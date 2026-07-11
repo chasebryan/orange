@@ -233,7 +233,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     ".github/dependabot.yml": "7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268",
     ".github/dependency-review-config.yml": "66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09",
     ".github/pull_request_template.md": "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f",
-    ".github/workflows/ci.yml": "198adc517714509c1913477aee9ee2054f17d3a6d4842890880e3f0776b97297",
+    ".github/workflows/ci.yml": "c19b23a47f21d247cc79c4c1aec913040a94c7fdc2eba56172bdd16e12392fc9",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
     ".github/workflows/scorecard.yml": "be2ff8f6d336bfb2002c1367b36dbb701c0faf30db19769038e6293a4a204f67",
@@ -244,7 +244,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "CONTRIBUTING.md": "e50b58c06667285d5a64429488b4e1349688834d4279c34f9925f6714bdddb53",
     "DEPENDENCY_POLICY.md": "b0fa14db2b2004be28d27b44af3420cccf88c9256165082f430e8afb49fdff5f",
     "GOVERNANCE.md": "48c93b2ba116b7ba7a508f7b776b7fe50830606c8797b6ad366055059c857246",
-    "Makefile": "e0ecff85c5fafd9697c81c2c17f9296b9d5e8781362763b5a1725acb0b36df58",
+    "Makefile": "574b06488bdcd22615653047c471b9a6352fc45b637f8998d2325ea5be5a4025",
     "README.md": "0a20d2bfaddc27a14b75aa19586a7cfa450a4f53eb6c7a633e00333500b21dba",
     "RELEASE_POLICY.md": "87924957dcdb0e52e4f73463698a306e9af14636e99842e91746ced5a1ce017a",
     "SECURITY.md": "4b055ad1b4380593a4a6160940a9319f858fb2bdaffc6ef18b23466d2523bfe7",
@@ -281,11 +281,11 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "da0b282b8e9710625bf323b485b65bb2d15090557c384cace13e90c1ab94dc5c",
-    "scripts/ci/check-repository": "6b2c249b49846d333fd87e4199f1c2727f767c7f0f900066c5407c9b4289e029",
+    "scripts/ci/check-repository": "f5bfb17cd49d952f84967893c769d41edf2bbdc70dae5d9b544319f8307db51a",
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "138cbed13e4ec2ceb1ce20153cd1c0bc8042a08f66a16952aca42d76b5d3ab12",
+    "tools/tests/test_validate_foundation_hardening.py": "b714b8d9ded1a17ba7c73b752efefa286d041781f72fe4e08d425a149a6d472f",
 }
 GATE0_CHARTER_SECTION_SHA256 = "2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -495,8 +495,10 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 
 def relative(path: Path, root: Path) -> str:
+    """Format a lexical repository-relative path without following symlinks."""
+
     try:
-        return path.resolve().relative_to(root.resolve()).as_posix()
+        return path.relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
 
@@ -545,9 +547,9 @@ def git_index_entries(root: Path) -> list[tuple[str, str]]:
 
 
 class FoundationValidator:
-    def __init__(self, root: Path, policy_path: Path = POLICY_PATH) -> None:
+    def __init__(self, root: Path) -> None:
         self.root = root.resolve()
-        self.policy_path = self.root / policy_path
+        self.policy_path = self.root / POLICY_PATH
         self.findings: list[Finding] = []
         self.policy: dict[str, Any] = {}
         self.repository_files = list(iter_repository_files(self.root))
@@ -1497,7 +1499,7 @@ class FoundationValidator:
                 "github.event.pull_request.user.login != 'chasebryan'",
                 "Gate 0 does not accept third-party pull requests until D-018 closes.",
                 "run: python3 -m unittest discover -s tools/tests -p 'test_*.py'",
-                "run: python3 tools/validate_foundation.py --root .",
+                "run: python3 tools/validate_foundation.py",
                 "DavidAnson/markdownlint-cli2-action@",
                 "run: ./scripts/ci/install-actionlint",
                 '"$RUNNER_TEMP/actionlint/actionlint" -color',
@@ -1613,7 +1615,7 @@ class FoundationValidator:
             )
             require(
                 "Validate Gate 0 repository policy",
-                ("run: python3 tools/validate_foundation.py --root .",),
+                ("run: python3 tools/validate_foundation.py",),
             )
             require("Lint Markdown", ("uses: DavidAnson/markdownlint-cli2-action@",))
             require("Install actionlint", ("run: ./scripts/ci/install-actionlint",))
@@ -3188,15 +3190,17 @@ def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
 
 def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository root")
-    parser.add_argument("--policy", type=Path, default=POLICY_PATH, help="policy path relative to root")
     parser.add_argument("--format", choices=("text", "json"), default="text", help="output format")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
-    validator = FoundationValidator(arguments.root, arguments.policy)
+    # This repository-owned validator always binds its filesystem scope to the
+    # checkout containing the script. Do not reintroduce caller-selected roots
+    # or policy paths without a new trust-boundary design and containment tests.
+    repository_root = Path(__file__).resolve().parents[1]
+    validator = FoundationValidator(repository_root)
     findings = validator.run()
     if arguments.format == "json":
         output = {
