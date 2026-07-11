@@ -182,7 +182,7 @@
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "d79f606c500ebd4586fb2c21d37d9687721e3ef28a95f74a481e5b242bf5c4f3"
+    "tools/tests/test_validate_foundation_hardening.py": "055238eb1a7d5ca2cdfdc26bba2da15831ff17f7bb9b9d38bf6bf24bef241476"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

@@ -409,7 +409,7 @@ class HostedControlEvidenceHardeningTests(unittest.TestCase):
             path.write_text(text + "Historical integration ID: 15368.\n", encoding="utf-8")
             validator = FoundationValidator(root)
             validator._validate_hosted_control_evidence()
-            self.assertIn("hosted_control.binding", {finding.code for finding in validator.findings})
+            self.assertIn("hosted_control.markers", {finding.code for finding in validator.findings})
 
     def test_missing_evidence_document_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -427,6 +427,45 @@ class HostedControlEvidenceHardeningTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_hosted_control_evidence(today=dt.date(2026, 10, 11))
             self.assertIn("hosted_control.expired", {finding.code for finding in validator.findings})
+
+    def test_extra_conflicting_binding_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            path = root / "docs/operations/GITHUB_CONTROLS.md"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + 'Required-check binding: `context="Dependency Review / policy" '
+                + "integration_id=99999`\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence()
+            self.assertIn("hosted_control.markers", {finding.code for finding in validator.findings})
+
+    def test_markers_hidden_in_a_code_fence_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            path = root / "docs/security/OSPS_BASELINE.md"
+            path.write_text(
+                "```text\n" + path.read_text(encoding="utf-8") + "```\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence()
+            self.assertIn("hosted_control.markers", {finding.code for finding in validator.findings})
+
+    def test_future_dated_snapshot_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence(today=dt.date(2026, 7, 10))
+            self.assertIn(
+                "hosted_control.future_snapshot",
+                {finding.code for finding in validator.findings},
+            )
 
 
 class DecisionGateHardeningTests(unittest.TestCase):

@@ -201,7 +201,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "d79f606c500ebd4586fb2c21d37d9687721e3ef28a95f74a481e5b242bf5c4f3",
+    "tools/tests/test_validate_foundation_hardening.py": "055238eb1a7d5ca2cdfdc26bba2da15831ff17f7bb9b9d38bf6bf24bef241476",
 }
 GATE0_CHARTER_SECTION_SHA256 = "2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -686,13 +686,14 @@ class FoundationValidator:
             f"snapshot_date={snapshot_value} review_due_date={review_due_value} "
             f"ruleset_id={ruleset_id}`"
         )
-        expected_bindings = {
+        expected_bindings = [
             (
                 "Required-check binding: `"
                 f"context=\"{item['context']}\" integration_id={item['integration_id']}`"
             )
             for item in GATE0_HOSTED_REPOSITORY_CONTROLS["required_checks"]
-        }
+        ]
+        expected_markers = [expected_snapshot, *expected_bindings]
         evidence_paths = (
             "docs/operations/GITHUB_CONTROLS.md",
             "docs/security/OSPS_BASELINE.md",
@@ -733,6 +734,12 @@ class FoundationValidator:
                 "hosted-control review due date precedes its snapshot date",
             )
         observed_today = today or dt.datetime.now(tz=dt.timezone.utc).date()
+        if snapshot_date > observed_today:
+            self.add(
+                "hosted_control.future_snapshot",
+                self.policy_path,
+                f"hosted-control snapshot {snapshot_value} is later than {observed_today.isoformat()}",
+            )
         if observed_today >= review_due_date:
             self.add(
                 "hosted_control.expired",
@@ -749,20 +756,19 @@ class FoundationValidator:
             except (OSError, UnicodeError) as exc:
                 self.add("hosted_control.unreadable", path, str(exc))
                 continue
-            lines = text.splitlines()
-            if lines.count(expected_snapshot) != 1:
+            marker_prefixes = ("Hosted-control snapshot:", "Required-check binding:")
+            observed_markers = [line for line in text.splitlines() if line.startswith(marker_prefixes)]
+            visible_markers = [
+                line
+                for line in markdown_without_fenced_blocks_and_comments(text).splitlines()
+                if line.startswith(marker_prefixes)
+            ]
+            if observed_markers != expected_markers or visible_markers != expected_markers:
                 self.add(
-                    "hosted_control.snapshot",
+                    "hosted_control.markers",
                     path,
-                    "expected exactly one canonical hosted-control snapshot marker",
+                    "visible hosted-control snapshot and producer-binding markers must match the exact canonical sequence",
                 )
-            for binding in sorted(expected_bindings):
-                if lines.count(binding) != 1:
-                    self.add(
-                        "hosted_control.binding",
-                        path,
-                        f"expected exactly one canonical producer binding {binding!r}",
-                    )
             for pattern, description in sorted(stale_claim_patterns.items()):
                 if re.search(pattern, text):
                     self.add(
