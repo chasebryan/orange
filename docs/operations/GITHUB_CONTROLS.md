@@ -25,7 +25,7 @@ date; a fresh readback and coordinated evidence update are then required.
 | Private vulnerability reporting | Enabled | One bootstrap steward; no independent PSIRT continuity. |
 | Dependabot alerts and security updates | Enabled | No product package manifest exists. |
 | Secret scanning | Provider-pattern scanning and push protection enabled | Non-provider patterns and validity checks are plan-ineligible and read back disabled. |
-| CodeQL default setup | Configured; `extended` query suite; standard runner; `remote_and_local` threat model; automatic language detection | No supported language is present on `main`, so the API reports an empty language list and no scan result. This is configuration, not coverage. |
+| CodeQL default setup | Configured; `extended` query suite; standard runner; `remote_and_local` threat model; weekly schedule; detected languages `actions` and `python`; successful exact-`main` run `29171652948` | At exact `main` `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`, Python analysis `1467719573` reported 0 results across 50 rules and Actions analysis `1467719309` reported 0 results across 23 rules, with no analysis errors or warnings. This is a time- and revision-specific hosted observation, not proof of vulnerability absence, independent or reproducible coverage, or merge blocking. |
 | Actions source policy | Exactly six repositories: `actions/checkout`, `actions/dependency-review-action`, `actions/upload-artifact`, `github/codeql-action`, `DavidAnson/markdownlint-cli2-action`, and `zizmorcore/zizmor-action`; plus one separately machine-enforced Scorecard image used by an explicit Docker CLI step | Repository wildcards are paired with full-SHA enforcement; reusable workflows still require repository validation. The Scorecard image and command are admitted only at the exact OCI digest. All other GitHub-owned and verified-publisher Actions are denied. |
 | Execution immutability | Repository Actions require full 40-character commit SHAs; the explicit Scorecard Docker invocation requires its exact OCI digest | Content addressing does not establish publisher trust, mirror the selected bytes, or fix the registry, hosted runner, container host, network, and service inputs. |
 | Default workflow token | `read`; cannot approve pull-request reviews | Job permissions remain authoritative and are checked in source. |
@@ -34,7 +34,7 @@ date; a fresh readback and coordinated evidence update are then required.
 | Discussions | Disabled | Planning decisions remain in versioned OEPs, ADRs, issues, and pull requests. |
 | Wiki | Disabled | Authoritative documentation remains versioned in Git. |
 | Immutable releases | Enabled for future published releases | No Orange release is authorized; this setting does not make a planning snapshot a product release. |
-| Default-branch rules | Active `Protect main` ruleset, ID `18810248`; no bypass actors; pull request, strict GitHub-Actions-bound checks, resolved conversations, squash-only linear history, deletion protection, and non-fast-forward protection | Bootstrap uses zero required approvals until a second qualified maintainer exists. |
+| Default-branch rules | Active `Protect main` ruleset, ID `18810248`; no bypass actors; pull request, resolved conversations, squash-only linear history, deletion and non-fast-forward protection; exact required contexts `Required CI / docs-policy-workflows` and `Dependency Review / policy`, each bound to GitHub Actions integration ID `15368` | Bootstrap uses zero required approvals until a second qualified maintainer exists. CodeQL is not a required ruleset context, and no CodeQL threshold or negative blocking test has been established. |
 | Commit signatures | Not required | Account signing key, verified commit, and Vigilant Mode require account-bound confirmation before enforcement. |
 | Web commit sign-off | Disabled | D-018 has not selected DCO/CLA or contribution terms. |
 
@@ -73,6 +73,31 @@ network metadata cannot decide whether a pull request is mergeable.
 Scorecard alone is not SAST, a CodeQL result, an audit, or an OSPS conformance
 claim. External-link availability is nondeterministic, so local relative-link
 and anchor validation remains in required CI.
+
+### Post-merge hosted execution snapshot
+
+This observation is bound to the 2026-07-11 readback and exact `main` revision
+`9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`. Pull request #3 head
+`8e26785f87c3866cc12915d7037820c608d6708d` was merged by `chasebryan` as that
+exact `main` commit after its checks were green. The active ruleset still
+requires the exact GitHub-Actions-bound Required CI and Dependency Review
+contexts recorded above.
+
+| Hosted observation | Exact evidence | Claim boundary |
+| --- | --- | --- |
+| Required CI on `main` | Run `29171653266` succeeded; repository policy `0.1.4` and its 65-test suite passed | One hosted execution under mutable runner and service inputs; not independent or reproducible proof |
+| Workflow Online Audit on `main` | Run `29171653264` succeeded | Live upstream metadata is time-dependent; this does not prove that the scheduled trigger has executed |
+| External Links on `main` | Run `29171653282` succeeded | Remote availability is time-dependent; this does not prove that the scheduled trigger has executed |
+| OpenSSF Scorecard on `main` | Run `29171653261` succeeded | Posture observation only; Scorecard is not SAST, CodeQL, an audit, a merge gate, or an assurance claim, and scheduled-event execution remains unproven |
+| CodeQL default setup on `main` | Run `29171652948` succeeded for `actions` and `python`; analyses `1467719309` and `1467719573` completed without errors or warnings | Zero results do not prove vulnerability absence; no CodeQL ruleset threshold or negative blocking behavior has been proven |
+
+CodeQL alerts #1 through #3, all `py/path-injection`, read back as fixed rather
+than dismissed at `2026-07-11T23:09:26Z`. That disposition records remediation
+state in GitHub for this snapshot; it is not evidence that all injection paths
+or future revisions are safe. The run IDs, analysis IDs, rule counts, statuses,
+and alert dispositions above are hosted observations only. They do not capture
+an immutable runner, service implementation, complete toolchain, signed result
+bundle, or independently replayable environment.
 
 The scheduled link audit excludes only `https://eprint.iacr.org/` because that
 primary-source host returns HTTP 403 to automated clients. The citations remain
@@ -116,9 +141,13 @@ mature two-person rule or OpenSSF OSPS-QA-07.01.
 - **Release tag rules:** D-017 must select the final namespace and D-018/D-019
   must close before a release pattern or authority is claimed. Immutable
   releases are already enabled, but no tag or release is authorized.
-- **Code-scanning rule:** add a ruleset CodeQL threshold only after CodeQL has a
-  successful result for both the proposed and target revisions. An empty
-  configured language list is not a result.
+- **Code-scanning rule:** CodeQL default setup now produces successful `actions`
+  and `python` analyses on `main`, but it is not a required ruleset context.
+  Keep a CodeQL threshold deferred until the exact producer/check identity is
+  selected and both proposed and target revisions pass a safe activation test,
+  including a controlled failing analysis that proves the intended rule blocks
+  merge without a same-named-context bypass or check-name deadlock. Green runs,
+  zero results, and fixed alerts are not negative blocking proof.
 - **License enforcement:** dependency review reports license data but no
   allow/deny list is authoritative before D-018.
 - **Advanced secret features:** non-provider patterns and validity checks are
