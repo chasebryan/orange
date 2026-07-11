@@ -1,5 +1,7 @@
 # Orange
 
+![Official Orange emblem and wordmark](assets/brand/orange-banner.png)
+
 Orange is a language and toolchain for specifying, implementing, and verifying
 cryptography.
 
@@ -66,7 +68,10 @@ to complete Gate 0 without beginning a disposable product implementation:
   [conformance fixtures](conformance/foundation/README.md); and
 - the machine-readable [repository policy](policy/README.md), pinned CI,
   dependency review, CodeQL default-setup record, and
-  [GitHub control runbook](docs/operations/GITHUB_CONTROLS.md).
+  [GitHub control runbook](docs/operations/GITHUB_CONTROLS.md); and
+- the owner-designated [official Orange emblem, wordmark, and lockup
+  assets](assets/brand/README.md), preserved with a digest manifest and explicit
+  rights boundary.
 
 Run the deterministic local policy and adversarial suite with:
 

@@ -361,7 +361,11 @@ strategy, and approved public wording.
 
 Status: blocked on naming/trademark/namespace review; decide at Gate 0
 
-Current state: **Orange** is the working codename and repository name.
+Current state: **Orange** is the working codename and repository name. The
+Bootstrap Steward designated the byte-preserved images under
+[`assets/brand/`](../assets/brand/) as the official working repository emblem,
+wordmark, and lockup on 2026-07-11. That designation records current project
+identity; it is not trademark clearance or ratification of the final name.
 
 Evidence of collision:
 
@@ -377,7 +381,10 @@ Required review:
 - searchability and confusion analysis;
 - codename-to-final-name migration cost.
 
-Do not publish packages or invest in a final visual identity before this closes.
+Do not publish packages, claim trademark clearance, register public namespaces,
+or treat the working assets as an irrevocable final identity before this
+closes. Preserve the admitted originals and their provenance so a later naming
+decision can migrate or retire them deliberately.
 
 ## D-018 — Licenses
 

@@ -30,13 +30,42 @@ jobs:
           persist-credentials: false
 
       - name: Run OpenSSF Scorecard
-        uses: docker://ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941 # v2.4.3
+        shell: bash
         env:
-          INPUT_RESULTS_FILE: results.sarif
-          INPUT_RESULTS_FORMAT: sarif
           INPUT_REPO_TOKEN: ${{ github.token }}
-          INPUT_PUBLISH_RESULTS: "false"
-          INPUT_FILE_MODE: archive
+        run: |
+          set -euo pipefail
+          test -n "${INPUT_REPO_TOKEN:-}"
+          test -r "$GITHUB_EVENT_PATH"
+          test -d "$GITHUB_WORKSPACE"
+          printf '::add-mask::%s\n' "$INPUT_REPO_TOKEN"
+          rm -f -- "$GITHUB_WORKSPACE/results.sarif"
+
+          docker run --rm \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777 \
+            --cap-drop=ALL \
+            --cap-add=DAC_OVERRIDE \
+            --security-opt=no-new-privileges=true \
+            --pids-limit=256 \
+            --mount "type=bind,source=${GITHUB_EVENT_PATH},target=/github/workflow/event.json,readonly" \
+            --mount "type=bind,source=${GITHUB_WORKSPACE},target=/github/workspace" \
+            --workdir /github/workspace \
+            --env GITHUB_ACTIONS=true \
+            --env GITHUB_API_URL \
+            --env GITHUB_EVENT_NAME \
+            --env GITHUB_EVENT_PATH=/github/workflow/event.json \
+            --env GITHUB_REF \
+            --env GITHUB_REPOSITORY \
+            --env GITHUB_WORKSPACE=/github/workspace \
+            --env INPUT_FILE_MODE=archive \
+            --env INPUT_PUBLISH_RESULTS=false \
+            --env INPUT_REPO_TOKEN \
+            --env INPUT_RESULTS_FILE=results.sarif \
+            --env INPUT_RESULTS_FORMAT=sarif \
+            ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941 # v2.4.3
+
+          test -s "$GITHUB_WORKSPACE/results.sarif"
 
       - name: Preserve SARIF result
         if: ${{ always() && hashFiles('results.sarif') != '' }}

@@ -57,6 +57,16 @@ MINIMUM_REQUIRED_PATHS = {
     "RELEASE_POLICY.md",
     "SECURITY.md",
     "SUPPORT.md",
+    "assets/brand/README.md",
+    "assets/brand/manifest.json",
+    "assets/brand/orange-banner-jpeg.JPEG",
+    "assets/brand/orange-banner.png",
+    "assets/brand/orange-banner2-erased.PNG",
+    "assets/brand/orange-banner2.PNG",
+    "assets/brand/orange-erased.PNG",
+    "assets/brand/orange.jpg",
+    "assets/brand/orange.png",
+    "assets/brand/orangePNG.PNG",
     "conformance/foundation/manifest.json",
     "conformance/foundation/README.md",
     "docs/DECISIONS.md",
@@ -105,9 +115,79 @@ MINIMUM_ACTION_REPOSITORIES = {
     "github/codeql-action/upload-sarif",
     "zizmorcore/zizmor-action",
 }
-GATE0_ALLOWED_CONTAINER_ACTIONS = {
-    "docker://ghcr.io/ossf/scorecard-action@sha256:"
+GATE0_ALLOWED_CONTAINER_IMAGES = {
+    "ghcr.io/ossf/scorecard-action@sha256:"
     "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
+}
+GATE0_ALLOWED_BINARY_ARTIFACTS = [
+    {
+        "path": "assets/brand/orange-banner2.PNG",
+        "sha256": "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b",
+        "role": "Official working Orange wordmark on a light background",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+    {
+        "path": "assets/brand/orangePNG.PNG",
+        "sha256": "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02",
+        "role": "Official working Orange emblem source variant on a light background",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+    {
+        "path": "assets/brand/orange-banner-jpeg.JPEG",
+        "sha256": "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a",
+        "role": "Official working Orange horizontal lockup JPEG",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+    {
+        "path": "assets/brand/orange-banner2-erased.PNG",
+        "sha256": "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c",
+        "role": "Official working Orange transparent wordmark",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+    {
+        "path": "assets/brand/orange-erased.PNG",
+        "sha256": "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2",
+        "role": "Official working Orange transparent emblem",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+    {
+        "path": "assets/brand/orange-banner.png",
+        "sha256": "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266",
+        "role": "Official working Orange primary horizontal lockup with embedded C2PA claim",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+    {
+        "path": "assets/brand/orange.jpg",
+        "sha256": "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888",
+        "role": "Official working Orange emblem JPEG on a light background",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+    {
+        "path": "assets/brand/orange.png",
+        "sha256": "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463",
+        "role": "Official working Orange primary emblem with embedded C2PA claim",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+    },
+]
+GATE0_BRAND_ASSET_METADATA = {
+    "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
+    "orangePNG.PNG": ("image/png", 1254, 1254, False, False),
+    "orange-banner-jpeg.JPEG": ("image/jpeg", 2048, 683, False, False),
+    "orange-banner2-erased.PNG": ("image/png", 1444, 683, True, False),
+    "orange-erased.PNG": ("image/png", 1254, 1254, True, False),
+    "orange-banner.png": ("image/png", 2172, 724, False, True),
+    "orange.jpg": ("image/jpeg", 1254, 1254, False, False),
+    "orange.png": ("image/png", 1254, 1254, False, True),
+}
+GATE0_BRAND_SOURCE_FILENAMES = {
+    "orange-banner2.PNG": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
+    "orangePNG.PNG": "4DB7A71A-8FF8-48B3-8243-1657017AD816.PNG",
+    "orange-banner-jpeg.JPEG": "IMG_2760.JPEG",
+    "orange-banner2-erased.PNG": "IMG_2766.PNG",
+    "orange-erased.PNG": "IMG_2768.PNG",
+    "orange-banner.png": "orange-banner.png",
+    "orange.jpg": "orange.jpg",
+    "orange.png": "orange.png",
 }
 GATE0_EXECUTABLE_PATHS = {
     "scripts/ci/check-external-links",
@@ -142,8 +222,8 @@ GATE0_WORKFLOW_INVENTORY = {
 }
 GATE0_PROTECTED_FILE_DIGESTS = {
     ".editorconfig": "a3766d51a21a904a405f808017eeb34d5426558ad487803a5d4f39a854379ca9",
-    ".gitattributes": "15f8f9d748b8aecc1c0abdaa20dd8352143c14cf874097f5f765ce11271cc4a4",
-    ".github/CODEOWNERS": "4cf3f361e263fbd58a16f89ae588a47d688611965417a653d6986465e093269c",
+    ".gitattributes": "a5f4501e4eeea215d890813156f46edf1cd9dee83be968e5ff5edc6c136f111d",
+    ".github/CODEOWNERS": "8038a3a61117a29c26bfdd7b66a9a5675cb779736bad2c8c1797e680d7484663",
     ".github/ISSUE_TEMPLATE/conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
     ".github/ISSUE_TEMPLATE/config.yml": "ff5a8f986c0a9902d402ac17eecd3fbea8783ad396ba0b33133650826054ffe3",
     ".github/ISSUE_TEMPLATE/oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
@@ -156,18 +236,21 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     ".github/workflows/ci.yml": "198adc517714509c1913477aee9ee2054f17d3a6d4842890880e3f0776b97297",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
-    ".github/workflows/scorecard.yml": "882cc0f6c220947d4757b8624a8eca39c439684e3dc4d719d0f33a7ae9164394",
+    ".github/workflows/scorecard.yml": "be2ff8f6d336bfb2002c1367b36dbb701c0faf30db19769038e6293a4a204f67",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
     ".markdownlint-cli2.jsonc": "731e1af92e9e12a2a3582c5b63fe48148bd94930e2bcf07de9214a823b15bdd1",
     "CODE_OF_CONDUCT.md": "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a",
-    "CONTRIBUTING.md": "8776b5946dd8d578d9f50cfaf1c74a19a6b3deb9c879fe36d28deb219a1d28d0",
+    "CONTRIBUTING.md": "e50b58c06667285d5a64429488b4e1349688834d4279c34f9925f6714bdddb53",
     "DEPENDENCY_POLICY.md": "b0fa14db2b2004be28d27b44af3420cccf88c9256165082f430e8afb49fdff5f",
     "GOVERNANCE.md": "48c93b2ba116b7ba7a508f7b776b7fe50830606c8797b6ad366055059c857246",
     "Makefile": "e0ecff85c5fafd9697c81c2c17f9296b9d5e8781362763b5a1725acb0b36df58",
+    "README.md": "0a20d2bfaddc27a14b75aa19586a7cfa450a4f53eb6c7a633e00333500b21dba",
     "RELEASE_POLICY.md": "87924957dcdb0e52e4f73463698a306e9af14636e99842e91746ced5a1ce017a",
     "SECURITY.md": "4b055ad1b4380593a4a6160940a9319f858fb2bdaffc6ef18b23466d2523bfe7",
     "SUPPORT.md": "936543d521cdc8059b73775bd991c2ea40faa0c2de715b25b9e02880ca1e0aec",
+    "assets/brand/README.md": "40c7dcc00ad935e8e05ac3b937fedf17c8cc5ff9a25accaa3ac2227e9f653ff7",
+    "assets/brand/manifest.json": "35c65a3e6850badca2b6fc421dcdc5e3f4e1ecb5a5c0fae8620348e915030769",
     "conformance/foundation/README.md": "18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294",
     "conformance/foundation/invalid/claim-record-assumption-only.json": "2e8fa46cda4b814f8d2096d19c4e7fec83ae9f28cd355c5012948ce5980ca210",
     "conformance/foundation/invalid/evidence-manifest-independent-without-review.json": "b92882efaf1f36a5988a8c4c484e4d7e659219248a6ee287f5928bf2b853f16b",
@@ -184,12 +267,13 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/operations/CI_DEPENDENCIES.md": "f438e12f35b5d90139527559dab9ad02440e7312823dafeda3b5af3bf552dfb8",
-    "docs/operations/GITHUB_CONTROLS.md": "0572b453dda6a0a6535f3acb9ce6195cb2b88d0fb4c51ab8a99bb5c2646eea47",
-    "docs/security/OSPS_BASELINE.md": "039ceab60c41dc99438c9ef5c37cbf239567366adedcc09fe4ef0a9d5c89b289",
+    "docs/DECISIONS.md": "3fa17e47d04e9983e61dab881800daa9e1550034ba45d598e8cc206892dda827",
+    "docs/operations/CI_DEPENDENCIES.md": "da007b7dafbc35bd9d9bb9cfd73f6946126f7a640488c4ec2d61014cccecc535",
+    "docs/operations/GITHUB_CONTROLS.md": "63f64d732232833cc3edce518e397326ac8fde5c0214d23ad81f501c01069220",
+    "docs/security/OSPS_BASELINE.md": "cb5e35385cb2f6bf3e74265733771bd1143af346ead6088ebe6094e154bfc9c3",
     "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
-    "docs/security/THREAT_MODEL.md": "b33dad990242cb03b580de7326b8eb867b068806e9219db85a0524310e68356d",
-    "policy/README.md": "7e7282b42f301b9709cf16e9cdbbba599db55fe9111a6f5b3389720e03a13b3e",
+    "docs/security/THREAT_MODEL.md": "2b2d67ca9c73183584d84541376ddd144b11274376c47785708d356a149a8921",
+    "policy/README.md": "eb4d4f56cefe499c50797cd5a39f5107c89b0507ad087bf2ce85532d0d4b4373",
     "schemas/README.md": "164ebec6c44aa928457c3944ae25f29cadc3ba331e2aae4997bc2d0782230256",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
@@ -201,7 +285,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "055238eb1a7d5ca2cdfdc26bba2da15831ff17f7bb9b9d38bf6bf24bef241476",
+    "tools/tests/test_validate_foundation_hardening.py": "138cbed13e4ec2ceb1ce20153cd1c0bc8042a08f66a16952aca42d76b5d3ab12",
 }
 GATE0_CHARTER_SECTION_SHA256 = "2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -254,6 +338,7 @@ GATE0_CONFORMANCE_INSTANCE_PATHS = {
 MINIMUM_CODEOWNERS = {
     "* @chasebryan",
     "/.github/ @chasebryan",
+    "/assets/brand/ @chasebryan",
     "/SECURITY.md @chasebryan",
     "/GOVERNANCE.md @chasebryan",
     "/docs/ASSURANCE.md @chasebryan",
@@ -277,6 +362,7 @@ GATE0_ALLOWED_TOP_LEVEL = {
     "RELEASE_POLICY.md",
     "SECURITY.md",
     "SUPPORT.md",
+    "assets",
     "conformance",
     "docs",
     "policy",
@@ -477,6 +563,7 @@ class FoundationValidator:
             return sorted(set(self.findings))
         self._validate_required_and_forbidden_paths()
         self._validate_tree_encoding_and_format()
+        self._validate_brand_assets()
         self._validate_protected_file_digests()
         self._validate_hosted_control_evidence()
         self._validate_markdown_links()
@@ -595,6 +682,29 @@ class FoundationValidator:
             for field in ("role", "provenance"):
                 if not isinstance(artifact[field], str) or not artifact[field].strip():
                     self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] needs {field}")
+        if policy["allowed_binary_artifacts"] != GATE0_ALLOWED_BINARY_ARTIFACTS:
+            self.add(
+                "policy.binary_inventory",
+                self.policy_path,
+                "official binary artifact paths, digests, roles, and provenance must remain exact",
+            )
+        expected_action_policy_keys = {
+            "allowed_action_repositories",
+            "allowed_container_images",
+            "allowed_write_permissions",
+            "forbidden_events",
+            "require_full_commit_sha",
+            "require_version_comment",
+        }
+        observed_action_policy_keys = set(policy["github_actions"])
+        if observed_action_policy_keys != expected_action_policy_keys:
+            self.add(
+                "policy.action_fields",
+                self.policy_path,
+                "github_actions fields must remain exact; "
+                f"missing={sorted(expected_action_policy_keys - observed_action_policy_keys)}, "
+                f"extra={sorted(observed_action_policy_keys - expected_action_policy_keys)}",
+            )
         action_repositories = set(policy["github_actions"].get("allowed_action_repositories", []))
         if action_repositories != MINIMUM_ACTION_REPOSITORIES:
             self.add(
@@ -602,12 +712,12 @@ class FoundationValidator:
                 self.policy_path,
                 f"Action identities must be exact; missing={sorted(MINIMUM_ACTION_REPOSITORIES - action_repositories)}, extra={sorted(action_repositories - MINIMUM_ACTION_REPOSITORIES)}",
             )
-        container_actions = set(policy["github_actions"].get("allowed_container_actions", []))
-        if container_actions != GATE0_ALLOWED_CONTAINER_ACTIONS:
+        container_images = set(policy["github_actions"].get("allowed_container_images", []))
+        if container_images != GATE0_ALLOWED_CONTAINER_IMAGES:
             self.add(
                 "policy.container_allowlist",
                 self.policy_path,
-                f"container Action identities must be exact; missing={sorted(GATE0_ALLOWED_CONTAINER_ACTIONS - container_actions)}, extra={sorted(container_actions - GATE0_ALLOWED_CONTAINER_ACTIONS)}",
+                f"container image identities must be exact; missing={sorted(GATE0_ALLOWED_CONTAINER_IMAGES - container_images)}, extra={sorted(container_images - GATE0_ALLOWED_CONTAINER_IMAGES)}",
             )
         if set(policy["executable_paths"]) != GATE0_EXECUTABLE_PATHS:
             self.add("policy.executables", self.policy_path, "Gate 0 executable allowlist must remain exact")
@@ -890,6 +1000,105 @@ class FoundationValidator:
                 if comment_error:
                     self.add("markdown.html_comment", path, comment_error)
 
+    def _validate_brand_assets(self) -> None:
+        manifest_path = self.root / "assets/brand/manifest.json"
+        try:
+            manifest = load_json(manifest_path)
+        except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError) as exc:
+            self.add("brand.manifest", manifest_path, str(exc))
+            return
+        expected_header = {
+            "schema_version": "orange-brand-assets/v1",
+            "status": "official",
+            "authority": "chasebryan",
+            "designated_on": "2026-07-11",
+            "source_collection": "Orange-Assets",
+            "import_mode": "byte-for-byte",
+        }
+        if not isinstance(manifest, dict):
+            self.add("brand.manifest", manifest_path, "brand manifest root must be an object")
+            return
+        if {key: manifest.get(key) for key in expected_header} != expected_header:
+            self.add("brand.manifest_header", manifest_path, "official brand manifest header must remain exact")
+        if set(manifest) != {*expected_header, "assets"}:
+            self.add("brand.manifest_fields", manifest_path, "official brand manifest fields must remain exact")
+        assets = manifest.get("assets")
+        if not isinstance(assets, list):
+            self.add("brand.manifest", manifest_path, "assets must be an array")
+            return
+        expected_paths = list(GATE0_BRAND_ASSET_METADATA)
+        observed_paths = [item.get("path") for item in assets if isinstance(item, dict)]
+        if observed_paths != expected_paths or len(observed_paths) != len(assets):
+            self.add("brand.manifest_inventory", manifest_path, "official brand asset order and inventory must remain exact")
+        admissions = {
+            PurePosixPath(item["path"]).name: item
+            for item in GATE0_ALLOWED_BINARY_ARTIFACTS
+        }
+        for index, item in enumerate(assets):
+            if not isinstance(item, dict):
+                self.add("brand.manifest_item", manifest_path, f"assets[{index}] must be an object")
+                continue
+            name = item.get("path")
+            if name not in GATE0_BRAND_ASSET_METADATA:
+                self.add("brand.manifest_item", manifest_path, f"assets[{index}] has an unadmitted path")
+                continue
+            media_type, width, height, alpha, has_c2pa = GATE0_BRAND_ASSET_METADATA[name]
+            expected_fields = {
+                "path",
+                "source_filename",
+                "media_type",
+                "width",
+                "height",
+                "alpha",
+                "role",
+                "sha256",
+            }
+            if has_c2pa:
+                expected_fields.add("content_credentials")
+            if set(item) != expected_fields:
+                self.add("brand.manifest_fields", manifest_path, f"assets[{index}] fields must remain exact")
+            if (
+                item.get("media_type") != media_type
+                or item.get("width") != width
+                or item.get("height") != height
+                or item.get("alpha") is not alpha
+                or not isinstance(item.get("role"), str)
+                or not item.get("role")
+            ):
+                self.add("brand.manifest_metadata", manifest_path, f"assets[{index}] technical metadata is incorrect")
+            if item.get("sha256") != admissions[name]["sha256"]:
+                self.add("brand.manifest_digest", manifest_path, f"assets[{index}] digest disagrees with policy")
+            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name]:
+                self.add(
+                    "brand.manifest_provenance",
+                    manifest_path,
+                    f"assets[{index}] source filename is incorrect",
+                )
+            if has_c2pa and item.get("content_credentials") != (
+                "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified"
+            ):
+                self.add("brand.manifest_provenance", manifest_path, f"assets[{index}] C2PA status is incorrect")
+
+            asset_path = manifest_path.parent / name
+            try:
+                data = asset_path.read_bytes()
+            except OSError as exc:
+                self.add("brand.asset", asset_path, str(exc))
+                continue
+            if media_type == "image/png":
+                if len(data) < 29 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+                    self.add("brand.asset_format", asset_path, "asset is not a canonical PNG stream")
+                    continue
+                observed_width = int.from_bytes(data[16:20], "big")
+                observed_height = int.from_bytes(data[20:24], "big")
+                observed_alpha = data[25] in {4, 6}
+                if (observed_width, observed_height, observed_alpha) != (width, height, alpha):
+                    self.add("brand.asset_metadata", asset_path, "PNG header disagrees with admitted metadata")
+            elif not data.startswith(b"\xff\xd8\xff") or not data.endswith(b"\xff\xd9"):
+                self.add("brand.asset_format", asset_path, "asset is not a complete JPEG stream")
+            if has_c2pa and b"caBX" not in data:
+                self.add("brand.c2pa", asset_path, "canonical source no longer carries its C2PA container")
+
     def _validate_markdown_links(self) -> None:
         for path in (path for path in self.repository_files if path.suffix.lower() == ".md"):
             try:
@@ -1152,7 +1361,6 @@ class FoundationValidator:
             self.add("workflow.required", f".github/workflows/{name}", "required workflow is missing")
         actions_policy = self.policy["github_actions"]
         allowed = set(actions_policy.get("allowed_action_repositories", []))
-        allowed_containers = set(actions_policy.get("allowed_container_actions", []))
         forbidden_events = set(actions_policy.get("forbidden_events", []))
         allowed_writes = {
             name: set(values)
@@ -1203,23 +1411,12 @@ class FoundationValidator:
                 ):
                     self.add("workflow.uses_syntax", path, f"line {line_number}: uses must use canonical unquoted block syntax")
                 if container_match:
-                    container_action, version = container_match.groups()
-                    if not re.fullmatch(r"docker://[^\s@]+@sha256:[0-9a-f]{64}", container_action):
-                        self.add(
-                            "workflow.mutable_container",
-                            path,
-                            f"line {line_number}: container Action must use an exact sha256 manifest digest",
-                        )
-                    if container_action not in allowed_containers:
-                        self.add(
-                            "workflow.container_allowlist",
-                            path,
-                            f"line {line_number}: container Action is not admitted: {container_action}",
-                        )
-                    if actions_policy.get("require_version_comment") and not version:
-                        self.add("workflow.version_comment", path, f"line {line_number}: pinned container needs a version comment")
-                    elif version and not re.fullmatch(r"v[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?", version):
-                        self.add("workflow.version_comment", path, f"line {line_number}: invalid container version comment {version!r}")
+                    container_action, _ = container_match.groups()
+                    self.add(
+                        "workflow.container_action",
+                        path,
+                        f"line {line_number}: direct container Action syntax is not admitted: {container_action}",
+                    )
                 elif match:
                     action, ref, version = match.groups()
                     if action.startswith("./"):
@@ -1317,7 +1514,8 @@ class FoundationValidator:
             "scorecard.yml": (
                 "name: OpenSSF Scorecard / analysis",
                 "if: ${{ github.ref == 'refs/heads/main' }}",
-                "docker://ghcr.io/ossf/scorecard-action@sha256:",
+                "docker run --rm",
+                "ghcr.io/ossf/scorecard-action@sha256:",
                 "github/codeql-action/upload-sarif@",
             ),
         }
@@ -1427,25 +1625,122 @@ class FoundationValidator:
             require(
                 "Run OpenSSF Scorecard",
                 (
-                    "uses: docker://ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
-                    "INPUT_RESULTS_FILE: results.sarif",
-                    "INPUT_RESULTS_FORMAT: sarif",
+                    "shell: bash",
+                    "run: |",
+                    "set -euo pipefail",
+                    'test -n "${INPUT_REPO_TOKEN:-}"',
+                    'test -r "$GITHUB_EVENT_PATH"',
+                    'test -d "$GITHUB_WORKSPACE"',
+                    "printf '::add-mask::%s\\n' \"$INPUT_REPO_TOKEN\"",
+                    'rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
+                    "docker run --rm",
+                    "--read-only",
+                    "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
+                    "--cap-drop=ALL",
+                    "--cap-add=DAC_OVERRIDE",
+                    "--security-opt=no-new-privileges=true",
+                    "--pids-limit=256",
+                    '--mount "type=bind,source=${GITHUB_EVENT_PATH},target=/github/workflow/event.json,readonly"',
+                    '--mount "type=bind,source=${GITHUB_WORKSPACE},target=/github/workspace"',
+                    "--workdir /github/workspace",
+                    "--env GITHUB_ACTIONS=true",
+                    "--env GITHUB_API_URL",
+                    "--env GITHUB_EVENT_NAME",
+                    "--env GITHUB_EVENT_PATH=/github/workflow/event.json",
+                    "--env GITHUB_REF",
+                    "--env GITHUB_REPOSITORY",
+                    "--env GITHUB_WORKSPACE=/github/workspace",
+                    "--env INPUT_FILE_MODE=archive",
+                    "--env INPUT_PUBLISH_RESULTS=false",
+                    "--env INPUT_REPO_TOKEN",
+                    "--env INPUT_RESULTS_FILE=results.sarif",
+                    "--env INPUT_RESULTS_FORMAT=sarif",
+                    "ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
                     "INPUT_REPO_TOKEN: ${{ github.token }}",
-                    'INPUT_PUBLISH_RESULTS: "false"',
-                    "INPUT_FILE_MODE: archive",
+                    'test -s "$GITHUB_WORKSPACE/results.sarif"',
                 ),
             )
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
+            expected_scorecard_block = '''      - name: Run OpenSSF Scorecard
+        shell: bash
+        env:
+          INPUT_REPO_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "${INPUT_REPO_TOKEN:-}"
+          test -r "$GITHUB_EVENT_PATH"
+          test -d "$GITHUB_WORKSPACE"
+          printf '::add-mask::%s\\n' "$INPUT_REPO_TOKEN"
+          rm -f -- "$GITHUB_WORKSPACE/results.sarif"
+          docker run --rm \\
+            --read-only \\
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777 \\
+            --cap-drop=ALL \\
+            --cap-add=DAC_OVERRIDE \\
+            --security-opt=no-new-privileges=true \\
+            --pids-limit=256 \\
+            --mount "type=bind,source=${GITHUB_EVENT_PATH},target=/github/workflow/event.json,readonly" \\
+            --mount "type=bind,source=${GITHUB_WORKSPACE},target=/github/workspace" \\
+            --workdir /github/workspace \\
+            --env GITHUB_ACTIONS=true \\
+            --env GITHUB_API_URL \\
+            --env GITHUB_EVENT_NAME \\
+            --env GITHUB_EVENT_PATH=/github/workflow/event.json \\
+            --env GITHUB_REF \\
+            --env GITHUB_REPOSITORY \\
+            --env GITHUB_WORKSPACE=/github/workspace \\
+            --env INPUT_FILE_MODE=archive \\
+            --env INPUT_PUBLISH_RESULTS=false \\
+            --env INPUT_REPO_TOKEN \\
+            --env INPUT_RESULTS_FILE=results.sarif \\
+            --env INPUT_RESULTS_FORMAT=sarif \\
+            ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941
+          test -s "$GITHUB_WORKSPACE/results.sarif"'''  # noqa: E501
+            if scorecard_block != expected_scorecard_block:
+                self.add(
+                    "workflow.scorecard_contract",
+                    path,
+                    f"{job_name}/Run OpenSSF Scorecard must match the reviewed Docker runtime contract exactly",
+                )
+            image = next(iter(GATE0_ALLOWED_CONTAINER_IMAGES))
+            if scorecard_block.count(image) != 1:
+                self.add(
+                    "workflow.scorecard_image",
+                    path,
+                    f"{job_name}/Run OpenSSF Scorecard must invoke the one admitted image exactly once",
+                )
+            if "docker://" in scorecard_block:
+                self.add(
+                    "workflow.scorecard_runtime",
+                    path,
+                    f"{job_name}/Run OpenSSF Scorecard must use the hosted runner Docker CLI",
+                )
             for forbidden in (
                 'INPUT_PUBLISH_RESULTS: "true"',
-                "INPUT_INTERNAL_PUBLISH_BASE_URL:",
-                "INPUT_INTERNAL_DEFAULT_TOKEN:",
+                "INPUT_PUBLISH_RESULTS=true",
+                "INPUT_INTERNAL_PUBLISH_BASE_URL",
+                "INPUT_INTERNAL_DEFAULT_TOKEN",
             ):
                 if forbidden in scorecard_block:
                     self.add(
                         "workflow.scorecard_publication",
                         path,
                         f"{job_name}/Run OpenSSF Scorecard contains forbidden public publication setting {forbidden!r}",
+                    )
+            for forbidden in (
+                "--privileged",
+                "--cap-add=ALL",
+                "--cap-add=SYS_ADMIN",
+                "--device",
+                "--entrypoint",
+                "--network=host",
+                "/var/run/docker.sock",
+            ):
+                if forbidden in scorecard_block:
+                    self.add(
+                        "workflow.scorecard_runtime",
+                        path,
+                        f"{job_name}/Run OpenSSF Scorecard contains forbidden Docker option {forbidden!r}",
                     )
             require("Upload result to code scanning", ("uses: github/codeql-action/upload-sarif@",))
 
