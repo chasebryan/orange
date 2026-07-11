@@ -1,3 +1,4 @@
 # orange
 Orange is a language for specifying, implementing, and verifying cryptography.
-<img width="420" height="420" alt="orange" src="https://github.com/user-attachments/assets/61bc737c-7dd5-40ae-8afb-b1247d006864" />
+<img width="2172" height="724" alt="orange-banner" src="https://github.com/user-attachments/assets/ec07da49-f12a-4827-886c-dff4662b3e71" />
+
