@@ -21,7 +21,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write # Required to publish an authenticated Scorecard result.
       security-events: write # Required to upload SARIF to code scanning.
     steps:
       - name: Checkout
@@ -36,10 +35,8 @@ jobs:
           INPUT_RESULTS_FILE: results.sarif
           INPUT_RESULTS_FORMAT: sarif
           INPUT_REPO_TOKEN: ${{ github.token }}
-          INPUT_PUBLISH_RESULTS: "true"
+          INPUT_PUBLISH_RESULTS: "false"
           INPUT_FILE_MODE: archive
-          INPUT_INTERNAL_PUBLISH_BASE_URL: https://api.scorecard.dev
-          INPUT_INTERNAL_DEFAULT_TOKEN: ${{ github.token }}
 
       - name: Preserve SARIF result
         if: ${{ always() && hashFiles('results.sarif') != '' }}

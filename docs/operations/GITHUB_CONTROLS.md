@@ -25,7 +25,7 @@ paired with current API readback and the effective rules response.
 | Merge methods | Squash only; auto-merge and branch update enabled; merged branches deleted | This does not itself require a pull request. The default-branch ruleset remains the enforcement gate. |
 | Wiki | Disabled | Authoritative documentation remains versioned in Git. |
 | Immutable releases | Enabled for future published releases | No Orange release is authorized; this setting does not make a planning snapshot a product release. |
-| Default-branch rules | Not yet active | Required check identities must first complete successfully; enabling nonexistent checks would deadlock a sole-steward repository. |
+| Default-branch rules | Active `Protect main` ruleset, ID `18810248`; no bypass actors; pull request, strict GitHub-Actions-bound checks, resolved conversations, squash-only linear history, deletion protection, and non-fast-forward protection | Bootstrap uses zero required approvals until a second qualified maintainer exists. |
 | Commit signatures | Not required | Account signing key, verified commit, and Vigilant Mode require account-bound confirmation before enforcement. |
 | Web commit sign-off | Disabled | D-018 has not selected DCO/CLA or contribution terms. |
 
@@ -49,8 +49,12 @@ workflow change remain essential.
 
 Scorecard runs its content-addressed container only on trusted `main` push or
 schedule and hard-gates its job to the `main` ref; it has no manual dispatch
-because that could select an unreviewed branch while holding OIDC and SARIF
-write permissions. External-link
+because that could select an unreviewed branch while holding SARIF write
+permission. Public Scorecard publication is deliberately disabled because the
+publication service requires the official outer Action identity, whose selected
+descriptor delegates to a mutable image tag. The digest-pinned run instead
+retains its SARIF artifact and uploads it to GitHub code scanning without an
+OIDC permission. External-link
 and online workflow-metadata audits may be manually dispatched because they
 hold only `contents: read`. All three are informational and must not be required
 merge checks. Required CI runs zizmor with online audits disabled, so mutable
@@ -66,14 +70,17 @@ the audit does not globally accept HTTP 403.
 
 ## Protected-main activation sequence
 
-The following sequence is mandatory; it avoids weakening the target while also
-avoiding a check-name deadlock:
+The following sequence was used for ruleset `18810248` and is mandatory for any
+replacement; it avoids weakening the target while also avoiding a check-name
+deadlock:
 
 1. Push the complete branch and open a pull request.
 2. Require successful hosted results from these exact jobs:
    `Required CI / docs-policy-workflows` and `Dependency Review / policy`.
 3. Read the check runs for the exact head SHA. Record each check name and GitHub
    App integration ID; do not accept a same-named status from another producer.
+   The activation readback bound both exact contexts to GitHub Actions
+   integration ID `15368`.
 4. Create one active default-branch ruleset with no bypass actor. Require pull
    request, strict current checks, conversation resolution, linear history, and
    block deletion and non-fast-forward updates.

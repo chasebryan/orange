@@ -137,7 +137,7 @@
     ".github/workflows/ci.yml": "198adc517714509c1913477aee9ee2054f17d3a6d4842890880e3f0776b97297",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
-    ".github/workflows/scorecard.yml": "2bc9f8d5ade899bd305e384f7e8adb990ace1bb673135c1dfc382ef593d09fcc",
+    ".github/workflows/scorecard.yml": "882cc0f6c220947d4757b8624a8eca39c439684e3dc4d719d0f33a7ae9164394",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
     ".markdownlint-cli2.jsonc": "731e1af92e9e12a2a3582c5b63fe48148bd94930e2bcf07de9214a823b15bdd1",
@@ -165,11 +165,11 @@
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/operations/CI_DEPENDENCIES.md": "99d5bbf3b67bd5cb86fb28c53028c45b5578f2bfb105df92636d7d1c0d802ade",
-    "docs/operations/GITHUB_CONTROLS.md": "149fb17b0e45ddf00c60d2777b5d97dbd01c032a4d8cb0db277b0aad8a8257a5",
-    "docs/security/OSPS_BASELINE.md": "47a3ce8dbc7fe3e6d4451881179bb97f5eb5253c12b9f54c1e854a5b3cbfcf1f",
-    "docs/security/SECRETS_AND_INCIDENTS.md": "dc595debb25ee71678338e699d6565c6cfdef28c1e516558c88cf41415c4a428",
-    "docs/security/THREAT_MODEL.md": "417770f7fc2e1ddd4f291e93c83ddedf6f5a23e80f7c9368e53ee61cd960786b",
+    "docs/operations/CI_DEPENDENCIES.md": "f438e12f35b5d90139527559dab9ad02440e7312823dafeda3b5af3bf552dfb8",
+    "docs/operations/GITHUB_CONTROLS.md": "184872cb3d3f8a8bb11b2047de1b97eb54b96a0e107cf2fdfe24e336981f56e8",
+    "docs/security/OSPS_BASELINE.md": "5dbdfa7e858c7d3a12f5e844399d596d000d73b1e7010e4e4e93712fcd002ad4",
+    "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
+    "docs/security/THREAT_MODEL.md": "e5d347dbe9900c16c9bdb5e98395f42a688e026343031df40302d3e28bbb5c8b",
     "policy/README.md": "7e7282b42f301b9709cf16e9cdbbba599db55fe9111a6f5b3389720e03a13b3e",
     "schemas/README.md": "164ebec6c44aa928457c3944ae25f29cadc3ba331e2aae4997bc2d0782230256",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
@@ -182,7 +182,7 @@
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "760845687e2c7881710910225f52a5c0479d5f1634de6b238fc09968bae40f76"
+    "tools/tests/test_validate_foundation_hardening.py": "0a717603d0048fd6fe879ae49dd22fa0171dadc5df8d818ea1b4a0d7ae9f6232"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
@@ -210,7 +210,6 @@
     ],
     "allowed_write_permissions": {
       "scorecard.yml": [
-        "id-token",
         "security-events"
       ]
     }

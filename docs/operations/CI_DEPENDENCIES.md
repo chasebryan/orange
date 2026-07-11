@@ -34,11 +34,12 @@ redistribution, or a license for this repository.
 | `ci.yml` | Required pull-request, merge-queue, and `main` repository checks | Checkout, markdownlint, actionlint, and zizmor | GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
 | `dependency-review.yml` | Pull-request and merge-queue dependency-policy signal | Checkout and Dependency Review | Depends on GitHub's dependency graph, API, and event comparison state |
 | `external-links.yml` | `main`, scheduled, and manual link observation | Checkout and lychee | Downloads lychee and queries every non-excluded external endpoint at run time |
-| `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, Scorecard publication, artifact, OIDC, and code-scanning services |
+| `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
 | `workflow-online-audit.yml` | `main`, scheduled, and manual upstream-metadata observation | Checkout and zizmor | Pulls the digest-pinned zizmor image and intentionally queries current GitHub metadata |
 
-`ci.yml` and `dependency-review.yml` supply the two candidate required merge
-checks; effective branch rules must be read back separately. The other three
+`ci.yml` and `dependency-review.yml` supply the two required merge checks bound
+to GitHub Actions by ruleset `18810248`; effective rules still require separate
+readback during drift review. The other three
 workflows are informational. Dependency, link, workflow-metadata, and
 repository-posture results can change while the checked-out repository bytes
 remain fixed.
@@ -73,6 +74,13 @@ part of the upstream descriptor and therefore part of the source-review surface.
 | lychee 0.24.2 | Linux x86-64 GNU archive `sha256:1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a` | [`scripts/ci/install-lychee`](../../scripts/ci/install-lychee) downloads the named release archive over HTTPS and checks SHA-256 before extraction | Dual [Apache-2.0](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-APACHE) or [MIT](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-MIT) at release `lychee-v0.24.2`; [upstream release](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2) is the provenance locator | Only Linux x86-64 is admitted by the installer; archive and release metadata are not mirrored, and link results depend on live remote endpoints |
 | zizmor 1.26.1 container | `ghcr.io/zizmorcore/zizmor:1.26.1@sha256:d1117e5dbd9ee4970644067b534ab6ab50371f3c6f7f4d05446eb603a6e78f48` | The exact pinned composite Action rejects an unknown version and constructs the image reference from its committed version-to-digest map | [MIT at release `v1.26.1`](https://github.com/zizmorcore/zizmor/blob/v1.26.1/LICENSE); [upstream release](https://github.com/zizmorcore/zizmor/releases/tag/v1.26.1) and GHCR are the provenance locators | The image is content-selected but not mirrored; execution still depends on the registry, ambient Docker daemon/kernel, runner CPU, and network. Online-audit output additionally depends on current GitHub state |
 | Scorecard 2.4.3 container | `docker://ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941` | [`scorecard.yml`](../../.github/workflows/scorecard.yml) invokes the container directly by digest; repository validation admits that exact reference independently of the six-repository Action allowlist | [Apache-2.0](https://github.com/ossf/scorecard-action/blob/4eaacf0543bb3f2c246792bd56e8cdeffafb205a/LICENSE); the image's upstream OCI revision label is [`4eaacf0543bb3f2c246792bd56e8cdeffafb205a`](https://github.com/ossf/scorecard-action/tree/4eaacf0543bb3f2c246792bd56e8cdeffafb205a), and GHCR is the runtime provenance locator | The runtime is content-selected but not mirrored; execution still depends on GHCR availability and integrity, correct publisher provenance and digest admission, and the ambient Docker daemon, kernel, runner CPU, and network. The hosted result is not hermetic or independently reproducible evidence |
+
+Orange deliberately sets `INPUT_PUBLISH_RESULTS` to `false`. OpenSSF's public
+publication API requires the official `ossf/scorecard-action` step identity,
+while that exact Action descriptor selects its runtime through a mutable image
+tag. Gate 0 chooses the content-addressed runtime and retains the SARIF artifact
+and GitHub code-scanning upload instead. The job therefore requests no OIDC
+token and makes no Orange-authenticated publication to `api.scorecard.dev`.
 
 Checksums above are copied from the executable installer scripts or the exact
 selected Action version map. A reviewer must compare this table with those
@@ -111,7 +119,7 @@ tools and services are ambient rather than admitted, fixed inputs:
 | Docker daemon, kernel, and CPU | zizmor and Scorecard containers | Runner-provided execution boundary; versions, configuration, and host identity are not captured |
 | `curl`, `sha256sum`, `tar`, `install`, `mktemp`, `rm`, and `uname` | Download, verify, extract, install, and clean temporary tools | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured |
 | `make` | Optional local `make check` entry point | Not invoked by required hosted CI; local version and provenance are operator-controlled and unrecorded |
-| Artifact, OIDC, code-scanning, Scorecard publication, GHCR, and external web services | Storage, identity, analysis publication, image retrieval, and link observations | Mutable hosted services; terms and service behavior are external assumptions, not repository-pinned software inputs |
+| Artifact, code-scanning, GHCR, and external web services | Storage, analysis upload, image retrieval, and link observations | Mutable hosted services; terms and service behavior are external assumptions, not repository-pinned software inputs |
 
 The usual upstream licenses of a tool family are not a substitute for the
 license metadata of the exact runner package. Until an immutable runner
@@ -135,7 +143,7 @@ recorded identities and digests.
 | Dependency Review | Event base/head identities and the selected Action revision | GitHub reported no configured dependency-policy violation for its then-current dependency data | Dependency graph/API state and service implementation are external, time-indexed inputs |
 | External Links | lychee archive digest, link-check flags, and repository locators | The non-excluded endpoints produced accepted responses during the run | Remote content, DNS, TLS, routing, rate limits, and server policy change independently of repository bytes |
 | Offline zizmor step | Repository revision, Action revision, tool version, and container digest | The selected workflow-analysis rules returned the recorded result with online audits disabled | Docker host, kernel, runner image, and output-retention path are not fixed or bundled |
-| Online zizmor and Scorecard | Action/tool identities, both container digests, and the repository revision | A time-specific observation of GitHub metadata or repository posture | Live platform state, APIs, registry availability, runner and container host, publication endpoints, and other hosted services remain mutable |
+| Online zizmor and Scorecard | Action/tool identities, both container digests, and the repository revision | A time-specific observation of GitHub metadata or repository posture | Live platform state, APIs, registry availability, runner and container host, artifact/code-scanning endpoints, and other hosted services remain mutable |
 
 A green check, log URL, annotation, SARIF upload, or 14-day artifact is an
 execution observation. It is not a signed, thick, offline-replayable evidence

@@ -226,6 +226,55 @@ jobs:
             validator._validate_workflows()
             self.assertIn("workflow.container_allowlist", {finding.code for finding in validator.findings})
 
+    def test_digest_pinned_scorecard_does_not_request_publication_identity(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        workflow = (source_root / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")
+        self.assertIn('INPUT_PUBLISH_RESULTS: "false"', workflow)
+        self.assertNotIn('INPUT_PUBLISH_RESULTS: "true"', workflow)
+        self.assertNotIn("id-token: write", workflow)
+        self.assertNotIn("INPUT_INTERNAL_PUBLISH_BASE_URL", workflow)
+        self.assertNotIn("INPUT_INTERNAL_DEFAULT_TOKEN", workflow)
+
+    def test_scorecard_publication_settings_are_rejected(self) -> None:
+        digest = "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
+        base_step = [
+            "      - name: Run OpenSSF Scorecard",
+            f"        uses: docker://ghcr.io/ossf/scorecard-action@sha256:{digest} # v2.4.3",
+            "        env:",
+            "          INPUT_RESULTS_FILE: results.sarif",
+            "          INPUT_RESULTS_FORMAT: sarif",
+            "          INPUT_REPO_TOKEN: ${{ github.token }}",
+            '          INPUT_PUBLISH_RESULTS: "false"',
+            "          INPUT_FILE_MODE: archive",
+        ]
+        upload_step = [
+            "      - name: Upload result to code scanning",
+            "        uses: github/codeql-action/upload-sarif@" + "a" * 40 + " # v4.37.0",
+        ]
+        mutations = (
+            ('          INPUT_PUBLISH_RESULTS: "true"', True),
+            ("          INPUT_INTERNAL_PUBLISH_BASE_URL: https://api.scorecard.dev", False),
+            ("          INPUT_INTERNAL_DEFAULT_TOKEN: ${{ github.token }}", False),
+        )
+        for forbidden, replaces_false in mutations:
+            with self.subTest(forbidden=forbidden):
+                run_step = [
+                    forbidden if replaces_false and line == '          INPUT_PUBLISH_RESULTS: "false"' else line
+                    for line in base_step
+                ]
+                if not replaces_false:
+                    run_step.append(forbidden)
+                validator = FoundationValidator(Path("/virtual"))
+                validator._validate_step_details(
+                    Path("scorecard.yml"),
+                    "analysis",
+                    {
+                        "Run OpenSSF Scorecard": run_step,
+                        "Upload result to code scanning": upload_step,
+                    },
+                )
+                self.assertIn("workflow.scorecard_publication", {finding.code for finding in validator.findings})
+
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
     @staticmethod
