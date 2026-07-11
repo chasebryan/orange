@@ -1,0 +1,67 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "inventory_id": "G0-TRUST-FOUNDATION-FIXTURE",
+  "repository": "chasebryan/orange",
+  "revision": "f50d35227a04831d459b3358db65b80093e8123a",
+  "scope": "Representative trust closure for validation of provisional Gate 0 repository records only.",
+  "components": [
+    {
+      "component_id": "G0-COMPONENT-GITHUB-API",
+      "name": "GitHub repository settings API",
+      "category": "external_service",
+      "trust_role": "untrusted",
+      "containment": "Capture and digest API responses, compare independent endpoints, and never treat API success alone as proof of the repository state.",
+      "rationale": "The service is an observation and mutation boundary, not an Orange proof authority.",
+      "compromise_effects": [
+        "A forged response could cause the repository-control snapshot to misstate a security setting."
+      ],
+      "owner": "Bootstrap Repository Steward",
+      "review_triggers": [
+        "Any repository-control change or GitHub API version change"
+      ]
+    },
+    {
+      "component_id": "G0-COMPONENT-VALIDATOR",
+      "name": "Gate 0 foundation record validator",
+      "category": "checker",
+      "trust_role": "authoritative",
+      "immutable_identity": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "rationale": "Within this narrow fixture, its acceptance controls only the claim that a record conforms to the provisional repository schema.",
+      "compromise_effects": [
+        "A defect could accept a malformed Gate 0 record; it cannot establish a product proof or release claim."
+      ],
+      "owner": "Bootstrap Repository Steward",
+      "review_triggers": [
+        "Any validator, schema, or supported-keyword change"
+      ]
+    }
+  ],
+  "axioms": [],
+  "trusted_models": [],
+  "external_contracts": [],
+  "claim_closures": [
+    {
+      "claim_ref": "G0-CLAIM-REPOSITORY-POLICY",
+      "component_refs": [
+        "G0-COMPONENT-GITHUB-API",
+        "G0-COMPONENT-VALIDATOR"
+      ],
+      "axiom_refs": [],
+      "model_refs": [],
+      "contract_refs": []
+    }
+  ],
+  "change_from_prior": {
+    "state": "first_inventory",
+    "summary": "This representative fixture has no prior inventory."
+  },
+  "limitations": [
+    "This is synthetic conformance data, not the complete Orange trusted computing base.",
+    "No product checker, proof kernel, compiler, target model, or release builder exists in Gate 0."
+  ]
+}

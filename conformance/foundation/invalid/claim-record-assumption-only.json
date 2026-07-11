@@ -1,0 +1,77 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "claim_id": "G0-CLAIM-REPOSITORY-POLICY",
+  "claim_kind": "repository_control",
+  "wording": "At the recorded revision, the foundation policy validator accepts the repository-controlled Gate 0 records.",
+  "subject": {
+    "kind": "repository_file",
+    "repository": "chasebryan/orange",
+    "revision": "f50d35227a04831d459b3358db65b80093e8123a",
+    "path": "CONTRIBUTING.md",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "context": {
+    "language_edition": {
+      "state": "not_applicable",
+      "reason": "No Orange language edition exists during Gate 0."
+    },
+    "toolchain": {
+      "state": "identified",
+      "identifier": "python-cpython-3.14.6",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "crypto_profile": {
+      "state": "not_applicable",
+      "reason": "This claim concerns repository records, not cryptographic behavior."
+    },
+    "target_profile": {
+      "state": "not_applicable",
+      "reason": "This claim does not concern generated target code."
+    },
+    "leakage_model": {
+      "state": "not_applicable",
+      "reason": "This claim makes no leakage assertion."
+    }
+  },
+  "theorem_fingerprints": [],
+  "proof_object_fingerprints": [],
+  "evidence_refs": [],
+  "assumptions": [
+    {
+      "assumption_id": "G0-ASSUMPTION-VALIDATOR-CORRECT",
+      "category": "tool",
+      "statement": "Assume the foundation record validator is correct.",
+      "compromise_effect": "A validator defect could accept a malformed Gate 0 record."
+    }
+  ],
+  "exclusions": [
+    "Acceptance is not proof that the policy content is complete or correct."
+  ],
+  "outcome": "satisfied",
+  "basis": [
+    {
+      "basis_id": "G0-BASIS-VALIDATOR-ASSUMPTION",
+      "type": "assumption",
+      "verification_state": "recorded",
+      "assumption_ref": "G0-ASSUMPTION-VALIDATOR-CORRECT"
+    }
+  ],
+  "review_policy": {
+    "mode": "event",
+    "triggers": [
+      "Any change to a foundation schema or repository-policy validator"
+    ],
+    "owner": "Bootstrap Repository Steward"
+  },
+  "notes": [
+    "Invalid: an assumption alone is not a checked basis for a satisfied claim."
+  ]
+}

@@ -21,11 +21,15 @@ chat or events, and people officially representing Orange.
 
 ## Reporting and enforcement
 
-For a non-sensitive moderation request, mention `@chasebryan` without posting
-private details. If confidentiality is needed, post only a request to establish
-a private channel and disengage from the interaction until one is provided. Do
-not put conduct reports in the vulnerability-reporting channel unless the
-conduct itself creates a security vulnerability.
+For a non-sensitive moderation request, mention `@chasebryan`. If
+confidentiality is needed, use the no-details
+[moderator-contact form](https://github.com/chasebryan/orange/issues/new?template=conduct-contact.yml)
+and disengage from the interaction until a private channel is established. The
+request itself is public: do not describe the incident or identify affected
+people there. Abuse of GitHub itself can also be sent through
+[GitHub's private abuse-reporting channel](https://support.github.com/request/landing?tags=report-abuse).
+Do not put conduct reports in vulnerability reporting unless the conduct itself
+creates a security vulnerability.
 
 `@chasebryan` is currently the sole moderator. There is no independent private
 intake or appeal yet; this is a disclosed governance gap that must close before

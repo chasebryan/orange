@@ -4,5 +4,8 @@ contact_links:
     url: https://github.com/chasebryan/orange/security/advisories/new
     about: Never disclose a suspected vulnerability in a public issue.
   - name: Read the support policy
-    url: https://github.com/chasebryan/orange/blob/main/SUPPORT.md
-    about: Check the current research-stage support boundary before opening an issue.
+    url: https://github.com/chasebryan/orange
+    about: Open SUPPORT.md at the repository root and check the current research-stage boundary before filing.
+  - name: Report abuse to GitHub
+    url: https://support.github.com/request/landing?tags=report-abuse
+    about: Use GitHub's private platform channel for abuse, harassment, or content-policy violations.

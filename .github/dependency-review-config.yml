@@ -1,0 +1,14 @@
+fail_on_severity: moderate
+fail_on_scopes:
+  - runtime
+  - development
+  - unknown
+license_check: true
+vulnerability_check: true
+retry_on_snapshot_warnings: true
+retry_on_snapshot_warnings_timeout: 120
+show_openssf_scorecard: true
+warn_on_openssf_scorecard_level: 5
+show_patched_versions: true
+comment_summary_in_pr: never
+warn_only: false

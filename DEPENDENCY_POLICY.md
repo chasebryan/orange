@@ -38,6 +38,9 @@ An admission proposal must identify:
 
 Repository automation, Dependabot, dependency review, SBOMs, and vulnerability
 alerts are defense in depth. They do not constitute admission approval.
+Until D-018 closes, Dependabot pull requests are non-mergeable surveillance
+suggestions. The bootstrap steward reviews the diff and independently authors
+an admitted update with the required provenance record.
 
 ## Immutability and execution rules
 
@@ -48,7 +51,7 @@ alerts are defense in depth. They do not constitute admission approval.
 - Containers and images use content digests, never mutable tags.
 - Toolchains and operating-system inputs use an immutable snapshot or digest.
 - Release inputs contain no floating ranges, branches, tags, or latest URLs.
-- A certified dependency graph does not run arbitrary native build scripts,
+- A claim-bearing dependency graph does not run arbitrary native build scripts,
   compiler plugins, or generators with ambient authority.
 
 Security policy failures are fail-closed. A non-assurance exception must name

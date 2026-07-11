@@ -135,7 +135,7 @@ have normal production hardening and resource limits.
 ### 2.5 `orange-registry` and package client
 
 The package system resolves content-addressed, immutable packages and theorem
-fingerprints. Certified package graphs prohibit arbitrary native build scripts
+fingerprints. Claim-bearing package graphs prohibit arbitrary native build scripts
 and compiler plugins. The registry is not required for offline build or proof
 replay when a thick bundle or populated local object store supplies every
 addressed byte.
@@ -175,7 +175,7 @@ Implementations are first-order, effectful procedures with contracts. They have
 structured control flow, regions, ownership, borrows, mutable buffers, and typed
 failure. Loops require invariants and termination variants.
 
-Certified cryptographic kernels have no:
+Claim-bearing cryptographic kernels have no:
 
 - undefined behavior;
 - implicit panic or exception;
@@ -327,7 +327,7 @@ Normative 1.0 target families are proposed as:
 - AArch64 Linux, AAPCS64, with explicit baseline and selected crypto/NEON/SVE
   profiles where modeled;
 - host tools on current Linux, macOS, and Windows, even where those hosts are
-  not initially certified native-output targets.
+  not initially supported for claim-bearing native output.
 
 RISC-V, Windows native ABI, macOS object targets, and additional Wasm profiles
 are planned extensions, not implicit 1.0 promises. The exact matrix must be
@@ -414,7 +414,7 @@ clearing, or remanence resistance without a stronger target policy.
 
 ### 5.7 Concurrency
 
-General shared-memory concurrency is outside the 1.0 certified kernel. Explicit
+General shared-memory concurrency is outside the 1.0 claim-bearing kernel. Explicit
 data-parallel vector operations are supported. Protocol orchestration and
 threading live in a host language through generated interfaces until Orange has
 a separately designed concurrent memory and leakage model.
@@ -466,13 +466,13 @@ Automation is a portfolio behind one obligation protocol.
 ### 7.1 Bit vectors and finite equivalence
 
 Use verified bit-blasting to SAT and require a checkable LRAT-family certificate
-for successful certified proofs. Counterexamples are decoded back to source
+for successful claim-closing proofs. Counterexamples are decoded back to source
 values.
 
 ### 7.2 Equality, arithmetic, and algebra
 
 - kernel-checked reflective normalization for rings and fields;
-- certified modular and range decision procedures;
+- kernel-checked modular and range decision procedures;
 - proof-producing SMT for explicitly supported EUF/linear-arithmetic/bit-vector
   fragments;
 - explicit induction and user lemmas for quantified properties.
@@ -482,13 +482,13 @@ certificate-friendly fragments wherever possible.
 
 ### 7.3 Solver policy
 
-Solvers may search, simplify, and find counterexamples. Certified success
+Solvers may search, simplify, and find counterexamples. Claim-closing success
 requires a certificate with no trusted or unsupported steps. Timeout, unknown,
 resource exhaustion, missing proof output, or certificate-check failure leaves
 the claim outcome `unresolved`, with the precise diagnostic reason recorded.
 
-Developer profiles may display solver-only results, but they cannot populate a
-certified claim or be cached under a misleading status.
+Developer profiles may display solver-only results, but they cannot satisfy a
+claim or be cached under a misleading status.
 
 ### 7.4 Proof cache
 
@@ -528,7 +528,8 @@ Optimization passes choose one of two acceptable forms:
 2. an untrusted transformer whose output comes with a checked per-artifact
    functional and leakage translation certificate.
 
-An unverified pass cannot run in a certified pipeline and retain old claims.
+An unverified pass cannot run in an assurance-preserving pipeline and retain old
+claims.
 
 ### 8.2 Direct native path
 
@@ -578,7 +579,8 @@ an implementation with a proof that:
 The intended logical TCB contains only what a particular claim needs:
 
 - normative core semantics;
-- the authoritative proof checker and built-in certified decision procedures;
+- the authoritative proof checker and built-in kernel-checked decision
+  procedures;
 - selected ISA, ABI, object, and leakage models;
 - final binary decoder/validator;
 - explicit axioms and imported foreign contracts;
@@ -621,7 +623,7 @@ Orange distinguishes two canonical forms:
   replay by itself;
 - a **thick evidence bundle** contains every source, package, model, proof,
   certificate, tool, and build-critical byte needed for the replay it claims.
-  Certified releases require a thick bundle.
+  Claim-bearing releases require a thick bundle.
 
 The proposed `.orange-evidence` thick bundle contains:
 
@@ -673,7 +675,7 @@ bit-identical artifacts from the release inputs.
   rollback and freeze protection.
 - Maintainer MFA, namespace reservation, anti-typosquatting review, recovery,
   quarantine, and revocation are required before public package publication.
-- Certified graphs do not execute arbitrary package build scripts.
+- Claim-bearing graphs do not execute arbitrary package build scripts.
 - Deterministic generators run with explicit capabilities; generated source is
   hashed and checked like handwritten source.
 - Packages declare axioms, foreign contracts, declassifications, unsafe
@@ -713,8 +715,8 @@ target assumption.
 - Spec evaluation supports deterministic and symbolic replay.
 - Differential testing compares spec, implementation, external libraries, and
   standards vectors.
-- Instrumented native profiles are non-certified and redact secret values.
-- Certified builds reject logging, tracing, coverage, and secret-dependent
+- Instrumented native profiles are non-claim-bearing and redact secret values.
+- Claim-bearing builds reject logging, tracing, coverage, and secret-dependent
   assertions in cryptographic kernels.
 - Source maps connect every IR and final instruction to source obligations.
 

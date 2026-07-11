@@ -64,8 +64,8 @@ mechanism is novel.
 | System | Primary strength | Specification | Efficient implementation | Main evidence path | Lesson for Orange |
 | --- | --- | --- | --- | --- | --- |
 | Cryptol + SAW | Bit-precise specs and equivalence checking | Native, executable, size-polymorphic crypto DSL | Verifies existing C, Rust, Java, LLVM and related code through symbolic execution | SAT/SMT-backed SAW proofs and scripts | Bit vectors, sequences, parameterized widths, counterexamples, and equivalence workflows are table stakes; proof/build scripting must not become an untyped second language. |
-| hacspec + hax | Familiar Rust-shaped specs and multi-prover translation | Functional Rust subset | hax translates a large safe-Rust subset; it is not itself a native crypto optimizer | F*, Lean, Rocq, SSProve, and experimental protocol backends | Familiar syntax lowers adoption cost, but every translation boundary needs a stated and checked semantic relationship. |
-| F* + HACL* + EverCrypt | Proof-oriented high-assurance code with deployed C output | Refinement/dependent types and effects | Low* and KaRaMeL C extraction; Vale supplies verified assembly | F* verification with heavy Z3 automation; project-specific proofs | Refinement types and effect tracking work in real crypto. Orange should improve evidence portability and avoid accepting an opaque solver “yes” as its native proof format. |
+| hacspec + hax | Familiar Rust-shaped specs and multi-prover translation | Functional Rust subset | hax translates a large safe-Rust subset; it is not itself a native crypto optimizer | F\*, Lean, Rocq, SSProve, and experimental protocol backends | Familiar syntax lowers adoption cost, but every translation boundary needs a stated and checked semantic relationship. |
+| F\* + HACL\* + EverCrypt | Proof-oriented high-assurance code with deployed C output | Refinement/dependent types and effects | Low\* and KaRaMeL C extraction; Vale supplies verified assembly | F\* verification with heavy Z3 automation; project-specific proofs | Refinement types and effect tracking work in real crypto. Orange should improve evidence portability and avoid accepting an opaque solver “yes” as its native proof format. |
 | Vale | Verified, high-performance assembly | Contracts around low-level code | x86/x64/ARM assembly families | Dafny or F* verification | Target-specific assembly and explicit machine models are sometimes necessary; low-level escape hatches must carry proofs, not waive them. |
 | Jasmin + EasyCrypt | Predictable high-speed crypto and verified lowering | Imperative source with formal semantics | Verified compiler to native assembly, including target intrinsics | Static safety checks, constant-time analysis, EasyCrypt extraction/proofs, compiler theorems | A crypto compiler needs predictable code generation and property preservation, not only semantic equivalence at a high IR. |
 | Fiat-Crypto | Correct-by-construction field arithmetic | Mathematical field/modulus parameters in Rocq | Generates C and other language outputs through proven synthesis | Rocq proofs over synthesis and rewriters | Synthesis is valuable for structured subdomains. Orange should expose verified generators as packages rather than force every optimized routine to be handwritten. |
@@ -130,8 +130,8 @@ Orange should attach leakage claims to:
 
 ### 4.3 The solver should search, not legislate
 
-F* demonstrates that SMT automation can remove a large burden from routine
-refinement proofs, while its own documentation is candid that the F* and Z3
+F\* demonstrates that SMT automation can remove a large burden from routine
+refinement proofs, while its own documentation is candid that the F\* and Z3
 combination is trusted for those results. Lean demonstrates the alternative of
 checking explicit proof terms with a small kernel. Modern cvc5 and SAT solvers
 can produce proof artifacts for useful fragments.
@@ -354,64 +354,64 @@ All links were checked during the 2026-07-11 research pass.
 
 ### Languages and verification systems
 
-- Cryptol documentation: https://tools.galois.com/cryptol/get-started/documentation
-- SAW overview: https://tools.galois.com/saw
-- SAW tutorial: https://saw.galois.com/intro/
-- hacspec: https://hacspec.org/
-- hax repository and backend status: https://github.com/cryspen/hax
-- F* proof-oriented programming introduction: https://fstar-lang.org/tutorial/book/intro.html
-- HACL* and EverCrypt manual: https://hacl-star.github.io/
-- Vale repository: https://github.com/project-everest/vale
-- Jasmin documentation: https://jasmin-lang.readthedocs.io/en/stable/
-- Jasmin constant-time methodology: https://jasmin-lang.readthedocs.io/en/stable/tools/ct.html
-- Jasmin compiler passes: https://jasmin-lang.readthedocs.io/en/stable/compiler/passes/index.html
-- EasyCrypt: https://easycrypt.gitlab.io/easycrypt-web/
-- Fiat-Crypto: https://github.com/mit-plv/fiat-crypto
-- Lean language reference: https://lean-lang.org/doc/reference/latest/
-- Rocq extraction documentation: https://docs.rocq-prover.org/master/refman/addendum/extraction.html
-- CompCert documentation: https://compcert.org/doc/
+- [Cryptol documentation](https://tools.galois.com/cryptol/get-started/documentation)
+- [SAW overview](https://tools.galois.com/saw)
+- [SAW tutorial](https://saw.galois.com/intro/)
+- [hacspec](https://hacspec.org/)
+- [hax repository and backend status](https://github.com/cryspen/hax)
+- [F\* proof-oriented programming introduction](https://fstar-lang.org/tutorial/book/intro.html)
+- [HACL\* and EverCrypt manual](https://hacl-star.github.io/)
+- [Vale repository](https://github.com/project-everest/vale)
+- [Jasmin documentation](https://jasmin-lang.readthedocs.io/en/stable/)
+- [Jasmin constant-time methodology](https://jasmin-lang.readthedocs.io/en/stable/tools/ct.html)
+- [Jasmin compiler passes](https://jasmin-lang.readthedocs.io/en/stable/compiler/passes/index.html)
+- [EasyCrypt](https://easycrypt.gitlab.io/easycrypt-web/)
+- [Fiat-Crypto](https://github.com/mit-plv/fiat-crypto)
+- [Lean language reference](https://lean-lang.org/doc/reference/latest/)
+- [Rocq extraction documentation](https://docs.rocq-prover.org/master/refman/addendum/extraction.html)
+- [CompCert documentation](https://compcert.org/doc/)
 
 ### End-to-end and compiler research
 
-- The Last Yard, CPP 2024: https://popl24.sigplan.org/details/CPP-2024-papers/2/The-Last-Yard-Foundational-End-to-End-Verification-of-High-Speed-Cryptography
-- Last Yard preprint: https://eprint.iacr.org/2023/185
-- The Last Mile: https://eprint.iacr.org/2019/160
-- EverCrypt paper: https://eprint.iacr.org/2019/757
-- Constant-time-preserving C compiler: https://eprint.iacr.org/2019/926
-- SoK: Computer-Aided Cryptography: https://eprint.iacr.org/2019/1393
-- ct-verif: https://www.usenix.org/conference/usenixsecurity16/technical-sessions/presentation/almeida
-- FaCT: https://pldi19.sigplan.org/details/pldi-2019-papers/47/FaCT-A-DSL-for-Timing-Sensitive-Computation
-- CT-Wasm: https://popl19.sigplan.org/details/POPL-2019-Research-Papers/59/CT-Wasm-Type-Driven-Secure-Cryptography-for-the-Web-Ecosystem
-- dudect: https://github.com/oreparaz/dudect
-- CoqCryptoLine: https://link.springer.com/chapter/10.1007/978-3-031-37703-7_11
+- [The Last Yard, CPP 2024](https://popl24.sigplan.org/details/CPP-2024-papers/2/The-Last-Yard-Foundational-End-to-End-Verification-of-High-Speed-Cryptography)
+- [Last Yard preprint](https://eprint.iacr.org/2023/185)
+- [The Last Mile](https://eprint.iacr.org/2019/160)
+- [EverCrypt paper](https://eprint.iacr.org/2019/757)
+- [Constant-time-preserving C compiler](https://eprint.iacr.org/2019/926)
+- [SoK: Computer-Aided Cryptography](https://eprint.iacr.org/2019/1393)
+- [ct-verif](https://www.usenix.org/conference/usenixsecurity16/technical-sessions/presentation/almeida)
+- [FaCT](https://pldi19.sigplan.org/details/pldi-2019-papers/47/FaCT-A-DSL-for-Timing-Sensitive-Computation)
+- [CT-Wasm](https://popl19.sigplan.org/details/POPL-2019-Research-Papers/59/CT-Wasm-Type-Driven-Secure-Cryptography-for-the-Web-Ecosystem)
+- [dudect](https://github.com/oreparaz/dudect)
+- [CoqCryptoLine](https://link.springer.com/chapter/10.1007/978-3-031-37703-7_11)
 
 ### Standards and validation
 
-- NIST CAVP: https://csrc.nist.gov/projects/cryptographic-algorithm-validation-program
-- NIST ACVP documentation: https://pages.nist.gov/ACVP/
-- FIPS 203, ML-KEM: https://csrc.nist.gov/pubs/fips/203/final
-- FIPS 204, ML-DSA: https://csrc.nist.gov/pubs/fips/204/final
-- FIPS 205, SLH-DSA: https://csrc.nist.gov/pubs/fips/205/final
-- NIST automated module validation work: https://pages.nist.gov/ACMVPDocs/
-- RFC 9935, ML-KEM in X.509: https://www.rfc-editor.org/rfc/rfc9935.html
-- RFC 9936, ML-KEM in CMS: https://www.rfc-editor.org/rfc/rfc9936.html
-- RFC 9180, HPKE and detailed vectors: https://www.rfc-editor.org/rfc/rfc9180.html
-- Project Wycheproof: https://github.com/C2SP/wycheproof
+- [NIST CAVP](https://csrc.nist.gov/projects/cryptographic-algorithm-validation-program)
+- [NIST ACVP documentation](https://pages.nist.gov/ACVP/)
+- [FIPS 203, ML-KEM](https://csrc.nist.gov/pubs/fips/203/final)
+- [FIPS 204, ML-DSA](https://csrc.nist.gov/pubs/fips/204/final)
+- [FIPS 205, SLH-DSA](https://csrc.nist.gov/pubs/fips/205/final)
+- [NIST automated module validation work](https://pages.nist.gov/ACMVPDocs/)
+- [RFC 9935, ML-KEM in X.509](https://www.rfc-editor.org/rfc/rfc9935.html)
+- [RFC 9936, ML-KEM in CMS](https://www.rfc-editor.org/rfc/rfc9936.html)
+- [RFC 9180, HPKE and detailed vectors](https://www.rfc-editor.org/rfc/rfc9180.html)
+- [Project Wycheproof](https://github.com/C2SP/wycheproof)
 
 ### Release and supply-chain evidence
 
-- NIST SSDF 1.1: https://csrc.nist.gov/pubs/sp/800/218/final
-- SLSA 1.2: https://slsa.dev/spec/v1.2/
-- OpenSSF OSPS Baseline: https://baseline.openssf.org/
-- Reproducible Builds definition: https://reproducible-builds.org/docs/definition/
-- `SOURCE_DATE_EPOCH` specification: https://reproducible-builds.org/specs/source-date-epoch/
-- Sigstore signing model: https://docs.sigstore.dev/cosign/signing/overview/
-- CycloneDX CBOM: https://cyclonedx.org/capabilities/cbom/
+- [NIST SSDF 1.1](https://csrc.nist.gov/pubs/sp/800/218/final)
+- [SLSA 1.2](https://slsa.dev/spec/v1.2/)
+- [OpenSSF OSPS Baseline](https://baseline.openssf.org/)
+- [Reproducible Builds definition](https://reproducible-builds.org/docs/definition/)
+- [`SOURCE_DATE_EPOCH` specification](https://reproducible-builds.org/specs/source-date-epoch/)
+- [Sigstore signing model](https://docs.sigstore.dev/cosign/signing/overview/)
+- [CycloneDX CBOM](https://cyclonedx.org/capabilities/cbom/)
 
 ### Naming evidence
 
-- Orange data-mining project: https://orangedatamining.com/
-- Earlier Orange systems language: https://github.com/orange-lang/orange
+- [Orange data-mining project](https://orangedatamining.com/)
+- [Earlier Orange systems language](https://github.com/orange-lang/orange)
 
 ## 9. Research to refresh at later gates
 

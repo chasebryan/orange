@@ -1,0 +1,68 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "inventory_id": "G0-STANDARDS-BAD-DIGEST",
+  "repository": "chasebryan/orange",
+  "revision": "f50d35227a04831d459b3358db65b80093e8123a",
+  "standards": [
+    {
+      "standard_id": "G0-STANDARD-RFC-8785",
+      "title": "JSON Canonicalization Scheme",
+      "issuer": "RFC Editor",
+      "document_identifier": "RFC 8785",
+      "edition_or_revision": "RFC 8785",
+      "publication_date": "2020-06-01",
+      "source": {
+        "source_class": "primary_publisher",
+        "uri": "https://www.rfc-editor.org/rfc/rfc8785.txt",
+        "retrieved_at": "2026-07-11T12:00:00Z",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "not-a-sha256-digest"
+        },
+        "archive_state": "acquisition_required",
+        "acquisition_instructions": "Fetch the exact primary source and verify its digest during capture."
+      },
+      "rights": {
+        "redistribution_status": "unknown",
+        "terms_reference": "https://www.rfc-editor.org/copyright/",
+        "review_status": "review_required"
+      },
+      "errata": [],
+      "normative_clauses": [
+        {
+          "clause_id": "RFC8785-SECTION-3.2",
+          "locator": "Section 3.2, Generation of Canonical JSON Data",
+          "relevance": "Defines the provisional canonicalization decision case.",
+          "transcription": {
+            "path": "docs/REPRODUCIBILITY.md",
+            "digest": {
+              "algorithm": "sha256",
+              "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "review_state": "unreviewed",
+            "reviewers": []
+          }
+        }
+      ],
+      "vector_sources": [],
+      "patent_review": {
+        "status": "not_reviewed",
+        "note": "The fixture makes no patent determination."
+      },
+      "export_review": {
+        "status": "not_reviewed",
+        "note": "The fixture makes no export-control determination."
+      },
+      "technical_review": {
+        "status": "unreviewed",
+        "reviewers": [],
+        "note": "Independent technical review is required later."
+      }
+    }
+  ],
+  "limitations": [
+    "Invalid by design: the primary-source digest is malformed."
+  ]
+}

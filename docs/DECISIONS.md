@@ -139,6 +139,10 @@ Required decision suite:
   dependency surface;
 - assess external-audit and contributor availability.
 
+The symmetric cases, measurements, hard gates, archive, and inconclusive
+procedure are specified in the
+[D-006 proof-foundation decision suite](PROOF_FOUNDATION_DECISION_SUITE.md).
+
 The decision is evidence-based. No surface syntax should make it irreversible
 before the suite is published.
 
@@ -189,7 +193,7 @@ audit, and proof that cross-language canonical boundaries are checkable.
 Status: proposed for Gate 0
 
 Recommendation: solvers are untrusted search/counterexample engines in
-certified mode. Successful automated claims require checked certificates or
+claim-closing mode. Successful automated claims require checked certificates or
 Orange proof terms.
 
 Initial portfolio:
@@ -240,14 +244,14 @@ Status: proposed; decide at Gate 0
 
 Recommendation:
 
-- certified target tuples: x86-64 Linux/SysV and AArch64 Linux/AAPCS64;
+- initial assurance target tuples: x86-64 Linux/SysV and AArch64 Linux/AAPCS64;
 - explicit baseline and selected crypto/SIMD feature profiles;
 - host tools for current Linux, macOS, and Windows;
 - stable generated C ABI and Rust wrapper;
 - portable C output clearly labeled as an interoperability path.
 
-Deferred unless Gate 0 substitutes them: RISC-V certified target, Windows and
-macOS certified native outputs, general Wasm constant-time claims, GPUs, and
+Deferred unless Gate 0 substitutes them: a RISC-V assurance target, claim-bearing
+Windows and macOS native outputs, general Wasm constant-time claims, GPUs, and
 hardware synthesis.
 
 Rationale: x86-64 and AArch64 cover the principal server and client CPU families
@@ -256,6 +260,10 @@ Gate 0 to choose only one for 1.0 rather than weaken both.
 
 Acceptance evidence: resource estimate per target, ISA/ABI model availability,
 hardware/lab access, and flagship-corpus feasibility.
+
+The unselected target/corpus/schedule combinations and capacity bands are
+compared in the
+[Gate 0 support-envelope options](GATE0_SUPPORT_ENVELOPES.md).
 
 ## D-012 — Baseline leakage claim
 
@@ -296,7 +304,7 @@ Recommendation:
 - human manifest plus immutable generated lock;
 - proofs bind to exact content and theorem fingerprints;
 - published versions immutable, with yanking affecting new resolution only;
-- certified graphs forbid arbitrary native build scripts/plugins;
+- claim-bearing graphs forbid arbitrary native build scripts/plugins;
 - offline resolution/replay from a thick bundle or populated local
   content-addressed store is mandatory; a lockfile alone is insufficient;
 - public registry uses TUF-style delegated/threshold metadata, MFA, recovery,
@@ -328,6 +336,10 @@ proof, leakage, binary, interop, or response gates while retaining the claim.
 Acceptance evidence: claim matrix, standards/errata/vector sources, formal and
 compiler workload estimate, target benchmarks, independent reference library,
 and maintainer ownership for each family.
+
+Exact full and reduced corpus candidates, their deferred claims, and resource
+consequences are compared in the
+[Gate 0 support-envelope options](GATE0_SUPPORT_ENVELOPES.md).
 
 ## D-016 — Validation and certification posture
 

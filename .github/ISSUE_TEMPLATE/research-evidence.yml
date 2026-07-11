@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        This form is for permanent, reproducible decision evidence—not a product prototype. Do not post sensitive security information. Prefer primary sources and record their exact versions.
+        This form is intake for facts, citations, and reproducibility summaries—not contributed repository prose, a product prototype, or material licensed for incorporation. Do not post sensitive security information. Prefer primary sources and record their exact versions.
   - type: input
     id: decision
     attributes:

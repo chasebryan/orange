@@ -1,7 +1,5 @@
 # Orange
 
-<img width="2172" height="724" alt="orange-banner" src="https://github.com/user-attachments/assets/ec07da49-f12a-4827-886c-dff4662b3e71" />
-
 Orange is a language and toolchain for specifying, implementing, and verifying
 cryptography.
 
@@ -44,7 +42,46 @@ commitments only when the Gate 0 decisions are ratified.
 - [End-state architecture](docs/ARCHITECTURE.md)
 - [Assurance and security model](docs/ASSURANCE.md)
 - [Dependency-ordered roadmap](docs/ROADMAP.md)
+- [Gate 0 feature traceability](docs/GATE0_TRACEABILITY.md)
+- [Proposed Orange 1.0 user journeys](docs/USER_JOURNEYS.md)
+- [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
 - [Decision register](docs/DECISIONS.md)
+
+## Gate 0 repository foundation
+
+The repository now carries the permanent policy and evidence architecture used
+to complete Gate 0 without beginning a disposable product implementation:
+
+- [governance](GOVERNANCE.md), [contribution boundary](CONTRIBUTING.md), and the
+  [OEP](docs/governance/oeps/README.md) and
+  [ADR](docs/governance/adrs/README.md) processes;
+- [security reporting](SECURITY.md), [support](SUPPORT.md), the living
+  [threat model](docs/security/THREAT_MODEL.md), and the honest
+  [OSPS evidence matrix](docs/security/OSPS_BASELINE.md), backed by the
+  [secrets and incident playbook](docs/security/SECRETS_AND_INCIDENTS.md);
+- [dependency](DEPENDENCY_POLICY.md) and [release](RELEASE_POLICY.md) policy,
+  with an honest [CI dependency inventory](docs/operations/CI_DEPENDENCIES.md);
+- the [Gate 0 reproducibility contract](docs/REPRODUCIBILITY.md), provisional
+  [evidence schemas](schemas/README.md), and positive/adversarial
+  [conformance fixtures](conformance/foundation/README.md); and
+- the machine-readable [repository policy](policy/README.md), pinned CI,
+  dependency review, CodeQL default-setup record, and
+  [GitHub control runbook](docs/operations/GITHUB_CONTROLS.md).
+
+Run the deterministic local policy and adversarial suite with:
+
+```sh
+make check
+```
+
+Passing this check proves the scoped Gate 0 repository invariants and fixture
+expectations only. It does not prove the future language, compiler,
+cryptographic correctness, a security certification, OSPS conformance, or
+release readiness.
+
+The repository has no selected license while D-018 remains blocked and does
+not accept third-party pull requests for merge yet. Security reports must use
+the private path in [SECURITY.md](SECURITY.md), never a public issue.
 
 The name **Orange** is a working project name until the naming and trademark
 gate in the decision register is closed. Existing software and an earlier

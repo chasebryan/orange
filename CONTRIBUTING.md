@@ -16,12 +16,22 @@ silently imposing terms on contributors or the future project.
 External researchers and prospective contributors are welcome to open issues
 containing facts, primary-source links, reproducible methods, and proposed
 scope. Do not contribute original code or prose in an issue. The bootstrap
-steward may author repository work while Gate 0 proceeds.
+steward may author repository work while Gate 0 proceeds. Issue-form answers
+are intake summaries for evaluation, not text licensed for incorporation;
+until D-018 closes, a maintainer must independently author any repository
+change from the cited facts and sources.
 
 After D-018 closes, this file must name the repository licenses, generated-
 output policy, patent and provenance terms, and either DCO 1.1 sign-off or a
 counsel-selected contributor agreement. A DCO sign-off is a legal provenance
 statement; it is distinct from cryptographically signing a commit.
+
+Required CI supplies a blocking defense-in-depth signal by failing ordinary
+pull requests whose opener is not `chasebryan`; it does not prove commit or
+content authorship and cannot replace legal/provenance review. Dependabot pull
+requests are surveillance and update suggestions only during Gate 0; they
+cannot be merged. The steward must review the upstream change and independently
+author any admitted pin update with its provenance and validation.
 
 ## Gate 0 scope
 

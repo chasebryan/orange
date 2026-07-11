@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd)"
+
+cd -- "$REPOSITORY_ROOT"
+
+export LANG=C
+export LC_ALL=C
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONHASHSEED=0
+export PYTHONUTF8=1
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
+export TZ=UTC
+
+python3 -m unittest discover -s tools/tests -p 'test_*.py'
+python3 tools/validate_foundation.py --root .

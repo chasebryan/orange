@@ -69,12 +69,13 @@ code, semantics, proofs, vectors, documentation, claims, and attestations. A
 published advisory will identify affected versions and any invalidated earlier
 claims. Credit is given as requested when legally and operationally possible.
 
-## Good-faith security research
+## Interim research boundary
 
-The project intends to treat good-faith research into Orange-owned repository
-content and project assets as authorized when it follows this policy and
-applicable law. This statement does not authorize testing of GitHub or any
-other third-party system.
+Orange currently publishes planning material and repository policy, not a
+project-operated service or software distribution. This interim policy does
+not grant testing authority over GitHub, another third-party system, or any
+future Orange service. A counsel-reviewed safe-harbor statement must be adopted
+before the project operates public services or distributes software.
 
 Researchers must avoid privacy violations, destructive testing, denial of
 service, persistence, lateral movement, social engineering, and access beyond
@@ -82,6 +83,6 @@ what is necessary to demonstrate the issue. Stop when sensitive data is
 encountered; minimize, protect, and delete any data obtained. Give the project
 a reasonable opportunity to remediate before disclosure.
 
-This policy does not promise a bounty, waive third-party rights, or provide
-legal advice. Its safe-harbor language must receive legal review before Orange
-operates public services or distributes software.
+This policy does not promise a bounty, waive third-party rights, grant legal
+immunity, or provide legal advice. Public source and documentation review can
+still be reported privately through the path above.

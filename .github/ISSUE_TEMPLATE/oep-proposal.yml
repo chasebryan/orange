@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        This issue is intake only. Acceptance occurs through a reviewed, numbered OEP and coupled decision-register update. Do not include sensitive security details; normative claims require primary sources.
+        This issue is intake for a concise summary and source links, not contributed OEP prose or material licensed for incorporation. Acceptance occurs through a maintainer-authored, reviewed, numbered OEP and coupled decision-register update. Do not include sensitive security details; normative claims require primary sources.
   - type: input
     id: title
     attributes:

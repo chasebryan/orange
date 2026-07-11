@@ -8,7 +8,7 @@ This repository currently contains research and planning material, not a
 compiler, library, package, or supported product. It provides no production
 support or software-security guarantee.
 
-Public planning questions and non-sensitive defects belong in the structured
+Public planning questions and non-sensitive defects belong in their structured
 issue forms. Sensitive vulnerabilities use [SECURITY.md](SECURITY.md), and
 conduct concerns use [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Never put
 credentials, private keys, embargoed vulnerabilities, or private cryptographic

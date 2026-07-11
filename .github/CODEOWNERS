@@ -9,6 +9,16 @@
 /RELEASE_POLICY.md @chasebryan
 /docs/ASSURANCE.md @chasebryan
 /docs/DECISIONS.md @chasebryan
+/docs/GATE0_TRACEABILITY.md @chasebryan
+/docs/PROOF_FOUNDATION_DECISION_SUITE.md @chasebryan
+/docs/USER_JOURNEYS.md @chasebryan
 /docs/governance/ @chasebryan
 /docs/security/ @chasebryan
+/docs/operations/CI_DEPENDENCIES.md @chasebryan
+/docs/REPRODUCIBILITY.md @chasebryan
+/schemas/ @chasebryan
+/conformance/foundation/ @chasebryan
+/policy/ @chasebryan
+/scripts/ci/ @chasebryan
+/tools/validate_foundation.py @chasebryan
 /research/decisions/ @chasebryan
