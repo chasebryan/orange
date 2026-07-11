@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import io
 import json
 import shutil
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 
 from tools.validate_foundation import (
@@ -15,6 +17,8 @@ from tools.validate_foundation import (
     canonical_json_bytes,
     checkout_disables_credentials,
     load_json,
+    parse_arguments,
+    relative,
     validate_schema_instance,
     workflow_jobs,
     workflow_steps,
@@ -293,6 +297,24 @@ jobs:
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
+    def test_cli_cannot_redirect_repository_or_policy_paths(self) -> None:
+        for arguments in (("--root", "."), ("--policy", "alternate.json")):
+            with self.subTest(arguments=arguments):
+                with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                    parse_arguments(arguments)
+                self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(parse_arguments(("--format", "json")).format, "json")
+
+    def test_diagnostic_relative_path_does_not_follow_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "root"
+            outside = Path(directory) / "outside"
+            root.mkdir()
+            outside.mkdir()
+            link = root / "outside-link"
+            link.symlink_to(outside, target_is_directory=True)
+            self.assertEqual(relative(link, root), "outside-link")
+
     @staticmethod
     def _path_policy() -> dict[str, object]:
         return {
