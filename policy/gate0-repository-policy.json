@@ -137,7 +137,7 @@
     ".github/workflows/ci.yml": "198adc517714509c1913477aee9ee2054f17d3a6d4842890880e3f0776b97297",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
-    ".github/workflows/scorecard.yml": "882cc0f6c220947d4757b8624a8eca39c439684e3dc4d719d0f33a7ae9164394",
+    ".github/workflows/scorecard.yml": "eaab3d2b27bfba648d6822da055a96de857a030f41392ac3187bcdd3ff34f150",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
     ".markdownlint-cli2.jsonc": "731e1af92e9e12a2a3582c5b63fe48148bd94930e2bcf07de9214a823b15bdd1",
@@ -165,8 +165,8 @@
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/operations/CI_DEPENDENCIES.md": "f438e12f35b5d90139527559dab9ad02440e7312823dafeda3b5af3bf552dfb8",
-    "docs/operations/GITHUB_CONTROLS.md": "0572b453dda6a0a6535f3acb9ce6195cb2b88d0fb4c51ab8a99bb5c2646eea47",
+    "docs/operations/CI_DEPENDENCIES.md": "da007b7dafbc35bd9d9bb9cfd73f6946126f7a640488c4ec2d61014cccecc535",
+    "docs/operations/GITHUB_CONTROLS.md": "63f64d732232833cc3edce518e397326ac8fde5c0214d23ad81f501c01069220",
     "docs/security/OSPS_BASELINE.md": "039ceab60c41dc99438c9ef5c37cbf239567366adedcc09fe4ef0a9d5c89b289",
     "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
     "docs/security/THREAT_MODEL.md": "b33dad990242cb03b580de7326b8eb867b068806e9219db85a0524310e68356d",
@@ -182,7 +182,7 @@
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "055238eb1a7d5ca2cdfdc26bba2da15831ff17f7bb9b9d38bf6bf24bef241476"
+    "tools/tests/test_validate_foundation_hardening.py": "9ce5ee12161d8953b364b74d6f293b07cd65c581b82b8a84bc6a8b01dcbf827a"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
@@ -205,8 +205,8 @@
       "github/codeql-action/upload-sarif",
       "zizmorcore/zizmor-action"
     ],
-    "allowed_container_actions": [
-      "docker://ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
+    "allowed_container_images": [
+      "ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
     ],
     "allowed_write_permissions": {
       "scorecard.yml": [

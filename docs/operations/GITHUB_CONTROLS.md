@@ -26,8 +26,8 @@ date; a fresh readback and coordinated evidence update are then required.
 | Dependabot alerts and security updates | Enabled | No product package manifest exists. |
 | Secret scanning | Provider-pattern scanning and push protection enabled | Non-provider patterns and validity checks are plan-ineligible and read back disabled. |
 | CodeQL default setup | Configured; `extended` query suite; standard runner; `remote_and_local` threat model; automatic language detection | No supported language is present on `main`, so the API reports an empty language list and no scan result. This is configuration, not coverage. |
-| Actions source policy | Exactly six repositories: `actions/checkout`, `actions/dependency-review-action`, `actions/upload-artifact`, `github/codeql-action`, `DavidAnson/markdownlint-cli2-action`, and `zizmorcore/zizmor-action`; plus one separately machine-enforced Scorecard container digest | Repository wildcards are paired with full-SHA enforcement; reusable workflows still require repository validation. The direct Scorecard OCI reference is admitted only at its exact digest. All other GitHub-owned and verified-publisher Actions are denied. |
-| Action immutability | Repository Actions require full 40-character commit SHAs; the direct Scorecard container requires its exact OCI digest | Content addressing does not establish publisher trust, mirror the selected bytes, or fix the registry, hosted runner, container host, network, and service inputs. |
+| Actions source policy | Exactly six repositories: `actions/checkout`, `actions/dependency-review-action`, `actions/upload-artifact`, `github/codeql-action`, `DavidAnson/markdownlint-cli2-action`, and `zizmorcore/zizmor-action`; plus one separately machine-enforced Scorecard image used by an explicit Docker CLI step | Repository wildcards are paired with full-SHA enforcement; reusable workflows still require repository validation. The Scorecard image and command are admitted only at the exact OCI digest. All other GitHub-owned and verified-publisher Actions are denied. |
+| Execution immutability | Repository Actions require full 40-character commit SHAs; the explicit Scorecard Docker invocation requires its exact OCI digest | Content addressing does not establish publisher trust, mirror the selected bytes, or fix the registry, hosted runner, container host, network, and service inputs. |
 | Default workflow token | `read`; cannot approve pull-request reviews | Job permissions remain authoritative and are checked in source. |
 | External fork workflows | Approval required for all external contributors | Dependabot receives fork-like token restrictions and may require approval. |
 | Merge methods | Squash only; auto-merge and branch update enabled; merged branches deleted | This does not itself require a pull request. The default-branch ruleset remains the enforcement gate. |
@@ -45,8 +45,8 @@ The required CI and dependency-review workflows use `pull_request`, `push` to
 receive no configured repository or environment secret, start from empty
 workflow permissions, use only a job-scoped `GITHUB_TOKEN` limited to
 `contents: read`, declare timeouts, disable checkout credential persistence, and pin
-every repository Action to a full commit SHA and admit the direct Scorecard OCI
-runtime only at its exact digest, with reviewable version comments.
+every repository Action to a full commit SHA and admit the explicit Scorecard
+Docker CLI runtime only at its exact digest, with reviewable version comments.
 Required workflows have no manual dispatch because required-check identity does
 not distinguish the triggering event; allowing one could let an operator attach
 a same-named manual result to an unintended ref.
@@ -57,8 +57,9 @@ source-controlled workflow inventory and digests are defense in depth, while
 the server-side approval gate for all external contributors and review of every
 workflow change remain essential.
 
-Scorecard runs its content-addressed container only on trusted `main` push or
-schedule and hard-gates its job to the `main` ref; it has no manual dispatch
+Scorecard runs its content-addressed image through an explicit Docker CLI step
+only on trusted `main` push or schedule and hard-gates its job to the `main`
+ref; it has no manual dispatch
 because that could select an unreviewed branch while holding SARIF write
 permission. Public Scorecard publication is deliberately disabled because the
 publication service requires the official outer Action identity, whose selected

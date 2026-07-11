@@ -105,8 +105,8 @@ MINIMUM_ACTION_REPOSITORIES = {
     "github/codeql-action/upload-sarif",
     "zizmorcore/zizmor-action",
 }
-GATE0_ALLOWED_CONTAINER_ACTIONS = {
-    "docker://ghcr.io/ossf/scorecard-action@sha256:"
+GATE0_ALLOWED_CONTAINER_IMAGES = {
+    "ghcr.io/ossf/scorecard-action@sha256:"
     "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
 }
 GATE0_EXECUTABLE_PATHS = {
@@ -156,7 +156,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     ".github/workflows/ci.yml": "198adc517714509c1913477aee9ee2054f17d3a6d4842890880e3f0776b97297",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
-    ".github/workflows/scorecard.yml": "882cc0f6c220947d4757b8624a8eca39c439684e3dc4d719d0f33a7ae9164394",
+    ".github/workflows/scorecard.yml": "eaab3d2b27bfba648d6822da055a96de857a030f41392ac3187bcdd3ff34f150",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
     ".markdownlint-cli2.jsonc": "731e1af92e9e12a2a3582c5b63fe48148bd94930e2bcf07de9214a823b15bdd1",
@@ -184,8 +184,8 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/operations/CI_DEPENDENCIES.md": "f438e12f35b5d90139527559dab9ad02440e7312823dafeda3b5af3bf552dfb8",
-    "docs/operations/GITHUB_CONTROLS.md": "0572b453dda6a0a6535f3acb9ce6195cb2b88d0fb4c51ab8a99bb5c2646eea47",
+    "docs/operations/CI_DEPENDENCIES.md": "da007b7dafbc35bd9d9bb9cfd73f6946126f7a640488c4ec2d61014cccecc535",
+    "docs/operations/GITHUB_CONTROLS.md": "63f64d732232833cc3edce518e397326ac8fde5c0214d23ad81f501c01069220",
     "docs/security/OSPS_BASELINE.md": "039ceab60c41dc99438c9ef5c37cbf239567366adedcc09fe4ef0a9d5c89b289",
     "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
     "docs/security/THREAT_MODEL.md": "b33dad990242cb03b580de7326b8eb867b068806e9219db85a0524310e68356d",
@@ -201,7 +201,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "055238eb1a7d5ca2cdfdc26bba2da15831ff17f7bb9b9d38bf6bf24bef241476",
+    "tools/tests/test_validate_foundation_hardening.py": "9ce5ee12161d8953b364b74d6f293b07cd65c581b82b8a84bc6a8b01dcbf827a",
 }
 GATE0_CHARTER_SECTION_SHA256 = "2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -602,12 +602,12 @@ class FoundationValidator:
                 self.policy_path,
                 f"Action identities must be exact; missing={sorted(MINIMUM_ACTION_REPOSITORIES - action_repositories)}, extra={sorted(action_repositories - MINIMUM_ACTION_REPOSITORIES)}",
             )
-        container_actions = set(policy["github_actions"].get("allowed_container_actions", []))
-        if container_actions != GATE0_ALLOWED_CONTAINER_ACTIONS:
+        container_images = set(policy["github_actions"].get("allowed_container_images", []))
+        if container_images != GATE0_ALLOWED_CONTAINER_IMAGES:
             self.add(
                 "policy.container_allowlist",
                 self.policy_path,
-                f"container Action identities must be exact; missing={sorted(GATE0_ALLOWED_CONTAINER_ACTIONS - container_actions)}, extra={sorted(container_actions - GATE0_ALLOWED_CONTAINER_ACTIONS)}",
+                f"container image identities must be exact; missing={sorted(GATE0_ALLOWED_CONTAINER_IMAGES - container_images)}, extra={sorted(container_images - GATE0_ALLOWED_CONTAINER_IMAGES)}",
             )
         if set(policy["executable_paths"]) != GATE0_EXECUTABLE_PATHS:
             self.add("policy.executables", self.policy_path, "Gate 0 executable allowlist must remain exact")
@@ -1152,7 +1152,6 @@ class FoundationValidator:
             self.add("workflow.required", f".github/workflows/{name}", "required workflow is missing")
         actions_policy = self.policy["github_actions"]
         allowed = set(actions_policy.get("allowed_action_repositories", []))
-        allowed_containers = set(actions_policy.get("allowed_container_actions", []))
         forbidden_events = set(actions_policy.get("forbidden_events", []))
         allowed_writes = {
             name: set(values)
@@ -1203,23 +1202,12 @@ class FoundationValidator:
                 ):
                     self.add("workflow.uses_syntax", path, f"line {line_number}: uses must use canonical unquoted block syntax")
                 if container_match:
-                    container_action, version = container_match.groups()
-                    if not re.fullmatch(r"docker://[^\s@]+@sha256:[0-9a-f]{64}", container_action):
-                        self.add(
-                            "workflow.mutable_container",
-                            path,
-                            f"line {line_number}: container Action must use an exact sha256 manifest digest",
-                        )
-                    if container_action not in allowed_containers:
-                        self.add(
-                            "workflow.container_allowlist",
-                            path,
-                            f"line {line_number}: container Action is not admitted: {container_action}",
-                        )
-                    if actions_policy.get("require_version_comment") and not version:
-                        self.add("workflow.version_comment", path, f"line {line_number}: pinned container needs a version comment")
-                    elif version and not re.fullmatch(r"v[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?", version):
-                        self.add("workflow.version_comment", path, f"line {line_number}: invalid container version comment {version!r}")
+                    container_action, _ = container_match.groups()
+                    self.add(
+                        "workflow.container_action",
+                        path,
+                        f"line {line_number}: direct container Action syntax is not admitted: {container_action}",
+                    )
                 elif match:
                     action, ref, version = match.groups()
                     if action.startswith("./"):
@@ -1317,7 +1305,8 @@ class FoundationValidator:
             "scorecard.yml": (
                 "name: OpenSSF Scorecard / analysis",
                 "if: ${{ github.ref == 'refs/heads/main' }}",
-                "docker://ghcr.io/ossf/scorecard-action@sha256:",
+                "docker run --rm",
+                "ghcr.io/ossf/scorecard-action@sha256:",
                 "github/codeql-action/upload-sarif@",
             ),
         }
@@ -1427,7 +1416,27 @@ class FoundationValidator:
             require(
                 "Run OpenSSF Scorecard",
                 (
-                    "uses: docker://ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
+                    "run: |",
+                    "docker run --rm",
+                    "--read-only",
+                    "--cap-drop=ALL",
+                    "--security-opt=no-new-privileges",
+                    "--pids-limit=256",
+                    '--user "$(id -u):$(id -g)"',
+                    "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m",
+                    "--env HOME=/tmp",
+                    "--env GITHUB_API_URL",
+                    "--env GITHUB_EVENT_NAME",
+                    "--env GITHUB_REF",
+                    "--env GITHUB_REPOSITORY",
+                    "--env GITHUB_SHA",
+                    "--env GITHUB_WORKSPACE=/github/workspace",
+                    "--env GITHUB_EVENT_PATH=/github/workflow/event.json",
+                    "--env INPUT_REPO_TOKEN",
+                    '--volume "${GITHUB_EVENT_PATH}:/github/workflow/event.json:ro"',
+                    '--volume "${GITHUB_WORKSPACE}:/github/workspace"',
+                    "--workdir /github/workspace",
+                    "ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
                     "INPUT_RESULTS_FILE: results.sarif",
                     "INPUT_RESULTS_FORMAT: sarif",
                     "INPUT_REPO_TOKEN: ${{ github.token }}",
@@ -1436,8 +1445,22 @@ class FoundationValidator:
                 ),
             )
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
+            image = next(iter(GATE0_ALLOWED_CONTAINER_IMAGES))
+            if scorecard_block.count(image) != 1:
+                self.add(
+                    "workflow.scorecard_image",
+                    path,
+                    f"{job_name}/Run OpenSSF Scorecard must invoke the one admitted image exactly once",
+                )
+            if "docker://" in scorecard_block:
+                self.add(
+                    "workflow.scorecard_runtime",
+                    path,
+                    f"{job_name}/Run OpenSSF Scorecard must use the hosted runner Docker CLI",
+                )
             for forbidden in (
                 'INPUT_PUBLISH_RESULTS: "true"',
+                "INPUT_PUBLISH_RESULTS=true",
                 "INPUT_INTERNAL_PUBLISH_BASE_URL:",
                 "INPUT_INTERNAL_DEFAULT_TOKEN:",
             ):
@@ -1446,6 +1469,13 @@ class FoundationValidator:
                         "workflow.scorecard_publication",
                         path,
                         f"{job_name}/Run OpenSSF Scorecard contains forbidden public publication setting {forbidden!r}",
+                    )
+            for forbidden in ("--privileged", "--cap-add", "--network=host", "/var/run/docker.sock"):
+                if forbidden in scorecard_block:
+                    self.add(
+                        "workflow.scorecard_runtime",
+                        path,
+                        f"{job_name}/Run OpenSSF Scorecard contains forbidden Docker option {forbidden!r}",
                     )
             require("Upload result to code scanning", ("uses: github/codeql-action/upload-sarif@",))
 

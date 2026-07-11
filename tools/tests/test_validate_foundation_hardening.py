@@ -22,8 +22,8 @@ def workflow_policy() -> dict[str, object]:
         "required_workflows": ["ci.yml"],
         "github_actions": {
             "allowed_action_repositories": ["actions/checkout"],
-            "allowed_container_actions": [
-                "docker://ghcr.io/ossf/scorecard-action@sha256:"
+            "allowed_container_images": [
+                "ghcr.io/ossf/scorecard-action@sha256:"
                 + "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
             ],
             "allowed_write_permissions": {},
@@ -119,7 +119,7 @@ jobs:
         ]
         self.assertFalse(checkout_disables_credentials(lines, 1))
 
-    def test_tag_selected_container_action_is_rejected(self) -> None:
+    def test_direct_container_action_syntax_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             workflow_dir = root / ".github/workflows"
@@ -140,92 +140,60 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Mutable container
-        uses: docker://ghcr.io/ossf/scorecard-action:v2.4.3
+      - name: Unsupported container Action
+        uses: docker://ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941 # v2.4.3
 """,
                 encoding="utf-8",
             )
             validator = FoundationValidator(root)
             validator.policy = workflow_policy()
             validator._validate_workflows()
-            self.assertIn("workflow.mutable_container", {finding.code for finding in validator.findings})
+            self.assertIn("workflow.container_action", {finding.code for finding in validator.findings})
 
-    def test_exact_admitted_container_digest_passes_identity_checks(self) -> None:
-        digest_action = (
-            "docker://ghcr.io/ossf/scorecard-action@sha256:"
+    def test_scorecard_uses_hardened_exact_digest_docker_runtime(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        workflow = (source_root / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")
+        image = (
+            "ghcr.io/ossf/scorecard-action@sha256:"
             "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
         )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            workflow_dir = root / ".github/workflows"
-            workflow_dir.mkdir(parents=True)
-            (workflow_dir / "ci.yml").write_text(
-                f"""name: CI
-on:
-  pull_request:
-  push:
-  merge_group:
-permissions: {{}}
-concurrency:
-  group: ci
-  cancel-in-progress: true
-jobs:
-  check:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions: {{}}
-    steps:
-      - name: Digest container
-        uses: {digest_action} # v2.4.3
-""",
-                encoding="utf-8",
-            )
-            validator = FoundationValidator(root)
-            validator.policy = workflow_policy()
-            validator._validate_workflows()
-            identity_codes = {
-                finding.code
-                for finding in validator.findings
-                if finding.code in {
-                    "workflow.action_allowlist",
-                    "workflow.mutable_action",
-                    "workflow.mutable_container",
-                    "workflow.container_allowlist",
-                    "workflow.uses_syntax",
-                }
-            }
-            self.assertEqual(identity_codes, set())
+        self.assertEqual(workflow.count(image), 1)
+        self.assertNotIn("uses: docker://", workflow)
+        for required in (
+            "docker run --rm",
+            "--read-only",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            '--user "$(id -u):$(id -g)"',
+            '--volume "${GITHUB_EVENT_PATH}:/github/workflow/event.json:ro"',
+            '--volume "${GITHUB_WORKSPACE}:/github/workspace"',
+            "--workdir /github/workspace",
+            "--env INPUT_REPO_TOKEN",
+        ):
+            self.assertIn(required, workflow)
 
-    def test_unadmitted_container_digest_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            workflow_dir = root / ".github/workflows"
-            workflow_dir.mkdir(parents=True)
-            (workflow_dir / "ci.yml").write_text(
-                """name: CI
-on:
-  pull_request:
-  push:
-  merge_group:
-permissions: {}
-concurrency:
-  group: ci
-  cancel-in-progress: true
-jobs:
-  check:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions: {}
-    steps:
-      - name: Unadmitted digest
-        uses: docker://ghcr.io/ossf/scorecard-action@sha256:0000000000000000000000000000000000000000000000000000000000000000 # v2.4.3
-""",
-                encoding="utf-8",
-            )
-            validator = FoundationValidator(root)
-            validator.policy = workflow_policy()
-            validator._validate_workflows()
-            self.assertIn("workflow.container_allowlist", {finding.code for finding in validator.findings})
+    def test_unadmitted_scorecard_digest_is_rejected(self) -> None:
+        digest = "0" * 64
+        validator = FoundationValidator(Path("/virtual"))
+        validator._validate_step_details(
+            Path("scorecard.yml"),
+            "analysis",
+            {
+                "Run OpenSSF Scorecard": [
+                    "      - name: Run OpenSSF Scorecard",
+                    "        env:",
+                    "          INPUT_REPO_TOKEN: ${{ github.token }}",
+                    "        run: |",
+                    "          docker run --rm \\",
+                    f"            ghcr.io/ossf/scorecard-action@sha256:{digest}",
+                ],
+                "Upload result to code scanning": [
+                    "      - name: Upload result to code scanning",
+                    "        uses: github/codeql-action/upload-sarif@" + "a" * 40 + " # v4.37.0",
+                ],
+            },
+        )
+        self.assertIn("workflow.scorecard_image", {finding.code for finding in validator.findings})
 
     def test_digest_pinned_scorecard_does_not_request_publication_identity(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -240,13 +208,15 @@ jobs:
         digest = "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
         base_step = [
             "      - name: Run OpenSSF Scorecard",
-            f"        uses: docker://ghcr.io/ossf/scorecard-action@sha256:{digest} # v2.4.3",
             "        env:",
             "          INPUT_RESULTS_FILE: results.sarif",
             "          INPUT_RESULTS_FORMAT: sarif",
             "          INPUT_REPO_TOKEN: ${{ github.token }}",
             '          INPUT_PUBLISH_RESULTS: "false"',
             "          INPUT_FILE_MODE: archive",
+            "        run: |",
+            "          docker run --rm \\",
+            f"            ghcr.io/ossf/scorecard-action@sha256:{digest} # v2.4.3",
         ]
         upload_step = [
             "      - name: Upload result to code scanning",
