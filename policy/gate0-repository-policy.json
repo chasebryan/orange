@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.1.0",
+  "policy_version": "0.1.1",
   "repository": "chasebryan/orange",
   "stage": "gate-0",
   "status": "enforced",
@@ -166,10 +166,10 @@
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
     "docs/operations/CI_DEPENDENCIES.md": "f438e12f35b5d90139527559dab9ad02440e7312823dafeda3b5af3bf552dfb8",
-    "docs/operations/GITHUB_CONTROLS.md": "184872cb3d3f8a8bb11b2047de1b97eb54b96a0e107cf2fdfe24e336981f56e8",
-    "docs/security/OSPS_BASELINE.md": "5dbdfa7e858c7d3a12f5e844399d596d000d73b1e7010e4e4e93712fcd002ad4",
+    "docs/operations/GITHUB_CONTROLS.md": "0572b453dda6a0a6535f3acb9ce6195cb2b88d0fb4c51ab8a99bb5c2646eea47",
+    "docs/security/OSPS_BASELINE.md": "039ceab60c41dc99438c9ef5c37cbf239567366adedcc09fe4ef0a9d5c89b289",
     "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
-    "docs/security/THREAT_MODEL.md": "e5d347dbe9900c16c9bdb5e98395f42a688e026343031df40302d3e28bbb5c8b",
+    "docs/security/THREAT_MODEL.md": "b33dad990242cb03b580de7326b8eb867b068806e9219db85a0524310e68356d",
     "policy/README.md": "7e7282b42f301b9709cf16e9cdbbba599db55fe9111a6f5b3389720e03a13b3e",
     "schemas/README.md": "164ebec6c44aa928457c3944ae25f29cadc3ba331e2aae4997bc2d0782230256",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
@@ -182,7 +182,7 @@
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "0a717603d0048fd6fe879ae49dd22fa0171dadc5df8d818ea1b4a0d7ae9f6232"
+    "tools/tests/test_validate_foundation_hardening.py": "d79f606c500ebd4586fb2c21d37d9687721e3ef28a95f74a481e5b242bf5c4f3"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
@@ -213,6 +213,21 @@
         "security-events"
       ]
     }
+  },
+  "hosted_repository_controls": {
+    "snapshot_date": "2026-07-11",
+    "review_due_date": "2026-10-11",
+    "main_ruleset_id": 18810248,
+    "required_checks": [
+      {
+        "context": "Required CI / docs-policy-workflows",
+        "integration_id": 15368
+      },
+      {
+        "context": "Dependency Review / policy",
+        "integration_id": 15368
+      }
+    ]
   },
   "required_codeowners": [
     "* @chasebryan",

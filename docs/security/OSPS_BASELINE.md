@@ -6,6 +6,12 @@ Pinned baseline: [OpenSSF OSPS Baseline v2026.02.19](https://baseline.openssf.or
 
 Assessment snapshot: 2026-07-11
 
+Hosted-control snapshot: `snapshot_date=2026-07-11 review_due_date=2026-10-11 ruleset_id=18810248`
+
+Required-check binding: `context="Required CI / docs-policy-workflows" integration_id=15368`
+
+Required-check binding: `context="Dependency Review / policy" integration_id=15368`
+
 Owner: Bootstrap Repository Steward (`@chasebryan`)
 
 Next scheduled review: 2026-10-11, or earlier on a trigger below
@@ -41,7 +47,7 @@ reviewer are explicit blockers, not administrative cleanup.
 | Status | Meaning |
 | --- | --- |
 | `Observed` | Direct repository or GitHub API evidence supports the current, triggered requirement at the snapshot. This is still not a level claim. |
-| `Candidate` | Control source exists only in the unmerged foundation change, or has not yet produced a successful hosted result. It is not enforced evidence. |
+| `Candidate` | Control source exists only in the unmerged foundation change, or its required trusted-event behavior has not yet produced a successful hosted result. Successful PR execution does not make unmerged source authoritative. |
 | `Documented` | Policy or design text exists, but operating or automated evidence is absent. |
 | `Partial` | Some material control exists, but the requirement or its intended scope is not fully evidenced. |
 | `Conditional` | The baseline's trigger is absent, such as no release or package manager. This is not a pass. |
@@ -53,11 +59,13 @@ reviewer are explicit blockers, not administrative cleanup.
 ### Snapshot boundary
 
 The inspection used the public repository and authenticated GitHub REST
-readback for `chasebryan/orange` on 2026-07-11. The committed branch base
-was `f50d35227a04831d459b3358db65b80093e8123a`; candidate files in this
-foundation change were inspected separately and are never labeled enforced.
-GitHub settings can drift without a Git commit, so every API observation expires
-at the next mandatory review.
+readback for `chasebryan/orange` on 2026-07-11. The resolved branch base was
+`8adf1d5c2d6e80f3974e26f88bc03a17e6bc5cc6`; the reviewed candidate head was
+`eac77fe1383361775a4f2256aaada4c8d02b345d`. Candidate source was inspected
+separately and is never labeled merged. Hosted settings and results are labeled
+operating evidence only for their exact snapshot and revision. GitHub settings
+can drift without a Git commit, so every API observation expires at the next
+mandatory review.
 
 Evidence aliases used below:
 
@@ -65,8 +73,8 @@ Evidence aliases used below:
 | --- | --- |
 | EV-GH-01 | Read-only GitHub repository API: public personal-account repository `chasebryan/orange`; default branch `main`; one collaborator, `chasebryan`, with admin; Issues enabled; Discussions disabled. |
 | EV-GH-02 | GitHub security APIs: Dependabot alerts and security updates enabled; secret scanning and push protection enabled; non-provider pattern scanning and validity checks disabled; private vulnerability reporting enabled. |
-| EV-GH-03 | GitHub Actions APIs: Actions enabled; sources restricted to the exact seven repositories used by candidate workflows; broad GitHub-owned and verified-publisher allowances disabled; full-SHA pinning required; default workflow token permission `read`; workflows cannot approve pull-request reviews; all external fork runs require approval. |
-| EV-GH-04 | GitHub rules APIs: no repository ruleset and no protection for `main`. Repository setting `web_commit_signoff_required` is false. |
+| EV-GH-03 | GitHub Actions APIs: Actions enabled; sources restricted to the exact six repository Action identities used by candidate workflows; broad GitHub-owned and verified-publisher allowances disabled; full-SHA pinning required; default workflow token permission `read`; workflows cannot approve pull-request reviews; all external fork runs require approval. The direct Scorecard OCI digest is enforced by candidate repository validation, not the GitHub Action-source setting. |
+| EV-GH-04 | GitHub rules APIs: active `Protect main` ruleset `18810248` targets the default branch with no bypass actor; requires a pull request, strict `Required CI / docs-policy-workflows` and `Dependency Review / policy` contexts from GitHub Actions integration `15368`, resolved conversations, squash-only linear history, and blocks deletion and non-fast-forward updates. Zero approvals are required during sole stewardship. Repository setting `web_commit_signoff_required` is false. |
 | EV-GH-05 | GitHub code-scanning API: CodeQL default setup `configured`, no language currently detected, `extended` query suite, standard runner, and `remote_and_local` threat model. Configuration without a language/result is not source coverage; Scorecard SARIF is not CodeQL analysis. |
 | EV-GH-06 | Repository APIs: squash-only merge, auto-merge and branch update enabled, merged branches deleted, wiki disabled, and immutable future releases enabled. No product release exists or is authorized. |
 | EV-REP-01 | Public Git URL and Git history identify source changes and authors. `git ls-files` plus file-type inspection found no generated executable or unreviewable binary at the snapshot. |
@@ -75,8 +83,8 @@ Evidence aliases used below:
 | EV-POL-03 | [`DEPENDENCY_POLICY.md`](../../DEPENDENCY_POLICY.md) and [`RELEASE_POLICY.md`](../../RELEASE_POLICY.md) define dependency admission, immutable references, release prohibition, future artifacts, separation, signing, and recovery. |
 | EV-POL-04 | [`docs/ASSURANCE.md`](../ASSURANCE.md), [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), and [`THREAT_MODEL.md`](THREAT_MODEL.md) define proposed assurance, future actors/interfaces, stop-ship conditions, and current/future threats. |
 | EV-POL-05 | [`docs/DECISIONS.md`](../DECISIONS.md#d-018--licenses) leaves licenses and inbound terms blocked; there is no `LICENSE`, `COPYING`, accepted DCO, or contributor agreement. |
-| EV-CAND-01 | Candidate workflows in [`.github/workflows/`](../../.github/workflows/) use full action SHAs, top-level empty permissions, per-job minimum permissions, timeouts, concurrency, non-persistent checkout credentials, and no `pull_request_target`. No hosted result or required-check enforcement existed at the snapshot. |
-| EV-CAND-02 | Candidate [Dependabot configuration](../../.github/dependabot.yml), [dependency-review policy](../../.github/dependency-review-config.yml), repository validators, schemas, and conformance fixtures exist in the working change; merge and successful hosted execution remain pending. |
+| EV-CAND-01 | Candidate workflows in [`.github/workflows/`](../../.github/workflows/) use full action SHAs, top-level empty permissions, per-job minimum permissions, timeouts, concurrency, non-persistent checkout credentials, and no `pull_request_target`. Required CI and dependency review both succeeded for exact head `eac77fe1383361775a4f2256aaada4c8d02b345d`; EV-GH-04 requires those exact contexts. Main-only and scheduled jobs remain pending until merge. |
+| EV-CAND-02 | Candidate [Dependabot configuration](../../.github/dependabot.yml), [dependency-review policy](../../.github/dependency-review-config.yml), repository validators, schemas, and conformance fixtures exist in the working change. Dependency review succeeded and is required for the exact head; merge, Dependabot operation, trusted-event Scorecard, and other main-only execution remain pending. |
 
 ### Current GitHub control-plane facts
 
@@ -84,14 +92,14 @@ Evidence aliases used below:
 | --- | --- | --- |
 | Visibility and ownership | Public personal-account repository; owner `chasebryan`; default `main` | Public source/history is available. Personal-account ownership has one ultimate owner and less granular collaborator roles than an organization. |
 | Current access | Only `chasebryan`, admin | Exact current list, but also a bus-factor and independent-review gap. |
-| Default-branch protection | No branch protection and no ruleset | Direct update, force-push/deletion prevention, required PR, required checks, and conversation-resolution rules are not enforced. |
+| Default-branch protection | Active ruleset `18810248`; no bypass actor; pull request, strict checks, resolved conversations, linear history, deletion and non-fast-forward protection | Platform API and effective-rule readback show enforcement. Zero approvals and one administrator remain an independence and privileged-control-plane risk; a safe direct-update negative test remains pending. |
 | Vulnerability intake | Private vulnerability reporting enabled | Private repository-advisory intake exists; continuity depends on one steward. |
 | Dependency security | Dependabot alerts and security updates enabled | Alerts and automatic security-fix support exist; product manifests do not. |
 | Secret protection | Secret scanning and push protection enabled | Supported provider patterns are covered. Non-provider patterns and validity checks are disabled, so coverage is not complete. |
-| Actions policy | Enabled; exactly seven Action repositories selected; broad GitHub-owned and verified-publisher allowances disabled; full-SHA pinning required; all external fork runs need approval | Source identities and mutable references are restricted. Candidate workflows have not yet completed a hosted run. |
-| Workflow tokens | Default `read`; cannot approve PR reviews | Safe default. Candidate workflows further reduce permissions, but are not yet authoritative or run. |
+| Actions policy | Enabled; exactly six repository Action identities selected; broad GitHub-owned and verified-publisher allowances disabled; full-SHA pinning required; all external fork runs need approval | Source identities and mutable references are restricted. Required PR workflows completed successfully; trusted-event and scheduled candidates remain pending. |
+| Workflow tokens | Default `read`; cannot approve PR reviews | Safe default. Required PR runs demonstrated their branch-source permission model; the source remains unmerged, and trusted-event permissions still require post-merge validation. |
 | CodeQL | Default setup configured with extended queries and automatic detection; no language/result yet | The control is configured but dormant while `main` has no supported source. Do not claim coverage or require a CodeQL rule until a successful result exists. |
-| Merge and release settings | Squash-only; auto-update/auto-merge enabled; merged branches deleted; immutable future releases enabled | Merge settings do not protect `main` without a ruleset. No release is authorized. |
+| Merge and release settings | Squash-only; auto-update/auto-merge enabled; merged branches deleted; immutable future releases enabled; active ruleset `18810248` | The ruleset protects `main`, but zero approvals do not provide independent review. No release is authorized. |
 | Web sign-off | Disabled | No GitHub web-commit DCO/sign-off enforcement. Legal contribution terms remain unresolved. |
 
 ## Level 1 matrix
@@ -103,10 +111,10 @@ unverified controls below means Orange makes no Level 1 conformance claim.
 | --- | --- | --- | --- |
 | OSPS-AC-01.01 | `Unverified` | EV-GH-01 shows the only privileged principal, but repository APIs do not disclose that account's MFA state. EV-POL-01 requires phishing-resistant MFA where available. | A personal repository cannot impose an organization-wide collaborator MFA policy. Record verifiable platform enforcement or move to an organization that requires MFA; never publish recovery factors. |
 | OSPS-AC-02.01 | `Observed` | EV-GH-01 shows only the owner. GitHub personal repositories add collaborators through an explicit invitation, satisfying the manual-assignment branch of the requirement. | Future collaborator admission needs a dated access record and review. Personal repositories give collaborators broad write access; an organization is needed for more granular roles. |
-| OSPS-AC-03.01 | `Gap` | EV-GH-04: `main` has no protection or ruleset. EV-POL-01 documents PR use but cannot prevent direct commit. | Add an active `main` ruleset requiring a PR, with no bypass, after candidate check contexts exist; test a direct push rejection. |
-| OSPS-AC-03.02 | `Gap` | EV-GH-04: no rule prevents `main` deletion. | Add an active rule restricting deletion and block force pushes; verify the effective rules API and a safe negative test. |
-| OSPS-BR-01.01 | `Candidate` | EV-CAND-01 does not interpolate event metadata into shell commands; workflow expressions used for concurrency are not executed as shell source. | Merge, run, and statically audit every workflow. Any future manual/event metadata reaching an interpreter must be allow-listed or safely passed through environment/arguments. |
-| OSPS-BR-01.03 | `Candidate` | EV-CAND-01 PR workflows have no secrets, begin with no permissions, grant only `contents: read`, avoid `pull_request_target`, and disable persisted checkout credentials. Privileged Scorecard permissions occur only on trusted events. | Obtain successful hosted runs and protect the workflow paths/checks. Reassess on every secret, environment, self-hosted runner, or event change. |
+| OSPS-AC-03.01 | `Observed` with verification residual | EV-GH-04 records an active no-bypass `main` ruleset requiring a pull request and strict current checks. Effective-rule readback matched the configured rules. | Preserve the rule and test a safe direct-update rejection after merge. Zero approvals satisfy no independent-review claim. |
+| OSPS-AC-03.02 | `Observed` with verification residual | EV-GH-04 records active deletion and non-fast-forward restrictions, confirmed by effective-rule API readback. | Preserve both rules and perform only a safe non-destructive negative test; do not test branch deletion against authoritative `main`. |
+| OSPS-BR-01.01 | `Candidate` with hosted PR evidence | EV-CAND-01 does not interpolate event metadata into shell commands; workflow expressions used for concurrency are not executed as shell source. Required PR workflows completed successfully and are required by EV-GH-04. | Merge and validate every trusted-event workflow. Any future manual/event metadata reaching an interpreter must be allow-listed or safely passed through environment/arguments. |
+| OSPS-BR-01.03 | `Candidate` with hosted PR evidence | EV-CAND-01 PR workflows receive no configured repository or environment secrets, begin with no permissions, grant only a job-scoped `GITHUB_TOKEN` limited to `contents: read`, avoid `pull_request_target`, and disable persisted checkout credentials. Both required PR jobs succeeded; their exact contexts are required and bound to GitHub Actions integration `15368`. Privileged Scorecard permissions occur only on trusted events. | Merge and validate trusted-event behavior. Reassess on every secret, environment, self-hosted runner, or event change. |
 | OSPS-BR-03.01 | `Observed` | EV-REP-01 and repository link inspection show official project channels use HTTPS. Git and GitHub links identify `https://github.com/chasebryan/orange`. | Preserve HTTPS-only link validation. A future domain, registry, chat, package, or documentation channel must be inventoried before being called official. |
 | OSPS-BR-03.02 | `Conditional` | No official distribution channel or software release exists; EV-POL-03 prohibits publication. | Before distribution, require authenticated HTTPS and signed, verifiable artifact/update metadata; demonstrate downgrade and adversary-in-the-middle resistance. |
 | OSPS-BR-07.01 | `Partial` | EV-GH-02 enables secret scanning and push protection; candidate ignore policy excludes common local credential files. | Non-provider patterns and validity checks are disabled. Define a secrets lifecycle, add complementary scanning where justified, and test block/revocation handling without committing a real secret. |
@@ -119,7 +127,7 @@ unverified controls below means Orange makes no Level 1 conformance claim.
 | OSPS-LE-03.01 | `Gap` | EV-POL-05: no `LICENSE`, `COPYING`, or license directory exists. | After legal selection, add the exact license text and machine-readable metadata in the same reviewed change. |
 | OSPS-LE-03.02 | `Conditional` and `Gap` | No release exists and no release license is selected. | Include the ratified license alongside source and release assets, then verify packaged contents. |
 | OSPS-QA-01.01 | `Observed` | EV-GH-01 and EV-REP-01: the source repository is publicly readable at a static GitHub URL. | Reassess on visibility or repository transfer. The owner's repo-only operating boundary must be preserved unless explicitly changed. |
-| OSPS-QA-01.02 | `Observed` | EV-REP-01: public Git history records commits, authors, and timestamps. | Protect history from force-push/deletion and preserve archival continuity. Git authorship is not proof of legal authorization or cryptographic identity. |
+| OSPS-QA-01.02 | `Observed` | EV-REP-01 records public Git history; EV-GH-04 blocks deletion and non-fast-forward updates to `main`. | Preserve archival continuity and monitor rule drift. Git authorship is not proof of legal authorization or cryptographic identity. |
 | OSPS-QA-02.01 | `Conditional` | There is no product package-management system or language dependency manifest. EV-CAND-02 tracks only GitHub Actions candidates. | Every admitted ecosystem must commit its direct dependency manifest and lock/inventory; offline bytes and transitive provenance remain additional Orange requirements. |
 | OSPS-QA-04.01 | `Conditional` | Orange currently uses one repository, explicitly bounded to `chasebryan/orange` by EV-POL-01. | If a second codebase becomes part of Orange, add a canonical repository inventory before use; do not operate or publish elsewhere without owner direction. |
 | OSPS-QA-05.01 | `Observed` | EV-REP-01 file-type inspection found no generated executable artifact. EV-POL-01 prohibits them. | Add the repository validator to required CI and inspect Git LFS/releases when introduced; a source scan does not cover external assets. |
@@ -134,7 +142,7 @@ remaining to become collaborative.
 
 | Control | Status | Exact current evidence | Gap and next evidence required |
 | --- | --- | --- | --- |
-| OSPS-AC-04.01 | `Observed` platform default; `Candidate` source | EV-GH-03 sets default workflow permissions to `read`. EV-CAND-01 begins every workflow with `permissions: {}` and grants explicit job permissions. | Merge, run, and continuously lint workflows. Reverify the setting after repository transfer or GitHub policy change. |
+| OSPS-AC-04.01 | `Observed` platform default; `Candidate` source with hosted PR evidence | EV-GH-03 sets default workflow permissions to `read`. EV-CAND-01 begins every workflow with `permissions: {}`, grants explicit job permissions, and required PR runs succeeded. | Merge, validate trusted-event jobs, and continuously lint workflows. Reverify the setting after repository transfer or GitHub policy change. |
 | OSPS-BR-02.01 | `Conditional` | No official release exists. EV-POL-03 requires one immutable identifier spanning all relevant version axes. | Define and validate the release identifier format before the first candidate. |
 | OSPS-BR-04.01 | `Conditional` | No release exists. EV-POL-03 requires changed claims, TCB/assumption deltas, security changes, and limitations. | Generate and review a functional/security changelog bound to each immutable release. |
 | OSPS-BR-05.01 | `Conditional` | No build/release pipeline ingests product dependencies. Candidate CI uses standard Actions plus checksum-verified downloads under EV-CAND-01. | Ratify standardized package/build tooling, immutable inputs, and offline archives for each admitted ecosystem. |
@@ -145,8 +153,8 @@ remaining to become collaborative.
 | OSPS-GV-01.02 | `Observed` current role; future target documented | EV-POL-01 defines the Bootstrap Repository Steward and proposed technical, assurance, release, and PSIRT authorities. | Ratify D-019, publish exact responsibilities/terms/recusal/succession, and assign real people before claiming collaborative governance. |
 | OSPS-GV-03.02 | `Documented` but legally blocked | EV-POL-01 defines acceptable scope, workflow, evidence, review, and contribution quality. It rejects third-party merge until D-018 closes. | Ratify licenses and DCO/CLA terms, then test the guide with an eligible external contribution. |
 | OSPS-LE-01.01 | `Gap` | EV-GH-04 has web sign-off disabled; EV-POL-05 has no accepted DCO or contributor agreement. Third-party merges are prohibited rather than falsely treated as authorized. | Select legal provenance terms, require assertion on every code commit, and add enforcement/validation with counsel-approved wording. |
-| OSPS-QA-03.01 | `Gap` | EV-GH-04: no required status checks or protected branch. Candidate checks have not run and cannot block merge. | After successful check discovery, require `Required CI / docs-policy-workflows` and `Dependency Review / policy` on `main`; verify failure blocks merge and bypass policy is explicit. |
-| OSPS-QA-06.01 | `Candidate` | EV-CAND-01 defines repository policy tests before acceptance; candidate validators and conformance checks are under development in the same foundation change. | Run locally and on GitHub, require the check, prove a negative mutation fails, and expand the suite with every product component. |
+| OSPS-QA-03.01 | `Observed` with negative-test residual | EV-GH-04 binds exact successful `Required CI / docs-policy-workflows` and `Dependency Review / policy` contexts to GitHub Actions integration `15368` under a strict no-bypass ruleset. | Preserve producer binding and prove a qualifying failed check blocks merge without weakening or bypassing the ruleset. |
+| OSPS-QA-06.01 | `Candidate` with hosted PR evidence | EV-CAND-01 defines repository policy tests before acceptance; 46 local tests, conformance validation, and the required hosted CI check succeeded at the reviewed head. Negative local mutations demonstrate fail-closed behavior. | Merge, retain the required check, and expand the suite with every product component. |
 | OSPS-SA-01.01 | `Conditional` with design evidence | No release exists. EV-POL-04 documents proposed actors, components, and flows, including this stable-ID threat model. | Update from intended architecture to the exact deployed system and all human/service actors before release. |
 | OSPS-SA-02.01 | `Conditional` | No released external software interface exists. Architecture discusses planned CLI/LSP/ABI/registry surfaces but they are not specifications. | Inventory and document every actual external interface, protocol, parser, error contract, privilege, and version before release. |
 | OSPS-SA-03.01 | `Conditional` with early assessment | No release exists. EV-POL-04 supplies a Gate 0 security assessment, not an implementation assessment. | Repeat against executable code, dependencies, deployments, findings, and test results before each release-bearing gate. |
@@ -178,8 +186,8 @@ used to imply present maturity or a large user base.
 | OSPS-SA-03.02 | `Conditional` with Gate 0 model | [`THREAT_MODEL.md`](THREAT_MODEL.md) covers current and future boundaries with stable IDs, abuse paths, controls, residual risk, owners, and triggers. No released critical code path exists. | Re-perform threat and attack-surface analysis against real code/deployments before release and on every mandatory trigger. |
 | OSPS-VM-04.02 | `Conditional` | No product component vulnerability or non-exploitability decision exists; no VEX process has run. | Define CycloneDX or CSAF VEX generation, review, expiry, evidence, and correction procedures before suppressing any component finding. |
 | OSPS-VM-05.01 | `Gap` | Candidate dependency review fails at `moderate` vulnerability severity, but EV-POL-03 has no complete SCA vulnerability/license remediation deadlines or risk thresholds. | Ratify severity, exploitability, malicious-package, license, SLA, exception, VEX, and expiry thresholds for every dependency class. |
-| OSPS-VM-05.02 | `Documented` and `Candidate` | EV-POL-03 says security policy failures fail closed and cannot waive assurance gates; EV-CAND-02 proposes dependency review. | Make the check required, exercise violation/exception paths, and block every release on unresolved policy violations. |
-| OSPS-VM-05.03 | `Candidate` | EV-CAND-02 proposes PR dependency review, Dependabot surveillance, vulnerability/license checks, and Scorecard signals. | Merge and require the check; add explicit malicious-dependency policy and ecosystem coverage; demonstrate a known-vulnerable dependency mutation is blocked. |
+| OSPS-VM-05.02 | `Documented` and `Candidate` with hosted PR evidence | EV-POL-03 says security policy failures fail closed and cannot waive assurance gates; EV-CAND-02 dependency review succeeded and EV-GH-04 makes it required. | Merge, exercise violation/exception paths, and block every release on unresolved policy violations. |
+| OSPS-VM-05.03 | `Candidate` with partial hosted evidence | EV-CAND-02 supplies required PR dependency review plus proposed Dependabot surveillance, vulnerability/license checks, and Scorecard signals. | Merge; validate Dependabot and Scorecard operation; add explicit malicious-dependency policy and ecosystem coverage; demonstrate a known-vulnerable dependency mutation is blocked. |
 | OSPS-VM-06.01 | `Gap` | No SAST remediation threshold or exception/expiry policy exists. | Define severity, confidence, scope, remediation time, false-positive evidence, owner, expiry, and release-blocking behavior before SAST is authoritative. |
 | OSPS-VM-06.02 | `Partial` | EV-GH-05: CodeQL default setup is configured with extended queries, but no supported language or scan result exists. Scorecard SARIF is posture data, not source-code weakness analysis. | Confirm automatic detection after supported source reaches `main`; obtain a successful baseline, then require an appropriate CodeQL threshold and test that a qualifying alert blocks merge. |
 
@@ -187,9 +195,11 @@ used to imply present maturity or a large user base.
 
 The following must remain visible even if all candidate checks pass:
 
-1. **Protected-main gap:** no PR, required-check, force-push, deletion,
-   conversation-resolution, or bypass restriction is active
-   (OSPS-AC-03.01, OSPS-AC-03.02, OSPS-QA-03.01).
+1. **Protected-main verification residual:** active no-bypass ruleset `18810248`
+   requires a PR, strict producer-bound checks, resolved conversations, linear
+   history, and blocks deletion and non-fast-forward updates. Safe negative
+   tests still need to prove direct-update and failed-check rejection without
+   weakening authoritative `main` (OSPS-AC-03.01/02, OSPS-QA-03.01).
 2. **Independent-review gap:** one owner cannot provide the non-author approval
    required by OSPS-QA-07.01 or Orange's mature governance. A bot, CODEOWNERS
    request, self-review, or second account controlled by the author does not
@@ -206,9 +216,11 @@ The following must remain visible even if all candidate checks pass:
    checks are disabled; the documented lifecycle is not independently exercised;
    selected Actions still depend on reviewed upstream identities; no complete
    SCA, VEX, or malicious-dependency lifecycle exists.
-7. **Operational-evidence gap:** branch-candidate workflows have not yet run on
-   GitHub and are not required checks. Local/static success cannot establish
-   GitHub event, token, permission, SARIF, or branch-rule behavior.
+7. **Operational-evidence gap:** required PR workflows succeeded, and their
+   exact contexts are required and app-bound, but the candidate source is unmerged. Main-only and scheduled
+   link, workflow-metadata, Scorecard, artifact, and SARIF behavior remains
+   untested. Local/static and PR success cannot establish those trusted-event
+   paths.
 8. **Release-capability gap:** no independent PSIRT, release roles, keys,
    builders, SBOM/CBOM, provenance, registry, support capacity, or recovery
    drill exists. The release prohibition is correct current behavior.
@@ -254,8 +266,8 @@ Review the complete matrix, not only one row, when any of these occurs:
    participates, label reviews steward-authored, not independent.
 
 The next scheduled full assessment is 2026-10-11. The foundation merge, first
-hosted workflow results, first CodeQL result, and protected-main configuration are
-earlier mandatory triggers.
+trusted-`main` workflow results, first CodeQL result, and any protected-main
+configuration change are earlier mandatory triggers.
 
 ## Primary sources
 

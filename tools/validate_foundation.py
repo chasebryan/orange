@@ -117,6 +117,15 @@ GATE0_EXECUTABLE_PATHS = {
     "tools/validate_foundation.py",
 }
 GATE0_ALLOWED_WRITE_PERMISSIONS = {"scorecard.yml": {"security-events"}}
+GATE0_HOSTED_REPOSITORY_CONTROLS = {
+    "snapshot_date": "2026-07-11",
+    "review_due_date": "2026-10-11",
+    "main_ruleset_id": 18810248,
+    "required_checks": [
+        {"context": "Required CI / docs-policy-workflows", "integration_id": 15368},
+        {"context": "Dependency Review / policy", "integration_id": 15368},
+    ],
+}
 GATE0_SCHEMA_PATHS = {
     "schemas/gate0/claim-record-v0.1.schema.json",
     "schemas/gate0/evidence-manifest-v0.1.schema.json",
@@ -176,10 +185,10 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
     "docs/operations/CI_DEPENDENCIES.md": "f438e12f35b5d90139527559dab9ad02440e7312823dafeda3b5af3bf552dfb8",
-    "docs/operations/GITHUB_CONTROLS.md": "184872cb3d3f8a8bb11b2047de1b97eb54b96a0e107cf2fdfe24e336981f56e8",
-    "docs/security/OSPS_BASELINE.md": "5dbdfa7e858c7d3a12f5e844399d596d000d73b1e7010e4e4e93712fcd002ad4",
+    "docs/operations/GITHUB_CONTROLS.md": "0572b453dda6a0a6535f3acb9ce6195cb2b88d0fb4c51ab8a99bb5c2646eea47",
+    "docs/security/OSPS_BASELINE.md": "039ceab60c41dc99438c9ef5c37cbf239567366adedcc09fe4ef0a9d5c89b289",
     "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
-    "docs/security/THREAT_MODEL.md": "e5d347dbe9900c16c9bdb5e98395f42a688e026343031df40302d3e28bbb5c8b",
+    "docs/security/THREAT_MODEL.md": "b33dad990242cb03b580de7326b8eb867b068806e9219db85a0524310e68356d",
     "policy/README.md": "7e7282b42f301b9709cf16e9cdbbba599db55fe9111a6f5b3389720e03a13b3e",
     "schemas/README.md": "164ebec6c44aa928457c3944ae25f29cadc3ba331e2aae4997bc2d0782230256",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
@@ -192,7 +201,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "0a717603d0048fd6fe879ae49dd22fa0171dadc5df8d818ea1b4a0d7ae9f6232",
+    "tools/tests/test_validate_foundation_hardening.py": "d79f606c500ebd4586fb2c21d37d9687721e3ef28a95f74a481e5b242bf5c4f3",
 }
 GATE0_CHARTER_SECTION_SHA256 = "2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -469,6 +478,7 @@ class FoundationValidator:
         self._validate_required_and_forbidden_paths()
         self._validate_tree_encoding_and_format()
         self._validate_protected_file_digests()
+        self._validate_hosted_control_evidence()
         self._validate_markdown_links()
         self._validate_json_documents()
         self._validate_schema_fixtures()
@@ -508,6 +518,7 @@ class FoundationValidator:
             "protected_file_digests": dict,
             "executable_paths": list,
             "github_actions": dict,
+            "hosted_repository_controls": dict,
             "required_codeowners": list,
             "decision_gates": dict,
             "temporary_constraints": dict,
@@ -621,6 +632,12 @@ class FoundationValidator:
             self.add("policy.action_comment", self.policy_path, "Action version comments cannot be disabled")
         if "pull_request_target" not in policy["github_actions"].get("forbidden_events", []):
             self.add("policy.forbidden_event", self.policy_path, "pull_request_target must remain forbidden")
+        if policy["hosted_repository_controls"] != GATE0_HOSTED_REPOSITORY_CONTROLS:
+            self.add(
+                "policy.hosted_repository_controls",
+                self.policy_path,
+                "hosted repository-control snapshot must remain exact",
+            )
         constraints = policy["temporary_constraints"]
         for key in (
             "accept_third_party_pull_requests",
@@ -657,6 +674,102 @@ class FoundationValidator:
                     path,
                     f"reviewed SHA-256 changed: expected {expected}, observed {observed}",
                 )
+
+    def _validate_hosted_control_evidence(self, *, today: dt.date | None = None) -> None:
+        """Keep the current hosted-control snapshot internally coherent."""
+
+        snapshot_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["snapshot_date"])
+        review_due_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["review_due_date"])
+        ruleset_id = str(GATE0_HOSTED_REPOSITORY_CONTROLS["main_ruleset_id"])
+        expected_snapshot = (
+            "Hosted-control snapshot: `"
+            f"snapshot_date={snapshot_value} review_due_date={review_due_value} "
+            f"ruleset_id={ruleset_id}`"
+        )
+        expected_bindings = {
+            (
+                "Required-check binding: `"
+                f"context=\"{item['context']}\" integration_id={item['integration_id']}`"
+            )
+            for item in GATE0_HOSTED_REPOSITORY_CONTROLS["required_checks"]
+        }
+        evidence_paths = (
+            "docs/operations/GITHUB_CONTROLS.md",
+            "docs/security/OSPS_BASELINE.md",
+            "docs/security/THREAT_MODEL.md",
+        )
+        stale_claim_patterns = {
+            r"(?i)\bunprotected default branch\b": "default branch described as unprotected",
+            r"(?i)\bno (?:branch protection|repository ruleset)(?:\s+or\s+ruleset)?\b": (
+                "branch protection or ruleset described as absent"
+            ),
+            r"(?i)\bdefault branch has no protection and no ruleset\b": (
+                "default branch described as having no protection"
+            ),
+            r"(?i)\bone owner and no branch rule\b": "branch rule described as absent",
+            (
+                r"(?i)\b(?:candidate|required|PR) (?:checks?|workflows?)\b[^.\n]{0,80}"
+                r"\b(?:has|have) not (?:yet )?run\b"
+            ): "required or candidate workflow described as never run",
+            (
+                r"(?i)\b(?:candidate|required|PR) (?:checks?|workflows?)\b[^.\n]{0,80}"
+                r"\b(?:is|are) not required\b"
+            ): "required check described as not required",
+        }
+        try:
+            snapshot_date = dt.date.fromisoformat(snapshot_value)
+            review_due_date = dt.date.fromisoformat(review_due_value)
+        except ValueError:
+            self.add(
+                "hosted_control.date",
+                self.policy_path,
+                "hosted-control snapshot and review-due dates must be ISO calendar dates",
+            )
+            return
+        if snapshot_date > review_due_date:
+            self.add(
+                "hosted_control.date_order",
+                self.policy_path,
+                "hosted-control review due date precedes its snapshot date",
+            )
+        observed_today = today or dt.datetime.now(tz=dt.timezone.utc).date()
+        if observed_today >= review_due_date:
+            self.add(
+                "hosted_control.expired",
+                self.policy_path,
+                f"hosted-control snapshot expired on {review_due_value}; refresh live readback and evidence",
+            )
+        for value in evidence_paths:
+            path = self.root / value
+            if not path.is_file():
+                self.add("hosted_control.missing", path, "hosted-control evidence document is missing")
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                self.add("hosted_control.unreadable", path, str(exc))
+                continue
+            lines = text.splitlines()
+            if lines.count(expected_snapshot) != 1:
+                self.add(
+                    "hosted_control.snapshot",
+                    path,
+                    "expected exactly one canonical hosted-control snapshot marker",
+                )
+            for binding in sorted(expected_bindings):
+                if lines.count(binding) != 1:
+                    self.add(
+                        "hosted_control.binding",
+                        path,
+                        f"expected exactly one canonical producer binding {binding!r}",
+                    )
+            for pattern, description in sorted(stale_claim_patterns.items()):
+                if re.search(pattern, text):
+                    self.add(
+                        "hosted_control.contradiction",
+                        path,
+                        f"stale hosted-control claim remains: {description}",
+                    )
 
     def _policy_path(self, value: str) -> Path | None:
         pure = PurePosixPath(value)

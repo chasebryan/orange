@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import json
 import shutil
 import tempfile
@@ -349,6 +350,83 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             validator._load_and_validate_policy()
             codes = {finding.code for finding in validator.findings}
             self.assertTrue({"policy.minimum", "policy.required_inventory"} & codes)
+
+
+class HostedControlEvidenceHardeningTests(unittest.TestCase):
+    @staticmethod
+    def _write_current_evidence(root: Path) -> None:
+        common = (
+            "Hosted-control snapshot: `snapshot_date=2026-07-11 "
+            "review_due_date=2026-10-11 ruleset_id=18810248`\n"
+            "Required-check binding: `context=\"Required CI / docs-policy-workflows\" "
+            "integration_id=15368`\n"
+            "Required-check binding: `context=\"Dependency Review / policy\" "
+            "integration_id=15368`\n"
+        )
+        for value in (
+            "docs/operations/GITHUB_CONTROLS.md",
+            "docs/security/OSPS_BASELINE.md",
+            "docs/security/THREAT_MODEL.md",
+        ):
+            path = root / value
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(common, encoding="utf-8")
+
+    def test_current_hosted_control_snapshot_is_coherent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence()
+            self.assertEqual(validator.findings, [])
+
+    def test_rephrased_stale_unprotected_main_claim_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            path = root / "docs/security/THREAT_MODEL.md"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + "The default branch has no protection and no ruleset.\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence()
+            self.assertIn(
+                "hosted_control.contradiction",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_check_context_must_bind_to_the_exact_producer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            path = root / "docs/security/OSPS_BASELINE.md"
+            text = path.read_text(encoding="utf-8").replace(
+                'context="Dependency Review / policy" integration_id=15368',
+                'context="Dependency Review / policy" integration_id=99999',
+            )
+            path.write_text(text + "Historical integration ID: 15368.\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence()
+            self.assertIn("hosted_control.binding", {finding.code for finding in validator.findings})
+
+    def test_missing_evidence_document_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            (root / "docs/security/THREAT_MODEL.md").unlink()
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence()
+            self.assertIn("hosted_control.missing", {finding.code for finding in validator.findings})
+
+    def test_snapshot_expires_on_its_review_due_date(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_current_evidence(root)
+            validator = FoundationValidator(root)
+            validator._validate_hosted_control_evidence(today=dt.date(2026, 10, 11))
+            self.assertIn("hosted_control.expired", {finding.code for finding in validator.findings})
 
 
 class DecisionGateHardeningTests(unittest.TestCase):

@@ -4,10 +4,18 @@ Status: operating record for `chasebryan/orange`; Gate 0 bootstrap state
 
 Snapshot date: 2026-07-11
 
+Hosted-control snapshot: `snapshot_date=2026-07-11 review_due_date=2026-10-11 ruleset_id=18810248`
+
+Required-check binding: `context="Required CI / docs-policy-workflows" integration_id=15368`
+
+Required-check binding: `context="Dependency Review / policy" integration_id=15368`
+
 This runbook records GitHub-hosted controls that are not fully represented by a
 Git commit. It applies only to `https://github.com/chasebryan/orange`. A setting
 can drift independently of the repository, so this file is evidence only when
 paired with current API readback and the effective rules response.
+The repository validator deliberately expires this snapshot on its review-due
+date; a fresh readback and coordinated evidence update are then required.
 
 ## Current verified control plane
 
@@ -23,6 +31,7 @@ paired with current API readback and the effective rules response.
 | Default workflow token | `read`; cannot approve pull-request reviews | Job permissions remain authoritative and are checked in source. |
 | External fork workflows | Approval required for all external contributors | Dependabot receives fork-like token restrictions and may require approval. |
 | Merge methods | Squash only; auto-merge and branch update enabled; merged branches deleted | This does not itself require a pull request. The default-branch ruleset remains the enforcement gate. |
+| Discussions | Disabled | Planning decisions remain in versioned OEPs, ADRs, issues, and pull requests. |
 | Wiki | Disabled | Authoritative documentation remains versioned in Git. |
 | Immutable releases | Enabled for future published releases | No Orange release is authorized; this setting does not make a planning snapshot a product release. |
 | Default-branch rules | Active `Protect main` ruleset, ID `18810248`; no bypass actors; pull request, strict GitHub-Actions-bound checks, resolved conversations, squash-only linear history, deletion protection, and non-fast-forward protection | Bootstrap uses zero required approvals until a second qualified maintainer exists. |
@@ -33,8 +42,9 @@ paired with current API readback and the effective rules response.
 
 The required CI and dependency-review workflows use `pull_request`, `push` to
 `main`, and `merge_group` as applicable. They never use `pull_request_target`,
-receive no secret, start from empty workflow permissions, declare minimum job
-permissions and timeouts, disable checkout credential persistence, and pin
+receive no configured repository or environment secret, start from empty
+workflow permissions, use only a job-scoped `GITHUB_TOKEN` limited to
+`contents: read`, declare timeouts, disable checkout credential persistence, and pin
 every repository Action to a full commit SHA and admit the direct Scorecard OCI
 runtime only at its exact digest, with reviewable version comments.
 Required workflows have no manual dispatch because required-check identity does
