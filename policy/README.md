@@ -22,6 +22,12 @@ fixtures, tests, and policy documents also have reviewed SHA-256 identities in
 both the validator and policy record. Changing one requires an intentional,
 reviewable update to both enforcement sources.
 
+Official binary brand assets are closed by the same inventory and are admitted
+only with an exact path, role, provenance statement, and SHA-256 digest. Their
+human and machine-readable inventory lives under [`assets/brand/`](../assets/brand/).
+This admission records project identity; it does not close the pending name,
+trademark, or license decisions.
+
 The validator and `gate0-repository-policy.json` cannot safely contain their own
 digests without a self-reference cycle. Their integrity therefore depends on
 the exact path/executable contracts plus GitHub review, required-check, and

@@ -49,7 +49,9 @@ Do not add:
   implementation before Gate 0 closes;
 - a disposable prototype, demo-only scaffold, or parallel MVP;
 - syntax or architecture selected merely by implementing it first;
-- packages, releases, final branding, or public namespaces;
+- packages, releases, unratified replacement/final branding, or public
+  namespaces (the steward-designated working assets are admitted only through
+  the exact repository policy);
 - empty directories for a future architecture;
 - opaque binaries or generated executables; or
 - dependencies that silently decide licensing, proof-foundation, target, or

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import shutil
 import tempfile
@@ -14,6 +15,8 @@ from tools.validate_foundation import (
     checkout_disables_credentials,
     load_json,
     validate_schema_instance,
+    workflow_jobs,
+    workflow_steps,
 )
 
 
@@ -78,6 +81,24 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_legacy_container_action_policy_field_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        policy = load_json(source_root / "policy/gate0-repository-policy.json")
+        policy["github_actions"]["allowed_container_actions"] = list(
+            policy["github_actions"]["allowed_container_images"]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy_dir = root / "policy"
+            policy_dir.mkdir()
+            (policy_dir / "gate0-repository-policy.json").write_text(
+                json.dumps(policy, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._load_and_validate_policy()
+            self.assertIn("policy.action_fields", {finding.code for finding in validator.findings})
+
     def test_descriptive_action_comment_cannot_bypass_policy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -160,17 +181,43 @@ jobs:
         self.assertEqual(workflow.count(image), 1)
         self.assertNotIn("uses: docker://", workflow)
         for required in (
+            "set -euo pipefail",
+            "printf '::add-mask::%s\\n'",
             "docker run --rm",
             "--read-only",
+            "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
             "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            '--user "$(id -u):$(id -g)"',
-            '--volume "${GITHUB_EVENT_PATH}:/github/workflow/event.json:ro"',
-            '--volume "${GITHUB_WORKSPACE}:/github/workspace"',
+            "--cap-add=DAC_OVERRIDE",
+            "--security-opt=no-new-privileges=true",
+            '--mount "type=bind,source=${GITHUB_EVENT_PATH},target=/github/workflow/event.json,readonly"',
+            '--mount "type=bind,source=${GITHUB_WORKSPACE},target=/github/workspace"',
             "--workdir /github/workspace",
+            "--env INPUT_PUBLISH_RESULTS=false",
             "--env INPUT_REPO_TOKEN",
+            'test -s "$GITHUB_WORKSPACE/results.sarif"',
         ):
             self.assertIn(required, workflow)
+
+    def test_scorecard_runtime_contract_rejects_bypass_mutations(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        workflow = (source_root / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")
+        jobs = dict(workflow_jobs(workflow.splitlines()))
+        source_steps = dict(workflow_steps(jobs["analysis"]))
+        mutations = (
+            ("--cap-add=DAC_OVERRIDE", "--cap-add=ALL", "workflow.scorecard_runtime"),
+            (",readonly\"", "\"", "workflow.scorecard_contract"),
+            ("--env INPUT_PUBLISH_RESULTS=false", "--env INPUT_PUBLISH_RESULTS=true", "workflow.scorecard_publication"),
+            ("--pids-limit=256", "--privileged", "workflow.scorecard_runtime"),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(mutation=old):
+                steps = {name: list(lines) for name, lines in source_steps.items()}
+                steps["Run OpenSSF Scorecard"] = [line.replace(old, new) for line in steps["Run OpenSSF Scorecard"]]
+                validator = FoundationValidator(Path("/virtual"))
+                validator._validate_step_details(Path("scorecard.yml"), "analysis", steps)
+                codes = {finding.code for finding in validator.findings}
+                self.assertIn("workflow.scorecard_contract", codes)
+                self.assertIn(expected_code, codes)
 
     def test_unadmitted_scorecard_digest_is_rejected(self) -> None:
         digest = "0" * 64
@@ -198,8 +245,8 @@ jobs:
     def test_digest_pinned_scorecard_does_not_request_publication_identity(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         workflow = (source_root / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")
-        self.assertIn('INPUT_PUBLISH_RESULTS: "false"', workflow)
-        self.assertNotIn('INPUT_PUBLISH_RESULTS: "true"', workflow)
+        self.assertIn("--env INPUT_PUBLISH_RESULTS=false", workflow)
+        self.assertNotIn("INPUT_PUBLISH_RESULTS=true", workflow)
         self.assertNotIn("id-token: write", workflow)
         self.assertNotIn("INPUT_INTERNAL_PUBLISH_BASE_URL", workflow)
         self.assertNotIn("INPUT_INTERNAL_DEFAULT_TOKEN", workflow)
@@ -209,13 +256,10 @@ jobs:
         base_step = [
             "      - name: Run OpenSSF Scorecard",
             "        env:",
-            "          INPUT_RESULTS_FILE: results.sarif",
-            "          INPUT_RESULTS_FORMAT: sarif",
             "          INPUT_REPO_TOKEN: ${{ github.token }}",
-            '          INPUT_PUBLISH_RESULTS: "false"',
-            "          INPUT_FILE_MODE: archive",
             "        run: |",
             "          docker run --rm \\",
+            "            --env INPUT_PUBLISH_RESULTS=false \\",
             f"            ghcr.io/ossf/scorecard-action@sha256:{digest} # v2.4.3",
         ]
         upload_step = [
@@ -223,14 +267,14 @@ jobs:
             "        uses: github/codeql-action/upload-sarif@" + "a" * 40 + " # v4.37.0",
         ]
         mutations = (
-            ('          INPUT_PUBLISH_RESULTS: "true"', True),
-            ("          INPUT_INTERNAL_PUBLISH_BASE_URL: https://api.scorecard.dev", False),
-            ("          INPUT_INTERNAL_DEFAULT_TOKEN: ${{ github.token }}", False),
+            ("            --env INPUT_PUBLISH_RESULTS=true \\", True),
+            ("            --env INPUT_INTERNAL_PUBLISH_BASE_URL=https://api.scorecard.dev \\", False),
+            ("            --env INPUT_INTERNAL_DEFAULT_TOKEN \\", False),
         )
         for forbidden, replaces_false in mutations:
             with self.subTest(forbidden=forbidden):
                 run_step = [
-                    forbidden if replaces_false and line == '          INPUT_PUBLISH_RESULTS: "false"' else line
+                    forbidden if replaces_false and line == "            --env INPUT_PUBLISH_RESULTS=false \\" else line
                     for line in base_step
                 ]
                 if not replaces_false:
@@ -279,6 +323,34 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             self.assertIn("path.top_level", {finding.code for finding in validator.findings})
             self.assertIn("path.inventory", {finding.code for finding in validator.findings})
 
+    def test_binary_admission_accepts_exact_bytes_and_rejects_mutation(self) -> None:
+        data = b"\x89PNG\r\n\x1a\nfixture"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "asset.png"
+            path.write_bytes(data)
+            admission = {
+                "path": "asset.png",
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "role": "test fixture",
+                "provenance": "unit test",
+            }
+
+            validator = FoundationValidator(root)
+            validator.repository_files = [path]
+            validator.index_entries = []
+            validator.policy = {"executable_paths": [], "allowed_binary_artifacts": [admission]}
+            validator._validate_tree_encoding_and_format()
+            self.assertNotIn("file.binary_digest", {finding.code for finding in validator.findings})
+
+            path.write_bytes(data + b"!")
+            validator = FoundationValidator(root)
+            validator.repository_files = [path]
+            validator.index_entries = []
+            validator.policy = {"executable_paths": [], "allowed_binary_artifacts": [admission]}
+            validator._validate_tree_encoding_and_format()
+            self.assertIn("file.binary_digest", {finding.code for finding in validator.findings})
+
     def test_numbered_change_record_path_remains_admitted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -289,6 +361,40 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             validator.policy = self._path_policy()
             validator._validate_required_and_forbidden_paths()
             self.assertNotIn("path.inventory", {finding.code for finding in validator.findings})
+
+
+class BrandAssetHardeningTests(unittest.TestCase):
+    def test_official_brand_manifest_matches_admitted_assets(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        validator = FoundationValidator(source_root)
+        validator._validate_brand_assets()
+        self.assertFalse([finding for finding in validator.findings if finding.code.startswith("brand.")])
+
+    def test_brand_manifest_metadata_mutation_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(source_root / "assets/brand", root / "assets/brand")
+            manifest_path = root / "assets/brand/manifest.json"
+            manifest = load_json(manifest_path)
+            manifest["assets"][0]["width"] += 1
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_brand_assets()
+            self.assertIn("brand.manifest_metadata", {finding.code for finding in validator.findings})
+
+    def test_canonical_c2pa_container_removal_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(source_root / "assets/brand", root / "assets/brand")
+            image_path = root / "assets/brand/orange.png"
+            data = image_path.read_bytes()
+            self.assertIn(b"caBX", data)
+            image_path.write_bytes(data.replace(b"caBX", b"caBY", 1))
+            validator = FoundationValidator(root)
+            validator._validate_brand_assets()
+            self.assertIn("brand.c2pa", {finding.code for finding in validator.findings})
 
 
 class ProtectedControlHardeningTests(unittest.TestCase):

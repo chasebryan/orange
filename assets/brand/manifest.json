@@ -1,0 +1,84 @@
+{
+  "schema_version": "orange-brand-assets/v1",
+  "status": "official",
+  "authority": "chasebryan",
+  "designated_on": "2026-07-11",
+  "source_collection": "Orange-Assets",
+  "import_mode": "byte-for-byte",
+  "assets": [
+    {
+      "path": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
+      "media_type": "image/png",
+      "width": 2048,
+      "height": 683,
+      "alpha": false,
+      "role": "wordmark-on-light-source-variant",
+      "sha256": "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b"
+    },
+    {
+      "path": "4DB7A71A-8FF8-48B3-8243-1657017AD816.PNG",
+      "media_type": "image/png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "role": "emblem-on-light-source-variant",
+      "sha256": "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02"
+    },
+    {
+      "path": "IMG_2760.JPEG",
+      "media_type": "image/jpeg",
+      "width": 2048,
+      "height": 683,
+      "alpha": false,
+      "role": "horizontal-lockup-on-light-jpeg",
+      "sha256": "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a"
+    },
+    {
+      "path": "IMG_2766.PNG",
+      "media_type": "image/png",
+      "width": 1444,
+      "height": 683,
+      "alpha": true,
+      "role": "transparent-wordmark",
+      "sha256": "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c"
+    },
+    {
+      "path": "IMG_2768.PNG",
+      "media_type": "image/png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": true,
+      "role": "transparent-emblem",
+      "sha256": "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2"
+    },
+    {
+      "path": "orange-banner.png",
+      "media_type": "image/png",
+      "width": 2172,
+      "height": 724,
+      "alpha": false,
+      "role": "primary-horizontal-lockup-on-light",
+      "content_credentials": "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified",
+      "sha256": "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266"
+    },
+    {
+      "path": "orange.jpg",
+      "media_type": "image/jpeg",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "role": "emblem-on-light-jpeg",
+      "sha256": "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888"
+    },
+    {
+      "path": "orange.png",
+      "media_type": "image/png",
+      "width": 1254,
+      "height": 1254,
+      "alpha": false,
+      "role": "primary-emblem-on-light",
+      "content_credentials": "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified",
+      "sha256": "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463"
+    }
+  ]
+}
