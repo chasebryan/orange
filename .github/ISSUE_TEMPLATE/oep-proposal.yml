@@ -1,0 +1,75 @@
+name: Orange Enhancement Proposal intake
+description: Request a numbered OEP for a normative, process, informational, or emergency proposal.
+title: "oep: "
+labels:
+  - oep
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is intake only. Acceptance occurs through a reviewed, numbered OEP and coupled decision-register update. Do not include sensitive security details; normative claims require primary sources.
+  - type: input
+    id: title
+    attributes:
+      label: Proposal title and champion
+      description: Give a concise title and the accountable champion.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation, scope, and non-goals
+    validations:
+      required: true
+  - type: input
+    id: decisions
+    attributes:
+      label: Affected decisions and normative documents
+      placeholder: D-005, docs/ASSURANCE.md section 3
+    validations:
+      required: true
+  - type: textarea
+    id: assurance
+    attributes:
+      label: Semantics, claims, TCB, axioms, and proof effects
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Threat, abuse, leakage, target, and ABI effects
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility, migration, deployment, rollback, and support
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Dependencies, licenses, IP, standards, and errata
+      description: Cite primary sources with versions and dates.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and evidence plan
+      description: Include conformance, tests, negative cases, replay evidence, and rejection criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: questions
+    attributes:
+      label: Unresolved questions
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-report safety
+      options:
+        - label: This issue contains no vulnerability details, secrets, private keys, or private cryptographic material.
+          required: true

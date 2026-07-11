@@ -1,0 +1,60 @@
+name: Planning or policy defect
+description: Report a factual inconsistency, ambiguity, broken invariant, or documentation defect.
+title: "defect: "
+labels:
+  - documentation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report vulnerabilities, secrets, or private cryptographic material here. Use private vulnerability reporting instead. Normative factual claims need primary sources.
+  - type: input
+    id: location
+    attributes:
+      label: Affected location
+      description: File, section, commit, schema field, or policy control.
+      placeholder: docs/ASSURANCE.md section 7 at commit ...
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed defect
+      description: State the inconsistency or ambiguity and distinguish observation from inference.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected correction
+      description: Describe the smallest permanent correction and its non-goals.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and primary sources
+      description: Include stable URLs, versions, publication/access dates, and relevant digests.
+    validations:
+      required: true
+  - type: textarea
+    id: assurance
+    attributes:
+      label: Assurance impact
+      description: Explain effects on claims, TCB, axioms, threats, targets, dependencies, licenses, or support; explain “No change” where applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction or validation
+      description: Give link-check, schema-check, or other reproducible commands when applicable.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-report safety
+      options:
+        - label: This issue contains no vulnerability details, secrets, private keys, or private cryptographic material.
+          required: true
