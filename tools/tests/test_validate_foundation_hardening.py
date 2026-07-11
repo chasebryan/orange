@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -382,6 +383,62 @@ class BrandAssetHardeningTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_brand_assets()
             self.assertIn("brand.manifest_metadata", {finding.code for finding in validator.findings})
+
+    def test_brand_manifest_source_filename_mutation_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(source_root / "assets/brand", root / "assets/brand")
+            manifest_path = root / "assets/brand/manifest.json"
+            manifest = load_json(manifest_path)
+            manifest["assets"][0]["source_filename"] = "unknown.PNG"
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_brand_assets()
+            self.assertIn("brand.manifest_provenance", {finding.code for finding in validator.findings})
+
+    def test_all_official_brand_assets_are_marked_binary_by_git(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        manifest = load_json(source_root / "assets/brand/manifest.json")
+        paths = [f"assets/brand/{asset['path']}" for asset in manifest["assets"]]
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(source_root),
+                "check-attr",
+                "binary",
+                "text",
+                "eol",
+                "diff",
+                "merge",
+                "--",
+                *paths,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        observed = set(result.stdout.splitlines())
+        expected = {
+            line
+            for path in paths
+            for line in (
+                f"{path}: binary: set",
+                f"{path}: text: unset",
+                f"{path}: eol: unspecified",
+                f"{path}: diff: unset",
+                f"{path}: merge: unset",
+            )
+        }
+        self.assertEqual(observed, expected)
+
+    def test_root_readme_uses_only_the_repository_banner(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        readme = (source_root / "README.md").read_text(encoding="utf-8")
+        banner = "![Official Orange emblem and wordmark](assets/brand/orange-banner.png)"
+        self.assertEqual(readme.count(banner), 1)
+        self.assertNotIn("user-attachments/assets", readme)
 
     def test_canonical_c2pa_container_removal_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

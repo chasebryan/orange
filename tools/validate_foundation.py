@@ -57,16 +57,16 @@ MINIMUM_REQUIRED_PATHS = {
     "RELEASE_POLICY.md",
     "SECURITY.md",
     "SUPPORT.md",
-    "assets/brand/1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
-    "assets/brand/4DB7A71A-8FF8-48B3-8243-1657017AD816.PNG",
-    "assets/brand/IMG_2760.JPEG",
-    "assets/brand/IMG_2766.PNG",
-    "assets/brand/IMG_2768.PNG",
     "assets/brand/README.md",
     "assets/brand/manifest.json",
+    "assets/brand/orange-banner-jpeg.JPEG",
     "assets/brand/orange-banner.png",
+    "assets/brand/orange-banner2-erased.PNG",
+    "assets/brand/orange-banner2.PNG",
+    "assets/brand/orange-erased.PNG",
     "assets/brand/orange.jpg",
     "assets/brand/orange.png",
+    "assets/brand/orangePNG.PNG",
     "conformance/foundation/manifest.json",
     "conformance/foundation/README.md",
     "docs/DECISIONS.md",
@@ -121,31 +121,31 @@ GATE0_ALLOWED_CONTAINER_IMAGES = {
 }
 GATE0_ALLOWED_BINARY_ARTIFACTS = [
     {
-        "path": "assets/brand/1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
+        "path": "assets/brand/orange-banner2.PNG",
         "sha256": "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b",
         "role": "Official working Orange wordmark on a light background",
         "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
     },
     {
-        "path": "assets/brand/4DB7A71A-8FF8-48B3-8243-1657017AD816.PNG",
+        "path": "assets/brand/orangePNG.PNG",
         "sha256": "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02",
         "role": "Official working Orange emblem source variant on a light background",
         "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
     },
     {
-        "path": "assets/brand/IMG_2760.JPEG",
+        "path": "assets/brand/orange-banner-jpeg.JPEG",
         "sha256": "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a",
         "role": "Official working Orange horizontal lockup JPEG",
         "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
     },
     {
-        "path": "assets/brand/IMG_2766.PNG",
+        "path": "assets/brand/orange-banner2-erased.PNG",
         "sha256": "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c",
         "role": "Official working Orange transparent wordmark",
         "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
     },
     {
-        "path": "assets/brand/IMG_2768.PNG",
+        "path": "assets/brand/orange-erased.PNG",
         "sha256": "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2",
         "role": "Official working Orange transparent emblem",
         "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
@@ -170,14 +170,24 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
     },
 ]
 GATE0_BRAND_ASSET_METADATA = {
-    "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG": ("image/png", 2048, 683, False, False),
-    "4DB7A71A-8FF8-48B3-8243-1657017AD816.PNG": ("image/png", 1254, 1254, False, False),
-    "IMG_2760.JPEG": ("image/jpeg", 2048, 683, False, False),
-    "IMG_2766.PNG": ("image/png", 1444, 683, True, False),
-    "IMG_2768.PNG": ("image/png", 1254, 1254, True, False),
+    "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
+    "orangePNG.PNG": ("image/png", 1254, 1254, False, False),
+    "orange-banner-jpeg.JPEG": ("image/jpeg", 2048, 683, False, False),
+    "orange-banner2-erased.PNG": ("image/png", 1444, 683, True, False),
+    "orange-erased.PNG": ("image/png", 1254, 1254, True, False),
     "orange-banner.png": ("image/png", 2172, 724, False, True),
     "orange.jpg": ("image/jpeg", 1254, 1254, False, False),
     "orange.png": ("image/png", 1254, 1254, False, True),
+}
+GATE0_BRAND_SOURCE_FILENAMES = {
+    "orange-banner2.PNG": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
+    "orangePNG.PNG": "4DB7A71A-8FF8-48B3-8243-1657017AD816.PNG",
+    "orange-banner-jpeg.JPEG": "IMG_2760.JPEG",
+    "orange-banner2-erased.PNG": "IMG_2766.PNG",
+    "orange-erased.PNG": "IMG_2768.PNG",
+    "orange-banner.png": "orange-banner.png",
+    "orange.jpg": "orange.jpg",
+    "orange.png": "orange.png",
 }
 GATE0_EXECUTABLE_PATHS = {
     "scripts/ci/check-external-links",
@@ -212,7 +222,7 @@ GATE0_WORKFLOW_INVENTORY = {
 }
 GATE0_PROTECTED_FILE_DIGESTS = {
     ".editorconfig": "a3766d51a21a904a405f808017eeb34d5426558ad487803a5d4f39a854379ca9",
-    ".gitattributes": "15f8f9d748b8aecc1c0abdaa20dd8352143c14cf874097f5f765ce11271cc4a4",
+    ".gitattributes": "a5f4501e4eeea215d890813156f46edf1cd9dee83be968e5ff5edc6c136f111d",
     ".github/CODEOWNERS": "8038a3a61117a29c26bfdd7b66a9a5675cb779736bad2c8c1797e680d7484663",
     ".github/ISSUE_TEMPLATE/conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
     ".github/ISSUE_TEMPLATE/config.yml": "ff5a8f986c0a9902d402ac17eecd3fbea8783ad396ba0b33133650826054ffe3",
@@ -239,8 +249,8 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "RELEASE_POLICY.md": "87924957dcdb0e52e4f73463698a306e9af14636e99842e91746ced5a1ce017a",
     "SECURITY.md": "4b055ad1b4380593a4a6160940a9319f858fb2bdaffc6ef18b23466d2523bfe7",
     "SUPPORT.md": "936543d521cdc8059b73775bd991c2ea40faa0c2de715b25b9e02880ca1e0aec",
-    "assets/brand/README.md": "b97881137b1e471630f8004e021b331dcf92f451d6187dac829453789e0ca2de",
-    "assets/brand/manifest.json": "f70b1e3da02263c00fa0906c58ff09eca055bdedcdb76f316172475c200ccab6",
+    "assets/brand/README.md": "40c7dcc00ad935e8e05ac3b937fedf17c8cc5ff9a25accaa3ac2227e9f653ff7",
+    "assets/brand/manifest.json": "35c65a3e6850badca2b6fc421dcdc5e3f4e1ecb5a5c0fae8620348e915030769",
     "conformance/foundation/README.md": "18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294",
     "conformance/foundation/invalid/claim-record-assumption-only.json": "2e8fa46cda4b814f8d2096d19c4e7fec83ae9f28cd355c5012948ce5980ca210",
     "conformance/foundation/invalid/evidence-manifest-independent-without-review.json": "b92882efaf1f36a5988a8c4c484e4d7e659219248a6ee287f5928bf2b853f16b",
@@ -275,7 +285,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "ddeb3b61e2926d584baf761f92daf27358407a33cc0aa6157ac8f25c3d361162",
+    "tools/tests/test_validate_foundation_hardening.py": "138cbed13e4ec2ceb1ce20153cd1c0bc8042a08f66a16952aca42d76b5d3ab12",
 }
 GATE0_CHARTER_SECTION_SHA256 = "2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -1033,7 +1043,16 @@ class FoundationValidator:
                 self.add("brand.manifest_item", manifest_path, f"assets[{index}] has an unadmitted path")
                 continue
             media_type, width, height, alpha, has_c2pa = GATE0_BRAND_ASSET_METADATA[name]
-            expected_fields = {"path", "media_type", "width", "height", "alpha", "role", "sha256"}
+            expected_fields = {
+                "path",
+                "source_filename",
+                "media_type",
+                "width",
+                "height",
+                "alpha",
+                "role",
+                "sha256",
+            }
             if has_c2pa:
                 expected_fields.add("content_credentials")
             if set(item) != expected_fields:
@@ -1049,6 +1068,12 @@ class FoundationValidator:
                 self.add("brand.manifest_metadata", manifest_path, f"assets[{index}] technical metadata is incorrect")
             if item.get("sha256") != admissions[name]["sha256"]:
                 self.add("brand.manifest_digest", manifest_path, f"assets[{index}] digest disagrees with policy")
+            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name]:
+                self.add(
+                    "brand.manifest_provenance",
+                    manifest_path,
+                    f"assets[{index}] source filename is incorrect",
+                )
             if has_c2pa and item.get("content_credentials") != (
                 "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified"
             ):

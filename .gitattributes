@@ -8,8 +8,8 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 
-*.png binary
-*.jpg binary
-*.jpeg binary
-*.gif binary
-*.wasm binary
+*.[pP][nN][gG] binary !eol
+*.[jJ][pP][gG] binary !eol
+*.[jJ][pP][eE][gG] binary !eol
+*.[gG][iI][fF] binary !eol
+*.wasm binary !eol
