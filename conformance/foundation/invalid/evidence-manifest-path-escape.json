@@ -1,0 +1,95 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "manifest_id": "urn:orange:gate0:evidence:path-escape-invalid",
+  "purpose": "gate0_decision_evidence",
+  "reproducibility_level": "replayable_method",
+  "decision_refs": [
+    "D-019"
+  ],
+  "created_from_revision": "f50d35227a04831d459b3358db65b80093e8123a",
+  "files": [
+    {
+      "path": "docs/../SECURITY.md",
+      "role": "input",
+      "media_type": "text/markdown",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "byte_size": 1,
+      "executable": false
+    }
+  ],
+  "claim_refs": [],
+  "trust_inventory_refs": [
+    "G0-TRUST-FOUNDATION-FIXTURE"
+  ],
+  "external_sources": [],
+  "observations": [
+    {
+      "observation_id": "G0-OBSERVATION-PATH-SAFETY",
+      "kind": "schema_validation",
+      "expected": "Every recorded path is a normalized repository-relative path.",
+      "status": "expected_only",
+      "evidence_file_refs": [
+        "docs/REPRODUCIBILITY.md"
+      ]
+    }
+  ],
+  "replay": {
+    "argv": [
+      "python3",
+      "-m",
+      "json.tool",
+      "valid/claim-record.json"
+    ],
+    "working_directory": "conformance/foundation",
+    "environment": {
+      "LANG": "C",
+      "LC_ALL": "C",
+      "SOURCE_DATE_EPOCH": "1783742400",
+      "TZ": "UTC",
+      "additional_variables": {}
+    },
+    "network": {
+      "mode": "denied",
+      "allowed_hosts": []
+    },
+    "randomness": {
+      "mode": "none",
+      "encoding": "none",
+      "value": "not-used"
+    },
+    "concurrency": {
+      "mode": "serial",
+      "worker_count": 1,
+      "determinism": "verified"
+    },
+    "toolchains": [
+      {
+        "name": "CPython",
+        "version": "3.14.6",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "acquisition": "Acquire the version-pinned interpreter through the future Gate 0 toolchain lock."
+      }
+    ],
+    "input_manifest_digest": {
+      "algorithm": "sha256",
+      "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "expected_output_manifest_digest": {
+      "algorithm": "sha256",
+      "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "expected_exit_code": 0
+  },
+  "independent_reproductions": [],
+  "limitations": [
+    "Invalid conformance mutation: a recorded path contains a parent-directory segment."
+  ]
+}

@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orange:gate0:schema:trust-inventory:0.1",
+  "$comment": "Provisional non-product Gate 0 schema. This URN is a local, non-resolving identifier and does not reserve a public namespace.",
+  "title": "Orange provisional Gate 0 trust inventory 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_status",
+    "non_product",
+    "inventory_id",
+    "repository",
+    "revision",
+    "scope",
+    "components",
+    "axioms",
+    "trusted_models",
+    "external_contracts",
+    "claim_closures",
+    "change_from_prior",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "record_status": { "const": "provisional_gate0" },
+    "non_product": { "type": "boolean", "const": true },
+    "inventory_id": { "type": "string", "pattern": "^G0-TRUST-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+    "repository": { "const": "chasebryan/orange" },
+    "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "scope": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/component" }
+    },
+    "axioms": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/axiom" }
+    },
+    "trusted_models": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/trustedModel" }
+    },
+    "external_contracts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/externalContract" }
+    },
+    "claim_closures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/claimClosure" }
+    },
+    "change_from_prior": { "$ref": "#/$defs/changeFromPrior" },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_id", "name", "category", "trust_role", "rationale", "compromise_effects", "owner", "review_triggers"],
+      "properties": {
+        "component_id": { "type": "string", "pattern": "^G0-COMPONENT-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "category": { "enum": ["proof_kernel", "checker", "compiler", "build_tool", "ci_action", "operating_system", "hardware", "external_service", "standard", "cryptographic_primitive", "human_review", "other"] },
+        "trust_role": { "enum": ["authoritative", "assumed", "untrusted", "empirical_only"] },
+        "immutable_identity": { "$ref": "#/$defs/digest" },
+        "assumption_ref": { "type": "string", "pattern": "^G0-AXIOM-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "containment": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "measurement_method": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "compromise_effects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "owner": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "review_triggers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["trust_role", "immutable_identity"],
+          "properties": { "trust_role": { "const": "authoritative" } }
+        },
+        {
+          "required": ["trust_role", "assumption_ref"],
+          "properties": { "trust_role": { "const": "assumed" } }
+        },
+        {
+          "required": ["trust_role", "containment"],
+          "properties": { "trust_role": { "const": "untrusted" } }
+        },
+        {
+          "required": ["trust_role", "measurement_method"],
+          "properties": { "trust_role": { "const": "empirical_only" } }
+        }
+      ]
+    },
+    "axiom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axiom_id", "statement", "justification", "affected_claims", "owner", "review_triggers"],
+      "properties": {
+        "axiom_id": { "type": "string", "pattern": "^G0-AXIOM-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "justification": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "affected_claims": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/claimId" } },
+        "owner": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "review_triggers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "trustedModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "name", "version", "digest", "scope", "unsoundness_effects"],
+      "properties": {
+        "model_id": { "type": "string", "pattern": "^G0-MODEL-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "digest": { "$ref": "#/$defs/digest" },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "unsoundness_effects": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "externalContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_id", "counterparty", "contract", "validation", "failure_effects"],
+      "properties": {
+        "contract_id": { "type": "string", "pattern": "^G0-CONTRACT-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "counterparty": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "contract": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "validation": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "failure_effects": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "claimClosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_ref", "component_refs", "axiom_refs", "model_refs", "contract_refs"],
+      "properties": {
+        "claim_ref": { "$ref": "#/$defs/claimId" },
+        "component_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^G0-COMPONENT-[A-Z0-9][A-Z0-9._-]{2,63}$" } },
+        "axiom_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^G0-AXIOM-[A-Z0-9][A-Z0-9._-]{2,63}$" } },
+        "model_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^G0-MODEL-[A-Z0-9][A-Z0-9._-]{2,63}$" } },
+        "contract_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^G0-CONTRACT-[A-Z0-9][A-Z0-9._-]{2,63}$" } }
+      }
+    },
+    "changeFromPrior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "summary"],
+      "properties": {
+        "state": { "enum": ["first_inventory", "compared"] },
+        "prior_inventory_digest": { "$ref": "#/$defs/digest" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "added_trust": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "removed_trust": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      },
+      "oneOf": [
+        {
+          "required": ["state"],
+          "properties": { "state": { "const": "first_inventory" } }
+        },
+        {
+          "required": ["state", "prior_inventory_digest", "added_trust", "removed_trust"],
+          "properties": { "state": { "const": "compared" } }
+        }
+      ]
+    },
+    "claimId": {
+      "type": "string",
+      "pattern": "^G0-CLAIM-[A-Z0-9][A-Z0-9._-]{2,63}$"
+    }
+  }
+}

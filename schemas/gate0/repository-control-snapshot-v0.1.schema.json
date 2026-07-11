@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orange:gate0:schema:repository-control-snapshot:0.1",
+  "$comment": "Provisional non-product Gate 0 schema. This URN is a local, non-resolving identifier and does not reserve a public namespace.",
+  "title": "Orange provisional Gate 0 repository-control snapshot 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_status",
+    "non_product",
+    "snapshot_id",
+    "repository",
+    "observed_at",
+    "observed_by",
+    "revision",
+    "security_features",
+    "actions",
+    "default_branch_policy",
+    "merge_policy",
+    "evidence_sources",
+    "exceptions",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "record_status": { "const": "provisional_gate0" },
+    "non_product": { "type": "boolean", "const": true },
+    "snapshot_id": { "type": "string", "pattern": "^G0-REPO-CONTROL-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+    "repository": { "$ref": "#/$defs/repository" },
+    "observed_at": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+    "observed_by": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "revision": { "$ref": "#/$defs/revision" },
+    "security_features": { "$ref": "#/$defs/securityFeatures" },
+    "actions": { "$ref": "#/$defs/actions" },
+    "default_branch_policy": { "$ref": "#/$defs/defaultBranchPolicy" },
+    "merge_policy": { "$ref": "#/$defs/mergePolicy" },
+    "evidence_sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/evidenceSource" }
+    },
+    "exceptions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/exception" }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!\\.{1,2}(?:/|$))(?!.*(?:/\\.{1,2})(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001f\\u007f])[^/\\\\](?:[^\\\\]*[^/\\\\])?$"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "name", "url", "visibility", "default_branch"],
+      "properties": {
+        "owner": { "const": "chasebryan" },
+        "name": { "const": "orange" },
+        "url": { "const": "https://github.com/chasebryan/orange" },
+        "visibility": { "enum": ["public", "private", "internal"] },
+        "default_branch": { "const": "main" }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "head"],
+      "properties": {
+        "branch": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "head": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "controlState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "evidence_refs"],
+      "properties": {
+        "state": { "enum": ["enabled", "disabled", "unavailable", "unverified", "not_applicable"] },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^G0-CONTROL-EVIDENCE-[A-Z0-9][A-Z0-9._-]{2,63}$" }
+        },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      },
+      "oneOf": [
+        {
+          "required": ["state"],
+          "properties": { "state": { "const": "enabled" } }
+        },
+        {
+          "required": ["state", "explanation"],
+          "properties": { "state": { "const": "disabled" } }
+        },
+        {
+          "required": ["state", "explanation"],
+          "properties": { "state": { "const": "unavailable" } }
+        },
+        {
+          "required": ["state", "explanation"],
+          "properties": { "state": { "const": "unverified" } }
+        },
+        {
+          "required": ["state", "explanation"],
+          "properties": { "state": { "const": "not_applicable" } }
+        }
+      ]
+    },
+    "securityFeatures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dependency_graph",
+        "dependabot_alerts",
+        "dependabot_security_updates",
+        "secret_scanning",
+        "secret_scanning_push_protection",
+        "secret_scanning_non_provider_patterns",
+        "secret_scanning_validity_checks",
+        "private_vulnerability_reporting",
+        "code_scanning"
+      ],
+      "properties": {
+        "dependency_graph": { "$ref": "#/$defs/controlState" },
+        "dependabot_alerts": { "$ref": "#/$defs/controlState" },
+        "dependabot_security_updates": { "$ref": "#/$defs/controlState" },
+        "secret_scanning": { "$ref": "#/$defs/controlState" },
+        "secret_scanning_push_protection": { "$ref": "#/$defs/controlState" },
+        "secret_scanning_non_provider_patterns": { "$ref": "#/$defs/controlState" },
+        "secret_scanning_validity_checks": { "$ref": "#/$defs/controlState" },
+        "private_vulnerability_reporting": { "$ref": "#/$defs/controlState" },
+        "code_scanning": { "$ref": "#/$defs/controlState" }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "allowed_actions",
+        "selected_actions",
+        "sha_pinning_required",
+        "default_workflow_permissions",
+        "can_approve_pull_request_reviews",
+        "evidence_refs"
+      ],
+      "properties": {
+        "enabled": { "$ref": "#/$defs/controlState" },
+        "allowed_actions": { "enum": ["all", "local_only", "selected"] },
+        "selected_actions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.*-]+(?:/[A-Za-z0-9_.*-]+)?$"
+          }
+        },
+        "sha_pinning_required": { "type": "boolean" },
+        "default_workflow_permissions": { "enum": ["read", "write"] },
+        "can_approve_pull_request_reviews": { "type": "boolean" },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^G0-CONTROL-EVIDENCE-[A-Z0-9][A-Z0-9._-]{2,63}$" }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "allowed_actions": { "enum": ["all", "local_only"] },
+            "selected_actions": { "maxItems": 0 }
+          }
+        },
+        {
+          "properties": {
+            "allowed_actions": { "const": "selected" },
+            "selected_actions": { "minItems": 1 }
+          }
+        }
+      ]
+    },
+    "defaultBranchPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protection_mechanism",
+        "policy_identifiers",
+        "require_pull_request",
+        "required_approvals",
+        "require_code_owner_review",
+        "require_conversation_resolution",
+        "required_status_checks",
+        "strict_status_checks",
+        "block_force_pushes",
+        "block_deletions",
+        "require_linear_history",
+        "require_signed_commits",
+        "bypass_actors",
+        "evidence_refs",
+        "explanation"
+      ],
+      "properties": {
+        "protection_mechanism": { "enum": ["classic_branch_protection", "ruleset", "none"] },
+        "policy_identifiers": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 256 } },
+        "require_pull_request": { "type": "boolean" },
+        "required_approvals": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "require_code_owner_review": { "type": "boolean" },
+        "require_conversation_resolution": { "type": "boolean" },
+        "required_status_checks": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 256 } },
+        "strict_status_checks": { "type": "boolean" },
+        "block_force_pushes": { "type": "boolean" },
+        "block_deletions": { "type": "boolean" },
+        "require_linear_history": { "type": "boolean" },
+        "require_signed_commits": { "type": "boolean" },
+        "bypass_actors": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 256 } },
+        "evidence_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^G0-CONTROL-EVIDENCE-[A-Z0-9][A-Z0-9._-]{2,63}$" } },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "protection_mechanism": { "const": "none" },
+            "policy_identifiers": { "maxItems": 0 },
+            "require_pull_request": { "const": false },
+            "required_approvals": { "const": 0 },
+            "require_code_owner_review": { "const": false },
+            "require_conversation_resolution": { "const": false },
+            "required_status_checks": { "maxItems": 0 },
+            "strict_status_checks": { "const": false },
+            "block_force_pushes": { "const": false },
+            "block_deletions": { "const": false },
+            "require_linear_history": { "const": false },
+            "require_signed_commits": { "const": false },
+            "bypass_actors": { "maxItems": 0 }
+          }
+        },
+        {
+          "properties": {
+            "protection_mechanism": { "const": "classic_branch_protection" },
+            "policy_identifiers": { "minItems": 1 }
+          }
+        },
+        {
+          "properties": {
+            "protection_mechanism": { "const": "ruleset" },
+            "policy_identifiers": { "minItems": 1 }
+          }
+        }
+      ]
+    },
+    "mergePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allow_merge_commit", "allow_squash_merge", "allow_rebase_merge", "allow_auto_merge", "allow_update_branch", "delete_branch_on_merge", "web_commit_signoff_required", "evidence_refs"],
+      "properties": {
+        "allow_merge_commit": { "type": "boolean" },
+        "allow_squash_merge": { "type": "boolean" },
+        "allow_rebase_merge": { "type": "boolean" },
+        "allow_auto_merge": { "type": "boolean" },
+        "allow_update_branch": { "type": "boolean" },
+        "delete_branch_on_merge": { "type": "boolean" },
+        "web_commit_signoff_required": { "type": "boolean" },
+        "evidence_refs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^G0-CONTROL-EVIDENCE-[A-Z0-9][A-Z0-9._-]{2,63}$" } }
+      }
+    },
+    "evidenceSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "method", "locator", "response_digest", "archive_state"],
+      "properties": {
+        "evidence_id": { "type": "string", "pattern": "^G0-CONTROL-EVIDENCE-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "method": { "enum": ["github_rest_api", "github_graphql", "github_web_ui", "local_git"] },
+        "locator": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "response_digest": { "$ref": "#/$defs/digest" },
+        "archive_state": { "enum": ["archived", "not_archived"] },
+        "response_path": { "$ref": "#/$defs/relativePath" },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      },
+      "oneOf": [
+        {
+          "required": ["response_path"],
+          "properties": { "archive_state": { "const": "archived" } },
+          "not": { "required": ["explanation"] }
+        },
+        {
+          "required": ["explanation"],
+          "properties": { "archive_state": { "const": "not_archived" } },
+          "not": { "required": ["response_path"] }
+        }
+      ]
+    },
+    "exception": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exception_id",
+        "control",
+        "scope",
+        "rationale",
+        "risk",
+        "owner",
+        "compensating_control",
+        "resolution",
+        "expires_at",
+        "approved_by",
+        "approved_at",
+        "approval_reference",
+        "review_trigger",
+        "evidence_refs"
+      ],
+      "properties": {
+        "exception_id": { "type": "string", "pattern": "^G0-EXCEPTION-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "control": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "risk": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "owner": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "compensating_control": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "resolution": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "expires_at": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+        "approved_by": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "approved_at": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+        "approval_reference": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "review_trigger": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "evidence_refs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^G0-CONTROL-EVIDENCE-[A-Z0-9][A-Z0-9._-]{2,63}$" }
+        }
+      }
+    }
+  }
+}

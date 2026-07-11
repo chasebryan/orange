@@ -1,0 +1,25 @@
+# Editor and operating-system state
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local tools, caches, and generated output
+.cache/
+.tools/
+__pycache__/
+*.py[cod]
+coverage/
+dist/
+out/
+tmp/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem

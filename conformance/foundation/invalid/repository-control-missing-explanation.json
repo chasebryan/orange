@@ -1,0 +1,163 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "snapshot_id": "G0-REPO-CONTROL-MISSING-EXPLANATION",
+  "repository": {
+    "owner": "chasebryan",
+    "name": "orange",
+    "url": "https://github.com/chasebryan/orange",
+    "visibility": "public",
+    "default_branch": "main"
+  },
+  "observed_at": "2026-07-11T12:00:00Z",
+  "observed_by": "Bootstrap Repository Steward",
+  "revision": {
+    "branch": "gate0/foundation-security",
+    "head": "f50d35227a04831d459b3358db65b80093e8123a"
+  },
+  "security_features": {
+    "dependency_graph": {
+      "state": "enabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ]
+    },
+    "dependabot_alerts": {
+      "state": "enabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ]
+    },
+    "dependabot_security_updates": {
+      "state": "enabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ]
+    },
+    "secret_scanning": {
+      "state": "enabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ]
+    },
+    "secret_scanning_push_protection": {
+      "state": "enabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ]
+    },
+    "secret_scanning_non_provider_patterns": {
+      "state": "disabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ],
+      "explanation": "This plan-gated feature is represented separately."
+    },
+    "secret_scanning_validity_checks": {
+      "state": "disabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ],
+      "explanation": "This plan-gated feature is represented separately."
+    },
+    "private_vulnerability_reporting": {
+      "state": "enabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ]
+    },
+    "code_scanning": {
+      "state": "disabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-REPOSITORY"
+      ]
+    }
+  },
+  "actions": {
+    "enabled": {
+      "state": "enabled",
+      "evidence_refs": [
+        "G0-CONTROL-EVIDENCE-ACTIONS"
+      ]
+    },
+    "allowed_actions": "all",
+    "selected_actions": [],
+    "sha_pinning_required": true,
+    "default_workflow_permissions": "read",
+    "can_approve_pull_request_reviews": false,
+    "evidence_refs": [
+      "G0-CONTROL-EVIDENCE-ACTIONS"
+    ]
+  },
+  "default_branch_policy": {
+    "protection_mechanism": "none",
+    "policy_identifiers": [],
+    "require_pull_request": false,
+    "required_approvals": 0,
+    "require_code_owner_review": false,
+    "require_conversation_resolution": false,
+    "required_status_checks": [],
+    "strict_status_checks": false,
+    "block_force_pushes": false,
+    "block_deletions": false,
+    "require_linear_history": false,
+    "require_signed_commits": false,
+    "bypass_actors": [],
+    "evidence_refs": [
+      "G0-CONTROL-EVIDENCE-BRANCH"
+    ],
+    "explanation": "This fixture models an unprotected bootstrap branch."
+  },
+  "merge_policy": {
+    "allow_merge_commit": true,
+    "allow_squash_merge": true,
+    "allow_rebase_merge": true,
+    "allow_auto_merge": false,
+    "allow_update_branch": false,
+    "delete_branch_on_merge": false,
+    "web_commit_signoff_required": false,
+    "evidence_refs": [
+      "G0-CONTROL-EVIDENCE-REPOSITORY"
+    ]
+  },
+  "evidence_sources": [
+    {
+      "evidence_id": "G0-CONTROL-EVIDENCE-ACTIONS",
+      "method": "github_rest_api",
+      "locator": "GET /repos/chasebryan/orange/actions/permissions",
+      "response_digest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "archive_state": "not_archived",
+      "explanation": "The adversarial fixture does not contain an archived API response."
+    },
+    {
+      "evidence_id": "G0-CONTROL-EVIDENCE-BRANCH",
+      "method": "github_rest_api",
+      "locator": "GET /repos/chasebryan/orange/rulesets",
+      "response_digest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "archive_state": "not_archived",
+      "explanation": "The adversarial fixture does not contain an archived API response."
+    },
+    {
+      "evidence_id": "G0-CONTROL-EVIDENCE-REPOSITORY",
+      "method": "github_rest_api",
+      "locator": "GET /repos/chasebryan/orange",
+      "response_digest": {
+        "algorithm": "sha256",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "archive_state": "not_archived",
+      "explanation": "The adversarial fixture does not contain an archived API response."
+    }
+  ],
+  "exceptions": [],
+  "limitations": [
+    "Invalid by design: disabled code scanning lacks its required explanation."
+  ]
+}

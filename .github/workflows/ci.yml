@@ -1,0 +1,71 @@
+name: Required CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  merge_group:
+    types:
+      - checks_requested
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: required-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  required:
+    name: Required CI / docs-policy-workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce Gate 0 author boundary
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}
+        run: |
+          echo "Gate 0 does not accept third-party pull requests until D-018 closes." >&2
+          exit 1
+
+      - name: Run Gate 0 validator unit tests
+        run: python3 -m unittest discover -s tools/tests -p 'test_*.py'
+
+      - name: Validate Gate 0 repository policy
+        run: python3 tools/validate_foundation.py --root .
+
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@8de2aa07cae85fd17c0b35642db70cf5495f1d25 # v24.0.0
+        with:
+          globs: |
+            **/*.md
+            .github/**/*.md
+
+      - name: Install actionlint
+        run: ./scripts/ci/install-actionlint "$RUNNER_TEMP/actionlint"
+
+      - name: Validate GitHub Actions workflows
+        run: |
+          "$RUNNER_TEMP/actionlint/actionlint" -color
+
+      - name: Audit GitHub Actions security
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          advanced-security: false
+          annotations: false
+          online-audits: false
+          persona: pedantic
+          version: "1.26.1"

@@ -1,0 +1,39 @@
+name: Planning question
+description: Ask a non-sensitive question about the current Gate 0 plan or repository policy.
+title: "question: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask a concise question and cite relevant sections or sources. This is intake, not contributed repository prose or material licensed for incorporation. Never post vulnerabilities, secrets, private keys, or private cryptographic material here.
+  - type: input
+    id: location
+    attributes:
+      label: Relevant location
+      description: Link a file, section, D-ID, OEP, or primary source when possible.
+      placeholder: docs/ROADMAP.md section 6
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: State one concrete question and distinguish facts from assumptions.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and sources
+      description: Add only the facts and primary-source links needed to understand the question.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-report safety
+      options:
+        - label: This issue contains no vulnerability details, secrets, private keys, or private cryptographic material.
+          required: true

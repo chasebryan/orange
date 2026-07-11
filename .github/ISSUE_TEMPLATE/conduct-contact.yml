@@ -1,0 +1,19 @@
+name: Request moderator contact
+description: Request a private channel for a conduct concern without posting details publicly.
+title: "conduct contact request"
+labels:
+  - conduct
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public. Do not describe the incident, identify affected people, or paste private evidence. This form only asks the sole bootstrap moderator to establish an appropriate private channel. For abuse of GitHub itself or immediate platform safety, use GitHub's report/block tools.
+  - type: checkboxes
+    id: request
+    attributes:
+      label: Contact request
+      options:
+        - label: I need a private channel for a project conduct concern and have included no incident details here.
+          required: true
+        - label: I understand the current sole moderator and lack of independent appeal are disclosed governance gaps.
+          required: true

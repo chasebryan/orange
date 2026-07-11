@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly ACTIONLINT_VERSION="1.7.12"
+readonly DOWNLOAD_BASE="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: $0 DESTINATION_DIRECTORY" >&2
+  exit 2
+fi
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "install-actionlint currently supports Linux only" >&2
+  exit 1
+fi
+
+case "$(uname -m)" in
+  x86_64 | amd64)
+    readonly ARCHIVE="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+    readonly ARCHIVE_SHA256="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+    ;;
+  aarch64 | arm64)
+    readonly ARCHIVE="actionlint_${ACTIONLINT_VERSION}_linux_arm64.tar.gz"
+    readonly ARCHIVE_SHA256="325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6"
+    ;;
+  *)
+    echo "unsupported Linux architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+readonly DESTINATION_DIRECTORY="$1"
+TEMPORARY_DIRECTORY="$(mktemp -d)"
+readonly TEMPORARY_DIRECTORY
+trap 'rm -rf "$TEMPORARY_DIRECTORY"' EXIT
+
+curl \
+  --fail \
+  --location \
+  --proto '=https' \
+  --show-error \
+  --silent \
+  --tlsv1.2 \
+  --output "$TEMPORARY_DIRECTORY/$ARCHIVE" \
+  "$DOWNLOAD_BASE/$ARCHIVE"
+
+printf '%s  %s\n' \
+  "$ARCHIVE_SHA256" \
+  "$TEMPORARY_DIRECTORY/$ARCHIVE" | sha256sum --check --strict
+
+tar \
+  --extract \
+  --file "$TEMPORARY_DIRECTORY/$ARCHIVE" \
+  --gzip \
+  --directory "$TEMPORARY_DIRECTORY"
+
+install \
+  -D \
+  -m 0755 \
+  "$TEMPORARY_DIRECTORY/actionlint" \
+  "$DESTINATION_DIRECTORY/actionlint"

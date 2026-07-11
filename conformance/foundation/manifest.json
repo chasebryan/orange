@@ -1,0 +1,136 @@
+{
+  "manifest_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "cases": [
+    {
+      "case_id": "claim-record-valid",
+      "instance": "conformance/foundation/valid/claim-record.json",
+      "schema": "schemas/gate0/claim-record-v0.1.schema.json",
+      "expected_valid": true
+    },
+    {
+      "case_id": "claim-record-assumption-only-satisfied",
+      "instance": "conformance/foundation/invalid/claim-record-assumption-only.json",
+      "schema": "schemas/gate0/claim-record-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "CLAIM_SATISFIED_WITHOUT_CHECKED_BASIS",
+        "keyword": "cross_invariant",
+        "instance_path": "/basis"
+      }
+    },
+    {
+      "case_id": "evidence-manifest-valid",
+      "instance": "conformance/foundation/valid/evidence-manifest.json",
+      "schema": "schemas/gate0/evidence-manifest-v0.1.schema.json",
+      "expected_valid": true
+    },
+    {
+      "case_id": "evidence-manifest-network-enabled",
+      "instance": "conformance/foundation/invalid/evidence-manifest-network-enabled.json",
+      "schema": "schemas/gate0/evidence-manifest-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "SCHEMA_CONST",
+        "keyword": "const",
+        "instance_path": "/replay/network/mode"
+      }
+    },
+    {
+      "case_id": "evidence-manifest-path-escape",
+      "instance": "conformance/foundation/invalid/evidence-manifest-path-escape.json",
+      "schema": "schemas/gate0/evidence-manifest-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "SCHEMA_PATTERN",
+        "keyword": "pattern",
+        "instance_path": "/files/0/path"
+      }
+    },
+    {
+      "case_id": "evidence-manifest-independent-without-review",
+      "instance": "conformance/foundation/invalid/evidence-manifest-independent-without-review.json",
+      "schema": "schemas/gate0/evidence-manifest-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "SCHEMA_ONEOF",
+        "keyword": "oneOf",
+        "instance_path": ""
+      }
+    },
+    {
+      "case_id": "repository-control-snapshot-valid",
+      "instance": "conformance/foundation/valid/repository-control-snapshot.json",
+      "schema": "schemas/gate0/repository-control-snapshot-v0.1.schema.json",
+      "expected_valid": true
+    },
+    {
+      "case_id": "repository-control-disabled-without-explanation",
+      "instance": "conformance/foundation/invalid/repository-control-missing-explanation.json",
+      "schema": "schemas/gate0/repository-control-snapshot-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "CONTROL_STATE_REQUIRES_EXPLANATION",
+        "keyword": "oneOf",
+        "instance_path": "/security_features/code_scanning"
+      }
+    },
+    {
+      "case_id": "repository-control-selected-actions-empty",
+      "instance": "conformance/foundation/invalid/repository-control-selected-actions-empty.json",
+      "schema": "schemas/gate0/repository-control-snapshot-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "SCHEMA_ONEOF",
+        "keyword": "oneOf",
+        "instance_path": "/actions"
+      }
+    },
+    {
+      "case_id": "standards-provenance-valid",
+      "instance": "conformance/foundation/valid/standards-provenance.json",
+      "schema": "schemas/gate0/standards-provenance-v0.1.schema.json",
+      "expected_valid": true
+    },
+    {
+      "case_id": "standards-provenance-malformed-digest",
+      "instance": "conformance/foundation/invalid/standards-provenance-bad-digest.json",
+      "schema": "schemas/gate0/standards-provenance-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "SCHEMA_PATTERN",
+        "keyword": "pattern",
+        "instance_path": "/standards/0/source/digest/value"
+      }
+    },
+    {
+      "case_id": "standards-provenance-reviewed-without-reference",
+      "instance": "conformance/foundation/invalid/standards-provenance-reviewed-without-reference.json",
+      "schema": "schemas/gate0/standards-provenance-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "SCHEMA_ONEOF",
+        "keyword": "oneOf",
+        "instance_path": "/standards/0/rights"
+      }
+    },
+    {
+      "case_id": "trust-inventory-valid",
+      "instance": "conformance/foundation/valid/trust-inventory.json",
+      "schema": "schemas/gate0/trust-inventory-v0.1.schema.json",
+      "expected_valid": true
+    },
+    {
+      "case_id": "trust-inventory-authority-without-identity",
+      "instance": "conformance/foundation/invalid/trust-inventory-missing-identity.json",
+      "schema": "schemas/gate0/trust-inventory-v0.1.schema.json",
+      "expected_valid": false,
+      "expected_error": {
+        "code": "TRUST_ROLE_REQUIRES_IDENTITY",
+        "keyword": "oneOf",
+        "instance_path": "/components/0"
+      }
+    }
+  ]
+}

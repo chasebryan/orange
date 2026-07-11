@@ -1,0 +1,46 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "inventory_id": "G0-TRUST-MISSING-IDENTITY",
+  "repository": "chasebryan/orange",
+  "revision": "f50d35227a04831d459b3358db65b80093e8123a",
+  "scope": "Adversarial trust record for the provisional Gate 0 validator.",
+  "components": [
+    {
+      "component_id": "G0-COMPONENT-VALIDATOR",
+      "name": "Gate 0 foundation record validator",
+      "category": "checker",
+      "trust_role": "authoritative",
+      "rationale": "The validator controls only provisional record-shape acceptance.",
+      "compromise_effects": [
+        "A defect could accept a malformed Gate 0 record."
+      ],
+      "owner": "Bootstrap Repository Steward",
+      "review_triggers": [
+        "Any validator or schema change"
+      ]
+    }
+  ],
+  "axioms": [],
+  "trusted_models": [],
+  "external_contracts": [],
+  "claim_closures": [
+    {
+      "claim_ref": "G0-CLAIM-REPOSITORY-POLICY",
+      "component_refs": [
+        "G0-COMPONENT-VALIDATOR"
+      ],
+      "axiom_refs": [],
+      "model_refs": [],
+      "contract_refs": []
+    }
+  ],
+  "change_from_prior": {
+    "state": "first_inventory",
+    "summary": "This adversarial fixture has no prior inventory."
+  },
+  "limitations": [
+    "Invalid by design: an authoritative component has no immutable identity."
+  ]
+}

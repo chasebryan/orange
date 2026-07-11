@@ -71,6 +71,9 @@ They need to replay evidence without network access, inspect the exact trusted
 base, distinguish proved facts from tested observations, and trace a binary to
 reviewed source.
 
+The proposed end-to-end acceptance paths for all five groups are recorded in
+the [Orange 1.0 user journeys](USER_JOURNEYS.md).
+
 ## 4. Product thesis
 
 Orange is a standalone, domain-specific language with several deliberately

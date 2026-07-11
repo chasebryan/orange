@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orange:gate0:schema:claim-record:0.1",
+  "$comment": "Provisional non-product Gate 0 schema. This URN is a local, non-resolving identifier and does not reserve a public namespace.",
+  "title": "Orange provisional Gate 0 claim record 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_status",
+    "non_product",
+    "claim_id",
+    "claim_kind",
+    "wording",
+    "subject",
+    "context",
+    "theorem_fingerprints",
+    "proof_object_fingerprints",
+    "evidence_refs",
+    "assumptions",
+    "exclusions",
+    "outcome",
+    "basis",
+    "review_policy"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "record_status": { "const": "provisional_gate0" },
+    "non_product": { "type": "boolean", "const": true },
+    "claim_id": {
+      "type": "string",
+      "pattern": "^G0-CLAIM-[A-Z0-9][A-Z0-9._-]{2,63}$"
+    },
+    "claim_kind": {
+      "enum": [
+        "well_formedness",
+        "memory_safety",
+        "functional_refinement",
+        "standards_conformance",
+        "termination",
+        "source_leakage",
+        "target_leakage",
+        "abi_contract",
+        "erasure",
+        "cryptographic_security",
+        "empirical_evidence",
+        "external_validation",
+        "repository_control"
+      ]
+    },
+    "wording": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "subject": { "$ref": "#/$defs/subject" },
+    "context": { "$ref": "#/$defs/context" },
+    "theorem_fingerprints": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/digest" },
+      "uniqueItems": true
+    },
+    "proof_object_fingerprints": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/digest" },
+      "uniqueItems": true
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^urn:orange:gate0:evidence:[a-z0-9][a-z0-9._:-]{2,127}$"
+      },
+      "uniqueItems": true
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/assumption" },
+      "uniqueItems": true
+    },
+    "exclusions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 1024 },
+      "uniqueItems": true
+    },
+    "outcome": {
+      "enum": ["satisfied", "not_satisfied", "unresolved", "unsupported"]
+    },
+    "basis": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/basis" },
+      "uniqueItems": true
+    },
+    "review_policy": { "$ref": "#/$defs/reviewPolicy" },
+    "notes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "repository", "revision", "path", "digest"],
+      "properties": {
+        "kind": { "enum": ["repository_file", "decision_case", "artifact", "export", "control_set"] },
+        "repository": { "const": "chasebryan/orange" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "path": { "$ref": "#/$defs/relativePath" },
+        "symbol": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!\\.{1,2}(?:/|$))(?!.*(?:/\\.{1,2})(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001f\\u007f])[^/\\\\](?:[^\\\\]*[^/\\\\])?$"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language_edition", "toolchain", "crypto_profile", "target_profile", "leakage_model"],
+      "properties": {
+        "language_edition": { "$ref": "#/$defs/contextReference" },
+        "toolchain": { "$ref": "#/$defs/contextReference" },
+        "crypto_profile": { "$ref": "#/$defs/contextReference" },
+        "target_profile": { "$ref": "#/$defs/contextReference" },
+        "leakage_model": { "$ref": "#/$defs/contextReference" }
+      }
+    },
+    "contextReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["identified", "unresolved", "not_applicable"] },
+        "identifier": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "digest": { "$ref": "#/$defs/digest" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      },
+      "oneOf": [
+        {
+          "required": ["state", "identifier", "digest"],
+          "properties": { "state": { "const": "identified" } },
+          "not": { "required": ["reason"] }
+        },
+        {
+          "required": ["state", "reason"],
+          "properties": { "state": { "const": "unresolved" } },
+          "not": {
+            "anyOf": [
+              { "required": ["identifier"] },
+              { "required": ["digest"] }
+            ]
+          }
+        },
+        {
+          "required": ["state", "reason"],
+          "properties": { "state": { "const": "not_applicable" } },
+          "not": {
+            "anyOf": [
+              { "required": ["identifier"] },
+              { "required": ["digest"] }
+            ]
+          }
+        }
+      ]
+    },
+    "assumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assumption_id", "category", "statement", "compromise_effect"],
+      "properties": {
+        "assumption_id": { "type": "string", "pattern": "^G0-ASSUMPTION-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "category": { "enum": ["logic", "tool", "foreign_contract", "operating_system", "cpu", "hardware", "human_review", "external_service", "other"] },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "compromise_effect": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis_id", "type", "verification_state"],
+      "properties": {
+        "basis_id": { "type": "string", "pattern": "^G0-BASIS-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "type": { "enum": ["kernel_proof", "checked_certificate", "external_proof", "test_run", "audit", "external_validation", "assumption"] },
+        "verification_state": { "enum": ["checked", "recorded", "failed", "expired", "unavailable"] },
+        "evidence_ref": { "type": "string", "pattern": "^urn:orange:gate0:evidence:[a-z0-9][a-z0-9._:-]{2,127}$" },
+        "assumption_ref": { "type": "string", "pattern": "^G0-ASSUMPTION-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "note": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      },
+      "oneOf": [
+        {
+          "required": ["type", "assumption_ref"],
+          "properties": { "type": { "const": "assumption" } },
+          "not": { "required": ["evidence_ref"] }
+        },
+        {
+          "required": ["type", "evidence_ref"],
+          "properties": {
+            "type": { "enum": ["kernel_proof", "checked_certificate", "external_proof", "test_run", "audit", "external_validation"] }
+          },
+          "not": { "required": ["assumption_ref"] }
+        }
+      ]
+    },
+    "reviewPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["none", "periodic", "event", "periodic_and_event"] },
+        "cadence_days": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "triggers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        },
+        "owner": { "type": "string", "minLength": 1, "maxLength": 256 }
+      },
+      "oneOf": [
+        {
+          "required": ["mode"],
+          "properties": { "mode": { "const": "none" } },
+          "not": {
+            "anyOf": [
+              { "required": ["cadence_days"] },
+              { "required": ["triggers"] }
+            ]
+          }
+        },
+        {
+          "required": ["mode", "cadence_days", "owner"],
+          "properties": { "mode": { "const": "periodic" } },
+          "not": { "required": ["triggers"] }
+        },
+        {
+          "required": ["mode", "triggers", "owner"],
+          "properties": { "mode": { "const": "event" } },
+          "not": { "required": ["cadence_days"] }
+        },
+        {
+          "required": ["mode", "cadence_days", "triggers", "owner"],
+          "properties": { "mode": { "const": "periodic_and_event" } }
+        }
+      ]
+    }
+  }
+}

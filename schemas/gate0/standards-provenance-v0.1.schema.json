@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orange:gate0:schema:standards-provenance:0.1",
+  "$comment": "Provisional non-product Gate 0 schema. This URN is a local, non-resolving identifier and does not reserve a public namespace.",
+  "title": "Orange provisional Gate 0 standards provenance inventory 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_status",
+    "non_product",
+    "inventory_id",
+    "repository",
+    "revision",
+    "standards",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "record_status": { "const": "provisional_gate0" },
+    "non_product": { "type": "boolean", "const": true },
+    "inventory_id": { "type": "string", "pattern": "^G0-STANDARDS-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+    "repository": { "const": "chasebryan/orange" },
+    "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "standards": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/standard" }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!\\.{1,2}(?:/|$))(?!.*(?:/\\.{1,2})(?:/|$))(?!.*//)(?!.*[\\u0000-\\u001f\\u007f])[^/\\\\](?:[^\\\\]*[^/\\\\])?$"
+    },
+    "provenanceSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_class", "uri", "retrieved_at", "digest", "archive_state"],
+      "properties": {
+        "source_class": { "enum": ["primary_publisher", "authorized_mirror"] },
+        "uri": { "type": "string", "format": "uri" },
+        "retrieved_at": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "archive_state": { "enum": ["archived", "metadata_only", "acquisition_required"] },
+        "archived_path": { "$ref": "#/$defs/relativePath" },
+        "acquisition_instructions": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      },
+      "oneOf": [
+        {
+          "required": ["archive_state", "archived_path"],
+          "properties": { "archive_state": { "const": "archived" } },
+          "not": { "required": ["acquisition_instructions"] }
+        },
+        {
+          "required": ["archive_state", "acquisition_instructions"],
+          "properties": { "archive_state": { "const": "metadata_only" } },
+          "not": { "required": ["archived_path"] }
+        },
+        {
+          "required": ["archive_state", "acquisition_instructions"],
+          "properties": { "archive_state": { "const": "acquisition_required" } },
+          "not": { "required": ["archived_path"] }
+        }
+      ]
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["redistribution_status", "terms_reference", "review_status"],
+      "properties": {
+        "redistribution_status": { "enum": ["permitted", "prohibited", "unknown"] },
+        "terms_reference": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "review_status": { "enum": ["not_reviewed", "review_required", "reviewed"] },
+        "review_reference": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      },
+      "oneOf": [
+        {
+          "properties": { "review_status": { "enum": ["not_reviewed", "review_required"] } }
+        },
+        {
+          "required": ["review_reference"],
+          "properties": { "review_status": { "const": "reviewed" } }
+        }
+      ]
+    },
+    "standard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "standard_id",
+        "title",
+        "issuer",
+        "document_identifier",
+        "edition_or_revision",
+        "publication_date",
+        "source",
+        "rights",
+        "errata",
+        "normative_clauses",
+        "vector_sources",
+        "patent_review",
+        "export_review",
+        "technical_review"
+      ],
+      "properties": {
+        "standard_id": { "type": "string", "pattern": "^G0-STANDARD-[A-Z0-9][A-Z0-9._-]{2,63}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "issuer": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "document_identifier": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "edition_or_revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "publication_date": { "type": "string", "format": "date" },
+        "source": { "$ref": "#/$defs/provenanceSource" },
+        "rights": { "$ref": "#/$defs/rights" },
+        "errata": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/erratum" }
+        },
+        "normative_clauses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/normativeClause" }
+        },
+        "vector_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/vectorSource" }
+        },
+        "patent_review": { "$ref": "#/$defs/legalReview" },
+        "export_review": { "$ref": "#/$defs/legalReview" },
+        "technical_review": { "$ref": "#/$defs/technicalReview" }
+      }
+    },
+    "erratum": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["erratum_id", "status", "source", "applicability"],
+      "properties": {
+        "erratum_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "status": { "enum": ["applicable", "not_applicable", "unresolved"] },
+        "source": { "$ref": "#/$defs/provenanceSource" },
+        "applicability": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "normativeClause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clause_id", "locator", "relevance", "transcription"],
+      "properties": {
+        "clause_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "locator": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "relevance": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "transcription": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "digest", "review_state", "reviewers"],
+          "properties": {
+            "path": { "$ref": "#/$defs/relativePath" },
+            "digest": { "$ref": "#/$defs/digest" },
+            "review_state": { "enum": ["unreviewed", "single_review", "independent_review"] },
+            "reviewers": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "review_state": { "const": "unreviewed" },
+                "reviewers": { "maxItems": 0 }
+              }
+            },
+            {
+              "properties": {
+                "review_state": { "const": "single_review" },
+                "reviewers": { "minItems": 1, "maxItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "review_state": { "const": "independent_review" },
+                "reviewers": { "minItems": 2 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "vectorSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vector_id", "source", "scope", "expected_interpretation"],
+      "properties": {
+        "vector_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "source": { "$ref": "#/$defs/provenanceSource" },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "expected_interpretation": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "legalReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "note"],
+      "properties": {
+        "status": { "enum": ["not_reviewed", "review_required", "reviewed"] },
+        "note": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "review_reference": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      },
+      "oneOf": [
+        {
+          "properties": { "status": { "enum": ["not_reviewed", "review_required"] } }
+        },
+        {
+          "required": ["review_reference"],
+          "properties": { "status": { "const": "reviewed" } }
+        }
+      ]
+    },
+    "technicalReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reviewers", "note"],
+      "properties": {
+        "status": { "enum": ["unreviewed", "single_review", "independent_review"] },
+        "reviewers": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 256 } },
+        "note": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": { "const": "unreviewed" },
+            "reviewers": { "maxItems": 0 }
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "single_review" },
+            "reviewers": { "minItems": 1, "maxItems": 1 }
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "independent_review" },
+            "reviewers": { "minItems": 2 }
+          }
+        }
+      ]
+    }
+  }
+}

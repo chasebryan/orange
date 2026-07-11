@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: $0 PATH_TO_LYCHEE" >&2
+  exit 2
+fi
+
+readonly LYCHEE="$1"
+
+# IACR ePrint currently rejects automated clients with HTTP 403. Keep its
+# primary-source citations, exclude only that exact HTTPS host from automation,
+# and review those links manually when research evidence is refreshed.
+exec "$LYCHEE" \
+  --exclude '^https://eprint\.iacr\.org/' \
+  --exclude-all-private \
+  --extensions md,yml \
+  --host-concurrency 2 \
+  --include-fragments \
+  --max-concurrency 16 \
+  --max-retries 3 \
+  --no-progress \
+  --require-https \
+  --timeout 20 \
+  '*.md' 'docs/**/*.md' '.github/**/*.md' '.github/**/*.yml'

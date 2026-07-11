@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly LYCHEE_VERSION="0.24.2"
+readonly ARCHIVE="lychee-x86_64-unknown-linux-gnu.tar.gz"
+readonly ARCHIVE_DIRECTORY="lychee-x86_64-unknown-linux-gnu"
+readonly ARCHIVE_SHA256="1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a"
+readonly DOWNLOAD_BASE="https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}"
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: $0 DESTINATION_DIRECTORY" >&2
+  exit 2
+fi
+
+if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+  echo "install-lychee supports Linux x86_64 only" >&2
+  exit 1
+fi
+
+readonly DESTINATION_DIRECTORY="$1"
+TEMPORARY_DIRECTORY="$(mktemp -d)"
+readonly TEMPORARY_DIRECTORY
+trap 'rm -rf "$TEMPORARY_DIRECTORY"' EXIT
+
+curl \
+  --fail \
+  --location \
+  --proto '=https' \
+  --show-error \
+  --silent \
+  --tlsv1.2 \
+  --output "$TEMPORARY_DIRECTORY/$ARCHIVE" \
+  "$DOWNLOAD_BASE/$ARCHIVE"
+
+printf '%s  %s\n' \
+  "$ARCHIVE_SHA256" \
+  "$TEMPORARY_DIRECTORY/$ARCHIVE" | sha256sum --check --strict
+
+tar \
+  --extract \
+  --file "$TEMPORARY_DIRECTORY/$ARCHIVE" \
+  --gzip \
+  --directory "$TEMPORARY_DIRECTORY"
+
+install \
+  -D \
+  -m 0755 \
+  "$TEMPORARY_DIRECTORY/$ARCHIVE_DIRECTORY/lychee" \
+  "$DESTINATION_DIRECTORY/bin/lychee"

@@ -1,0 +1,38 @@
+name: Workflow Online Audit
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 6 * * 3"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: workflow-online-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metadata:
+    name: Workflow Online Audit / upstream metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Audit workflow source and upstream metadata
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          advanced-security: false
+          annotations: false
+          online-audits: true
+          persona: pedantic
+          version: "1.26.1"

@@ -10,7 +10,7 @@ Orange will say exactly what was checked, for which artifact, with which model,
 and under which assumptions. It will not promise that “formal verification” is
 a universal security property.
 
-Every public claim resolves to a machine-readable record. Certified releases
+Every public claim resolves to a machine-readable record. Claim-bearing releases
 include a thick bundle with every proof- and build-critical byte needed for the
 offline replay they advertise. Kernel proofs and certificates are independently
 machine-checked; tests are rerun; external audits and validations are recorded
@@ -402,7 +402,9 @@ A PSIRT exists before public packages.
 Required public material:
 
 - `SECURITY.md` and supported-version matrix;
-- encrypted/private reporting path and safe-harbor policy;
+- encrypted/private reporting path and counsel-reviewed, asset-scoped
+  good-faith-research or safe-harbor language before public services or
+  software distribution;
 - disclosure and remediation policy;
 - downstream notification and advisory channels.
 
@@ -493,21 +495,21 @@ reports.
 
 ## 14. Current external baselines
 
-- NIST SSDF 1.1: https://csrc.nist.gov/pubs/sp/800/218/final
-- SLSA 1.2: https://slsa.dev/spec/v1.2/
-- SLSA Source requirements: https://slsa.dev/spec/v1.2/source-requirements
-- OpenSSF OSPS Baseline: https://baseline.openssf.org/
-- Reproducible Builds: https://reproducible-builds.org/docs/definition/
-- Sigstore: https://docs.sigstore.dev/cosign/signing/overview/
-- TUF specification: https://theupdateframework.github.io/specification/latest/
-- SPDX specifications: https://spdx.dev/use/specifications/
-- CycloneDX specification: https://cyclonedx.org/specification/overview/
-- CycloneDX CBOM: https://cyclonedx.org/capabilities/cbom/
-- NIST CAVP: https://csrc.nist.gov/projects/cryptographic-algorithm-validation-program
-- NIST ACVP: https://pages.nist.gov/ACVP/
-- FIPS 140-3: https://csrc.nist.gov/pubs/fips/140-3/final
-- ISO/IEC 29147:2018: https://www.iso.org/standard/72311.html
-- ISO/IEC 30111:2019: https://www.iso.org/standard/69725.html
+- [NIST SSDF 1.1](https://csrc.nist.gov/pubs/sp/800/218/final)
+- [SLSA 1.2](https://slsa.dev/spec/v1.2/)
+- [SLSA Source requirements](https://slsa.dev/spec/v1.2/source-requirements)
+- [OpenSSF OSPS Baseline](https://baseline.openssf.org/)
+- [Reproducible Builds](https://reproducible-builds.org/docs/definition/)
+- [Sigstore](https://docs.sigstore.dev/cosign/signing/overview/)
+- [TUF specification](https://theupdateframework.github.io/specification/latest/)
+- [SPDX specifications](https://spdx.dev/use/specifications/)
+- [CycloneDX specification](https://cyclonedx.org/specification/overview/)
+- [CycloneDX CBOM](https://cyclonedx.org/capabilities/cbom/)
+- [NIST CAVP](https://csrc.nist.gov/projects/cryptographic-algorithm-validation-program)
+- [NIST ACVP](https://pages.nist.gov/ACVP/)
+- [FIPS 140-3](https://csrc.nist.gov/pubs/fips/140-3/final)
+- [ISO/IEC 29147:2018](https://www.iso.org/standard/72311.html)
+- [ISO/IEC 30111:2019](https://www.iso.org/standard/69725.html)
 
 Versions in this section are a research snapshot. Release policy pins and
 re-evaluates the then-current final versions rather than following `latest`

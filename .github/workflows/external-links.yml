@@ -1,0 +1,39 @@
+name: External Links
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: external-links-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  links:
+    name: External Links / scheduled audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install checksum-verified lychee
+        run: ./scripts/ci/install-lychee "$RUNNER_TEMP/lychee"
+
+      - name: Check external links
+        run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee"

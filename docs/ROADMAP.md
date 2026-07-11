@@ -144,7 +144,8 @@ Indicative months: 0–9; indicative team: 14–18
 
 Permanent outcomes:
 
-- ratified charter, users, user journeys, non-goals, and 1.0 support envelope;
+- ratified charter, users, [user journeys](USER_JOURNEYS.md), non-goals, and a
+  selected [1.0 support envelope](GATE0_SUPPORT_ENVELOPES.md);
 - claim taxonomy, evidence graph/schema, TCB inventory format, and non-claims;
 - exact proposed hosts, targets, ABIs, leakage profiles, and cryptographic
   corpus;
@@ -153,8 +154,9 @@ Permanent outcomes:
 - source/docs/generated-code/spec/vector license policy and contribution terms;
 - governance, conflicts, release authority, PSIRT authority, and funding model;
 - standards, patents, export, certification, and external-lab strategy;
-- reproducible, archived decision suite comparing Rocq, Lean, and any other
-  proof foundation still under consideration;
+- reproducible, archived
+  [decision suite](PROOF_FOUNDATION_DECISION_SUITE.md) comparing Rocq, Lean, and
+  any other proof foundation still under consideration;
 - foundation-neutral human Core sketch and competing mechanized cases sufficient
   to test the decisions, stored as research evidence outside the product
   implementation;
@@ -166,7 +168,8 @@ Permanent outcomes:
 Gate 0 exit criteria:
 
 - no unresolved contradiction between advertised claims and the proposed TCB;
-- every 1.0 feature maps to an owner, dependency, evidence type, and exit test;
+- every 1.0 feature maps to an owner, dependency, evidence type, and exit test
+  in the [Gate 0 feature traceability matrix](GATE0_TRACEABILITY.md);
 - exact scope and non-goals are signed off;
 - proof foundation, canonical formats, and leakage baseline are selected;
 - naming and license gates are closed;
@@ -234,7 +237,7 @@ Gate 2 exit criteria:
 - every accepted axiom inventoried and visible in dependent claims;
 - malformed-proof fuzzing and mutation cannot produce an unexplained acceptance;
 - authoritative and independent checkers agree on the frozen corpus;
-- certified mode rejects all solver trust steps, unknowns, and missing
+- claim-closing mode rejects all solver trust steps, unknowns, and missing
   certificates;
 - frontend behavior matches the normative suite and its failures are bounded.
 
@@ -330,7 +333,7 @@ Gate 5 exit criteria:
 - documentation examples compile, prove, and execute in CI;
 - representative external users complete usability tasks without private help;
 - registry/dependency compromise and recovery exercises pass;
-- no arbitrary package script can affect a certified graph;
+- no arbitrary package script can affect a claim-bearing graph;
 - at least one independently developed frontend/checker passes its applicable
   stable conformance suite before final 1.0.
 
@@ -422,7 +425,8 @@ The first 90 days close ambiguity; they do not rush to a parser screenshot.
 - Implement those cases independently in the shortlisted proof foundations only
   as reproducible, archived architecture decision evidence. They are not
   production Orange implementations.
-- Draft the exact 1.0 support-envelope options and resource cost of each.
+- Draft and independently review the exact
+  [1.0 support-envelope options and resource bands](GATE0_SUPPORT_ENVELOPES.md).
 - Select secure repository, CI trust-boundary, dependency, and review controls.
 - Begin accredited-lab and standards-body conversations if validation is in
   scope.

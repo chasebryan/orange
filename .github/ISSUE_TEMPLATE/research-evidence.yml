@@ -1,0 +1,75 @@
+name: Research or decision evidence
+description: Propose reproducible evidence for a Gate 0 decision without creating product implementation.
+title: "research: "
+labels:
+  - research
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is intake for facts, citations, and reproducibility summaries—not contributed repository prose, a product prototype, or material licensed for incorporation. Do not post sensitive security information. Prefer primary sources and record their exact versions.
+  - type: input
+    id: decision
+    attributes:
+      label: Related decision or OEP
+      placeholder: D-006 or OEP-0001
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Decision question and alternatives
+      description: State the falsifiable question, candidate alternatives, and decision criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Primary sources
+      description: Include URLs, document/tool versions, publication dates, and access dates.
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: Reproducible method
+      description: Include commands, environment, declared inputs, seeds, and input/tool digests.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results, assumptions, and limitations
+      description: Separate observed output from interpretation; include failed or adverse cases.
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: License and provenance
+      description: Record terms for every imported source, vector, corpus, tool, and generated artifact.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Security and assurance impact
+      description: Cover TCB, axioms, claims, threats, leakage, targets, dependencies, standards, and residual risk.
+    validations:
+      required: true
+  - type: textarea
+    id: artifact
+    attributes:
+      label: Intended permanent artifact
+      description: Name its repository boundary, replay path, and retention value if the alternative is rejected.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundary acknowledgement
+      options:
+        - label: This is reproducible Gate 0 evidence, not a disposable prototype or product implementation.
+          required: true
+        - label: This issue contains no vulnerability details, secrets, private keys, or private cryptographic material.
+          required: true

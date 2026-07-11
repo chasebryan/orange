@@ -1,0 +1,151 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "manifest_id": "urn:orange:gate0:evidence:foundation-policy-check",
+  "purpose": "gate0_decision_evidence",
+  "reproducibility_level": "independent_decision_reproduction",
+  "decision_refs": [
+    "D-019"
+  ],
+  "created_from_revision": "f50d35227a04831d459b3358db65b80093e8123a",
+  "files": [
+    {
+      "path": "CONTRIBUTING.md",
+      "role": "input",
+      "media_type": "text/markdown",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "byte_size": 1,
+      "executable": false
+    },
+    {
+      "path": "conformance/foundation/valid/claim-record.json",
+      "role": "input",
+      "media_type": "application/json",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "abababababababababababababababababababababababababababababababab"
+      },
+      "byte_size": 1,
+      "executable": false
+    },
+    {
+      "path": "docs/REPRODUCIBILITY.md",
+      "role": "output",
+      "media_type": "text/markdown",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "byte_size": 1,
+      "executable": false
+    }
+  ],
+  "claim_refs": [
+    "G0-CLAIM-REPOSITORY-POLICY"
+  ],
+  "trust_inventory_refs": [
+    "G0-TRUST-FOUNDATION-FIXTURE"
+  ],
+  "external_sources": [],
+  "observations": [
+    {
+      "observation_id": "G0-OBSERVATION-POLICY-ACCEPTANCE",
+      "kind": "schema_validation",
+      "expected": "The representative claim record parses and the empty final argument is preserved.",
+      "actual": "The synthetic fixture records both conditions as matched.",
+      "status": "matched",
+      "evidence_file_refs": [
+        "conformance/foundation/valid/claim-record.json"
+      ],
+      "explanation": "This shape fixture records an expectation only; it is not a retained replay result."
+    }
+  ],
+  "replay": {
+    "argv": [
+      "python3",
+      "-c",
+      "import json,sys; json.load(open(sys.argv[1], encoding='utf-8')); raise SystemExit(0 if sys.argv[2] == '' else 1)",
+      "valid/claim-record.json",
+      ""
+    ],
+    "working_directory": "conformance/foundation",
+    "environment": {
+      "LANG": "C",
+      "LC_ALL": "C",
+      "SOURCE_DATE_EPOCH": "1783742400",
+      "TZ": "UTC",
+      "additional_variables": {
+        "PYTHONHASHSEED": "0"
+      }
+    },
+    "network": {
+      "mode": "denied",
+      "allowed_hosts": []
+    },
+    "randomness": {
+      "mode": "none",
+      "encoding": "none",
+      "value": "not-used"
+    },
+    "concurrency": {
+      "mode": "serial",
+      "worker_count": 1,
+      "determinism": "verified"
+    },
+    "toolchains": [
+      {
+        "name": "CPython",
+        "version": "3.14.6",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "acquisition": "Acquire the version-pinned interpreter through the future Gate 0 toolchain lock."
+      }
+    ],
+    "input_manifest_digest": {
+      "algorithm": "sha256",
+      "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "expected_output_manifest_digest": {
+      "algorithm": "sha256",
+      "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "expected_exit_code": 0
+  },
+  "independent_reproductions": [
+    {
+      "reproduction_id": "G0-REPRODUCTION-FOUNDATION-FIXTURE",
+      "reviewer_id": "Independent Fixture Reviewer",
+      "performed_at": "2026-07-11T13:00:00Z",
+      "environment": "Synthetic independently provisioned environment used only to exercise record shape.",
+      "source_manifest_digest": {
+        "algorithm": "sha256",
+        "value": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "expected_output_manifest_digest": {
+        "algorithm": "sha256",
+        "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "observed_output_manifest_digest": {
+        "algorithm": "sha256",
+        "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "result": "matched",
+      "differences": []
+    }
+  ],
+  "supersedes_manifest_digest": {
+    "algorithm": "sha256",
+    "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "limitations": [
+    "All hashes, sizes, epochs, and evidence identifiers in this conformance fixture are synthetic.",
+    "JSON parsing alone does not establish the truth of the associated claim.",
+    "The trailing empty argument, independent reproduction, and supersession digest exercise record shape; they do not describe an authoritative replay history."
+  ]
+}
