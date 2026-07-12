@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.1",
+  "policy_version": "0.2.2",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -148,6 +148,7 @@
     "docs/REPRODUCIBILITY.md",
     "docs/RESEARCH.md",
     "docs/ROADMAP.md",
+    "docs/THE_ORANGE_BOOK.md",
     "docs/USER_JOURNEYS.md",
     "docs/governance/adrs/ADR-0000-template.md",
     "docs/governance/adrs/README.md",
@@ -225,7 +226,7 @@
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
-    "README.md": "a4329d0464aaa06ddaba7bbf4aaa2046322cd32fecf10b0e22834cdd0649dfee",
+    "README.md": "15a5f76e871d3816b2b035ea895e172e12db0b31f497d1818af988629ad3c79a",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
@@ -265,7 +266,7 @@
     "scripts/ci/check-repository": "692b0a7b0571891e5dfec985bdfbec3f2e340f9545afccaa76a04b7433621c16",
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
-    "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
+    "tools/tests/test_validate_foundation.py": "231c8aafa857bfaef5dec11b6a707365a95a68abfd579abf5b7227585802d3ff",
     "tools/tests/test_validate_foundation_hardening.py": "3e972197baeeb331c8949413dcb317f3f6c4c909eafda952a2f01fb3db034ccf"
   },
   "executable_paths": [
