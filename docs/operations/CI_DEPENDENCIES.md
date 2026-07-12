@@ -44,6 +44,45 @@ workflows are informational. Dependency, link, workflow-metadata, and
 repository-posture results can change while the checked-out repository bytes
 remain fixed.
 
+### Observed post-merge execution snapshot
+
+The following is a time-indexed GitHub observation for exact `main`
+`9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`, not an additional dependency
+admission or reproducibility claim. Pull request #3 head
+`8e26785f87c3866cc12915d7037820c608d6708d` merged green through the exact
+Required CI and Dependency Review contexts bound by ruleset `18810248` to
+GitHub Actions integration ID `15368`.
+
+| Execution boundary | Observed result | Unclosed input or proof gap |
+| --- | --- | --- |
+| Required CI | `29171653266` succeeded; policy `0.1.4` and 65 tests passed | Runner image, Python, Node, Git, Docker host, Action bundles, and GitHub service behavior are not fully fixed or archived |
+| Dependency Review | Pull request #3's required check was green and app-bound by the active ruleset | Dependency graph and API state are hosted, time-indexed inputs; this workflow has no `main` push execution to claim |
+| Workflow Online Audit | `29171653264` succeeded on `main` | Current GitHub metadata is mutable, and this observation does not prove scheduled-event execution |
+| External Links | `29171653282` succeeded on `main` | DNS, TLS, routing, rate limits, remote content, and server policy remain mutable; scheduled-event execution is unproven |
+| OpenSSF Scorecard | `29171653261` succeeded on `main` | Registry, runner, Docker host, GitHub APIs, artifact and code-scanning services remain external; Scorecard is posture data, not SAST or CodeQL; scheduled-event execution is unproven |
+| CodeQL default setup | `29171652948` succeeded on `main`; Python analysis `1467719573` returned 0 results/50 rules and Actions analysis `1467719309` returned 0 results/23 rules, without errors or warnings | GitHub's analyzer, queries, runner, extraction, service behavior, and result storage are hosted inputs; zero results are not proof of absence and no CodeQL blocking threshold has been tested |
+
+Alerts #1-#3 (`py/path-injection`) were fixed, not dismissed, at
+`2026-07-11T23:09:26Z`. This records the hosted remediation disposition for the
+snapshot only. It is not a signed result bundle, independent retest, or proof
+that other paths and future revisions are safe.
+
+Scorecard run `29171653261`, job `86593727305`, executed the admitted image
+digest with a read-only root filesystem, bounded `tmpfs`, dropped capabilities
+except `DAC_OVERRIDE`, `no-new-privileges`, and a 256-process limit. Public
+publication and OIDC remained disabled. Artifact `8253693735` was unexpired at
+readback: its 16,361-byte archive had GitHub digest
+`sha256:404535706b75a2c3468e914e08c11cb9b537fd5e29fc82808bb330e5df58e7fe`;
+the extracted 74,492-byte `results.sarif` had SHA-256
+`b88e7044a7580230177f39cccd6d5e42a968b62a6f1f8cf054b26d31de8d69f5`,
+three SARIF runs, 18 rules, and seven results. Code-scanning accepted those
+results as analyses `1467719019`, `1467719022`, and `1467719027` without errors
+or warnings. A local pattern scan of all 190,363 log bytes and the retained
+SARIF found no GitHub token, classic PAT, bearer credential, or unmasked
+authorization-value pattern; the two token-value log fields were masked. These
+checks reduce accidental-disclosure uncertainty for this run only and do not
+make the mutable hosted execution hermetic or reproducible.
+
 ## 3. Pinned Action inventory
 
 Every direct repository Action `uses:` reference currently names a full
@@ -145,6 +184,7 @@ recorded identities and digests.
 | External Links | lychee archive digest, link-check flags, and repository locators | The non-excluded endpoints produced accepted responses during the run | Remote content, DNS, TLS, routing, rate limits, and server policy change independently of repository bytes |
 | Offline zizmor step | Repository revision, Action revision, tool version, and container digest | The selected workflow-analysis rules returned the recorded result with online audits disabled | Docker host, kernel, runner image, and output-retention path are not fixed or bundled |
 | Online zizmor and Scorecard | Action/tool identities, both container digests, and the repository revision | A time-specific observation of GitHub metadata or repository posture | Live platform state, APIs, registry availability, runner and container host, artifact/code-scanning endpoints, and other hosted services remain mutable |
+| CodeQL default setup | Exact repository revision plus hosted run, analysis, language, suite, and rule-count identifiers | GitHub reported successful `actions` and `python` analysis for the recorded snapshot and recorded three earlier `py/path-injection` alerts as fixed rather than dismissed | Analyzer/query implementation, extraction, standard runner, service state, and storage are not independently fixed or replayable; zero results do not prove absence, and no required-check threshold or negative blocking test exists |
 
 A green check, log URL, annotation, SARIF upload, or 14-day artifact is an
 execution observation. It is not a signed, thick, offline-replayable evidence
