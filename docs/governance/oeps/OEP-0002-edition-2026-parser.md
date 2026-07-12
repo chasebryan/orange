@@ -4,7 +4,7 @@ title: Edition 2026 minimal grammar and bounded parser
 authors:
   - Chase Bryan
 champion: Chase Bryan
-status: Provisional
+status: Accepted
 type: Standards
 created: 2026-07-12
 updated: 2026-07-12
@@ -22,10 +22,10 @@ supersedes: []
 superseded-by: null
 review-authorities:
   - Orange Project Owner
-decision-date: null
-decision-revision: null
+decision-date: 2026-07-12
+decision-revision: 52a3460853636f7cbaa27f3e27d86e032e3c82d4
 approval-records:
-  - Project-owner direction recorded on 2026-07-12; solo-reviewed and provisional
+  - solo-reviewed owner acceptance at merged revision 52a3460853636f7cbaa27f3e27d86e032e3c82d4
 ---
 
 # OEP-0002: Edition 2026 minimal grammar and bounded parser
@@ -38,9 +38,9 @@ bounded deterministic parser. A source contains the exact declaration
 functions. The coupled lexical specification fixes UTF-8, whitespace, line
 ending, identifier, comment, literal, punctuation, keyword, and resource rules.
 
-The owner direction recorded here authorizes implementation immediately under
-OEP-0001. This proposal remains Provisional until the exact merged S2 revision
-can be recorded and reviewed. Provisional status is not release authority.
+The owner direction recorded here authorized implementation under OEP-0001.
+The proposal is accepted at the exact merged S2 revision recorded below. That
+acceptance is pre-alpha syntax authority, not product-release authority.
 
 ## Motivation
 
@@ -194,8 +194,9 @@ recovery; and deterministic repeated parsing.
 
 Repository evidence must pass formatting, linting, Rust unit and CLI tests,
 offline locked dependency checks, foundation policy tests, exact inventory, and
-required hosted checks. The S2 merge revision will be recorded only after that
-evidence exists.
+required hosted checks. That evidence passed for PR #6 and exact merged revision
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4`; the decision record below binds the
+acceptance to those exact, time-indexed results.
 
 ## Operations, release, and recovery
 
@@ -225,8 +226,8 @@ expressions, semantics, proofs, targets, ABI, leakage, code generation, package
 shape, and release behavior remain unresolved. None is answered by accepting
 this grammar.
 
-OEP-0002 also remains mechanically unaccepted until the exact merged S2
-revision and its hosted evidence exist.
+Future answers to these questions require later decisions and do not silently
+change the accepted grammar.
 
 ## Decision record
 
@@ -235,8 +236,16 @@ resource budgets, non-goals, and bounded implementation recorded here. Under
 OEP-0001 and D-023, that owner direction is immediately effective and permits
 the S2 implementation to proceed.
 
-The record remains Provisional with null `decision-date` and
-`decision-revision`. It must not be marked Accepted until the implementation,
-normative document, tests, policy inventory, and required hosted checks are
-present at an exact merged revision. The work is solo-reviewed; no independent
-approval, audit, proof, or external validation is claimed.
+On 2026-07-12 the Orange Project Owner reviewed and accepted this proposal at
+exact S2 merge revision
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4`. PR #6 head
+`73416f1ee8b613f0f6244f8dcd2d30281e6e91f2` passed Required CI
+`29188056038`, Dependency Review `29188056060`, and CodeQL `29188055399`
+before the squash merge. Exact merged `main` then passed Required CI
+`29188111313` and CodeQL `29188111040`.
+
+The approval record is literally `solo-reviewed` and binds the exact decision
+revision. The author and decision authority are the same sole owner. No
+independent approval, audit, proof, external validation, product release, or
+semantic, cryptographic, target, ABI, leakage, or code-generation claim is
+created by this acceptance.

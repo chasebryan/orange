@@ -144,7 +144,8 @@ semantic, proof, code-generation, cryptographic, or production claim.
 
 ### S2 — Editioned grammar and parser
 
-Status: active under D-025 and provisional OEP-0002
+Status: complete at merged revision
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4` under D-025 and accepted OEP-0002
 
 Permanent outcomes:
 
@@ -248,11 +249,16 @@ dates. It cannot claim independent rebuild or multi-party release controls.
 
 The next permanent slices are:
 
-1. finish S1 and freeze the source/span/diagnostic contracts;
-2. write the pre-alpha lexical specification from the implemented behavior;
-3. decide the smallest editioned module and function grammar for S2;
-4. implement a bounded parser with adversarial tests; and
-5. specify the first typed expression fragment before implementing S3 checking.
+1. decide and normatively specify the smallest typed expression fragment for
+   S3;
+2. define the name-resolution, arithmetic, and failure rules that fragment
+   requires without selecting proof, target, ABI, or leakage behavior;
+3. implement bounded name resolution and type checking with one conformance case
+   per accepted or rejected rule;
+4. add deterministic reference evaluation only after the typed rules are
+   explicit; and
+5. preserve the S1/S2 source, diagnostic, lexical, grammar, parser, and resource
+   contracts through every S3 change.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.

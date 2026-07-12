@@ -547,8 +547,8 @@ their own decisions and do not inherit claims from this one.
 
 Status: directed
 
-Source: explicit project-owner direction for S2 on 2026-07-12; provisional
-OEP-0002
+Source: explicit project-owner direction for S2 on 2026-07-12; accepted
+OEP-0002 at exact revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4`
 
 Decision: define the first Orange 2026 syntax as valid UTF-8 of at most 16 MiB,
 with ASCII whitespace and identifiers, a mandatory exact `edition 2026;`
@@ -586,8 +586,10 @@ Acceptance evidence is the normative lexical and grammar document, exact source
 inventory, positive and malformed parser tests, ambiguity and duplicate-name
 cases, Unicode and line-ending cases, resource-limit tests, stable diagnostics,
 repeatability, offline locked Rust checks, repository policy checks, and green
-required hosted CI. OEP-0002 cannot become Accepted until the exact merged S2
-revision exists; owner direction is effective while it remains Provisional.
+required hosted CI. Acceptance required the exact merged S2 revision; that
+condition closed on 2026-07-12. OEP-0002 is Accepted at
+exact merged revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4` after its
+required hosted checks passed.
 
 ## How decisions change
 
