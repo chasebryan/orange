@@ -1,25 +1,32 @@
-# Gate 0 threat model
+# Solo-bootstrap threat model
 
-Status: living Gate 0 security evidence; not a product-security certification
+Status: living repository and pre-alpha compiler security evidence; not a
+product-security certification
 
 Evidence snapshot: exact `main` revision `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`, merged at `2026-07-11T23:08:36Z`; CodeQL alerts #1-#3 fixed at `2026-07-11T23:09:26Z`
 
 Hosted-control snapshot: `snapshot_date=2026-07-11 review_due_date=2026-10-11 ruleset_id=18810248`
 
+Solo/pre-alpha model amendment: 2026-07-12. The hosted evidence dates and
+revision above remain the original 2026-07-11 observations.
+
 Required-check binding: `context="Required CI / docs-policy-workflows" integration_id=15368`
 
 Required-check binding: `context="Dependency Review / policy" integration_id=15368`
 
-Owner: Bootstrap Repository Steward (`@chasebryan`)
+Owner: Orange Project Owner (`@chasebryan`)
 
 Next scheduled review: 2026-10-11, or earlier on any mandatory trigger below
 
 ## Executive summary
 
-Orange is presently a public planning and repository-control project. It has no
-compiler, proof checker, package client, registry, cryptographic implementation,
-product dependency, or product release. The immediate risks are therefore
-repository and governance integrity: compromise of the sole maintainer,
+Orange now includes a local pre-alpha Rust compiler foundation with source-file,
+lexer, diagnostic, and CLI input surfaces. It has no parser, semantic Core,
+proof checker, code generator, package client, registry, cryptographic
+implementation, third-party Rust crate, or product release. Immediate risks now
+include hostile source input, resource exhaustion, diagnostic/path disclosure,
+and compiler-toolchain compromise in addition to repository and governance
+integrity: compromise of the sole maintainer,
 misconfiguration or privileged weakening of protected-branch controls, unsafe
 CI evolution, credential disclosure, and planning text that overstates controls
 which do not yet exist. The intended product will add much higher-consequence proof,
@@ -29,9 +36,9 @@ been implemented.
 
 This document refines, but does not ratify or replace, the proposed security
 constitution in [`docs/ASSURANCE.md`](../ASSURANCE.md). A threat marked
-`future-blocking` is not currently exploitable through Orange software because
-that software does not exist. It becomes a release blocker as soon as its entry
-point or asset is introduced.
+`future-blocking` is not currently exploitable through Orange software until its
+entry point or asset is introduced. It becomes a release blocker when that
+boundary exists.
 
 ## Scope and assumptions
 
@@ -40,10 +47,11 @@ point or asset is introduced.
 - The authoritative public repository is
   [`chasebryan/orange`](https://github.com/chasebryan/orange), with `main` as its
   default branch.
-- Tracked content consists of planning, governance, security policy, issue and
-  pull-request templates, provisional Gate 0 schemas, conformance material, and
-  repository automation. The schemas are architecture evidence, not product
-  formats or proof evidence.
+- Tracked content consists of the pre-alpha Rust compiler workspace, planning,
+  governance, security policy, issue and pull-request templates, historical
+  Gate 0 schemas, conformance material, and repository automation. The schemas
+  remain provisional solo-bootstrap architecture evidence, not product formats
+  or proof evidence.
 - GitHub is the hosted identity, repository, issue, private-vulnerability, and
   Actions control plane. Orange assesses its configuration and use; testing or
   threat modeling GitHub's internal implementation is out of scope.
@@ -80,17 +88,17 @@ stewardship and are not independent review, external certification, or
 product-security assurance.
 
 - One person, `@chasebryan`, is the repository owner and only current
-  collaborator. [`GOVERNANCE.md`](../../GOVERNANCE.md) explicitly bars this
-  bootstrap state from making mature-governance, independent-review,
-  external-certification, or product-release claims.
+  collaborator. [`GOVERNANCE.md`](../../GOVERNANCE.md) authorizes solo
+  development while barring mature-governance, independent-review,
+  external-certification, and product-release claims that have no evidence.
 
 ### Future design scope
 
 The following components and flows are in scope as requirements because the
 project documents commit the end product to them:
 
-- source language, parser, elaborator, semantic cores, proof search, canonical
-  Proof IR, and the authoritative offline checker;
+- parser, elaborator, semantic cores, proof search, canonical Proof IR, and the
+  authoritative offline checker beyond the current lexer boundary;
 - compilation through CT IR and Machine IR to object bytes and generated foreign
   interfaces;
 - standards, errata, vectors, cryptographic packages, claims, evidence bundles,
@@ -114,17 +122,17 @@ asserted here.
   during this review and remains `unverified`.
 - No production credential, signing key, embargoed vulnerability, or private
   cryptographic material belongs in this repository or an untrusted workflow.
-- Naming, licensing, proof-foundation, governance, target, leakage, and release
+- Final naming, licensing, proof-foundation, target, leakage, and release
   decisions remain open. Their resolution can materially change likelihood,
   impact, ownership, and trust boundaries.
 - Deployment scale, multi-tenancy, public service topology, package-registry
   operation, supported targets, and data sensitivity are not yet selected.
   Threat ranks for those surfaces are deliberately conditional.
 
-Before Gate 0 closes, the project must answer who independently owns the TCB,
-cryptography, release, and PSIRT controls; which services are Internet-facing;
-which sensitive data each service may retain; and which exact target and
-leakage profiles a release promises.
+Before the affected capability or claim is released, the project must answer
+which services are Internet-facing, which sensitive data each service may
+retain, and which exact target and leakage profiles it promises. D-023 records
+that the owner holds all roles and that independent ownership is unavailable.
 
 ## System model
 
@@ -133,9 +141,9 @@ leakage profiles a release promises.
 | Component ID | Component | State | Security role and evidence |
 | --- | --- | --- | --- |
 | CMP-001 | GitHub repository and control plane | Current, external | Authoritative source, history, issues, reviews, security settings, private reports, and workflow execution. Configuration evidence is maintained in [`OSPS_BASELINE.md`](OSPS_BASELINE.md). |
-| CMP-002 | Gate 0 policy and evidence records | Current | Planning, decisions, threat/control records, provisional schemas, and conformance fixtures. See [`README.md`](../../README.md), [`docs/DECISIONS.md`](../DECISIONS.md), and [`schemas/README.md`](../../schemas/README.md). |
+| CMP-002 | Foundation policy and evidence records | Historical Gate 0 inputs plus current solo-bootstrap records | Planning, decisions, threat/control records, provisional schemas, and conformance fixtures. Historical Gate 0 material is retained as an input under the current capability-local model. See [`README.md`](../../README.md), [`docs/DECISIONS.md`](../DECISIONS.md), and [`schemas/README.md`](../../schemas/README.md). |
 | CMP-003 | Repository CI | Current on `main` with exact-revision hosted evidence | Repository-owned policy, dependency-review, link, workflow-metadata-audit, and Scorecard workflows are under [`.github/workflows/`](../../.github/workflows/). At exact `main` revision `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`, Required CI `29171653266`, Workflow Online Audit `29171653264`, External Links `29171653282`, and Scorecard `29171653261` completed green; GitHub CodeQL run `29171652948` also completed green. Ruleset `18810248` requires the exact Required CI and Dependency Review app-bound contexts. These push executions do not separately demonstrate scheduled or manual-dispatch event behavior. |
-| CMP-004 | Orange driver and language services | Future | Planned parser, elaborator, build coordinator, CLI, LSP, and host integration. No implementation exists. |
+| CMP-004 | Orange driver and language services | Current, pre-alpha lexer/CLI slice | Rust source map, byte spans, lexer, diagnostics, and `orangec check`/`lex`; no parser, elaborator, semantic validation, LSP, or code generation. |
 | CMP-005 | Orange semantic and evidence system | Future | Planned Core family, claims, Proof IR, proof search, and authoritative offline checker. No implementation exists. |
 | CMP-006 | Orange compiler and native boundary | Future | Planned CT IR, Machine IR, compiler, object encoding, linker validation, C ABI, and target execution. No implementation exists. |
 | CMP-007 | Package, registry, build, and release system | Future | Planned immutable dependency resolution, registry, hermetic builds, provenance, signing, publication, updates, and recovery. No implementation exists. |
@@ -154,12 +162,13 @@ tombstone rather than being renumbered.
 | TB-004 | Untrusted pull-request snapshot to CMP-003 | Repository files executed or parsed by hosted Actions runners | Current PR workflows declare no ambient permissions, grant only `contents: read` where needed, avoid privileged secrets and `pull_request_target`, disable persisted checkout credentials, and set timeouts. Active ruleset `18810248` requires exact app-bound Required CI and Dependency Review contexts before merge; PRs #1 through #3 are now merged, with PR #3 head `8e26785f87c3866cc12915d7037820c608d6708d` represented by exact `main` tree `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`. | Current source and platform-enforced PR boundary; sole-owner review remains non-independent |
 | TB-005 | CMP-003 to action/tool publishers and network services | Pinned Actions, digest-selected containers, downloaded tools, release archives, checksums, SARIF, and HTTPS requests | Repository settings require full action SHAs and restrict sources to the exact six admitted Action repositories; broad GitHub-owned and verified-publisher allowances are disabled. Scorecard executes at the separately enforced OCI digest, and downloaded binaries use pinned versions and SHA-256 checks. Exact-revision main runs `29171653264`, `29171653282`, and `29171653261` completed green. Publisher, selected-action, selected-image, registry, hosted-runner, and provenance compromise remain possible. | Current settings and exact-revision hosted execution; scheduled-event paths are not separately demonstrated |
 | TB-006 | Researcher to private security triage | Vulnerability report and attachments through GitHub private vulnerability reporting | Private reporting is enabled and [`SECURITY.md`](../../SECURITY.md) defines handling targets and disclosure constraints. Only one bootstrap steward receives and triages reports; no independent PSIRT exists. | Current |
-| TB-007 | Human standards intent to CMP-008 formal specification | Standards, errata, clauses, vectors, interpretations, and transcription records | Exact provenance and independent review are required by policy. No admitted standard package or transcription exists. | Future-blocking |
-| TB-008 | Surface source to CMP-005 canonical Core and claims | Source text, parsed syntax, elaboration, types, assumptions, and canonical serialization | Planned independent parsing, normative semantics, checked formats, and conformance cases. No implementation or accepted format exists. | Future-blocking |
-| TB-009 | Proof search and automation to authoritative proof checking | Candidate proof objects, solver certificates, limits, and errors | Planned untrusted search with deterministic, resource-bounded independent checking and fail-closed outcomes. No checker exists. | Future-blocking |
-| TB-010 | Each CMP-006 compiler stage to the next stage and final bytes | IR, certificates, transformations, target model, relocations, objects, and link results | Planned verified passes or checked per-artifact certificates, executable semantics, differential tests, and final-byte validation. No compiler exists. | Future-blocking |
+| TB-007 | Human standards intent to CMP-008 formal specification | Standards, errata, clauses, vectors, interpretations, and transcription records | Exact provenance, explicit transcription-review status, and separate owner cross-checks are required for admission. External independent review is unavailable; any claim that requires it remains unsupported. No admitted standard package or transcription exists. | Future-blocking only for standards-dependent packages and claims |
+| TB-008 | Surface source through CMP-004 to future CMP-005 Core and claims | File or standard-input UTF-8 bytes, paths, tokens, diagnostics, later syntax, types, assumptions, and canonical serialization | Current lexer validates UTF-8, assigns checked byte spans, emits structured diagnostics, and has positive/malformed tests. Parsing, normative semantics, checked formats, and Core do not exist. Owner review is not independent. | Current through lexical boundary; future-blocking beyond it |
+| TB-009 | Proof search and automation to authoritative proof checking | Candidate proof objects, solver certificates, limits, and errors | Planned untrusted search with deterministic, resource-bounded, implementation-diverse machine checking and fail-closed outcomes. No checker exists. | Future-blocking |
+| TB-010 | Each CMP-006 compiler stage to the next stage and final bytes | IR, certificates, transformations, target model, relocations, objects, and link results | Planned verified passes or checked per-artifact certificates, executable semantics, differential tests, and final-byte validation. No lowering, code-generation, target, or final-byte stage exists. | Future-blocking |
 | TB-011 | Generated artifact or foreign interface to its integrator, OS, CPU, accelerator, and entropy provider | ABI calls, buffers, errors, target features, entropy, runtime observations, and leakage | Planned explicit contracts, target profiles, named leakage models, misuse-resistant APIs, and empirical defense in depth. Exact platforms and profiles remain undecided. | Future-blocking |
-| TB-012 | Authoritative source to CMP-007 builders, registry, and update client | Source, dependencies, build inputs, packages, provenance, keys, artifacts, and update metadata | Planned hermetic inputs, independent reproducible builds, least-privilege roles, signed provenance, transparency evidence, and TUF-style recovery. No release system or keys exist. | Future-blocking |
+| TB-012 | Authoritative source to CMP-007 builders, registry, and update client | Source, dependencies, build inputs, packages, provenance, keys, artifacts, and update metadata | Planned hermetic inputs, separately provisioned owner rebuilds with explicit `not independently rebuilt` status, scoped credentials, signed provenance, transparency evidence, and TUF-style recovery. Independent rebuild and role-separation evidence are unavailable; no release system or keys exist. | Future-blocking only for release/distribution |
+| TB-013 | Local caller and filesystem to CMP-004 | Command-line arguments, file names, file bytes, standard input, output streams, and operating-system errors | The CLI uses no network or third-party crate, normalizes exposed I/O errors, escapes displayed path and control text, validates UTF-8, caps each source at 16 MiB, and returns stable success/compilation/usage status classes. Platform behavior remains security-sensitive. | Current pre-alpha |
 
 #### Diagram
 
@@ -177,6 +186,7 @@ flowchart LR
   Core -->|TB 010| Native["Native artifact"]
   Native -->|TB 011| Platform["Integrator and platform"]
   Main -->|TB 012| Release["Build registry and update"]
+  Local["Local caller and files"] -->|TB 013| Source
 ```
 
 ## Assets and security objectives
@@ -184,7 +194,7 @@ flowchart LR
 | Asset ID | Asset | Why it matters | Objective |
 | --- | --- | --- | --- |
 | AS-001 | Authoritative repository, history, settings, and `main` | Unauthorized or erased changes can corrupt every downstream decision and future release. | Integrity, availability |
-| AS-002 | Gate 0 decisions, policies, source provenance, and research evidence | Hidden edits or fabricated evidence can silently choose architecture, licensing, or assurance boundaries. | Integrity, authenticity, availability |
+| AS-002 | Historical Gate 0 and current solo-bootstrap decisions, policies, source provenance, and research evidence | Hidden edits or fabricated evidence can silently choose architecture, licensing, or assurance boundaries. | Integrity, authenticity, availability |
 | AS-003 | Maintainer identity, credentials, recovery factors, and privileged settings | The sole current principal can change source, settings, reports, and future publication paths. | Confidentiality, integrity, availability |
 | AS-004 | Workflow definitions, Actions tokens, runner isolation, and security results | CI can become an execution and credential boundary and can create false evidence if compromised. | Confidentiality, integrity, availability |
 | AS-005 | Private vulnerability reports and incident records | Premature disclosure can enable exploitation and harm reporters or downstream users. | Confidentiality, integrity, availability |
@@ -195,6 +205,7 @@ flowchart LR
 | AS-010 | Future signing, registry, update, revocation, and recovery keys | Key compromise can authorize malicious artifacts or prevent safe recovery. | Confidentiality, integrity, availability |
 | AS-011 | Public assurance language and project trust | Overclaiming can cause unsafe adoption even when repository bytes are unchanged. | Integrity, authenticity |
 | AS-012 | Official working emblem, wordmark, lockups, and their provenance record | Substitution, malformed bytes, or false rights/provenance claims can misrepresent project identity and expose image consumers. | Integrity, authenticity, availability |
+| AS-013 | Compiler source identities, token stream, byte spans, diagnostics, and CLI status | Malformed or ambiguous behavior can mislead later stages, tools, and users or exhaust the host. | Integrity, availability |
 
 ## Attacker model
 
@@ -204,7 +215,7 @@ flowchart LR
 | ADV-002 | An attacker compromises the sole owner or a future collaborator account, Git credential, session, recovery path, or local workstation. | Does not automatically compromise an offline key or independent reviewer; neither exists for a product today. |
 | ADV-003 | A dependency, Action, tool, publisher, release archive, registry, mirror, runner, or network path is malicious or compromised. | Cannot change a referenced full commit SHA without changing workflow source, but can compromise the content already at that identity or a downloaded artifact whose digest was incorrectly admitted. |
 | ADV-004 | A privileged insider or captured governance authority intentionally bypasses review, weakens a model, conceals an assumption, or publishes a misleading claim. | Cannot produce valid independent evidence merely by changing a status word if authoritative checking and threshold controls are implemented as planned. Those controls do not exist yet. |
-| ADV-005 | A future malicious source, proof, certificate, package, object, or evidence author targets parsers, semantics, resource limits, claim binding, and compiler transitions. | Has no such Orange parser or checker to attack in the current docs-only stage. |
+| ADV-005 | A malicious source, proof, certificate, package, object, or evidence author targets lexers, parsers, semantics, resource limits, claim binding, and compiler transitions. | Can reach the current lexer/CLI locally, but no Orange parser, checker, package client, or code generator exists yet. |
 | ADV-006 | A future remote, local co-resident, physical-profile, or well-intentioned integrating party chooses inputs, observes outputs/leakage, violates API preconditions, or runs outside the declared target model. | Physical resistance and behavior outside a named target/leakage profile are not implied claims. |
 | ADV-007 | The hosting platform, operating system, compiler, linker, CPU, firmware, accelerator, or entropy provider behaves maliciously or outside its model. | Is not made trustworthy by an Orange proof; impact must remain an explicit assumption or be reduced by independent checking and diversity. |
 | ADV-008 | A well-intentioned maintainer makes a review, configuration, transcription, release, or recovery mistake. | Cannot waive a documented assurance stop-ship condition by labeling the mistake operational. |
@@ -222,19 +233,20 @@ compliance evidence.
 | CTL-004 | Full-commit-SHA and selected-source requirements in repository settings and [`DEPENDENCY_POLICY.md`](../../DEPENDENCY_POLICY.md); current workflows pin repository Actions to 40-character SHAs and execute Scorecard directly at `sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941` | Current platform settings, policy, and `main` source; exact-revision Required CI `29171653266`, Workflow Online Audit `29171653264`, External Links `29171653282`, and Scorecard `29171653261` completed green | The six Action repositories and separately admitted Scorecard image remain upstream trust. Content addressing does not make their code trustworthy, mirror it, or eliminate publisher, registry, provenance, runner, and host compromise. |
 | CTL-005 | Repository workflow token default is read-only; each current workflow begins with `permissions: {}` and grants per-job minimums | Current platform default and `main` source; exact-revision hosted execution is green | Scorecard grants only `security-events: write` for SARIF upload; public publication and OIDC are disabled, and the write-capable job remains off untrusted events. Green push execution does not separately demonstrate its scheduled event path. |
 | CTL-006 | PR workflows use `pull_request`, no `pull_request_target`, no configured repository or environment secrets, only a job-scoped `GITHUB_TOKEN` limited to `contents: read`, bounded timeouts, concurrency, and checkout with `persist-credentials: false` | Current `main` source; exact Required CI and Dependency Review contexts are enforced by ruleset `18810248`, and PRs #1 through #3 are merged | PR content includes executable repository scripts; runner and Action compromise remain external assumptions, and sole-owner merge is not independent review. |
-| CTL-007 | [`GOVERNANCE.md`](../../GOVERNANCE.md) discloses sole stewardship, forbids independent/mature claims, and requires future separation of duties | Current documented constraint | No second maintainer or technically enforced non-author review; governance D-019 is not ratified. |
+| CTL-007 | [`GOVERNANCE.md`](../../GOVERNANCE.md) and D-019/D-023 establish sole-owner authority and forbid unsupported independent or mature claims | Current directed solo governance | No second maintainer, non-author review, separation of duties, or organizational continuity; these are disclosed limitations and not manufactured controls. |
 | CTL-008 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) and Required CI block third-party merge until licensing terms close; ruleset `18810248` requires a branch, pull request, checks, and resolved conversations | Current documented and platform-enforced constraint | Legal decision D-018 remains blocked, and zero approvals cannot supply independent review. |
 | CTL-009 | [`docs/ASSURANCE.md`](../ASSURANCE.md) defines fail-closed claim outcomes, explicit assumptions/non-claims, and non-waivable stop-ship conditions | Proposed constitution, not ratified implementation | No checker, claim registry, release gate, or independent assurance authority exists. |
-| CTL-010 | [`DEPENDENCY_POLICY.md`](../../DEPENDENCY_POLICY.md), current Dependabot/dependency-review configuration, and current Scorecard workflow define admission and surveillance | Current policy and `main` source; Dependency Review is an exact ruleset-required PR context and Scorecard run `29171653261` completed green at revision `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79` | No product dependency graph exists; future manifests, SCA exceptions, VEX, and admission records remain to be implemented. A green Scorecard run is not SAST, and the supplied push-run evidence does not prove scheduled-event execution or a Dependabot update cycle. |
-| CTL-011 | [`RELEASE_POLICY.md`](../../RELEASE_POLICY.md) forbids product release and specifies identity, reproducibility, signing, provenance, and recovery gates | Current documented prohibition; future target | No release authority, keys, builders, signatures, registry, or drills exist. |
-| CTL-012 | Provisional schemas and negative/positive conformance fixtures keep Gate 0 claims, trust, provenance, and repository-control observations explicit | Current architecture evidence | Passing schema checks proves shape only, not truth, soundness, provenance, or control operation. |
-| CTL-013 | Planned authoritative checker, independent checker, canonical formats, resource limits, and adversarial corpora | Target only | No implementation, proof, fuzzing result, or independent review exists. |
-| CTL-014 | Planned verified/certificate-checked compiler transitions and final-object validation | Target only | No IR, compiler, target model, artifact, or preservation evidence exists. |
-| CTL-015 | Planned hermetic builds, two independent rebuilds, signed provenance, transparency evidence, TUF-style roles, SBOM/CBOM, and recovery drills | Target only | No build/release infrastructure or independent principals exist. |
-| CTL-016 | Planned secrecy typing, named target leakage profiles, binary inspection, differential testing, and laboratory evidence | Target only | No leakage semantics, implementation, target choice, or measurement evidence exists. |
+| CTL-010 | [`DEPENDENCY_POLICY.md`](../../DEPENDENCY_POLICY.md), current Dependabot/dependency-review configuration, and current Scorecard workflow define admission and surveillance | Current policy and `main` source; D-024 admits the pinned Rust toolchain and standard library but no third-party crates | The toolchain and host remain bootstrap dependencies; future manifests, SCA exceptions, VEX, and additional admission records remain unimplemented. A green Scorecard run is not compiler SAST or proof of a Dependabot cycle. |
+| CTL-011 | [`RELEASE_POLICY.md`](../../RELEASE_POLICY.md) forbids current product release and defines an explicit solo-preview identity, repeatability, provenance, limitation, and recovery boundary | Current documented prohibition; future solo target | No release decision, keys, artifacts, signatures, registry, or drills exist; independent rebuild and role separation are unavailable. |
+| CTL-012 | Provisional schemas and negative/positive conformance fixtures keep historical Gate 0 claims, trust, provenance, and repository-control observations explicit | Historical/provisional inputs retained under solo bootstrap | Passing schema checks proves shape only, not truth, soundness, provenance, or control operation. |
+| CTL-013 | Planned authoritative checker, implementation-diverse checker, canonical formats, resource limits, and adversarial corpora | Target only | No implementation, proof, fuzzing result, or independent review exists. Same-owner implementation diversity will not be labeled independent. |
+| CTL-014 | Planned verified/certificate-checked compiler transitions and final-object validation | Target only | No semantic IR, lowering or code-generation stage, target model, generated artifact, or preservation evidence exists. |
+| CTL-015 | Planned hermetic builds, separately provisioned owner rebuilds, signed provenance, SBOM/CBOM, immutable publication, and recovery drills | Target only | No build/release infrastructure exists; independent principals and multi-role controls are unavailable and will not be claimed. |
+| CTL-016 | Planned secrecy typing, named target leakage profiles, binary inspection, and differential testing | Target only | No leakage semantics, implementation, target choice, or measurement evidence exists; laboratory evidence is unavailable and stronger physical claims remain unsupported. |
 | CTL-017 | [`SECRETS_AND_INCIDENTS.md`](SECRETS_AND_INCIDENTS.md) inventories current/future credential classes and defines least-scope custody, rotation, revocation, containment, recovery, evidence, communication, and synthetic exercises | Current documented control | Account factors are unverified; exercises, independent PSIRT continuity, and future key stores/roles do not yet exist. |
-| CTL-018 | The exact [`assets/brand/`](../../assets/brand/) inventory, owner-specific CODEOWNERS route, byte-level manifest, binary Git attributes, and repository-policy SHA-256 admissions protect the steward-designated working identity assets | Current `main` source merged through PR #2 at exact revision `f6682072ec3149c4301dde25732d2ab4d790aa75`; policy `0.1.4` and all 65 tests passed in exact-revision Required CI run `29171653266` after PR #3 | D-017 and D-018 remain blocked; C2PA claims are preserved but not independently verified, content addressing does not prove rights or safe decoder behavior, and sole stewardship supplies no independent visual or rights review. |
+| CTL-018 | The exact [`assets/brand/`](../../assets/brand/) inventory, owner-specific CODEOWNERS route, byte-level manifest, binary Git attributes, and repository-policy SHA-256 admissions protect the steward-designated working identity assets | Current `main` source merged through PR #2 at exact revision `f6682072ec3149c4301dde25732d2ab4d790aa75`; policy `0.1.4` and all 65 tests passed in exact-revision Required CI run `29171653266` after PR #3 | D-017 authorizes the working identity but does not provide public-name clearance, and D-018 outbound terms remain open; C2PA claims are preserved but not independently verified, content addressing does not prove rights or safe decoder behavior, and sole stewardship supplies no independent visual or rights review. |
 | CTL-019 | GitHub CodeQL default setup analyzes the current Python and Actions surfaces and preserves alert lifecycle state | Current platform control at exact `main` revision `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`: run `29171652948` completed green; Python analysis `1467719573` returned zero results across 50 configured rules; Actions analysis `1467719309` returned zero results across 23 configured rules; neither analysis reported an error or warning; alerts #1-#3 (`py/path-injection`) were fixed, not dismissed, at `2026-07-11T23:09:26Z` | Coverage is limited to the named revision, languages, configured rules, queries, and platform execution. Zero results do not prove vulnerability absence; fixed alerts demonstrate recorded remediation, not independent review or certification. |
+| CTL-020 | The dependency-free Rust compiler foundation forbids unsafe code, caps source bytes, tokens, and emitted diagnostics, sanitizes diagnostic control text, and exercises source, span, lexer, diagnostic, and CLI behavior with formatting, lint, unit, integration, malformed-input, oversize-input, and repeatability checks | Current source and local test evidence for the pending revision | Tests do not establish parser, semantic, proof, code-generation, cryptographic, leakage, or production correctness; the Rust toolchain, host, algorithmic behavior inside the budgets, and sole-owner review remain trusted or residual risks. |
 
 ## Entry points and attack surfaces
 
@@ -247,6 +259,7 @@ compliance evidence.
 | GitHub Actions PR runs | `pull_request` and `merge_group` events | TB-004 | Treat fork content, repository scripts, and parsed documents as attacker controlled. |
 | Trusted Actions runs | Push, schedule, or manual dispatch | TB-005 | Scorecard can upload SARIF but cannot request OIDC; event restrictions and minimum permissions remain critical. |
 | Private vulnerability intake | GitHub security advisory form | TB-006 | Reports may contain embargoed exploit information. See [`SECURITY.md`](../../SECURITY.md). |
+| Current lexer and CLI | File paths, file bytes, standard input, command arguments, and output streams | TB-008, TB-013 | Must reject invalid UTF-8, malformed tokens, oversized input, ambiguous options, and resource exhaustion with bounded stable diagnostics. |
 | Future parser, package client, checker, and LSP | Files, packages, proof objects, editor input | TB-008, TB-009 | Must reject malformed, cyclic, oversized, ambiguous, and resource-exhausting inputs. |
 | Future compiler, linker, and foreign ABI | Source/Core/IR/object input and caller buffers | TB-010, TB-011 | Must bind claims to exact bytes, targets, ABI contracts, and failure behavior. |
 | Future registry and update client | Package publication/resolution and update metadata | TB-012 | Must resist namespace takeover, downgrade, freeze, rollback, key compromise, and malicious packages. |
@@ -298,6 +311,11 @@ compliance evidence.
     overlapping buffers, reuses a nonce, selects an unsupported target, observes
     unmodeled leakage, or receives ambiguous authentication failure at TB-011.
     Correct primitive mathematics fails to protect real users.
+13. **TM-014 — exhaust or confuse the compiler frontend:** ADV-005 supplies an
+    oversized, malformed, deeply commented, Unicode, pathologically tokenized,
+    or misleadingly named source across TB-013. CMP-004 consumes excessive
+    memory or time, panics, emits wrong spans, leaks host path details, or returns
+    success despite a lexical error.
 
 ## Threat register
 
@@ -307,19 +325,20 @@ required control. Reviews must replace conditional ranks with deployment facts.
 
 | Threat ID | Source, boundaries, assets | Threat action and impact | Existing controls and evidence | Required treatment | Likelihood | Impact | Priority | Residual risk | Owner, review, status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TM-001 | ADV-002/004/008; TB-002/003; AS-001/002/003/011 | Compromise or unilateral authority changes or erases authoritative decisions, settings, or history. | CTL-001, CTL-007, CTL-008; ruleset `18810248` constrains ordinary Git updates, and public history aids detection. | Preserve the active no-bypass ruleset and exact required checks; test safe direct-update rejection. Add a non-author maintainer before claiming independent review; establish recovery and access review. | Medium-high: one administrator and zero required approvals, despite protected Git updates | High | High | Owner or platform compromise can weaken settings or abuse admin recovery; zero approvals do not create independent review. | Bootstrap Steward; each rules/access change and quarterly; `open-current` |
+| TM-001 | ADV-002/004/008; TB-002/003; AS-001/002/003/011 | Compromise or unilateral authority changes or erases authoritative decisions, settings, or history. | CTL-001, CTL-007, CTL-008; ruleset `18810248` constrains ordinary Git updates, and public history aids detection. | Preserve the active no-bypass ruleset and exact required checks; test safe direct-update rejection; maintain recovery material and periodic owner access review; never claim independent governance. | Medium-high: one administrator and zero required approvals, despite protected Git updates | High | High | Owner or platform compromise can weaken settings or abuse admin recovery; zero approvals do not create independent review. | Project owner; each rules/access change and quarterly; `open-current` |
 | TM-002 | ADV-001/002; TB-001/004; AS-003/004 | Attacker-controlled workflow, script, or metadata reaches a privileged runner and steals credentials or changes state. | CTL-005/006/019; current PR jobs declare read-only source access, no configured repository or environment secrets, only a job-scoped read-only `GITHUB_TOKEN`, timeouts, and no `pull_request_target`. Ruleset `18810248` requires the exact app-bound Required CI and Dependency Review contexts; exact-revision Required CI run `29171653266` completed green with policy `0.1.4` and all 65 tests; CodeQL run `29171652948` completed without errors or warnings and alerts #1-#3 were fixed rather than dismissed. | Policy-check every workflow diff; keep privileged jobs off PR events; validate metadata before shell use; require CI and security review on workflow paths. | Low now: demonstrated PR jobs have read-only permissions; reassess every permission or event change | High | Medium | Actions/runner isolation, sole-owner review, query coverage, and future permission edits remain trusted or residual risks. | CI/Release authority, currently Bootstrap Steward; every workflow change; `open-current` |
-| TM-003 | ADV-003; TB-005/012; AS-004/009 | Compromised action, tool, image, registry, archive, or dependency falsifies results or executes malicious code. | CTL-004/010; current selected-action/full-SHA settings, current pinned Action source, the content-addressed Scorecard runtime, download digests, exact required PR contexts, and green exact-revision main runs `29171653264`, `29171653282`, and `29171653261`. | Preserve the minimum allowlist and exact container admission; retain provenance/admission records; archive dependencies; verify signatures where available; use hermetic release inputs and independent rebuilds. | Medium: admitted third-party CI already executes with narrow PR permissions | High | High | A selected full SHA or digest identifies malicious bytes as faithfully as good bytes; admission, publisher provenance, registry availability, runner integrity, and monitoring remain human or external judgments. | Dependency and CI authority, currently Bootstrap Steward; each admission/update and weekly surveillance; `open-current` |
+| TM-003 | ADV-003; TB-005/012/013; AS-004/009/013 | Compromised action, tool, image, Rust toolchain, registry, archive, or dependency falsifies results or executes malicious code. | CTL-004/010/020; current full-SHA settings, pinned tool identities, no third-party Rust crates, exact required PR contexts, and green exact-revision hosted evidence. | Preserve the minimum allowlist and exact admission records; archive dependencies; verify signatures where available; use locked offline checks and separately provisioned owner rebuilds. | Medium: admitted third-party CI and the Rust toolchain execute code | High | High | A pinned identity can identify malicious bytes; publisher, registry, runner, host, and solo-admission judgment remain trusted or residual risks. | Project owner; each admission/update and surveillance run; `open-current` |
 | TM-004 | ADV-001/002/008; TB-001/002/004/005; AS-003/004/005/010 | Secret enters source, artifact, log, cache, or untrusted job and is used before revocation. | CTL-003/005/006/017; secret scanning and push protection enabled, minimal workflow permissions, no product keys, and a fail-closed lifecycle/playbook is documented. | Exercise synthetic leak/revocation paths; enable broader scanning if available; keep release/root keys out of GitHub; rotate immediately and treat history deletion as insufficient. | Medium: humans and tooling can leak unsupported patterns | High | High | Detection is not prevention for every secret; account custody and incident execution are not independently verified. | Security authority, currently Bootstrap Steward; every alert/credential event and quarterly; `open-current` |
-| TM-005 | ADV-004/005; TB-008/009/010/012; AS-006/008/009/011 | Valid evidence is rebound, omitted, downgraded, or confused across source, target, artifact, or claim context. | CTL-009/012 specify explicit subjects, digests, contexts, assumptions, and fail-closed outcomes. | Ratify canonical schemas; bind complete claim closure to exact bytes and versions; independently check bundle traversal; add substitution, omission, downgrade, and cross-target negative tests. | Future | High | High | Schema validity cannot prove truthful binding; human standards intent remains an assumption. | Assurance/TCB authority; every schema/claim change and release; `future-blocking` |
-| TM-006 | ADV-005/007; TB-008/009; AS-006 | Malformed or adversarial proofs exploit unsoundness, parser differential, resource exhaustion, or hidden axioms. | CTL-009/013 target small deterministic checker, axiom ledger, resource bounds, independent implementation, and adversarial corpus. | Prove the checked relation sound; fuzz and mutate accepted objects; test malformed/cyclic/oversized inputs; enforce canonical decoding and budgets; obtain independent logic/implementation audit. | Future | High | Critical | A shared semantic error can survive multiple implementations; audit and diverse formulations remain necessary. | Assurance/TCB Board; every checker/format/axiom change and release; `future-stop-ship` |
+| TM-005 | ADV-004/005; TB-008/009/010/012; AS-006/008/009/011 | Valid evidence is rebound, omitted, downgraded, or confused across source, target, artifact, or claim context. | CTL-009/012 specify explicit subjects, digests, contexts, assumptions, and fail-closed outcomes. | Ratify canonical schemas; bind complete claim closure to exact bytes and versions; check bundle traversal through separate owner-executable paths; add substitution, omission, downgrade, and cross-target negative tests. | Future | High | High | Schema validity cannot prove truthful binding; human standards intent remains an assumption. | Project owner; every schema/claim change and release; `future-blocking` |
+| TM-006 | ADV-005/007; TB-008/009; AS-006 | Malformed or adversarial proofs exploit unsoundness, parser differential, resource exhaustion, or hidden axioms. | CTL-009/013 target a small deterministic checker, axiom ledger, resource bounds, implementation diversity, and adversarial corpus. | Prove the checked relation sound; fuzz and mutate accepted objects; test malformed/cyclic/oversized inputs; enforce canonical decoding and budgets; record external audit as unavailable. | Future | High | Critical | A shared solo-authored semantic error can survive multiple implementations; the missing independent audit remains explicit. | Project owner; every checker/format/axiom change and release; `future-stop-ship` |
 | TM-007 | ADV-003/004/007/008; TB-010/011; AS-006/008/009 | Compiler, encoder, linker, ABI, or target behavior diverges from proved source or promised leakage behavior. | CTL-009/014/016 require checked transitions, target-indexed claims, differential testing, and final-byte inspection. | Give each stable IR executable semantics; verify or certificate-check each pass; bind object bytes and ABI; test real hardware and emulators; forbid silent target fallback. | Future | High | Critical | OS, firmware, CPU, toolchain, and unmodeled microarchitecture remain explicit assumptions. | Compiler and Assurance authorities; every pass/target/profile change and release; `future-stop-ship` |
-| TM-008 | ADV-004/008; TB-007; AS-002/007/011 | Wrong, stale, or selectively interpreted standard/erratum/vector becomes authoritative source intent. | CTL-009/012 require exact provenance, rights, clause links, errata, vectors, and independent transcription review. | Pin publication/errata/vector digests; archive permitted inputs; obtain independent cryptographer review; run mature independent implementations and official vectors as separate evidence. | Medium now for planning; High once packages exist | High | High | Formal proof can preserve a human transcription mistake perfectly. | Standards and Cryptography authorities; each upstream change and package admission; `open-design` |
-| TM-009 | ADV-002/003/004/007; TB-003/005/012; AS-003/004/009/010 | Source, builder, signer, registry, or update role is compromised, enabling forgery, rollback, freeze, or unrecoverable loss. | CTL-007/011/015 prohibit current release and require separation, independent rebuilds, provenance, threshold roots, and drills. | Separate source/build/sign/publish/root principals; use hermetic inputs, signed provenance, TUF-style roles, release/tag rules, immutable publication, monitoring, revocation, and rehearsed recovery. | Future | High | Critical | Coordinated principal or platform compromise and dependency on external transparency remain residual. | Release Engineering and PSIRT; every release/key/registry change and drill; `future-stop-ship` |
-| TM-010 | ADV-004/008; TB-002/003; AS-002/011 | Proposed, partial, or synthetic evidence is presented as mature assurance or compliance. | CTL-007/009/012; repository explicitly distinguishes proposed, target, current, and unsupported states. | Require machine-readable claim status and evidence; independent approval for critical assertions; release-facing claim review; block words such as certified unless exact external scope is supplied. | High: sole owner and public planning | High | High | Readers can ignore qualifications; governance independence is unavailable today. | Project owner and future Assurance Board; every public claim and release; `open-current` |
-| TM-011 | ADV-001/002/008; TB-001/006; AS-005/011 | Vulnerability details are disclosed publicly, mishandled, or left untriaged. | CTL-002/017; private reporting enabled, public issue redirection, response targets, evidence handling, containment, and notification are documented. | Staff an independent PSIRT; create continuity; exercise intake with synthetic data; minimize attachments/access; publish advisories only after coordinated remediation. | Medium: private path exists but one-person availability | Medium | Medium | Reporter error, GitHub outage, owner unavailability, or an unexercised playbook can still expose or delay a case. | Bootstrap Steward then PSIRT; each report and quarterly drill; `open-current` |
-| TM-012 | ADV-006/007/008; TB-011; AS-007/008/011 | Misuse, target mismatch, unmodeled leakage, entropy failure, or ambiguous failure behavior defeats real cryptographic security. | CTL-009/016 define independent claim dimensions, non-claims, explicit contracts, named leakage models, and layered evidence. | Ratify finite profiles; design misuse-resistant APIs; type and test buffer/nonce/state rules; bind entropy and platform contracts; add target binary and specialist lab evidence where claimed. | Future | High | Critical | Cryptographic hardness, foreign callers, hardware, and behavior outside named profiles remain assumptions/non-claims. | Cryptography, Target, and Assurance authorities; each API/target/profile/standard change and release; `future-stop-ship` |
+| TM-008 | ADV-004/008; TB-007; AS-002/007/011 | Wrong, stale, or selectively interpreted standard/erratum/vector becomes authoritative source intent. | CTL-009/012 require exact provenance, rights, clause links, errata, vectors, and explicit transcription-review status. | Pin publication/errata/vector digests; archive permitted inputs; cross-check clauses through separate owner passes; run official vectors and mature reference implementations as separate evidence; record independent review as unavailable. | Medium now for planning; High once packages exist | High | High | Formal proof can preserve a human transcription mistake perfectly. | Project owner; each upstream change and package admission; `open-design` |
+| TM-009 | ADV-002/003/004/007; TB-003/005/012; AS-003/004/009/010 | Source, builder, signer, registry, or update role is compromised, enabling forgery, rollback, freeze, or unrecoverable loss. | CTL-007/011/015 prohibit current release and require solo-produced provenance, clean rebuilds, immutable identities, and drills. | Use hermetic inputs, signed provenance where selected, release/tag rules, immutable publication, monitoring, revocation, and rehearsed owner recovery; disclose that one principal controls the path. | Future | High | Critical | Owner or platform compromise can span every role; independent transparency and role separation are unavailable. | Project owner; every release/key/registry change and drill; `future-stop-ship` |
+| TM-010 | ADV-004/008; TB-002/003; AS-002/011 | Proposed, partial, or synthetic evidence is presented as mature assurance or compliance. | CTL-007/009/012; repository explicitly distinguishes proposed, target, current, solo-reviewed, and unsupported states. | Require machine-readable claim status and evidence; owner review of every release-facing assertion; block words such as independent, certified, or validated unless exact evidence exists. | High: sole owner and public planning | High | High | Readers can ignore qualifications; governance independence is unavailable. | Project owner; every public claim and release; `open-current` |
+| TM-011 | ADV-001/002/008; TB-001/006; AS-005/011 | Vulnerability details are disclosed publicly, mishandled, or left untriaged. | CTL-002/017; private reporting enabled, public issue redirection, response targets, evidence handling, containment, and notification are documented. | Exercise owner intake with synthetic data; minimize attachments and access; preserve recovery instructions; publish advisories only after remediation is ready. | Medium: private path exists but one-person availability | Medium | Medium | Reporter error, GitHub outage, owner unavailability, or an unexercised playbook can still expose or delay a case. | Project owner; each report and quarterly drill; `open-current` |
+| TM-012 | ADV-006/007/008; TB-011; AS-007/008/011 | Misuse, target mismatch, unmodeled leakage, entropy failure, or ambiguous failure behavior defeats real cryptographic security. | CTL-009/016 define separate claim dimensions, non-claims, explicit contracts, named leakage models, and layered evidence. | Ratify finite profiles; design misuse-resistant APIs; type and test buffer/nonce/state rules; bind entropy and platform contracts; keep specialist-lab-dependent claims unsupported. | Future | High | Critical | Cryptographic hardness, foreign callers, hardware, and behavior outside named profiles remain assumptions/non-claims. | Project owner; each API/target/profile/standard change and release; `future-stop-ship` |
 | TM-013 | ADV-001/002/004/008; TB-001/003; AS-011/012 | A substituted, malformed, deceptively derived, or falsely attributed image corrupts project identity, strips provenance, overstates rights, or targets a viewer's decoder. | CTL-001/018 close the official binary inventory to exact paths and digests, route ownership, preserve supplied bytes, and state the D-017/D-018 boundary. | Keep originals immutable; review decoded content and metadata; verify C2PA independently before making a signed-provenance claim; add derived assets rather than overwriting sources; reassess every image format or rendering path. | Low: only the steward can merge and the bytes are digest-bound | Medium | Low | A trusted admitted file can still be legally encumbered, misleading, or dangerous to a vulnerable external decoder; sole stewardship provides no independent visual or rights review. | Bootstrap Steward; every brand-asset or identity change; `open-current` |
+| TM-014 | ADV-005/007/008; TB-008/013; AS-003/013 | Hostile source or path input exhausts resources, panics, produces incorrect tokens/spans, leaks host details, or is accepted with hidden lexical errors. | CTL-020; UTF-8 validation, checked source IDs/spans, 16 MiB source cap, token/diagnostic caps, sanitized output, normalized I/O errors, no unsafe code, no third-party crates, and positive/malformed/oversize CLI tests. | Retain the byte/token/diagnostic budgets; extend tests for nested comments, long tokens, Unicode byte spans, repeated runs, broken output streams, and fuzz/property cases as the frontend grows. | Medium: the local CLI intentionally accepts attacker-controlled files | Medium | Medium | Rust allocation failure within the cap, algorithmic complexity, toolchain defects, host filesystem behavior, and untested platform differences remain. | Project owner; every frontend/input-boundary change; `open-current` |
 
 ## Criticality calibration
 
@@ -353,18 +372,18 @@ those conditions.
 
 | Assurance condition | Principal threat IDs | Required disposition before release |
 | --- | --- | --- |
-| Proof-soundness flaw | TM-005, TM-006 | Fix and independently revalidate the checker, formats, affected proof closure, and every dependent claim. |
+| Proof-soundness flaw | TM-005, TM-006 | Fix and revalidate the checker, formats, affected proof closure, and every dependent claim through separately exercised owner-executable paths; record independent review as unavailable unless it actually occurs. |
 | Incorrect cryptographic output | TM-007, TM-008, TM-012 | Correct source/semantics/compiler/package as coupled artifacts and rerun the complete affected evidence set. |
 | Secret-dependent behavior within a promised profile | TM-007, TM-012 | Withdraw or narrow the profile, fix the source-to-binary path, and repeat formal, binary, hardware, and review evidence. |
 | Undocumented axiom, TCB expansion, foreign boundary, or claim downgrade | TM-005, TM-006, TM-007, TM-010 | Restore explicit closure and review; a wording change alone cannot cure missing evidence. |
-| Meaning-changing semantic ambiguity | TM-005, TM-006, TM-007 | Resolve normatively, add independent parsing/semantics evidence and migration analysis, then recheck dependents. |
+| Meaning-changing semantic ambiguity | TM-005, TM-006, TM-007 | Resolve normatively, add separate parsing and semantics evidence plus migration analysis, then recheck dependents; do not label same-owner evidence independent. |
 | Failed reproducibility, signature, provenance, update, or rollback protection | TM-003, TM-009 | Stop publication, repair the complete release path, rehearse recovery, and issue new immutable identities. |
-| Unresolved critical/high security or assurance finding | Any applicable threat | Understand scope and impact, remediate, retest, and obtain required independent review; no risk acceptance can waive it. |
+| Unresolved critical/high security or assurance finding | Any applicable threat | Understand scope and impact, remediate, and retest; keep any claim requiring unavailable independent review blocked. No risk acceptance can waive the finding. |
 | Relevant unreviewed standards erratum | TM-008, TM-012 | Complete provenance and cryptographer review, update affected packages/claims, and notify downstreams. |
 | Audit finding whose impact is unknown | Any applicable threat | Keep release blocked until impact and claim closure are known. |
 
-At Gate 0, release is already prohibited by governance, licensing, staffing, and
-technical prerequisites. A green threat table does not override any other gate.
+No release is currently authorized. A green threat table does not override the
+release policy or any capability-specific gate.
 
 ## Mandatory update and review protocol
 
@@ -402,10 +421,9 @@ The same pull request must update this document when it:
   not operating evidence.
 - The pull-request threat-impact row must name affected IDs. `No change` needs a
   reason tied to inspected boundaries.
-- Until a second qualified maintainer exists, the Bootstrap Steward records the
-  review but must not label it independent. TCB, cryptography, release, and
-  assurance-critical reviews require the authorities in
-  [`GOVERNANCE.md`](../../GOVERNANCE.md) before a product release.
+- The project owner records review but must not label it independent. TCB,
+  cryptography, release, and assurance-critical changes follow the solo claim
+  boundary in [`GOVERNANCE.md`](../../GOVERNANCE.md).
 - Perform a complete review at least quarterly, at every program gate, before
   any release candidate, and after every incident or recovery exercise.
 
@@ -424,6 +442,7 @@ The same pull request must update this document when it:
 | `docs/DECISIONS.md` | Records unresolved choices whose resolution changes the attack surface and authority model. | TM-001, TM-008, TM-009, TM-010, TM-012 |
 | `schemas/gate0/` | Encodes provisional claim, evidence, trust, standards, and repository-control record shapes; shape must not be confused with truth. | TM-005, TM-008, TM-010 |
 | `scripts/` and `tools/` | Repository-owned code executes in CI and validates evidence/policy; changes can weaken or bypass controls. | TM-002, TM-003, TM-010 |
+| `compiler/` | Processes attacker-controlled source and paths through the current Rust CLI and will hold future semantic and code-generation boundaries. | TM-003, TM-005, TM-006, TM-007, TM-014 |
 
 ## Quality check
 

@@ -1,18 +1,20 @@
-# Gate 0 CI dependency inventory
+# Solo-bootstrap CI and compiler-toolchain dependency inventory
 
-Status: current direct-dependency inventory and gap record; not a product
-dependency admission, reproducible-build claim, or legal approval
+Status: current direct-dependency inventory and gap record; not a reproducible-
+build claim or legal approval
 
-Snapshot: 2026-07-11
+Inventory amendment: 2026-07-12
+
+Hosted execution snapshot: 2026-07-11
 
 ## 1. Scope and claim boundary
 
-This document records the third-party Actions, downloaded executables, hosted
-services, and ambient runner tools used by the five workflows in
-`.github/workflows/`. It also separates repeatable validation methods from
-reproducible evidence. The inventory is evidence for reviewing the current
-repository automation; it does not satisfy the full admission record required
-by [`DEPENDENCY_POLICY.md`](../../DEPENDENCY_POLICY.md).
+This document records the Rust compiler toolchain plus third-party Actions,
+downloaded executables, hosted services, and ambient runner tools used by the
+five workflows in `.github/workflows/`. It also separates repeatable validation
+methods from reproducible evidence. The inventory does not by itself satisfy
+every admission or release record required by
+[`DEPENDENCY_POLICY.md`](../../DEPENDENCY_POLICY.md).
 
 A full Git commit SHA fixes the selected upstream Action revision under
 GitHub's object model. A container digest fixes the selected OCI manifest. Each
@@ -22,16 +24,29 @@ or transitive dependency closure. A release-archive checksum fixes the bytes
 accepted by an installer, but does not archive those bytes or establish their
 publisher identity. Those distinctions are explicit below.
 
-No component in this file is an Orange product dependency or part of a future
-logical trusted computing base. D-018 remains open, so recording an upstream
-license is factual provenance only and does not authorize incorporation,
-redistribution, or a license for this repository.
+The pinned Rust toolchain and standard library are admitted build/bootstrap
+dependencies for D-024 but are not a logical proof TCB. CI Actions and
+repository tools remain repository/build dependencies. D-018 remains open, so
+recording upstream terms is factual provenance only and does not authorize
+redistribution or grant a license for this repository.
 
-## 2. Workflow map
+## 2. Compiler toolchain
+
+| Component | Identity and role | Current closure | Known gap |
+| --- | --- | --- | --- |
+| Rust toolchain | `rustc`/Cargo 1.96.1 selected by `rust-toolchain.toml`; compiles and tests the Rust 2024 workspace | Exact release version and required `rustfmt`/`clippy` components are selected; initial Cargo graph has no third-party crates | Platform archives, installer, standard-library bytes, signatures, licenses, and transitive host inputs are not vendored or digest-bound here |
+| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages | Cargo and rustc remain toolchain trust; a lock file cannot archive the toolchain |
+| Rust standard library | Runtime/build interface used by `orange-compiler` and `orangec` | Supplied by the selected toolchain; no additional crate registry input | Target-specific standard-library and OS behavior are trusted; redistribution review remains open |
+
+These records authorize local owner development only. They do not establish a
+hermetic build, toolchain redistribution right, compiler correctness, or release
+provenance.
+
+## 3. Workflow map
 
 | Workflow | Trigger and role | Direct external execution dependencies | Network or hosted-state boundary |
 | --- | --- | --- | --- |
-| `ci.yml` | Required pull-request, merge-queue, and `main` repository checks | Checkout, markdownlint, actionlint, and zizmor | GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
+| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | rustup resolves the pinned toolchain when absent; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
 | `dependency-review.yml` | Pull-request and merge-queue dependency-policy signal | Checkout and Dependency Review | Depends on GitHub's dependency graph, API, and event comparison state |
 | `external-links.yml` | `main`, scheduled, and manual link observation | Checkout and lychee | Downloads lychee and queries every non-excluded external endpoint at run time |
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
@@ -83,7 +98,7 @@ authorization-value pattern; the two token-value log fields were masked. These
 checks reduce accidental-disclosure uncertainty for this run only and do not
 make the mutable hosted execution hermetic or reproducible.
 
-## 3. Pinned Action inventory
+## 4. Pinned Action inventory
 
 Every direct repository Action `uses:` reference currently names a full
 40-character commit SHA. Scorecard instead runs through an explicit Docker CLI
@@ -106,7 +121,7 @@ The pinned zizmor composite Action also declares
 `advanced-security: false`, so that conditional step is not executed. It remains
 part of the upstream descriptor and therefore part of the source-review surface.
 
-## 4. Downloaded executable and container inventory
+## 5. Downloaded executable and container inventory
 
 | Tool | Selected artifact identity | Verification performed by current automation | Upstream license and provenance | Remaining limitation |
 | --- | --- | --- | --- | --- |
@@ -118,16 +133,17 @@ part of the upstream descriptor and therefore part of the source-review surface.
 Orange deliberately sets `INPUT_PUBLISH_RESULTS` to `false`. OpenSSF's public
 publication API requires the official `ossf/scorecard-action` step identity,
 while that exact Action descriptor selects its runtime through a mutable image
-tag. Gate 0 chooses the content-addressed runtime and retains the SARIF artifact
-and GitHub code-scanning upload instead. The job therefore requests no OIDC
-token and makes no Orange-authenticated publication to `api.scorecard.dev`.
+tag. Current repository policy therefore chooses the content-addressed runtime
+and retains the SARIF artifact and GitHub code-scanning upload instead. The job
+requests no OIDC token and makes no Orange-authenticated publication to
+`api.scorecard.dev`.
 
 Checksums above are copied from the executable installer scripts or the exact
 selected Action version map. A reviewer must compare this table with those
 authoritative repository bytes after every change; this prose is not an
 enforcement mechanism.
 
-## 5. First-party methods and ambient dependencies
+## 6. First-party methods and ambient dependencies
 
 The required invariant check invokes repository-owned Bash and Python files:
 
@@ -166,7 +182,7 @@ license metadata of the exact runner package. Until an immutable runner
 manifest is captured and reviewed, the effective ambient license inventory is
 incomplete.
 
-## 6. Deterministic methods are not reproducible evidence
+## 7. Deterministic methods are not reproducible evidence
 
 Orange uses **deterministic method validation** to mean that a named procedure
 fixes its repository inputs and relevant process variables, avoids undeclared
@@ -178,7 +194,7 @@ recorded identities and digests.
 
 | Result | What is currently fixed | What the result actually establishes | Why it is not reproducible evidence yet |
 | --- | --- | --- | --- |
-| `make check` or `scripts/ci/check-repository` | Repository bytes and explicit process variables; no network is used by the method | The scoped repository invariants and synthetic/adversarial fixture expectations pass under the executing Python and OS | Python, Bash, kernel, filesystem, and host tools are not content-fixed; no signed execution manifest or independently replayable environment is emitted |
+| `make check` or `scripts/ci/check-repository` | Repository bytes, Cargo lock, selected Rust version, and explicit process variables; Cargo runs locked/offline after the toolchain exists | Rust formatting, lint, docs, unit/CLI tests, repository invariants, and synthetic/adversarial fixture expectations pass under the executing toolchain and OS | Rust archives, Python, Bash, kernel, filesystem, and host tools are not content-fixed; no signed execution manifest or independently replayable environment is emitted |
 | Required hosted CI | Repository revision, direct Action SHAs, actionlint archive digest, and zizmor image digest | The configured repository, Markdown, workflow, and workflow-security methods passed in one hosted run | Runner image, Node, Git, Docker host, Action bundles, and service behavior are not fully archived or fixed |
 | Dependency Review | Event base/head identities and the selected Action revision | GitHub reported no configured dependency-policy violation for its then-current dependency data | Dependency graph/API state and service implementation are external, time-indexed inputs |
 | External Links | lychee archive digest, link-check flags, and repository locators | The non-excluded endpoints produced accepted responses during the run | Remote content, DNS, TLS, routing, rate limits, and server policy change independently of repository bytes |
@@ -190,7 +206,7 @@ A green check, log URL, annotation, SARIF upload, or 14-day artifact is an
 execution observation. It is not a signed, thick, offline-replayable evidence
 bundle and must not be used to imply future Orange assurance claims.
 
-## 7. Closure requirements
+## 8. Closure requirements
 
 Before repository automation can support an offline-reproducibility or
 product-assurance claim, an accepted change must:
@@ -213,9 +229,9 @@ product-assurance claim, an accepted change must:
 These gaps do not invalidate the current defense-in-depth repository checks.
 They limit what those checks and their hosted results are permitted to claim.
 
-## 8. Maintenance
+## 9. Maintenance
 
-The Bootstrap Steward updates this inventory in the same change that alters a
+The project owner updates this inventory in the same change that alters a
 workflow dependency, installer identity, execution mode, or runner label. Each
 update must compare the workflow, installer, exact upstream revision, license,
 runtime descriptor, and transitive closure. Independent dependency and legal

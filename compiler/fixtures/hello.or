@@ -1,0 +1,6 @@
+// Permanent lexical fixture for the pre-alpha Orange 2026 edition.
+module demo {
+  spec identity = "orange";
+  impl rounds = 0x0A;
+  claim linked = true;
+}

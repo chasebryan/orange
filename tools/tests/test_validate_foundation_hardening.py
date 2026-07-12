@@ -8,8 +8,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import ExitStack, redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 from tools.validate_foundation import (
     FoundationValidator,
@@ -384,6 +385,384 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             validator.policy = self._path_policy()
             validator._validate_required_and_forbidden_paths()
             self.assertNotIn("path.inventory", {finding.code for finding in validator.findings})
+
+
+class RustDependencyBoundaryHardeningTests(unittest.TestCase):
+    @staticmethod
+    def _write_workspace(root: Path) -> None:
+        manifests = {
+            "rust-toolchain.toml": """[toolchain]
+channel = "1.96.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
+""",
+            "compiler/Cargo.toml": """[workspace]
+members = [
+  "crates/orange-compiler",
+  "crates/orangec",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.96.1"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "deny"
+""",
+            "compiler/crates/orange-compiler/Cargo.toml": """[package]
+name = "orange-compiler"
+description = "Permanent compiler foundations for the Orange language"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+""",
+            "compiler/crates/orangec/Cargo.toml": """[package]
+name = "orangec"
+description = "Command-line frontend for the Orange compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+orange-compiler = { path = "../orange-compiler" }
+
+[lints]
+workspace = true
+""",
+            "compiler/Cargo.lock": """version = 4
+
+[[package]]
+name = "orange-compiler"
+version = "0.0.1"
+
+[[package]]
+name = "orangec"
+version = "0.0.1"
+dependencies = [
+ "orange-compiler",
+]
+""",
+        }
+        for value, source in manifests.items():
+            path = root / value
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+
+    @staticmethod
+    def _compiler_findings(root: Path):
+        validator = FoundationValidator(root)
+        validator._validate_compiler_dependency_boundary()
+        return validator.findings
+
+    def test_exact_first_party_workspace_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_workspace(root)
+            self.assertEqual(self._compiler_findings(root), [])
+
+    def test_external_dependencies_in_every_cargo_context_are_rejected(self) -> None:
+        mutations = (
+            ("compiler/crates/orange-compiler/Cargo.toml", '[dependencies]\nserde = "1"\n'),
+            (
+                "compiler/crates/orange-compiler/Cargo.toml",
+                '[dev-dependencies]\nserde = { git = "https://example.invalid/serde" }\n',
+            ),
+            (
+                "compiler/crates/orange-compiler/Cargo.toml",
+                '[build-dependencies]\nserde = { path = "../../../../outside" }\n',
+            ),
+            ("compiler/Cargo.toml", '[workspace.dependencies]\nserde = "1"\n'),
+            (
+                "compiler/crates/orange-compiler/Cargo.toml",
+                '[target.\'cfg(unix)\'.dependencies]\nserde = "1"\n',
+            ),
+            (
+                "compiler/crates/orange-compiler/Cargo.toml",
+                '[target.\'cfg(unix)\'.dev-dependencies]\nserde = "1"\n',
+            ),
+            (
+                "compiler/crates/orange-compiler/Cargo.toml",
+                '[target.\'cfg(unix)\'.build-dependencies]\nserde = "1"\n',
+            ),
+            (
+                "compiler/Cargo.toml",
+                '[patch.crates-io]\nserde = { git = "https://example.invalid/serde" }\n',
+            ),
+            (
+                "compiler/Cargo.toml",
+                '[replace]\n"serde:1.0.0" = { git = "https://example.invalid/serde" }\n',
+            ),
+        )
+        for value, addition in mutations:
+            with self.subTest(manifest=value, addition=addition), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / value
+                path.write_text(path.read_text(encoding="utf-8") + "\n" + addition, encoding="utf-8")
+                self.assertIn(
+                    "compiler.dependencies",
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_admitted_path_dependency_cannot_escape_or_gain_source_fields(self) -> None:
+        mutations = (
+            '{ path = "../../../../outside" }',
+            '{ path = "../orange-compiler", version = "0.0.1" }',
+            '{ package = "orange-compiler", git = "https://example.invalid/orange" }',
+        )
+        for replacement in mutations:
+            with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / "compiler/crates/orangec/Cargo.toml"
+                source = path.read_text(encoding="utf-8")
+                path.write_text(
+                    source.replace('{ path = "../orange-compiler" }', replacement),
+                    encoding="utf-8",
+                )
+                self.assertIn(
+                    "compiler.dependencies",
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_malformed_manifest_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_workspace(root)
+            path = root / "compiler/crates/orange-compiler/Cargo.toml"
+            path.write_text(path.read_text(encoding="utf-8") + "\n[dependencies\n", encoding="utf-8")
+            self.assertIn(
+                "compiler.manifest_toml",
+                {finding.code for finding in self._compiler_findings(root)},
+            )
+
+    def test_lockfile_rejects_registry_and_lock_only_path_packages(self) -> None:
+        additions = (
+            """[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0000000000000000000000000000000000000000000000000000000000000000"
+""",
+            """[[package]]
+name = "vendored"
+version = "0.1.0"
+""",
+        )
+        for addition in additions:
+            with self.subTest(addition=addition), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / "compiler/Cargo.lock"
+                path.write_text(path.read_text(encoding="utf-8") + "\n" + addition, encoding="utf-8")
+                self.assertIn(
+                    "compiler.lock_graph",
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_extra_manifest_is_rejected_by_dependency_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_workspace(root)
+            path = root / "compiler/crates/unadmitted/Cargo.toml"
+            path.parent.mkdir(parents=True)
+            path.write_text('[package]\nname = "unadmitted"\nversion = "0.0.1"\n', encoding="utf-8")
+            self.assertIn(
+                "compiler.manifest_inventory",
+                {finding.code for finding in self._compiler_findings(root)},
+            )
+
+    def test_workspace_and_package_identity_cannot_drift(self) -> None:
+        mutations = (
+            (
+                "compiler/Cargo.toml",
+                lambda source: source + '\n[package]\nname = "unexpected-root"\nversion = "0.0.1"\n',
+                "compiler.package_inventory",
+            ),
+            (
+                "compiler/Cargo.toml",
+                lambda source: source.replace('  "crates/orangec",\n', ''),
+                "compiler.workspace_members",
+            ),
+            (
+                "compiler/crates/orange-compiler/Cargo.toml",
+                lambda source: source.replace('name = "orange-compiler"', 'name = "renamed"'),
+                "compiler.package_inventory",
+            ),
+            (
+                "compiler/crates/orange-compiler/Cargo.toml",
+                lambda source: source.replace(
+                    'name = "orange-compiler"',
+                    'name = "orange-compiler"\nworkspace = "../../../../outside"',
+                ),
+                "compiler.package_inventory",
+            ),
+        )
+        for value, mutate, expected_code in mutations:
+            with self.subTest(manifest=value, code=expected_code), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / value
+                path.write_text(mutate(path.read_text(encoding="utf-8")), encoding="utf-8")
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_toolchain_contract_rejects_every_pinned_dimension(self) -> None:
+        mutations = (
+            lambda source: source.replace('channel = "1.96.1"', 'channel = "stable"'),
+            lambda source: source.replace(
+                'components = ["clippy", "rustfmt"]',
+                'components = ["clippy"]',
+            ),
+            lambda source: source.replace('profile = "minimal"', 'profile = "default"'),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / "rust-toolchain.toml"
+                path.write_text(mutate(path.read_text(encoding="utf-8")), encoding="utf-8")
+                self.assertIn(
+                    "compiler.toolchain_contract",
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_workspace_contract_rejects_every_foundation_dimension(self) -> None:
+        mutations = (
+            lambda source: source.replace('resolver = "2"', 'resolver = "3"'),
+            lambda source: source.replace('version = "0.0.1"', 'version = "0.0.2"'),
+            lambda source: source.replace('edition = "2024"', 'edition = "2021"'),
+            lambda source: source.replace('rust-version = "1.96.1"', 'rust-version = "1.85"'),
+            lambda source: source.replace("publish = false", "publish = true"),
+            lambda source: source.replace('unsafe_code = "forbid"', 'unsafe_code = "allow"'),
+            lambda source: source.replace('all = "deny"', 'all = "warn"'),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / "compiler/Cargo.toml"
+                path.write_text(mutate(path.read_text(encoding="utf-8")), encoding="utf-8")
+                self.assertIn(
+                    "compiler.manifest_contract",
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_member_contract_rejects_inheritance_and_lint_drift(self) -> None:
+        mutations = (
+            lambda source: source.replace("version.workspace = true", 'version = "0.0.1"'),
+            lambda source: source.replace("edition.workspace = true", 'edition = "2024"'),
+            lambda source: source.replace(
+                "rust-version.workspace = true",
+                'rust-version = "1.96.1"',
+            ),
+            lambda source: source.replace("publish.workspace = true", "publish = false"),
+            lambda source: source.replace(
+                "[lints]\nworkspace = true",
+                "[lints]\nworkspace = false",
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / "compiler/crates/orange-compiler/Cargo.toml"
+                path.write_text(mutate(path.read_text(encoding="utf-8")), encoding="utf-8")
+                self.assertIn(
+                    "compiler.manifest_contract",
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_build_scripts_and_legacy_dependency_tables_are_rejected(self) -> None:
+        mutations = (
+            lambda source: source.replace(
+                'description = "Command-line frontend for the Orange compiler"',
+                'description = "Command-line frontend for the Orange compiler"\n'
+                'build = "src/main.rs"',
+            ),
+            lambda source: source.replace(
+                'description = "Command-line frontend for the Orange compiler"',
+                'description = "Command-line frontend for the Orange compiler"\n'
+                'links = "orange-native"',
+            ),
+            lambda source: source
+            + '\n[build_dependencies]\norange-compiler = { path = "../orange-compiler" }\n',
+            lambda source: source
+            + '\n[dev_dependencies]\norange-compiler = { path = "../orange-compiler" }\n',
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                path = root / "compiler/crates/orangec/Cargo.toml"
+                path.write_text(mutate(path.read_text(encoding="utf-8")), encoding="utf-8")
+                self.assertIn(
+                    "compiler.manifest_contract",
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_malformed_toolchain_and_lockfile_fail_closed(self) -> None:
+        mutations = (
+            ("rust-toolchain.toml", '[toolchain\nchannel = "1.96.1"\n', "compiler.toolchain_toml"),
+            ("compiler/Cargo.lock", "version = 4\n[[package]\n", "compiler.lock_toml"),
+        )
+        for value, source, expected_code in mutations:
+            with self.subTest(path=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_workspace(root)
+                (root / value).write_text(source, encoding="utf-8")
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in self._compiler_findings(root)},
+                )
+
+    def test_top_level_run_invokes_compiler_contract(self) -> None:
+        validator = FoundationValidator(Path("/virtual"))
+        other_validation_methods = (
+            "_validate_required_and_forbidden_paths",
+            "_validate_tree_encoding_and_format",
+            "_validate_brand_assets",
+            "_validate_protected_file_digests",
+            "_validate_hosted_control_evidence",
+            "_validate_markdown_links",
+            "_validate_json_documents",
+            "_validate_schema_fixtures",
+            "_validate_workflows",
+            "_validate_dependabot",
+            "_validate_codeowners",
+            "_validate_decision_gates",
+            "_validate_traceability",
+            "_validate_user_journeys",
+            "_validate_proof_foundation_suite",
+            "_validate_change_records",
+            "_validate_repository_templates",
+        )
+
+        def load_policy() -> None:
+            validator.policy = {"loaded": True}
+
+        with ExitStack() as stack:
+            stack.enter_context(mock.patch.object(validator, "_load_and_validate_policy", side_effect=load_policy))
+            for method_name in other_validation_methods:
+                stack.enter_context(mock.patch.object(validator, method_name))
+            compiler_contract = stack.enter_context(
+                mock.patch.object(validator, "_validate_compiler_dependency_boundary")
+            )
+            validator.run()
+        compiler_contract.assert_called_once_with()
 
 
 class BrandAssetHardeningTests(unittest.TestCase):

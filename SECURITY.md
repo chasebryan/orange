@@ -1,12 +1,13 @@
 # Security policy
 
-Status: Gate 0; no Orange software release exists.
+Status: solo pre-alpha development; no Orange software release exists.
 
 ## Supported versions
 
 | Product or version | Security support |
 | --- | --- |
 | Orange software, toolchain, packages, or generated artifacts | Not applicable; none has been released |
+| Compiler source on `main` | Best-effort owner triage; not a supported version or security guarantee |
 | Research and planning documents | Reviewed for integrity, but not production software and carry no software-security assurance |
 
 The working branch, default branch, planning documents, and future pre-release
@@ -58,9 +59,10 @@ not a contractual service-level agreement. Active exploitation, proof
 unsoundness, widespread silent miscompilation or leakage, registry compromise,
 or release-key compromise enters immediate incident mode.
 
-The current repository has one bootstrap steward and no staffed, independent
-PSIRT. That is a disclosed Gate 0 limitation. A staffed PSIRT is required
-before public packages or production releases.
+The current repository has one owner who performs security triage and no
+staffed, independent PSIRT. That is a disclosed solo-project limitation. It
+does not block development; any later release must state the resulting
+single-person response and continuity risk.
 
 The project will confirm receipt, reproduce and classify the issue privately,
 coordinate a disclosure date based on risk rather than impose a blanket
@@ -69,13 +71,13 @@ code, semantics, proofs, vectors, documentation, claims, and attestations. A
 published advisory will identify affected versions and any invalidated earlier
 claims. Credit is given as requested when legally and operationally possible.
 
-## Interim research boundary
+## Solo pre-release boundary
 
-Orange currently publishes planning material and repository policy, not a
-project-operated service or software distribution. This interim policy does
-not grant testing authority over GitHub, another third-party system, or any
-future Orange service. A counsel-reviewed safe-harbor statement must be adopted
-before the project operates public services or distributes software.
+Orange currently publishes compiler source, planning material, and repository
+policy, not a project-operated service or software distribution. This policy
+does not grant testing authority over GitHub, another third-party system, or any
+future Orange service. Counsel review is unavailable and no counsel-reviewed
+safe harbor is claimed.
 
 Researchers must avoid privacy violations, destructive testing, denial of
 service, persistence, lateral movement, social engineering, and access beyond

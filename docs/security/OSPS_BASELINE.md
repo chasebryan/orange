@@ -1,6 +1,6 @@
 # OpenSSF OSPS Baseline evidence matrix
 
-Status: Gate 0 readiness evidence; no conformance or maturity claim
+Status: solo-bootstrap repository evidence; no conformance or maturity claim
 
 Pinned baseline: [OpenSSF OSPS Baseline v2026.02.19](https://baseline.openssf.org/versions/2026-02-19.html)
 
@@ -8,11 +8,14 @@ Assessment snapshot: 2026-07-11
 
 Hosted-control snapshot: `snapshot_date=2026-07-11 review_due_date=2026-10-11 ruleset_id=18810248`
 
+Solo/pre-alpha assessment amendment: 2026-07-12. Hosted observations below
+remain bound to the original 2026-07-11 exact-`main` snapshot.
+
 Required-check binding: `context="Required CI / docs-policy-workflows" integration_id=15368`
 
 Required-check binding: `context="Dependency Review / policy" integration_id=15368`
 
-Owner: Bootstrap Repository Steward (`@chasebryan`)
+Owner: Orange Project Owner (`@chasebryan`)
 
 Next scheduled review: 2026-10-11, or earlier on a trigger below
 
@@ -30,17 +33,19 @@ assess a specific version, and its maturity levels have different scopes:
 - Level 1 applies to any code or non-code project with any number of maintainers
   or users. It is the only level whose project scope currently matches Orange.
 - Level 2 applies to a code project with at least two maintainers and consistent
-  users. Orange has repository-policy tooling but no product implementation,
-  only one maintainer, and no demonstrated consistent user population.
+  users. Orange now has a pre-alpha Rust compiler foundation, but it has only one
+  maintainer and no demonstrated consistent user population.
 - Level 3 applies to a code project with a large number of consistent users.
   Orange has neither. Level 3 remains the release-bearing target proposed by
   [`docs/ASSURANCE.md`](../ASSURANCE.md), not current state.
 
-There is no Orange compiler, checker, cryptography package, product dependency,
+There is an incomplete Orange lexer/CLI compiler foundation, a pinned Rust
+toolchain dependency, and no checker, code generator, cryptography package,
 distribution channel, or product release. Conditional release rows therefore
 receive no compliance credit: `not triggered` proves only that the triggering
-asset does not exist. The unresolved license decision and absent non-author
-reviewer are explicit blockers, not administrative cleanup.
+asset does not exist. The unresolved license and absent non-author review remain
+explicit gaps, but D-023 makes them claim/distribution limits rather than
+blockers to owner-authored development.
 
 ## Status vocabulary
 
@@ -97,7 +102,7 @@ Evidence aliases used below:
 | Current access | Only `chasebryan`, admin | Exact current list, but also a bus-factor and independent-review gap. |
 | Default-branch protection | Active ruleset `18810248`; no bypass actor; pull request, strict checks, resolved conversations, linear history, deletion and non-fast-forward protection | Platform API and effective-rule readback show enforcement. Zero approvals and one administrator remain an independence and privileged-control-plane risk; a safe direct-update negative test remains pending. |
 | Vulnerability intake | Private vulnerability reporting enabled | Private repository-advisory intake exists; continuity depends on one steward. |
-| Dependency security | Dependabot alerts and security updates enabled; Dependabot and dependency-review configuration merged | Configuration and a required PR dependency-review context exist. Dependabot operation and rejection of a known-vulnerable, malicious, or otherwise untrusted dependency remain unverified; product manifests do not exist. |
+| Dependency security | Dependabot alerts and security updates enabled; Dependabot and dependency-review configuration merged | Configuration and a required PR dependency-review context exist. The compiler Cargo manifests contain only workspace packages. Dependabot operation and rejection of a known-vulnerable, malicious, or otherwise untrusted dependency remain unverified. |
 | Secret protection | Secret scanning and push protection enabled | Supported provider patterns are covered. Non-provider patterns and validity checks are disabled, so coverage is not complete. |
 | Actions policy | Enabled; exactly six repository Action identities selected; broad GitHub-owned and verified-publisher allowances disabled; full-SHA pinning required; all external fork runs need approval | Source identities and mutable references are restricted. Required PR checks previously succeeded, and exact trusted-main push runs for Required CI `29171653266`, Workflow Online Audit `29171653264`, External Links `29171653282`, and Scorecard `29171653261` are green at `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`. Scheduled trigger execution remains unproven. |
 | Workflow tokens | Default `read`; cannot approve PR reviews | Merged workflows start with no permissions and grant explicit job permissions. Exact trusted-main push jobs completed successfully. Scorecard alone receives `security-events: write` for SARIF upload; public Scorecard publication and OIDC are disabled. Run success does not prove scheduled or manual trigger behavior or future permission stability. |
@@ -125,23 +130,24 @@ unverified controls below means Orange makes no Level 1 conformance claim.
 | OSPS-DO-02.01 | `Conditional` | No release exists. EV-POL-02 already routes public planning defects and private vulnerabilities. | Before release, provide tested defect-report instructions for product versions, logs, reproductions, supported tuples, and sensitive-data handling. |
 | OSPS-GV-02.01 | `Observed` | EV-GH-01 has public Issues enabled; structured issue forms accept planning defects, evidence, and OEP proposals. | Discussions are disabled, which is acceptable because the requirement needs one mechanism. Preserve public decision links and do not route vulnerabilities publicly. |
 | OSPS-GV-03.01 | `Observed` | EV-POL-01 explains scope, workflow, evidence, review, definition of done, AI-assisted material, and the current third-party contribution prohibition. | Update immediately when licensing or contribution authority changes. |
-| OSPS-LE-02.01 | `Gap` | EV-POL-05: no product source code exists, but the active project has not selected an OSI/FSF-compliant source license. | Owner/legal decision D-018 must select exact terms before product code or third-party contributions. Absence of code does not close the licensing gate. |
+| OSPS-LE-02.01 | `Gap` | Product source now exists, but EV-POL-05 records no selected OSI/FSF-compliant source license. | D-018 must select exact terms before third-party contributions or distribution. Solo owner-authored development does not close the licensing gap. |
 | OSPS-LE-02.02 | `Conditional` and `Gap` | No released software asset exists, and EV-POL-05 records no selected release license. | Select compatible release-asset and generated-output terms before any release. Never infer them from a proposed recommendation. |
 | OSPS-LE-03.01 | `Gap` | EV-POL-05: no `LICENSE`, `COPYING`, or license directory exists. | After legal selection, add the exact license text and machine-readable metadata in the same reviewed change. |
 | OSPS-LE-03.02 | `Conditional` and `Gap` | No release exists and no release license is selected. | Include the ratified license alongside source and release assets, then verify packaged contents. |
 | OSPS-QA-01.01 | `Observed` | EV-GH-01 and EV-REP-01: the source repository is publicly readable at a static GitHub URL. | Reassess on visibility or repository transfer. The owner's repo-only operating boundary must be preserved unless explicitly changed. |
 | OSPS-QA-01.02 | `Observed` | EV-REP-01 records public Git history; EV-GH-04 blocks deletion and non-fast-forward updates to `main`. | Preserve archival continuity and monitor rule drift. Git authorship is not proof of legal authorization or cryptographic identity. |
-| OSPS-QA-02.01 | `Conditional` | There is no product package-management system or language dependency manifest. EV-OPS-02 covers only merged repository automation and GitHub Actions configuration. | Every admitted ecosystem must commit its direct dependency manifest and lock/inventory; offline bytes and transitive provenance remain additional Orange requirements. |
+| OSPS-QA-02.01 | `Partial` | The compiler workspace commits `Cargo.toml` and `Cargo.lock` and currently has no third-party crates. EV-OPS-02 also covers repository automation and GitHub Actions configuration. | Keep the direct/transitive graph exact for every admitted ecosystem; toolchain provenance, offline bytes, and future dependency admission remain additional Orange requirements. |
 | OSPS-QA-04.01 | `Conditional` | Orange currently uses one repository, explicitly bounded to `chasebryan/orange` by EV-POL-01. | If a second codebase becomes part of Orange, add a canonical repository inventory before use; do not operate or publish elsewhere without owner direction. |
 | OSPS-QA-05.01 | `Observed` | EV-REP-01 file-type inspection found no generated executable artifact. EV-POL-01 prohibits them, and EV-OPS-02 shows repository validation operating in required CI at the exact merged revision. | Preserve the validator in required CI and inspect Git LFS/releases when introduced; a source scan does not cover external assets. |
-| OSPS-QA-05.02 | `Observed` with limitation | EV-REP-01 identifies eight non-executable working brand images. Required CI closes their paths and verifies exact SHA-256 admissions; the local README and manifest record roles and owner-supplied provenance. Two originals retain C2PA claims identifying OpenAI-generated media. | The C2PA signatures were not independently verified, binary review does not prove copyright or trademark rights, and D-017/D-018 remain blocked. Require the same closed admission for every future binary corpus or generated artifact. |
-| OSPS-VM-02.01 | `Observed` with limitation | EV-POL-02 provides the private advisory contact path and identifies the Bootstrap Repository Steward through governance. | Add independent PSIRT contacts and continuity before public packages. One owner is discoverable but not resilient. |
+| OSPS-QA-05.02 | `Observed` with limitation | EV-REP-01 identifies eight non-executable working brand images. Required CI closes their paths and verifies exact SHA-256 admissions; the local README and manifest record roles and owner-supplied provenance. Two originals retain C2PA claims identifying OpenAI-generated media. | The C2PA signatures were not independently verified, binary review does not prove copyright or trademark rights, the D-017 working name lacks public-name clearance, and D-018 outbound terms remain open. Require the same closed admission for every future binary corpus or generated artifact. |
+| OSPS-VM-02.01 | `Observed` with limitation | EV-POL-02 provides the private advisory contact path and identifies the project owner through governance. | Exercise solo continuity and recovery before public packages. One owner is discoverable but not resilient; independent PSIRT contacts are unavailable. |
 
 ## Level 2 target matrix
 
 Level 2 does not currently apply because Orange is not a code project with two
 maintainers. Existing evidence is recorded to expose rather than hide the work
-remaining to become collaborative.
+remaining to become collaborative. Missing independent people or roles are
+OSPS conformance gaps, not prerequisites for current pre-alpha development.
 
 | Control | Status | Exact current evidence | Gap and next evidence required |
 | --- | --- | --- | --- |
@@ -149,20 +155,20 @@ remaining to become collaborative.
 | OSPS-BR-02.01 | `Conditional` | No official release exists. EV-POL-03 requires one immutable identifier spanning all relevant version axes. | Define and validate the release identifier format before the first candidate. |
 | OSPS-BR-04.01 | `Conditional` | No release exists. EV-POL-03 requires changed claims, TCB/assumption deltas, security changes, and limitations. | Generate and review a functional/security changelog bound to each immutable release. |
 | OSPS-BR-05.01 | `Conditional` | No build/release pipeline ingests product dependencies. Merged repository CI uses standard Actions plus checksum-verified downloads under EV-OPS-01. | Ratify standardized package/build tooling, immutable inputs, and offline archives for each admitted ecosystem. |
-| OSPS-BR-06.01 | `Conditional` | No release or signing authority exists. EV-POL-03 requires signatures or signed manifests and exact asset digests. | Establish independent signing roles, identity verification, transparency/archival evidence, and a tested verification command before publication. |
+| OSPS-BR-06.01 | `Conditional` | No release or signing authority exists. EV-POL-03 requires signatures or signed manifests and exact asset digests. | Independent signing roles are unavailable in solo mode. Scope credentials and record identity, transparency/archival evidence, and a tested verification command before any publication; any OSPS requirement for independent roles remains unmet and is not claimed. |
 | OSPS-DO-06.01 | `Conditional` with documented target | No release exists. EV-POL-03 documents selection, provenance, pinning, update, rollback, and removal requirements. | Replace target prose with the actual release dependency graph, acquisition procedure, and maintenance owners. |
-| OSPS-DO-07.01 | `Gap` for future product | Repository-policy Python/shell tooling runs through `make check`, but no Orange language, checker, compiler, or cryptography implementation exists. Repository checks are not product build instructions. | When the first permanent product implementation is authorized, add pinned, clean-environment, network/offline, and platform-specific build/replay instructions with tests. |
+| OSPS-DO-07.01 | `Partial` for pre-alpha compiler | `compiler/README.md` documents the dependency-free Rust workspace, and `make check` runs locked offline formatting, lint, documentation, unit, and CLI tests. No parser, checker, code generator, or cryptography implementation exists. | Add clean-platform observations and update instructions with every capability; repository/compiler checks are not release assurance. |
 | OSPS-GV-01.01 | `Observed` current scope; structurally weak | EV-GH-01 and this snapshot list the sole sensitive-resource holder, `chasebryan`, with admin access. EV-POL-01 requires a maintainer record when another principal exists. | Inventory all repository, security-alert, CI, domain, registry, key, and release access before those resources exist; publish role-safe details without secrets. |
-| OSPS-GV-01.02 | `Observed` current role; future target documented | EV-POL-01 defines the Bootstrap Repository Steward and proposed technical, assurance, release, and PSIRT authorities. | Ratify D-019, publish exact responsibilities/terms/recusal/succession, and assign real people before claiming collaborative governance. |
+| OSPS-GV-01.02 | `Observed` current solo role | EV-POL-01 and D-019/D-023 define the owner as the sole technical, assurance, release-policy, and security-response authority. | Preserve the single-owner limitation and never claim collaborative governance. Record an explicit transition only if real participants later exist. |
 | OSPS-GV-03.02 | `Documented` but legally blocked | EV-POL-01 defines acceptable scope, workflow, evidence, review, and contribution quality. It rejects third-party merge until D-018 closes. | Ratify licenses and DCO/CLA terms, then test the guide with an eligible external contribution. |
 | OSPS-LE-01.01 | `Gap` | EV-GH-04 has web sign-off disabled; EV-POL-05 has no accepted DCO or contributor agreement. Third-party merges are prohibited rather than falsely treated as authorized. | Select legal provenance terms, require assertion on every code commit, and add enforcement/validation with counsel-approved wording. |
 | OSPS-QA-03.01 | `Observed` with negative-test residual | EV-GH-04 binds exact successful `Required CI / docs-policy-workflows` and `Dependency Review / policy` contexts to GitHub Actions integration `15368` under a strict no-bypass ruleset. | Preserve producer binding and prove a qualifying failed check blocks merge without weakening or bypassing the ruleset. |
 | OSPS-QA-06.01 | `Observed` for repository-policy scope | EV-OPS-01/02 define merged repository policy tests before acceptance; policy `0.1.4` has 65 passing tests, conformance validation succeeds, and Required CI `29171653266` passed at exact merged revision `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`. Negative local mutations demonstrate fail-closed validator behavior. | Retain the required check and expand the suite with every product component. This is repository-policy evidence, not product implementation assurance. |
 | OSPS-SA-01.01 | `Conditional` with design evidence | No release exists. EV-POL-04 documents proposed actors, components, and flows, including this stable-ID threat model. | Update from intended architecture to the exact deployed system and all human/service actors before release. |
-| OSPS-SA-02.01 | `Conditional` | No released external software interface exists. Architecture discusses planned CLI/LSP/ABI/registry surfaces but they are not specifications. | Inventory and document every actual external interface, protocol, parser, error contract, privilege, and version before release. |
-| OSPS-SA-03.01 | `Conditional` with early assessment | No release exists. EV-POL-04 supplies a Gate 0 security assessment, not an implementation assessment. | Repeat against executable code, dependencies, deployments, findings, and test results before each release-bearing gate. |
-| OSPS-VM-01.01 | `Observed` policy | EV-POL-02 defines coordinated disclosure, safe handling, one-business-day acknowledgement and three-business-day assessment targets. | Staff and exercise the process; targets are not an SLA and one-person continuity is weak. |
-| OSPS-VM-03.01 | `Observed` | EV-GH-02 verifies private vulnerability reporting; EV-POL-02 links directly to it and prohibits public reports. | Test notifications and continuity without submitting a fake vulnerability. Add an independent private contact before public packages. |
+| OSPS-SA-02.01 | `Conditional` | No released external software interface exists. The current `orangec` CLI is documented as pre-alpha; later CLI/LSP/ABI/registry surfaces remain planned rather than released specifications. | Inventory and document every actual external interface, protocol, parser, error contract, privilege, and version before release. |
+| OSPS-SA-03.01 | `Conditional` with early assessment | No release exists. EV-POL-04 now covers repository controls and the pre-alpha lexer/CLI, not a full product or deployment assessment. | Repeat against executable code, dependencies, deployments, findings, and test results before each release-bearing capability. |
+| OSPS-VM-01.01 | `Observed` policy | EV-POL-02 defines coordinated disclosure, safe handling, one-business-day acknowledgement and three-business-day assessment targets. | The owner must exercise the process; targets are not an SLA and one-person continuity remains a disclosed gap. External staffing is unavailable, not a current development prerequisite. |
+| OSPS-VM-03.01 | `Observed` | EV-GH-02 verifies private vulnerability reporting; EV-POL-02 links directly to it and prohibits public reports. | Exercise owner notifications and continuity without submitting a fake vulnerability. An independent private contact is unavailable, remains an OSPS continuity gap, and is not claimed. |
 | OSPS-VM-04.01 | `Conditional` | No Orange software vulnerability or release advisory exists. EV-POL-02 promises published advisories identifying affected versions and invalidated claims. | Define the advisory/Vulnerability Disclosure Report publication record and exercise it during an incident simulation. |
 
 ## Level 3 target matrix
@@ -175,7 +181,7 @@ used to imply present maturity or a large user base.
 | OSPS-AC-04.02 | `Observed` with independence and trigger residuals | EV-OPS-01 grants read-only contents to validation jobs; only trusted-event Scorecard has `security-events: write` for SARIF upload. Scorecard run `29171653261` passed on exact merged `main`. Public Scorecard publication and OIDC are disabled. | Scheduled execution remains unproven. One owner and zero required approvals do not independently protect workflow permission changes. Document why the remaining write is necessary and re-review every permission delta. |
 | OSPS-BR-01.04 | `Partial` | Merged manual workflow definitions accept no user-defined inputs, grant only `contents: read`, and do not interpolate collaborator input into shell. Their jobs have green push-path evidence. The privileged Scorecard job has no manual trigger and is hard-gated to `main`. | `workflow_dispatch` execution itself remains unproven. Any future dispatch input or write-capable manual job must have an allow-list, length/type constraints, trusted-ref gate, safe interpreter boundary, and negative tests. |
 | OSPS-BR-02.02 | `Conditional` | No release asset exists. EV-POL-03 requires each asset and claim to bind to immutable identities/digests. | Generate an asset manifest and prove every archive, SBOM, evidence bundle, signature, and binary maps to the release ID. |
-| OSPS-BR-07.02 | `Documented` and `Partial` | [`SECRETS_AND_INCIDENTS.md`](SECRETS_AND_INCIDENTS.md) defines current/future classes, owners, stores, issuance, rotation, expiry, audit, revocation, recovery, and synthetic exercises. | Verify account controls, run exercises, staff independent response/release roles, and instantiate inventories for every future credential. |
+| OSPS-BR-07.02 | `Documented` and `Partial` | [`SECRETS_AND_INCIDENTS.md`](SECRETS_AND_INCIDENTS.md) defines current/future classes, owners, stores, issuance, rotation, expiry, audit, revocation, recovery, and synthetic exercises. | Verify account controls, run owner-executable exercises, and instantiate inventories for every future credential. Independent response/release roles are unavailable and remain a disclosed conformance gap. |
 | OSPS-DO-03.01 | `Conditional` | No release. EV-POL-03 plans hashes, signatures, provenance, and update metadata. | Publish tested offline and online integrity/authenticity verification instructions for exact assets. |
 | OSPS-DO-03.02 | `Conditional` | No release author or signing identity exists. | Document trusted release identities, keyless/threshold verification, rotation, compromise, and historical verification without exposing private keys. |
 | OSPS-DO-04.01 | `Conditional` | No release. [`SUPPORT.md`](../../SUPPORT.md) explicitly says none is supported and labels future duration as proposed. | Publish funded scope and exact start/end dates for every released support tuple. |
@@ -183,10 +189,10 @@ used to imply present maturity or a large user base.
 | OSPS-GV-04.01 | `Documented` and `Partial` | EV-POL-01 requires least privilege, role criteria, conflict handling, prompt offboarding, and quarterly access review. | Ratify objective privilege-escalation criteria, record reviewer/decision/effective date, and technically restrict roles. Solo owner cannot independently review own escalation. |
 | OSPS-QA-02.02 | `Conditional` | No compiled release exists. EV-POL-03 requires SPDX SBOM and CycloneDX SBOM/CBOM. | Generate, validate, sign/bind, and ship complete component inventories for actual release assets. |
 | OSPS-QA-04.02 | `Conditional` | One repository and no release. | If a release spans repositories, inventory them and prove each enforces equivalent or stronger source, review, CI, dependency, and release controls. |
-| OSPS-QA-06.02 | `Partial` | EV-POL-04 documents PR, merge, nightly, weekly, and release-candidate test classes. EV-OPS-01/02 provide merged repository-check commands, 65 passing tests, and exact green trusted-main push results. | Scheduled cadence remains unproven, and no product test suite exists. Publish exact environments, expected outputs, retention, and failure evidence as each future test class becomes operating. |
-| OSPS-QA-06.03 | `Documented` | EV-POL-01 requires tests or replayable evidence where applicable and coupled updates for major effects. | Ratify explicit major-change test obligations and enforce them through review/coverage/conformance policy once code exists. |
-| OSPS-QA-07.01 | `Gap` | EV-GH-01/04 and EV-POL-01: one owner, no non-author collaborator, no required approval. CODEOWNERS names only the author/owner. | Add a qualified independent maintainer, require at least one non-author human approval on `main`, prevent self-approval/bypass, and verify a negative merge test. This cannot be solved by a bot or the author's second account. |
-| OSPS-SA-03.02 | `Conditional` with Gate 0 model | [`THREAT_MODEL.md`](THREAT_MODEL.md) covers current and future boundaries with stable IDs, abuse paths, controls, residual risk, owners, and triggers. No released critical code path exists. | Re-perform threat and attack-surface analysis against real code/deployments before release and on every mandatory trigger. |
+| OSPS-QA-06.02 | `Partial` | EV-POL-04 documents PR, merge, nightly, weekly, and release-candidate test classes. EV-OPS-01/02 provide merged repository-check commands, 65 passing tests, and exact green trusted-main push results. The S1 compiler source defines formatting, lint, documentation, unit, CLI, malformed-input, and repeatability tests. | Scheduled cadence is not established by repository configuration alone. Bind each accepted compiler change to its exact required-CI result and publish exact environments, expected outputs, retention, and failure evidence as each future test class becomes operating. |
+| OSPS-QA-06.03 | `Documented` | EV-POL-01 requires tests or replayable evidence where applicable and coupled updates for major effects. | Ratify explicit major-change test obligations and enforce them through review, coverage, and conformance policy as code evolves. |
+| OSPS-QA-07.01 | `Gap` | EV-GH-01/04 and EV-POL-01: one owner, no non-author collaborator, no required approval. CODEOWNERS names only the author/owner. | A qualified independent maintainer and non-author approval are unavailable in solo mode, so this OSPS control remains unmet. If the operating model changes, require the approval, prevent self-approval/bypass, and verify a negative merge test; this gap is not a pre-alpha development prerequisite and cannot be solved by a bot or the author's second account. |
+| OSPS-SA-03.02 | `Conditional` with pre-alpha model | [`THREAT_MODEL.md`](THREAT_MODEL.md) covers the current repository and compiler foundation plus future boundaries with stable IDs, abuse paths, controls, residual risk, owners, and triggers. No released critical code path exists. | Re-perform threat and attack-surface analysis against the exact code and deployment before release and on every mandatory trigger. |
 | OSPS-VM-04.02 | `Conditional` | No product component vulnerability or non-exploitability decision exists; no VEX process has run. | Define CycloneDX or CSAF VEX generation, review, expiry, evidence, and correction procedures before suppressing any component finding. |
 | OSPS-VM-05.01 | `Gap` | Merged dependency review is configured to fail at `moderate` vulnerability severity, but EV-POL-03 has no complete SCA vulnerability/license remediation deadlines or risk thresholds. | Ratify severity, exploitability, malicious-package, license, SLA, exception, VEX, and expiry thresholds for every dependency class. |
 | OSPS-VM-05.02 | `Documented` and `Partial` | EV-POL-03 says security policy failures fail closed and cannot waive assurance gates. EV-OPS-02 is merged; Dependency Review previously succeeded and EV-GH-04 makes its producer-bound context required. | Exercise violation and exception paths, demonstrate rejection of an untrusted dependency, and block every release on unresolved policy violations. No release-block proof exists yet. |
@@ -203,12 +209,13 @@ The following must remain visible despite merged source and green named `main` r
    history, and blocks deletion and non-fast-forward updates. Safe negative
    tests still need to prove direct-update and failed-check rejection without
    weakening authoritative `main` (OSPS-AC-03.01/02, OSPS-QA-03.01).
-2. **Independent-review gap:** one owner cannot provide the non-author approval
-   required by OSPS-QA-07.01 or Orange's mature governance. A bot, CODEOWNERS
-   request, self-review, or second account controlled by the author does not
-   close it.
-3. **Licensing gap:** D-018 is blocked, no license file or inbound assertion
-   exists, and third-party merges/product code remain prohibited
+2. **Independent-review gap:** one owner cannot provide non-author approval. A
+   bot, CODEOWNERS request, self-review, or second account controlled by the
+   author does not close it. D-023 records this as unavailable evidence, not an
+   active dependency.
+3. **Licensing gap:** D-018 has no outbound terms, license file, or inbound
+   assertion. Third-party merges and distribution remain prohibited, while
+   owner-authored product code is permitted
    (OSPS-LE-01.01, OSPS-LE-02.01/02, OSPS-LE-03.01/02).
 4. **MFA evidence gap:** the repository review could not independently verify
    account MFA or impose an organization requirement (OSPS-AC-01.01).
@@ -232,9 +239,10 @@ The following must remain visible despite merged source and green named `main` r
    unverified. Green Scorecard execution does not establish SAST or reproducible
    assurance; public Scorecard publication and OIDC remain disabled. Run success
    alone does not prove failure-path enforcement or retained artifact contents.
-8. **Release-capability gap:** no independent PSIRT, release roles, keys,
-   builders, SBOM/CBOM, provenance, registry, support capacity, or recovery
-   drill exists. The release prohibition is correct current behavior.
+8. **Release-capability gap:** no release decision, keys, artifacts, SBOM/CBOM,
+   provenance, registry, support capacity, or recovery drill exists. Independent
+   PSIRT, builders, and release roles are unavailable and not claimed. The
+   current release prohibition is correct.
 
 ## Next-review protocol
 

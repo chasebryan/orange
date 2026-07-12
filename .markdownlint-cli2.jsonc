@@ -1,4 +1,7 @@
 {
+  "ignores": [
+    "compiler/target/**"
+  ],
   "config": {
     "MD013": false,
     "MD024": {

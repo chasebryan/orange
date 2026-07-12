@@ -1,12 +1,15 @@
-# Gate 0 evidence schemas
+# Historical Gate 0 evidence schemas
 
-Status: provisional Gate 0 architecture; non-product and non-normative
+Status: historical Gate 0 schema drafts retained under solo bootstrap;
+non-product and non-normative
 
 This directory contains version `0.1` drafts for the records needed to review
-Orange's evidence architecture before product implementation begins. They are
-not the future language, package, proof, compiler, registry, or release
-formats. Acceptance of a fixture proves only that the fixture has the shape of
-a Gate 0 architecture record. It does not prove a technical claim.
+Orange's evidence architecture before product implementation began. They are
+now retained as historical, provisional architecture inputs while the pre-alpha
+compiler foundation exists. They are not the future language, package, proof,
+compiler, registry, or release formats. Acceptance of a fixture proves only
+that the fixture has the shape of a historical Gate 0 architecture record. It
+does not prove a technical claim.
 
 The schemas use JSON Schema draft 2020-12. Their `$id` values are
 `urn:orange:gate0:...` identifiers: they are stable local identifiers, not

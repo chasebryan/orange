@@ -1,8 +1,18 @@
 # Assurance and security model
 
-Status: proposed assurance constitution
+Status: proposed technical assurance model with directed solo evidence boundary
 
-Snapshot: 2026-07-11
+Research snapshot: 2026-07-11
+
+Solo amendment: 2026-07-12
+
+Under D-023, outside human and organizational participation is
+unavailable for current planning. Independent review, external audit,
+laboratory validation, separate release roles, and independent rebuilds are
+therefore optional evidence classes, not development prerequisites. Their
+absence must remain explicit and limits the claims Orange can make. It never
+turns owner review into independent evidence or weakens a machine-checkable
+technical obligation for a claim that Orange actually advertises.
 
 ## 1. Assurance promise
 
@@ -54,18 +64,18 @@ Assume all of the following:
 
 ### 2.2 Assets and controls
 
-| Asset | Principal threats | Required controls |
+| Asset | Principal threats | Technical controls and solo evidence boundary |
 | --- | --- | --- |
-| Semantic truth | Ambiguous rules, unsound axiom, kernel bug | Complete normative semantics, small checker, axiom ledger, independent checker and review |
-| Source intent | Wrong transcription of a standard, ignored errata | Clause-linked standards provenance, vectors, independent specs, cryptographer review |
+| Semantic truth | Ambiguous rules, unsound axiom, kernel bug | Complete normative semantics, small checker, axiom ledger, and implementation-diverse checking; independent logic review is recorded only when available, and its absence limits dependent claims |
+| Source intent | Wrong transcription of a standard, ignored errata | Clause-linked standards provenance, vectors, explicit transcription-review status, and separately exercised owner cross-checks; external cryptographer review is unavailable and not claimed |
 | Compiler correctness | Pass bug, backend drift, printer/assembler mismatch | Semantic IRs, verified passes or checked certificates, differential fuzzing, final-byte validation |
-| Secret confidentiality | Branch/address/timing leakage, diagnostics, stale copies | Secrecy types, named leakage model, erasure obligations, binary analysis and laboratory tests |
+| Secret confidentiality | Branch/address/timing leakage, diagnostics, stale copies | Secrecy types, named leakage model, erasure obligations, binary analysis, and owner-executable measurements; laboratory evidence is required only for claims whose profile calls for it, and those profiles remain unsupported while it is unavailable |
 | Key and entropy lifecycle | Weak entropy, reuse, cloning, false zeroization | Explicit provider contracts, affine capabilities, misuse-resistant APIs, target-scoped erasure claims |
 | Claim integrity | Evidence substitution, hidden assumption, target confusion | Content addressing, claim closure, canonical formats, fail-closed checking |
 | Build and release | Dependency/CI compromise, forged provenance, rollback | Hermetic inputs, SLSA, reproducible builds, signatures, transparency, TUF-style updates |
 | Registry | Typosquatting, account takeover, malicious package, downgrade | MFA, namespace policy, trust tiers, quarantine/revocation, immutable lockfiles |
 | Availability | Proof bombs, pathological parser input, solver divergence | Streaming formats, deterministic resource limits, cancellation, adversarial corpus |
-| Governance | Capture, unilateral critical changes, sponsor pressure | Public decisions, conflicts disclosure, two-person review, threshold release authority |
+| Governance | Capture, unilateral critical changes, sponsor pressure | Public decisions, conflict disclosure, and explicit solo-review status; two-person review and threshold authority are unavailable, remain disclosed conformance gaps, and are not claimed as current controls |
 
 ### 2.3 Security boundaries
 
@@ -183,7 +193,9 @@ A target leakage claim requires:
 4. target instruction classification and ABI assumptions;
 5. binary static inspection;
 6. empirical timing testing on named hardware as defense in depth;
-7. specialist laboratory work for release profiles that make stronger claims.
+7. specialist laboratory work for release profiles whose stronger claims
+   require it; while that work is unavailable, those profiles remain
+   `unsupported` rather than blocking unrelated development.
 
 Statistical tools can reveal a model or implementation failure; failure to
 detect leakage is not a proof.
@@ -199,9 +211,11 @@ Required gates:
 - deterministic and resource-bounded checking;
 - malformed, cyclic, oversized, and adversarial proof corpus;
 - structure-aware fuzzing and mutation of accepted proof objects;
-- differential agreement between authoritative and independent checkers;
+- differential agreement between authoritative and implementation-diverse
+  checkers where two checkers exist;
 - proof-format compatibility and rejection tests;
-- independent logic and implementation audit.
+- explicit review status showing that external logic and implementation audit
+  are unavailable in solo mode.
 
 Any soundness flaw is a stop-ship issue and triggers an analysis of every claim
 that depended on the affected checker version.
@@ -210,8 +224,9 @@ that depended on the affected checker version.
 
 - Every normative grammar/static/dynamic rule maps to a conformance case or a
   mechanized theorem reference.
-- A second independently implemented parser/frontend is required before a
-  stable edition so ambiguity and differential behavior can be found.
+- Before a stable edition, ambiguity and differential behavior must be tested
+  with a second implementation, generated-parser oracle, or equivalent
+  owner-executable method. Same-owner diversity is never called independent.
 - Parser, formatter, and elaborator fuzzing cover invalid UTF-8 policy,
   confusables, nesting, error recovery, namespace resolution, and resource use.
 - The executable reference semantics is differentially compared with Impl Core,
@@ -246,7 +261,9 @@ unprofiled implementation.
 Every stable algorithm/construction/profile has:
 
 - exact normative publication, edition, errata snapshot and source digest;
-- clause-to-definition traceability and independent human review;
+- clause-to-definition traceability, explicit transcription-review status, and
+  separately exercised owner cross-checks; external cryptographer review is
+  unavailable, and any claim that requires it remains `unsupported`;
 - intellectual-property and transition/deprecation status;
 - mathematical spec and implementation-refinement evidence;
 - an honest statement separating implementation correctness from assumed
@@ -278,8 +295,9 @@ demo algorithms.
 | ML-KEM | Polynomials, matrices, rejection/failure behavior, PQC standards | Standards+errata provenance, safety, leakage, ACVP |
 | ML-DSA or SLH-DSA | Larger state/performance and randomized signatures | Parameterized modules, entropy effects, PQC profile evolution |
 
-Final 1.0 membership is a Gate 0 decision. Starting order should maximize
-semantic coverage and independent vectors, not marketing breadth.
+Final 1.0 membership requires an incremental corpus decision. Starting order
+should maximize semantic coverage and independent vectors, not marketing
+breadth.
 
 ## 7. CI policy
 
@@ -327,9 +345,10 @@ semantic coverage and independent vectors, not marketing breadth.
 - frozen content-addressed dependency graph;
 - network-disabled build from declared inputs;
 - complete formal, target, vector, conformance, docs, and audit suite;
-- two independently administered bit-for-bit rebuilds;
+- two clean, separately provisioned owner rebuilds with identical artifacts and
+  an explicit `not independently rebuilt` status;
 - key, registry, update, rollback, and disaster-recovery drills;
-- multi-role release ceremony and sign-off.
+- recorded solo release ceremony and owner sign-off.
 
 ## 8. Stop-ship conditions
 
@@ -378,7 +397,7 @@ Every release ships:
 - SPDX SBOM;
 - CycloneDX SBOM/CBOM;
 - TCB and axiom inventory;
-- audit reports and finding dispositions;
+- audit status and any available reports and finding dispositions;
 - changelog, security changes, known limitations, and support dates.
 
 The logical evidence remains verifiable without trusting a transparency service
@@ -386,25 +405,26 @@ to stay online forever.
 
 ### 9.3 Keys and updates
 
-- Offline threshold-held root keys.
-- Narrowly delegated online signing/update roles.
-- Multi-role release approval.
+- Offline root and recovery keys with separately stored recovery material.
+- Narrowly scoped online signing/update credentials; the sole owner controls
+  them in solo mode and the missing role separation remains disclosed.
+- Recorded owner release approval.
 - Regular rotation and documented expiry.
 - Rollback and freeze protection.
 - Revocation and compromise recovery that has been rehearsed.
-- No single person can control source acceptance, build, signing, registry, and
-  root recovery.
+- The owner necessarily controls source acceptance, build, signing, registry,
+  and recovery in solo mode; credentials and procedures are separated where
+  possible and the missing separation of duties is disclosed.
 
 ## 10. Vulnerability response
 
-A PSIRT exists before public packages.
+The owner performs the security-response function before public packages.
 
 Required public material:
 
 - `SECURITY.md` and supported-version matrix;
-- encrypted/private reporting path and counsel-reviewed, asset-scoped
-  good-faith-research or safe-harbor language before public services or
-  software distribution;
+- encrypted/private reporting path and an asset-scoped good-faith-research
+  boundary; counsel review is unavailable and must not be claimed;
 - disclosure and remediation policy;
 - downstream notification and advisory channels.
 
@@ -449,31 +469,27 @@ different evidence classes.
   entropy strategy, self-tests, version, platform, and operational environment
   can be assessed externally.
 
-An accredited laboratory should be consulted during Gate 0 if a certificate-
-bearing 1.0 profile is a product requirement. Module, runtime, entropy, update,
-and package boundaries are costly to change late.
+Accredited-laboratory work is unavailable in solo mode. Certificate-bearing
+profiles therefore remain `unsupported`. Module, runtime, entropy, update, and
+package boundaries should still avoid choices that make later assessment
+unnecessarily difficult.
 
 ## 12. Governance controls
 
-The mature project needs:
-
-- Technical Steering Council;
-- Language and Semantics Committee;
-- Cryptography Review Board;
-- Assurance and TCB Board;
-- Release Engineering authority;
-- PSIRT;
-- standards, legal/IP, and ecosystem working groups;
-- independent external advisory and audit bodies.
+The project owner is the sole governance, review, release-policy, and
+security-response authority under D-019 and D-023. No committee, board,
+independent adviser, external auditor, or separate operational role is assumed.
+This is a disclosed assurance limitation rather than a substitute control.
 
 Normative or security-relevant changes use public Orange Enhancement Proposals
 containing motivation, non-goals, semantic changes, threat/TCB impact, proof
 obligations, compatibility, conformance changes, implementation evidence,
 standards and IP provenance, and alternatives.
 
-No author self-approves a TCB, cryptography, or release-system change. Protected
-branches use two trusted-person review. Conflicts, funding, minutes, decisions,
-rejected proposals, and time-bounded exceptions are published.
+The owner may approve an owner-authored TCB, cryptography, or release-system
+change, but the record must say `solo-reviewed`, include adversarial evidence,
+and preserve all unresolved risk. Protected history and required checks provide
+defense in depth; they do not create a second trusted person.
 
 ## 13. Explicit non-claims
 

@@ -35,16 +35,19 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Enforce Gate 0 author boundary
+      - name: Enforce solo contribution boundary
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}
         run: |
-          echo "Gate 0 does not accept third-party pull requests until D-018 closes." >&2
+          echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2
           exit 1
 
-      - name: Run Gate 0 validator unit tests
+      - name: Validate Rust compiler
+        run: make check-compiler
+
+      - name: Run foundation validator unit tests
         run: python3 -m unittest discover -s tools/tests -p 'test_*.py'
 
-      - name: Validate Gate 0 repository policy
+      - name: Validate solo-bootstrap repository policy
         run: python3 tools/validate_foundation.py
 
       - name: Lint Markdown

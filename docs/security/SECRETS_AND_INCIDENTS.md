@@ -1,9 +1,10 @@
 # Secrets lifecycle and incident response
 
-Status: enforced Gate 0 repository policy; no product or release secrets exist
+Status: enforced solo-bootstrap repository policy; no product or release
+secrets exist
 
-Owner: Bootstrap Repository Steward; future operational authority: PSIRT and
-Release Engineering after D-019 ratification
+Owner: Orange Project Owner; no separate PSIRT or Release Engineering role
+exists in solo mode
 
 This document governs credentials and sensitive incident material used to
 operate `chasebryan/orange`. It complements `SECURITY.md`; it does not create a
@@ -18,8 +19,8 @@ repository cannot observe.
 | Local GitHub/API credential | Used only for authorized repository administration | OS credential store or fine-grained, expiring credential with minimum repository scope | Source, shell history, command output, issue/PR text, long-lived broad token |
 | Workflow `GITHUB_TOKEN` | Ephemeral per job | GitHub-issued job token with repository default `read` and explicit minimum job permissions | Persisted checkout credential, artifact/cache, PR output, cross-job reuse |
 | Vulnerability reports and incident evidence | Possible now | GitHub private advisory with access limited to triage principals; encrypted protected evidence store when needed | Public issue/PR/discussion, ordinary CI artifact, unencrypted shared location |
-| Product service, registry, signing, transparency, and online update keys | None authorized | Future narrow online roles in protected stores with audit and rotation | Introduction before an accepted design and staffed authority |
-| Offline release/root/recovery keys | None authorized | Future offline threshold custody split across independent principals | GitHub secrets, a networked build runner, one-person custody, ordinary backup |
+| Product service, registry, signing, transparency, and online update keys | None authorized | Future narrowly scoped credentials in protected stores with audit and rotation, only under an explicit release design; sole-owner control must remain disclosed | Introduction before an accepted design and owner authority |
+| Offline release/root/recovery keys | None authorized | Future separated recovery material under an explicit release design; threshold custody requires a changed operating model and is unavailable now | GitHub secrets, a networked build runner, unrecorded one-person custody, ordinary backup |
 
 No current workflow requires a stored repository secret. Adding any secret,
 environment, OIDC audience, cloud trust, deploy key, webhook credential, or
@@ -42,11 +43,13 @@ before a stored cloud credential. Credentials are single-purpose, least-scope,
 time-bounded, and never shared. Inventory metadata must not include the secret,
 recovery code, private key, or a value from which it can be derived.
 
-The bootstrap steward reviews current access and inventory at least quarterly
-and on every collaborator, workflow, permission, secret, environment, webhook,
-deployment, or recovery change. Future release-capable governance requires an
-independent reviewer and separation of source, build, sign/publish, registry,
-and root-recovery roles.
+The project owner reviews current access and inventory at least quarterly and
+on every collaborator, workflow, permission, secret, environment, webhook,
+deployment, or recovery change. Independent review and separation of source,
+build, sign/publish, registry, and root-recovery principals are unavailable in
+solo mode. They remain disclosed evidence or conformance gaps and limit any
+future claim that requires them; they are not prerequisites for unrelated
+pre-alpha development.
 
 ## Rotation and revocation
 
@@ -68,9 +71,10 @@ leakage, registry compromise, or release/root-key compromise enters immediate
 incident mode under `SECURITY.md`. Any suspected credential disclosure begins
 private triage even if a scanner did not alert.
 
-The current steward may contain a Gate 0 repository incident. Future PSIRT may
-withdraw artifacts/profiles, quarantine packages, and coordinate disclosure;
-Release Engineering controls build/publish recovery. No incident responder may
+The project owner may contain a current solo-bootstrap repository incident and,
+if a future product exists, withdraw artifacts/profiles, quarantine packages,
+coordinate disclosure, and control build/publish recovery. No separate PSIRT or
+Release Engineering authority exists in solo mode. No incident responder may
 use urgency to widen public claims, bypass an assurance stop-ship condition, or
 publish with unverified replacement credentials.
 
@@ -143,8 +147,8 @@ requirements need responsible review; this document is not legal advice.
 
 ## Exercises and exit evidence
 
-At least quarterly during active Gate 0 automation, and before any release-
-capable stage, exercise with synthetic credentials only:
+At least quarterly during active solo-bootstrap automation, and before any
+release-capable stage, exercise with synthetic credentials only:
 
 - push-protection behavior using only a GitHub/provider-documented, non-live
   test string in a disposable ref when such a test mechanism is available;

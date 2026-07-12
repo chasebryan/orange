@@ -11,21 +11,30 @@ the exact assurance claims that matter, and ship native artifacts together with
 machine-readable evidence, including independently checkable proofs and
 certificates where the claim kind permits them.
 
-Orange is at the research and architecture stage. There is no compiler,
-standard library, or verified cryptographic implementation in this repository
-yet. The documents below define the intended end product and the permanent path
-to it; they do not describe features that already exist.
+Orange is now in solo, pre-alpha compiler development. The repository contains
+the first Rust compiler foundation: source locations, a deterministic lexer,
+structured diagnostics, and the `orangec` command-line boundary. There is no
+parser, type checker, code generator, standard library, proof checker, or
+verified cryptographic implementation yet.
+
+Implemented behavior is solo-authored and solo-reviewed. It is not independently
+reviewed, formally verified, production-ready, or a cryptographic assurance
+claim.
 
 ## Directed commitments
 
 - Deliver the complete language and toolchain, not a disposable prototype.
 - Build incrementally through tested components of the final production
   architecture; do not plan a prototype-to-rewrite phase.
+- Operate as a solo project without making development depend on unavailable
+  contributors, reviewers, auditors, laboratories, or partner organizations.
+- Separate implementation progress from assurance claims: missing external
+  evidence is disclosed and limits claims, not unrelated development.
 
-## Proposed Gate 0 baseline
+## Architecture direction
 
-The current planning documents recommend the following. These become project
-commitments only when the Gate 0 decisions are ratified.
+The current planning documents recommend the following. Individual choices are
+ratified incrementally before the component or claim that depends on them.
 
 - One language with distinct semantic strata for mathematical specifications,
   executable implementations, leakage-aware low-level code, probabilistic
@@ -48,11 +57,13 @@ commitments only when the Gate 0 decisions are ratified.
 - [Proposed Orange 1.0 user journeys](docs/USER_JOURNEYS.md)
 - [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
 - [Decision register](docs/DECISIONS.md)
+- [Solo-development process](docs/governance/oeps/OEP-0001-solo-development.md)
+- [Compiler status and usage](compiler/README.md)
 
-## Gate 0 repository foundation
+## Repository and compiler foundation
 
-The repository now carries the permanent policy and evidence architecture used
-to complete Gate 0 without beginning a disposable product implementation:
+The repository carries the permanent policy and evidence architecture created
+during Gate 0 and the first production-lineage compiler slice:
 
 - [governance](GOVERNANCE.md), [contribution boundary](CONTRIBUTING.md), and the
   [OEP](docs/governance/oeps/README.md) and
@@ -73,19 +84,19 @@ to complete Gate 0 without beginning a disposable product implementation:
   assets](assets/brand/README.md), preserved with a digest manifest and explicit
   rights boundary.
 
-Run the deterministic local policy and adversarial suite with:
+Run the deterministic repository and compiler checks with:
 
 ```sh
 make check
 ```
 
-Passing this check proves the scoped Gate 0 repository invariants and fixture
-expectations only. It does not prove the future language, compiler,
-cryptographic correctness, a security certification, OSPS conformance, or
-release readiness.
+Passing this check demonstrates the scoped repository invariants, fixture
+expectations, and tested compiler behavior only. It does not prove language or
+compiler soundness, cryptographic correctness, a security certification, OSPS
+conformance, independent review, or release readiness.
 
-The repository has no selected license while D-018 remains blocked and does
-not accept third-party pull requests for merge yet. Security reports must use
+The repository has no selected outbound license under D-018 and does not accept
+third-party pull requests for merge yet. Security reports must use
 the private path in [SECURITY.md](SECURITY.md), never a public issue.
 
 The name **Orange** is a working project name until the naming and trademark

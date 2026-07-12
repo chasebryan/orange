@@ -1,8 +1,14 @@
 # Orange project charter
 
-Status: proposed for ratification
+Status: directed mission with incremental solo execution under D-023
 
 Research snapshot: 2026-07-11
+
+Solo amendment: Orange is planned and implemented by one owner without relying
+on contributors, independent reviewers, auditors, laboratories, or partner
+organizations. Their absence limits the claims Orange may make; it does not
+block unrelated implementation. Where this charter's original institutional
+wording conflicts with D-023 or OEP-0001, the solo operating model controls.
 
 ## 1. Mission
 
@@ -123,9 +129,10 @@ No one claim implies the others.
   reductions.
 - Interactive proof terms plus certificate-producing automation for decidable
   fragments.
-- A verified compilation path for the native targets ratified at Gate 0,
-  including an auditable connection to final object code. The current proposed
-  envelope is Linux x86-64 and AArch64, subject to staffing and model review.
+- A verified compilation path for native targets selected by an incremental
+  target decision, including an auditable connection to final object code. The
+  current proposed envelope is Linux x86-64 and AArch64, subject to solo capacity
+  and target-model evidence review.
 - A reference/interoperability C backend whose weaker assurance is clearly
   labeled.
 - Stable C ABI artifacts, generated C headers, and generated Rust bindings.
@@ -244,15 +251,17 @@ The 1.0 gate is closed only when:
 - the flagship corpus meets its published claim matrix and standard vectors;
 - negative tests demonstrate that invalid programs, forged evidence, invalid
   proofs, and unsupported claims fail closed;
-- releases are deterministic, independently reproduced, signed, accompanied by
-  SBOM and provenance, and recoverable through a documented bootstrap path;
-- two independent security reviews have been completed, all critical and high
-  findings are resolved, and the public threat model matches the shipped
-  system;
+- releases are deterministic, reproducible by the owner from clean declared
+  inputs, signed where the solo release policy requires it, accompanied by SBOM
+  and provenance, and recoverable through a documented bootstrap path;
+- all known critical and high security findings are resolved and the public
+  threat model matches the shipped system; independent security review remains
+  explicitly unavailable unless it actually occurs;
 - the language server, diagnostics, reference manual, proof guide, integration
-  guide, and migration policy are usable by people outside the core team;
-- maintainers have an LTS, vulnerability-response, key-management, and
-  deprecation process they have exercised in a release drill.
+  guide, and migration policy pass clean-environment scripted journeys without
+  private state; external usability validation remains unclaimed;
+- the owner has a vulnerability-response, key-management, support, and
+  deprecation process exercised for the exact release scope.
 
 After 1.0, new architectures, leakage models, proof automation, and algorithm
 packages are normal evolution. They do not retroactively strengthen old claim
@@ -267,19 +276,21 @@ The project will track evidence, not vanity metrics:
 - number of hidden assumptions per published claim and trend over time;
 - proof replay success from clean environments and median replay time;
 - differential and negative-test corpus size and mutation score;
-- reproducibility rate across independent builders;
+- reproducibility rate across declared clean owner builds;
 - conformance coverage by standards clause and vector family;
 - generated-code performance and code size against named, versioned baselines;
 - time from a source change to an updated, reviewable proof bundle;
-- number and severity of unresolved audit findings;
-- onboarding time for an external contributor to specify, implement, prove,
-  and export one small primitive using only published documentation.
+- number and severity of unresolved security and assurance findings;
+- time to complete a clean-environment specify, implement, prove, and export
+  journey using only published documentation.
 
 Adoption counts are useful, but they cannot substitute for these gates.
 
-## 11. Decisions required before implementation
+## 11. Incremental decisions during implementation
 
-The following must be ratified at the first roadmap gate:
+The former plan required every major 1.0 decision before any implementation.
+D-023 replaces that aggregate barrier. Each of the following must be recorded
+before the component or public claim that depends on it becomes irreversible:
 
 1. project name and package/command namespace;
 2. source, documentation, generated-code, and specification licenses;
@@ -291,5 +302,6 @@ The following must be ratified at the first roadmap gate:
 8. the compatibility and support window.
 
 Recommended answers and alternatives are recorded in
-[DECISIONS.md](DECISIONS.md). No implementation should smuggle in a choice that
-this gate has not made explicit.
+[DECISIONS.md](DECISIONS.md). D-024 authorizes the proof-neutral Rust compiler
+foundation now. No later implementation may smuggle in a choice that its own
+incremental gate has not made explicit.

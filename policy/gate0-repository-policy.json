@@ -1,7 +1,7 @@
 {
-  "policy_version": "0.1.5",
+  "policy_version": "0.2.0",
   "repository": "chasebryan/orange",
-  "stage": "gate-0",
+  "stage": "solo-bootstrap",
   "status": "enforced",
   "default_branch": "main",
   "bootstrap_steward": "chasebryan",
@@ -13,11 +13,13 @@
     ".markdownlint-cli2.jsonc",
     "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md",
+    "compiler",
     "DEPENDENCY_POLICY.md",
     "GOVERNANCE.md",
     "Makefile",
     "README.md",
     "RELEASE_POLICY.md",
+    "rust-toolchain.toml",
     "SECURITY.md",
     "SUPPORT.md",
     "assets",
@@ -100,11 +102,26 @@
     ".markdownlint-cli2.jsonc",
     "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md",
+    "compiler/.gitignore",
+    "compiler/Cargo.lock",
+    "compiler/Cargo.toml",
+    "compiler/README.md",
+    "compiler/crates/orange-compiler/Cargo.toml",
+    "compiler/crates/orange-compiler/src/diagnostic.rs",
+    "compiler/crates/orange-compiler/src/edition.rs",
+    "compiler/crates/orange-compiler/src/lexer.rs",
+    "compiler/crates/orange-compiler/src/lib.rs",
+    "compiler/crates/orange-compiler/src/source.rs",
+    "compiler/crates/orangec/Cargo.toml",
+    "compiler/crates/orangec/src/main.rs",
+    "compiler/crates/orangec/tests/cli.rs",
+    "compiler/fixtures/hello.or",
     "DEPENDENCY_POLICY.md",
     "GOVERNANCE.md",
     "Makefile",
     "README.md",
     "RELEASE_POLICY.md",
+    "rust-toolchain.toml",
     "SECURITY.md",
     "SUPPORT.md",
     "assets/brand/README.md",
@@ -194,22 +211,22 @@
     ".github/dependabot.yml": "7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268",
     ".github/dependency-review-config.yml": "66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09",
     ".github/pull_request_template.md": "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f",
-    ".github/workflows/ci.yml": "c19b23a47f21d247cc79c4c1aec913040a94c7fdc2eba56172bdd16e12392fc9",
+    ".github/workflows/ci.yml": "1ff8f97eb5e6be559b8d592d6127b03b36ff69867bbd989fb8f3902d905faf73",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
     ".github/workflows/scorecard.yml": "be2ff8f6d336bfb2002c1367b36dbb701c0faf30db19769038e6293a4a204f67",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
-    ".markdownlint-cli2.jsonc": "731e1af92e9e12a2a3582c5b63fe48148bd94930e2bcf07de9214a823b15bdd1",
+    ".markdownlint-cli2.jsonc": "abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5",
     "CODE_OF_CONDUCT.md": "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a",
-    "CONTRIBUTING.md": "e50b58c06667285d5a64429488b4e1349688834d4279c34f9925f6714bdddb53",
-    "DEPENDENCY_POLICY.md": "b0fa14db2b2004be28d27b44af3420cccf88c9256165082f430e8afb49fdff5f",
-    "GOVERNANCE.md": "48c93b2ba116b7ba7a508f7b776b7fe50830606c8797b6ad366055059c857246",
-    "Makefile": "574b06488bdcd22615653047c471b9a6352fc45b637f8998d2325ea5be5a4025",
-    "README.md": "0a20d2bfaddc27a14b75aa19586a7cfa450a4f53eb6c7a633e00333500b21dba",
-    "RELEASE_POLICY.md": "87924957dcdb0e52e4f73463698a306e9af14636e99842e91746ced5a1ce017a",
-    "SECURITY.md": "4b055ad1b4380593a4a6160940a9319f858fb2bdaffc6ef18b23466d2523bfe7",
-    "SUPPORT.md": "936543d521cdc8059b73775bd991c2ea40faa0c2de715b25b9e02880ca1e0aec",
+    "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
+    "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
+    "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
+    "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
+    "README.md": "a4404b0d4f8f64a39adf2f35d8b2e8bcc027f86e515a620155ce801f45bbcae0",
+    "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
+    "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
+    "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
     "assets/brand/README.md": "40c7dcc00ad935e8e05ac3b937fedf17c8cc5ff9a25accaa3ac2227e9f653ff7",
     "assets/brand/manifest.json": "35c65a3e6850badca2b6fc421dcdc5e3f4e1ecb5a5c0fae8620348e915030769",
     "conformance/foundation/README.md": "18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294",
@@ -228,25 +245,25 @@
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "3fa17e47d04e9983e61dab881800daa9e1550034ba45d598e8cc206892dda827",
-    "docs/operations/CI_DEPENDENCIES.md": "ff15ded96c6a8e3a9baebae102e43f65ceaecf0b428f39525d0dd733841d408d",
+    "docs/DECISIONS.md": "3e4a97c4960c8db16b2d8b786b266bc4fc543c012d88178fa3d90ccd214a023f",
+    "docs/operations/CI_DEPENDENCIES.md": "21a7ec854592247ec0b3b238136046ca5bf3e4ab78797d53c16cc11f97667309",
     "docs/operations/GITHUB_CONTROLS.md": "315159cfca2572260e3d5a7dc922f1a720e50758472c7bdb2988d2521f45c914",
-    "docs/security/OSPS_BASELINE.md": "6f24f0bcf5ad62115cac296db980de853fcd3fc9716507415270cc89ff14391a",
-    "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
-    "docs/security/THREAT_MODEL.md": "9d875b10f300ce8626254db1dfe85aeffd51dde9c19a624c1c6916f8f19f4e8c",
-    "policy/README.md": "eb4d4f56cefe499c50797cd5a39f5107c89b0507ad087bf2ce85532d0d4b4373",
-    "schemas/README.md": "164ebec6c44aa928457c3944ae25f29cadc3ba331e2aae4997bc2d0782230256",
+    "docs/security/OSPS_BASELINE.md": "87978e2bced5b5e6d844d27c375aa84a71de4f8ea72662daad8c2461a29a58d9",
+    "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
+    "docs/security/THREAT_MODEL.md": "19cb66ef091fab9189bffe71e56ba4ba8637cb5f9cedea034a39178962ec29c0",
+    "policy/README.md": "37d58be1b1b16cb2b08462c218167693f9bf61358d52d26f51607bf63b94c97c",
+    "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
     "schemas/gate0/repository-control-snapshot-v0.1.schema.json": "f4cfcab41639fac0a5c3f75a99cfd3bef0a30b57fc950109058f5006f40ed8b4",
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "da0b282b8e9710625bf323b485b65bb2d15090557c384cace13e90c1ab94dc5c",
-    "scripts/ci/check-repository": "f5bfb17cd49d952f84967893c769d41edf2bbdc70dae5d9b544319f8307db51a",
+    "scripts/ci/check-repository": "692b0a7b0571891e5dfec985bdfbec3f2e340f9545afccaa76a04b7433621c16",
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "b714b8d9ded1a17ba7c73b752efefa286d041781f72fe4e08d425a149a6d472f"
+    "tools/tests/test_validate_foundation_hardening.py": "6b04e2d34f5c291c7b3f74a9419740b741fd265f52d3637e9b271dc0093393f9"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
@@ -309,22 +326,34 @@
     "/tools/validate_foundation.py @chasebryan"
   ],
   "decision_gates": {
+    "implementation_language": {
+      "decision": "D-008",
+      "required_status": "directed"
+    },
     "project_name": {
       "decision": "D-017",
-      "required_status": "blocked"
+      "required_status": "directed"
     },
     "licenses": {
       "decision": "D-018",
-      "required_status": "blocked"
+      "required_status": "directed"
     },
     "governance": {
       "decision": "D-019",
-      "required_status": "proposed"
+      "required_status": "directed"
+    },
+    "solo_project": {
+      "decision": "D-023",
+      "required_status": "directed"
+    },
+    "compiler_foundation": {
+      "decision": "D-024",
+      "required_status": "directed"
     }
   },
   "temporary_constraints": {
     "accept_third_party_pull_requests": false,
-    "allow_product_implementation": false,
+    "allow_product_implementation": true,
     "allow_product_releases": false,
     "claim_osps_level_3": false
   }

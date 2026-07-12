@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministically validate Orange's Gate 0 repository foundation.
+"""Deterministically validate Orange's solo-bootstrap repository foundation.
 
 This is repository-policy tooling, not the Orange product checker and not a
 general JSON Schema implementation. It deliberately supports and audits the
@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 import unicodedata
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping, Sequence
@@ -26,7 +27,7 @@ from urllib.parse import unquote, urlsplit
 POLICY_PATH = Path("policy/gate0-repository-policy.json")
 IGNORED_PARTS = {".git", ".agents", ".codex", "__pycache__"}
 BINARY_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".wasm"}
-TEXT_TAB_FREE_SUFFIXES = {".json", ".jsonc", ".py", ".sh", ".yaml", ".yml"}
+TEXT_TAB_FREE_SUFFIXES = {".json", ".jsonc", ".or", ".py", ".rs", ".sh", ".toml", ".yaml", ".yml"}
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 MINIMUM_REQUIRED_PATHS = {
     ".editorconfig",
@@ -50,11 +51,26 @@ MINIMUM_REQUIRED_PATHS = {
     ".markdownlint-cli2.jsonc",
     "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md",
+    "compiler/.gitignore",
+    "compiler/Cargo.lock",
+    "compiler/Cargo.toml",
+    "compiler/README.md",
+    "compiler/crates/orange-compiler/Cargo.toml",
+    "compiler/crates/orange-compiler/src/diagnostic.rs",
+    "compiler/crates/orange-compiler/src/edition.rs",
+    "compiler/crates/orange-compiler/src/lexer.rs",
+    "compiler/crates/orange-compiler/src/lib.rs",
+    "compiler/crates/orange-compiler/src/source.rs",
+    "compiler/crates/orangec/Cargo.toml",
+    "compiler/crates/orangec/src/main.rs",
+    "compiler/crates/orangec/tests/cli.rs",
+    "compiler/fixtures/hello.or",
     "DEPENDENCY_POLICY.md",
     "GOVERNANCE.md",
     "Makefile",
     "README.md",
     "RELEASE_POLICY.md",
+    "rust-toolchain.toml",
     "SECURITY.md",
     "SUPPORT.md",
     "assets/brand/README.md",
@@ -233,22 +249,22 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     ".github/dependabot.yml": "7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268",
     ".github/dependency-review-config.yml": "66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09",
     ".github/pull_request_template.md": "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f",
-    ".github/workflows/ci.yml": "c19b23a47f21d247cc79c4c1aec913040a94c7fdc2eba56172bdd16e12392fc9",
+    ".github/workflows/ci.yml": "1ff8f97eb5e6be559b8d592d6127b03b36ff69867bbd989fb8f3902d905faf73",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
     ".github/workflows/scorecard.yml": "be2ff8f6d336bfb2002c1367b36dbb701c0faf30db19769038e6293a4a204f67",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
-    ".markdownlint-cli2.jsonc": "731e1af92e9e12a2a3582c5b63fe48148bd94930e2bcf07de9214a823b15bdd1",
+    ".markdownlint-cli2.jsonc": "abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5",
     "CODE_OF_CONDUCT.md": "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a",
-    "CONTRIBUTING.md": "e50b58c06667285d5a64429488b4e1349688834d4279c34f9925f6714bdddb53",
-    "DEPENDENCY_POLICY.md": "b0fa14db2b2004be28d27b44af3420cccf88c9256165082f430e8afb49fdff5f",
-    "GOVERNANCE.md": "48c93b2ba116b7ba7a508f7b776b7fe50830606c8797b6ad366055059c857246",
-    "Makefile": "574b06488bdcd22615653047c471b9a6352fc45b637f8998d2325ea5be5a4025",
-    "README.md": "0a20d2bfaddc27a14b75aa19586a7cfa450a4f53eb6c7a633e00333500b21dba",
-    "RELEASE_POLICY.md": "87924957dcdb0e52e4f73463698a306e9af14636e99842e91746ced5a1ce017a",
-    "SECURITY.md": "4b055ad1b4380593a4a6160940a9319f858fb2bdaffc6ef18b23466d2523bfe7",
-    "SUPPORT.md": "936543d521cdc8059b73775bd991c2ea40faa0c2de715b25b9e02880ca1e0aec",
+    "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
+    "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
+    "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
+    "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
+    "README.md": "a4404b0d4f8f64a39adf2f35d8b2e8bcc027f86e515a620155ce801f45bbcae0",
+    "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
+    "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
+    "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
     "assets/brand/README.md": "40c7dcc00ad935e8e05ac3b937fedf17c8cc5ff9a25accaa3ac2227e9f653ff7",
     "assets/brand/manifest.json": "35c65a3e6850badca2b6fc421dcdc5e3f4e1ecb5a5c0fae8620348e915030769",
     "conformance/foundation/README.md": "18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294",
@@ -267,27 +283,27 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "3fa17e47d04e9983e61dab881800daa9e1550034ba45d598e8cc206892dda827",
-    "docs/operations/CI_DEPENDENCIES.md": "ff15ded96c6a8e3a9baebae102e43f65ceaecf0b428f39525d0dd733841d408d",
+    "docs/DECISIONS.md": "3e4a97c4960c8db16b2d8b786b266bc4fc543c012d88178fa3d90ccd214a023f",
+    "docs/operations/CI_DEPENDENCIES.md": "21a7ec854592247ec0b3b238136046ca5bf3e4ab78797d53c16cc11f97667309",
     "docs/operations/GITHUB_CONTROLS.md": "315159cfca2572260e3d5a7dc922f1a720e50758472c7bdb2988d2521f45c914",
-    "docs/security/OSPS_BASELINE.md": "6f24f0bcf5ad62115cac296db980de853fcd3fc9716507415270cc89ff14391a",
-    "docs/security/SECRETS_AND_INCIDENTS.md": "0b27074a1d10c486174abf00dc1d1e491f8f36207b5cfd7ea56a8f51a29032fb",
-    "docs/security/THREAT_MODEL.md": "9d875b10f300ce8626254db1dfe85aeffd51dde9c19a624c1c6916f8f19f4e8c",
-    "policy/README.md": "eb4d4f56cefe499c50797cd5a39f5107c89b0507ad087bf2ce85532d0d4b4373",
-    "schemas/README.md": "164ebec6c44aa928457c3944ae25f29cadc3ba331e2aae4997bc2d0782230256",
+    "docs/security/OSPS_BASELINE.md": "87978e2bced5b5e6d844d27c375aa84a71de4f8ea72662daad8c2461a29a58d9",
+    "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
+    "docs/security/THREAT_MODEL.md": "19cb66ef091fab9189bffe71e56ba4ba8637cb5f9cedea034a39178962ec29c0",
+    "policy/README.md": "37d58be1b1b16cb2b08462c218167693f9bf61358d52d26f51607bf63b94c97c",
+    "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
     "schemas/gate0/repository-control-snapshot-v0.1.schema.json": "f4cfcab41639fac0a5c3f75a99cfd3bef0a30b57fc950109058f5006f40ed8b4",
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "da0b282b8e9710625bf323b485b65bb2d15090557c384cace13e90c1ab94dc5c",
-    "scripts/ci/check-repository": "f5bfb17cd49d952f84967893c769d41edf2bbdc70dae5d9b544319f8307db51a",
+    "scripts/ci/check-repository": "692b0a7b0571891e5dfec985bdfbec3f2e340f9545afccaa76a04b7433621c16",
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "b714b8d9ded1a17ba7c73b752efefa286d041781f72fe4e08d425a149a6d472f",
+    "tools/tests/test_validate_foundation_hardening.py": "6b04e2d34f5c291c7b3f74a9419740b741fd265f52d3637e9b271dc0093393f9",
 }
-GATE0_CHARTER_SECTION_SHA256 = "2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a"
+GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
 GATE0_JOURNEY_IDS = tuple(f"J-{index:02d}" for index in range(1, 9))
@@ -335,6 +351,88 @@ GATE0_CONFORMANCE_INSTANCE_PATHS = {
     "conformance/foundation/valid/standards-provenance.json",
     "conformance/foundation/valid/trust-inventory.json",
 }
+GATE0_RUST_TOOLCHAIN = {
+    "toolchain": {
+        "channel": "1.96.1",
+        "components": ["clippy", "rustfmt"],
+        "profile": "minimal",
+    },
+}
+GATE0_RUST_MANIFESTS = {
+    "compiler/Cargo.toml": {
+        "workspace": {
+            "members": [
+                "crates/orange-compiler",
+                "crates/orangec",
+            ],
+            "resolver": "2",
+            "package": {
+                "version": "0.0.1",
+                "edition": "2024",
+                "rust-version": "1.96.1",
+                "publish": False,
+            },
+            "lints": {
+                "rust": {"unsafe_code": "forbid"},
+                "clippy": {"all": "deny"},
+            },
+        },
+    },
+    "compiler/crates/orange-compiler/Cargo.toml": {
+        "package": {
+            "name": "orange-compiler",
+            "description": "Permanent compiler foundations for the Orange language",
+            "version": {"workspace": True},
+            "edition": {"workspace": True},
+            "rust-version": {"workspace": True},
+            "publish": {"workspace": True},
+        },
+        "lints": {"workspace": True},
+    },
+    "compiler/crates/orangec/Cargo.toml": {
+        "package": {
+            "name": "orangec",
+            "description": "Command-line frontend for the Orange compiler",
+            "version": {"workspace": True},
+            "edition": {"workspace": True},
+            "rust-version": {"workspace": True},
+            "publish": {"workspace": True},
+        },
+        "dependencies": {
+            "orange-compiler": {"path": "../orange-compiler"},
+        },
+        "lints": {"workspace": True},
+    },
+}
+GATE0_RUST_MANIFEST_PACKAGES = {
+    "compiler/Cargo.toml": None,
+    "compiler/crates/orange-compiler/Cargo.toml": "orange-compiler",
+    "compiler/crates/orangec/Cargo.toml": "orangec",
+}
+GATE0_RUST_WORKSPACE_MEMBERS = [
+    "crates/orange-compiler",
+    "crates/orangec",
+]
+GATE0_RUST_DEPENDENCY_TABLES = {
+    "compiler/Cargo.toml": {},
+    "compiler/crates/orange-compiler/Cargo.toml": {},
+    "compiler/crates/orangec/Cargo.toml": {
+        "dependencies": {
+            "orange-compiler": {"path": "../orange-compiler"},
+        },
+    },
+}
+GATE0_RUST_LOCK = {
+    "version": 4,
+    "package": [
+        {"name": "orange-compiler", "version": "0.0.1"},
+        {
+            "name": "orangec",
+            "version": "0.0.1",
+            "dependencies": ["orange-compiler"],
+        },
+    ],
+}
 MINIMUM_CODEOWNERS = {
     "* @chasebryan",
     "/.github/ @chasebryan",
@@ -355,11 +453,13 @@ GATE0_ALLOWED_TOP_LEVEL = {
     ".markdownlint-cli2.jsonc",
     "CODE_OF_CONDUCT.md",
     "CONTRIBUTING.md",
+    "compiler",
     "DEPENDENCY_POLICY.md",
     "GOVERNANCE.md",
     "Makefile",
     "README.md",
     "RELEASE_POLICY.md",
+    "rust-toolchain.toml",
     "SECURITY.md",
     "SUPPORT.md",
     "assets",
@@ -564,6 +664,7 @@ class FoundationValidator:
         if not self.policy:
             return sorted(set(self.findings))
         self._validate_required_and_forbidden_paths()
+        self._validate_compiler_dependency_boundary()
         self._validate_tree_encoding_and_format()
         self._validate_brand_assets()
         self._validate_protected_file_digests()
@@ -584,7 +685,7 @@ class FoundationValidator:
 
     def _load_and_validate_policy(self) -> None:
         if not self.policy_path.is_file():
-            self.add("policy.missing", self.policy_path, "Gate 0 repository policy is missing")
+            self.add("policy.missing", self.policy_path, "solo-bootstrap repository policy is missing")
             return
         try:
             policy = load_json(self.policy_path)
@@ -628,14 +729,14 @@ class FoundationValidator:
             return
         if policy["repository"] != "chasebryan/orange":
             self.add("policy.scope", self.policy_path, "repository must remain chasebryan/orange")
-        if policy["stage"] != "gate-0" or policy["status"] != "enforced":
-            self.add("policy.stage", self.policy_path, "this validator only accepts enforced Gate 0 policy")
+        if policy["stage"] != "solo-bootstrap" or policy["status"] != "enforced":
+            self.add("policy.stage", self.policy_path, "this validator only accepts enforced solo-bootstrap policy")
         if policy["default_branch"] != "main":
-            self.add("policy.default_branch", self.policy_path, "Gate 0 default branch must remain main")
+            self.add("policy.default_branch", self.policy_path, "solo-bootstrap default branch must remain main")
         if policy["bootstrap_steward"] != "chasebryan":
             self.add("policy.steward", self.policy_path, "bootstrap steward must remain chasebryan")
         if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", policy["policy_version"]):
-            self.add("policy.version", self.policy_path, "Gate 0 policy version must be a 0.x semantic version")
+            self.add("policy.version", self.policy_path, "solo-bootstrap policy version must be a 0.x semantic version")
         for key in (
             "required_paths",
             "forbidden_paths",
@@ -660,7 +761,7 @@ class FoundationValidator:
             if missing:
                 self.add("policy.minimum", self.policy_path, f"{key} omits protected values: {', '.join(missing)}")
         if set(policy["required_paths"]) != MINIMUM_REQUIRED_PATHS:
-            self.add("policy.required_inventory", self.policy_path, "Gate 0 required-path inventory must remain exact")
+            self.add("policy.required_inventory", self.policy_path, "solo-bootstrap required-path inventory must remain exact")
         top_level = set(policy["allowed_top_level_paths"])
         if top_level != GATE0_ALLOWED_TOP_LEVEL:
             missing = sorted(GATE0_ALLOWED_TOP_LEVEL - top_level)
@@ -668,7 +769,7 @@ class FoundationValidator:
             self.add(
                 "policy.top_level",
                 self.policy_path,
-                f"Gate 0 top-level allowlist drifted; missing={missing}, extra={extra}",
+                f"solo-bootstrap top-level allowlist drifted; missing={missing}, extra={extra}",
             )
         for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
             if not isinstance(artifact, dict):
@@ -722,14 +823,14 @@ class FoundationValidator:
                 f"container image identities must be exact; missing={sorted(GATE0_ALLOWED_CONTAINER_IMAGES - container_images)}, extra={sorted(container_images - GATE0_ALLOWED_CONTAINER_IMAGES)}",
             )
         if set(policy["executable_paths"]) != GATE0_EXECUTABLE_PATHS:
-            self.add("policy.executables", self.policy_path, "Gate 0 executable allowlist must remain exact")
+            self.add("policy.executables", self.policy_path, "solo-bootstrap executable allowlist must remain exact")
         if set(policy["workflow_inventory"]) != GATE0_WORKFLOW_INVENTORY:
-            self.add("policy.workflow_inventory", self.policy_path, "Gate 0 workflow inventory must remain exact")
+            self.add("policy.workflow_inventory", self.policy_path, "solo-bootstrap workflow inventory must remain exact")
         if policy["protected_file_digests"] != GATE0_PROTECTED_FILE_DIGESTS:
             self.add(
                 "policy.protected_file_digests",
                 self.policy_path,
-                "protected Gate 0 file digests must remain exact",
+                "protected solo-bootstrap file digests must remain exact",
             )
         actual_writes = {
             name: set(values)
@@ -751,21 +852,28 @@ class FoundationValidator:
                 "hosted repository-control snapshot must remain exact",
             )
         constraints = policy["temporary_constraints"]
-        for key in (
-            "accept_third_party_pull_requests",
-            "allow_product_implementation",
-            "allow_product_releases",
-            "claim_osps_level_3",
-        ):
-            if constraints.get(key) is not False:
-                self.add("policy.temporary_constraint", self.policy_path, f"{key} must remain false during Gate 0")
+        expected_constraints = {
+            "accept_third_party_pull_requests": False,
+            "allow_product_implementation": True,
+            "allow_product_releases": False,
+            "claim_osps_level_3": False,
+        }
+        if constraints != expected_constraints:
+            self.add(
+                "policy.temporary_constraint",
+                self.policy_path,
+                f"solo-bootstrap constraints must remain exact: {expected_constraints}",
+            )
         expected_decisions = {
-            "project_name": {"decision": "D-017", "required_status": "blocked"},
-            "licenses": {"decision": "D-018", "required_status": "blocked"},
-            "governance": {"decision": "D-019", "required_status": "proposed"},
+            "implementation_language": {"decision": "D-008", "required_status": "directed"},
+            "project_name": {"decision": "D-017", "required_status": "directed"},
+            "licenses": {"decision": "D-018", "required_status": "directed"},
+            "governance": {"decision": "D-019", "required_status": "directed"},
+            "solo_project": {"decision": "D-023", "required_status": "directed"},
+            "compiler_foundation": {"decision": "D-024", "required_status": "directed"},
         }
         if policy["decision_gates"] != expected_decisions:
-            self.add("policy.decision_gates", self.policy_path, "Gate 0 decision gates must remain exact")
+            self.add("policy.decision_gates", self.policy_path, "solo-bootstrap decision gates must remain exact")
         self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
@@ -914,7 +1022,7 @@ class FoundationValidator:
                 value,
             ):
                 continue
-            self.add("path.inventory", value, "path is not admitted by the exact Gate 0 inventory")
+            self.add("path.inventory", value, "path is not admitted by the exact solo-bootstrap inventory")
         for value in self.policy["required_paths"]:
             path = self._policy_path(value)
             if path is not None and not path.is_file():
@@ -922,7 +1030,163 @@ class FoundationValidator:
         for value in self.policy["forbidden_paths"]:
             path = self._policy_path(value)
             if path is not None and path.exists():
-                self.add("path.forbidden", value, "path is forbidden until its Gate 0 decision closes")
+                self.add("path.forbidden", value, "path is forbidden until its dependent capability decision closes")
+
+    def _validate_compiler_dependency_boundary(self) -> None:
+        """Require the exact pinned, safe, first-party-only Rust foundation."""
+
+        toolchain_path = self.root / "rust-toolchain.toml"
+        try:
+            with toolchain_path.open("rb") as source:
+                toolchain = tomllib.load(source)
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+            self.add("compiler.toolchain_toml", toolchain_path, f"Rust toolchain file is not valid TOML: {exc}")
+        else:
+            if toolchain != GATE0_RUST_TOOLCHAIN:
+                self.add(
+                    "compiler.toolchain_contract",
+                    toolchain_path,
+                    "Rust channel, components, and profile must match the exact S1 toolchain contract",
+                )
+
+        expected_manifest_paths = set(GATE0_RUST_MANIFESTS)
+        observed_manifest_paths = {
+            relative(path, self.root)
+            for path in self.repository_files
+            if path.name == "Cargo.toml"
+        }
+        if observed_manifest_paths != expected_manifest_paths:
+            self.add(
+                "compiler.manifest_inventory",
+                "compiler",
+                "Cargo manifest inventory must remain exact; "
+                f"missing={sorted(expected_manifest_paths - observed_manifest_paths)}, "
+                f"extra={sorted(observed_manifest_paths - expected_manifest_paths)}",
+            )
+
+        manifests: dict[str, dict[str, Any]] = {}
+        for value in sorted(expected_manifest_paths):
+            path = self.root / value
+            try:
+                with path.open("rb") as source:
+                    manifest = tomllib.load(source)
+            except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+                self.add("compiler.manifest_toml", path, f"Cargo manifest is not valid TOML: {exc}")
+                continue
+            manifests[value] = manifest
+
+            if manifest != GATE0_RUST_MANIFESTS[value]:
+                self.add(
+                    "compiler.manifest_contract",
+                    path,
+                    "parsed Cargo manifest differs from the exact S1 workspace/package contract",
+                )
+
+            expected_package = GATE0_RUST_MANIFEST_PACKAGES[value]
+            package = manifest.get("package")
+            observed_package = package.get("name") if isinstance(package, dict) else None
+            package_is_exact = (
+                package is None
+                if expected_package is None
+                else isinstance(package, dict)
+                and observed_package == expected_package
+                and "workspace" not in package
+            )
+            if not package_is_exact:
+                self.add(
+                    "compiler.package_inventory",
+                    path,
+                    "workspace package identity/ownership must remain exact; "
+                    f"expected={expected_package!r}, observed={observed_package!r}",
+                )
+
+            observed_tables: dict[str, Any] = {}
+
+            def record_table(label: str, table: Any) -> None:
+                if not isinstance(table, dict):
+                    self.add(
+                        "compiler.dependency_table",
+                        path,
+                        f"Cargo dependency table {label!r} must be a table",
+                    )
+                    return
+                if table:
+                    observed_tables[label] = table
+
+            for kind in ("dependencies", "dev-dependencies", "build-dependencies"):
+                if kind in manifest:
+                    record_table(kind, manifest[kind])
+
+            workspace = manifest.get("workspace")
+            if workspace is not None:
+                if not isinstance(workspace, dict):
+                    self.add("compiler.workspace", path, "Cargo workspace declaration must be a table")
+                elif value != "compiler/Cargo.toml":
+                    self.add("compiler.workspace", path, "only the root manifest may declare a workspace")
+                elif "dependencies" in workspace:
+                    record_table("workspace.dependencies", workspace["dependencies"])
+
+            targets = manifest.get("target")
+            if targets is not None:
+                if not isinstance(targets, dict):
+                    self.add("compiler.dependency_table", path, "Cargo target declaration must be a table")
+                else:
+                    for target_name, target in sorted(targets.items()):
+                        if not isinstance(target, dict):
+                            self.add(
+                                "compiler.dependency_table",
+                                path,
+                                f"Cargo target {target_name!r} must be a table",
+                            )
+                            continue
+                        for kind in ("dependencies", "dev-dependencies", "build-dependencies"):
+                            if kind in target:
+                                record_table(f"target.{target_name}.{kind}", target[kind])
+
+            patches = manifest.get("patch")
+            if patches is not None:
+                if not isinstance(patches, dict):
+                    self.add("compiler.dependency_table", path, "Cargo patch declaration must be a table")
+                else:
+                    for source_name, table in sorted(patches.items()):
+                        record_table(f"patch.{source_name}", table)
+            if "replace" in manifest:
+                record_table("replace", manifest["replace"])
+
+            expected_tables = GATE0_RUST_DEPENDENCY_TABLES[value]
+            if observed_tables != expected_tables:
+                self.add(
+                    "compiler.dependencies",
+                    path,
+                    "dependency declarations must remain the exact admitted first-party path graph; "
+                    f"expected={expected_tables!r}, observed={observed_tables!r}",
+                )
+
+        root_manifest = manifests.get("compiler/Cargo.toml")
+        if root_manifest is not None:
+            workspace = root_manifest.get("workspace")
+            observed_members = workspace.get("members") if isinstance(workspace, dict) else None
+            observed_excludes = workspace.get("exclude", []) if isinstance(workspace, dict) else None
+            if observed_members != GATE0_RUST_WORKSPACE_MEMBERS or observed_excludes != []:
+                self.add(
+                    "compiler.workspace_members",
+                    self.root / "compiler/Cargo.toml",
+                    "workspace members must remain the exact admitted package directories with no exclusions",
+                )
+
+        lock_path = self.root / "compiler/Cargo.lock"
+        try:
+            with lock_path.open("rb") as source:
+                lock = tomllib.load(source)
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+            self.add("compiler.lock_toml", lock_path, f"Cargo lockfile is not valid TOML: {exc}")
+            return
+        if lock != GATE0_RUST_LOCK:
+            self.add(
+                "compiler.lock_graph",
+                lock_path,
+                "Cargo lockfile must contain only the exact two first-party workspace packages and edge",
+            )
 
     def _validate_tree_encoding_and_format(self) -> None:
         files = self.repository_files
@@ -961,7 +1225,7 @@ class FoundationValidator:
             if value != nfc:
                 self.add("path.not_nfc", path, "repository path must be Unicode NFC")
             if path.is_symlink():
-                self.add("file.symlink", path, "symlinks are not permitted in the Gate 0 evidence tree")
+                self.add("file.symlink", path, "symlinks are not permitted in the solo-bootstrap repository tree")
                 continue
             is_executable = bool(path.stat().st_mode & 0o111)
             if is_executable and value not in executable_paths:
@@ -1495,9 +1759,10 @@ class FoundationValidator:
         requirements: dict[str, tuple[str, ...]] = {
             "ci.yml": (
                 "name: Required CI / docs-policy-workflows",
-                "name: Enforce Gate 0 author boundary",
+                "name: Enforce solo contribution boundary",
                 "github.event.pull_request.user.login != 'chasebryan'",
-                "Gate 0 does not accept third-party pull requests until D-018 closes.",
+                "Solo mode does not accept third-party pull requests until D-018 selects contribution terms.",
+                "run: make check-compiler",
                 "run: python3 -m unittest discover -s tools/tests -p 'test_*.py'",
                 "run: python3 tools/validate_foundation.py",
                 "DavidAnson/markdownlint-cli2-action@",
@@ -1537,9 +1802,10 @@ class FoundationValidator:
                 "required",
                 (
                     "Checkout",
-                    "Enforce Gate 0 author boundary",
-                    "Run Gate 0 validator unit tests",
-                    "Validate Gate 0 repository policy",
+                    "Enforce solo contribution boundary",
+                    "Validate Rust compiler",
+                    "Run foundation validator unit tests",
+                    "Validate solo-bootstrap repository policy",
                     "Lint Markdown",
                     "Install actionlint",
                     "Validate GitHub Actions workflows",
@@ -1576,7 +1842,7 @@ class FoundationValidator:
                     self.add("workflow.step_contract", path, f"{job_name}/{step_name} is missing {value!r}")
 
         allowed_step_conditions: dict[str, set[str]] = {
-            "ci.yml": {"Enforce Gate 0 author boundary"},
+            "ci.yml": {"Enforce solo contribution boundary"},
             "scorecard.yml": {"Preserve SARIF result", "Upload result to code scanning"},
         }
         for step_name, lines in steps.items():
@@ -1602,19 +1868,23 @@ class FoundationValidator:
         if path.name == "ci.yml":
             require("Checkout", ("uses: actions/checkout@", "persist-credentials: false"))
             require(
-                "Enforce Gate 0 author boundary",
+                "Enforce solo contribution boundary",
                 (
                     "if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}",
-                    'echo "Gate 0 does not accept third-party pull requests until D-018 closes." >&2',
+                    'echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2',
                     "exit 1",
                 ),
             )
             require(
-                "Run Gate 0 validator unit tests",
+                "Validate Rust compiler",
+                ("run: make check-compiler",),
+            )
+            require(
+                "Run foundation validator unit tests",
                 ("run: python3 -m unittest discover -s tools/tests -p 'test_*.py'",),
             )
             require(
-                "Validate Gate 0 repository policy",
+                "Validate solo-bootstrap repository policy",
                 ("run: python3 tools/validate_foundation.py",),
             )
             require("Lint Markdown", ("uses: DavidAnson/markdownlint-cli2-action@",))
@@ -1967,13 +2237,14 @@ class FoundationValidator:
         self._validate_coverage_table(path, text, "Persona coverage", GATE0_PERSONA_IDS, primary_owners, "journey.persona_matrix")
         self._validate_coverage_table(path, text, "Operation coverage", GATE0_OPERATION_IDS, operation_owners, "journey.operation_matrix")
         self._validate_coverage_table(path, text, "Feature coverage", GATE0_FEATURE_IDS, feature_owners, "journey.feature_matrix")
+        normalized_text = re.sub(r"\s+", " ", text)
         for assertion in (
             "Persona coverage is 5/5.",
             "Operation coverage is 10/10.",
             "Feature coverage is 14/14.",
-            "8/8 structurally specified journeys, 0/8 implemented journeys, and 0/8",
+            "8/8 structurally specified journeys, 0/8 complete journeys, and 0/8",
         ):
-            if assertion not in text:
+            if assertion not in normalized_text:
                 self.add("journey.coverage_assertion", path, f"missing reviewed baseline assertion: {assertion}")
 
     def _validate_coverage_table(
@@ -3214,10 +3485,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif findings:
         for finding in findings:
             print(f"{finding.path}: {finding.code}: {finding.message}")
-        print(f"Gate 0 repository policy failed with {len(findings)} finding(s).")
+        print(f"Solo-bootstrap repository policy failed with {len(findings)} finding(s).")
     else:
         print(
-            "Gate 0 repository policy passed "
+            "Solo-bootstrap repository policy passed "
             f"({validator.policy['repository']} policy {validator.policy['policy_version']})."
         )
     return 1 if findings else 0

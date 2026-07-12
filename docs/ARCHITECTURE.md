@@ -1,10 +1,19 @@
 # End-state architecture
 
-Status: proposed architecture
+Status: proposed end-state architecture with active compiler foundation
 
-Audience: language, compiler, formal-methods, cryptography, and tooling teams
+Audience: project owner and future language, compiler, formal-methods,
+cryptography, and tooling readers
 
-Snapshot: 2026-07-11
+Research snapshot: 2026-07-11
+
+Solo/compiler amendment: 2026-07-12
+
+D-023 and D-024 authorize a proof-neutral Rust compiler foundation before the
+end-state architecture is fully selected. Unresolved architecture choices gate
+only the component or claim that depends on them. The implemented source, span,
+lexer, diagnostic, and CLI boundaries make no proof, Core, target, ABI,
+cryptographic, or leakage decision.
 
 ## 1. Architecture objective
 
@@ -103,9 +112,9 @@ objects, transformation certificates, and target models. It has:
 
 The recommended implementation is an Orange-owned kernel and checker specified
 and proved sound in Rocq, with an extracted authoritative executable. An
-independent safe-Rust checker should be maintained for differential testing and
-ecosystem resilience. The proof format must not be a serialized compiler heap
-or a solver transcript.
+implementation-diverse safe-Rust checker should be maintained for differential
+testing and ecosystem resilience. The proof format must not be a serialized
+compiler heap or a solver transcript.
 
 This proof-foundation choice remains a ratification gate. Lean 4 is the strongest
 alternative and must be compared with the same decision suite before product
@@ -331,7 +340,8 @@ Normative 1.0 target families are proposed as:
 
 RISC-V, Windows native ABI, macOS object targets, and additional Wasm profiles
 are planned extensions, not implicit 1.0 promises. The exact matrix must be
-ratified at Gate 0.
+ratified by an incremental target decision before target implementation or
+native-code claims.
 
 ## 5. Type, memory, secrecy, and effect system
 
@@ -662,8 +672,9 @@ locale and timezone, declared seeds, immutable tool digests, and
 `SOURCE_DATE_EPOCH`. Profile-guided or search data that affects output is a
 checked-in, hashed input.
 
-Release acceptance requires two independently administered builders to produce
-bit-identical artifacts from the release inputs.
+Any authorized release must satisfy the separately provisioned owner-rebuild and
+byte-comparison requirements in [the release policy](../RELEASE_POLICY.md).
+Those runs are repeatability evidence, not independent rebuilds.
 
 ## 11. Package and registry security
 
@@ -746,7 +757,7 @@ Orange will not create a disposable compiler.
 1. Mechanize the normative cores, checking relation, erasure, and leakage
    semantics before broad surface-language growth.
 2. Implement the permanent safe-Rust driver/frontend and preserve it as a
-   supported bootstrap and independent implementation.
+   supported bootstrap and implementation-diverse frontend.
 3. Produce the authoritative extracted checker from the ratified metatheory and
    differential-test it against the Rust checker.
 4. Add each permanent compiler pass with semantics, preservation obligations,
@@ -757,8 +768,9 @@ Orange will not create a disposable compiler.
    language. Networking and editor tooling need not be self-hosted.
 7. If any compiler core becomes self-hosted, retain the stage-0 path and require
    reproducible diverse double compilation or an equivalent bootstrap check.
-8. Never retire a bootstrap stage until independent builds, proof-checker
-   agreement, audits, and recovery drills pass.
+8. Never retire a bootstrap stage until separately provisioned owner rebuilds,
+   proof-checker agreement, and recovery drills pass; record independent build
+   and audit evidence as unavailable unless it actually exists.
 
 ## 15. Proposed repository structure
 
@@ -769,7 +781,7 @@ docs/                  charter, research, architecture, assurance, roadmap
 spec/                  human-readable normative language specification
 formal/                selected metatheory, kernel, semantics, verified passes
 research/decisions/    reproducible, archived Gate 0 decision evidence
-crates/                 Rust workspace: driver, frontend, LSP, package tooling
+compiler/               Rust workspace: driver, frontend, diagnostics, later tools
 schemas/                canonical Core, claim, package, and evidence schemas
 stdlib/                 Orange language and proof standard library
 crypto/                 flagship standards-sourced cryptography corpus
@@ -780,11 +792,12 @@ tools/                  deterministic repository and release tooling
 release/                provenance policies, bootstrap inputs, ceremonies
 ```
 
-Directories are created when their first permanent, reviewed artifact lands.
+Directories are created when their first permanent, solo-reviewed artifact
+lands. `Solo-reviewed` is not independent review.
 
 ## 16. Architecture gates
 
-Before implementation begins, ratify:
+Before the affected component or claim stabilizes, ratify:
 
 1. Rocq versus Lean metatheory using the same representative decision suite;
 2. Orange Proof IR logic and axiom policy;
@@ -793,7 +806,13 @@ Before implementation begins, ratify:
 5. baseline leakage trace and target-classification process;
 6. direct object validation strategy;
 7. flagship corpus and the claim each algorithm must exercise;
-8. name, licenses, governance, and version axes.
+8. final name, licenses, release policy, and version axes.
+
+D-024 deliberately precedes these gates because source identity, byte spans,
+lexing, diagnostics, and a host CLI do not depend on their answers. Parsing must
+record its grammar boundary; proof work must wait for items 1–3; target and code
+generation claims must wait for items 4–6; cryptography packages must wait for
+item 7; distribution must wait for item 8.
 
 The custom proof kernel, source-to-binary leakage preservation, object-file last
 mile, and probabilistic game logic are the hardest architectural work. They are
