@@ -1,13 +1,13 @@
 # GitHub repository controls
 
-Status: operating record for `chasebryan/orange`; Gate 0 bootstrap state
+Status: operating record for `chasebryan/orange`; solo-bootstrap state
 
 Snapshot date: 2026-07-11
 
 Hosted-control snapshot: `snapshot_date=2026-07-11 review_due_date=2026-10-11 ruleset_id=18810248`
 
-Hosted-execution refresh: 2026-07-12 at exact S1 `main` revision
-`469bdec6037f20c8d099d61a09a3d19a55c88231`; this refresh did not re-read
+Hosted-execution refresh: 2026-07-12 at exact S2 `main` revision
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4`; this refresh did not re-read
 repository settings
 
 Required-check binding: `context="Required CI / docs-policy-workflows" integration_id=15368`
@@ -29,7 +29,7 @@ date; a fresh readback and coordinated evidence update are then required.
 | Private vulnerability reporting | Enabled | One bootstrap steward; no independent PSIRT continuity. |
 | Dependabot alerts and security updates | Enabled | No product package manifest exists. |
 | Secret scanning | Provider-pattern scanning and push protection enabled | Non-provider patterns and validity checks are plan-ineligible and read back disabled. |
-| CodeQL default setup | 2026-07-11 readback: configured with `extended` query suite, standard runner, `remote_and_local` threat model, weekly schedule, and detected languages `actions` and `python` | A separate 2026-07-12 execution at exact S1 `main` also analyzed Rust. Run `29186965847` completed without analysis errors or warnings: Actions `1468413067` reported `0/23`, Python `1468413065` reported `0/50`, and Rust `1468413062` reported `7/27`. The seven Rust results remain open high `rust/path-injection` alerts #11-#17, all classified `test` in `compiler/crates/orangec/tests/cli.rs`. This execution is not a fresh settings readback, proof of vulnerability absence, independent coverage, or merge blocking. |
+| CodeQL default setup | 2026-07-11 readback: configured with `extended` query suite, standard runner, `remote_and_local` threat model, weekly schedule, and detected languages `actions` and `python` | A separate 2026-07-12 execution at exact S2 `main` also analyzed Rust. Run `29188111040` completed without analysis errors or warnings: Actions `1468459678` reported `0/23`, Python `1468459893` reported `0/50`, and Rust `1468460793` reported `0/27`. Alerts #11-#17 were fixed at `2026-07-12T09:51:03Z`, with null dismissal time and reason. This execution is not a fresh settings readback, proof of vulnerability absence, independent coverage, or merge blocking. |
 | Actions source policy | Exactly six repositories: `actions/checkout`, `actions/dependency-review-action`, `actions/upload-artifact`, `github/codeql-action`, `DavidAnson/markdownlint-cli2-action`, and `zizmorcore/zizmor-action`; plus one separately machine-enforced Scorecard image used by an explicit Docker CLI step | Repository wildcards are paired with full-SHA enforcement; reusable workflows still require repository validation. The Scorecard image and command are admitted only at the exact OCI digest. All other GitHub-owned and verified-publisher Actions are denied. |
 | Execution immutability | Repository Actions require full 40-character commit SHAs; the explicit Scorecard Docker invocation requires its exact OCI digest | Content addressing does not establish publisher trust, mirror the selected bytes, or fix the registry, hosted runner, container host, network, and service inputs. |
 | Default workflow token | `read`; cannot approve pull-request reviews | Job permissions remain authoritative and are checked in source. |
@@ -118,12 +118,31 @@ squash merge. The resulting `main` push produced:
 | OpenSSF Scorecard on `main` | Run `29186961902` succeeded | Posture observation only; not SAST, CodeQL, an audit, a merge gate, or an assurance claim |
 | CodeQL default setup on `main` | Run `29186965847` succeeded without analysis errors or warnings; Actions `1468413067`=`0/23`, Python `1468413065`=`0/50`, Rust `1468413062`=`7/27` | Successful analysis does not mean alert-free analysis or prove a CodeQL merge threshold |
 
-The seven Rust results are open high `rust/path-injection` alerts numbered 11
-through 17, all classified `test` at paths in
-`compiler/crates/orangec/tests/cli.rs`. S2 contains candidate remediation that
-moves the affected tests off environment-derived temporary paths, but neither
-closure nor non-exploitability is claimed until the S2 revision merges and a
-post-merge CodeQL result and alert readback confirm disposition.
+At S1, the seven Rust results were open high `rust/path-injection` alerts
+numbered 11 through 17, all classified `test` in
+`compiler/crates/orangec/tests/cli.rs`.
+
+The S2 implementation merged as exact `main` revision
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4` from PR #6 head
+`73416f1ee8b613f0f6244f8dcd2d30281e6e91f2`. PR Required CI `29188056038`,
+Dependency Review `29188056060`, and CodeQL `29188055399` succeeded. The exact
+merged revision then produced:
+
+| Hosted observation | Exact S2 evidence | Claim boundary |
+| --- | --- | --- |
+| Required CI on `main` | Run `29188111313` succeeded with policy `0.2.1` and the merged parser checks | One hosted execution under mutable runner and service inputs; not independent or reproducible proof |
+| Workflow Online Audit on `main` | Run `29188111278` succeeded | Live upstream metadata is time-dependent; this push result does not prove the scheduled trigger |
+| External Links on `main` | Run `29188111303` attempt 2 succeeded after attempt 1 encountered a transient `slsa.dev` connection failure | A retry demonstrates eventual link reachability only; remote availability remains time-dependent |
+| OpenSSF Scorecard on `main` | Run `29188111302` succeeded | Posture observation only; not SAST, CodeQL, an audit, a merge gate, or an assurance claim |
+| CodeQL default setup on `main` | Run `29188111040` succeeded without analysis errors or warnings; Actions `1468459678`=`0/23`, Python `1468459893`=`0/50`, Rust `1468460793`=`0/27` | Zero results do not prove vulnerability absence or a CodeQL merge threshold |
+
+Alerts #11 through #17 all read back fixed at `2026-07-12T09:51:03Z` with
+`dismissed_at=null` and `dismissed_reason=null`. This supports remediation at
+the exact S2 revision; it is not a dismissal, proof of non-exploitability,
+independent review, or guarantee against another path-injection defect.
+No CodeQL alerts remained open at that readback. Open code-scanning alerts #4
+through #10 are Scorecard posture findings, so this record does not claim that
+all GitHub code-scanning alerts are clear.
 
 The scheduled link audit excludes only `https://eprint.iacr.org/` because that
 primary-source host returns HTTP 403 to automated clients. The citations remain
@@ -167,16 +186,15 @@ mature two-person rule or OpenSSF OSPS-QA-07.01.
 - **Release tag rules:** D-017 must select the final namespace and D-018/D-019
   must close before a release pattern or authority is claimed. Immutable
   releases are already enabled, but no tag or release is authorized.
-- **Code-scanning rule:** CodeQL default setup now produces successful `actions`,
-  `python`, and `rust` analyses on S1 `main`, but it is not a required ruleset
-  context. Rust analysis currently has seven open high test-classified
-  `rust/path-injection` results.
+- **Code-scanning rule:** CodeQL default setup now produces successful
+  zero-result `actions`, `python`, and `rust` analyses on exact S2 `main`, and
+  alerts #11-#17 are fixed rather than dismissed. CodeQL is still not a required
+  ruleset context.
   Keep a CodeQL threshold deferred until the exact producer/check identity is
   selected and both proposed and target revisions pass a safe activation test,
   including a controlled failing analysis that proves the intended rule blocks
   merge without a same-named-context bypass or check-name deadlock. Successful
-  runs, zero-result languages, candidate fixes, and later fixed-alert states are
-  not negative blocking proof.
+  runs, zero results, and fixed-alert states are not negative blocking proof.
 - **License enforcement:** dependency review reports license data but no
   allow/deny list is authoritative before D-018.
 - **Advanced secret features:** non-provider patterns and validity checks are

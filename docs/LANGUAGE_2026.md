@@ -1,7 +1,7 @@
 # Orange 2026 lexical and grammar specification
 
-Status: normative pre-alpha syntax under D-025 and the effective owner direction
-recorded by provisional OEP-0002
+Status: normative pre-alpha syntax under D-025 and accepted OEP-0002 at exact
+merged revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4`
 
 Edition: `2026`
 
