@@ -49,6 +49,8 @@ ratified incrementally before the component or claim that depends on them.
 
 ## Plan
 
+- [The Orange Book](docs/THE_ORANGE_BOOK.md), the living reader guide by Chase
+  Bryan
 - [Project charter](docs/PROJECT_CHARTER.md)
 - [Research and landscape analysis](docs/RESEARCH.md)
 - [End-state architecture](docs/ARCHITECTURE.md)

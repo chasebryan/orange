@@ -25,6 +25,21 @@ from urllib.parse import unquote, urlsplit
 
 
 POLICY_PATH = Path("policy/gate0-repository-policy.json")
+ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
+ORANGE_BOOK_MINIMUM_CHAPTER_WORDS = 1_200
+ORANGE_BOOK_REQUIRED_SECTIONS = (
+    "## Contents",
+    "## Preface",
+    "## Chapter 1: The Seams Are the System",
+    "## Manuscript map",
+    "## Sources and drafting disclosure",
+)
+ORANGE_BOOK_CONTENTS = (
+    "- [Preface](#preface)",
+    "- [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)",
+    "- [Manuscript map](#manuscript-map)",
+    "- [Sources and drafting disclosure](#sources-and-drafting-disclosure)",
+)
 IGNORED_PARTS = {".git", ".agents", ".codex", "__pycache__"}
 BINARY_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".wasm"}
 TEXT_TAB_FREE_SUFFIXES = {".json", ".jsonc", ".or", ".py", ".rs", ".sh", ".toml", ".yaml", ".yml"}
@@ -98,6 +113,7 @@ MINIMUM_REQUIRED_PATHS = {
     "docs/PROJECT_CHARTER.md",
     "docs/RESEARCH.md",
     "docs/ROADMAP.md",
+    "docs/THE_ORANGE_BOOK.md",
     "docs/governance/adrs/ADR-0000-template.md",
     "docs/governance/adrs/README.md",
     "docs/governance/oeps/OEP-0000-template.md",
@@ -263,7 +279,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
-    "README.md": "a4329d0464aaa06ddaba7bbf4aaa2046322cd32fecf10b0e22834cdd0649dfee",
+    "README.md": "15a5f76e871d3816b2b035ea895e172e12db0b31f497d1818af988629ad3c79a",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
@@ -303,7 +319,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/check-repository": "692b0a7b0571891e5dfec985bdfbec3f2e340f9545afccaa76a04b7433621c16",
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
-    "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
+    "tools/tests/test_validate_foundation.py": "231c8aafa857bfaef5dec11b6a707365a95a68abfd579abf5b7227585802d3ff",
     "tools/tests/test_validate_foundation_hardening.py": "3e972197baeeb331c8949413dcb317f3f6c4c909eafda952a2f01fb3db034ccf",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -698,6 +714,7 @@ class FoundationValidator:
         self._validate_protected_file_digests()
         self._validate_hosted_control_evidence()
         self._validate_markdown_links()
+        self._validate_orange_book()
         self._validate_json_documents()
         self._validate_schema_fixtures()
         self._validate_workflows()
@@ -1471,6 +1488,87 @@ class FoundationValidator:
                     anchors = markdown_anchors(resolved.read_text(encoding="utf-8"))
                     if fragment not in anchors:
                         self.add("markdown.anchor_missing", path, f"anchor not found: {raw_target}")
+
+    def _validate_orange_book(self) -> None:
+        """Keep the living reader guide identifiable, navigable, and substantive."""
+
+        path = self.root / ORANGE_BOOK_PATH
+        if not path.is_file():
+            self.add("book.missing", path, "the canonical Orange Book manuscript is missing")
+            return
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            self.add("book.unreadable", path, str(exc))
+            return
+
+        visible_text = markdown_without_fenced_blocks_and_comments(text)
+        lines = visible_text.splitlines()
+        if not lines or lines[0] != "# The Orange Book":
+            self.add("book.identity", path, "the manuscript must begin with '# The Orange Book'")
+        bylines = [line for line in lines if re.fullmatch(r"By\s+\S.*", line)]
+        if bylines != ["By Chase Bryan"]:
+            self.add("book.identity", path, "the manuscript must contain only the exact byline 'By Chase Bryan'")
+        if lines.count("Status: living pre-alpha reader guide") != 1:
+            self.add("book.status", path, "the v0.1 manuscript must retain its living pre-alpha reader-guide status")
+
+        snapshot_lines = [line for line in lines if line.startswith("Snapshot:")]
+        snapshot_valid = len(snapshot_lines) == 1 and re.fullmatch(
+            r"Snapshot: \d{4}-\d{2}-\d{2}", snapshot_lines[0]
+        )
+        if snapshot_valid:
+            try:
+                dt.date.fromisoformat(snapshot_lines[0].removeprefix("Snapshot: "))
+            except ValueError:
+                snapshot_valid = False
+        if not snapshot_valid:
+            self.add("book.snapshot", path, "the manuscript must contain exactly one ISO-date Snapshot line")
+
+        section_positions: list[int] = []
+        for heading in ORANGE_BOOK_REQUIRED_SECTIONS:
+            positions = [index for index, line in enumerate(lines) if line == heading]
+            if len(positions) != 1:
+                self.add("book.structure", path, f"required section must occur exactly once: {heading}")
+            else:
+                section_positions.append(positions[0])
+        if len(section_positions) == len(ORANGE_BOOK_REQUIRED_SECTIONS) and section_positions != sorted(
+            section_positions
+        ):
+            self.add("book.structure", path, "required manuscript sections are out of order")
+
+        try:
+            contents_start = lines.index("## Contents") + 1
+            contents_end = lines.index("## Preface")
+        except ValueError:
+            pass
+        else:
+            observed_contents = [line for line in lines[contents_start:contents_end] if line.startswith("- [")]
+            if observed_contents != list(ORANGE_BOOK_CONTENTS):
+                self.add("book.navigation", path, "contents must list the required manuscript destinations in order")
+
+        try:
+            chapter_start = lines.index("## Chapter 1: The Seams Are the System") + 1
+            chapter_end = lines.index("## Manuscript map")
+        except ValueError:
+            pass
+        else:
+            chapter_text = "\n".join(lines[chapter_start:chapter_end])
+            chapter_words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’-]*", chapter_text)
+            if len(chapter_words) < ORANGE_BOOK_MINIMUM_CHAPTER_WORDS:
+                self.add(
+                    "book.chapter_length",
+                    path,
+                    "Chapter 1 must contain at least "
+                    f"{ORANGE_BOOK_MINIMUM_CHAPTER_WORDS} words; observed {len(chapter_words)}",
+                )
+
+        boundary_text = re.sub(r"(?m)^>\s?", "", visible_text)
+        if re.search(r"not a\s+normative language specification", boundary_text) is None:
+            self.add("book.boundary", path, "the manuscript must state its non-normative boundary")
+        if not all(
+            marker in visible_text for marker in ("OpenAI Codex", "GPT-5", "Chase Bryan is the named author")
+        ):
+            self.add("book.disclosure", path, "the v0.1 AI-assistance and author-accountability disclosure is incomplete")
 
     @staticmethod
     def _markdown_destination(raw_target: str) -> str:

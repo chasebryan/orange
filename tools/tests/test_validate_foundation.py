@@ -65,6 +65,132 @@ class MarkdownTests(unittest.TestCase):
     def test_longer_closing_fence_is_valid(self) -> None:
         self.assertIsNone(markdown_fence_error("~~~text\ncontent\n~~~~\n"))
 
+    @staticmethod
+    def _orange_book_text(*, byline: str = "By Chase Bryan", chapter_words: int = 1_200) -> str:
+        chapter = " ".join("evidence" for _ in range(chapter_words))
+        return f"""# The Orange Book
+
+{byline}
+
+Status: living pre-alpha reader guide
+
+Snapshot: 2026-07-12
+
+This is not a normative language specification.
+
+## Contents
+
+- [Preface](#preface)
+- [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)
+- [Manuscript map](#manuscript-map)
+- [Sources and drafting disclosure](#sources-and-drafting-disclosure)
+
+## Preface
+
+Reader context.
+
+## Chapter 1: The Seams Are the System
+
+{chapter}
+
+## Manuscript map
+
+Future chapters.
+
+## Sources and drafting disclosure
+
+Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.
+"""
+
+    def test_orange_book_contract_accepts_v01_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(self._orange_book_text(), encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual(validator.findings, [])
+
+    def test_orange_book_contract_rejects_wrong_byline_and_short_chapter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                self._orange_book_text(byline="By Someone Else", chapter_words=20),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual(
+                {finding.code for finding in validator.findings},
+                {"book.chapter_length", "book.identity"},
+            )
+
+    def test_orange_book_contract_rejects_reordered_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            text = self._orange_book_text().replace(
+                "- [Preface](#preface)\n"
+                "- [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)",
+                "- [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)\n"
+                "- [Preface](#preface)",
+            )
+            path.write_text(text, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual({finding.code for finding in validator.findings}, {"book.navigation"})
+
+    def test_orange_book_contract_rejects_hidden_chapter_and_disclosure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            hidden_words = " ".join("evidence" for _ in range(1_200))
+            text = self._orange_book_text(chapter_words=20).replace(
+                "\n## Manuscript map",
+                f"\n<!-- {hidden_words} -->\n\n## Manuscript map",
+            ).replace(
+                "Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.",
+                "<!-- OpenAI Codex GPT-5 Chase Bryan is the named author -->",
+            )
+            path.write_text(text, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual(
+                {finding.code for finding in validator.findings},
+                {"book.chapter_length", "book.disclosure"},
+            )
+
+    def test_orange_book_contract_rejects_impossible_snapshot_date(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            text = self._orange_book_text().replace("Snapshot: 2026-07-12", "Snapshot: 2026-99-99")
+            path.write_text(text, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual({finding.code for finding in validator.findings}, {"book.snapshot"})
+
+    def test_orange_book_contract_rejects_competing_byline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            text = self._orange_book_text().replace(
+                "By Chase Bryan\n",
+                "By Chase Bryan\n\nBy Someone Else\n",
+                1,
+            )
+            path.write_text(text, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual({finding.code for finding in validator.findings}, {"book.identity"})
+
 
 class WorkflowTests(unittest.TestCase):
     def test_checkout_credentials_must_be_explicitly_disabled(self) -> None:
