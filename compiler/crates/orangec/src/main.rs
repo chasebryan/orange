@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    Edition, Lexed, MAX_SOURCE_BYTES, SourceError, SourceFile, SourceMap, lex, render_diagnostics,
+    Edition, Lexed, MAX_SOURCE_BYTES, SourceError, SourceFile, SourceMap, lex, parse,
+    render_diagnostics,
 };
 
 const SUCCESS: u8 = 0;
@@ -18,7 +19,7 @@ const MAX_SOURCES_PER_INVOCATION: usize = 256;
 const USAGE: &str = "Usage: orangec [OPTIONS] <check|lex> <FILE>...\n\
 \n\
 Commands:\n\
-  check    Perform lexical validation\n\
+  check    Perform lexical and syntactic validation\n\
   lex      Print the deterministic token stream\n\
 \n\
 Options:\n\
@@ -241,8 +242,20 @@ fn compile(
                 &mut standard_error_available,
                 &mut error_group_written,
                 &mut output_failed,
-                &render_diagnostics(&sources, &result.diagnostics),
+                &render_diagnostics(&sources, result.diagnostics()),
             );
+        } else if options.command == CompilerCommand::Check {
+            let result = parse(source, &result);
+            if result.has_errors() {
+                compilation_failed = true;
+                emit_error_group(
+                    standard_error,
+                    &mut standard_error_available,
+                    &mut error_group_written,
+                    &mut output_failed,
+                    &render_diagnostics(&sources, &result.diagnostics),
+                );
+            }
         }
     }
 
@@ -321,7 +334,7 @@ fn write_tokens(
         }
         writeln!(output, "== {} ==", source.name())?;
     }
-    for token in &result.tokens {
+    for token in result.tokens() {
         let spelling = token
             .lexeme(source)
             .map(escape_token_spelling)

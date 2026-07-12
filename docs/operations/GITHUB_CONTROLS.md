@@ -6,6 +6,10 @@ Snapshot date: 2026-07-11
 
 Hosted-control snapshot: `snapshot_date=2026-07-11 review_due_date=2026-10-11 ruleset_id=18810248`
 
+Hosted-execution refresh: 2026-07-12 at exact S1 `main` revision
+`469bdec6037f20c8d099d61a09a3d19a55c88231`; this refresh did not re-read
+repository settings
+
 Required-check binding: `context="Required CI / docs-policy-workflows" integration_id=15368`
 
 Required-check binding: `context="Dependency Review / policy" integration_id=15368`
@@ -25,7 +29,7 @@ date; a fresh readback and coordinated evidence update are then required.
 | Private vulnerability reporting | Enabled | One bootstrap steward; no independent PSIRT continuity. |
 | Dependabot alerts and security updates | Enabled | No product package manifest exists. |
 | Secret scanning | Provider-pattern scanning and push protection enabled | Non-provider patterns and validity checks are plan-ineligible and read back disabled. |
-| CodeQL default setup | Configured; `extended` query suite; standard runner; `remote_and_local` threat model; weekly schedule; detected languages `actions` and `python`; successful exact-`main` run `29171652948` | At exact `main` `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`, Python analysis `1467719573` reported 0 results across 50 rules and Actions analysis `1467719309` reported 0 results across 23 rules, with no analysis errors or warnings. This is a time- and revision-specific hosted observation, not proof of vulnerability absence, independent or reproducible coverage, or merge blocking. |
+| CodeQL default setup | 2026-07-11 readback: configured with `extended` query suite, standard runner, `remote_and_local` threat model, weekly schedule, and detected languages `actions` and `python` | A separate 2026-07-12 execution at exact S1 `main` also analyzed Rust. Run `29186965847` completed without analysis errors or warnings: Actions `1468413067` reported `0/23`, Python `1468413065` reported `0/50`, and Rust `1468413062` reported `7/27`. The seven Rust results remain open high `rust/path-injection` alerts #11-#17, all classified `test` in `compiler/crates/orangec/tests/cli.rs`. This execution is not a fresh settings readback, proof of vulnerability absence, independent coverage, or merge blocking. |
 | Actions source policy | Exactly six repositories: `actions/checkout`, `actions/dependency-review-action`, `actions/upload-artifact`, `github/codeql-action`, `DavidAnson/markdownlint-cli2-action`, and `zizmorcore/zizmor-action`; plus one separately machine-enforced Scorecard image used by an explicit Docker CLI step | Repository wildcards are paired with full-SHA enforcement; reusable workflows still require repository validation. The Scorecard image and command are admitted only at the exact OCI digest. All other GitHub-owned and verified-publisher Actions are denied. |
 | Execution immutability | Repository Actions require full 40-character commit SHAs; the explicit Scorecard Docker invocation requires its exact OCI digest | Content addressing does not establish publisher trust, mirror the selected bytes, or fix the registry, hosted runner, container host, network, and service inputs. |
 | Default workflow token | `read`; cannot approve pull-request reviews | Job permissions remain authoritative and are checked in source. |
@@ -74,9 +78,10 @@ Scorecard alone is not SAST, a CodeQL result, an audit, or an OSPS conformance
 claim. External-link availability is nondeterministic, so local relative-link
 and anchor validation remains in required CI.
 
-### Post-merge hosted execution snapshot
+### Hosted execution observations
 
-This observation is bound to the 2026-07-11 readback and exact `main` revision
+The original observation is bound to the 2026-07-11 readback and exact `main`
+revision
 `9f458c04542c512a8c04b00cb7ce4ef6bacd1a79`. Pull request #3 head
 `8e26785f87c3866cc12915d7037820c608d6708d` was merged by `chasebryan` as that
 exact `main` commit after its checks were green. The active ruleset still
@@ -98,6 +103,27 @@ or future revisions are safe. The run IDs, analysis IDs, rule counts, statuses,
 and alert dispositions above are hosted observations only. They do not capture
 an immutable runner, service implementation, complete toolchain, signed result
 bundle, or independently replayable environment.
+
+On 2026-07-12, hosted execution was refreshed at the exact S1 merge revision
+`469bdec6037f20c8d099d61a09a3d19a55c88231`. This was a run/result refresh,
+not a readback of the settings table above. PR #5's final Required CI run
+`29186933765` and Dependency Review run `29186933780` succeeded before the
+squash merge. The resulting `main` push produced:
+
+| Hosted observation | Exact S1 evidence | Claim boundary |
+| --- | --- | --- |
+| Required CI on `main` | Run `29186961911` succeeded; solo-bootstrap policy `0.2.0` and all 78 Python tests passed with the S1 Rust checks | One hosted execution under mutable runner and service inputs; not independent or reproducible proof |
+| Workflow Online Audit on `main` | Run `29186961920` succeeded | Live upstream metadata is time-dependent; this push result does not prove the scheduled trigger |
+| External Links on `main` | Run `29186961966` succeeded | Remote availability is time-dependent; this push result does not prove the scheduled trigger |
+| OpenSSF Scorecard on `main` | Run `29186961902` succeeded | Posture observation only; not SAST, CodeQL, an audit, a merge gate, or an assurance claim |
+| CodeQL default setup on `main` | Run `29186965847` succeeded without analysis errors or warnings; Actions `1468413067`=`0/23`, Python `1468413065`=`0/50`, Rust `1468413062`=`7/27` | Successful analysis does not mean alert-free analysis or prove a CodeQL merge threshold |
+
+The seven Rust results are open high `rust/path-injection` alerts numbered 11
+through 17, all classified `test` at paths in
+`compiler/crates/orangec/tests/cli.rs`. S2 contains candidate remediation that
+moves the affected tests off environment-derived temporary paths, but neither
+closure nor non-exploitability is claimed until the S2 revision merges and a
+post-merge CodeQL result and alert readback confirm disposition.
 
 The scheduled link audit excludes only `https://eprint.iacr.org/` because that
 primary-source host returns HTTP 403 to automated clients. The citations remain
@@ -141,13 +167,16 @@ mature two-person rule or OpenSSF OSPS-QA-07.01.
 - **Release tag rules:** D-017 must select the final namespace and D-018/D-019
   must close before a release pattern or authority is claimed. Immutable
   releases are already enabled, but no tag or release is authorized.
-- **Code-scanning rule:** CodeQL default setup now produces successful `actions`
-  and `python` analyses on `main`, but it is not a required ruleset context.
+- **Code-scanning rule:** CodeQL default setup now produces successful `actions`,
+  `python`, and `rust` analyses on S1 `main`, but it is not a required ruleset
+  context. Rust analysis currently has seven open high test-classified
+  `rust/path-injection` results.
   Keep a CodeQL threshold deferred until the exact producer/check identity is
   selected and both proposed and target revisions pass a safe activation test,
   including a controlled failing analysis that proves the intended rule blocks
-  merge without a same-named-context bypass or check-name deadlock. Green runs,
-  zero results, and fixed alerts are not negative blocking proof.
+  merge without a same-named-context bypass or check-name deadlock. Successful
+  runs, zero-result languages, candidate fixes, and later fixed-alert states are
+  not negative blocking proof.
 - **License enforcement:** dependency review reports license data but no
   allow/deny list is authoritative before D-018.
 - **Advanced secret features:** non-provider patterns and validity checks are

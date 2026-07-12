@@ -1,6 +1,6 @@
 # End-state architecture
 
-Status: proposed end-state architecture with active compiler foundation
+Status: proposed end-state architecture with active pre-alpha frontend
 
 Audience: project owner and future language, compiler, formal-methods,
 cryptography, and tooling readers
@@ -9,11 +9,12 @@ Research snapshot: 2026-07-11
 
 Solo/compiler amendment: 2026-07-12
 
-D-023 and D-024 authorize a proof-neutral Rust compiler foundation before the
-end-state architecture is fully selected. Unresolved architecture choices gate
-only the component or claim that depends on them. The implemented source, span,
-lexer, diagnostic, and CLI boundaries make no proof, Core, target, ABI,
-cryptographic, or leakage decision.
+D-023 through D-025 authorize a proof-neutral Rust compiler foundation and one
+minimal Orange 2026 grammar before the end-state architecture is fully selected.
+Unresolved architecture choices gate only the component or claim that depends
+on them. The implemented source, span, lexer, parser, diagnostic, and CLI
+boundaries make no type, execution, proof, Core, target, ABI, cryptographic, or
+leakage decision.
 
 ## 1. Architecture objective
 
@@ -159,7 +160,11 @@ with the compiler, not postponed until the compiler is “done.”
 ## 3. Surface-language model
 
 Orange uses visibly distinct declaration kinds within one editioned module
-system. The final grammar is not defined by this plan; the semantic roles are.
+system. D-025 defines the first pre-alpha Orange 2026 grammar: one exact edition
+declaration, one module, and empty `spec` or `impl` functions. That syntax is a
+bounded frontend foothold, not the final grammar and not a definition of the
+semantic roles below. [`LANGUAGE_2026.md`](LANGUAGE_2026.md) is authoritative
+for current lexical and parsing behavior.
 
 ### 3.1 Specification declarations
 

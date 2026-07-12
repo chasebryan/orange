@@ -24,6 +24,18 @@ pub enum DiagnosticCode {
     LexicalTokenLimit,
     /// Further lexical errors were suppressed after the reporting budget.
     TooManyLexicalErrors,
+    /// A token required by the active grammar production was not present.
+    ExpectedSyntax,
+    /// The source edition declaration is not exactly `edition 2026;`.
+    UnsupportedSourceEdition,
+    /// A module member is not a `spec` or `impl` function declaration.
+    ExpectedFunctionDeclaration,
+    /// Syntax follows the single module allowed in one source file.
+    TrailingSyntax,
+    /// Further parser errors were suppressed after the reporting budget.
+    TooManySyntaxErrors,
+    /// A deterministic parser resource budget was exhausted.
+    ParserResourceLimit,
 }
 
 impl DiagnosticCode {
@@ -38,6 +50,12 @@ impl DiagnosticCode {
             Self::MalformedInteger => "ORC0005",
             Self::LexicalTokenLimit => "ORC0006",
             Self::TooManyLexicalErrors => "ORC0007",
+            Self::ExpectedSyntax => "ORC0101",
+            Self::UnsupportedSourceEdition => "ORC0102",
+            Self::ExpectedFunctionDeclaration => "ORC0103",
+            Self::TrailingSyntax => "ORC0104",
+            Self::TooManySyntaxErrors => "ORC0105",
+            Self::ParserResourceLimit => "ORC0106",
         }
     }
 }

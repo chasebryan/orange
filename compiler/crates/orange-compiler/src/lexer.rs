@@ -24,6 +24,8 @@ pub enum TokenKind {
     Integer,
     /// A double-quoted string literal.
     String,
+    /// `edition`
+    KwEdition,
     /// `module`
     KwModule,
     /// `spec`
@@ -115,6 +117,7 @@ impl TokenKind {
             Self::Identifier => "IDENTIFIER",
             Self::Integer => "INTEGER",
             Self::String => "STRING",
+            Self::KwEdition => "KW_EDITION",
             Self::KwModule => "KW_MODULE",
             Self::KwSpec => "KW_SPEC",
             Self::KwImpl => "KW_IMPL",
@@ -180,12 +183,24 @@ impl Token {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Lexed {
     /// Non-trivia tokens, always ending in exactly one [`TokenKind::Eof`].
-    pub tokens: Vec<Token>,
+    tokens: Vec<Token>,
     /// Recoverable lexical errors in source order.
-    pub diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl Lexed {
+    /// Returns the immutable token stream, including its final EOF token.
+    #[must_use]
+    pub fn tokens(&self) -> &[Token] {
+        &self.tokens
+    }
+
+    /// Returns lexical diagnostics in deterministic source order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
     /// Returns whether lexical analysis found any errors.
     #[must_use]
     pub fn has_errors(&self) -> bool {
@@ -274,13 +289,16 @@ impl<'source> Lexer<'source> {
 
     fn skip_trivia(&mut self) -> bool {
         let initial = self.cursor;
-        while self.peek_char().is_some_and(char::is_whitespace) {
+        while self.peek_char().is_some_and(is_ascii_whitespace) {
             self.advance_char();
         }
 
         if self.starts_with("//") {
             self.cursor += 2;
-            while self.peek_char().is_some_and(|character| character != '\n') {
+            while self
+                .peek_char()
+                .is_some_and(|character| !matches!(character, '\n' | '\r'))
+            {
                 self.advance_char();
             }
             return true;
@@ -575,6 +593,7 @@ impl<'source> Lexer<'source> {
 const fn keyword_kind(spelling: &str, edition: Edition) -> Option<TokenKind> {
     match edition {
         Edition::E2026 => match spelling.as_bytes() {
+            b"edition" => Some(TokenKind::KwEdition),
             b"module" => Some(TokenKind::KwModule),
             b"spec" => Some(TokenKind::KwSpec),
             b"impl" => Some(TokenKind::KwImpl),
@@ -588,6 +607,10 @@ const fn keyword_kind(spelling: &str, edition: Edition) -> Option<TokenKind> {
 
 const fn is_identifier_start(character: char) -> bool {
     character.is_ascii_alphabetic() || character == '_'
+}
+
+const fn is_ascii_whitespace(character: char) -> bool {
+    matches!(character, ' ' | '\t' | '\r' | '\n')
 }
 
 const fn is_identifier_continue(character: char) -> bool {
@@ -662,18 +685,19 @@ mod tests {
     #[test]
     fn recognizes_keywords_identifiers_literals_and_punctuation() {
         let (sources, lexed) = lex_text(
-            "module spec impl game proof claim name _x 12 0b1010 0xCA_FE \"ok\\n\" \
+            "edition module spec impl game proof claim name _x 12 0b1010 0xCA_FE \"ok\\n\" \
              (){}[],:;...::+-*/%&&&|||^~!==<<=>>=->=>?",
         );
 
         assert!(lexed.diagnostics.is_empty());
         assert_eq!(lexed.tokens.last().unwrap().kind, TokenKind::Eof);
-        assert_eq!(lexed.tokens[0].kind, TokenKind::KwModule);
-        assert_eq!(lexed.tokens[6].kind, TokenKind::Identifier);
-        assert_eq!(lexed.tokens[8].kind, TokenKind::Integer);
-        assert_eq!(lexed.tokens[11].kind, TokenKind::String);
+        assert_eq!(lexed.tokens[0].kind, TokenKind::KwEdition);
+        assert_eq!(lexed.tokens[1].kind, TokenKind::KwModule);
+        assert_eq!(lexed.tokens[7].kind, TokenKind::Identifier);
+        assert_eq!(lexed.tokens[9].kind, TokenKind::Integer);
+        assert_eq!(lexed.tokens[12].kind, TokenKind::String);
         let source = sources.iter().next().unwrap();
-        assert_eq!(lexed.tokens[9].lexeme(source), Some("0b1010"));
+        assert_eq!(lexed.tokens[10].lexeme(source), Some("0b1010"));
         assert!(kinds(&lexed).contains(&TokenKind::Arrow));
         assert!(kinds(&lexed).contains(&TokenKind::FatArrow));
         assert!(kinds(&lexed).contains(&TokenKind::DotDot));
@@ -686,6 +710,31 @@ mod tests {
         assert_eq!(
             kinds(&lexed),
             vec![TokenKind::Identifier, TokenKind::Identifier, TokenKind::Eof]
+        );
+    }
+
+    #[test]
+    fn uses_only_ascii_whitespace_and_stops_comments_at_all_line_endings() {
+        let (_, lexed) = lex_text("one//a\rtwo//b\r\nthree//c\nfour\u{00a0}five");
+        assert_eq!(
+            kinds(&lexed),
+            vec![
+                TokenKind::Identifier,
+                TokenKind::Identifier,
+                TokenKind::Identifier,
+                TokenKind::Identifier,
+                TokenKind::Identifier,
+                TokenKind::Eof,
+            ]
+        );
+        assert_eq!(lexed.diagnostics.len(), 1);
+        assert_eq!(
+            lexed.diagnostics[0].code(),
+            DiagnosticCode::UnexpectedCharacter
+        );
+        assert_eq!(
+            lexed.diagnostics[0].message(),
+            "unexpected character U+00A0"
         );
     }
 
@@ -732,16 +781,19 @@ mod tests {
     }
 
     #[test]
-    fn unterminated_string_stops_before_the_line_ending() {
-        let (sources, lexed) = lex_text("\"first\nnext");
-        assert_eq!(lexed.diagnostics.len(), 1);
-        assert_eq!(
-            lexed.diagnostics[0].code(),
-            DiagnosticCode::UnterminatedString
-        );
-        let source = sources.iter().next().unwrap();
-        assert_eq!(lexed.tokens[0].lexeme(source), Some("\"first"));
-        assert_eq!(lexed.tokens[1].lexeme(source), Some("next"));
+    fn unterminated_string_stops_before_every_logical_line_ending() {
+        for ending in ["\n", "\r\n", "\r"] {
+            let text = format!("\"first{ending}next");
+            let (sources, lexed) = lex_text(&text);
+            assert_eq!(lexed.diagnostics.len(), 1, "{ending:?}");
+            assert_eq!(
+                lexed.diagnostics[0].code(),
+                DiagnosticCode::UnterminatedString
+            );
+            let source = sources.iter().next().unwrap();
+            assert_eq!(lexed.tokens[0].lexeme(source), Some("\"first"));
+            assert_eq!(lexed.tokens[1].lexeme(source), Some("next"));
+        }
     }
 
     #[test]

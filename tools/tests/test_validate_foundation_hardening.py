@@ -761,8 +761,81 @@ version = "0.1.0"
             compiler_contract = stack.enter_context(
                 mock.patch.object(validator, "_validate_compiler_dependency_boundary")
             )
+            language_contract = stack.enter_context(
+                mock.patch.object(validator, "_validate_compiler_language_boundary")
+            )
             validator.run()
         compiler_contract.assert_called_once_with()
+        language_contract.assert_called_once_with()
+
+
+class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
+    _BOUNDARY_PATHS = (
+        "compiler/crates/orange-compiler/src/source.rs",
+        "compiler/crates/orange-compiler/src/lexer.rs",
+        "compiler/crates/orange-compiler/src/parser.rs",
+        "docs/LANGUAGE_2026.md",
+    )
+
+    def _copy_boundary(self, root: Path) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        for value in self._BOUNDARY_PATHS:
+            destination = root / value
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_root / value, destination)
+
+    def _codes(self, root: Path) -> set[str]:
+        validator = FoundationValidator(root)
+        validator._validate_compiler_language_boundary()
+        return {finding.code for finding in validator.findings}
+
+    def test_exact_normative_and_rust_budgets_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            self.assertFalse(self._codes(root))
+
+    def test_each_compiled_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            ("compiler/crates/orange-compiler/src/source.rs", "16 * 1024 * 1024", "15 * 1024 * 1024"),
+            ("compiler/crates/orange-compiler/src/lexer.rs", "262_144", "262_143"),
+            ("compiler/crates/orange-compiler/src/lexer.rs", "usize = 100;", "usize = 99;"),
+            ("compiler/crates/orange-compiler/src/parser.rs", "usize = 100;", "usize = 99;"),
+            ("compiler/crates/orange-compiler/src/parser.rs", "262_144", "262_143"),
+            ("compiler/crates/orange-compiler/src/parser.rs", "1_048_576", "1_048_575"),
+            ("compiler/crates/orange-compiler/src/parser.rs", "usize = 64;", "usize = 63;"),
+        )
+        for value, old, new in mutations:
+            with self.subTest(path=value, old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / value
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_commented_budget_decoy_cannot_hide_real_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "compiler/crates/orange-compiler/src/parser.rs"
+            source = path.read_text(encoding="utf-8").replace("1_048_576", "1_048_575", 1)
+            source += "\n/*\npub const MAX_PARSE_EVENTS_PER_SOURCE: usize = 1_048_576;\n*/\n"
+            path.write_text(source, encoding="utf-8")
+            self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_normative_budget_drift_fails_boundary_and_protected_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "docs/LANGUAGE_2026.md"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(source.replace("262,144 syntax nodes", "262,143 syntax nodes", 1), encoding="utf-8")
+            self.assertIn("compiler.language_spec_budget", self._codes(root))
+            validator = FoundationValidator(root)
+            validator._validate_protected_file_digests()
+            self.assertIn("protected_file.digest", {finding.code for finding in validator.findings})
 
 
 class BrandAssetHardeningTests(unittest.TestCase):
@@ -1112,6 +1185,69 @@ Status: accepted
 
 
 class ChangeRecordHardeningTests(unittest.TestCase):
+    _ACCEPTED_REVISION = "0123456789abcdef0123456789abcdef01234567"
+
+    def _write_accepted_oep(
+        self,
+        root: Path,
+        *,
+        review_authorities: list[str],
+        approval_records: list[str],
+    ) -> None:
+        oeps = root / "docs/governance/oeps"
+        oeps.mkdir(parents=True)
+        authorities = "\n".join(f"  - {value}" for value in review_authorities)
+        approvals = "\n".join(f"  - {value}" for value in approval_records)
+        headings = (
+            "Abstract",
+            "Motivation",
+            "Scope and non-goals",
+            "Specification",
+            "Alternatives",
+            "Compatibility and migration",
+            "Semantic and claim effects",
+            "TCB, axiom, and proof effects",
+            "Threat, abuse, and leakage effects",
+            "Conformance, tests, and evidence",
+            "Unresolved questions",
+            "Decision record",
+        )
+        body = "\n".join(
+            f"## {heading}\n\nSubstantive solo-mode decision evidence for this test record.\n"
+            for heading in headings
+        )
+        (oeps / "OEP-0001-solo-test.md").write_text(
+            f"""---
+number: OEP-0001
+title: Solo test
+authors:
+  - Chase Bryan
+champion: Chase Bryan
+status: Accepted
+type: Process
+created: 2026-07-12
+updated: 2026-07-12
+discussion: owner-test
+related-decisions:
+  - D-023
+related-adrs: []
+requires: []
+supersedes: []
+superseded-by: null
+review-authorities:
+{authorities}
+decision-date: 2026-07-12
+decision-revision: {self._ACCEPTED_REVISION}
+approval-records:
+{approvals}
+---
+
+# OEP-0001: Solo test
+
+{body}""",
+            encoding="utf-8",
+        )
+
     def test_empty_and_invalid_oep_metadata_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1205,6 +1341,99 @@ approval-records: []
             self.assertIn("record.acceptance", codes)
             self.assertIn("record.independence", codes)
             self.assertIn("record.section", codes)
+
+    def test_accepted_solo_oep_allows_owner_authorship_without_fake_independence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_accepted_oep(
+                root,
+                review_authorities=["Orange Project Owner"],
+                approval_records=[
+                    f"solo-reviewed owner acceptance at revision {self._ACCEPTED_REVISION}"
+                ],
+            )
+            validator = FoundationValidator(root)
+            validator._validate_change_records()
+            codes = {finding.code for finding in validator.findings}
+            self.assertNotIn("record.acceptance", codes)
+            self.assertNotIn("record.independence", codes)
+
+    def test_accepted_solo_oep_rejects_authority_alias_as_independence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_accepted_oep(
+                root,
+                review_authorities=["Chase Bryan"],
+                approval_records=[
+                    f"solo-reviewed owner acceptance at revision {self._ACCEPTED_REVISION}"
+                ],
+            )
+            validator = FoundationValidator(root)
+            validator._validate_change_records()
+            self.assertIn("record.independence", {finding.code for finding in validator.findings})
+
+    def test_accepted_solo_oep_requires_literal_solo_reviewed_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_accepted_oep(
+                root,
+                review_authorities=["Orange Project Owner"],
+                approval_records=[f"owner approval at revision {self._ACCEPTED_REVISION}"],
+            )
+            validator = FoundationValidator(root)
+            validator._validate_change_records()
+            self.assertIn("record.acceptance", {finding.code for finding in validator.findings})
+
+    def test_accepted_solo_oep_rejects_independent_claim_inside_approval_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_accepted_oep(
+                root,
+                review_authorities=["Orange Project Owner"],
+                approval_records=[
+                    f"solo-reviewed and independently reviewed at revision {self._ACCEPTED_REVISION}"
+                ],
+            )
+            validator = FoundationValidator(root)
+            validator._validate_change_records()
+            self.assertIn("record.independence", {finding.code for finding in validator.findings})
+
+    def test_accepted_solo_oep_may_disclose_absent_independent_review(self) -> None:
+        records = (
+            f"solo-reviewed; no independent review was available; revision {self._ACCEPTED_REVISION}",
+            f"solo-reviewed without an independent review; revision {self._ACCEPTED_REVISION}",
+            f"solo-reviewed; independent review was unavailable; revision {self._ACCEPTED_REVISION}",
+        )
+        for record in records:
+            with self.subTest(record=record), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_accepted_oep(
+                    root,
+                    review_authorities=["Orange Project Owner"],
+                    approval_records=[record],
+                )
+                validator = FoundationValidator(root)
+                validator._validate_change_records()
+                self.assertNotIn("record.independence", {finding.code for finding in validator.findings})
+
+    def test_accepted_solo_oep_approval_must_bind_exact_decision_revision(self) -> None:
+        wrong_revision = "1123456789abcdef0123456789abcdef01234567"
+        records = (
+            "solo-reviewed owner acceptance without a revision",
+            f"solo-reviewed owner acceptance at revision {wrong_revision}",
+            f"solo-reviewed owner acceptance at revision a{self._ACCEPTED_REVISION}",
+        )
+        for record in records:
+            with self.subTest(record=record), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_accepted_oep(
+                    root,
+                    review_authorities=["Orange Project Owner"],
+                    approval_records=[record],
+                )
+                validator = FoundationValidator(root)
+                validator._validate_change_records()
+                self.assertIn("record.acceptance", {finding.code for finding in validator.findings})
 
 
 class PlanningTraceHardeningTests(unittest.TestCase):

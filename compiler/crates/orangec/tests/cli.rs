@@ -51,13 +51,37 @@ fn checks_multiple_files_in_argument_order() {
 }
 
 #[test]
+fn accepts_the_minimal_program_from_standard_input_repeatably() {
+    let source = concat!(
+        "edition 2026;\n",
+        "module demo {\n",
+        "  spec identity() {}\n",
+        "  impl rounds() {}\n",
+        "}\n",
+    );
+    let first = run_with_stdin(&["check", "-"], source.as_bytes());
+    let second = run_with_stdin(&["check", "-"], source.as_bytes());
+
+    assert!(first.status.success());
+    assert_eq!(first.stdout, b"");
+    assert_eq!(first.stderr, b"");
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
+    assert_eq!(first.status.code(), second.status.code());
+}
+
+#[test]
 fn reports_mixed_file_errors_in_argument_order() {
-    let invalid =
-        std::env::temp_dir().join(format!("orangec-ordered-invalid-{}.or", std::process::id()));
-    let missing =
-        std::env::temp_dir().join(format!("orangec-ordered-missing-{}.or", std::process::id()));
-    fs::write(&invalid, b"@").unwrap();
+    let process_id = std::process::id();
+    let invalid = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "orangec-reports-mixed-file-errors-invalid-{process_id}.or"
+    ));
+    let missing = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "orangec-reports-mixed-file-errors-missing-{process_id}.or"
+    ));
+    let _ = fs::remove_file(&invalid);
     let _ = fs::remove_file(&missing);
+    fs::write(&invalid, b"@").unwrap();
 
     let output = orangec()
         .arg("check")
@@ -66,6 +90,7 @@ fn reports_mixed_file_errors_in_argument_order() {
         .output()
         .unwrap();
     fs::remove_file(&invalid).unwrap();
+    let _ = fs::remove_file(&missing);
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(output.stdout, b"");
@@ -73,6 +98,41 @@ fn reports_mixed_file_errors_in_argument_order() {
     let lexical_error = stderr.find("error[ORC0001]").unwrap();
     let input_error = stderr.find("error[ORC1001]").unwrap();
     assert!(lexical_error < input_error, "{stderr}");
+}
+
+#[test]
+fn reports_parser_errors_for_multiple_files_in_argument_order() {
+    let process_id = std::process::id();
+    let missing_semicolon = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "orangec-parser-order-missing-semicolon-{process_id}.or"
+    ));
+    let trailing_module = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "orangec-parser-order-trailing-module-{process_id}.or"
+    ));
+    let _ = fs::remove_file(&missing_semicolon);
+    let _ = fs::remove_file(&trailing_module);
+    fs::write(&missing_semicolon, b"edition 2026\nmodule first {}\n").unwrap();
+    fs::write(
+        &trailing_module,
+        b"edition 2026; module second {} module extra {}\n",
+    )
+    .unwrap();
+
+    let output = orangec()
+        .arg("check")
+        .arg(&missing_semicolon)
+        .arg(&trailing_module)
+        .output()
+        .unwrap();
+    fs::remove_file(&missing_semicolon).unwrap();
+    fs::remove_file(&trailing_module).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let first = stderr.find("error[ORC0101]").unwrap();
+    let second = stderr.find("error[ORC0104]").unwrap();
+    assert!(first < second, "{stderr}");
 }
 
 #[test]
@@ -157,8 +217,47 @@ fn check_reports_a_stable_source_diagnostic_and_failure_status() {
 }
 
 #[test]
+fn check_reports_an_exact_repeatable_parser_diagnostic() {
+    let source = b"edition 2026\nmodule demo {}\n";
+    let first = run_with_stdin(&["check", "-"], source);
+    let second = run_with_stdin(&["check", "-"], source);
+
+    assert_eq!(first.status.code(), Some(1));
+    assert_eq!(first.stdout, b"");
+    assert_eq!(first.status.code(), second.status.code());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
+    assert_eq!(
+        String::from_utf8(first.stderr).unwrap(),
+        concat!(
+            "error[ORC0101]: expected `;` after the edition\n",
+            " --> <stdin>:2:1\n",
+            "  |\n",
+            "2 | module demo {}\n",
+            "  | ^^^^^^ found KW_MODULE\n",
+            "  = note: write `edition 2026;`\n",
+        )
+    );
+}
+
+#[test]
+fn lexical_errors_prevent_parser_cascades() {
+    let source = b"@ edition 2026; module { spec broken( {}\n";
+    let output = run_with_stdin(&["check", "-"], source);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("error[ORC0001]"), "{stderr}");
+    assert!(!stderr.contains("error[ORC01"), "{stderr}");
+}
+
+#[test]
 fn rejects_non_utf8_source_before_lexing() {
-    let path = std::env::temp_dir().join(format!("orangec-invalid-utf8-{}.or", std::process::id()));
+    let process_id = std::process::id();
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("orangec-rejects-non-utf8-source-{process_id}.or"));
+    let _ = fs::remove_file(&path);
     fs::write(&path, [b'm', 0xff]).unwrap();
     let output = orangec().arg("check").arg(&path).output().unwrap();
     fs::remove_file(&path).unwrap();
@@ -171,10 +270,10 @@ fn rejects_non_utf8_source_before_lexing() {
 
 #[test]
 fn rejects_an_oversized_file_without_reading_it() {
-    let path = std::env::temp_dir().join(format!(
-        "orangec-oversized-source-{}.or",
-        std::process::id()
-    ));
+    let process_id = std::process::id();
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("orangec-rejects-oversized-source-{process_id}.or"));
+    let _ = fs::remove_file(&path);
     let file = File::create(&path).unwrap();
     file.set_len(u64::try_from(MAX_SOURCE_BYTES).unwrap() + 1)
         .unwrap();

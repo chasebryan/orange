@@ -1,12 +1,12 @@
 # Orange Enhancement Proposal process
 
-Status: provisional solo-project process under OEP-0001 and D-023
+Status: accepted solo-project process under OEP-0001 and D-023
 
-Orange currently has one owner and no outside review authority. OEP-0001 records
-the owner direction that external participation is unavailable and must not
-block development. During solo mode, an owner-authored and owner-approved record
-is valid project authority but is always labeled `solo-reviewed`; it is never
-independent approval.
+Orange currently has one owner and no outside review authority. Accepted
+OEP-0001 records the owner direction that external participation is unavailable
+and must not block development. During solo mode, an owner-authored and
+owner-approved record is valid project authority but is always labeled
+`solo-reviewed`; it is never independent approval.
 
 Orange Enhancement Proposals (OEPs) are the durable change-control record for
 normative architecture, language semantics, assurance claims, governance,
@@ -61,9 +61,11 @@ proposal should receive `OEP-0001` unless an earlier numbered intake exists.
 An Accepted record names the exact reviewed commit in `decision-revision` and
 lists immutable review or authority references in `approval-records`. Its
 decision date, related decisions, review authorities, and substantive decision
-record must be complete. OEP-0001 may use the one-time bootstrap-owner path
-described below, but its approval record must explicitly preserve the missing
-independent-review gap; it cannot present owner ratification as independence.
+record must be complete. During solo mode, `review-authorities` is exactly
+`Orange Project Owner`, and at least one approval record contains the literal
+label `solo-reviewed`. An approval record that claims independence is invalid;
+using a second spelling or role name for the same owner does not manufacture a
+second principal.
 
 The recommended minimum review periods are fourteen days for ordinary
 normative proposals and thirty days for constitutional or security-model
@@ -96,3 +98,10 @@ governance; thirty days is the current recommendation.
 The repository validator checks filename/number agreement, required metadata,
 status and type vocabulary, decision links, and local references. Mechanical
 success does not establish technical soundness or authority approval.
+
+## Current proposals
+
+| OEP | Status | Scope |
+| --- | --- | --- |
+| [OEP-0001](OEP-0001-solo-development.md) | Accepted | Solo development and incremental capability gates |
+| [OEP-0002](OEP-0002-edition-2026-parser.md) | Provisional | Directed Orange 2026 lexical boundary, minimal grammar, and bounded parser |

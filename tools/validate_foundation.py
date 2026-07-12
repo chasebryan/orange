@@ -60,6 +60,7 @@ MINIMUM_REQUIRED_PATHS = {
     "compiler/crates/orange-compiler/src/edition.rs",
     "compiler/crates/orange-compiler/src/lexer.rs",
     "compiler/crates/orange-compiler/src/lib.rs",
+    "compiler/crates/orange-compiler/src/parser.rs",
     "compiler/crates/orange-compiler/src/source.rs",
     "compiler/crates/orangec/Cargo.toml",
     "compiler/crates/orangec/src/main.rs",
@@ -88,6 +89,7 @@ MINIMUM_REQUIRED_PATHS = {
     "docs/DECISIONS.md",
     "docs/GATE0_TRACEABILITY.md",
     "docs/GATE0_SUPPORT_ENVELOPES.md",
+    "docs/LANGUAGE_2026.md",
     "docs/PROOF_FOUNDATION_DECISION_SUITE.md",
     "docs/REPRODUCIBILITY.md",
     "docs/USER_JOURNEYS.md",
@@ -261,7 +263,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
-    "README.md": "a4404b0d4f8f64a39adf2f35d8b2e8bcc027f86e515a620155ce801f45bbcae0",
+    "README.md": "a4329d0464aaa06ddaba7bbf4aaa2046322cd32fecf10b0e22834cdd0649dfee",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
@@ -283,13 +285,14 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "3e4a97c4960c8db16b2d8b786b266bc4fc543c012d88178fa3d90ccd214a023f",
+    "docs/DECISIONS.md": "9d818486fa2961cf0d271d3878d3eff2b35b88dfb6a1d04e51a573e7dabc5ff5",
+    "docs/LANGUAGE_2026.md": "1f779d3927f3d07540ab4d03815d9657c8a95eff9d9849921bfc02acd0e28acf",
     "docs/operations/CI_DEPENDENCIES.md": "21a7ec854592247ec0b3b238136046ca5bf3e4ab78797d53c16cc11f97667309",
-    "docs/operations/GITHUB_CONTROLS.md": "315159cfca2572260e3d5a7dc922f1a720e50758472c7bdb2988d2521f45c914",
-    "docs/security/OSPS_BASELINE.md": "87978e2bced5b5e6d844d27c375aa84a71de4f8ea72662daad8c2461a29a58d9",
+    "docs/operations/GITHUB_CONTROLS.md": "dc43c34a3b35021223ddfc08fee557bcb4901b1742b84b4e31b7f8a254daec4f",
+    "docs/security/OSPS_BASELINE.md": "2ee2a0040ce222be796f8524d9f5a44ca46745c6b5c78a5886a58f7c33f67295",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "19cb66ef091fab9189bffe71e56ba4ba8637cb5f9cedea034a39178962ec29c0",
-    "policy/README.md": "37d58be1b1b16cb2b08462c218167693f9bf61358d52d26f51607bf63b94c97c",
+    "docs/security/THREAT_MODEL.md": "4b71a02989e8dcabdddbc2da747030a18de680be8a2181ace5da0eca4f29d9da",
+    "policy/README.md": "f437a7671de3596b9035d626c3e59d70f7fd6d039b098fab162134aea5493704",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
@@ -301,7 +304,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "67b6a5d5d2ad670002c0c2175c5c424f5a63737a3ed7042662bf87f074a40a56",
-    "tools/tests/test_validate_foundation_hardening.py": "6b04e2d34f5c291c7b3f74a9419740b741fd265f52d3637e9b271dc0093393f9",
+    "tools/tests/test_validate_foundation_hardening.py": "3e972197baeeb331c8949413dcb317f3f6c4c909eafda952a2f01fb3db034ccf",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -432,6 +435,30 @@ GATE0_RUST_LOCK = {
             "dependencies": ["orange-compiler"],
         },
     ],
+}
+ORANGE_2026_RUST_BUDGETS = {
+    "compiler/crates/orange-compiler/src/source.rs": {
+        "MAX_SOURCE_BYTES": 16 * 1024 * 1024,
+    },
+    "compiler/crates/orange-compiler/src/lexer.rs": {
+        "MAX_TOKENS_PER_SOURCE": 262_144,
+        "MAX_DIAGNOSTICS_PER_SOURCE": 100,
+    },
+    "compiler/crates/orange-compiler/src/parser.rs": {
+        "MAX_PARSE_DIAGNOSTICS_PER_SOURCE": 100,
+        "MAX_SYNTAX_NODES_PER_SOURCE": 262_144,
+        "MAX_PARSE_EVENTS_PER_SOURCE": 1_048_576,
+        "MAX_RECOVERY_DELIMITER_DEPTH": 64,
+    },
+}
+ORANGE_2026_SPEC_BUDGET_MARKERS = {
+    "at most 16 MiB\n(`16 * 1024 * 1024` bytes)": 16 * 1024 * 1024,
+    "At most 262,144 non-trivia tokens": 262_144,
+    "At most 100 ordinary lexical diagnostics": 100,
+    "262,144 syntax nodes": 262_144,
+    "1,048,576 parser events or equivalent syntax elements": 1_048_576,
+    "100 ordinary parse diagnostics plus at most one suppression diagnostic": 100,
+    "recovery delimiter nesting depth 64": 64,
 }
 MINIMUM_CODEOWNERS = {
     "* @chasebryan",
@@ -665,6 +692,7 @@ class FoundationValidator:
             return sorted(set(self.findings))
         self._validate_required_and_forbidden_paths()
         self._validate_compiler_dependency_boundary()
+        self._validate_compiler_language_boundary()
         self._validate_tree_encoding_and_format()
         self._validate_brand_assets()
         self._validate_protected_file_digests()
@@ -871,6 +899,7 @@ class FoundationValidator:
             "governance": {"decision": "D-019", "required_status": "directed"},
             "solo_project": {"decision": "D-023", "required_status": "directed"},
             "compiler_foundation": {"decision": "D-024", "required_status": "directed"},
+            "edition_2026_parser": {"decision": "D-025", "required_status": "directed"},
         }
         if policy["decision_gates"] != expected_decisions:
             self.add("policy.decision_gates", self.policy_path, "solo-bootstrap decision gates must remain exact")
@@ -1187,6 +1216,53 @@ class FoundationValidator:
                 lock_path,
                 "Cargo lockfile must contain only the exact two first-party workspace packages and edge",
             )
+
+    def _validate_compiler_language_boundary(self) -> None:
+        """Bind normative Orange 2026 resource budgets to compiled constants."""
+
+        for value, expected_constants in ORANGE_2026_RUST_BUDGETS.items():
+            path = self.root / value
+            try:
+                source = rust_code_without_comments_and_literals(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError) as exc:
+                self.add("compiler.language_budget", path, f"cannot read Rust budget source: {exc}")
+                continue
+            declarations: dict[str, list[str]] = {}
+            for match in re.finditer(
+                r"(?m)^\s*pub\s+const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*([^;]+);",
+                source,
+            ):
+                declarations.setdefault(match.group(1), []).append(match.group(2))
+            for name, expected in expected_constants.items():
+                expressions = declarations.get(name, [])
+                if len(expressions) != 1:
+                    self.add(
+                        "compiler.language_budget",
+                        path,
+                        f"{name} must have exactly one public usize declaration; observed={len(expressions)}",
+                    )
+                    continue
+                observed = parse_rust_usize_product(expressions[0])
+                if observed != expected:
+                    self.add(
+                        "compiler.language_budget",
+                        path,
+                        f"{name} must equal {expected}; observed={observed!r}",
+                    )
+
+        specification = self.root / "docs/LANGUAGE_2026.md"
+        try:
+            text = specification.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            self.add("compiler.language_spec_budget", specification, f"cannot read normative budget specification: {exc}")
+            return
+        for marker, expected in ORANGE_2026_SPEC_BUDGET_MARKERS.items():
+            if marker not in text:
+                self.add(
+                    "compiler.language_spec_budget",
+                    specification,
+                    f"normative specification must state the exact {expected} budget marker {marker!r}",
+                )
 
     def _validate_tree_encoding_and_format(self) -> None:
         files = self.repository_files
@@ -2479,19 +2555,49 @@ class FoundationValidator:
                     ):
                         self.add("record.acceptance", path, "Accepted record needs immutable approval-record references")
                     if prefix == "OEP":
+                        if isinstance(decision_revision, str) and re.fullmatch(r"[0-9a-f]{40}", decision_revision):
+                            bound_revision = re.compile(
+                                rf"(?<![0-9a-f]){re.escape(decision_revision)}(?![0-9a-f])"
+                            )
+                            if not isinstance(approval_records, list) or not any(
+                                isinstance(item, str) and bound_revision.search(item)
+                                for item in approval_records
+                            ):
+                                self.add(
+                                    "record.acceptance",
+                                    path,
+                                    "Accepted OEP approval-records must bind the exact decision-revision",
+                                )
                         if parse_iso_date(metadata.get("decision-date")) is None:
                             self.add("record.acceptance", path, "Accepted OEP needs an exact decision-date")
                         related = metadata.get("related-decisions")
                         if not isinstance(related, list) or not related:
                             self.add("record.acceptance", path, "Accepted OEP needs at least one related decision")
-                        authors = set(metadata.get("authors", [])) if isinstance(metadata.get("authors"), list) else set()
-                        authorities = (
-                            set(metadata.get("review-authorities", []))
-                            if isinstance(metadata.get("review-authorities"), list)
-                            else set()
-                        )
-                        if authors & authorities:
-                            self.add("record.independence", path, "authors cannot serve as their own review authorities")
+                        authorities = metadata.get("review-authorities")
+                        if authorities != ["Orange Project Owner"]:
+                            self.add(
+                                "record.independence",
+                                path,
+                                "Accepted solo-mode OEP review-authorities must be exactly Orange Project Owner",
+                            )
+                        if not isinstance(approval_records, list) or not any(
+                            isinstance(item, str) and re.search(r"(?<![A-Za-z0-9_])solo-reviewed(?![A-Za-z0-9_])", item)
+                            for item in approval_records
+                        ):
+                            self.add(
+                                "record.acceptance",
+                                path,
+                                "Accepted solo-mode OEP needs a literal solo-reviewed approval record",
+                            )
+                        if isinstance(approval_records, list) and any(
+                            isinstance(item, str) and approval_record_claims_independence(item)
+                            for item in approval_records
+                        ):
+                            self.add(
+                                "record.independence",
+                                path,
+                                "solo-mode OEP approval records cannot claim independent review",
+                            )
                     else:
                         owners = set(metadata.get("owners", [])) if isinstance(metadata.get("owners"), list) else set()
                         reviewers = set(metadata.get("reviewers", [])) if isinstance(metadata.get("reviewers"), list) else set()
@@ -2837,6 +2943,117 @@ def front_matter(path: Path) -> tuple[dict[str, Any], list[str]] | None:
 
 def nonempty_scalar(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def parse_rust_usize_product(value: str) -> int | None:
+    """Parse the deliberately tiny integer-product form used by Rust budgets."""
+
+    if re.fullmatch(r"\s*[0-9][0-9_]*(?:\s*\*\s*[0-9][0-9_]*)*\s*", value) is None:
+        return None
+    result = 1
+    for factor in value.split("*"):
+        result *= int(factor.strip().replace("_", ""), 10)
+    return result
+
+
+def rust_code_without_comments_and_literals(value: str) -> str:
+    """Blank Rust comments and strings while preserving lines and offsets."""
+
+    result = list(value)
+    index = 0
+    state = "code"
+    block_depth = 0
+    raw_closer = ""
+    while index < len(value):
+        if state == "code":
+            raw = re.match(r'r(#{0,255})"', value[index:])
+            if raw is not None:
+                raw_closer = '"' + raw.group(1)
+                length = raw.end()
+                for offset in range(index, index + length):
+                    result[offset] = " "
+                index += length
+                state = "raw"
+            elif value.startswith("//", index):
+                result[index : index + 2] = [" ", " "]
+                index += 2
+                state = "line"
+            elif value.startswith("/*", index):
+                result[index : index + 2] = [" ", " "]
+                index += 2
+                block_depth = 1
+                state = "block"
+            elif value[index] == '"':
+                result[index] = " "
+                index += 1
+                state = "string"
+            else:
+                index += 1
+        elif state == "line":
+            if value[index] == "\n":
+                state = "code"
+            else:
+                result[index] = " "
+            index += 1
+        elif state == "block":
+            if value.startswith("/*", index):
+                result[index : index + 2] = [" ", " "]
+                index += 2
+                block_depth += 1
+            elif value.startswith("*/", index):
+                result[index : index + 2] = [" ", " "]
+                index += 2
+                block_depth -= 1
+                if block_depth == 0:
+                    state = "code"
+            else:
+                if value[index] != "\n":
+                    result[index] = " "
+                index += 1
+        elif state == "string":
+            if value[index] == "\\" and index + 1 < len(value):
+                result[index] = " "
+                if value[index + 1] != "\n":
+                    result[index + 1] = " "
+                index += 2
+            else:
+                character = value[index]
+                if character != "\n":
+                    result[index] = " "
+                index += 1
+                if character == '"':
+                    state = "code"
+        else:
+            if value.startswith(raw_closer, index):
+                for offset in range(index, index + len(raw_closer)):
+                    result[offset] = " "
+                index += len(raw_closer)
+                state = "code"
+            else:
+                if value[index] != "\n":
+                    result[index] = " "
+                index += 1
+    return "".join(result)
+
+
+def approval_record_claims_independence(value: str) -> bool:
+    """Return whether an approval record positively claims a second reviewer."""
+
+    normalized = re.sub(r"[_-]+", " ", value.casefold())
+    for claim in re.finditer(r"\bindependen(?:t|ce|tly)\b", normalized):
+        prefix = normalized[max(0, claim.start() - 32) : claim.start()]
+        suffix = normalized[claim.end() : claim.end() + 40]
+        negated_before = re.search(
+            r"\b(?:no|not|non|without|absent|missing|unavailable)(?:\s+(?:a|an|any))?\s*$",
+            prefix,
+        )
+        negated_after = re.match(
+            r"\s+(?:review\s+)?(?:was\s+|is\s+)?(?:absent|missing|unavailable|not available)\b",
+            suffix,
+        )
+        if negated_before is None and negated_after is None:
+            return True
+    return False
 
 
 def parse_iso_date(value: Any) -> dt.date | None:

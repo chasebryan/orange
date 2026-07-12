@@ -14,6 +14,15 @@ absence must remain explicit and limits the claims Orange can make. It never
 turns owner review into independent evidence or weakens a machine-checkable
 technical obligation for a claim that Orange actually advertises.
 
+D-025 adds a narrow current assurance surface: the dependency-free Rust
+frontend recognizes the exact Orange 2026 grammar in
+[`LANGUAGE_2026.md`](LANGUAGE_2026.md) with fixed source, token, syntax-node,
+event, diagnostic, and recovery-depth budgets. Its positive, malformed,
+Unicode, line-ending, resource, and repeatability tests are implementation
+evidence only. They do not establish parser correctness, semantic soundness,
+proof soundness, independent review, cryptographic correctness, constant-time
+behavior, or production readiness.
+
 ## 1. Assurance promise
 
 Orange will say exactly what was checked, for which artifact, with which model,
@@ -74,7 +83,7 @@ Assume all of the following:
 | Claim integrity | Evidence substitution, hidden assumption, target confusion | Content addressing, claim closure, canonical formats, fail-closed checking |
 | Build and release | Dependency/CI compromise, forged provenance, rollback | Hermetic inputs, SLSA, reproducible builds, signatures, transparency, TUF-style updates |
 | Registry | Typosquatting, account takeover, malicious package, downgrade | MFA, namespace policy, trust tiers, quarantine/revocation, immutable lockfiles |
-| Availability | Proof bombs, pathological parser input, solver divergence | Streaming formats, deterministic resource limits, cancellation, adversarial corpus |
+| Availability | Proof bombs, pathological parser input, solver divergence | Current parser has deterministic source/token/node/event/diagnostic/recovery limits and adversarial cases; streaming proof formats, solver cancellation, and the larger corpus remain targets |
 | Governance | Capture, unilateral critical changes, sponsor pressure | Public decisions, conflict disclosure, and explicit solo-review status; two-person review and threshold authority are unavailable, remain disclosed conformance gaps, and are not claimed as current controls |
 
 ### 2.3 Security boundaries
