@@ -255,7 +255,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     ".github/workflows/scorecard.yml": "be2ff8f6d336bfb2002c1367b36dbb701c0faf30db19769038e6293a4a204f67",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
-    ".markdownlint-cli2.jsonc": "731e1af92e9e12a2a3582c5b63fe48148bd94930e2bcf07de9214a823b15bdd1",
+    ".markdownlint-cli2.jsonc": "abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5",
     "CODE_OF_CONDUCT.md": "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a",
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
