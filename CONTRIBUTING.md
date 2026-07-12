@@ -1,9 +1,9 @@
 # Contributing to Orange
 
-Orange is in Gate 0: constitution, evidence architecture, and reproducible
-technical decision work. There is no product implementation yet, and work in
-this repository must advance a permanent end-product boundary rather than a
-prototype, scaffold, or MVP.
+Orange is a solo, pre-alpha project with active production-lineage compiler
+development. OEP-0001 and D-023 replace the former all-project Gate 0
+implementation freeze with incremental capability gates. Work must still
+advance a permanent end-product boundary rather than a disposable prototype.
 
 ## Current contribution and legal boundary
 
@@ -16,12 +16,14 @@ silently imposing terms on contributors or the future project.
 External researchers and prospective contributors are welcome to open issues
 containing facts, primary-source links, reproducible methods, and proposed
 scope. Do not contribute original code or prose in an issue. The bootstrap
-steward may author repository work while Gate 0 proceeds. Issue-form answers
-are intake summaries for evaluation, not text licensed for incorporation;
-until D-018 closes, a maintainer must independently author any repository
-change from the cited facts and sources.
+steward may author repository work during solo pre-alpha development.
+Issue-form answers are intake summaries for evaluation, not text licensed for
+incorporation; until D-018 closes, a maintainer must author any repository
+change afresh from the cited facts and sources without incorporating the
+issue's original expression.
 
-After D-018 closes, this file must name the repository licenses, generated-
+If D-018 later selects contribution terms, this file must name the repository
+licenses, generated-
 output policy, patent and provenance terms, and either DCO 1.1 sign-off or a
 counsel-selected contributor agreement. A DCO sign-off is a legal provenance
 statement; it is distinct from cryptographically signing a commit.
@@ -29,24 +31,26 @@ statement; it is distinct from cryptographically signing a commit.
 Required CI supplies a blocking defense-in-depth signal by failing ordinary
 pull requests whose opener is not `chasebryan`; it does not prove commit or
 content authorship and cannot replace legal/provenance review. Dependabot pull
-requests are surveillance and update suggestions only during Gate 0; they
-cannot be merged. The steward must review the upstream change and independently
-author any admitted pin update with its provenance and validation.
+requests are surveillance and update suggestions only during solo mode; they
+cannot be merged. The steward must review the upstream change and author any
+admitted pin update afresh with its provenance and validation.
 
-## Gate 0 scope
+## Solo-development scope
 
-Appropriate work includes:
+Owner-authored work may include:
 
 - factual corrections supported by primary sources;
 - planning, governance, security, assurance, and threat-model improvements;
-- standards, dependency, license, and provenance inventories; and
+- standards, dependency, license, and provenance inventories;
 - reproducible permanent decision evidence under `research/decisions/` once a
-  decision case has a substantive artifact.
+  decision case has a substantive artifact;
+- permanent compiler, diagnostics, parser, semantic, and code-generation
+  components admitted through incremental decisions; and
+- tests, fixtures, documentation, and developer tooling for implemented
+  behavior.
 
 Do not add:
 
-- compiler, checker, standard-library, package, or generated-code product
-  implementation before Gate 0 closes;
 - a disposable prototype, demo-only scaffold, or parallel MVP;
 - syntax or architecture selected merely by implementing it first;
 - packages, releases, unratified replacement/final branding, or public
@@ -66,15 +70,14 @@ Do not add:
 3. Link the affected D-ID, OEP, or normative document before implementation.
 4. Work on a branch and open a pull request using the repository template.
 5. Record exact validation commands, evidence, provenance, and limitations.
-6. Obtain the review required by the current governance stage. An author does
-   not self-approve assurance-critical work.
+6. Record owner review as `solo-reviewed`. Never label it independent review.
 7. Update the decision register and coupled documents in the same change.
 
 ## Definition of done
 
 A change belongs at its intended permanent boundary; is deterministic and
 documented; includes tests or replayable evidence where applicable; cites
-primary-source provenance; introduces no hidden Gate 0 decision; and declares
+primary-source provenance; introduces no hidden capability decision; and declares
 all effects on the TCB, threats, claims, dependencies, licenses, compatibility,
 and support. Local links, formatting, whitespace, schemas, and policy checks
 must pass.

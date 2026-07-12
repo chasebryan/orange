@@ -1,8 +1,25 @@
 # Gate 0 feature traceability
 
-Status: proposed Gate 0 planning map; no feature or decision is ratified
+Status: legacy Gate 0 planning map retained at transition; D-023 governs active work
 
 Snapshot: 2026-07-11
+
+## Solo-mode disposition
+
+D-023 retired the aggregate Gate 0 implementation barrier at the honest state
+recorded below. The seven legacy criteria were not completed and are not being
+relabeled as complete. They no longer block unrelated production-lineage work.
+
+The project owner now holds decision responsibility for all fourteen feature
+groups. This is a governance assignment, not evidence that the features are
+implemented or independently reviewed. Independent mapping review is unavailable
+and not an active dependency. Each feature instead passes its own incremental
+capability gate before it can make the affected claim.
+
+The detailed matrix remains useful as a long-range dependency and evidence map.
+References to proposed committees, staffed workstreams, external reviewers, and
+Gate 0 closure are historical institutional assumptions superseded by OEP-0001
+where they conflict with the solo model.
 
 ## 1. Scope and interpretation
 
@@ -21,7 +38,7 @@ charter, roadmap, decision register, and this matrix together.
 The source section currently contains fourteen top-level bullets. Its exact
 UTF-8 byte selection, beginning with the section 5 heading and ending before
 the section 6 heading, has SHA-256 digest
-`2ed9492d19141935e5ba143b1166d7121cb5ed0be855e3c9568c9b7463679a3a`.
+`4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f`.
 Recompute it with:
 
 ```sh
@@ -32,23 +49,24 @@ sed -n '/^## 5\. In scope for the 1\.0 product$/,/^## 6\. Explicit non-goals for
 A changed digest requires full row-by-row review even when the bullet count and
 order remain unchanged.
 
-Workstream IDs refer to the proposed workstreams in
-[`ROADMAP.md` section 4](ROADMAP.md#4-workstreams). Named authorities refer to
-the proposed mature bodies in [`GOVERNANCE.md`](../GOVERNANCE.md#proposed-mature-authorities).
-They are accountability targets, not staffed teams. Decision D-019 is not
-ratified, no accountable person has been appointed for these rows, and the
-Bootstrap Repository Steward cannot supply independent approval.
+Workstream IDs refer to the solo workstreams in
+[`ROADMAP.md` section 3](ROADMAP.md#3-solo-workstreams). Named authorities in
+the legacy matrix are superseded by the sole-owner authority in
+[`GOVERNANCE.md`](../GOVERNANCE.md#current-authority). They are historical
+accountability targets, not staffed teams. D-019 and D-023 assign current
+responsibility to the sole owner, who can record owner review but cannot supply
+independent approval.
 
-Every row also depends on these common gates:
+The retired institutional process treated these as common gates:
 
 - D-001 and D-002 preserve the directed mission and permanent-product lineage.
-- D-017 must settle the project and package namespace.
-- D-018 must settle source, documentation, generated-output, specification,
+- D-017 required settlement of the project and package namespace.
+- D-018 required settlement of source, documentation, generated-output,
   vector, and contribution terms.
-- D-019 must ratify governance, name accountable people, fund the work, and
-  establish independent review and release authority.
+- D-019 required ratified governance, named accountable people, funding, and
+  independent review and release authority.
 - Applicable assurance stop-ship conditions in
-  [`ASSURANCE.md`](ASSURANCE.md#8-stop-ship-conditions) must be clear.
+  [`ASSURANCE.md`](ASSURANCE.md#8-stop-ship-conditions) had to be clear.
 
 ## 2. Evidence and state vocabulary
 
@@ -81,18 +99,21 @@ Target gate names when the complete evidence can first be required. It is not a
 current pass. Assurance outcomes such as `satisfied` and `unresolved` remain
 reserved for claim records and are not planning-row states.
 
-## 3. Current coverage and Gate 0 closure
+## 3. Preserved Gate 0 coverage and closure
 
-| Measure | Current count | Interpretation |
+The following is the preserved pre-transition baseline, not the active
+implementation gate:
+
+| Measure | Pre-transition count | Interpretation |
 | --- | ---: | --- |
 | Charter feature groups represented | 14/14 | Every section 5 bullet has one source-ordered row. |
 | Structurally mapped rows | 14/14 | Every row has all planning fields; this is document coverage only. |
 | Accountable people appointed and accepting | 0/14 | Workstreams and proposed authorities are not people or appointments. |
 | Independently reviewed row mappings | 0/14 | No authorized non-author human has attested to a row. |
-| Feature exit tests evidenced | 0/14 | Product implementation and later-gate evidence do not exist. |
+| Feature exit tests evidenced | 0/14 | At transition, product implementation and later-gate evidence did not exist. |
 | Gate 0 exit criteria closed | 0/7 | This matrix partially addresses only the traceability criterion. |
 
-The complete Gate 0 closure ledger remains:
+The preserved Gate 0 closure ledger was:
 
 | Criterion | Closure state | Evidence still required |
 | --- | --- | --- |
@@ -164,7 +185,8 @@ The matrix is complete only when all of the following remain true:
    and never merely because a schema, plan, synthetic fixture, or local test
    exists.
 
-Gate 0 can close this traceability criterion only after accountable people and
-reviewers accept the finite feature envelope and its dependencies, evidence
-obligations, and exit tests. Completing this document supplies the map; it does
-not supply that acceptance or any future-gate evidence.
+Under the retired institutional process, Gate 0 could close this criterion only
+after accountable people and independent reviewers accepted the map. Under
+D-023, the sole owner accepts governance responsibility while the mapping stays
+`mapped`, not independently `reviewed`. Completing this document supplies a map;
+it does not supply implementation or assurance evidence.

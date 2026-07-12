@@ -2,7 +2,7 @@
 
 Status: active proposed-decision ledger
 
-Snapshot: 2026-07-11
+Snapshot: 2026-07-12
 
 This file separates user direction, research recommendations, and ratified
 architecture. A recommendation is not allowed to become a hidden decision by
@@ -17,6 +17,10 @@ Statuses:
 - `blocked`: an external fact or authority is required;
 - `superseded`: retained for history with a replacement link.
 
+Under D-023, remaining `Gate 0` phrases are legacy decision-stage labels, not
+an aggregate implementation barrier. Each unresolved decision gates only the
+component or claim that depends on it.
+
 ## D-001 — Mission
 
 Status: directed
@@ -26,12 +30,14 @@ Source: original repository README
 Directed decision: Orange is a language for specifying, implementing, and
 verifying cryptography.
 
-Working product interpretation, proposed for Gate 0: the deliverable includes
-the language, proof system, compiler, developer tools, package/evidence format,
-standard cryptography corpus, and operational release system needed to make
-that sentence true.
+Working product interpretation for incremental capability decisions: the
+deliverable includes the language, proof system, compiler, developer tools,
+package/evidence format, standard cryptography corpus, and operational release
+system needed to make that sentence true.
 
-Open detail: Gate 0 must freeze the finite 1.0 support envelope.
+Open detail: incremental capability decisions must keep the support envelope
+finite. D-023 supersedes the former requirement to freeze all of 1.0 before any
+implementation begins.
 
 ## D-002 — No disposable prototype
 
@@ -56,7 +62,8 @@ Change rule: only explicit user/project-governance direction can supersede this.
 
 ## D-003 — Product form
 
-Status: proposed for Gate 0
+Status: proposed; decide before S2/S3 stabilizes the standalone language and
+Core boundary
 
 Recommendation: a standalone domain-specific language with its own editioned
 semantics and canonical Core formats.
@@ -71,12 +78,14 @@ Rationale: interoperability with those systems is valuable, but delegating the
 surface language and semantics would preserve the polyglot seams Orange is meant
 to make explicit.
 
-Acceptance evidence: complete user journeys, stable core boundary, and an
-independent review that the standalone scope is fundable.
+Acceptance evidence: complete user journeys, a stable Core boundary, and an
+owner-executable scope and resource analysis. Independent feasibility review is
+unavailable in solo mode; its absence limits any external feasibility claim but
+does not block proof-neutral frontend work.
 
 ## D-004 — Semantic strata
 
-Status: proposed for Gate 0
+Status: proposed; decide before S3 stabilizes the semantic strata and Core
 
 Recommendation: one module system with separate Specification, Implementation,
 Machine Implementation, Game, and Proof strata, lowering to several formally
@@ -92,22 +101,25 @@ and one game/reduction relation.
 
 ## D-005 — Public assurance model
 
-Status: proposed for Gate 0
+Status: proposed; decide before S4 stabilizes the claim model and public claim
+records
 
-Recommendation: independent named claims with statuses and full assumption/TCB
+Recommendation: separately named claims with statuses and full assumption/TCB
 closure. Never issue one package-wide `verified` Boolean or a numeric ladder
 that implies unrelated properties.
 
 Minimum claim families: conformance, refinement, safety, termination, leakage,
 compiler preservation, ABI, erasure, game-based security, and empirical tests.
 
-Acceptance evidence: schema review by implementers, auditors, cryptographers,
-and downstream integrators; demonstrate mixed statuses on a representative
-artifact without ambiguity.
+Acceptance evidence: owner-executable schema review and a representative
+artifact with unambiguous mixed statuses. Multidisciplinary external review by
+implementers, auditors, cryptographers, and downstream integrators is
+unavailable in solo mode; any claim that depends on it remains unsupported,
+without blocking unrelated S1-S3 development.
 
 ## D-006 — Proof foundation
 
-Status: investigate; decide at Gate 0
+Status: investigate; required before proof-bearing components, not the frontend
 
 Current recommendation: Rocq for the normative metatheory, Orange kernel
 soundness, and verified compiler transformations.
@@ -136,15 +148,17 @@ Required decision suite:
 - produce and replay an LRAT-backed bitvector proof;
 - exercise extraction/distribution on all supported hosts;
 - measure clean bootstrap, proof replay, diagnostics, binary size, and long-term
-  dependency surface;
-- assess external-audit and contributor availability.
+  dependency surface; and
+- record that external-audit and contributor availability are unavailable in
+  solo mode and therefore cannot distinguish the candidates.
 
 The symmetric cases, measurements, hard gates, archive, and inconclusive
 procedure are specified in the
 [D-006 proof-foundation decision suite](PROOF_FOUNDATION_DECISION_SUITE.md).
 
-The decision is evidence-based. No surface syntax should make it irreversible
-before the suite is published.
+The decision is evidence-based. D-023 permits proof-neutral compiler work while
+this remains open. No source or Core choice may make a proof foundation
+irreversible before the owner records a revised, solo-executable comparison.
 
 ## D-007 — Orange-owned proof format and checker
 
@@ -152,7 +166,8 @@ Status: proposed; depends on D-006
 
 Recommendation: define a small Orange Proof IR and kernel. Formalize the checker
 in the selected proof foundation and distribute an authoritative extracted
-checker, plus an independent safe-Rust checker for differential validation.
+checker, plus an implementation-diverse safe-Rust checker for differential
+validation.
 
 Alternative: make the host prover’s compiled environment the permanent public
 artifact.
@@ -170,27 +185,33 @@ fuzzing, external logic audit, stable canonical encoding.
 
 ## D-008 — Implementation languages
 
-Status: proposed for Gate 0
+Status: directed for the solo compiler bootstrap
 
-Recommendation:
+Directed decision:
 
-- safe Rust for the permanent driver, frontend services, package tooling, LSP,
-  and independent checker;
+- safe Rust, Rust edition 2024, for the permanent driver, frontend services,
+  package tooling, LSP, and implementation-diverse checker;
 - selected proof foundation for normative semantics, authoritative checker, and
   verified stable compiler passes;
 - no mandatory self-hosting target.
+
+The initial slice pins the Rust toolchain and uses only the standard library.
+New crates require an explicit dependency admission record. The words
+`independent checker` remain reserved for organizational independence; a second
+checker written by the owner is an implementation-diverse checker.
 
 Rationale: Rust is suitable for hostile-input tooling and distribution, while
 the checker/passes need a direct mechanized relationship. Orange is too
 specialized to gain from adding general application features merely to
 self-host its package manager or LSP.
 
-Acceptance evidence: bootstrap and distribution design, license/dependency
-audit, and proof that cross-language canonical boundaries are checkable.
+This decision authorizes the proof-neutral compiler foundation in D-024. The
+proof foundation and cross-language canonical boundary remain open and gate
+only components that depend on them.
 
 ## D-009 — Solver trust
 
-Status: proposed for Gate 0
+Status: proposed; decide before S4 admits solver-backed proof search
 
 Recommendation: solvers are untrusted search/counterexample engines in
 claim-closing mode. Successful automated claims require checked certificates or
@@ -213,7 +234,8 @@ no solver executable is in the native logical TCB.
 
 ## D-010 — Compiler strategy
 
-Status: proposed for Gate 0 architecture, final pass policy at Gate 1
+Status: proposed; decide the IR strategy before S5 and each final pass policy
+before that pass can carry a preservation claim
 
 Recommendation: hybrid verified compilation and translation validation.
 
@@ -240,7 +262,7 @@ that is rejected.
 
 ## D-011 — Initial native target envelope
 
-Status: proposed; decide at Gate 0
+Status: proposed; decide before target implementation or native-code claims
 
 Recommendation:
 
@@ -250,24 +272,25 @@ Recommendation:
 - stable generated C ABI and Rust wrapper;
 - portable C output clearly labeled as an interoperability path.
 
-Deferred unless Gate 0 substitutes them: a RISC-V assurance target, claim-bearing
-Windows and macOS native outputs, general Wasm constant-time claims, GPUs, and
-hardware synthesis.
+Deferred unless an incremental target decision substitutes them: a RISC-V
+assurance target, claim-bearing Windows and macOS native outputs, general Wasm
+constant-time claims, GPUs, and hardware synthesis.
 
 Rationale: x86-64 and AArch64 cover the principal server and client CPU families
-while keeping target verification finite. The team and lab capacity may require
-Gate 0 to choose only one for 1.0 rather than weaken both.
+while keeping target verification finite. Solo capacity and available target
+model evidence may require the owner to choose only one for 1.0 rather than
+weaken both.
 
 Acceptance evidence: resource estimate per target, ISA/ABI model availability,
-hardware/lab access, and flagship-corpus feasibility.
+owner-accessible hardware evidence, and flagship-corpus feasibility.
 
-The unselected target/corpus/schedule combinations and capacity bands are
-compared in the
-[Gate 0 support-envelope options](GATE0_SUPPORT_ENVELOPES.md).
+The active solo capacity boundary that governs future target admission is
+recorded in the [solo development envelope](GATE0_SUPPORT_ENVELOPES.md).
 
 ## D-012 — Baseline leakage claim
 
-Status: investigate; decide at Gate 0
+Status: investigate; decide before S6 stabilizes leakage semantics or makes any
+constant-time claim
 
 Recommendation: two-run architectural noninterference covering branches,
 addresses/widths, indirect targets, traps, termination, and target-classified
@@ -278,11 +301,14 @@ power/EM, masking, and fault resistance.
 
 Acceptance evidence: formal trace semantics, target instruction-classification
 process, positive and negative examples, preservation plan through final bytes,
-and independent side-channel review.
+and an explicit review status. Independent side-channel review is unavailable
+in solo mode, so claims that require it remain unsupported; this does not block
+earlier proof-neutral compiler capabilities.
 
 ## D-013 — Stable foreign boundary
 
-Status: proposed; finalize by Gate 1
+Status: proposed; finalize before S6 implements a foreign boundary or makes ABI
+claims
 
 Recommendation: generated C ABI plus a machine-readable contract, with safe
 Rust wrappers above it.
@@ -297,7 +323,8 @@ tuple; generated header/wrapper/object all derive from one definition.
 
 ## D-014 — Package and registry model
 
-Status: proposed; local format by Gate 2, public registry by Gate 5
+Status: proposed; decide the local format before S8 package tooling; decide any
+public registry only through an explicit future release/distribution decision
 
 Recommendation:
 
@@ -315,7 +342,7 @@ offline, and compromised-key exercises.
 
 ## D-015 — Flagship 1.0 corpus
 
-Status: proposed set; decide exact membership at Gate 0
+Status: proposed set; decide exact membership before S7 admits the corpus
 
 Recommended coverage set:
 
@@ -334,12 +361,14 @@ Scope rule: under-resourcing removes a family or target rather than removing the
 proof, leakage, binary, interop, or response gates while retaining the claim.
 
 Acceptance evidence: claim matrix, standards/errata/vector sources, formal and
-compiler workload estimate, target benchmarks, independent reference library,
-and maintainer ownership for each family.
+compiler workload estimate, target benchmarks, owner-executable comparisons
+against mature reference implementations, and an explicit solo ownership and
+resource record for each family. Independent human review and separate
+maintainer ownership are unavailable in solo mode; their absence limits the
+admissible claims rather than unrelated compiler development.
 
-Exact full and reduced corpus candidates, their deferred claims, and resource
-consequences are compared in the
-[Gate 0 support-envelope options](GATE0_SUPPORT_ENVELOPES.md).
+The active solo capacity boundary that governs future corpus admission is
+recorded in the [solo development envelope](GATE0_SUPPORT_ENVELOPES.md).
 
 ## D-016 — Validation and certification posture
 
@@ -350,16 +379,20 @@ Decision recommendation:
 - support NIST ACVP-compatible input/output and record validation status;
 - never call local vectors or proof replay an ACVP/CAVP certificate;
 - never call Orange itself FIPS 140 validated;
-- if a certificate-bearing module is a 1.0 requirement, engage an accredited
-  laboratory during Phase 0 and design the module/entropy/runtime/self-test
-  boundaries with it.
+- keep certificate-bearing profiles unsupported in the current solo operating
+  model; only a future explicit operating-model change with an actually
+  available accredited laboratory may open such a profile decision.
 
 Acceptance evidence: lab scope and budget, module boundary, change/revalidation
 strategy, and approved public wording.
 
+Those acceptance items apply only to a future certificate-bearing profile.
+Their current unavailability limits certification claims and does not block
+development of non-certificate capabilities.
+
 ## D-017 — Project and package name
 
-Status: blocked on naming/trademark/namespace review; decide at Gate 0
+Status: directed working codename for solo development; public naming remains open
 
 Current state: **Orange** is the working codename and repository name. The
 Bootstrap Steward designated the byte-preserved images under
@@ -373,7 +406,7 @@ Evidence of collision:
 - earlier `orange-lang/orange` systems language;
 - broad commercial use of “Orange.”
 
-Required review:
+Unavailable review inputs:
 
 - professional trademark/legal search in intended jurisdictions and classes;
 - command, package, domain, organization, documentation, and social namespace
@@ -381,14 +414,14 @@ Required review:
 - searchability and confusion analysis;
 - codename-to-final-name migration cost.
 
-Do not publish packages, claim trademark clearance, register public namespaces,
-or treat the working assets as an irrevocable final identity before this
-closes. Preserve the admitted originals and their provenance so a later naming
-decision can migrate or retire them deliberately.
+The owner directs use of **Orange** and `orangec` for repository-local solo
+development. This is not trademark clearance and does not authorize package,
+domain, or registry publication. Preserve the admitted originals and their
+provenance so a later naming decision can migrate or retire them deliberately.
 
 ## D-018 — Licenses
 
-Status: blocked on owner/legal decision; decide at Gate 0
+Status: directed solo-development boundary; outbound license remains open
 
 Working recommendation for review:
 
@@ -402,20 +435,26 @@ Working recommendation for review:
 - contribution terms compatible with future neutral governance and patent
   defense.
 
-Do not add a license based solely on this recommendation. Dependency and proof-
-library license compatibility must be audited first.
+No repository-wide license or contribution grant is selected. The owner may
+author and run Orange code in this repository, and that unresolved outbound
+license does not block owner-authored implementation. Third-party contributions,
+crate publication, binary distribution, and redistribution claims remain
+blocked until the owner records appropriate terms. Dependencies require an
+owner admission record; the initial compiler uses no third-party Rust crates.
 
 ## D-019 — Governance and release authority
 
-Status: proposed; decide structure/funding at Gate 0
+Status: directed solo-project governance
 
-Recommendation: move toward neutral, transparent governance with language,
-cryptography, assurance/TCB, release, and PSIRT authorities. Critical changes
-require two trusted persons; authors do not self-approve TCB, cryptography, or
-release-system work; releases use threshold multi-role approval.
+Decision: `@chasebryan` is the sole project, implementation, review, merge,
+security, and decision authority until explicit owner direction changes the
+model. Plans must assume no contributors, independent reviewers, auditors,
+laboratories, partner organizations, or separate operational roles.
 
-Acceptance evidence: charter, conflict/funding disclosure, escalation and
-security authority, maintainer succession, separation of duties, and funded LTS.
+Owner approval is valid governance disposition but is never independent
+evidence. Missing separation of duties, bus factor, external review, and
+multi-party custody are disclosed limitations rather than development blockers.
+See D-023, OEP-0001, and `GOVERNANCE.md`.
 
 ## D-020 — Supply-chain target
 
@@ -450,15 +489,59 @@ independent audits/rebuilds pass.
 
 ## D-022 — Support policy
 
-Status: proposed; funding decision at Gate 0, final by Gate 6
+Status: directed best-effort solo support until a release decision
 
-Recommendation: five years of full LTS support for Language Edition 1/toolchain
-line plus two years critical-security-only. A security-driven algorithm or
-target-profile withdrawal may override normal deprecation windows. Ordinary
-deprecations receive at least twelve months when safety permits.
+Decision: pre-alpha solo development has no SLA, LTS window, compatibility
+promise, or migration-service promise. Support is best effort by the owner.
+A release-specific support window may be adopted only when the owner can
+actually sustain it; the former five-plus-two-year institutional target is not
+an active commitment.
 
-Acceptance evidence: funded maintainers, rotations, archival/rebuild capacity,
-downstream notification, and end-of-life/migration plan.
+Security-driven withdrawal may be immediate. Every release, if one is later
+authorized, must state its actual support dates and single-maintainer risk.
+
+## D-023 — Solo project operating model
+
+Status: directed
+
+Source: explicit project-owner direction on 2026-07-12
+
+Decision: Orange is developed as a solo project until the owner explicitly
+records otherwise. All current and future planning must treat outside human or
+organizational participation as unavailable. No milestone may depend on
+contributors, independent reviewers, auditors, laboratories, partner
+organizations, or separate release and incident-response roles.
+
+The former aggregate Gate 0 implementation embargo is superseded. Work proceeds
+through incremental capability gates. An unresolved decision blocks only the
+component or claim that relies on it. The absence of independent or external
+evidence must be reported honestly, but it does not block unrelated work.
+
+This decision does not convert owner review into independent review, waive a
+technical proof obligation, grant certification, select a license, or authorize
+a release. If participation later becomes real, the owner may amend the model;
+earlier evidence remains labeled solo-produced.
+
+## D-024 — Initial compiler foundation
+
+Status: directed
+
+Source: explicit project-owner direction to begin compiler work on 2026-07-12
+
+Decision: begin the permanent Orange compiler lineage in Rust. The first bounded
+slice contains source identity and byte spans, deterministic UTF-8 lexing,
+structured stable diagnostics, and the `orangec` command-line boundary. It pins
+the Rust toolchain, uses Rust edition 2024, and admits no third-party crates.
+
+This slice may reserve clearly documented tokens but does not ratify the full
+grammar, Core semantics, proof foundation, target model, ABI, or leakage model.
+It performs no native code generation and carries no proof, cryptographic,
+constant-time, compatibility, support, or production-readiness claim.
+
+Acceptance evidence for the slice is deterministic formatting and linting,
+unit and CLI tests covering positive and malformed input, stable diagnostics,
+an exact source inventory, and green repository policy checks. Later slices add
+their own decisions and do not inherit claims from this one.
 
 ## How decisions change
 

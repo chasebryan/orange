@@ -15,5 +15,4 @@ export PYTHONUTF8=1
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 export TZ=UTC
 
-python3 -m unittest discover -s tools/tests -p 'test_*.py'
-python3 tools/validate_foundation.py
+make check

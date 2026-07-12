@@ -1,13 +1,21 @@
 # Dependency policy
 
-Status: enforced repository policy for Gate 0; product dependency choices remain
-blocked by Gate 0 decisions.
+Status: enforced solo-development dependency policy
 
-No product dependency may be admitted before licensing, proof-foundation, host,
-target, and trust-boundary decisions close. Gate 0 research tools must be
-isolated, pinned by exact version and digest, reproducible, and accompanied by
-license and provenance records. They are outside the product and logical TCB
-unless a later accepted decision explicitly admits them.
+Dependencies are admitted incrementally by the owner for a bounded component.
+An unresolved proof-foundation, target, or leakage decision blocks only a
+dependency that would choose or enter that boundary. Every admitted dependency
+is pinned, classified, reproducible where possible, and accompanied by license
+and provenance notes. It is outside the logical TCB unless a decision explicitly
+admits it.
+
+D-024 admits the pinned Rust 1.96.1 toolchain and standard library as
+build/bootstrap dependencies for the initial compiler. It admits no third-party
+Rust crates. Repository policy parses the exact Cargo manifests and lock graph,
+admits only the declared workspace-local `orangec` to `orange-compiler` path
+edge, and rejects registry, Git, versioned, escaped-path, or additional package
+dependencies. Toolchain redistribution remains outside the current no-release
+boundary.
 
 ## Dependency classes
 
@@ -38,9 +46,10 @@ An admission proposal must identify:
 
 Repository automation, Dependabot, dependency review, SBOMs, and vulnerability
 alerts are defense in depth. They do not constitute admission approval.
-Until D-018 closes, Dependabot pull requests are non-mergeable surveillance
-suggestions. The bootstrap steward reviews the diff and independently authors
-an admitted update with the required provenance record.
+Until D-018 selects contribution terms, Dependabot pull requests are
+non-mergeable surveillance suggestions. The owner reviews the diff and authors
+an admitted update with the required provenance record; this is solo review,
+not independent review.
 
 ## Immutability and execution rules
 

@@ -1,16 +1,20 @@
 # Proposed Orange 1.0 user journeys
 
-Status: proposed Gate 0 product-boundary evidence; no journey is implemented or
-externally validated
+Status: proposed product-boundary evidence; no end-to-end journey is complete
 
 Snapshot: 2026-07-11
+
+Solo amendment: D-023 treats external-user and independent-human validation as
+unavailable rather than as a development prerequisite. Completion tests are
+therefore executable by the owner in clean declared environments. Every result
+records `solo-reviewed`; no owner run is relabeled as external validation.
 
 ## 1. Purpose and limits
 
 This document turns the five target-user groups in
 [`PROJECT_CHARTER.md`](PROJECT_CHARTER.md#3-target-users) into falsifiable,
 end-to-end product journeys. It also covers the ten operations required by the
-Gate 5 exit criteria in [`ROADMAP.md`](ROADMAP.md#phase-5--developer-product-and-ecosystem)
+later capability stages in [`ROADMAP.md`](ROADMAP.md)
 and connects each journey to the fourteen feature groups in
 [`GATE0_TRACEABILITY.md`](GATE0_TRACEABILITY.md#4-feature-matrix).
 
@@ -187,7 +191,8 @@ negative results, claim records, and exact failure diagnostics.
 
 **Non-goals:** A successful functional proof does not imply cryptographic
 security, leakage resistance, ABI correctness, or final-object preservation.
-This journey does not authorize product implementation before Gate 0 closes.
+Implementing one part of this journey does not authorize or imply any stronger
+claim elsewhere in the journey.
 
 **Completion test:** A permanent representative package must produce a mixed
 claim matrix whose permitted bases replay identically in both checkers. Mutate
@@ -328,15 +333,16 @@ network access prevents the affected claim from replaying successfully. The
 auditor may inspect partial diagnostics but receives no generic green verdict.
 
 **Evidence outputs:** Bundle inventory, verification and replay receipts,
-checker/build/test logs, independently computed artifact digests, claim/TCB/
+checker/build/test logs, separately computed artifact digests, claim/TCB/
 assumption matrix, external-evidence status, and exact non-success diagnostics.
 
 **Non-goals:** Offline replay does not prove the original standard transcription,
 auditor independence, hardware assumptions, or physical security. Signature
 verification establishes an authorized identity, not correctness.
 
-**Completion test:** Two independent reviewers unpack the same bundle in clean,
-network-denied environments and obtain the declared claim and artifact results.
+**Completion test:** The owner unpacks the same bundle in two clean,
+network-denied environments and obtains the declared claim and artifact results;
+the record remains `solo-reviewed` and external reproduction is unavailable.
 Mutation cases for every manifest/object class, an escaping path, an expired
 external record, checker disagreement, and a network request must fail at the
 correct boundary without a satisfied affected claim.
@@ -419,7 +425,7 @@ until safely handled.
    compiler, vectors, documentation, claims, manifests, and attestations—that
    the root cause affects.
 5. Re-run the complete affected proof, build, conformance, leakage, integration,
-   update, and offline-replay evidence with independent review.
+   update, and offline-replay evidence with recorded owner review.
 6. Publish an immutable advisory, replacement/revocation metadata, downstream
    notification, recovery instructions, and time-bounded retrospective when
    disclosure is safe.
@@ -479,7 +485,8 @@ a journey.
 | `offline-replay` | J-06, J-07, J-08 | 1/1 |
 
 Operation coverage is 10/10. An operation is not complete until its owning
-journey passes with real product artifacts and representative external users.
+journey passes with real product artifacts in a clean owner-run environment.
+External usability validation is a separate, currently unavailable status.
 
 ### Feature coverage
 
@@ -518,7 +525,7 @@ The journey set is structurally complete only while all of these are true:
 6. A material charter, architecture, assurance, roadmap, threat, claim, or
    feature-matrix change updates the affected journeys in the same proposal.
 
-Gate 0 scope sign-off requires appointed accountable people, independent expert
-review, and representative external-user validation. The current coverage is
-8/8 structurally specified journeys, 0/8 implemented journeys, and 0/8
-externally validated journeys.
+D-023 assigns accountability to the project owner and removes unavailable
+external validation from the implementation gate. The current coverage is 8/8
+structurally specified journeys, 0/8 complete journeys, and 0/8 externally
+validated journeys. The last count remains visible as an honest non-claim.

@@ -1,7 +1,12 @@
 # Orange Enhancement Proposal process
 
-Status: proposed Gate 0 process. The first governance OEP must ratify or amend
-this process; this document does not make its own recommendations accepted.
+Status: provisional solo-project process under OEP-0001 and D-023
+
+Orange currently has one owner and no outside review authority. OEP-0001 records
+the owner direction that external participation is unavailable and must not
+block development. During solo mode, an owner-authored and owner-approved record
+is valid project authority but is always labeled `solo-reviewed`; it is never
+independent approval.
 
 Orange Enhancement Proposals (OEPs) are the durable change-control record for
 normative architecture, language semantics, assurance claims, governance,
@@ -42,13 +47,16 @@ proposal should receive `OEP-0001` unless an earlier numbered intake exists.
    negative cases, and the complete impact analysis in the template.
 4. The proposal enters public Review only when its unresolved questions and
    decision criteria are explicit.
-5. Required authorities review within their scope. The author cannot provide
-   the independent approval for their own assurance-critical change.
+5. During solo mode, the project owner performs and records the review. The
+   owner cannot label that review independent. If another authority actually
+   exists in a later governance stage, that authority reviews within its scope.
 6. The decision records disposition of alternatives and minority or dissenting
    evidence, not just the winning conclusion.
 7. Acceptance updates `docs/DECISIONS.md`, affected normative documents,
    conformance expectations, and threat/control records in the same change.
-8. Implementation starts only after every prerequisite Gate 0 OEP is Accepted.
+8. Implementation starts when an Accepted OEP or explicit owner direction
+   grants a bounded component boundary. Unresolved decisions gate only the
+   components and claims that depend on them.
 
 An Accepted record names the exact reviewed commit in `decision-revision` and
 lists immutable review or authority references in `approval-records`. Its
@@ -64,19 +72,18 @@ an accountable exception process.
 
 ## Decision authority
 
-Consensus is preferred. Voting membership, quorum, recusals, supermajority
-subjects, appeal, and succession are unresolved D-019 details and must be
-ratified rather than inferred from this file. No authority may waive an
-assurance stop-ship condition; it can resolve the condition, reduce the claim
-or supported scope, or delay work.
+The project owner is the decision authority during solo mode. Voting, quorum,
+recusal, and committee rules do not apply while there is only one participant.
+No owner decision can manufacture evidence: it may authorize work, reduce or
+defer a claim, or accept a disclosed engineering risk, but it cannot turn
+self-review into independent review, proof, audit, or certification.
 
-During Bootstrap only, the project owner may explicitly ratify OEP-0001 under
-the top-level authority recorded in `GOVERNANCE.md`. The decision record must
-identify that owner direction, the evidence reviewed, unresolved independence
-gaps, and the exact process text accepted. Repository stewardship or admin
-access alone cannot mark it Accepted. Once OEP-0001 and D-019 establish the
-normal authority, this one-time bootstrap path expires and cannot be used for
-later normative proposals.
+During solo mode, the project owner may accept an OEP under the top-level
+authority recorded in `GOVERNANCE.md`. The decision record must identify the
+owner direction, evidence reviewed, unresolved questions, and exact text. The
+approval record says `owner approval` or `solo-reviewed`; it must not imply a
+second principal. If participants later join, a new governance OEP defines when
+multi-person review begins and does not retroactively relabel prior decisions.
 
 An emergency OEP may only contain risk: withdraw an artifact or profile,
 quarantine a package, revoke a key, or land a minimum safe correction. It cannot

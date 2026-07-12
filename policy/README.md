@@ -1,35 +1,37 @@
 # Repository policy
 
-`gate0-repository-policy.json` is the machine-readable policy enforced while
-Orange remains in Gate 0. It complements the human governance and assurance
-documents; it does not ratify any decision that those documents leave proposed,
-investigative, or blocked.
+`gate0-repository-policy.json` retains its historical filename but now enforces
+the solo-bootstrap repository stage created by D-023 and OEP-0001. Historical
+policy versions remain available in Git.
 
-The policy deliberately fails if product implementation or a repository-wide
-license appears before its decision gate closes. When Gate 0 is ratified, its
-replacement must arrive through an accepted OEP with migration, threat, TCB,
-license, contribution, and conformance effects. Historical policy versions
-remain available in Git.
+The policy admits the exact initial Rust compiler inventory and continues to
+fail closed on unknown source, unexpected binaries, untracked executable paths,
+unratified license files, unapproved dependencies, and workflow drift. The
+validator parses every admitted Cargo manifest and the lock graph; only the
+workspace-local `orangec` to `orange-compiler` path dependency is allowed in the
+initial slice. Product implementation is allowed; product releases and
+third-party pull requests are not.
 
-Run `make check` to execute unit/adversarial tests and then validate the current
-tree. GitHub required CI invokes the same entry point.
+Run `make check` to execute Rust formatting, linting, and tests plus the
+foundation unit/adversarial tests and repository validator. GitHub required CI
+executes the same compiler checks and policy boundary.
 
-The Gate 0 tree is closed by default. Permanent files and conformance instances
-use an exact static inventory; only correctly named OEP and ADR records may be
-added outside it, and those records receive their own structural validation.
+The tree remains closed by default. Permanent files and conformance instances
+use an exact static inventory; correctly named OEP and ADR records may be added
+outside it and receive structural validation. Adding a compiler source file
+requires an intentional policy and validator inventory update.
+
 Security-sensitive workflows, templates, ownership rules, CI scripts, schemas,
-fixtures, tests, and policy documents also have reviewed SHA-256 identities in
-both the validator and policy record. Changing one requires an intentional,
-reviewable update to both enforcement sources.
+fixtures, tests, and selected policy documents retain reviewed SHA-256 identities
+in both the validator and policy record. Changing one requires an intentional
+update to both enforcement sources. Solo owner review is a change-control record,
+not independent review.
 
-Official binary brand assets are closed by the same inventory and are admitted
-only with an exact path, role, provenance statement, and SHA-256 digest. Their
-human and machine-readable inventory lives under [`assets/brand/`](../assets/brand/).
-This admission records project identity; it does not close the pending name,
-trademark, or license decisions.
+Official binary brand assets remain closed by exact path, role, provenance, and
+SHA-256 digest. Their inventory under [`assets/brand/`](../assets/brand/) records
+working project identity; it does not claim trademark clearance or grant a
+repository-wide license.
 
-The validator and `gate0-repository-policy.json` cannot safely contain their own
-digests without a self-reference cycle. Their integrity therefore depends on
-the exact path/executable contracts plus GitHub review, required-check, and
-protected-branch controls. Local hashes are defense in depth and do not replace
-server-side separation of acceptance from authoring.
+The validator and policy JSON cannot safely contain their own digests without a
+self-reference cycle. Their integrity depends on exact path and executable
+contracts plus Git history and required checks.

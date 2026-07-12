@@ -1,10 +1,24 @@
 # D-006 proof-foundation decision suite
 
-Status: proposed Gate 0 research protocol; no proof foundation is selected
+Status: institutional protocol suspended by D-023; no proof foundation selected
 
 Suite version: `d006-v0.1-draft`
 
 Snapshot: 2026-07-11
+
+## Solo-mode disposition
+
+This protocol was designed around separate candidate authors, independent
+reviewers, external auditors, and practitioner cohorts. Those roles are
+unavailable under D-023, so the protocol cannot be executed as written and is
+not an active implementation gate.
+
+DS-01 through DS-06 remain useful design inputs for a later owner-executable
+comparison. DS-07 and every external-review metric are unavailable and
+non-blocking. A revised decision may use reproducible solo-produced evidence,
+but it must not describe a second owner run or implementation as independent.
+D-006 gates proof-bearing semantics and checker work only; it does not gate the
+proof-neutral compiler foundation authorized by D-024.
 
 ## 1. Decision boundary
 
@@ -22,8 +36,8 @@ replayable without becoming a second Orange implementation.
 
 No proof toolchain is installed, account created, license accepted, or package
 downloaded by this document. Before execution, exact tool and dependency terms
-must pass the unresolved D-018 legal gate and the repository's dependency
-admission process.
+must pass owner dependency admission under D-018 and D-023. This requirement
+does not apply to the admitted dependency-free Rust compiler slice.
 
 ## 2. Candidate parity and frozen inputs
 
@@ -498,8 +512,9 @@ Codex-only review cannot accept it or supply the required independence.
 
 No candidate becomes Orange's foundation because its adapter landed first, its
 syntax appears in product docs, its package graph is convenient, or one benchmark
-is faster. Product implementation remains prohibited until the complete Gate 0
-closes.
+is faster. Proof-bearing implementation remains prohibited until its incremental
+proof and canonical-format gates close. Unrelated compiler implementation is
+authorized.
 
 ## 9. Structural completion criteria
 
