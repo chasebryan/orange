@@ -4,7 +4,7 @@ title: Solo development and incremental capability gates
 authors:
   - Chase Bryan
 champion: Chase Bryan
-status: Provisional
+status: Accepted
 type: Process
 created: 2026-07-12
 updated: 2026-07-12
@@ -25,10 +25,10 @@ supersedes: []
 superseded-by: null
 review-authorities:
   - Orange Project Owner
-decision-date: null
-decision-revision: null
+decision-date: 2026-07-12
+decision-revision: 469bdec6037f20c8d099d61a09a3d19a55c88231
 approval-records:
-  - Project-owner direction recorded on 2026-07-12
+  - solo-reviewed owner acceptance at merged revision 469bdec6037f20c8d099d61a09a3d19a55c88231
 ---
 
 # OEP-0001: Solo development and incremental capability gates
@@ -232,7 +232,13 @@ solo project, that outside participation be treated as unavailable for all
 current planning, and that compiler work begin. This proposal records that
 direction and the resulting claim boundary.
 
-The status is Provisional until the exact repository revision containing the
-coupled policy and implementation changes can be recorded. The owner direction
-is immediately effective under the authority order in `GOVERNANCE.md`. There is
-no independent approval, and this record does not represent one.
+On 2026-07-12 the Orange Project Owner reviewed and accepted this record against
+exact merged revision
+`469bdec6037f20c8d099d61a09a3d19a55c88231`. That revision contains the S1
+compiler foundation, coupled policy, dependency boundary, tests, and the honest
+solo-governance wording authorized by this proposal.
+
+The approval record is literally `solo-reviewed`. The author and decision
+authority are the same sole owner. There was no second principal, independent
+approval, audit, proof, or external validation, and this Accepted status must
+never be used to imply one.

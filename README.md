@@ -12,10 +12,11 @@ machine-readable evidence, including independently checkable proofs and
 certificates where the claim kind permits them.
 
 Orange is now in solo, pre-alpha compiler development. The repository contains
-the first Rust compiler foundation: source locations, a deterministic lexer,
-structured diagnostics, and the `orangec` command-line boundary. There is no
-parser, type checker, code generator, standard library, proof checker, or
-verified cryptographic implementation yet.
+the Rust compiler foundation plus the first Orange 2026 syntax slice: source
+locations, deterministic lexing, a bounded parser for one deliberately small
+module/function grammar, structured diagnostics, and the `orangec` command-line
+boundary. There is no type checker, name resolver, evaluator, code generator,
+standard library, proof checker, or verified cryptographic implementation yet.
 
 Implemented behavior is solo-authored and solo-reviewed. It is not independently
 reviewed, formally verified, production-ready, or a cryptographic assurance
@@ -57,13 +58,15 @@ ratified incrementally before the component or claim that depends on them.
 - [Proposed Orange 1.0 user journeys](docs/USER_JOURNEYS.md)
 - [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
 - [Decision register](docs/DECISIONS.md)
+- [Normative Orange 2026 lexical and grammar specification](docs/LANGUAGE_2026.md)
 - [Solo-development process](docs/governance/oeps/OEP-0001-solo-development.md)
+- [Edition 2026 parser proposal](docs/governance/oeps/OEP-0002-edition-2026-parser.md)
 - [Compiler status and usage](compiler/README.md)
 
 ## Repository and compiler foundation
 
 The repository carries the permanent policy and evidence architecture created
-during Gate 0 and the first production-lineage compiler slice:
+during Gate 0 and the first two production-lineage compiler slices:
 
 - [governance](GOVERNANCE.md), [contribution boundary](CONTRIBUTING.md), and the
   [OEP](docs/governance/oeps/README.md) and

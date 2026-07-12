@@ -123,7 +123,8 @@ barrier.
 
 ### S1 — Compiler foundation
 
-Status: active
+Status: complete at merged revision
+`469bdec6037f20c8d099d61a09a3d19a55c88231`
 
 Scope:
 
@@ -143,20 +144,30 @@ semantic, proof, code-generation, cryptographic, or production claim.
 
 ### S2 — Editioned grammar and parser
 
-Status: pending
+Status: active under D-025 and provisional OEP-0002
 
 Permanent outcomes:
 
-- an explicit pre-alpha language edition marker;
-- a documented lexical and grammar specification;
-- a lossless or precisely mapped syntax tree;
+- a mandatory exact `edition 2026;` marker;
+- the normative lexical and grammar specification in
+  [`LANGUAGE_2026.md`](LANGUAGE_2026.md);
+- exactly one module containing empty `spec` or `impl` functions;
+- a precisely source-mapped syntax tree;
 - bounded error recovery and stable parse diagnostics;
-- positive, negative, ambiguity, Unicode, and resource-limit fixtures; and
-- deterministic formatter foundations.
+- positive, malformed, ambiguity, duplicate-name, Unicode, line-ending,
+  resource-limit, and repeatability cases; and
+- exact source and policy inventory.
+
+The directed grammar contains no imports, multiple modules, parameters, types,
+expressions, non-empty bodies, semantics, proofs, targets, ABI, leakage, code
+generation, packaging, or release behavior. `game`, `proof`, and `claim` remain
+lexical reservations only.
 
 Exit test: every accepted form maps to one syntax tree; every rejected form has
-a stable error category; mutation and repeated parsing reveal no unexplained
-acceptance, panic, hang, or nondeterminism.
+a stable error category; resource exhaustion fails closed; and mutation and
+repeated parsing reveal no unexplained acceptance, panic, hang, or
+nondeterminism. Required hosted checks and local offline checks pass at the
+exact merged revision.
 
 ### S3 — Semantic core and reference evaluator
 

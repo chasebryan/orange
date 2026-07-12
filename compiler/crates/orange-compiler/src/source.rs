@@ -141,7 +141,8 @@ impl SourceFile {
         let mut last_checkpoint = 0_usize;
         let mut column = 1_u32;
 
-        for (index, character) in text.char_indices() {
+        let mut index = 0_usize;
+        while index < text.len() {
             if index > line_start
                 && index.saturating_sub(last_checkpoint) >= COLUMN_CHECKPOINT_INTERVAL_BYTES
             {
@@ -154,17 +155,25 @@ impl SourceFile {
                 last_checkpoint = index;
             }
 
-            if character == '\n' {
-                // `byte_len` proved that every index in the source fits in u32.
-                let next = index + character.len_utf8();
+            let byte = text.as_bytes()[index];
+            if byte == b'\r' || byte == b'\n' {
+                // CRLF is one logical ending; bare CR and LF are endings too.
+                let next = if byte == b'\r' && text.as_bytes().get(index + 1) == Some(&b'\n') {
+                    index + 2
+                } else {
+                    index + 1
+                };
                 line_starts.push(TextOffset::new(
                     u32::try_from(next).map_err(|_| SourceError::TooLarge)?,
                 ));
                 line_start = next;
                 last_checkpoint = next;
                 column = 1;
+                index = next;
             } else {
+                let character = text[index..].chars().next().ok_or(SourceError::TooLarge)?;
                 column = column.checked_add(1).ok_or(SourceError::TooLarge)?;
+                index += character.len_utf8();
             }
         }
 
@@ -261,8 +270,14 @@ impl SourceFile {
             (checkpoint.offset, checkpoint.column)
         });
         let scan_start = usize::try_from(scan_start.0).ok()?;
-        let scalar_delta =
-            u32::try_from(self.text.get(scan_start..offset_usize)?.chars().count()).ok()?;
+        let scalar_delta = u32::try_from(
+            self.text
+                .get(scan_start..offset_usize)?
+                .chars()
+                .filter(|character| !matches!(character, '\r' | '\n'))
+                .count(),
+        )
+        .ok()?;
 
         Some(LineColumn {
             line: u32::try_from(line_index + 1).ok()?,
@@ -429,12 +444,40 @@ mod tests {
             Some(LineColumn { line: 1, column: 3 })
         );
         assert_eq!(
+            source.line_column(TextOffset::new(4)),
+            Some(LineColumn { line: 1, column: 3 })
+        );
+        assert_eq!(
             source.line_column(TextOffset::new(5)),
             Some(LineColumn { line: 2, column: 1 })
         );
         assert_eq!(source.line_text(1), Some("aé"));
         assert_eq!(source.line_text(2), Some("β"));
         assert_eq!(source.line_text(3), Some(""));
+    }
+
+    #[test]
+    fn treats_lf_crlf_and_bare_cr_as_logical_line_endings() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("endings.or", "a\rb\r\nc\nd").unwrap();
+        let source = sources.get(id).unwrap();
+
+        assert_eq!(source.line_text(1), Some("a"));
+        assert_eq!(source.line_text(2), Some("b"));
+        assert_eq!(source.line_text(3), Some("c"));
+        assert_eq!(source.line_text(4), Some("d"));
+        assert_eq!(
+            source.line_column(TextOffset::new(2)),
+            Some(LineColumn { line: 2, column: 1 })
+        );
+        assert_eq!(
+            source.line_column(TextOffset::new(5)),
+            Some(LineColumn { line: 3, column: 1 })
+        );
+        assert_eq!(
+            source.line_column(TextOffset::new(7)),
+            Some(LineColumn { line: 4, column: 1 })
+        );
     }
 
     #[test]

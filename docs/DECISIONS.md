@@ -543,6 +543,52 @@ unit and CLI tests covering positive and malformed input, stable diagnostics,
 an exact source inventory, and green repository policy checks. Later slices add
 their own decisions and do not inherit claims from this one.
 
+## D-025 — Orange 2026 minimal grammar and bounded parser
+
+Status: directed
+
+Source: explicit project-owner direction for S2 on 2026-07-12; provisional
+OEP-0002
+
+Decision: define the first Orange 2026 syntax as valid UTF-8 of at most 16 MiB,
+with ASCII whitespace and identifiers, a mandatory exact `edition 2026;`
+declaration, exactly one named module, and zero or more empty `spec` or `impl`
+function declarations. The complete grammar is:
+
+```text
+source_file   = edition_decl module_decl EOF ;
+edition_decl  = "edition" "2026" ";" ;
+module_decl   = "module" IDENTIFIER "{" function_decl* "}" ;
+function_decl = function_kind IDENTIFIER "(" ")" empty_body ;
+function_kind = "spec" | "impl" ;
+empty_body    = "{" "}" ;
+```
+
+Line feed, carriage-return line feed, and bare carriage return each form one
+logical line ending. `edition` is reserved with the existing Orange 2026
+keywords. `game`, `proof`, and `claim` remain lexical reservations only.
+Duplicate member names are syntactically valid because name resolution is not
+part of parsing.
+
+The parser is deterministic and bounded by exact token, syntax-node, event,
+diagnostic, and recovery-depth limits in
+[`LANGUAGE_2026.md`](LANGUAGE_2026.md). Lexically invalid input is not parsed;
+recovery may improve diagnostics but never converts a malformed source into
+success.
+
+This slice explicitly does not define parameters, types, expressions, non-empty
+bodies, imports, multiple modules, semantics, proofs, targets, ABI, leakage,
+code generation, packages, or releases. Syntactic acceptance makes no claim
+about any of them and does not settle D-003 through D-006 or D-009 through
+D-016.
+
+Acceptance evidence is the normative lexical and grammar document, exact source
+inventory, positive and malformed parser tests, ambiguity and duplicate-name
+cases, Unicode and line-ending cases, resource-limit tests, stable diagnostics,
+repeatability, offline locked Rust checks, repository policy checks, and green
+required hosted CI. OEP-0002 cannot become Accepted until the exact merged S2
+revision exists; owner direction is effective while it remains Provisional.
+
 ## How decisions change
 
 An accepted decision changes through an Orange Enhancement Proposal or the
