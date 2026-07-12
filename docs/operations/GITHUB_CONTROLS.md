@@ -118,8 +118,8 @@ squash merge. The resulting `main` push produced:
 | OpenSSF Scorecard on `main` | Run `29186961902` succeeded | Posture observation only; not SAST, CodeQL, an audit, a merge gate, or an assurance claim |
 | CodeQL default setup on `main` | Run `29186965847` succeeded without analysis errors or warnings; Actions `1468413067`=`0/23`, Python `1468413065`=`0/50`, Rust `1468413062`=`7/27` | Successful analysis does not mean alert-free analysis or prove a CodeQL merge threshold |
 
-The seven Rust results are open high `rust/path-injection` alerts #11 through
-#17, all classified `test` at paths in
+The seven Rust results are open high `rust/path-injection` alerts numbered 11
+through 17, all classified `test` at paths in
 `compiler/crates/orangec/tests/cli.rs`. S2 contains candidate remediation that
 moves the affected tests off environment-derived temporary paths, but neither
 closure nor non-exploitability is claimed until the S2 revision merges and a
