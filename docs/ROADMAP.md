@@ -215,6 +215,19 @@ completed successfully. The merged slice passed 89 Rust tests, including the
 documentation test, 95 Python policy tests, and policy version 0.2.3 with zero
 findings.
 
+Post-acceptance conformance/control refresh: PR #11 head
+`7d54594349cc7afe0cacf60ebc9f1d8f5e913fee` passed Required CI run
+`29292600483`, Dependency Review run `29292600471`, and CodeQL run
+`29292598799`, then squash-merged at `2026-07-13T23:20:22Z` as exact `main`
+revision `23352bcde976b86890db28ea4d375a31e6354bca`. At that revision, Required
+CI run `29292740885`, Workflow Online Audit run `29292740874`, External Links
+run `29292740884`, OpenSSF Scorecard run `29292740941`, and dynamic CodeQL run
+`29292740478` completed successfully. Required CI covered policy version 0.2.6,
+92 Rust tests including the documentation test, 103 Python policy tests, and
+zero foundation-validator findings. This refresh adds the exact external S3a
+black-box corpus and draft D-003/D-004 research protocols; it does not change
+the S3a acceptance revision, accept either draft decision, or authorize S3b.
+
 ### S4 — Proof and claim boundary
 
 Status: pending D-006 and dependent decisions
