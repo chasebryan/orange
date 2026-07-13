@@ -14,6 +14,10 @@ fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/hello.or")
 }
 
+fn typed_fixture() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/typed-answer.or")
+}
+
 fn run_with_stdin(arguments: &[&str], input: &[u8]) -> std::process::Output {
     let mut child = orangec()
         .args(arguments)
@@ -44,6 +48,79 @@ fn checks_multiple_files_in_argument_order() {
         .arg(&fixture)
         .output()
         .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"");
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
+fn checks_and_evaluates_the_typed_fixture_repeatably() {
+    let fixture = typed_fixture();
+    let checked = orangec().arg("check").arg(&fixture).output().unwrap();
+    let first = orangec().arg("eval").arg(&fixture).output().unwrap();
+    let second = orangec().arg("eval").arg(&fixture).output().unwrap();
+
+    assert!(checked.status.success());
+    assert_eq!(checked.stdout, b"");
+    assert_eq!(checked.stderr, b"");
+    assert!(first.status.success());
+    assert_eq!(first.stderr, b"");
+    assert_eq!(first.status.code(), second.status.code());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.stderr, second.stderr);
+    assert_eq!(
+        String::from_utf8(first.stdout).unwrap(),
+        concat!(
+            "demo::answer: Int = 42\n",
+            "demo::negative: Int = -42\n",
+            "demo::mask: Word[8] = 0xff\n",
+        )
+    );
+}
+
+#[test]
+fn evaluation_emits_no_partial_values_after_a_semantic_error() {
+    let source = concat!(
+        "edition 2026; module demo {\n",
+        "  spec valid() -> Int { 42 }\n",
+        "  spec invalid() -> Word[8] { 256 }\n",
+        "}\n",
+    );
+    let output = run_with_stdin(&["eval", "-"], source.as_bytes());
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("error[ORC0207]"), "{stderr}");
+    assert!(
+        stderr.contains("outside the range of `Word[8]`"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn evaluation_requires_exactly_one_source_before_reading() {
+    let output = orangec()
+        .arg("eval")
+        .arg("first.or")
+        .arg("second.or")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.starts_with("orangec: command `eval` requires exactly one source file\n\nUsage:")
+    );
+    assert!(!stderr.contains("ORC1001"));
+}
+
+#[test]
+fn evaluation_of_an_empty_core_succeeds_without_output() {
+    let source = "edition 2026; module demo { spec empty() {} impl empty() {} }\n";
+    let output = run_with_stdin(&["eval", "-"], source.as_bytes());
 
     assert!(output.status.success());
     assert_eq!(output.stdout, b"");

@@ -1,17 +1,19 @@
 # Orange 2026 lexical and grammar specification
 
-Status: normative pre-alpha syntax under D-025 and accepted OEP-0002 at exact
-merged revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4`
+Status: normative pre-alpha S2 syntax under D-025 and accepted OEP-0002,
+additively extended with provisional S3a syntax under D-026 and OEP-0003
 
 Edition: `2026`
 
 Snapshot: 2026-07-12
 
 This document defines the complete lexical and syntactic language accepted by
-the first Orange parser. It is intentionally small. Acceptance establishes only
-that source text has this shape; it does not establish typing, name resolution,
-execution, proof, compilation, cryptographic correctness, or any other semantic
-property.
+the Orange 2026 parser. It is intentionally small. Acceptance establishes only
+that source text has this shape. The separate
+[`SEMANTICS_2026.md`](SEMANTICS_2026.md) defines the exact subset that has type,
+name-resolution, Core, and reference-evaluation meaning. Syntax acceptance by
+itself does not establish any semantic, proof, compilation, cryptographic, or
+other correctness property.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
@@ -96,9 +98,11 @@ selected base. A leading, trailing, doubled, or otherwise misplaced underscore
 is malformed. A letter or digit consumed as part of a candidate integer but
 invalid for the selected base makes that complete candidate malformed.
 
-Except for the exact `2026` token in the mandatory edition declaration, integer
-tokens have no grammatical role in this slice. Any other well-formed integer is
-therefore lexically valid and still rejected by the parser.
+The exact `2026` token selects the mandatory source edition. Other integer
+tokens may appear as a syntactic type-width argument or as the magnitude of a
+typed `spec` literal. Parsing an integer assigns no numeric value, supported
+width, type, or evaluation meaning; those rules are defined separately in
+[`SEMANTICS_2026.md`](SEMANTICS_2026.md).
 
 ### 2.4 String tokens
 
@@ -121,9 +125,10 @@ The punctuation tokens are:
 =  <  >  ==  !=  <=  >=  ->  =>  ?
 ```
 
-The parser grammar below uses only `(`, `)`, `{`, `}`, and `;`. Every other
-punctuation token is a lexical reservation without syntax or semantics in this
-slice.
+The parser grammar below uses `(`, `)`, `{`, `}`, `[`, `]`, `;`, `-`, and `->`.
+Every other punctuation token is a lexical reservation without syntax or
+semantics in this slice. `-` is admitted only as the optional sign immediately
+before a typed-body integer token; it is not a general unary operator.
 
 ### 2.6 Lexical limits and failures
 
@@ -146,9 +151,13 @@ The Orange 2026 parser in this slice accepts exactly the following grammar:
 source_file   = edition_decl module_decl EOF ;
 edition_decl  = "edition" "2026" ";" ;
 module_decl   = "module" IDENTIFIER "{" function_decl* "}" ;
-function_decl = function_kind IDENTIFIER "(" ")" empty_body ;
-function_kind = "spec" | "impl" ;
-empty_body    = "{" "}" ;
+function_decl = "spec" IDENTIFIER "(" ")" spec_tail
+              | "impl" IDENTIFIER "(" ")" empty_body ;
+spec_tail     = empty_body
+              | "->" parsed_type "{" signed_integer "}" ;
+empty_body     = "{" "}" ;
+parsed_type    = IDENTIFIER ("[" INTEGER "]")? ;
+signed_integer = "-"? INTEGER ;
 ```
 
 `"2026"` in `edition_decl` means the exact decimal integer-token spelling
@@ -156,13 +165,23 @@ empty_body    = "{" "}" ;
 edition. The declaration is mandatory and must be first.
 
 One source contains exactly one module. A module may contain zero or more
-function declarations in source order. A function has exactly one kind, one
-identifier, an empty parameter list, and an empty body. Trivia may occur between
-tokens wherever token boundaries permit it.
+function declarations in source order. Every function has one kind, one
+identifier, and an empty parameter list. Both `spec` and `impl` retain the
+legacy empty body. Only `spec` may instead have one parsed result type and a
+body containing exactly one optionally negative integer token. Trivia may occur
+between tokens wherever token boundaries permit it.
 
-This grammar is LL(1): each declaration begins with one distinct reserved word,
-and `}` terminates the declaration list. There is no precedence, implicit
-semicolon, contextual keyword, or grammar ambiguity in this slice.
+`parsed_type` deliberately accepts any identifier and either no width or one
+integer width. This is a syntactic container, not support for a named type,
+generic arguments, or arbitrary word widths. The semantic specification
+recognizes only its exact documented type forms. Similarly, `signed_integer`
+does not introduce general expressions, operators, or arithmetic.
+
+This grammar is LL(1): each declaration begins with `spec` or `impl`, `}`
+terminates the declaration list, and `{` versus `->` selects a `spec` tail.
+There is no precedence, implicit semicolon, contextual keyword, or grammar
+ambiguity in this slice. In particular, `impl name() -> Type { 1 }` is a syntax
+error rather than a typed implementation declaration.
 
 The following source is accepted:
 
@@ -171,6 +190,8 @@ edition 2026;
 module demo {
   spec identity() {}
   impl rounds() {}
+  spec answer() -> Int { 42 }
+  spec byte() -> Word[8] { 0xff }
 }
 ```
 
@@ -182,11 +203,19 @@ Every accepted source maps to one deterministic syntax tree containing:
 - one edition-declaration node with the exact edition token;
 - one module node with its identifier;
 - one function node per declaration, in source order, with its `spec` or `impl`
-  kind and identifier; and
+  kind and identifier;
+- one empty-body marker for each legacy empty function; or, for a typed `spec`,
+  one parsed-type node with its optional width span and one integer-literal node
+  with its optional sign and magnitude span; and
 - exact token spans sufficient to map every node back to its source extent.
 
+The tree retains spelling and source structure only. A parsed type or integer
+literal is not a resolved type or decoded value. The AST shape and each source
+span are inputs to, not results of, semantic analysis.
+
 Duplicate module-member names are syntactically valid and produce separate
-function nodes. Whether names conflict is future name-resolution work.
+function nodes. Whether accepted syntax has a name conflict is decided only by
+the rules in [`SEMANTICS_2026.md`](SEMANTICS_2026.md).
 
 No recovery node or missing token is permitted in a successful parse. A
 recovered tree accompanying diagnostics is tooling evidence only and must not be
@@ -223,24 +252,30 @@ revision.
 Orange 2026 currently defines none of the following:
 
 - imports, multiple modules, nested modules, attributes, or visibility;
-- parameters, return types, generic arguments, contracts, or effects;
-- statements, expressions, bindings, control flow, or non-empty bodies;
-- type rules, name resolution, evaluation, or execution behavior;
-- proof terms, proof rules, claims, games, or a semantic Core;
+- parameters, generic arguments, contracts, or effects;
+- statements, general expressions, bindings, calls, arithmetic, control flow,
+  or bodies other than the empty and single-literal forms above;
+- proof terms, proof rules, claims, games, or a proof-bearing or canonical Core;
 - targets, layout, ABI, leakage behavior, lowering, optimization, code
   generation, packaging, linking, or releases.
 
-Acceptance by this parser must not be described as validation of any item in
-that list. Adding one requires a later directed or accepted language decision,
-normative specification, implementation, negative cases, and migration review.
+This syntax document defines no type rule, name-resolution rule, literal value,
+Core construction, evaluation, or execution behavior. The narrow rules for the
+typed reference slice are exclusively in
+[`SEMANTICS_2026.md`](SEMANTICS_2026.md); parser acceptance must not be described
+as semantic validation. Adding another surface requires a directed or accepted
+language decision, normative syntax and semantics as applicable,
+implementation, negative cases, and migration review.
 
 ## 7. Conformance boundary
 
-Conformance for this slice requires positive sources, one malformed case for
-each grammar boundary, reserved-word-as-name cases, duplicate-name acceptance,
-Unicode whitespace and identifier rejection, each logical line-ending form,
-lexical and parser resource-limit cases, trailing-token rejection, and repeated
-parse equality.
+Syntactic conformance for this slice requires positive legacy-empty and typed
+`spec` sources; exact type, width, sign, magnitude, body, and declaration spans;
+one malformed case for each grammar boundary; typed-`impl` rejection;
+reserved-word-as-name cases; syntactic duplicate-name acceptance; generic
+parsed-type spellings without semantic filtering; Unicode whitespace and
+identifier rejection; each logical line-ending form; lexical and parser
+resource-limit cases; trailing-token rejection; and repeated parse equality.
 
 Tests demonstrate the behavior of the recorded implementation revision only.
 They do not prove grammar completeness, parser correctness, semantic soundness,

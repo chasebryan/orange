@@ -50,7 +50,7 @@ pub struct ModuleDeclaration {
     pub functions: Vec<FunctionDeclaration>,
 }
 
-/// A minimal empty-body function declaration.
+/// A parameterless function declaration in the current Orange 2026 grammar.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionDeclaration {
     /// Full function extent.
@@ -59,15 +59,59 @@ pub struct FunctionDeclaration {
     pub kind: FunctionKind,
     /// Function name.
     pub name: Identifier,
+    /// Empty legacy syntax or the typed literal body available to `spec`.
+    pub body: FunctionBody,
 }
 
 /// The two function declaration categories admitted by the minimal grammar.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum FunctionKind {
     /// A `spec` declaration.
     Spec,
     /// An `impl` declaration.
     Impl,
+}
+
+/// The syntactic body forms admitted for a function declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FunctionBody {
+    /// The legacy `{}` form, which remains syntax-only.
+    Empty,
+    /// A result type and signed integer literal, admitted only for `spec`.
+    TypedLiteral(TypedLiteralBody),
+}
+
+/// The complete typed tail of a literal `spec`, from `->` through `}`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypedLiteralBody {
+    /// Full extent from the `->` token through the body's closing brace.
+    pub span: Span,
+    /// Syntactic result type; semantic analysis resolves its meaning.
+    pub result_type: TypeSyntax,
+    /// The function body's sole signed integer literal.
+    pub literal: IntegerLiteral,
+}
+
+/// A syntactic result type name with an optional integer width argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeSyntax {
+    /// Full type extent, including `[WIDTH]` when present.
+    pub span: Span,
+    /// Exact type-name spelling and span.
+    pub name: Identifier,
+    /// Exact span of the width integer, excluding brackets.
+    pub width_span: Option<Span>,
+}
+
+/// A signed integer literal syntax node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntegerLiteral {
+    /// Full extent, including a leading `-` when present.
+    pub span: Span,
+    /// Exact extent of the magnitude's integer token.
+    pub magnitude_span: Span,
+    /// Whether the literal has a leading `-` token.
+    pub negative: bool,
 }
 
 /// An owned ASCII identifier and its source span.
@@ -101,7 +145,9 @@ impl ParseResult {
 /// Parses the minimal Orange 2026 grammar from a complete lexer result.
 ///
 /// The grammar is intentionally closed: one edition declaration, one module,
-/// and zero or more parameterless `spec` or `impl` functions with empty bodies.
+/// and zero or more parameterless functions. Legacy `spec` and `impl`
+/// declarations retain empty bodies; `spec` additionally admits a syntactic
+/// result type and one signed integer literal.
 /// Lexically invalid sources are not parsed and therefore cannot produce an
 /// AST or cascading parser diagnostics.
 #[must_use]
@@ -348,7 +394,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                         "expected a `spec` or `impl` function declaration",
                         self.current_span(),
                         "this token cannot begin a module member",
-                        "the minimal grammar admits only parameterless functions with empty bodies",
+                        "Orange 2026 admits empty functions and typed literal `spec` functions",
                     );
                     self.recover_to(&[
                         TokenKind::KwSpec,
@@ -416,9 +462,10 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let left_paren = self.consume_or_recover(
             TokenKind::LeftParen,
             "`(` after the function name",
-            "minimal functions have an empty parameter list",
+            "functions in this grammar have an empty parameter list",
             &[
                 TokenKind::RightParen,
+                TokenKind::Arrow,
                 TokenKind::LeftBrace,
                 TokenKind::KwSpec,
                 TokenKind::KwImpl,
@@ -431,6 +478,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`)` after `(`",
             "parameters are not part of the minimal grammar",
             &[
+                TokenKind::Arrow,
                 TokenKind::LeftBrace,
                 TokenKind::KwSpec,
                 TokenKind::KwImpl,
@@ -438,24 +486,70 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 TokenKind::Eof,
             ],
         );
-        let left_brace = self.consume_or_recover(
-            TokenKind::LeftBrace,
-            "`{` to begin the empty function body",
-            "minimal function bodies are written `{}`",
-            &[
-                TokenKind::RightBrace,
-                TokenKind::KwSpec,
-                TokenKind::KwImpl,
-                TokenKind::Eof,
-            ],
-        );
 
+        let (body, body_end) = match self.current_kind() {
+            TokenKind::LeftBrace => self.parse_empty_function_body(),
+            TokenKind::Arrow if kind == FunctionKind::Spec => self.parse_typed_literal_body(),
+            TokenKind::Arrow => {
+                self.report(
+                    DiagnosticCode::ExpectedSyntax,
+                    "typed literal bodies are allowed only on `spec` functions",
+                    self.current_span(),
+                    "an `impl` function cannot have a typed literal body",
+                    "keep the legacy `impl name() {}` form until implementation semantics are defined",
+                );
+                self.recover_to(&[
+                    TokenKind::KwSpec,
+                    TokenKind::KwImpl,
+                    TokenKind::RightBrace,
+                    TokenKind::Eof,
+                ]);
+                (None, None)
+            }
+            _ => {
+                self.expected(
+                    if kind == FunctionKind::Spec {
+                        "`{}` or `->` after the parameter list"
+                    } else {
+                        "`{` to begin the empty `impl` body"
+                    },
+                    if kind == FunctionKind::Spec {
+                        "a `spec` is either legacy-empty or has a typed literal body"
+                    } else {
+                        "typed `impl` bodies are not part of this syntax"
+                    },
+                );
+                self.recover_to(&[
+                    TokenKind::KwSpec,
+                    TokenKind::KwImpl,
+                    TokenKind::RightBrace,
+                    TokenKind::Eof,
+                ]);
+                (None, None)
+            }
+        };
+
+        match (name, left_paren, right_paren, body, body_end) {
+            (Some(name), Some(_), Some(_), Some(body), Some(body_end)) if self.record_node() => {
+                Some(FunctionDeclaration {
+                    span: self.join(keyword.span, body_end.span),
+                    kind,
+                    name,
+                    body,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_empty_function_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
+        let left_brace = self.bump();
         let right_brace = if self.current_kind() == TokenKind::RightBrace {
             self.bump()
         } else {
             self.expected(
                 "`}` immediately after the function body's `{`",
-                "nonempty function bodies are outside the minimal grammar",
+                "legacy empty function bodies are written `{}`",
             );
             self.recover_to(&[
                 TokenKind::RightBrace,
@@ -470,16 +564,175 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
         };
 
-        match (name, left_paren, right_paren, left_brace, right_brace) {
-            (Some(name), Some(_), Some(_), Some(_), Some(right_brace)) if self.record_node() => {
-                Some(FunctionDeclaration {
-                    span: self.join(keyword.span, right_brace.span),
-                    kind,
-                    name,
-                })
-            }
-            _ => None,
+        match (left_brace, right_brace) {
+            (Some(_), Some(right_brace)) => (Some(FunctionBody::Empty), Some(right_brace)),
+            _ => (None, right_brace),
         }
+    }
+
+    fn parse_typed_literal_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
+        let arrow = self.bump();
+        let result_type = self.parse_type_syntax();
+        if result_type.is_none()
+            && !matches!(
+                self.current_kind(),
+                TokenKind::LeftBrace
+                    | TokenKind::KwSpec
+                    | TokenKind::KwImpl
+                    | TokenKind::RightBrace
+                    | TokenKind::Eof
+            )
+        {
+            self.recover_to(&[
+                TokenKind::LeftBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ]);
+        }
+
+        let left_brace = self.consume_or_recover(
+            TokenKind::LeftBrace,
+            "`{` after the result type",
+            "typed `spec` bodies contain exactly one signed integer literal",
+            &[
+                TokenKind::Minus,
+                TokenKind::Integer,
+                TokenKind::RightBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::Eof,
+            ],
+        );
+        let literal = self.parse_integer_literal();
+        if literal.is_none()
+            && !matches!(
+                self.current_kind(),
+                TokenKind::RightBrace | TokenKind::KwSpec | TokenKind::KwImpl | TokenKind::Eof
+            )
+        {
+            self.recover_to(&[
+                TokenKind::RightBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::Eof,
+            ]);
+        }
+
+        let right_brace = if self.current_kind() == TokenKind::RightBrace {
+            self.bump()
+        } else {
+            self.expected(
+                "`}` immediately after the integer literal",
+                "typed `spec` bodies contain exactly one signed integer literal",
+            );
+            self.recover_to(&[
+                TokenKind::RightBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::Eof,
+            ]);
+            if self.current_kind() == TokenKind::RightBrace {
+                self.bump()
+            } else {
+                None
+            }
+        };
+
+        match (arrow, result_type, left_brace, literal, right_brace) {
+            (Some(arrow), Some(result_type), Some(_), Some(literal), Some(right_brace))
+                if self.record_node() =>
+            {
+                (
+                    Some(FunctionBody::TypedLiteral(TypedLiteralBody {
+                        span: self.join(arrow.span, right_brace.span),
+                        result_type,
+                        literal,
+                    })),
+                    Some(right_brace),
+                )
+            }
+            (_, _, _, _, right_brace) => (None, right_brace),
+        }
+    }
+
+    fn parse_type_syntax(&mut self) -> Option<TypeSyntax> {
+        let name = self.parse_identifier("result type")?;
+        let mut end = name.span;
+        let mut width_span = None;
+
+        if self.current_kind() == TokenKind::LeftBracket {
+            self.bump();
+            let width = if self.current_kind() == TokenKind::Integer {
+                self.bump()
+            } else {
+                self.expected(
+                    "an integer width after `[`",
+                    "width-parameter syntax is written `Name[WIDTH]`",
+                );
+                None
+            };
+            width_span = width.map(|token| token.span);
+
+            let right_bracket = if self.current_kind() == TokenKind::RightBracket {
+                self.bump()
+            } else {
+                self.expected(
+                    "`]` after the type width",
+                    "width-parameter syntax is written `Name[WIDTH]`",
+                );
+                self.recover_to(&[
+                    TokenKind::RightBracket,
+                    TokenKind::LeftBrace,
+                    TokenKind::KwSpec,
+                    TokenKind::KwImpl,
+                    TokenKind::RightBrace,
+                    TokenKind::Eof,
+                ]);
+                if self.current_kind() == TokenKind::RightBracket {
+                    self.bump()
+                } else {
+                    None
+                }
+            };
+            if let Some(right_bracket) = right_bracket {
+                end = right_bracket.span;
+            }
+            if width.is_none() || right_bracket.is_none() {
+                return None;
+            }
+        }
+
+        self.record_node().then_some(TypeSyntax {
+            span: self.join(name.span, end),
+            name,
+            width_span,
+        })
+    }
+
+    fn parse_integer_literal(&mut self) -> Option<IntegerLiteral> {
+        let minus = if self.current_kind() == TokenKind::Minus {
+            self.bump()
+        } else {
+            None
+        };
+        if self.current_kind() != TokenKind::Integer {
+            self.expected(
+                "an integer literal in the typed `spec` body",
+                "the body contains exactly one optionally negative integer literal",
+            );
+            return None;
+        }
+        let magnitude = self.bump()?;
+        let span = minus.map_or(magnitude.span, |minus| {
+            self.join(minus.span, magnitude.span)
+        });
+        self.record_node().then_some(IntegerLiteral {
+            span,
+            magnitude_span: magnitude.span,
+            negative: minus.is_some(),
+        })
     }
 
     fn parse_identifier(&mut self, role: &str) -> Option<Identifier> {
@@ -701,12 +954,93 @@ mod tests {
         assert_eq!(ast.module.functions.len(), 2);
         assert_eq!(ast.module.functions[0].kind, FunctionKind::Spec);
         assert_eq!(ast.module.functions[0].name.text, "one");
+        assert_eq!(ast.module.functions[0].body, FunctionBody::Empty);
         assert_eq!(
             source.slice(ast.module.functions[0].span),
             Some("spec one() {}")
         );
         assert_eq!(ast.module.functions[1].kind, FunctionKind::Impl);
         assert_eq!(source.slice(ast.module.span), Some(&text[14..]));
+    }
+
+    #[test]
+    fn builds_typed_literal_spec_nodes_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module demo { ",
+            "spec answer() -> Int { -0x2a } ",
+            "spec byte() -> Word[8] { 255 } ",
+            "impl legacy() {} ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty());
+        let ast = parsed.ast.unwrap();
+        let source = sources.iter().next().unwrap();
+
+        let answer = &ast.module.functions[0];
+        assert_eq!(answer.kind, FunctionKind::Spec);
+        assert_eq!(
+            source.slice(answer.span),
+            Some("spec answer() -> Int { -0x2a }")
+        );
+        let FunctionBody::TypedLiteral(answer_body) = &answer.body else {
+            panic!("expected a typed literal body");
+        };
+        assert_eq!(source.slice(answer_body.span), Some("-> Int { -0x2a }"));
+        assert_eq!(source.slice(answer_body.result_type.span), Some("Int"));
+        assert_eq!(answer_body.result_type.name.text, "Int");
+        assert_eq!(answer_body.result_type.width_span, None);
+        assert_eq!(source.slice(answer_body.literal.span), Some("-0x2a"));
+        assert_eq!(
+            source.slice(answer_body.literal.magnitude_span),
+            Some("0x2a")
+        );
+        assert!(answer_body.literal.negative);
+
+        let byte = &ast.module.functions[1];
+        let FunctionBody::TypedLiteral(byte_body) = &byte.body else {
+            panic!("expected a typed literal body");
+        };
+        assert_eq!(source.slice(byte_body.result_type.span), Some("Word[8]"));
+        assert_eq!(byte_body.result_type.name.text, "Word");
+        assert_eq!(
+            byte_body
+                .result_type
+                .width_span
+                .and_then(|span| source.slice(span)),
+            Some("8")
+        );
+        assert_eq!(source.slice(byte_body.literal.span), Some("255"));
+        assert!(!byte_body.literal.negative);
+        assert_eq!(ast.module.functions[2].body, FunctionBody::Empty);
+    }
+
+    #[test]
+    fn parses_generic_type_and_literal_syntax_without_assigning_semantics() {
+        let text = "edition 2026; module m { spec f() -> FutureType[0x10] { -1_000 } }";
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty());
+        let source = sources.iter().next().unwrap();
+        let function = &parsed.ast.unwrap().module.functions[0];
+        let FunctionBody::TypedLiteral(body) = &function.body else {
+            panic!("expected a typed literal body");
+        };
+
+        assert_eq!(body.result_type.name.text, "FutureType");
+        assert_eq!(
+            source.slice(body.result_type.span),
+            Some("FutureType[0x10]")
+        );
+        assert_eq!(
+            body.result_type
+                .width_span
+                .and_then(|span| source.slice(span)),
+            Some("0x10")
+        );
+        assert_eq!(source.slice(body.literal.span), Some("-1_000"));
+        assert!(body.literal.negative);
     }
 
     #[test]
@@ -788,6 +1122,14 @@ mod tests {
             "edition 2026; module m { spec f() } }",
             "edition 2026; module m { spec f() { x } }",
             "edition 2026; module m { spec f() {}",
+            "edition 2026; module m { spec f() -> { 1 } }",
+            "edition 2026; module m { spec f() -> Word[] { 1 } }",
+            "edition 2026; module m { spec f() -> Word[8 { 1 } }",
+            "edition 2026; module m { spec f() -> Int 1 }",
+            "edition 2026; module m { spec f() -> Int {} }",
+            "edition 2026; module m { spec f() -> Int { - } }",
+            "edition 2026; module m { spec f() -> Int { 1 2 } }",
+            "edition 2026; module m { impl f() -> Int { 1 } }",
         ];
 
         for text in corpus {
@@ -795,6 +1137,32 @@ mod tests {
             assert!(parsed.has_errors(), "accepted {text:?}");
             assert!(parsed.ast.is_none(), "partial AST escaped for {text:?}");
         }
+    }
+
+    #[test]
+    fn rejects_typed_impl_and_recovers_to_the_next_member() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "impl forbidden() -> Int { 1 } ",
+            "spec allowed() -> Int { 2 } ",
+            "}"
+        );
+        let mut sources = SourceMap::new();
+        let id = sources.add("test.or", text).unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let first = parse(source, &lexed);
+        let second = parse(source, &lexed);
+
+        assert!(lexed.diagnostics().is_empty());
+        assert_eq!(first, second);
+        assert!(first.ast.is_none());
+        assert_eq!(first.diagnostics.len(), 1);
+        assert_eq!(first.diagnostics[0].code(), DiagnosticCode::ExpectedSyntax);
+        assert_eq!(
+            first.diagnostics[0].message(),
+            "typed literal bodies are allowed only on `spec` functions"
+        );
     }
 
     #[test]
@@ -823,6 +1191,7 @@ mod tests {
             "edition 2026; module game {}",
             "edition 2026; module m { spec proof() {} }",
             "edition 2026; module m { impl claim() {} }",
+            "edition 2026; module m { spec f() -> proof { 1 } }",
         ] {
             let (_, lexed, parsed) = parse_text(text);
             assert!(lexed.diagnostics().is_empty());

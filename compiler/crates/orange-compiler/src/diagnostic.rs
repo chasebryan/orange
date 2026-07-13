@@ -36,6 +36,26 @@ pub enum DiagnosticCode {
     TooManySyntaxErrors,
     /// A deterministic parser resource budget was exhausted.
     ParserResourceLimit,
+    /// A second function declaration conflicts in its declaration namespace.
+    DuplicateFunction,
+    /// A typed literal body appeared on a function kind without semantics.
+    UnsupportedTypedFunction,
+    /// A typed literal names a type outside the admitted semantic fragment.
+    UnsupportedType,
+    /// A `Word` type uses a width other than the admitted exact width.
+    UnsupportedWordWidth,
+    /// An exact integer magnitude exceeds the semantic representation budget.
+    IntegerMagnitudeLimit,
+    /// A fixed-width word literal is negative.
+    NegativeWordLiteral,
+    /// A fixed-width word literal is outside its admitted unsigned range.
+    WordLiteralOutOfRange,
+    /// Further semantic errors were suppressed after the reporting budget.
+    TooManySemanticErrors,
+    /// A deterministic semantic-analysis resource budget was exhausted.
+    SemanticResourceLimit,
+    /// A deterministic reference-evaluation resource budget was exhausted.
+    EvaluationResourceLimit,
 }
 
 impl DiagnosticCode {
@@ -56,6 +76,16 @@ impl DiagnosticCode {
             Self::TrailingSyntax => "ORC0104",
             Self::TooManySyntaxErrors => "ORC0105",
             Self::ParserResourceLimit => "ORC0106",
+            Self::DuplicateFunction => "ORC0201",
+            Self::UnsupportedTypedFunction => "ORC0202",
+            Self::UnsupportedType => "ORC0203",
+            Self::UnsupportedWordWidth => "ORC0204",
+            Self::IntegerMagnitudeLimit => "ORC0205",
+            Self::NegativeWordLiteral => "ORC0206",
+            Self::WordLiteralOutOfRange => "ORC0207",
+            Self::TooManySemanticErrors => "ORC0208",
+            Self::SemanticResourceLimit => "ORC0209",
+            Self::EvaluationResourceLimit => "ORC0301",
         }
     }
 }
@@ -75,7 +105,28 @@ impl Severity {
     }
 }
 
-/// A compiler diagnostic with one primary source span.
+/// A labeled secondary source span attached to a diagnostic.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SecondarySpan {
+    span: Span,
+    label: String,
+}
+
+impl SecondarySpan {
+    /// Returns the secondary source span.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the concise label rendered beside the secondary underline.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+}
+
+/// A compiler diagnostic with one primary and zero or more secondary spans.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Diagnostic {
     severity: Severity,
@@ -83,6 +134,7 @@ pub struct Diagnostic {
     message: String,
     primary_span: Span,
     label: String,
+    secondary_spans: Vec<SecondarySpan>,
     notes: Vec<String>,
 }
 
@@ -96,6 +148,7 @@ impl Diagnostic {
             message: message.into(),
             primary_span,
             label: String::new(),
+            secondary_spans: Vec::new(),
             notes: Vec::new(),
         }
     }
@@ -104,6 +157,16 @@ impl Diagnostic {
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
+        self
+    }
+
+    /// Appends a labeled secondary source span.
+    #[must_use]
+    pub fn with_secondary_span(mut self, span: Span, label: impl Into<String>) -> Self {
+        self.secondary_spans.push(SecondarySpan {
+            span,
+            label: label.into(),
+        });
         self
     }
 
@@ -137,6 +200,12 @@ impl Diagnostic {
     pub const fn primary_span(&self) -> Span {
         self.primary_span
     }
+
+    /// Returns the structured secondary source spans in construction order.
+    #[must_use]
+    pub fn secondary_spans(&self) -> &[SecondarySpan] {
+        &self.secondary_spans
+    }
 }
 
 /// Renders diagnostics in a canonical total order over their rendered fields.
@@ -146,7 +215,11 @@ impl Diagnostic {
 #[must_use]
 pub fn render_diagnostics(sources: &SourceMap, diagnostics: &[Diagnostic]) -> String {
     let mut ordered: Vec<_> = diagnostics.iter().collect();
-    ordered.sort_by(|left, right| diagnostic_key(left).cmp(&diagnostic_key(right)));
+    ordered.sort_by(|left, right| {
+        diagnostic_key(left)
+            .cmp(&diagnostic_key(right))
+            .then_with(|| compare_secondary_spans(&left.secondary_spans, &right.secondary_spans))
+    });
 
     let mut rendered = String::new();
     for (index, diagnostic) in ordered.into_iter().enumerate() {
@@ -198,6 +271,7 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
             diagnostic.primary_span.start().bytes(),
             diagnostic.primary_span.end().bytes()
         );
+        render_secondary_spans(output, sources, diagnostic);
         render_notes(output, diagnostic);
         return;
     };
@@ -209,6 +283,7 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
             diagnostic.primary_span.start().bytes(),
             diagnostic.primary_span.end().bytes()
         );
+        render_secondary_spans(output, sources, diagnostic);
         render_notes(output, diagnostic);
         return;
     };
@@ -221,6 +296,7 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
         location.column
     );
     let Some(line) = source.line_text(location.line) else {
+        render_secondary_spans(output, sources, diagnostic);
         render_notes(output, diagnostic);
         return;
     };
@@ -247,7 +323,84 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
         let _ = write!(output, " {}", sanitize_inline(&diagnostic.label));
     }
     output.push('\n');
+    render_secondary_spans(output, sources, diagnostic);
     render_notes(output, diagnostic);
+}
+
+fn compare_secondary_spans(left: &[SecondarySpan], right: &[SecondarySpan]) -> std::cmp::Ordering {
+    left.iter()
+        .map(secondary_span_key)
+        .cmp(right.iter().map(secondary_span_key))
+}
+
+fn secondary_span_key(secondary: &SecondarySpan) -> (crate::source::SourceId, u32, u32, &str) {
+    (
+        secondary.span.source(),
+        secondary.span.start().bytes(),
+        secondary.span.end().bytes(),
+        &secondary.label,
+    )
+}
+
+fn render_secondary_spans(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic) {
+    let mut ordered: Vec<_> = diagnostic.secondary_spans.iter().collect();
+    ordered.sort_by_key(|secondary| secondary_span_key(secondary));
+    for secondary in ordered {
+        render_secondary_span(output, sources, secondary);
+    }
+}
+
+fn render_secondary_span(output: &mut String, sources: &SourceMap, secondary: &SecondarySpan) {
+    let Some(source) = sources.get(secondary.span.source()) else {
+        let _ = writeln!(
+            output,
+            " ::: <unknown>:{}..{} {}",
+            secondary.span.start().bytes(),
+            secondary.span.end().bytes(),
+            sanitize_inline(&secondary.label)
+        );
+        return;
+    };
+    let Some(location) = source.line_column(secondary.span.start()) else {
+        let _ = writeln!(
+            output,
+            " ::: {}:{}..{} {}",
+            sanitize_inline(source.name()),
+            secondary.span.start().bytes(),
+            secondary.span.end().bytes(),
+            sanitize_inline(&secondary.label)
+        );
+        return;
+    };
+    let _ = writeln!(
+        output,
+        " ::: {}:{}:{}",
+        sanitize_inline(source.name()),
+        location.line,
+        location.column
+    );
+    let Some(line) = source.line_text(location.line) else {
+        return;
+    };
+    let gutter_width = location.line.to_string().len();
+    let (excerpt, caret_offset, caret_width) =
+        render_excerpt(source, secondary.span, location.line, line);
+    let _ = writeln!(
+        output,
+        "{space:>width$} |",
+        space = "",
+        width = gutter_width
+    );
+    let _ = writeln!(output, "{} | {excerpt}", location.line);
+    let _ = writeln!(
+        output,
+        "{space:>width$} | {indent}{marks} {}",
+        sanitize_inline(&secondary.label),
+        space = "",
+        width = gutter_width,
+        indent = " ".repeat(caret_offset),
+        marks = "-".repeat(caret_width),
+    );
 }
 
 fn render_notes(output: &mut String, diagnostic: &Diagnostic) {
@@ -394,6 +547,43 @@ mod tests {
 
         let output = render_diagnostics(&sources, &[later, earlier]);
         assert!(output.find("earlier").unwrap() < output.find("later").unwrap());
+    }
+
+    #[test]
+    fn renders_structured_secondary_spans_deterministically() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add("sample.or", "spec first\nspec second\n")
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let first = source
+            .span(TextOffset::new(5), TextOffset::new(10))
+            .unwrap();
+        let second = source
+            .span(TextOffset::new(16), TextOffset::new(22))
+            .unwrap();
+        let diagnostic = Diagnostic::error(
+            DiagnosticCode::DuplicateFunction,
+            "duplicate spec function `same`",
+            second,
+        )
+        .with_label("duplicate declaration")
+        .with_secondary_span(first, "first declaration is here");
+
+        assert_eq!(
+            render_diagnostics(&sources, &[diagnostic]),
+            concat!(
+                "error[ORC0201]: duplicate spec function `same`\n",
+                " --> sample.or:2:6\n",
+                "  |\n",
+                "2 | spec second\n",
+                "  |      ^^^^^^ duplicate declaration\n",
+                " ::: sample.or:1:6\n",
+                "  |\n",
+                "1 | spec first\n",
+                "  |      ----- first declaration is here\n",
+            )
+        );
     }
 
     #[test]

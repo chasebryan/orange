@@ -1,0 +1,7 @@
+// Permanent typed-literal fixture for the provisional Orange 2026 S3a slice.
+edition 2026;
+module demo {
+  spec answer() -> Int { 42 }
+  spec negative() -> Int { -0x2a }
+  spec mask() -> Word[8] { 0xff }
+}

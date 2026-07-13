@@ -172,7 +172,7 @@ exact merged revision.
 
 ### S3 — Semantic core and reference evaluator
 
-Status: pending
+Status: active under D-026 and provisional OEP-0003
 
 Permanent outcomes:
 
@@ -186,6 +186,23 @@ Permanent outcomes:
 Exit test: the specification, type checker, evaluator, diagnostics, and
 conformance cases agree for every supported construct. No proof or native-code
 claim is implied.
+
+#### S3a — Typed literal specifications
+
+Status: provisional under D-026 and OEP-0003
+
+The first bounded semantic slice preserves legacy empty `spec` and `impl`
+declarations and adds only `spec NAME() -> TYPE { SIGNED_INTEGER }`. Semantic
+acceptance recognizes mathematical `Int` and unsigned `Word[8]`, enforces
+same-kind declaration-name uniqueness, lowers typed specifications to a
+source-ordered Typed Reference Core, and evaluates those closed literal values
+deterministically.
+
+The slice has exact semantic diagnostic, Core-node, integer-input, semantic-
+event, and evaluation-step budgets. It defines no operators, calls, parameters,
+bindings, control flow, dynamic failure values, typed implementations, canonical
+Core encoding, proof identity, refinement, code generation, ABI, leakage,
+package, release, or cryptographic behavior. S3a does not complete S3.
 
 ### S4 — Proof and claim boundary
 
@@ -249,16 +266,16 @@ dates. It cannot claim independent rebuild or multi-party release controls.
 
 The next permanent slices are:
 
-1. decide and normatively specify the smallest typed expression fragment for
-   S3;
-2. define the name-resolution, arithmetic, and failure rules that fragment
-   requires without selecting proof, target, ABI, or leakage behavior;
-3. implement bounded name resolution and type checking with one conformance case
-   per accepted or rejected rule;
-4. add deterministic reference evaluation only after the typed rules are
-   explicit; and
+1. implement the D-026 typed-literal grammar and semantic rules without adding
+   an excluded expression or implementation feature;
+2. construct the bounded source-ordered Typed Reference Core only after name,
+   type, and literal validation succeeds;
+3. expose deterministic `orangec eval FILE` output with no partial results;
+4. add one positive or negative conformance case per normative S3a rule and
+   exercise every resource boundary; and
 5. preserve the S1/S2 source, diagnostic, lexical, grammar, parser, and resource
-   contracts through every S3 change.
+   contracts, then close OEP-0003 only against an exact merged revision and its
+   hosted evidence.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
