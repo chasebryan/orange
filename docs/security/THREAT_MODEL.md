@@ -11,6 +11,10 @@ Repository-control evidence snapshot: exact `main` revision
 Compiler-lineage snapshot: S2 merged as exact revision
 `52a3460853636f7cbaa27f3e27d86e032e3c82d4`
 
+Provisional compiler amendment: S3a typed-literal semantics, Typed Reference
+Core, and evaluation are under review on 2026-07-12; no merged revision or hosted
+acceptance evidence is assigned to that delta
+
 Hosted-execution refresh: 2026-07-12 at exact S2 `main`; no repository-setting
 readback was performed for this refresh
 
@@ -30,14 +34,21 @@ Next scheduled review: 2026-10-11, or earlier on any mandatory trigger below
 
 ## Executive summary
 
-Authoritative S2 `main` includes a local pre-alpha Rust compiler frontend with
-source-file, lexer, bounded parser, normative minimal grammar, diagnostic, and
-CLI input surfaces. Orange has no type or name analysis, semantic Core,
-proof checker, code generator, package client, registry, cryptographic
-implementation, third-party Rust crate, or product release. Immediate risks
-include hostile source and path input, resource exhaustion, diagnostic/path
-disclosure, and compiler-toolchain compromise. The parser also exposes recovery,
-tree, and parser-budget risks. Repository and governance risks
+The exact authoritative compiler snapshot remains S2 `main`, with its local
+pre-alpha Rust source, lexer, bounded parser, normative minimal grammar,
+diagnostic, and CLI input surfaces. The provisional S3a change under review adds
+typed-`spec` literal parsing, separate declaration-kind namespace checks, exact
+contextual `Int` and `Word[8]` validation, a bounded noncanonical Typed Reference
+Core, semantic `orangec check`, and deterministic `orangec eval` output. It has
+no parameters, operators, calls, typed implementations, refinement, canonical
+encoding, proof checker, code generator, ABI, package client, registry,
+cryptographic implementation, third-party Rust crate, or product release.
+
+Immediate risks include hostile source and path input, resource exhaustion,
+wrong normalized values or output, diagnostic/path disclosure, and
+compiler-toolchain compromise. The frontend exposes recovery, tree, namespace,
+integer-decoding, Core-construction, output, and budget risks. Repository and
+governance risks
 include compromise of the sole maintainer,
 misconfiguration or privileged weakening of protected-branch controls, unsafe
 CI evolution, credential disclosure, and planning text that overstates controls
@@ -65,6 +76,11 @@ boundary exists.
   Gate 0 schemas, conformance material, and repository automation. The schemas remain
   provisional solo-bootstrap architecture evidence, not product formats or
   proof evidence.
+- This review also covers the provisional S3a branch delta governed by D-026,
+  [`OEP-0003`](../governance/oeps/OEP-0003-orange-2026-typed-literals.md), and
+  [`SEMANTICS_2026.md`](../SEMANTICS_2026.md). It is current proposed code, not
+  merged or hosted acceptance evidence, and it does not change the exact S2
+  `main` snapshot above.
 - GitHub is the hosted identity, repository, issue, private-vulnerability, and
   Actions control plane. Orange assesses its configuration and use; testing or
   threat modeling GitHub's internal implementation is out of scope.
@@ -115,8 +131,9 @@ product-security assurance.
 The following components and flows are in scope as requirements because the
 project documents commit the end product to them:
 
-- elaborator, semantic cores, proof search, canonical Proof IR, and the
-  authoritative offline checker beyond the current syntax boundary;
+- the complete elaborator and semantic Core family beyond the provisional
+  typed-literal Core, proof search, canonical Proof IR, and the authoritative
+  offline checker;
 - compilation through CT IR and Machine IR to object bytes and generated foreign
   interfaces;
 - standards, errata, vectors, cryptographic packages, claims, evidence bundles,
@@ -161,8 +178,8 @@ that the owner holds all roles and that independent ownership is unavailable.
 | CMP-001 | GitHub repository and control plane | Current, external | Authoritative source, history, issues, reviews, security settings, private reports, and workflow execution. Configuration evidence is maintained in [`OSPS_BASELINE.md`](OSPS_BASELINE.md). |
 | CMP-002 | Foundation policy and evidence records | Historical Gate 0 inputs plus current solo-bootstrap records | Planning, decisions, threat/control records, provisional schemas, and conformance fixtures. Historical Gate 0 material is retained as an input under the current capability-local model. See [`README.md`](../../README.md), [`docs/DECISIONS.md`](../DECISIONS.md), and [`schemas/README.md`](../../schemas/README.md). |
 | CMP-003 | Repository CI | Current on `main` with exact-revision hosted evidence | Repository-owned policy, dependency-review, link, workflow-metadata-audit, and Scorecard workflows are under [`.github/workflows/`](../../.github/workflows/). At exact S2 `main` revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4`, Required CI `29188111313`, Workflow Online Audit `29188111278`, External Links `29188111303` attempt 2, Scorecard `29188111302`, and CodeQL `29188111040` succeeded. Ruleset `18810248` requires the exact Required CI and Dependency Review app-bound contexts. These push executions do not separately demonstrate scheduled or manual-dispatch event behavior and do not refresh hosted settings. |
-| CMP-004 | Orange driver and language services | Current pre-alpha syntax/CLI slice | Rust source map, byte spans, lexer, bounded parser, syntax tree, diagnostics, and `orangec check`/`lex`; no type or name analysis, elaborator, semantic validation, LSP, or code generation exists. |
-| CMP-005 | Orange semantic and evidence system | Future | Planned Core family, claims, Proof IR, proof search, and authoritative offline checker. No implementation exists. |
+| CMP-004 | Orange driver and language services | S2 current on `main`; provisional S3a under review | Rust source map, byte spans, lexer, bounded parser, syntax tree, diagnostics, and `orangec check`/`eval`/`lex`. The provisional delta adds declaration-kind namespace checks, exact `Int`/`Word[8]` typed literals, noncanonical Typed Reference Core construction, and deterministic evaluation; no calls, operators, typed `impl`, LSP, proof, refinement, or code generation exists. |
+| CMP-005 | Orange semantic and evidence system | Future beyond provisional S3a | Planned canonical Core family, claims, Proof IR, proof search, and authoritative offline checker. The Typed Reference Core in CMP-004 has no canonical encoding, proof identity, or relationship to this future family. |
 | CMP-006 | Orange compiler and native boundary | Future | Planned CT IR, Machine IR, compiler, object encoding, linker validation, C ABI, and target execution. No implementation exists. |
 | CMP-007 | Package, registry, build, and release system | Future | Planned immutable dependency resolution, registry, hermetic builds, provenance, signing, publication, updates, and recovery. No implementation exists. |
 | CMP-008 | Standards and cryptography corpus | Future | Planned standards/errata provenance, vectors, packages, proofs, tests, and external-validation records. No implementation exists. |
@@ -181,7 +198,7 @@ tombstone rather than being renumbered.
 | TB-005 | CMP-003 to action/tool publishers and network services | Pinned Actions, digest-selected containers, downloaded tools, release archives, checksums, SARIF, and HTTPS requests | The 2026-07-11 settings snapshot requires full action SHAs and restricts sources to the exact six admitted Action repositories; broad GitHub-owned and verified-publisher allowances were disabled. Scorecard executes at the separately enforced OCI digest, and downloaded binaries use pinned versions and SHA-256 checks. Exact S2 `main` runs `29188111278`, `29188111303` attempt 2, and `29188111302` succeeded. Publisher, selected-action, selected-image, registry, hosted-runner, and provenance compromise remain possible. | 2026-07-11 settings plus 2026-07-12 exact-revision hosted execution; scheduled-event paths are not separately demonstrated and settings were not refreshed |
 | TB-006 | Researcher to private security triage | Vulnerability report and attachments through GitHub private vulnerability reporting | Private reporting is enabled and [`SECURITY.md`](../../SECURITY.md) defines handling targets and disclosure constraints. Only one bootstrap steward receives and triages reports; no independent PSIRT exists. | Current |
 | TB-007 | Human standards intent to CMP-008 formal specification | Standards, errata, clauses, vectors, interpretations, and transcription records | Exact provenance, explicit transcription-review status, and separate owner cross-checks are required for admission. External independent review is unavailable; any claim that requires it remains unsupported. No admitted standard package or transcription exists. | Future-blocking only for standards-dependent packages and claims |
-| TB-008 | Surface source through CMP-004 to future CMP-005 Core and claims | File or standard-input UTF-8 bytes, paths, tokens, syntax trees, diagnostics, later types, assumptions, and canonical serialization | The S2 frontend validates UTF-8, assigns checked byte spans, lexes and parses the normative minimal Orange 2026 grammar, emits structured diagnostics, and has positive, malformed, Unicode, line-ending, resource, and repeatability tests. Name/type analysis, normative semantics, checked formats, and Core do not exist. Owner review is not independent. | Current through syntax boundary; future-blocking beyond it |
+| TB-008 | Surface source through CMP-004 to provisional Typed Reference Core, then future CMP-005 Core and claims | File or standard-input UTF-8 bytes, paths, tokens, syntax trees, names, contextual types, signed literals, diagnostics, Typed Reference Core values, and later assumptions/canonical serialization | S2 has exact merged frontend evidence. The provisional S3a delta adds bounded same-kind namespace rejection, exact `Int`/`Word[8]` validation, source-ordered Core construction, semantic checks, and deterministic evaluation with no partial values after an error. Its rules are normative under D-026, but no exact merged or hosted acceptance evidence exists yet. The Core is noncanonical and owner review is not independent. | Current through merged syntax; provisional through typed-literal Core; future-blocking beyond it |
 | TB-009 | Proof search and automation to authoritative proof checking | Candidate proof objects, solver certificates, limits, and errors | Planned untrusted search with deterministic, resource-bounded, implementation-diverse machine checking and fail-closed outcomes. No checker exists. | Future-blocking |
 | TB-010 | Each CMP-006 compiler stage to the next stage and final bytes | IR, certificates, transformations, target model, relocations, objects, and link results | Planned verified passes or checked per-artifact certificates, executable semantics, differential tests, and final-byte validation. No lowering, code-generation, target, or final-byte stage exists. | Future-blocking |
 | TB-011 | Generated artifact or foreign interface to its integrator, OS, CPU, accelerator, and entropy provider | ABI calls, buffers, errors, target features, entropy, runtime observations, and leakage | Planned explicit contracts, target profiles, named leakage models, misuse-resistant APIs, and empirical defense in depth. Exact platforms and profiles remain undecided. | Future-blocking |
@@ -199,7 +216,7 @@ flowchart LR
   CI -->|TB 005| Tools["Pinned actions and tools"]
   Public -->|TB 006| Triage["Private security triage"]
   Standards["Standards and errata"] -->|TB 007| Spec["Formal specification"]
-  Source["Orange source"] -->|TB 008| Core["Core and claims"]
+  Source["Orange source"] -->|TB 008| Core["Provisional Typed Reference Core and future claims"]
   Search["Proof search"] -->|TB 009| Checker["Offline checker"]
   Core -->|TB 010| Native["Native artifact"]
   Native -->|TB 011| Platform["Integrator and platform"]
@@ -216,7 +233,7 @@ flowchart LR
 | AS-003 | Maintainer identity, credentials, recovery factors, and privileged settings | The sole current principal can change source, settings, reports, and future publication paths. | Confidentiality, integrity, availability |
 | AS-004 | Workflow definitions, Actions tokens, runner isolation, and security results | CI can become an execution and credential boundary and can create false evidence if compromised. | Confidentiality, integrity, availability |
 | AS-005 | Private vulnerability reports and incident records | Premature disclosure can enable exploitation and harm reporters or downstream users. | Confidentiality, integrity, availability |
-| AS-006 | Future semantic truth, axioms, Core formats, claims, proofs, and checker | Unsound acceptance defeats the central assurance promise. | Integrity, authenticity, availability |
+| AS-006 | Provisional typed-literal semantic truth plus future axioms, canonical Core formats, claims, proofs, and checker | A wrong accepted value, misleading Core identity, or unsound future acceptance defeats the applicable assurance promise. | Integrity, authenticity, availability |
 | AS-007 | Future standards, errata, vectors, and cryptographic source intent | Wrong or stale intent can yield internally consistent but unsafe cryptography. | Integrity, authenticity, availability |
 | AS-008 | Future compiler stages, target models, objects, ABIs, and leakage evidence | A last-mile mismatch can invalidate functional, safety, or confidentiality claims. | Integrity, confidentiality, availability |
 | AS-009 | Future packages, dependency graph, build inputs, release artifacts, and provenance | Substitution or rollback can deliver bytes different from reviewed source and evidence. | Integrity, authenticity, availability |
@@ -233,7 +250,7 @@ flowchart LR
 | ADV-002 | An attacker compromises the sole owner or a future collaborator account, Git credential, session, recovery path, or local workstation. | Does not automatically compromise an offline key or independent reviewer; neither exists for a product today. |
 | ADV-003 | A dependency, Action, tool, publisher, release archive, registry, mirror, runner, or network path is malicious or compromised. | Cannot change a referenced full commit SHA without changing workflow source, but can compromise the content already at that identity or a downloaded artifact whose digest was incorrectly admitted. |
 | ADV-004 | A privileged insider or captured governance authority intentionally bypasses review, weakens a model, conceals an assumption, or publishes a misleading claim. | Cannot produce valid independent evidence merely by changing a status word if authoritative checking and threshold controls are implemented as planned. Those controls do not exist yet. |
-| ADV-005 | A malicious source, proof, certificate, package, object, or evidence author targets lexers, parsers, semantics, resource limits, claim binding, and compiler transitions. | Can reach the current lexer/parser/CLI locally; no checker, package client, or code generator exists yet. |
+| ADV-005 | A malicious source, proof, certificate, package, object, or evidence author targets lexers, parsers, semantics, resource limits, claim binding, and compiler transitions. | Can reach the merged lexer/parser/CLI and the provisional semantic analyzer, Core constructor, and evaluator locally; no proof checker, package client, or code generator exists yet. |
 | ADV-006 | A future remote, local co-resident, physical-profile, or well-intentioned integrating party chooses inputs, observes outputs/leakage, violates API preconditions, or runs outside the declared target model. | Physical resistance and behavior outside a named target/leakage profile are not implied claims. |
 | ADV-007 | The hosting platform, operating system, compiler, linker, CPU, firmware, accelerator, or entropy provider behaves maliciously or outside its model. | Is not made trustworthy by an Orange proof; impact must remain an explicit assumption or be reduced by independent checking and diversity. |
 | ADV-008 | A well-intentioned maintainer makes a review, configuration, transcription, release, or recovery mistake. | Cannot waive a documented assurance stop-ship condition by labeling the mistake operational. |
@@ -265,6 +282,7 @@ compliance evidence.
 | CTL-018 | The exact [`assets/brand/`](../../assets/brand/) inventory, owner-specific CODEOWNERS route, byte-level manifest, binary Git attributes, and repository-policy SHA-256 admissions protect the steward-designated working identity assets | Current S2 `main`; policy `0.2.1` and all 88 Python tests passed in Required CI `29188111313` at exact revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4` | D-017 authorizes the working identity but does not provide public-name clearance, and D-018 outbound terms remain open; C2PA claims are preserved but not independently verified, content addressing does not prove rights or safe decoder behavior, and sole stewardship supplies no independent visual or rights review. |
 | CTL-019 | GitHub CodeQL default setup analyzes the current Actions, Python, and Rust surfaces and preserves alert lifecycle state | At exact S2 `main`, run `29188111040` completed without analysis errors or warnings; Actions `1468459678`=`0/23`, Python `1468459893`=`0/50`, and Rust `1468460793`=`0/27`. Alerts #11-#17 were fixed at `2026-07-12T09:51:03Z`, with no dismissal. No CodeQL alerts remained open at readback; open code-scanning alerts #4-#10 were Scorecard posture results. | Coverage is limited to the named revision, languages, configured rules, queries, and platform execution. Zero CodeQL results and fixed findings do not mean all code-scanning alerts are closed or prove vulnerability absence. No CodeQL threshold or independent analysis exists. |
 | CTL-020 | The dependency-free Rust compiler frontend forbids unsafe code; caps source bytes, tokens, syntax nodes, parser events, emitted diagnostics, and recovery depth; sanitizes diagnostic control text; and exercises source, span, lexer, parser, diagnostic, and CLI behavior with malformed-input, Unicode, line-ending, resource, and repeatability tests. | Policy `0.2.1`, 88 tests, parser source, and exact budget bindings are merged at revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4`; Required CI `29188111313` succeeded | Tests do not establish parser correctness, name/type or semantic correctness, proof, code-generation, cryptographic, leakage, or production correctness; the Rust toolchain, host, algorithmic behavior inside the budgets, and sole-owner review remain trusted or residual risks. |
+| CTL-021 | D-026, provisional OEP-0003, and [`SEMANTICS_2026.md`](../SEMANTICS_2026.md) constrain S3a to same-kind namespace uniqueness, exact contextual `Int`/`Word[8]` typed literals, fail-closed semantic/Core/integer/evaluation budgets, a noncanonical source-ordered Typed Reference Core, and deterministic all-or-nothing evaluation output. | Provisional worktree implementation under review; no merged revision, hosted checks, or Accepted OEP evidence yet | Shared specification/implementation mistakes, integer decoding and formatting defects, allocation or host failure within budgets, and sole-owner review remain. Tests cannot establish semantic soundness, proof, refinement, code generation, leakage, ABI, or cryptographic correctness. |
 
 ## Entry points and attack surfaces
 
@@ -277,7 +295,7 @@ compliance evidence.
 | GitHub Actions PR runs | `pull_request` and `merge_group` events | TB-004 | Treat fork content, repository scripts, and parsed documents as attacker controlled. |
 | Trusted Actions runs | Push, schedule, or manual dispatch | TB-005 | Scorecard can upload SARIF but cannot request OIDC; event restrictions and minimum permissions remain critical. |
 | Private vulnerability intake | GitHub security advisory form | TB-006 | Reports may contain embargoed exploit information. See [`SECURITY.md`](../../SECURITY.md). |
-| Current lexer, parser, and CLI | File paths, file bytes, standard input, command arguments, tokens, trees, and output streams | TB-008, TB-013 | Must reject invalid UTF-8, malformed tokens or grammar, Unicode-confusable syntax, oversized input, ambiguous options, recovery stalls, and resource exhaustion with bounded stable diagnostics. |
+| Current/provisional frontend and CLI | File paths, file bytes, standard input, command arguments, tokens, trees, names, types, literals, Typed Reference Core values, diagnostics, and evaluation output | TB-008, TB-013 | Must reject invalid UTF-8, malformed tokens or grammar, Unicode-confusable syntax, duplicate same-kind names, unsupported contextual types, invalid/range-limited literals, ambiguous options, recovery stalls, and resource exhaustion with bounded stable diagnostics and no partial evaluation values. |
 | Future package client, checker, and LSP | Files, packages, proof objects, editor input | TB-008, TB-009 | Must reject malformed, cyclic, oversized, ambiguous, and resource-exhausting inputs. |
 | Future compiler, linker, and foreign ABI | Source/Core/IR/object input and caller buffers | TB-010, TB-011 | Must bind claims to exact bytes, targets, ABI contracts, and failure behavior. |
 | Future registry and update client | Package publication/resolution and update metadata | TB-012 | Must resist namespace takeover, downgrade, freeze, rollback, key compromise, and malicious packages. |
@@ -331,9 +349,10 @@ compliance evidence.
     Correct primitive mathematics fails to protect real users.
 13. **TM-014 — exhaust or confuse the compiler frontend:** ADV-005 supplies an
     oversized, malformed, deeply commented, Unicode, pathologically tokenized,
-    or misleadingly named source across TB-013. CMP-004 consumes excessive
-    memory or time, panics, emits wrong spans, leaks host path details, or returns
-    success despite a lexical error.
+    duplicate-named, unsupported-type, enormous-literal, or otherwise misleading
+    source across TB-013. CMP-004 consumes excessive memory or time, panics,
+    emits wrong spans, constructs a wrong typed value/Core, leaks host path
+    details, emits partial values, or returns success despite an earlier error.
 
 ## Threat register
 
@@ -356,7 +375,7 @@ required control. Reviews must replace conditional ranks with deployment facts.
 | TM-011 | ADV-001/002/008; TB-001/006; AS-005/011 | Vulnerability details are disclosed publicly, mishandled, or left untriaged. | CTL-002/017; private reporting enabled, public issue redirection, response targets, evidence handling, containment, and notification are documented. | Exercise owner intake with synthetic data; minimize attachments and access; preserve recovery instructions; publish advisories only after remediation is ready. | Medium: private path exists but one-person availability | Medium | Medium | Reporter error, GitHub outage, owner unavailability, or an unexercised playbook can still expose or delay a case. | Project owner; each report and quarterly drill; `open-current` |
 | TM-012 | ADV-006/007/008; TB-011; AS-007/008/011 | Misuse, target mismatch, unmodeled leakage, entropy failure, or ambiguous failure behavior defeats real cryptographic security. | CTL-009/016 define separate claim dimensions, non-claims, explicit contracts, named leakage models, and layered evidence. | Ratify finite profiles; design misuse-resistant APIs; type and test buffer/nonce/state rules; bind entropy and platform contracts; keep specialist-lab-dependent claims unsupported. | Future | High | Critical | Cryptographic hardness, foreign callers, hardware, and behavior outside named profiles remain assumptions/non-claims. | Project owner; each API/target/profile/standard change and release; `future-stop-ship` |
 | TM-013 | ADV-001/002/004/008; TB-001/003; AS-011/012 | A substituted, malformed, deceptively derived, or falsely attributed image corrupts project identity, strips provenance, overstates rights, or targets a viewer's decoder. | CTL-001/018 close the official binary inventory to exact paths and digests, route ownership, preserve supplied bytes, and state the D-017/D-018 boundary. | Keep originals immutable; review decoded content and metadata; verify C2PA independently before making a signed-provenance claim; add derived assets rather than overwriting sources; reassess every image format or rendering path. | Low: only the steward can merge and the bytes are digest-bound | Medium | Low | A trusted admitted file can still be legally encumbered, misleading, or dangerous to a vulnerable external decoder; sole stewardship provides no independent visual or rights review. | Bootstrap Steward; every brand-asset or identity change; `open-current` |
-| TM-014 | ADV-005/007/008; TB-008/013; AS-003/013 | Hostile source or path input exhausts resources, stalls parser recovery, panics, produces incorrect tokens/spans/trees, leaks host details, or is accepted with hidden lexical or syntax errors. | CTL-019/020; S2 has UTF-8 validation, checked source IDs/spans, exact ASCII rules, a 16 MiB source cap, token/node/event/diagnostic/recovery caps, sanitized output, normalized I/O errors, no unsafe code or third-party crates, and positive/malformed/Unicode/line-ending/resource/repeatability tests. Exact-main CodeQL reported zero results, and prior path-injection alerts #11-#17 are fixed rather than dismissed. | Retain every frontend budget; extend mutation, fuzz/property, broken-output, and cross-implementation cases as the grammar grows; bind any semantic consumer to the exact accepted tree rather than reparsing. | Medium: the local CLI intentionally accepts attacker-controlled files | Medium | Medium | Rust allocation failure within a cap, algorithmic complexity, shared specification/implementation mistakes, toolchain defects, host filesystem behavior, and untested platform differences remain. | Project owner; every frontend/input-boundary change; `open-current` |
+| TM-014 | ADV-005/007/008; TB-008/013; AS-003/006/013 | Hostile source or path input exhausts resources, stalls recovery, panics, produces incorrect tokens/spans/trees/names/types/values/Core/output, leaks host details, emits partial values, or is accepted despite an earlier error. | CTL-019/020 cover exact merged S2 evidence. CTL-021 specifies provisional S3a namespace, type, integer, Core, semantic-event, diagnostic, evaluation, determinism, and all-or-nothing-output controls, but has no merged/hosted acceptance evidence yet. | Retain every frontend budget; test duplicate, unsupported-type, signed/range, enormous-literal, suppression, Core-order, output, broken-output, mutation, fuzz/property, and cross-implementation cases; bind semantic consumers to the accepted tree rather than reparsing. | Medium: the local CLI intentionally accepts attacker-controlled files | Medium | Medium | Rust allocation failure within a cap, algorithmic complexity, integer normalization/formatting defects, shared specification/implementation mistakes, toolchain defects, host filesystem/output behavior, and untested platforms remain. | Project owner; every frontend/input-boundary change; `open-current` |
 
 ## Criticality calibration
 
@@ -456,7 +475,7 @@ The same pull request must update this document when it:
 | `DEPENDENCY_POLICY.md` | Governs action, tool, product dependency, provenance, and exception admission. | TM-003, TM-009 |
 | `RELEASE_POLICY.md` | Prohibits current product release and defines future source/build/sign/update separation. | TM-009, TM-010 |
 | `docs/ASSURANCE.md` | Defines adversaries, claim dimensions, TCB, stop-ship conditions, and non-claims. | TM-005 through TM-012 |
-| `docs/ARCHITECTURE.md` | Defines the current parser and future checker, compiler, ABI, package, registry, and evidence boundaries. | TM-005 through TM-012, TM-014 |
+| `docs/ARCHITECTURE.md` | Defines the current parser, provisional Typed Reference Core/evaluator, and future checker, compiler, ABI, package, registry, and evidence boundaries. | TM-005 through TM-012, TM-014 |
 | `docs/DECISIONS.md` | Records unresolved choices whose resolution changes the attack surface and authority model. | TM-001, TM-008, TM-009, TM-010, TM-012 |
 | `schemas/gate0/` | Encodes provisional claim, evidence, trust, standards, and repository-control record shapes; shape must not be confused with truth. | TM-005, TM-008, TM-010 |
 | `scripts/` and `tools/` | Repository-owned code executes in CI and validates evidence/policy; changes can weaken or bypass controls. | TM-002, TM-003, TM-010 |

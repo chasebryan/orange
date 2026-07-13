@@ -591,6 +591,60 @@ condition closed on 2026-07-12. OEP-0002 is Accepted at
 exact merged revision `52a3460853636f7cbaa27f3e27d86e032e3c82d4` after its
 required hosted checks passed.
 
+## D-026 — Orange 2026 typed literal specifications
+
+Status: directed
+
+Source: explicit project-owner direction for S3a on 2026-07-12; provisional
+OEP-0003
+
+Decision: preserve the accepted empty `spec` and `impl` function syntax and add
+one typed form for specifications only:
+
+```text
+typed_spec     = "spec" IDENTIFIER "(" ")" "->" parsed_type
+                 "{" signed_integer "}" ;
+parsed_type    = IDENTIFIER ("[" INTEGER "]")? ;
+signed_integer = "-"? INTEGER ;
+```
+
+Semantic acceptance recognizes exactly contextual `Int` without a width and
+exact `Word[8]`. `Int` denotes mathematical signed integers. `Word[8]` denotes
+unsigned values from 0 through 255; a minus sign or out-of-range literal is an
+error, with no wrapping or coercion. Any other parsed type is a semantic error.
+Integer magnitude input is limited to 16,384 significant bits without making
+`Int` a finite-width type.
+
+Function names are unique per `(spec | impl, exact name)` namespace. A `spec`
+and `impl` may share a name. Empty functions participate in duplicate checking
+but acquire no type, value, or execution meaning.
+
+Successful analysis constructs a Typed Reference Core containing typed
+specifications only, with contiguous source-order IDs, normalized types, and
+literal values. The Core has no canonical encoding, proof identity, refinement
+relation, implementation semantics, or cross-revision ID promise. `orangec eval
+FILE` prints all Core values in source order as
+`module::name: Type = value`, using decimal `Int` and two-digit lowercase
+hexadecimal `Word[8]`; an empty Core prints nothing.
+
+The semantic boundary is limited to 100 ordinary diagnostics plus one
+suppression diagnostic, 262,144 Core nodes, 1,048,576 semantic events, and
+1,048,576 evaluation steps. Exhaustion fails closed. Parameters, operators,
+calls, bindings, control flow, dynamic failure, typed implementations, proofs,
+code generation, ABI, leakage, packages, releases, and cryptographic claims are
+outside this slice.
+
+The normative grammar delta and semantic rules are in
+[`SEMANTICS_2026.md`](SEMANTICS_2026.md). This bounded direction does not accept
+D-003 or D-004, select the complete semantic strata, or authorize proof or
+native-code claims.
+
+Acceptance evidence requires exact positive, negative, boundary, resource, and
+repeatability conformance coverage; stable diagnostics and output; offline
+locked Rust and repository policy checks; and green required hosted checks at
+an exact merged implementation revision. OEP-0003 remains Provisional until
+that revision and evidence exist.
+
 ## How decisions change
 
 An accepted decision changes through an Orange Enhancement Proposal or the

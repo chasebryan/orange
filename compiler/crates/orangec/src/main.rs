@@ -2,24 +2,26 @@
 
 use std::env;
 use std::ffi::{OsStr, OsString};
+use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    Edition, Lexed, MAX_SOURCE_BYTES, SourceError, SourceFile, SourceMap, lex, parse,
-    render_diagnostics,
+    Edition, Lexed, MAX_SOURCE_BYTES, SourceError, SourceFile, SourceMap, analyze, evaluate, lex,
+    parse, render_diagnostics,
 };
 
 const SUCCESS: u8 = 0;
 const COMPILATION_ERROR: u8 = 1;
 const USAGE_ERROR: u8 = 2;
 const MAX_SOURCES_PER_INVOCATION: usize = 256;
-const USAGE: &str = "Usage: orangec [OPTIONS] <check|lex> <FILE>...\n\
+const USAGE: &str = "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n\
 \n\
 Commands:\n\
-  check    Perform lexical and syntactic validation\n\
+  check    Perform lexical, syntactic, and semantic validation\n\
+  eval     Reference-evaluate one source after complete validation\n\
   lex      Print the deterministic token stream\n\
 \n\
 Options:\n\
@@ -95,6 +97,7 @@ fn compile(
     let mut error_group_written = false;
     let mut token_output_available = true;
     let mut token_source_written = false;
+    let mut evaluation_output = String::new();
     let show_headers = options.paths.len() > 1;
     let mut token_output = io::BufWriter::new(standard_output);
 
@@ -244,18 +247,105 @@ fn compile(
                 &mut output_failed,
                 &render_diagnostics(&sources, result.diagnostics()),
             );
-        } else if options.command == CompilerCommand::Check {
-            let result = parse(source, &result);
-            if result.has_errors() {
+        } else if matches!(
+            options.command,
+            CompilerCommand::Check | CompilerCommand::Eval
+        ) {
+            let parsed = parse(source, &result);
+            if parsed.has_errors() {
                 compilation_failed = true;
                 emit_error_group(
                     standard_error,
                     &mut standard_error_available,
                     &mut error_group_written,
                     &mut output_failed,
-                    &render_diagnostics(&sources, &result.diagnostics),
+                    &render_diagnostics(&sources, &parsed.diagnostics),
                 );
+                continue;
             }
+
+            let Some(ast) = parsed.ast.as_ref() else {
+                compilation_failed = true;
+                emit_error_group(
+                    standard_error,
+                    &mut standard_error_available,
+                    &mut error_group_written,
+                    &mut output_failed,
+                    &render_cli_error(
+                        "ORC1006",
+                        "parser succeeded without a complete syntax tree",
+                        "this is an internal compiler failure",
+                    ),
+                );
+                continue;
+            };
+            let analyzed = analyze(source, ast);
+            if analyzed.has_errors() {
+                compilation_failed = true;
+                emit_error_group(
+                    standard_error,
+                    &mut standard_error_available,
+                    &mut error_group_written,
+                    &mut output_failed,
+                    &render_diagnostics(&sources, &analyzed.diagnostics),
+                );
+                continue;
+            }
+
+            if options.command == CompilerCommand::Eval {
+                let Some(core) = analyzed.core.as_ref() else {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_cli_error(
+                            "ORC1006",
+                            "semantic analysis succeeded without Typed Reference Core",
+                            "this is an internal compiler failure",
+                        ),
+                    );
+                    continue;
+                };
+                let evaluated = evaluate(core);
+                if evaluated.has_errors() {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_diagnostics(&sources, &evaluated.diagnostics),
+                    );
+                    continue;
+                }
+                let Some(values) = evaluated.values.as_ref() else {
+                    compilation_failed = true;
+                    continue;
+                };
+                for value in values {
+                    let _ = writeln!(evaluation_output, "{value}");
+                }
+            }
+        }
+    }
+
+    if !compilation_failed
+        && options.command == CompilerCommand::Eval
+        && token_output_available
+        && let Err(error) = token_output.write_all(evaluation_output.as_bytes())
+    {
+        token_output_available = false;
+        if error.kind() != io::ErrorKind::BrokenPipe {
+            output_failed = true;
+            emit_error_group(
+                standard_error,
+                &mut standard_error_available,
+                &mut error_group_written,
+                &mut output_failed,
+                "orangec: could not write evaluation output\n",
+            );
         }
     }
 
@@ -269,7 +359,11 @@ fn compile(
             &mut standard_error_available,
             &mut error_group_written,
             &mut output_failed,
-            "orangec: could not write token output\n",
+            if options.command == CompilerCommand::Eval {
+                "orangec: could not write evaluation output\n"
+            } else {
+                "orangec: could not write token output\n"
+            },
         );
     }
 
@@ -427,6 +521,7 @@ fn emit_error_group(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CompilerCommand {
     Check,
+    Eval,
     Lex,
 }
 
@@ -484,6 +579,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Acti
         if command.is_none() {
             command = match utf8 {
                 Some("check") => Some(CompilerCommand::Check),
+                Some("eval") => Some(CompilerCommand::Eval),
                 Some("lex") => Some(CompilerCommand::Lex),
                 Some(value) => return Err(format!("unknown command `{value}`")),
                 None => return Err(String::from("command is not valid UTF-8")),
@@ -504,8 +600,14 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Acti
             "command `{}` requires at least one source file",
             match command {
                 CompilerCommand::Check => "check",
+                CompilerCommand::Eval => "eval",
                 CompilerCommand::Lex => "lex",
             }
+        ));
+    }
+    if command == CompilerCommand::Eval && paths.len() != 1 {
+        return Err(String::from(
+            "command `eval` requires exactly one source file",
         ));
     }
     Ok(Action::Compile(Options {
@@ -545,6 +647,14 @@ mod tests {
             parse_arguments(os_arguments(&["check", "--edition=2026", "one.or"])),
             Ok(Action::Compile(Options {
                 command: CompilerCommand::Check,
+                edition: Edition::E2026,
+                paths: vec![PathBuf::from("one.or")],
+            }))
+        );
+        assert_eq!(
+            parse_arguments(os_arguments(&["eval", "--edition=2026", "one.or"])),
+            Ok(Action::Compile(Options {
+                command: CompilerCommand::Eval,
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
             }))
@@ -597,6 +707,22 @@ mod tests {
             parse_arguments(over_limit),
             Err(format!(
                 "at most {MAX_SOURCES_PER_INVOCATION} source inputs are accepted per invocation"
+            ))
+        );
+    }
+
+    #[test]
+    fn reference_evaluation_requires_exactly_one_source() {
+        assert_eq!(
+            parse_arguments(os_arguments(&["eval"])),
+            Err(String::from(
+                "command `eval` requires at least one source file"
+            ))
+        );
+        assert_eq!(
+            parse_arguments(os_arguments(&["eval", "one.or", "two.or"])),
+            Err(String::from(
+                "command `eval` requires exactly one source file"
             ))
         );
     }

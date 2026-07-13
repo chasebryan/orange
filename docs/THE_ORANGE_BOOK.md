@@ -40,8 +40,10 @@ as it grows, and keep the boundary between aspiration and evidence visible.
 That boundary matters because Orange is young. The repository is in solo,
 pre-alpha compiler development. It has a production-lineage Rust compiler
 foundation, a deterministic lexer, a bounded parser, structured diagnostics,
-and a deliberately tiny Orange 2026 grammar. It does not yet have type checking,
-name resolution, evaluation, code generation, a standard library, a proof
+and a deliberately tiny Orange 2026 grammar. An active provisional S3a slice
+adds bounded semantic checking and reference evaluation for closed typed
+`spec` literals only. It does not add a general expression language, typed
+implementations, refinement, code generation, a standard library, a proof
 checker, or a verified cryptographic implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
 language or compiler is sound.
@@ -142,7 +144,9 @@ bytes implement the named specification. A theorem prover can check a proof,
 but the theorem may not be the property an integrator thinks it is.
 
 Many architectural details of this vertical artifact remain proposed or under
-investigation. Orange has not yet selected its complete semantic Core, proof
+investigation. The provisional Typed Reference Core for literal specifications
+has no canonical encoding, proof identity, or refinement role and does not
+select the complete semantic Core. Orange has also not selected its proof
 foundation, proof format, solver policy, leakage baseline, native target
 envelope, stable foreign boundary, package model, or flagship cryptography
 corpus. This chapter describes the problem those choices must eventually solve;
@@ -217,27 +221,49 @@ The current Orange implementation is deliberately narrow. The permanent Rust
 compiler lineage provides source identities and UTF-8 byte spans, deterministic
 lexing, stable diagnostic codes, and the `orangec` command-line boundary. The
 Orange 2026 parser recognizes exactly one edition declaration followed by one
-module containing zero or more empty `spec` or `impl` functions:
+module. Legacy empty `spec` and `impl` functions remain valid, and the
+provisional S3a grammar adds closed typed-literal specifications:
 
 ```orange
 edition 2026;
 module demo {
   spec identity() {}
   impl rounds() {}
+  spec answer() -> Int { 42 }
+  spec mask() -> Word[8] { 0xff }
 }
 ```
 
-That source can be lexed and parsed. It cannot be type checked or executed.
-`spec` and `impl` are syntactic categories without defined semantics in this
-slice. The reserved words `game`, `proof`, and `claim` do not introduce usable
-constructs. There are no parameters, return types, expressions, statements,
-proof terms, targets, ABI rules, or code generation.
+`orangec check` lexes, parses, and semantically validates that source. Function
+names must be unique within separate `spec` and `impl` namespaces, so the two
+kinds may share a spelling while a same-kind duplicate fails. Semantic type
+acceptance is contextual and exact: `Int` denotes mathematical signed integers,
+and `Word[8]` accepts only unsigned values from 0 through 255 without wrapping,
+truncation, or coercion.
 
-These absences are not disguised as a miniature finished language. The parser
-is a bounded, tested component at its intended permanent boundary. Its success
-means that accepted source has the recorded syntactic shape. It does not mean
-the source is correct cryptography, a valid proof, safe machine code, or even an
-executable program.
+Successful typed specifications lower in source order to a bounded Typed
+Reference Core. Running `orangec eval FILE` prints:
+
+```text
+demo::answer: Int = 42
+demo::mask: Word[8] = 0xff
+```
+
+Empty declarations still have no type, value, or execution meaning. The Core is
+noncanonical and carries no proof identity or relationship between a `spec` and
+an `impl`. The fragment has no parameters, operators, calls, bindings, control
+flow, general failure values, proof terms, targets, ABI rules, or code generation.
+The reserved words `game`, `proof`, and `claim` still introduce no usable
+constructs.
+
+These absences are not disguised as a miniature finished language. The parser,
+semantic analyzer, Core constructor, and evaluator are bounded components at
+their intended incremental boundaries. Parse success means the source has the
+recorded syntactic shape. S3a semantic and evaluation success means only that a
+closed typed literal satisfied the provisional rules and produced the displayed
+value. Neither result means the source is correct cryptography, a valid proof,
+safe machine code, a refining implementation, or a generally executable
+program.
 
 This is the project's no-disposable-prototype rule in practice. Orange grows by
 adding permanent components with explicit interfaces, deterministic behavior,
@@ -273,11 +299,11 @@ Chapter names may change as the normative design changes.
 | I — Why Orange | 1. The Seams Are the System | Drafted in v0.1 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Planned | Public claim model remains proposed |
 | I — Why Orange | 3. One Language, Several Semantic Worlds | Planned | Product form and semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Planned | Typed Core and evaluator are pending |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Planned | Provisional typed-literal Core and evaluator exist; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Planned | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Planned | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Planned | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Planned | Current directed grammar and parser |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Planned | Current parser plus provisional typed-literal semantics |
 | III — Building the Language | 9. From Core to Native Bytes | Planned | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Planned | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Planned | Exact source and rights decisions are required |
@@ -304,7 +330,10 @@ principal sources for version 0.1 are:
   proposed, investigative, and unresolved choices;
 - the [dependency-ordered roadmap](ROADMAP.md) for current capability status;
 - the [Orange 2026 lexical and grammar specification](LANGUAGE_2026.md) for the
-  normative parser boundary; and
+  normative parser boundary;
+- the [provisional typed-literal semantics](SEMANTICS_2026.md) and
+  [OEP-0003](governance/oeps/OEP-0003-orange-2026-typed-literals.md) for the
+  bounded S3a meaning and non-claims; and
 - the [compiler guide](../compiler/README.md) for implemented CLI behavior.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and

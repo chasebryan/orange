@@ -774,7 +774,10 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "compiler/crates/orange-compiler/src/source.rs",
         "compiler/crates/orange-compiler/src/lexer.rs",
         "compiler/crates/orange-compiler/src/parser.rs",
+        "compiler/crates/orange-compiler/src/semantics.rs",
+        "compiler/crates/orange-compiler/src/eval.rs",
         "docs/LANGUAGE_2026.md",
+        "docs/SEMANTICS_2026.md",
     )
 
     def _copy_boundary(self, root: Path) -> None:
@@ -804,6 +807,11 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("compiler/crates/orange-compiler/src/parser.rs", "262_144", "262_143"),
             ("compiler/crates/orange-compiler/src/parser.rs", "1_048_576", "1_048_575"),
             ("compiler/crates/orange-compiler/src/parser.rs", "usize = 64;", "usize = 63;"),
+            ("compiler/crates/orange-compiler/src/semantics.rs", "usize = 100;", "usize = 99;"),
+            ("compiler/crates/orange-compiler/src/semantics.rs", "262_144", "262_143"),
+            ("compiler/crates/orange-compiler/src/semantics.rs", "1_048_576", "1_048_575"),
+            ("compiler/crates/orange-compiler/src/semantics.rs", "16_384", "16_383"),
+            ("compiler/crates/orange-compiler/src/eval.rs", "1_048_576", "1_048_575"),
         )
         for value, old, new in mutations:
             with self.subTest(path=value, old=old), tempfile.TemporaryDirectory() as directory:
@@ -836,6 +844,30 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_protected_file_digests()
             self.assertIn("protected_file.digest", {finding.code for finding in validator.findings})
+
+    def test_each_normative_semantic_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            (
+                "100 ordinary semantic diagnostics followed by at most one suppression\n  diagnostic",
+                "99 ordinary semantic diagnostics followed by at most one suppression\n  diagnostic",
+            ),
+            ("262,144 Typed Reference Core nodes", "262,143 Typed Reference Core nodes"),
+            ("1,048,576 semantic events", "1,048,575 semantic events"),
+            (
+                "16,384 significant bits in any decoded integer magnitude",
+                "16,383 significant bits in any decoded integer magnitude",
+            ),
+            ("1,048,576 reference-evaluation steps", "1,048,575 reference-evaluation steps"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/SEMANTICS_2026.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.language_spec_budget", self._codes(root))
 
 
 class BrandAssetHardeningTests(unittest.TestCase):

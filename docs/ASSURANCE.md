@@ -23,6 +23,14 @@ evidence only. They do not establish parser correctness, semantic soundness,
 proof soundness, independent review, cryptographic correctness, constant-time
 behavior, or production readiness.
 
+D-026 and provisional OEP-0003 add a second narrow surface under active review.
+The frontend checks separate `spec` and `impl` namespaces, accepts only closed
+typed `spec` literals with exact contextual `Int` or `Word[8]`, constructs a
+bounded source-ordered Typed Reference Core, and reference-evaluates it through
+`orangec eval`. The Core is noncanonical and has no proof identity, refinement,
+target, ABI, or leakage meaning. The complete semantic strata in D-004 remain
+unratified, and no merged-revision or hosted acceptance evidence is claimed yet.
+
 ## 1. Assurance promise
 
 Orange will say exactly what was checked, for which artifact, with which model,
@@ -83,7 +91,7 @@ Assume all of the following:
 | Claim integrity | Evidence substitution, hidden assumption, target confusion | Content addressing, claim closure, canonical formats, fail-closed checking |
 | Build and release | Dependency/CI compromise, forged provenance, rollback | Hermetic inputs, SLSA, reproducible builds, signatures, transparency, TUF-style updates |
 | Registry | Typosquatting, account takeover, malicious package, downgrade | MFA, namespace policy, trust tiers, quarantine/revocation, immutable lockfiles |
-| Availability | Proof bombs, pathological parser input, solver divergence | Current parser has deterministic source/token/node/event/diagnostic/recovery limits and adversarial cases; streaming proof formats, solver cancellation, and the larger corpus remain targets |
+| Availability | Proof bombs, pathological frontend input, solver divergence | The current parser and provisional S3a analyzer/evaluator have deterministic source, token, syntax, Core, integer, semantic, diagnostic, recovery, and evaluation limits; streaming proof formats, solver cancellation, and the larger corpus remain targets |
 | Governance | Capture, unilateral critical changes, sponsor pressure | Public decisions, conflict disclosure, and explicit solo-review status; two-person review and threshold authority are unavailable, remain disclosed conformance gaps, and are not claimed as current controls |
 
 ### 2.3 Security boundaries
@@ -91,7 +99,8 @@ Assume all of the following:
 The boundaries are:
 
 - human standards intent to formal Orange specification;
-- surface syntax to canonical Core;
+- surface syntax to the provisional Typed Reference Core, and later to canonical
+  Core;
 - Core to checked claim/proof;
 - proof search to proof checking;
 - each compiler IR transformation;
@@ -231,6 +240,10 @@ that depended on the affected checker version.
 
 ### 5.2 Frontend and semantics
 
+- The provisional S3a fragment maps typed-literal grammar, namespace, contextual
+  type, literal, Core, output, failure, resource, and determinism rules to
+  conformance cases. This coverage remains implementation evidence, not a proof
+  of semantic correctness.
 - Every normative grammar/static/dynamic rule maps to a conformance case or a
   mechanized theorem reference.
 - Before a stable edition, ambiguity and differential behavior must be tested
@@ -238,8 +251,9 @@ that depended on the affected checker version.
   owner-executable method. Same-owner diversity is never called independent.
 - Parser, formatter, and elaborator fuzzing cover invalid UTF-8 policy,
   confusables, nesting, error recovery, namespace resolution, and resource use.
-- The executable reference semantics is differentially compared with Impl Core,
-  optimized IRs, and native results.
+- As implementation paths arrive, the executable reference semantics is
+  differentially compared with Impl Core, optimized IRs, and native results.
+  S3a has none of those paths and establishes no refinement relation.
 - Diagnostics for invalid programs are tested; a crash or hang is not an
   acceptable rejection mode.
 
@@ -501,6 +515,11 @@ and preserve all unresolved risk. Protected history and required checks provide
 defense in depth; they do not create a second trusted person.
 
 ## 13. Explicit non-claims
+
+The provisional S3a evaluator proves nothing about its own semantic correctness.
+Its typed literals do not imply parameters, operators, calls, implementation
+semantics, `spec`/`impl` refinement, canonical encoding, proof checking, code
+generation, ABI correctness, or cryptographic assurance.
 
 Orange does not, by default:
 

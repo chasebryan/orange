@@ -71,16 +71,20 @@ MINIMUM_REQUIRED_PATHS = {
     "compiler/Cargo.toml",
     "compiler/README.md",
     "compiler/crates/orange-compiler/Cargo.toml",
+    "compiler/crates/orange-compiler/src/core.rs",
     "compiler/crates/orange-compiler/src/diagnostic.rs",
     "compiler/crates/orange-compiler/src/edition.rs",
+    "compiler/crates/orange-compiler/src/eval.rs",
     "compiler/crates/orange-compiler/src/lexer.rs",
     "compiler/crates/orange-compiler/src/lib.rs",
     "compiler/crates/orange-compiler/src/parser.rs",
+    "compiler/crates/orange-compiler/src/semantics.rs",
     "compiler/crates/orange-compiler/src/source.rs",
     "compiler/crates/orangec/Cargo.toml",
     "compiler/crates/orangec/src/main.rs",
     "compiler/crates/orangec/tests/cli.rs",
     "compiler/fixtures/hello.or",
+    "compiler/fixtures/typed-answer.or",
     "DEPENDENCY_POLICY.md",
     "GOVERNANCE.md",
     "Makefile",
@@ -113,6 +117,7 @@ MINIMUM_REQUIRED_PATHS = {
     "docs/PROJECT_CHARTER.md",
     "docs/RESEARCH.md",
     "docs/ROADMAP.md",
+    "docs/SEMANTICS_2026.md",
     "docs/THE_ORANGE_BOOK.md",
     "docs/governance/adrs/ADR-0000-template.md",
     "docs/governance/adrs/README.md",
@@ -279,12 +284,13 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
-    "README.md": "15a5f76e871d3816b2b035ea895e172e12db0b31f497d1818af988629ad3c79a",
+    "README.md": "d68a2b056bd9a7da750b0e428f86f7c14bd23032b9767b18b5a6d9c99b301ff4",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
     "assets/brand/README.md": "40c7dcc00ad935e8e05ac3b937fedf17c8cc5ff9a25accaa3ac2227e9f653ff7",
     "assets/brand/manifest.json": "35c65a3e6850badca2b6fc421dcdc5e3f4e1ecb5a5c0fae8620348e915030769",
+    "compiler/fixtures/typed-answer.or": "22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e",
     "conformance/foundation/README.md": "18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294",
     "conformance/foundation/invalid/claim-record-assumption-only.json": "2e8fa46cda4b814f8d2096d19c4e7fec83ae9f28cd355c5012948ce5980ca210",
     "conformance/foundation/invalid/evidence-manifest-independent-without-review.json": "b92882efaf1f36a5988a8c4c484e4d7e659219248a6ee287f5928bf2b853f16b",
@@ -301,14 +307,15 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "e419185bf7c289f1924128beaca16bcbaf691bcd705d4ec47a500be19b4390b9",
-    "docs/LANGUAGE_2026.md": "2674f875c6d2fd6b5c1cd6800f0172c0e49df711cfaebce5e59b29cd910bf0e5",
+    "docs/DECISIONS.md": "376b3405a10225796f014de6bc0cc32f4adb568791f66d1ebff5d18f6dfa292f",
+    "docs/LANGUAGE_2026.md": "497fac9fc9cdc094735941a8458ca6f682127324a57136c41ddad0cec4563a16",
+    "docs/SEMANTICS_2026.md": "1be86be6bdc012493b3c7b8350c46b3fc4c2851e66517936c207d8565db94c11",
     "docs/operations/CI_DEPENDENCIES.md": "21a7ec854592247ec0b3b238136046ca5bf3e4ab78797d53c16cc11f97667309",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "3bdb552ca227bb792ce501a76f32fa98e238d2ea9f476e15f0fb0c8a43d7dfa3",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "200c567918eafe4483b3bab78af9bcbf0663a64b1823fd08e18e53877a50d876",
-    "policy/README.md": "f437a7671de3596b9035d626c3e59d70f7fd6d039b098fab162134aea5493704",
+    "docs/security/THREAT_MODEL.md": "99becc3d4957aa3851d45458a5340ccfcf484e948930fec17a7ec496d6f2d988",
+    "policy/README.md": "ddaf46818c8d22e7701c70ad28a52b1bbf6dbf0cf7c77d048d9e0629ad36b5e9",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
@@ -320,7 +327,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "231c8aafa857bfaef5dec11b6a707365a95a68abfd579abf5b7227585802d3ff",
-    "tools/tests/test_validate_foundation_hardening.py": "3e972197baeeb331c8949413dcb317f3f6c4c909eafda952a2f01fb3db034ccf",
+    "tools/tests/test_validate_foundation_hardening.py": "de1532be9c36be8e5e2db500186b0bdf7ab00a601317737be9fec24a57e9750b",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -466,15 +473,33 @@ ORANGE_2026_RUST_BUDGETS = {
         "MAX_PARSE_EVENTS_PER_SOURCE": 1_048_576,
         "MAX_RECOVERY_DELIMITER_DEPTH": 64,
     },
+    "compiler/crates/orange-compiler/src/semantics.rs": {
+        "MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE": 100,
+        "MAX_CORE_NODES_PER_SOURCE": 262_144,
+        "MAX_SEMANTIC_EVENTS_PER_SOURCE": 1_048_576,
+        "MAX_INTEGER_BITS": 16_384,
+    },
+    "compiler/crates/orange-compiler/src/eval.rs": {
+        "MAX_EVALUATION_STEPS_PER_SOURCE": 1_048_576,
+    },
 }
 ORANGE_2026_SPEC_BUDGET_MARKERS = {
-    "at most 16 MiB\n(`16 * 1024 * 1024` bytes)": 16 * 1024 * 1024,
-    "At most 262,144 non-trivia tokens": 262_144,
-    "At most 100 ordinary lexical diagnostics": 100,
-    "262,144 syntax nodes": 262_144,
-    "1,048,576 parser events or equivalent syntax elements": 1_048_576,
-    "100 ordinary parse diagnostics plus at most one suppression diagnostic": 100,
-    "recovery delimiter nesting depth 64": 64,
+    "docs/LANGUAGE_2026.md": {
+        "at most 16 MiB\n(`16 * 1024 * 1024` bytes)": 16 * 1024 * 1024,
+        "At most 262,144 non-trivia tokens": 262_144,
+        "At most 100 ordinary lexical diagnostics": 100,
+        "262,144 syntax nodes": 262_144,
+        "1,048,576 parser events or equivalent syntax elements": 1_048_576,
+        "100 ordinary parse diagnostics plus at most one suppression diagnostic": 100,
+        "recovery delimiter nesting depth 64": 64,
+    },
+    "docs/SEMANTICS_2026.md": {
+        "100 ordinary semantic diagnostics followed by at most one suppression\n  diagnostic": 100,
+        "262,144 Typed Reference Core nodes": 262_144,
+        "1,048,576 semantic events": 1_048_576,
+        "16,384 significant bits in any decoded integer magnitude": 16_384,
+        "1,048,576 reference-evaluation steps": 1_048_576,
+    },
 }
 MINIMUM_CODEOWNERS = {
     "* @chasebryan",
@@ -917,6 +942,7 @@ class FoundationValidator:
             "solo_project": {"decision": "D-023", "required_status": "directed"},
             "compiler_foundation": {"decision": "D-024", "required_status": "directed"},
             "edition_2026_parser": {"decision": "D-025", "required_status": "directed"},
+            "typed_literal_semantics": {"decision": "D-026", "required_status": "directed"},
         }
         if policy["decision_gates"] != expected_decisions:
             self.add("policy.decision_gates", self.policy_path, "solo-bootstrap decision gates must remain exact")
@@ -1267,19 +1293,24 @@ class FoundationValidator:
                         f"{name} must equal {expected}; observed={observed!r}",
                     )
 
-        specification = self.root / "docs/LANGUAGE_2026.md"
-        try:
-            text = specification.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            self.add("compiler.language_spec_budget", specification, f"cannot read normative budget specification: {exc}")
-            return
-        for marker, expected in ORANGE_2026_SPEC_BUDGET_MARKERS.items():
-            if marker not in text:
+        for value, expected_markers in ORANGE_2026_SPEC_BUDGET_MARKERS.items():
+            specification = self.root / value
+            try:
+                text = specification.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
                 self.add(
                     "compiler.language_spec_budget",
                     specification,
-                    f"normative specification must state the exact {expected} budget marker {marker!r}",
+                    f"cannot read normative budget specification: {exc}",
                 )
+                continue
+            for marker, expected in expected_markers.items():
+                if marker not in text:
+                    self.add(
+                        "compiler.language_spec_budget",
+                        specification,
+                        f"normative specification must state the exact {expected} budget marker {marker!r}",
+                    )
 
     def _validate_tree_encoding_and_format(self) -> None:
         files = self.repository_files

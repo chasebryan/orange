@@ -9,12 +9,17 @@ Research snapshot: 2026-07-11
 
 Solo/compiler amendment: 2026-07-12
 
-D-023 through D-025 authorize a proof-neutral Rust compiler foundation and one
-minimal Orange 2026 grammar before the end-state architecture is fully selected.
-Unresolved architecture choices gate only the component or claim that depends
-on them. The implemented source, span, lexer, parser, diagnostic, and CLI
-boundaries make no type, execution, proof, Core, target, ABI, cryptographic, or
-leakage decision.
+D-023 through D-025 authorize a proof-neutral Rust compiler foundation and the
+minimal Orange 2026 parser. D-026 and provisional OEP-0003 add one bounded
+semantic foothold: closed typed `spec` literals, separate declaration-kind
+namespaces, exact contextual `Int` and `Word[8]`, a deterministic Typed Reference
+Core, and reference evaluation. [`SEMANTICS_2026.md`](SEMANTICS_2026.md) is the
+normative provisional boundary.
+
+The Typed Reference Core has no canonical encoding, proof identity, refinement
+relation, target, ABI, cryptographic, or leakage meaning. D-003 and D-004 remain
+unratified, and unresolved architecture choices continue to gate only the
+component or claim that depends on them.
 
 ## 1. Architecture objective
 
@@ -160,11 +165,18 @@ with the compiler, not postponed until the compiler is “done.”
 ## 3. Surface-language model
 
 Orange uses visibly distinct declaration kinds within one editioned module
-system. D-025 defines the first pre-alpha Orange 2026 grammar: one exact edition
-declaration, one module, and empty `spec` or `impl` functions. That syntax is a
-bounded frontend foothold, not the final grammar and not a definition of the
-semantic roles below. [`LANGUAGE_2026.md`](LANGUAGE_2026.md) is authoritative
-for current lexical and parsing behavior.
+system. D-025 defines the first pre-alpha Orange 2026 grammar, and D-026
+additively preserves its empty declarations while permitting
+`spec NAME() -> TYPE { SIGNED_INTEGER }`. The parser accepts a generic type shape;
+semantic analysis accepts only exact contextual `Int` and `Word[8]` and rejects
+same-kind duplicate names. A same-named `spec` and `impl` is permitted because
+their namespaces are separate.
+
+[`LANGUAGE_2026.md`](LANGUAGE_2026.md) is authoritative for current lexical and
+parsing behavior. [`SEMANTICS_2026.md`](SEMANTICS_2026.md) defines the
+provisional typed-literal meaning. Empty declarations retain no type or value,
+and the narrow accepted form is not a definition of the complete semantic roles
+proposed below.
 
 ### 3.1 Specification declarations
 
@@ -236,6 +248,18 @@ behavior, and assumed claims. Neither is an annotation that suppresses the type
 checker.
 
 ## 4. Core semantic family
+
+The current provisional Typed Reference Core contains only typed `spec`
+functions, contiguous source-order IDs, exact module and function names, one
+normalized `Int` or `Word8` type, and one literal value. It contains no
+operators, calls, parameters, bindings, effects, implementation declarations,
+proof terms, or target information. `orangec eval FILE` visits those functions
+in order and prints deterministic typed values; an empty Core prints nothing.
+
+This internal compiler boundary is not any canonical Core proposed below. It
+has no serialized identity, cross-revision ID promise, proof-checking role,
+refinement relation, or erasure relation. The provisional OEP-0003 boundary does
+not accept D-003 or D-004.
 
 ### 4.1 Spec Core
 
@@ -614,6 +638,11 @@ There is still an intent boundary. The checker can prove a formal spec; humans,
 standards provenance, independent implementations, and vectors establish that
 the formal spec is the intended algorithm.
 
+In the current provisional S3a slice, the Rust semantic analyzer, integer
+decoder, Typed Reference Core constructor, evaluator, and output formatter are
+engineering trust dependencies. No logical checker exists, so their results are
+not proof evidence and are not outside a logical TCB by virtue of being checked.
+
 ## 10. Canonical artifacts and reproducibility
 
 ### 10.1 Manifest and lock
@@ -705,11 +734,17 @@ The product is not complete if only its authors can use it.
 
 ### CLI
 
-The intended command families include formatting, checking, evaluation,
-testing, proving, building, documentation, package operations, evidence replay,
-trust inspection, target inspection, and conformance runs. Exact names are part
-of later CLI design, but every operation supports stable machine-readable
-output.
+The current pre-alpha CLI has `orangec check`, `orangec eval`, and `orangec lex`.
+`check` performs lexical, syntactic, and bounded semantic validation. `eval`
+accepts one source and prints each typed specification in source order as
+`module::name: Type = value`, using decimal `Int` and two-digit lowercase
+hexadecimal `Word[8]` values.
+
+The intended command families additionally include formatting, testing,
+proving, building, documentation, package operations, evidence replay, trust
+inspection, target inspection, and conformance runs. Their exact names remain
+later CLI design, and the current evaluator output is not a canonical Core or
+evidence encoding.
 
 ### Language server
 
