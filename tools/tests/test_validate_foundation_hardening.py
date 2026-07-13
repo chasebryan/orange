@@ -6,6 +6,7 @@ import io
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import ExitStack, redirect_stderr
@@ -298,13 +299,70 @@ jobs:
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
-    def test_cli_cannot_redirect_repository_or_policy_paths(self) -> None:
-        for arguments in (("--root", "."), ("--policy", "alternate.json")):
-            with self.subTest(arguments=arguments):
-                with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
-                    parse_arguments(arguments)
-                self.assertEqual(raised.exception.code, 2)
-        self.assertEqual(parse_arguments(("--format", "json")).format, "json")
+    def test_cli_root_assertion_cannot_redirect_repository_scope(self) -> None:
+        repository_root = Path(__file__).resolve().parents[2]
+        self.assertEqual(parse_arguments(()).root, repository_root)
+        self.assertEqual(
+            parse_arguments(("--root", str(repository_root))).root,
+            repository_root,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            temporary_root = Path(directory)
+            root_link = temporary_root / "checkout-link"
+            root_link.symlink_to(repository_root, target_is_directory=True)
+            self.assertEqual(
+                parse_arguments(("--root", str(root_link))).root,
+                repository_root,
+            )
+
+            regular_file = temporary_root / "not-a-root"
+            regular_file.write_text("not a repository\n", encoding="utf-8")
+            rejected = (
+                temporary_root,
+                repository_root / "tools",
+                regular_file,
+                temporary_root / "missing",
+            )
+            for candidate in rejected:
+                with self.subTest(candidate=candidate):
+                    with redirect_stderr(io.StringIO()), self.assertRaises(
+                        SystemExit
+                    ) as raised:
+                        parse_arguments(("--root", str(candidate)))
+                    self.assertEqual(raised.exception.code, 2)
+
+    def test_cli_cannot_redirect_policy_path(self) -> None:
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            parse_arguments(("--policy", "alternate.json"))
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_cli_format_remains_independent_of_root_assertion(self) -> None:
+        repository_root = Path(__file__).resolve().parents[2]
+        arguments = parse_arguments(
+            ("--root", str(repository_root), "--format", "json")
+        )
+        self.assertEqual(arguments.root, repository_root)
+        self.assertEqual(arguments.format, "json")
+
+    def test_goal_cli_command_accepts_root_assertion(self) -> None:
+        repository_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(repository_root / "tools/validate_foundation.py"),
+                "--root",
+                ".",
+                "--format",
+                "json",
+            ],
+            cwd=repository_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        self.assertTrue(json.loads(result.stdout)["valid"])
 
     def test_diagnostic_relative_path_does_not_follow_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -747,6 +805,8 @@ version = "0.1.0"
             "_validate_traceability",
             "_validate_user_journeys",
             "_validate_proof_foundation_suite",
+            "_validate_product_form_decision_packet",
+            "_validate_semantic_strata_suite",
             "_validate_change_records",
             "_validate_repository_templates",
         )
@@ -964,6 +1024,8 @@ class ProtectedControlHardeningTests(unittest.TestCase):
     def test_codeowners_and_fixture_mutations_are_digest_protected(self) -> None:
         paths = (
             ".github/CODEOWNERS",
+            "compiler/crates/orangec/tests/s3a_conformance.rs",
+            "compiler/fixtures/s3a/invalid-word-range.or",
             "conformance/foundation/valid/claim-record.json",
         )
         for value in paths:
@@ -1524,6 +1586,138 @@ class PlanningTraceHardeningTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_proof_foundation_suite()
             self.assertIn("proof_suite.case_ids", {finding.code for finding in validator.findings})
+
+    def test_semantic_strata_suite_baseline_is_valid(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        validator = FoundationValidator(root)
+        validator._validate_semantic_strata_suite()
+        self.assertEqual(
+            [
+                finding
+                for finding in validator.findings
+                if finding.code.startswith("semantic_strata.")
+            ],
+            [],
+        )
+
+    def test_product_form_decision_packet_baseline_is_valid(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        validator = FoundationValidator(root)
+        validator._validate_product_form_decision_packet()
+        self.assertEqual(
+            [
+                finding
+                for finding in validator.findings
+                if finding.code.startswith("product_form.")
+            ],
+            [],
+        )
+
+    def test_product_form_decision_packet_mutations_are_rejected(self) -> None:
+        mutations = (
+            ("| PF-G08 |", "| PF-G07 |", "product_form.hard_gates"),
+            ("| J-08 |", "| J-07 |", "product_form.journeys"),
+            (
+                "PF-04: Rust subset with proof annotations",
+                "PF-03: Rust subset with proof annotations",
+                "product_form.candidates",
+            ),
+            (
+                "The packet has no OEP number, intake",
+                "The packet has an assigned OEP number, intake",
+                "product_form.assertion",
+            ),
+        )
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "docs/PRODUCT_FORM_DECISION_PACKET.md"
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / "docs"
+                docs.mkdir()
+                target = docs / source.name
+                shutil.copyfile(source, target)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_product_form_decision_packet()
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_semantic_strata_suite_identity_mutations_are_rejected(self) -> None:
+        mutations = (
+            ("### SC-05", "### SC-04", "semantic_strata.case_ids"),
+            ("10. **SS-G10", "10. **SS-G09", "semantic_strata.hard_gates"),
+            ("| SR-14 |", "| SR-13 |", "semantic_strata.relationships"),
+            ("| ST-HOST |", "| ST-REL |", "semantic_strata.candidates"),
+            (
+                "| ST-HOST | Host-delegated strata |",
+                "| ST-HOST |\n",
+                "semantic_strata.candidates",
+            ),
+        )
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / "docs"
+                docs.mkdir()
+                target = docs / source.name
+                shutil.copyfile(source, target)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_semantic_strata_suite()
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_semantic_strata_suite_protocol_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "**Falsification:**",
+                "**Unsupported conclusion:**",
+                "semantic_strata.case_field",
+            ),
+            (
+                "Execution evidence is currently 0/5 candidates and 0/5 cases.",
+                "Execution evidence is currently complete.",
+                "semantic_strata.assertion",
+            ),
+        )
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / "docs"
+                docs.mkdir()
+                target = docs / source.name
+                shutil.copyfile(source, target)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_semantic_strata_suite()
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in validator.findings},
+                )
 
 
 class SchemaDeterminismTests(unittest.TestCase):

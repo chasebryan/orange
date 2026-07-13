@@ -1,0 +1,9 @@
+// S3a rejection: Word widths are exact and only Word[8] is admitted.
+edition 2026;
+module s3a_invalid_word_width {
+  spec missing_width() -> Word { 1 }
+  spec leading_zero() -> Word[08] { 1 }
+  spec hexadecimal_width() -> Word[0x8] { 1 }
+  spec separated_width() -> Word[1_0] { 1 }
+  spec other_width() -> Word[16] { 1 }
+}

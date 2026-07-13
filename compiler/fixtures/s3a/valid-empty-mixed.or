@@ -1,0 +1,6 @@
+// S3a conformance: empty declarations stay valueless and namespaces are per kind.
+edition 2026;
+module s3a_empty_mixed {
+  spec shared() {}
+  impl shared() {}
+}

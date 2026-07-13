@@ -25,6 +25,7 @@ from urllib.parse import unquote, urlsplit
 
 
 POLICY_PATH = Path("policy/gate0-repository-policy.json")
+VALIDATOR_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
 ORANGE_BOOK_MINIMUM_CHAPTER_WORDS = 1_200
 ORANGE_BOOK_REQUIRED_SECTIONS = (
@@ -83,7 +84,18 @@ MINIMUM_REQUIRED_PATHS = {
     "compiler/crates/orangec/Cargo.toml",
     "compiler/crates/orangec/src/main.rs",
     "compiler/crates/orangec/tests/cli.rs",
+    "compiler/crates/orangec/tests/s3a_conformance.rs",
     "compiler/fixtures/hello.or",
+    "compiler/fixtures/s3a/invalid-duplicate-spec.or",
+    "compiler/fixtures/s3a/invalid-int-magnitude.or",
+    "compiler/fixtures/s3a/invalid-negative-word.or",
+    "compiler/fixtures/s3a/invalid-typed-impl.or",
+    "compiler/fixtures/s3a/invalid-unsupported-type.or",
+    "compiler/fixtures/s3a/invalid-word-range.or",
+    "compiler/fixtures/s3a/invalid-word-width.or",
+    "compiler/fixtures/s3a/valid-empty-mixed.or",
+    "compiler/fixtures/s3a/valid-int-radices.or",
+    "compiler/fixtures/s3a/valid-word8-boundaries.or",
     "compiler/fixtures/typed-answer.or",
     "DEPENDENCY_POLICY.md",
     "GOVERNANCE.md",
@@ -109,6 +121,7 @@ MINIMUM_REQUIRED_PATHS = {
     "docs/GATE0_TRACEABILITY.md",
     "docs/GATE0_SUPPORT_ENVELOPES.md",
     "docs/LANGUAGE_2026.md",
+    "docs/PRODUCT_FORM_DECISION_PACKET.md",
     "docs/PROOF_FOUNDATION_DECISION_SUITE.md",
     "docs/REPRODUCIBILITY.md",
     "docs/USER_JOURNEYS.md",
@@ -117,6 +130,7 @@ MINIMUM_REQUIRED_PATHS = {
     "docs/PROJECT_CHARTER.md",
     "docs/RESEARCH.md",
     "docs/ROADMAP.md",
+    "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
     "docs/SEMANTICS_2026.md",
     "docs/THE_ORANGE_BOOK.md",
     "docs/governance/adrs/ADR-0000-template.md",
@@ -290,6 +304,17 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
     "assets/brand/README.md": "40c7dcc00ad935e8e05ac3b937fedf17c8cc5ff9a25accaa3ac2227e9f653ff7",
     "assets/brand/manifest.json": "35c65a3e6850badca2b6fc421dcdc5e3f4e1ecb5a5c0fae8620348e915030769",
+    "compiler/crates/orangec/tests/s3a_conformance.rs": "aa80ca33ef594aec277f6812a76efafe5a9a53b787839e1ff267d3fea29c3b0e",
+    "compiler/fixtures/s3a/invalid-duplicate-spec.or": "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6",
+    "compiler/fixtures/s3a/invalid-int-magnitude.or": "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542",
+    "compiler/fixtures/s3a/invalid-negative-word.or": "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b",
+    "compiler/fixtures/s3a/invalid-typed-impl.or": "4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07",
+    "compiler/fixtures/s3a/invalid-unsupported-type.or": "14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc",
+    "compiler/fixtures/s3a/invalid-word-range.or": "4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf",
+    "compiler/fixtures/s3a/invalid-word-width.or": "d92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2",
+    "compiler/fixtures/s3a/valid-empty-mixed.or": "c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96",
+    "compiler/fixtures/s3a/valid-int-radices.or": "937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4",
+    "compiler/fixtures/s3a/valid-word8-boundaries.or": "db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee",
     "compiler/fixtures/typed-answer.or": "22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e",
     "conformance/foundation/README.md": "18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294",
     "conformance/foundation/invalid/claim-record-assumption-only.json": "2e8fa46cda4b814f8d2096d19c4e7fec83ae9f28cd355c5012948ce5980ca210",
@@ -307,7 +332,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "0e2e651b0ab6c5f14d9cbd2499f1d105cbc99689fb0b578f6676e9959fd2cfb9",
+    "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
     "docs/SEMANTICS_2026.md": "ac5b7d1b3056ea751aa12a0de3a8541482e0114f4dc0807e9bd7b54cb0ab69b6",
     "docs/operations/CI_DEPENDENCIES.md": "21a7ec854592247ec0b3b238136046ca5bf3e4ab78797d53c16cc11f97667309",
@@ -315,7 +340,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "docs/security/OSPS_BASELINE.md": "b392cf138cb179596a4ef7df8e9c209a80be2eafa0120e10459b47c2479ee4e0",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "a04e91c7ef1fa1a7db9db638b76bf3d8ddf280eb64485763573cb916f03c1971",
-    "policy/README.md": "ddaf46818c8d22e7701c70ad28a52b1bbf6dbf0cf7c77d048d9e0629ad36b5e9",
+    "policy/README.md": "fd87e14f7c6adb0332107c4e3032b5697220c4b235f4b85309d5ac2c96a331d8",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
@@ -327,7 +352,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "231c8aafa857bfaef5dec11b6a707365a95a68abfd579abf5b7227585802d3ff",
-    "tools/tests/test_validate_foundation_hardening.py": "de1532be9c36be8e5e2db500186b0bdf7ab00a601317737be9fec24a57e9750b",
+    "tools/tests/test_validate_foundation_hardening.py": "641298e7d507ec5806f502719a684aaf610a6e41eaac9b617b742875d459a5c3",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -749,6 +774,8 @@ class FoundationValidator:
         self._validate_traceability()
         self._validate_user_journeys()
         self._validate_proof_foundation_suite()
+        self._validate_product_form_decision_packet()
+        self._validate_semantic_strata_suite()
         self._validate_change_records()
         self._validate_repository_templates()
         return sorted(set(self.findings))
@@ -2534,6 +2561,257 @@ class FoundationValidator:
             if assertion not in normalized_text:
                 self.add("proof_suite.assertion", path, f"missing decision-protocol invariant: {assertion}")
 
+    def _validate_product_form_decision_packet(self) -> None:
+        path = self.root / "docs/PRODUCT_FORM_DECISION_PACKET.md"
+        if not path.is_file():
+            return
+        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+
+        required_headings = (
+            "Abstract",
+            "Motivation",
+            "Scope and non-goals",
+            "Specification",
+            "Alternatives",
+            "Compatibility and migration",
+            "Semantic and claim effects",
+            "TCB, axiom, and proof effects",
+            "Threat, abuse, and leakage effects",
+            "Target and ABI effects",
+            "Standards, errata, and provenance",
+            "Dependencies, licenses, and IP",
+            "Conformance, tests, and evidence",
+            "Operations, release, and recovery",
+            "Support and deprecation",
+            "Unresolved questions",
+            "Current disposition",
+        )
+        for heading in required_headings:
+            if len(markdown_section(text, f"## {heading}").strip()) < 20:
+                self.add(
+                    "product_form.section",
+                    path,
+                    f"missing or empty substantive section: {heading}",
+                )
+
+        decision_gates = markdown_section(text, "### Decision gates", heading_level=3)
+        gate_rows = table_rows(decision_gates, r"PF-G[0-9A-Z]+")
+        gate_ids = tuple(f"PF-G{index:02d}" for index in range(1, 9))
+        if tuple(row[0] for row in gate_rows) != gate_ids or any(
+            len(row) != 2 for row in gate_rows
+        ):
+            self.add(
+                "product_form.hard_gates",
+                path,
+                "hard-gate table must retain PF-G01 through PF-G08 exactly once in order",
+            )
+
+        candidate_rows = table_rows(decision_gates, r"PF-[0-9A-Z]+:.*")
+        expected_candidate_rows = (
+            (
+                "PF-01: standalone editioned Orange DSL",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Recommend",
+            ),
+            (
+                "PF-02: manifest-only orchestration",
+                "Fail",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Unproven",
+                "Pass",
+                "Pass",
+                "Unproven",
+                "Reject as product form; retain orchestration techniques",
+            ),
+            (
+                r"PF-03: DSL embedded in F\*, Lean, or Rocq",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Unproven",
+                "Unproven",
+                "Pass",
+                "Pass",
+                "Unproven",
+                "Reject as product form; retain proof adapters",
+            ),
+            (
+                "PF-04: Rust subset with proof annotations",
+                "Pass",
+                "Pass",
+                "Pass",
+                "Unproven",
+                "Unproven",
+                "Pass",
+                "Pass",
+                "Unproven",
+                "Reject as product form; retain Rust implementation and integration paths",
+            ),
+        )
+        if tuple(tuple(row) for row in candidate_rows) != expected_candidate_rows:
+            self.add(
+                "product_form.candidates",
+                path,
+                "candidate matrix must retain the four exact design-level assessments",
+            )
+
+        journey_rows = table_rows(
+            markdown_section(text, "### Journey coverage", heading_level=3),
+            r"J-[0-9A-Z]+",
+        )
+        journey_ids = tuple(f"J-{index:02d}" for index in range(1, 9))
+        if tuple(row[0] for row in journey_rows) != journey_ids or any(
+            len(row) != 2 for row in journey_rows
+        ):
+            self.add(
+                "product_form.journeys",
+                path,
+                "journey coverage must retain J-01 through J-08 exactly once in order",
+            )
+
+        normalized_text = re.sub(r"\s+", " ", text)
+        for assertion in (
+            "Status: draft owner-review packet; no product form selected",
+            "There is no weighted score;",
+            "8/8 structurally specified design journeys and 0/8 completed journeys",
+            "This is design coverage, not journey completion or user validation.",
+            "No owner review or approval is recorded.",
+            "The packet has no OEP number, intake or discussion reference, decision date, decision revision, approval record, or change authority.",
+            "This packet does not accept D-003 or authorize S3b implementation.",
+        ):
+            if assertion not in normalized_text:
+                self.add(
+                    "product_form.assertion",
+                    path,
+                    f"missing decision-packet invariant: {assertion}",
+                )
+
+    def _validate_semantic_strata_suite(self) -> None:
+        path = self.root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
+        if not path.is_file():
+            return
+        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+
+        candidate_rows = table_rows(
+            markdown_section(text, "## 2. Candidate architectures"),
+            r"ST-[A-Z]+",
+        )
+        candidate_ids = ("ST-REL", "ST-UNI", "ST-DUAL", "ST-MIRROR", "ST-HOST")
+        candidate_names = (
+            "Role-oriented related family",
+            "Universal Core",
+            "Pure/effect pair",
+            "Five mirrored Cores",
+            "Host-delegated strata",
+        )
+        candidate_shapes_valid = all(len(row) == 4 for row in candidate_rows)
+        if tuple(row[0] for row in candidate_rows) != candidate_ids:
+            self.add(
+                "semantic_strata.candidates",
+                path,
+                "candidate table must retain the five exact ordered candidate identities",
+            )
+        elif not candidate_shapes_valid:
+            self.add(
+                "semantic_strata.candidates",
+                path,
+                "every candidate row must retain four fields",
+            )
+        elif tuple(row[1] for row in candidate_rows) != candidate_names:
+            self.add(
+                "semantic_strata.candidates",
+                path,
+                "candidate identities must retain their exact architecture names",
+            )
+        for row in candidate_rows:
+            if len(row) != 4 or row[3] != "0/5 cases":
+                self.add(
+                    "semantic_strata.candidate_state",
+                    path,
+                    f"{row[0]} must retain the honest zero-evidence baseline",
+                )
+
+        relationship_rows = table_rows(
+            markdown_section(text, "## 4. Required relationship graph"),
+            r"SR-[0-9A-Z]+",
+        )
+        relationship_ids = tuple(f"SR-{index:02d}" for index in range(1, 15))
+        if tuple(row[0] for row in relationship_rows) != relationship_ids or any(
+            len(row) != 3 for row in relationship_rows
+        ):
+            self.add(
+                "semantic_strata.relationships",
+                path,
+                "relationship graph must retain SR-01 through SR-14 exactly once in order with three fields",
+            )
+
+        case_ids = tuple(f"SC-{index:02d}" for index in range(1, 6))
+        cases = markdown_section(text, "## 5. Required decision cases")
+        case_headings = tuple(re.findall(r"(?m)^###\s+(SC-[0-9A-Z]+)\b", cases))
+        if case_headings != case_ids:
+            self.add(
+                "semantic_strata.case_ids",
+                path,
+                "decision cases must retain SC-01 through SC-05 exactly once in order",
+            )
+        required_labels = (
+            "Question",
+            "Dependencies",
+            "Inputs",
+            "Required boundary observations",
+            "Positive case",
+            "Mutation and negative case",
+            "Resource bounds",
+            "Non-claims",
+            "Falsification",
+        )
+        for case_id in case_ids:
+            body = markdown_section(cases, f"### {case_id}", heading_level=3, prefix=True)
+            for label in required_labels:
+                if f"**{label}:**" not in body:
+                    self.add(
+                        "semantic_strata.case_field",
+                        path,
+                        f"{case_id} is missing {label}",
+                    )
+
+        hard_gates = markdown_section(text, "## 6. Hard gates and anti-gaming rules")
+        gate_rows = re.findall(
+            r"(?m)^([1-9][0-9]*)\.\s+\*\*(SS-G[0-9A-Z]+)\b",
+            hard_gates,
+        )
+        expected_gates = tuple((str(index), f"SS-G{index:02d}") for index in range(1, 11))
+        if tuple(gate_rows) != expected_gates:
+            self.add(
+                "semantic_strata.hard_gates",
+                path,
+                "hard gates must retain ordered non-compensable SS-G01 through SS-G10",
+            )
+
+        normalized_text = re.sub(r"\s+", " ", text)
+        for assertion in (
+            "There is no weighted aggregate score.",
+            "Execution evidence is currently 0/5 candidates and 0/5 cases.",
+            "Independent review is currently absent.",
+            "No semantic stratum is selected by this draft suite.",
+            "This suite does not accept D-003 or authorize S3b implementation.",
+        ):
+            if assertion not in normalized_text:
+                self.add(
+                    "semantic_strata.assertion",
+                    path,
+                    f"missing decision-protocol invariant: {assertion}",
+                )
+
     def _validate_change_records(self) -> None:
         specifications = (
             (
@@ -3805,18 +4083,40 @@ def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
     return f"SCHEMA_{issue.keyword.upper()}"
 
 
+def asserted_repository_root(value: str) -> Path:
+    """Accept only a path resolving to the checkout that owns this validator."""
+
+    try:
+        candidate = Path(value).resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise argparse.ArgumentTypeError(
+            "must resolve to the checkout containing this validator"
+        ) from None
+    if candidate != VALIDATOR_REPOSITORY_ROOT:
+        raise argparse.ArgumentTypeError(
+            "must resolve to the checkout containing this validator"
+        )
+    return VALIDATOR_REPOSITORY_ROOT
+
+
 def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--root",
+        type=asserted_repository_root,
+        default=VALIDATOR_REPOSITORY_ROOT,
+        metavar="PATH",
+        help="assert the checkout containing this validator; cannot redirect validation",
+    )
     parser.add_argument("--format", choices=("text", "json"), default="text", help="output format")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
-    # This repository-owned validator always binds its filesystem scope to the
-    # checkout containing the script. Do not reintroduce caller-selected roots
-    # or policy paths without a new trust-boundary design and containment tests.
-    repository_root = Path(__file__).resolve().parents[1]
+    # Parsing returns the script-owned checkout constant even when --root is
+    # supplied. The flag asserts identity and never selects caller-owned scope.
+    repository_root = arguments.root
     validator = FoundationValidator(repository_root)
     findings = validator.run()
     if arguments.format == "json":

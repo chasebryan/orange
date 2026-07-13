@@ -1,0 +1,16 @@
+// S3a conformance: Int signs and zero normalize identically in every admitted radix.
+edition 2026;
+module s3a_int_radices {
+  spec decimal_positive() -> Int { 1_234_567_890 }
+  spec decimal_zero() -> Int { 0 }
+  spec decimal_negative() -> Int { -10 }
+  spec decimal_negative_zero() -> Int { -0 }
+  spec binary_positive() -> Int { 0b1010_0101 }
+  spec binary_zero() -> Int { 0b0 }
+  spec binary_negative() -> Int { -0b1010_0101 }
+  spec binary_negative_zero() -> Int { -0B0 }
+  spec hexadecimal_positive() -> Int { 0Xdead_BEEF }
+  spec hexadecimal_zero() -> Int { 0x0 }
+  spec hexadecimal_negative() -> Int { -0x2a }
+  spec hexadecimal_negative_zero() -> Int { -0X0 }
+}

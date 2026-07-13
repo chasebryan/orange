@@ -2,7 +2,7 @@
 
 Status: active proposed-decision ledger
 
-Snapshot: 2026-07-12
+Snapshot: 2026-07-13
 
 This file separates user direction, research recommendations, and ratified
 architecture. A recommendation is not allowed to become a hidden decision by
@@ -83,6 +83,12 @@ owner-executable scope and resource analysis. Independent feasibility review is
 unavailable in solo mode; its absence limits any external feasibility claim but
 does not block proof-neutral frontend work.
 
+The four candidates, eight hard gates, journey coverage, migration boundary,
+resource analysis, and reconsideration rules are specified in the
+[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md). That
+unnumbered research packet recommends the standalone form but records no owner
+acceptance, OEP intake, or implementation authority.
+
 ## D-004 — Semantic strata
 
 Status: proposed; decide before S3 stabilizes the semantic strata and Core
@@ -98,6 +104,13 @@ requirements; hiding them in annotations would make the semantics less honest.
 Acceptance evidence: representative permanent decision cases for SHA-like word
 code, mutable buffers, a secret-dependent rejection case, one vector intrinsic,
 and one game/reduction relation.
+
+The symmetric candidates, typed relationship graph, five cases,
+non-compensable gates, resource contract, and inconclusive procedure are
+specified in the
+[D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md).
+That Draft protocol records 0/5 candidates and 0/5 cases executed. It selects
+no stratum, does not accept D-003, and does not authorize S3b.
 
 ## D-005 — Public assurance model
 

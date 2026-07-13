@@ -2,7 +2,7 @@
 
 Status: directed active roadmap under D-023 and OEP-0001
 
-Snapshot: 2026-07-12
+Snapshot: 2026-07-13
 
 Orange is developed by one owner. This roadmap assumes no contributors,
 independent reviewers, auditors, laboratories, partner organizations, or
@@ -288,6 +288,12 @@ Before S3b expands the Typed Reference Core with pure expressions or calls:
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
+The unapproved
+[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md) and the
+conditional
+[D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md)
+define the owner-executable research that may run ahead. Neither packet decides
+its subject or authorizes S3b; the D-004 suite retains a zero-evidence baseline.
 
 ## 7. Quality and claim metrics
 

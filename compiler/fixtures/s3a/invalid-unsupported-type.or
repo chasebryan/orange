@@ -1,0 +1,6 @@
+// S3a rejection: identifier-shaped result types other than Int are unsupported.
+edition 2026;
+module s3a_invalid_unsupported_type {
+  spec other_identifier() -> Integer { 1 }
+  spec int_width() -> Int[8] { 1 }
+}
