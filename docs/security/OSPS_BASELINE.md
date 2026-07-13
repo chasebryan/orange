@@ -95,6 +95,14 @@ It does not refresh settings, alter the accepted S3a revision, accept draft
 D-003/D-004, authorize S3b, or establish semantic proof, independent review,
 vulnerability absence, or OSPS conformance.
 
+Evidence-recording boundary: aliases and phrases such as "latest recorded"
+refer to the exact subject revision captured by this document, not necessarily
+the later commit that contains the document. Merging an evidence-only document
+or protected-digest update moves `main` but does not, by itself, require another
+recursive evidence update. A material source or control change, or any mandatory
+review trigger below, must roll the subject revision forward. Unrecorded later
+executions receive no evidence credit.
+
 Evidence aliases used below:
 
 | Evidence ID | Evidence |
@@ -128,9 +136,9 @@ Evidence aliases used below:
 | Vulnerability intake | Private vulnerability reporting enabled | Private repository-advisory intake exists; continuity depends on one steward. |
 | Dependency security | Dependabot alerts and security updates enabled; Dependabot and dependency-review configuration merged | Configuration and a required PR dependency-review context exist. The compiler Cargo manifests contain only workspace packages. Dependabot operation and rejection of a known-vulnerable, malicious, or otherwise untrusted dependency remain unverified. |
 | Secret protection | Secret scanning and push protection enabled | Supported provider patterns are covered. Non-provider patterns and validity checks are disabled, so coverage is not complete. |
-| Actions policy | Enabled at the 2026-07-11 readback; exactly six repository Action identities selected; broad GitHub-owned and verified-publisher allowances disabled; full-SHA pinning required; all external fork runs need approval | Source identities and mutable references are restricted. EV-OPS-04 records the latest green PR #11 required checks and exact trusted-main push runs. This is an execution refresh, not a settings readback; scheduled trigger execution remains unproven. |
+| Actions policy | Enabled at the 2026-07-11 readback; exactly six repository Action identities selected; broad GitHub-owned and verified-publisher allowances disabled; full-SHA pinning required; all external fork runs need approval | Source identities and mutable references are restricted. EV-OPS-04 records the latest recorded green PR #11 required checks and exact trusted-main push runs. This is an execution refresh, not a settings readback; scheduled trigger execution remains unproven. |
 | Workflow tokens | Default `read`; cannot approve PR reviews | Merged workflows start with no permissions and grant explicit job permissions. Exact trusted-main push jobs completed successfully. Scorecard alone receives `security-events: write` for SARIF upload; public Scorecard publication and OIDC are disabled. Run success does not prove scheduled or manual trigger behavior or future permission stability. |
-| CodeQL | Successful configured analyses for Python, GitHub Actions, and Rust; latest exact result-count and alert-state readback is bound to revision `23352bcde976b86890db28ea4d375a31e6354bca` | EV-GH-08 records `0/23`, `0/50`, and `0/27` results plus no open CodeQL alerts; open alerts #4-#10 are Scorecard posture findings. No CodeQL threshold/ruleset or failing-alert merge-block proof exists, and the execution refresh is not a fresh settings readback or vulnerability-absence claim. |
+| CodeQL | Successful configured analyses for Python, GitHub Actions, and Rust; latest recorded exact result-count and alert-state readback is bound to subject revision `23352bcde976b86890db28ea4d375a31e6354bca` | EV-GH-08 records `0/23`, `0/50`, and `0/27` results plus no open CodeQL alerts; open alerts #4-#10 are Scorecard posture findings. No CodeQL threshold/ruleset or failing-alert merge-block proof exists, and the execution refresh is not a fresh settings readback or vulnerability-absence claim. |
 | Merge and release settings | Squash-only; auto-update/auto-merge enabled; merged branches deleted; immutable future releases enabled; active ruleset `18810248` | The ruleset protects `main`, but zero approvals do not provide independent review. No release is authorized. |
 | Web sign-off | Disabled | No GitHub web-commit DCO/sign-off enforcement. Legal contribution terms remain unresolved. |
 
@@ -139,13 +147,13 @@ Evidence aliases used below:
 Level 1 is the applicable current project scope. The combination of gaps and
 unverified controls below means Orange makes no Level 1 conformance claim.
 
-| Control | Status | Exact current evidence | Gap and next evidence required |
+| Control | Status | Exact recorded evidence | Gap and next evidence required |
 | --- | --- | --- | --- |
 | OSPS-AC-01.01 | `Unverified` | EV-GH-01 shows the only privileged principal, but repository APIs do not disclose that account's MFA state. EV-POL-01 requires phishing-resistant MFA where available. | A personal repository cannot impose an organization-wide collaborator MFA policy. Record verifiable platform enforcement or move to an organization that requires MFA; never publish recovery factors. |
 | OSPS-AC-02.01 | `Observed` | EV-GH-01 shows only the owner. GitHub personal repositories add collaborators through an explicit invitation, satisfying the manual-assignment branch of the requirement. | Future collaborator admission needs a dated access record and review. Personal repositories give collaborators broad write access; an organization is needed for more granular roles. |
 | OSPS-AC-03.01 | `Observed` with verification residual | EV-GH-04 records an active no-bypass `main` ruleset requiring a pull request and strict current checks. Effective-rule readback matched the configured rules. | Preserve the rule and perform a safe direct-update rejection test. Zero approvals provide no independent-review evidence. |
 | OSPS-AC-03.02 | `Observed` with verification residual | EV-GH-04 records active deletion and non-fast-forward restrictions, confirmed by effective-rule API readback. | Preserve both rules and perform only a safe non-destructive negative test; do not test branch deletion against authoritative `main`. |
-| OSPS-BR-01.01 | `Observed` with trigger-scope residual | EV-OPS-01 is merged and does not interpolate event metadata into shell commands; workflow expressions used for concurrency are not executed as shell source. EV-OPS-04 records successful PR #11 and trusted-main push executions at exact current revision `23352bcde976b86890db28ea4d375a31e6354bca`. | Scheduled and manual trigger execution remains unproven. Any future manual or event metadata reaching an interpreter must be allow-listed or safely passed through environment variables or arguments. |
+| OSPS-BR-01.01 | `Observed` with trigger-scope residual | EV-OPS-01 is merged and does not interpolate event metadata into shell commands; workflow expressions used for concurrency are not executed as shell source. EV-OPS-04 records successful PR #11 and trusted-main push executions at exact subject revision `23352bcde976b86890db28ea4d375a31e6354bca`. | Scheduled and manual trigger execution remains unproven. Any future manual or event metadata reaching an interpreter must be allow-listed or safely passed through environment variables or arguments. |
 | OSPS-BR-01.03 | `Observed` with event-scope residual | EV-OPS-01 is merged. PR workflows receive no configured repository or environment secrets, begin with no permissions, grant only job-scoped `contents: read`, avoid `pull_request_target`, and disable persisted checkout credentials. Required PR jobs previously succeeded; exact trusted-main push workflows are now green. Privileged Scorecard permissions occur only on trusted events. | Scheduled trigger execution remains unproven. Reassess on every secret, environment, self-hosted runner, event, or permission change. |
 | OSPS-BR-03.01 | `Observed` | EV-REP-01 and repository link inspection show official project channels use HTTPS. Git and GitHub links identify `https://github.com/chasebryan/orange`. | Preserve HTTPS-only link validation. A future domain, registry, chat, package, or documentation channel must be inventoried before being called official. |
 | OSPS-BR-03.02 | `Conditional` | No official distribution channel or software release exists; EV-POL-03 prohibits publication. | Before distribution, require authenticated HTTPS and signed, verifiable artifact/update metadata; demonstrate downgrade and adversary-in-the-middle resistance. |
@@ -173,7 +181,7 @@ maintainers. Existing evidence is recorded to expose rather than hide the work
 remaining to become collaborative. Missing independent people or roles are
 OSPS conformance gaps, not prerequisites for current pre-alpha development.
 
-| Control | Status | Exact current evidence | Gap and next evidence required |
+| Control | Status | Exact recorded evidence | Gap and next evidence required |
 | --- | --- | --- | --- |
 | OSPS-AC-04.01 | `Observed` with trigger-scope residual | EV-GH-03 sets default workflow permissions to `read`. EV-OPS-01 is merged, begins every workflow with `permissions: {}`, grants explicit job permissions, and has green exact trusted-main push runs. | Scheduled and manual trigger execution remains unproven. Continuously lint workflows and reverify the setting after repository transfer or GitHub policy change. |
 | OSPS-BR-02.01 | `Conditional` | No official release exists. EV-POL-03 requires one immutable identifier spanning all relevant version axes. | Define and validate the release identifier format before the first candidate. |
@@ -200,7 +208,7 @@ OSPS conformance gaps, not prerequisites for current pre-alpha development.
 Level 3 is a future release-bearing target only. None of these rows should be
 used to imply present maturity or a large user base.
 
-| Control | Status | Exact current evidence | Gap and next evidence required |
+| Control | Status | Exact recorded evidence | Gap and next evidence required |
 | --- | --- | --- | --- |
 | OSPS-AC-04.02 | `Observed` with independence and trigger residuals | EV-OPS-01 grants read-only contents to validation jobs; only trusted-event Scorecard has `security-events: write` for SARIF upload. EV-OPS-04 records Scorecard run `29292740941` passing at exact revision `23352bcde976b86890db28ea4d375a31e6354bca`. Public Scorecard publication and OIDC are disabled. | Scheduled execution remains unproven. One owner and zero required approvals do not independently protect workflow permission changes. Document why the remaining write is necessary and re-review every permission delta. |
 | OSPS-BR-01.04 | `Partial` | Merged manual workflow definitions accept no user-defined inputs, grant only `contents: read`, and do not interpolate collaborator input into shell. Their jobs have green push-path evidence. The privileged Scorecard job has no manual trigger and is hard-gated to `main`. | `workflow_dispatch` execution itself remains unproven. Any future dispatch input or write-capable manual job must have an allow-list, length/type constraints, trusted-ref gate, safe interpreter boundary, and negative tests. |
@@ -260,7 +268,7 @@ The following must remain visible despite merged source and green named `main` r
    revision `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. Post-acceptance PR #11
    head `7d54594349cc7afe0cacf60ebc9f1d8f5e913fee` passed Required CI
    `29292600483`, Dependency Review `29292600471`, and CodeQL `29292598799`.
-   At exact current `main` revision
+   At latest recorded subject revision
    `23352bcde976b86890db28ea4d375a31e6354bca`, trusted-main push runs then
    succeeded for Required CI `29292740885`, Workflow Online Audit `29292740874`,
    External Links `29292740884`, OpenSSF Scorecard `29292740941`, and dynamic
