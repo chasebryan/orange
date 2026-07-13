@@ -1,6 +1,6 @@
 # Orange 2026 typed-literal semantic specification
 
-Status: normative provisional S3a semantics under D-026 and OEP-0003
+Status: normative accepted pre-alpha S3a semantics under D-026 and OEP-0003
 
 Edition: `2026`
 
@@ -12,8 +12,13 @@ lexical and grammar rules in [`LANGUAGE_2026.md`](LANGUAGE_2026.md). That
 document remains authoritative for source representation, tokens, the legacy
 empty-declaration grammar, syntax trees, parser diagnostics, and parser limits.
 This document authoritatively adds only the typed-`spec` alternative and its
-semantics under the later owner direction recorded by D-026 and provisional
+semantics under the later owner direction recorded by D-026 and accepted
 OEP-0003.
+
+The corresponding implementation and documentation were merged by PR #9 at
+commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. Acceptance closes this bounded
+typed-literal slice only. Orange remains pre-alpha, later S3 semantics remain
+incomplete, and D-003 and D-004 remain unresolved.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

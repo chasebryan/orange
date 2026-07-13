@@ -105,4 +105,4 @@ success does not establish technical soundness or authority approval.
 | --- | --- | --- |
 | [OEP-0001](OEP-0001-solo-development.md) | Accepted | Solo development and incremental capability gates |
 | [OEP-0002](OEP-0002-edition-2026-parser.md) | Accepted | Orange 2026 lexical boundary, minimal grammar, and bounded parser |
-| [OEP-0003](OEP-0003-orange-2026-typed-literals.md) | Provisional | Orange 2026 typed literal specifications and reference evaluation |
+| [OEP-0003](OEP-0003-orange-2026-typed-literals.md) | Accepted | Orange 2026 typed literal specifications and reference evaluation |

@@ -172,7 +172,7 @@ exact merged revision.
 
 ### S3 — Semantic core and reference evaluator
 
-Status: active under D-026 and provisional OEP-0003
+Status: active after completed S3a under D-026 and accepted OEP-0003
 
 Permanent outcomes:
 
@@ -189,7 +189,8 @@ claim is implied.
 
 #### S3a — Typed literal specifications
 
-Status: provisional under D-026 and OEP-0003
+Status: completed under D-026 and accepted OEP-0003 at merged revision
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`
 
 The first bounded semantic slice preserves legacy empty `spec` and `impl`
 declarations and adds only `spec NAME() -> TYPE { SIGNED_INTEGER }`. Semantic
@@ -203,6 +204,16 @@ event, and evaluation-step budgets. It defines no operators, calls, parameters,
 bindings, control flow, dynamic failure values, typed implementations, canonical
 Core encoding, proof identity, refinement, code generation, ABI, leakage,
 package, release, or cryptographic behavior. S3a does not complete S3.
+
+Closure evidence: PR #9 merged at `2026-07-13T00:42:10Z` after Required CI run
+`29215790064`, Dependency Review run `29215790110`, and CodeQL run
+`29215789258` passed. At exact merged revision
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`, Required CI run `29215877872`,
+Workflow Online Audit run `29215877891`, External Links run `29215877874`,
+OpenSSF Scorecard run `29215877875`, and dynamic CodeQL run `29215877437` also
+completed successfully. The merged slice passed 89 Rust tests, including the
+documentation test, 95 Python policy tests, and policy version 0.2.3 with zero
+findings.
 
 ### S4 — Proof and claim boundary
 
@@ -264,18 +275,16 @@ dates. It cannot claim independent rebuild or multi-party release controls.
 
 ## 6. Immediate sequence
 
-The next permanent slices are:
+S3a evidence closure is complete at exact merged revision
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`, with OEP-0003 accepted and its
+local and hosted evidence recorded.
 
-1. implement the D-026 typed-literal grammar and semantic rules without adding
-   an excluded expression or implementation feature;
-2. construct the bounded source-ordered Typed Reference Core only after name,
-   type, and literal validation succeeds;
-3. expose deterministic `orangec eval FILE` output with no partial results;
-4. add one positive or negative conformance case per normative S3a rule and
-   exercise every resource boundary; and
-5. preserve the S1/S2 source, diagnostic, lexical, grammar, parser, and resource
-   contracts, then close OEP-0003 only against an exact merged revision and its
-   hosted evidence.
+Before S3b expands the Typed Reference Core with pure expressions or calls:
+
+1. decide D-003, the product form that constrains the language and evaluator;
+2. decide D-004, the complete semantic strata and Core relationships; and
+3. authorize the bounded S3b surface through an OEP with explicit conformance,
+   resource, compatibility, threat, and non-claim boundaries.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.

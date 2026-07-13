@@ -13,16 +13,22 @@ certificates where the claim kind permits them.
 
 Orange is now in solo, pre-alpha compiler development. The repository contains
 the Rust compiler foundation, the accepted Orange 2026 parser slice, and an
-active provisional S3a semantic slice. `orangec check` performs bounded lexical,
+accepted S3a typed-literal semantic slice. `orangec check` performs bounded lexical,
 syntactic, and semantic validation; typed `spec` literals with exact `Int` or
 `Word[8]` types lower to a deterministic, noncanonical Typed Reference Core;
 and `orangec eval FILE` prints those closed values in source order.
 
-The provisional slice has separate `spec` and `impl` name namespaces, but only
+The S3a slice has separate `spec` and `impl` name namespaces, but only
 typed specifications acquire values. It defines no parameters, operators,
 calls, typed implementations, refinement, proof system, canonical Core encoding,
-code generation, ABI, standard library, or verified cryptographic implementation.
-D-003 and D-004 remain unratified.
+code generation, ABI, standard library, package or release behavior, or verified
+cryptographic implementation. D-003 and D-004 remain unresolved and unratified,
+and later S3 semantic work is incomplete.
+
+The accepted S3a implementation and normative documentation were merged by
+[PR #9](https://github.com/chasebryan/orange/pull/9) as commit
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. That repository fact is
+implementation evidence, not a stable compatibility or assurance claim.
 
 Implemented behavior is solo-authored and solo-reviewed. It is not independently
 reviewed, formally verified, production-ready, or a cryptographic assurance
@@ -67,17 +73,18 @@ ratified incrementally before the component or claim that depends on them.
 - [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
 - [Decision register](docs/DECISIONS.md)
 - [Normative Orange 2026 lexical and grammar specification](docs/LANGUAGE_2026.md)
-- [Provisional Orange 2026 typed-literal semantics](docs/SEMANTICS_2026.md)
+- [Normative Orange 2026 typed-literal semantics](docs/SEMANTICS_2026.md)
 - [Solo-development process](docs/governance/oeps/OEP-0001-solo-development.md)
 - [Edition 2026 parser proposal](docs/governance/oeps/OEP-0002-edition-2026-parser.md)
-- [Typed-literal semantics proposal](docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md)
+- [Accepted typed-literal semantics OEP](docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md)
 - [Compiler status and usage](compiler/README.md)
 
 ## Repository and compiler foundation
 
 The repository carries the permanent policy and evidence architecture created
 during Gate 0, the first two completed production-lineage compiler slices, and
-the active provisional S3a slice:
+the accepted S3a typed-literal slice. The larger S3 semantic milestone remains
+incomplete:
 
 - [governance](GOVERNANCE.md), [contribution boundary](CONTRIBUTING.md), and the
   [OEP](docs/governance/oeps/README.md) and

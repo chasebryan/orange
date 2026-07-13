@@ -1,6 +1,6 @@
 # Orange compiler
 
-Status: production-lineage, pre-alpha S3a under provisional OEP-0003
+Status: production-lineage, pre-alpha S3a under accepted OEP-0003
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -9,10 +9,16 @@ interfaces to extend rather than a disposable prototype.
 
 Nothing here makes a verification, correctness, constant-time, or production
 readiness claim. `orangec check` performs lexical, syntactic, and bounded
-semantic validation. The provisional S3a slice assigns meaning only to closed
+semantic validation. The accepted S3a slice assigns meaning only to closed
 typed `spec` literals, lowers them to a noncanonical Typed Reference Core, and
 reference-evaluates them. General expressions, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
+
+This boundary was merged by
+[PR #9](https://github.com/chasebryan/orange/pull/9) as commit
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. Orange remains pre-alpha; that
+merge creates no stable public compatibility promise.
+Later S3 semantics remain incomplete, and D-003 and D-004 remain unresolved.
 
 ## Run
 
@@ -106,10 +112,11 @@ demo::answer: Int = 42
 demo::mask: Word[8] = 0xff
 ```
 
-The complete provisional rules and non-claims are in
+The complete accepted rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md). This slice defines no
 operators, calls, parameters, bindings, effects, proof meaning, implementation
-refinement, target behavior, ABI, leakage property, or output code.
+refinement, target behavior, ABI, leakage property, output code, package or
+release behavior, or cryptographic construction.
 
 ## Layout
 

@@ -1,7 +1,7 @@
 # Orange 2026 lexical and grammar specification
 
 Status: normative pre-alpha S2 syntax under D-025 and accepted OEP-0002,
-additively extended with provisional S3a syntax under D-026 and OEP-0003
+additively extended with accepted S3a syntax under D-026 and OEP-0003
 
 Edition: `2026`
 
@@ -14,6 +14,11 @@ that source text has this shape. The separate
 name-resolution, Core, and reference-evaluation meaning. Syntax acceptance by
 itself does not establish any semantic, proof, compilation, cryptographic, or
 other correctness property.
+
+The S3a extension was merged by PR #9 at commit
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. This records the implemented
+pre-alpha boundary, not a stable syntax-compatibility guarantee; later S3 work
+and the D-003/D-004 architecture decisions remain open.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
