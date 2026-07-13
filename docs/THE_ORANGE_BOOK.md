@@ -40,11 +40,12 @@ as it grows, and keep the boundary between aspiration and evidence visible.
 That boundary matters because Orange is young. The repository is in solo,
 pre-alpha compiler development. It has a production-lineage Rust compiler
 foundation, a deterministic lexer, a bounded parser, structured diagnostics,
-and a deliberately tiny Orange 2026 grammar. An active provisional S3a slice
-adds bounded semantic checking and reference evaluation for closed typed
+and a deliberately tiny Orange 2026 grammar. The accepted S3a slice adds
+bounded semantic checking and reference evaluation for closed typed
 `spec` literals only. It does not add a general expression language, typed
 implementations, refinement, code generation, a standard library, a proof
-checker, or a verified cryptographic implementation. A passing test suite is
+checker, package or release behavior, or a verified cryptographic
+implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
 language or compiler is sound.
 
@@ -144,7 +145,7 @@ bytes implement the named specification. A theorem prover can check a proof,
 but the theorem may not be the property an integrator thinks it is.
 
 Many architectural details of this vertical artifact remain proposed or under
-investigation. The provisional Typed Reference Core for literal specifications
+investigation. The current Typed Reference Core for literal specifications
 has no canonical encoding, proof identity, or refinement role and does not
 select the complete semantic Core. Orange has also not selected its proof
 foundation, proof format, solver policy, leakage baseline, native target
@@ -222,7 +223,11 @@ compiler lineage provides source identities and UTF-8 byte spans, deterministic
 lexing, stable diagnostic codes, and the `orangec` command-line boundary. The
 Orange 2026 parser recognizes exactly one edition declaration followed by one
 module. Legacy empty `spec` and `impl` functions remain valid, and the
-provisional S3a grammar adds closed typed-literal specifications:
+accepted S3a grammar adds closed typed-literal specifications:
+
+PR #9 merged that bounded pre-alpha implementation and its normative records as
+commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
+the D-003/D-004 architecture decisions remain open.
 
 ```orange
 edition 2026;
@@ -260,7 +265,7 @@ These absences are not disguised as a miniature finished language. The parser,
 semantic analyzer, Core constructor, and evaluator are bounded components at
 their intended incremental boundaries. Parse success means the source has the
 recorded syntactic shape. S3a semantic and evaluation success means only that a
-closed typed literal satisfied the provisional rules and produced the displayed
+closed typed literal satisfied the accepted rules and produced the displayed
 value. Neither result means the source is correct cryptography, a valid proof,
 safe machine code, a refining implementation, or a generally executable
 program.
@@ -299,11 +304,11 @@ Chapter names may change as the normative design changes.
 | I — Why Orange | 1. The Seams Are the System | Drafted in v0.1 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Planned | Public claim model remains proposed |
 | I — Why Orange | 3. One Language, Several Semantic Worlds | Planned | Product form and semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Planned | Provisional typed-literal Core and evaluator exist; complete semantic Core remains open |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Planned | Accepted typed-literal Core and evaluator exist; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Planned | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Planned | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Planned | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Planned | Current parser plus provisional typed-literal semantics |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Planned | Current parser plus accepted typed-literal semantics |
 | III — Building the Language | 9. From Core to Native Bytes | Planned | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Planned | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Planned | Exact source and rights decisions are required |
@@ -331,7 +336,7 @@ principal sources for version 0.1 are:
 - the [dependency-ordered roadmap](ROADMAP.md) for current capability status;
 - the [Orange 2026 lexical and grammar specification](LANGUAGE_2026.md) for the
   normative parser boundary;
-- the [provisional typed-literal semantics](SEMANTICS_2026.md) and
+- the [accepted typed-literal semantics](SEMANTICS_2026.md) and
   [OEP-0003](governance/oeps/OEP-0003-orange-2026-typed-literals.md) for the
   bounded S3a meaning and non-claims; and
 - the [compiler guide](../compiler/README.md) for implemented CLI behavior.

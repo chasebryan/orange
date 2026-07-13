@@ -4,7 +4,7 @@ title: Orange 2026 typed literal specifications
 authors:
   - Chase Bryan
 champion: Chase Bryan
-status: Provisional
+status: Accepted
 type: Standards
 created: 2026-07-12
 updated: 2026-07-12
@@ -25,10 +25,10 @@ supersedes: []
 superseded-by: null
 review-authorities:
   - Orange Project Owner
-decision-date: null
-decision-revision: null
+decision-date: 2026-07-12
+decision-revision: 6c0bd3021cf2df603e08808e4660724ca1e2b2a5
 approval-records:
-  - Project-owner direction recorded on 2026-07-12; solo-reviewed and provisional
+  - solo-reviewed owner acceptance at merged revision 6c0bd3021cf2df603e08808e4660724ca1e2b2a5
 ---
 
 # OEP-0003: Orange 2026 typed literal specifications
@@ -45,11 +45,10 @@ typed specifications. `orangec eval FILE` prints every such value in source
 order. The Core is an internal typed boundary without a canonical encoding,
 proof identity, refinement relation, target meaning, or release claim.
 
-The owner direction recorded here authorizes bounded S3a implementation under
-OEP-0001 and D-023. This proposal remains Provisional until the complete
-implementation, conformance evidence, exact merged revision, and required
-hosted checks can be reviewed and recorded. Provisional status is not release
-authority.
+The owner direction recorded here authorized bounded S3a implementation under
+OEP-0001 and D-023. This proposal is accepted at the exact merged S3a revision
+recorded below. Acceptance is pre-alpha semantic authority for this bounded
+slice, not release authority.
 
 ## Motivation
 
@@ -352,8 +351,8 @@ commitment. The exact type and output forms may change only through an explicit
 edition-aware semantic decision with migration notes.
 
 Permanent-lineage means the analyzer, Core boundary, evaluator, diagnostics,
-and tests are extended in place; it does not make this provisional fragment a
-stable public interface.
+and tests are extended in place; it does not make this accepted pre-alpha
+fragment a stable public interface.
 
 ## Unresolved questions
 
@@ -374,9 +373,21 @@ format, resource budgets, non-goals, and solo claim boundary recorded here.
 Under OEP-0001 and D-023, that direction is immediately effective and permits
 the bounded S3a implementation to proceed.
 
-The record remains Provisional with null `decision-date` and
-`decision-revision`. It must not be marked Accepted until the implementation,
-normative semantics, conformance corpus, policy inventory, and required hosted
-checks are present at an exact merged revision. The work is solo-reviewed; no
+On 2026-07-12 the Orange Project Owner reviewed and accepted this proposal at
+exact S3a merge revision
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. PR #9 head
+`8c48a85997b756cf65d64110ebc869bb26e49079` passed Required CI run
+`29215790064`, Dependency Review run `29215790110`, and CodeQL run
+`29215789258` before the squash merge at `2026-07-13T00:42:10Z`. At the exact
+merged revision, Required CI run `29215877872`, Workflow Online Audit run
+`29215877891`, External Links run `29215877874`, OpenSSF Scorecard run
+`29215877875`, and dynamic CodeQL run `29215877437` also completed
+successfully. Acceptance evidence additionally includes 89 passing Rust tests,
+including the documentation test, 95 passing Python policy tests, and policy
+version 0.2.3 reporting zero findings.
+
+The approval record is literally `solo-reviewed` and binds the exact decision
+revision. The author and decision authority are the same sole owner. No
 independent approval, proof, audit, external validation, product release, or
-cryptographic, target, ABI, leakage, or code-generation claim is created.
+cryptographic, target, ABI, leakage, or code-generation claim is created by
+this acceptance.

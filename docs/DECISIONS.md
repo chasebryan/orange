@@ -595,8 +595,9 @@ required hosted checks passed.
 
 Status: directed
 
-Source: explicit project-owner direction for S3a on 2026-07-12; provisional
-OEP-0003
+Source: explicit project-owner direction for S3a on 2026-07-12; accepted
+OEP-0003 at exact merged revision
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`
 
 Decision: preserve the accepted empty `spec` and `impl` function syntax and add
 one typed form for specifications only:
@@ -639,11 +640,20 @@ The normative grammar delta and semantic rules are in
 D-003 or D-004, select the complete semantic strata, or authorize proof or
 native-code claims.
 
-Acceptance evidence requires exact positive, negative, boundary, resource, and
-repeatability conformance coverage; stable diagnostics and output; offline
-locked Rust and repository policy checks; and green required hosted checks at
-an exact merged implementation revision. OEP-0003 remains Provisional until
-that revision and evidence exist.
+Acceptance evidence includes exact positive, negative, boundary, resource, and
+repeatability conformance coverage; stable diagnostics and output; 89 passing
+Rust tests, including the documentation test; 95 passing Python policy tests;
+and policy version 0.2.3 reporting zero findings. PR #9 head
+`8c48a85997b756cf65d64110ebc869bb26e49079` passed Required CI run
+`29215790064`, Dependency Review run `29215790110`, and CodeQL run
+`29215789258` before the squash merge at `2026-07-13T00:42:10Z` as exact
+revision `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. On that exact merged revision,
+Required CI run
+`29215877872`, Workflow Online Audit run `29215877891`, External Links run
+`29215877874`, OpenSSF Scorecard run `29215877875`, and dynamic CodeQL run
+`29215877437` also completed successfully. OEP-0003 is Accepted at that
+revision. This closure does not accept D-003 or D-004 or authorize any excluded
+claim.
 
 ## How decisions change
 

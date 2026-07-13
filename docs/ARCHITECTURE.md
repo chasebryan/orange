@@ -10,16 +10,19 @@ Research snapshot: 2026-07-11
 Solo/compiler amendment: 2026-07-12
 
 D-023 through D-025 authorize a proof-neutral Rust compiler foundation and the
-minimal Orange 2026 parser. D-026 and provisional OEP-0003 add one bounded
+minimal Orange 2026 parser. D-026 and accepted OEP-0003 add one bounded
 semantic foothold: closed typed `spec` literals, separate declaration-kind
 namespaces, exact contextual `Int` and `Word[8]`, a deterministic Typed Reference
 Core, and reference evaluation. [`SEMANTICS_2026.md`](SEMANTICS_2026.md) is the
-normative provisional boundary.
+normative accepted boundary. PR #9 merged that pre-alpha foothold as commit
+`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`; later S3 semantics remain
+incomplete.
 
 The Typed Reference Core has no canonical encoding, proof identity, refinement
-relation, target, ABI, cryptographic, or leakage meaning. D-003 and D-004 remain
-unratified, and unresolved architecture choices continue to gate only the
-component or claim that depends on them.
+relation, target, ABI, package or release identity, cryptographic, or leakage
+meaning. D-003 and D-004 remain unresolved and unratified, and unresolved
+architecture choices continue to gate only the component or claim that depends
+on them.
 
 ## 1. Architecture objective
 
@@ -174,7 +177,7 @@ their namespaces are separate.
 
 [`LANGUAGE_2026.md`](LANGUAGE_2026.md) is authoritative for current lexical and
 parsing behavior. [`SEMANTICS_2026.md`](SEMANTICS_2026.md) defines the
-provisional typed-literal meaning. Empty declarations retain no type or value,
+accepted typed-literal meaning. Empty declarations retain no type or value,
 and the narrow accepted form is not a definition of the complete semantic roles
 proposed below.
 
@@ -249,7 +252,7 @@ checker.
 
 ## 4. Core semantic family
 
-The current provisional Typed Reference Core contains only typed `spec`
+The current Typed Reference Core contains only typed `spec`
 functions, contiguous source-order IDs, exact module and function names, one
 normalized `Int` or `Word8` type, and one literal value. It contains no
 operators, calls, parameters, bindings, effects, implementation declarations,
@@ -258,7 +261,7 @@ in order and prints deterministic typed values; an empty Core prints nothing.
 
 This internal compiler boundary is not any canonical Core proposed below. It
 has no serialized identity, cross-revision ID promise, proof-checking role,
-refinement relation, or erasure relation. The provisional OEP-0003 boundary does
+refinement relation, or erasure relation. The accepted OEP-0003 boundary does
 not accept D-003 or D-004.
 
 ### 4.1 Spec Core
@@ -638,7 +641,7 @@ There is still an intent boundary. The checker can prove a formal spec; humans,
 standards provenance, independent implementations, and vectors establish that
 the formal spec is the intended algorithm.
 
-In the current provisional S3a slice, the Rust semantic analyzer, integer
+In the current S3a slice, the Rust semantic analyzer, integer
 decoder, Typed Reference Core constructor, evaluator, and output formatter are
 engineering trust dependencies. No logical checker exists, so their results are
 not proof evidence and are not outside a logical TCB by virtue of being checked.
