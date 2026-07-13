@@ -31,6 +31,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtu
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/typed-answer.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/typed-answer.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 ```
 
 `orangec` accepts up to 256 source inputs in argument order. Regular files are
@@ -118,11 +119,54 @@ operators, calls, parameters, bindings, effects, proof meaning, implementation
 refinement, target behavior, ABI, leakage property, output code, package or
 release behavior, or cryptographic construction.
 
+## S3a CLI conformance corpus
+
+`fixtures/s3a/` contains an exact ten-file black-box corpus for already accepted
+S3a behavior. Three fixtures must evaluate successfully and seven must fail
+closed. The corpus covers:
+
+- empty declarations, mixed empty and typed declarations, and cross-kind equal
+  names;
+- positive, zero, negative, and negative-zero `Int` observations in decimal,
+  binary, and hexadecimal source forms;
+- exact `Word[8]` observations at 0, 1, 254, and 255;
+- typed-`impl` syntax rejection; and
+- the stable duplicate, unsupported-type, word-width, integer-magnitude,
+  negative-word, and word-range diagnostic categories.
+
+`crates/orangec/tests/s3a_conformance.rs` checks the directory inventory rather
+than accepting an extra fixture implicitly. It invokes both `orangec check` and
+`orangec eval` twice per fixture and requires identical status, standard output,
+and standard error. Accepted cases have silent checking, exact evaluation
+output, and no diagnostic. Rejected cases have status 1, no partial output, the
+exact ordered diagnostic-code sequence, the expected diagnostic meaning, and
+the exact primary line and column for every diagnostic. Check and evaluation
+rejection bytes must agree.
+
+Two generated black-box cases exercise boundaries that are impractical as
+ordinary expected-output fixtures. One accepts exactly 16,384 significant bits
+and rejects 16,385 without evaluating the enormous accepted integer. The other
+requires exactly 100 `ORC0203` diagnostics followed by one `ORC0208` suppression
+diagnostic. Every generated command runs twice. The rejected boundary and
+diagnostic-budget sources run through both commands; the accepted boundary uses
+silent checking only so the test does not intentionally capture an enormous
+decimal evaluation result.
+
+This is the first external S3a corpus, not completion of S3 or the complete
+normative conformance minimum. Internal unit and CLI tests still cover injected
+semantic-event, Core-node, and evaluation budgets, source identity, and
+malformed internal states that valid public source cannot always reach before
+an earlier bound. The external corpus adds no source construct, semantic rule,
+canonical Core identity, proof, target, claim, or S3b authority.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
   syntax-tree, parser, semantic, Core, and evaluator library;
 - `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
   `lex` behavior;
+- `crates/orangec/tests/s3a_conformance.rs`: exact repeatable black-box S3a
+  corpus runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture; and
-- `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture.
+- `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture; and
+- `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus.

@@ -1,0 +1,6 @@
+// S3a rejection: even negative zero is not a Word[8] value.
+edition 2026;
+module s3a_invalid_negative_word {
+  spec negative_one() -> Word[8] { -1 }
+  spec negative_zero() -> Word[8] { -0 }
+}
