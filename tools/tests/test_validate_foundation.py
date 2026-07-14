@@ -987,6 +987,81 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             [("git.untracked", "untracked.txt")],
         )
 
+    def test_intent_to_add_entries_are_rejected_including_empty_files(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "empty-intent.txt").write_bytes(b"")
+            (root / "nonempty-intent.txt").write_bytes(b"content\n")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "-N", "empty-intent.txt", "nonempty-intent.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            validator = FoundationValidator(root)
+
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in validator.findings],
+            [("git.intent_to_add", "empty-intent.txt")],
+        )
+
+    def test_modified_staged_empty_file_is_not_intent_to_add(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            for name in ("staged-empty.txt", "modified-empty.txt"):
+                (root / name).write_bytes(b"")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "staged-empty.txt", "modified-empty.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "modified-empty.txt").write_bytes(b"worktree change\n")
+            validator = FoundationValidator(root)
+
+        self.assertEqual(validator.findings, [])
+
+    def test_intent_to_add_inventory_failure_is_fatal(self) -> None:
+        file_process = _FakePopen(b"file.txt\0")
+        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        stage_process = _FakePopen(metadata + b"\tfile.txt\0")
+        intent_process = _FakePopen(b"", return_code=1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "file.txt").write_bytes(b"")
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                side_effect=(file_process, stage_process, intent_process),
+            ):
+                validator = FoundationValidator(root)
+
+        self.assertEqual(
+            {finding.code for finding in validator.findings},
+            {"resource.inventory_intent"},
+        )
+
     def test_fallback_counts_ignored_entry_but_prunes_its_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -80,7 +80,6 @@ _I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
-# Bound discovery separately and keep Git paths as bytes until checked.
 GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
 GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
@@ -362,7 +361,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 7adc77c7632a6109bf5f379df4f6ce1ec093d500679779c91a401c93f1f7c6e1
+tools/tests/test_validate_foundation.py 36f8815d97c2e186c062730cd91c22ab92a5e0f2ffaf931ff8152c1ec9bfe54b
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -627,7 +626,6 @@ def _parse_i_json_integer(value: str) -> int:
         len(magnitude) == len(_I_JSON_MAXIMUM_INTEGER_MAGNITUDE)
         and magnitude > _I_JSON_MAXIMUM_INTEGER_MAGNITUDE
     ):
-        # Reject lexically before int() and keep the diagnostic size-independent.
         raise json.JSONDecodeError(
             "integer exceeds the I-JSON interoperable range",
             value,
@@ -652,7 +650,6 @@ def _require_unicode_scalars(value: Any, source: str) -> None:
 
 
 def _require_bounded_json_nesting(source: str) -> None:
-    """Preflight Gate 0's JSON nesting bound."""
     depth = 0
     in_string = False
     escaped = False
@@ -681,7 +678,6 @@ def _require_bounded_json_nesting(source: str) -> None:
 
 
 def _load_json_bytes(data: bytes) -> Any:
-    """Parse one buffered Gate 0 JSON document."""
     source = data.decode("utf-8")
     _require_bounded_json_nesting(source)
     try:
@@ -694,9 +690,6 @@ def _load_json_bytes(data: bytes) -> Any:
         )
         _require_unicode_scalars(result, source)
     except RecursionError as exc:
-        # The iterative preflight should make this unreachable for ordinary
-        # inputs. Normalize any implementation-specific fallback so every
-        # load_json caller can keep handling malformed JSON uniformly.
         raise json.JSONDecodeError(
             "JSON structural nesting exceeds the Gate 0 limit "
             f"of {GATE0_MAXIMUM_JSON_NESTING_DEPTH}",
@@ -711,8 +704,6 @@ def load_json(path: Path) -> Any:
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    """Serialize canonical JSON."""
-
     _require_unicode_scalars(value, "")
 
     def serialize(item: Any) -> str:
@@ -743,8 +734,6 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 
 def relative(path: Path, root: Path) -> str:
-    """Format a lexical repository-relative path."""
-
     try:
         return path.relative_to(root).as_posix()
     except ValueError:
@@ -752,8 +741,6 @@ def relative(path: Path, root: Path) -> str:
 
 
 def _secure_repository_reads_supported() -> bool:
-    """Check secure component-wise open support."""
-
     return (
         os.name == "posix"
         and all(
@@ -767,14 +754,10 @@ def _secure_repository_reads_supported() -> bool:
 
 
 def _secure_repository_discovery_supported() -> bool:
-    """Check descriptor-based directory scan support."""
-
     return _secure_repository_reads_supported() and os.scandir in os.supports_fd
 
 
 def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes]) -> int:
-    """Open a no-follow directory chain below ``root``."""
-
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY | os.O_NOFOLLOW
     descriptor = os.open(root, flags)
     try:
@@ -792,8 +775,6 @@ def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes])
 
 
 def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
-    """Inspect entry presence without following it."""
-
     if not _secure_repository_reads_supported():
         return None
     descriptor: int | None = None
@@ -805,7 +786,6 @@ def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
     except FileNotFoundError:
         return False
     except (NotImplementedError, OSError):
-        # Let resource preflight classify an indeterminate entry.
         return None
     finally:
         if descriptor is not None:
@@ -822,8 +802,6 @@ class _GitRecordRead:
 
 
 def _sanitized_git_environment(root: Path) -> dict[str, str]:
-    """Build Git's minimal environment."""
-
     environment = {"PATH": os.environ.get("PATH", os.defpath)}
     environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
     environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
@@ -832,8 +810,6 @@ def _sanitized_git_environment(root: Path) -> dict[str, str]:
 
 
 def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
-    """Terminate and reap a Git producer."""
-
     try:
         process.kill()
     except OSError:
@@ -855,8 +831,6 @@ def _read_git_nul_records(
     *,
     maximum_record_bytes: int,
 ) -> _GitRecordRead:
-    """Read bounded NUL Git records by deadline."""
-
     command = [
         "git",
         "-c",
@@ -990,8 +964,6 @@ def _read_git_nul_records(
 
 
 def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path]:
-    """Collect a bounded no-follow filesystem inventory."""
-
     if not _secure_repository_discovery_supported():
         findings.append(
             Finding(
@@ -1316,6 +1288,50 @@ class FoundationValidator:
                         "Git file inventory path has no stage-zero index entry",
                     )
                 )
+        if not self.findings and git_inventory_succeeded:
+            intent = _read_git_nul_records(
+                self.root,
+                [
+                    "diff-files",
+                    *(
+                        "--ita-invisible-in-index --no-ext-diff --no-textconv "
+                        "--ignore-submodules=none --no-renames --name-only --diff-filter=A"
+                    ).split(),
+                ],
+                maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+            )
+            if intent.finding is not None:
+                self.findings.append(intent.finding)
+            elif intent.records is None:
+                self.findings.append(
+                    Finding("resource.inventory_intent", ".", "Git intent inventory is unavailable")
+                )
+            elif intent.records:
+                if any(not _git_path_is_relative(value) for value in intent.records) or len(
+                    set(intent.records)
+                ) != len(intent.records):
+                    self.findings.append(
+                        Finding(
+                            "resource.inventory_protocol",
+                            ".",
+                            "Git intent inventory has malformed paths",
+                        )
+                    )
+                else:
+                    try:
+                        intent_path = min(intent.records).decode("utf-8")
+                    except UnicodeDecodeError:
+                        self.findings.append(
+                            Finding(
+                                "resource.inventory_encoding",
+                                ".",
+                                "Git intent path is not valid UTF-8",
+                            )
+                        )
+                    else:
+                        self.findings.append(
+                            Finding("git.intent_to_add", intent_path, "Git index entry is intent-to-add")
+                        )
         self._inventory_has_findings = bool(self.findings)
         self._authenticated_protected_bytes: dict[str, bytes | None] = {}
         self._repository_byte_cache: dict[str, bytes | None] = {}
@@ -1348,8 +1364,6 @@ class FoundationValidator:
             self.add(code, path_text, message)
 
     def _inventory_files_in(self, directory: str, *, recursive: bool = False) -> list[Path]:
-        """Select bounded files."""
-
         prefix = PurePosixPath(directory).as_posix().rstrip("/") + "/"
         selected: list[tuple[str, Path]] = []
         for path in self.repository_files:
@@ -1362,14 +1376,10 @@ class FoundationValidator:
         return [path for _, path in sorted(selected)]
 
     def _inventory_has_file(self, path: Path) -> bool:
-        """Check lexical file presence."""
-
         value = relative(path, self.root)
         return any(relative(candidate, self.root) == value for candidate in self.repository_files)
 
     def _inventory_has_path(self, path: Path) -> bool:
-        """Check lexical path presence."""
-
         value = relative(path, self.root).rstrip("/")
         prefix = value + "/"
         return any(
@@ -1477,8 +1487,6 @@ class FoundationValidator:
         return None
 
     def _preflight_repository_resources(self) -> bool:
-        """Preflight repository resources."""
-
         if self._resource_preflight_complete:
             return not self._resource_issue_keys
         self._resource_preflight_complete = True
@@ -1555,8 +1563,6 @@ class FoundationValidator:
         return not self._resource_issue_keys
 
     def _read_repository_bytes(self, path: Path) -> bytes | None:
-        """Cache a bounded repository snapshot."""
-
         lexical_path = self._lexical_repository_path(path)
         if lexical_path is None:
             return None
@@ -1646,8 +1652,6 @@ class FoundationValidator:
         return data
 
     def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
-        """Open a no-follow file."""
-
         if not _secure_repository_reads_supported():
             self._resource_issue(
                 "resource.unsupported_host",
@@ -2025,14 +2029,10 @@ class FoundationValidator:
             self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
-        """Authenticate protected files."""
-
         for value in sorted(GATE0_PROTECTED_FILE_DIGESTS):
             self._read_authenticated_protected_file(value)
 
     def _read_authenticated_protected_file(self, value: str) -> bytes | None:
-        """Cache authenticated bytes."""
-
         if value in self._authenticated_protected_bytes:
             return self._authenticated_protected_bytes[value]
         self._authenticated_protected_bytes[value] = None
@@ -2058,8 +2058,6 @@ class FoundationValidator:
         return data
 
     def _validate_hosted_control_evidence(self, *, today: dt.date | None = None) -> None:
-        """Validate hosted controls."""
-
         snapshot_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["snapshot_date"])
         review_due_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["review_due_date"])
         ruleset_id = str(GATE0_HOSTED_REPOSITORY_CONTROLS["main_ruleset_id"])
@@ -2188,8 +2186,6 @@ class FoundationValidator:
                 self.add("path.forbidden", value, "path is forbidden until its dependent capability decision closes")
 
     def _validate_makefile_entrypoint(self) -> None:
-        """Validate the local gate."""
-
         path = self.root / "Makefile"
         source = self._read_repository_text(path)
         if source is None:
@@ -2279,8 +2275,6 @@ class FoundationValidator:
                 self.add("make.python_cache_contract", path, f"{meaning}: expected exactly {required!r}")
 
     def _validate_compiler_dependency_boundary(self) -> None:
-        """Validate Rust dependencies."""
-
         toolchain_path = self.root / "rust-toolchain.toml"
         try:
             toolchain = self._load_repository_toml(toolchain_path)
@@ -2432,8 +2426,6 @@ class FoundationValidator:
             )
 
     def _validate_compiler_language_boundary(self) -> None:
-        """Validate resource budgets."""
-
         budget_groups = (
             (ORANGE_2026_RUST_BUDGETS, True, "compiler.language_budget"),
             (ORANGEC_OPERATIONAL_BUDGETS, False, "compiler.cli_budget"),
@@ -2739,8 +2731,6 @@ class FoundationValidator:
                         self.add("markdown.anchor_missing", path, f"anchor not found: {raw_target}")
 
     def _validate_orange_book(self) -> None:
-        """Validate the Orange Book."""
-
         path = self.root / ORANGE_BOOK_PATH
         if not self._inventory_has_file(path):
             self.add("book.missing", path, "the canonical Orange Book manuscript is missing")
@@ -4588,8 +4578,6 @@ def markdown_with_masked_inline_syntax(text: str, syntax: str) -> str:
 
 
 def markdown_without_fenced_blocks_and_comments(text: str) -> str:
-    """Strip Markdown code and comments."""
-
     prose = markdown_with_masked_inline_syntax(markdown_without_fenced_blocks(text), "<>")
     uncommented: list[str] = []
     offset = 0
@@ -4705,8 +4693,6 @@ RUST_RAW_STRING_PREFIX_RE = re.compile(r'r(#{0,255})"')
 
 
 def parse_rust_usize_product(value: str) -> int | None:
-    """Parse a usize product."""
-
     if re.fullmatch(r"\s*[0-9][0-9_]*(?:\s*\*\s*[0-9][0-9_]*)*\s*", value) is None:
         return None
     result = 1
@@ -4725,8 +4711,6 @@ def parse_rust_usize_product(value: str) -> int | None:
 
 
 def rust_code_without_comments_and_literals(value: str) -> str:
-    """Blank Rust non-code."""
-
     result = list(value)
     index = 0
     state = "code"
@@ -4805,8 +4789,6 @@ def rust_code_without_comments_and_literals(value: str) -> str:
 
 
 def approval_record_claims_independence(value: str) -> bool:
-    """Detect independent-review claims."""
-
     normalized = re.sub(r"[_-]+", " ", value.casefold())
     for claim in re.finditer(r"\bindependen(?:t|ce|tly)\b", normalized):
         prefix = normalized[max(0, claim.start() - 32) : claim.start()]
@@ -5240,7 +5222,6 @@ RFC3986_HEX_DIGITS = frozenset("0123456789ABCDEFabcdef")
 
 
 def has_valid_rfc3986_lexical_form(value: str) -> bool:
-    """Check URI syntax."""
     if not value.isascii():
         return False
     for index, character in enumerate(value):
@@ -5479,8 +5460,6 @@ def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
 
 
 def asserted_repository_root(value: str) -> Path:
-    """Match the owning checkout."""
-
     try:
         candidate = Path(value).resolve(strict=True)
     except (OSError, RuntimeError):
