@@ -53,7 +53,9 @@ Repository discovery is likewise host-configuration independent. The bounded
 Git inventory passes only the caller's tool-search path plus fixed Git and
 locale controls, disables system and user configuration, disables
 repository-configured filesystem monitors, and applies only checkout
-`.gitignore` files when excluding untracked content. One
+`.gitignore` files when excluding untracked content. The child environment
+also binds Git's work tree to the validator-owned root, so local
+`core.worktree` configuration cannot hide actual checkout files. One
 30-second deadline covers the complete inventory stream and process exit. If
 Git is unavailable for an exported tree with no `.git` entry, the bounded
 filesystem fallback preserves the same fail-closed resource checks. Each queued

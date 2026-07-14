@@ -624,6 +624,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 "GIT_CEILING_DIRECTORIES": str(root.parent),
                 "GIT_OPTIONAL_LOCKS": "0",
                 "GIT_TERMINAL_PROMPT": "0",
+                "GIT_WORK_TREE": str(root),
                 "LC_ALL": "C",
                 "PATH": "/test/bin",
             },
@@ -686,6 +687,45 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             [path.name for path in paths],
             [".gitignore", "globally-hidden.txt"],
         )
+        self.assertEqual(findings, [])
+
+    def test_local_core_worktree_cannot_hide_checkout_files(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            external = parent / "redirected-worktree"
+            external.mkdir()
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "config", "core.worktree", str(external)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "untracked.txt").write_text("must remain visible\n", encoding="utf-8")
+            findings: list = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual([path.name for path in paths], ["tracked.txt", "untracked.txt"])
         self.assertEqual(findings, [])
 
     def test_git_file_count_and_raw_metadata_limits_are_inclusive(self) -> None:

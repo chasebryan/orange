@@ -374,7 +374,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 5ae5c60edbec7d813846f300fb87b6df67546494de8c68d4c2276dc4d68cd594
+policy/README.md aebbd9e2071b12aa01541dc038e9719a848b3583b09a72817a99dc6de660206d
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -385,7 +385,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a85b798e8a3b42
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py d22ed50c239cdfb392c1f7ed2044917ad883341bc551b56278f40180852213af
+tools/tests/test_validate_foundation.py 06c201ff2b0a50023e42505abcd62b128820428a857c4bd58e4d0fd6f579a498
 tools/tests/test_validate_foundation_hardening.py e39f4c39e4c184475ff7663f676374fef049b80d11efd68a3f8fc9a4e46c67ca
 """.strip().splitlines()
 )
@@ -854,6 +854,7 @@ def _sanitized_git_environment(root: Path) -> dict[str, str]:
     environment = {"PATH": os.environ.get("PATH", os.defpath)}
     environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
     environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
+    environment["GIT_WORK_TREE"] = str(root)
     return environment
 
 
