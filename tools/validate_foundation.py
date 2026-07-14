@@ -391,7 +391,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/check-repository": "6dd7f8381904385e5e51116a6dcca690c4392f0db6011f0f68af36b3d4873fc4",
     "scripts/ci/install-actionlint": "c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636",
     "scripts/ci/install-lychee": "e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced",
-    "tools/tests/test_validate_foundation.py": "a71d47b0c542c07bc5d18b884980e0625592cac6b30fdf1a1f4003dfc3771e3d",
+    "tools/tests/test_validate_foundation.py": "663287593ddea30dee2ced2b41c1554a619dda3ae7f70676db173396f7466f55",
     "tools/tests/test_validate_foundation_hardening.py": "f617d0a05740fe8fd1c935f80fec2e34dec7f0a69ce57d9c74bd50da00a05273",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"

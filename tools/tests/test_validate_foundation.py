@@ -531,7 +531,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             root.mkdir()
             fake_git = parent / "git"
             fake_git.write_text("#!/bin/sh\n/bin/sleep 60\n", encoding="utf-8")
-            fake_git.chmod(0o755)
+            fake_git.chmod(0o700)
             findings = []
             with (
                 mock.patch.dict(
@@ -910,7 +910,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             def open_then_swap(
                 path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
                 flags: int,
-                mode: int = 0o777,
+                mode: int = 0o600,
                 *,
                 dir_fd: int | None = None,
             ) -> int:
