@@ -1646,6 +1646,8 @@ class MarkdownTests(unittest.TestCase):
                 "[balanced]((guide).md)\n"
                 "[outer [inner]]((guide).md)\n"
                 "[escaped \\] label]((guide).md)\n"
+                "[multiline\nlabel]((guide).md)\n"
+                "[blank\n\nlabel](blank-ignored.md)\n"
                 "[angle](<(guide).md>)\n"
                 "[escaped](\\(guide\\).md)\n"
                 "[query](target.md?value=(nested))\n"
@@ -1654,6 +1656,7 @@ class MarkdownTests(unittest.TestCase):
                 "[missing](missing(part).md)\n"
                 "[missing [nested]](nested-missing.md)\n"
                 "[missing \\] label](escaped-missing.md)\n"
+                "[missing\nmultiline](multiline-missing.md)\n"
                 "[unterminated title](missing-title.md \"unterminated)\n"
                 "[unterminated](ignored.md\r[after cr](cr-missing.md)\n",
                 encoding="utf-8",
@@ -1676,6 +1679,10 @@ class MarkdownTests(unittest.TestCase):
                 (
                     "markdown.link_missing",
                     "local link target does not exist: escaped-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: multiline-missing.md",
                 ),
                 (
                     "markdown.link_missing",

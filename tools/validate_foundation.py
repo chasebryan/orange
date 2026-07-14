@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "bb71c488c94732027f6af2546972b79408cad0544f65f5cc57a51f05707a93d1"
+GATE0_PROTECTED_FILE_DIGEST = "bcf1395c45cfa16dbabb17fe3e48b5f4729a042df1d6356155303ae048917ad3"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -4568,7 +4568,13 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
         for index in range(offset, len(text)):
             character = text[index]
             if character in "\r\n":
-                label_depth = 0
+                next_line = index + 1
+                if character == "\r" and text.startswith("\n", next_line):
+                    next_line += 1
+                while next_line < len(text) and text[next_line] in " \t":
+                    next_line += 1
+                if next_line >= len(text) or text[next_line] in "\r\n":
+                    label_depth = 0
                 escaped = False
             elif escaped:
                 escaped = False
