@@ -1398,6 +1398,20 @@ class MarkdownTests(unittest.TestCase):
                 [("markdown.link_missing", "local link target does not exist: visible.md")],
             )
 
+    def test_reference_style_link_destinations_are_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "[guide][docs]\n\n[docs]: missing.md\n\n`[ignored]: ignored.md`\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
+            self.assertEqual(
+                [(finding.code, finding.message) for finding in validator.findings],
+                [("markdown.link_missing", "local link target does not exist: missing.md")],
+            )
+
     def test_existing_cross_file_anchor_passes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

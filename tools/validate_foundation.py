@@ -362,7 +362,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 93cf57eb237ab180387e936b8fb09ca69d9b03d5ba8b5bb3963af31cc6c49142
+tools/tests/test_validate_foundation.py 7adc77c7632a6109bf5f379df4f6ce1ec093d500679779c91a401c93f1f7c6e1
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -559,6 +559,7 @@ CONTAINER_ACTION_RE = re.compile(
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
 )
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]\n]*\]\(([^)\n]+)\)")
+MARKDOWN_REFERENCE_RE = re.compile(r"(?m)^ {0,3}\[[^\]\n]+\]:\s*(<[^>\n]*>|[^\s]+)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FRONT_MATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9-]*):(?:\s*(.*))?$")
 RECORD_FILENAME_RE = re.compile(r"^(?P<prefix>OEP|ADR)-(?P<number>[0-9]{4})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
@@ -2692,7 +2693,12 @@ class FoundationValidator:
                 continue
             text = markdown_without_fenced_blocks_and_comments(text)
             text = markdown_with_masked_inline_syntax(text, "[]()")
-            for match in MARKDOWN_LINK_RE.finditer(text):
+            matches = (
+                match
+                for pattern in (MARKDOWN_LINK_RE, MARKDOWN_REFERENCE_RE)
+                for match in pattern.finditer(text)
+            )
+            for match in matches:
                 raw_target = match.group(1).strip()
                 target = self._markdown_destination(raw_target)
                 if not target:
