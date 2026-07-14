@@ -362,7 +362,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 59cdd53e1fa55fe29284a7c0f2c421be01dfe7a4d19b2cb799bab905d33740ad
+tools/tests/test_validate_foundation.py fda3c9a3f7aa79d507237212ae014459ecca26602ad4e4c690224c1a0fe9e0c0
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -710,7 +710,7 @@ def load_json(path: Path) -> Any:
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    """Serialize Gate 0's integer-only RFC 8785 profile."""
+    """Serialize canonical JSON."""
 
     _require_unicode_scalars(value, "")
 
@@ -1347,7 +1347,7 @@ class FoundationValidator:
             self.add(code, path_text, message)
 
     def _inventory_files_in(self, directory: str, *, recursive: bool = False) -> list[Path]:
-        """Select files from the bounded inventory."""
+        """Select bounded files."""
 
         prefix = PurePosixPath(directory).as_posix().rstrip("/") + "/"
         selected: list[tuple[str, Path]] = []
@@ -1476,7 +1476,7 @@ class FoundationValidator:
         return None
 
     def _preflight_repository_resources(self) -> bool:
-        """Preflight repository metadata and bounds."""
+        """Preflight repository resources."""
 
         if self._resource_preflight_complete:
             return not self._resource_issue_keys
@@ -1554,7 +1554,7 @@ class FoundationValidator:
         return not self._resource_issue_keys
 
     def _read_repository_bytes(self, path: Path) -> bytes | None:
-        """Read and cache one bounded repository snapshot."""
+        """Cache a bounded repository snapshot."""
 
         lexical_path = self._lexical_repository_path(path)
         if lexical_path is None:
@@ -1645,7 +1645,7 @@ class FoundationValidator:
         return data
 
     def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
-        """Open a no-follow regular-file candidate."""
+        """Open a no-follow file."""
 
         if not _secure_repository_reads_supported():
             self._resource_issue(
@@ -2026,13 +2026,13 @@ class FoundationValidator:
             self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
-        """Authenticate security-critical Gate 0 files."""
+        """Authenticate protected files."""
 
         for value in sorted(GATE0_PROTECTED_FILE_DIGESTS):
             self._read_authenticated_protected_file(value)
 
     def _read_authenticated_protected_file(self, value: str) -> bytes | None:
-        """Cache one authenticated protected file."""
+        """Cache authenticated bytes."""
 
         if value in self._authenticated_protected_bytes:
             return self._authenticated_protected_bytes[value]
@@ -2059,7 +2059,7 @@ class FoundationValidator:
         return data
 
     def _validate_hosted_control_evidence(self, *, today: dt.date | None = None) -> None:
-        """Keep the current hosted-control snapshot internally coherent."""
+        """Validate hosted controls."""
 
         snapshot_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["snapshot_date"])
         review_due_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["review_due_date"])
@@ -2189,7 +2189,7 @@ class FoundationValidator:
                 self.add("path.forbidden", value, "path is forbidden until its dependent capability decision closes")
 
     def _validate_makefile_entrypoint(self) -> None:
-        """Keep the standard local gate policy-first, exact, and serialized."""
+        """Validate the local gate."""
 
         path = self.root / "Makefile"
         source = self._read_repository_text(path)
@@ -2280,7 +2280,7 @@ class FoundationValidator:
                 self.add("make.python_cache_contract", path, f"{meaning}: expected exactly {required!r}")
 
     def _validate_compiler_dependency_boundary(self) -> None:
-        """Require the exact pinned, safe, first-party-only Rust foundation."""
+        """Validate Rust dependencies."""
 
         toolchain_path = self.root / "rust-toolchain.toml"
         try:
@@ -2433,7 +2433,7 @@ class FoundationValidator:
             )
 
     def _validate_compiler_language_boundary(self) -> None:
-        """Bind normative and CLI resource budgets to compiled constants."""
+        """Validate resource budgets."""
 
         budget_groups = (
             (ORANGE_2026_RUST_BUDGETS, True, "compiler.language_budget"),
@@ -2693,6 +2693,7 @@ class FoundationValidator:
             if text is None:
                 continue
             text = markdown_without_fenced_blocks_and_comments(text)
+            text = markdown_with_masked_inline_syntax(text, "[]()")
             for match in MARKDOWN_LINK_RE.finditer(text):
                 raw_target = match.group(1).strip()
                 target = self._markdown_destination(raw_target)
@@ -2734,7 +2735,7 @@ class FoundationValidator:
                         self.add("markdown.anchor_missing", path, f"anchor not found: {raw_target}")
 
     def _validate_orange_book(self) -> None:
-        """Keep the living reader guide identifiable, navigable, and substantive."""
+        """Validate the Orange Book."""
 
         path = self.root / ORANGE_BOOK_PATH
         if not self._inventory_has_file(path):
@@ -4544,9 +4545,7 @@ def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
     return sorted(set(result))
 
 
-def markdown_without_fenced_blocks_and_comments(text: str) -> str:
-    """Return Markdown prose with code fences and HTML comments removed."""
-
+def markdown_without_fenced_blocks(text: str) -> str:
     result: list[str] = []
     fence_char: str | None = None
     fence_length = 0
@@ -4561,7 +4560,33 @@ def markdown_without_fenced_blocks_and_comments(text: str) -> str:
             continue
         if fence_char is None:
             result.append(line)
-    prose = "\n".join(result)
+    return "\n".join(result)
+
+
+def markdown_with_masked_inline_syntax(text: str, syntax: str) -> str:
+    result = list(text)
+    runs = list(re.finditer(r"`+", text))
+    opening_index = 0
+    while opening_index < len(runs):
+        opening = runs[opening_index]
+        closing_index = opening_index + 1
+        while closing_index < len(runs) and len(runs[closing_index].group()) != len(opening.group()):
+            closing_index += 1
+        if closing_index >= len(runs):
+            opening_index += 1
+            continue
+        closing = runs[closing_index]
+        for index in range(opening.start(), closing.end()):
+            if result[index] in syntax:
+                result[index] = " "
+        opening_index = closing_index + 1
+    return "".join(result)
+
+
+def markdown_without_fenced_blocks_and_comments(text: str) -> str:
+    """Strip Markdown code and comments."""
+
+    prose = markdown_with_masked_inline_syntax(markdown_without_fenced_blocks(text), "<>")
     uncommented: list[str] = []
     offset = 0
     while offset < len(prose):
@@ -4585,29 +4610,17 @@ def markdown_without_fenced_blocks_and_comments(text: str) -> str:
 
 
 def markdown_html_comment_error(text: str) -> str | None:
-    fence_char = ""
-    fence_size = 0
     opened = False
-    for line in text.splitlines():
-        fence = re.match(r"^ {0,3}(`{3,}|~{3,})(?:[^`~].*)?$", line)
-        if fence:
-            marker = fence.group(1)
-            if not fence_char:
-                fence_char, fence_size = marker[0], len(marker)
-            elif marker[0] == fence_char and len(marker) >= fence_size:
-                fence_char, fence_size = "", 0
-            continue
-        if fence_char:
-            continue
-        for token in re.finditer(r"<!--|-->", line):
-            if token.group() == "<!--":
-                if opened:
-                    return "nested HTML comment opener"
-                opened = True
-            elif not opened:
-                return "HTML comment closer without opener"
-            else:
-                opened = False
+    prose = markdown_with_masked_inline_syntax(markdown_without_fenced_blocks(text), "<>")
+    for token in re.finditer(r"<!--|-->", prose):
+        if token.group() == "<!--":
+            if opened:
+                return "nested HTML comment opener"
+            opened = True
+        elif not opened:
+            return "HTML comment closer without opener"
+        else:
+            opened = False
     return "unclosed HTML comment" if opened else None
 
 
@@ -4688,7 +4701,7 @@ RUST_RAW_STRING_PREFIX_RE = re.compile(r'r(#{0,255})"')
 
 
 def parse_rust_usize_product(value: str) -> int | None:
-    """Parse a tiny integer product within Orange's admitted 64-bit usize range."""
+    """Parse a usize product."""
 
     if re.fullmatch(r"\s*[0-9][0-9_]*(?:\s*\*\s*[0-9][0-9_]*)*\s*", value) is None:
         return None
@@ -4708,7 +4721,7 @@ def parse_rust_usize_product(value: str) -> int | None:
 
 
 def rust_code_without_comments_and_literals(value: str) -> str:
-    """Blank Rust comments and strings while preserving lines and offsets."""
+    """Blank Rust non-code."""
 
     result = list(value)
     index = 0
@@ -4788,7 +4801,7 @@ def rust_code_without_comments_and_literals(value: str) -> str:
 
 
 def approval_record_claims_independence(value: str) -> bool:
-    """Return whether an approval record positively claims a second reviewer."""
+    """Detect independent-review claims."""
 
     normalized = re.sub(r"[_-]+", " ", value.casefold())
     for claim in re.finditer(r"\bindependen(?:t|ce|tly)\b", normalized):
@@ -5223,7 +5236,7 @@ RFC3986_HEX_DIGITS = frozenset("0123456789ABCDEFabcdef")
 
 
 def has_valid_rfc3986_lexical_form(value: str) -> bool:
-    """Check URI characters and percent escapes."""
+    """Check URI syntax."""
     if not value.isascii():
         return False
     for index, character in enumerate(value):
@@ -5462,7 +5475,7 @@ def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
 
 
 def asserted_repository_root(value: str) -> Path:
-    """Accept only a path resolving to the checkout that owns this validator."""
+    """Match the owning checkout."""
 
     try:
         candidate = Path(value).resolve(strict=True)

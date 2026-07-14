@@ -1320,6 +1320,11 @@ class MarkdownTests(unittest.TestCase):
         )
         self.assertIsNone(markdown_html_comment_error("<!-- balanced -->\n"))
         self.assertIsNone(markdown_html_comment_error("```text\n<!-- fenced\n```\n"))
+        self.assertIsNone(markdown_html_comment_error("`<!--` and ``-->``\n"))
+        self.assertEqual(
+            markdown_html_comment_error("`<!--` -->\n"),
+            "HTML comment closer without opener",
+        )
         self.assertEqual(
             markdown_html_comment_error("<!-- outer <!-- nested -->\n"),
             "nested HTML comment opener",
@@ -1330,8 +1335,8 @@ class MarkdownTests(unittest.TestCase):
         )
 
     def test_heading_anchors_match_github_style_duplicates(self) -> None:
-        anchors = markdown_anchors("# One heading\n\n## Repeated\n\n## Repeated\n")
-        self.assertEqual(anchors, {"one-heading", "repeated", "repeated-1"})
+        anchors = markdown_anchors("# One heading\n\n## Repeated\n\n## Repeated\n\n## Use `orange`\n")
+        self.assertEqual(anchors, {"one-heading", "repeated", "repeated-1", "use-orange"})
 
     def test_repeated_fragment_links_scan_their_target_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1373,6 +1378,21 @@ class MarkdownTests(unittest.TestCase):
 
             validator._validate_markdown_links()
 
+            self.assertEqual(
+                [(finding.code, finding.message) for finding in validator.findings],
+                [("markdown.link_missing", "local link target does not exist: visible.md")],
+            )
+
+    def test_links_in_inline_code_are_not_live_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "`[single](single.md)` and ``code ` [double](double.md) ` code``\n"
+                "unmatched ` [visible](visible.md)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
             self.assertEqual(
                 [(finding.code, finding.message) for finding in validator.findings],
                 [("markdown.link_missing", "local link target does not exist: visible.md")],
