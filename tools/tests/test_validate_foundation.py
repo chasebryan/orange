@@ -673,6 +673,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 "GIT_CONFIG_GLOBAL": os.devnull,
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_CEILING_DIRECTORIES": str(root.parent),
+                "GIT_NO_LAZY_FETCH": "1",
                 "GIT_OPTIONAL_LOCKS": "0",
                 "GIT_TERMINAL_PROMPT": "0",
                 "GIT_WORK_TREE": str(root),
@@ -935,6 +936,42 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(entries, [("100644", "tracked.txt")])
         self.assertEqual(findings, [])
 
+    def test_stage_inventory_rejects_a_missing_index_object(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "missing-object.txt").write_bytes(b"worktree content\n")
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(root),
+                    "update-index",
+                    "--add",
+                    "--info-only",
+                    "--cacheinfo",
+                    "100644,1111111111111111111111111111111111111111,missing-object.txt",
+                ],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            findings = []
+            entries = git_index_entries(root, findings, required=True)
+
+        self.assertEqual(entries, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
+
     def test_stage_inventory_failure_after_git_file_inventory_is_fatal(self) -> None:
         file_process = _FakePopen(b"file.txt\0")
         stage_process = _FakePopen(b"", return_code=1)
@@ -953,7 +990,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
     def test_stage_inventory_must_be_a_subset_of_the_file_inventory(self) -> None:
         file_process = _FakePopen(b"file.txt\0")
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         stage_process = _FakePopen(metadata + b"\tother.txt\0")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1045,7 +1082,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
     def test_intent_to_add_inventory_failure_is_fatal(self) -> None:
         file_process = _FakePopen(b"file.txt\0")
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         stage_process = _FakePopen(metadata + b"\tfile.txt\0")
         intent_process = _FakePopen(b"", return_code=1)
         with tempfile.TemporaryDirectory() as directory:
@@ -1221,7 +1258,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
     def test_stage_prefix_limit_is_inclusive_and_path_tabs_are_preserved(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         raw_path = b"tab\tname.txt"
         output = metadata + b"\t" + raw_path + b"\0"
         for adjustment, accepted in ((0, True), (-1, False)):
@@ -1247,7 +1284,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                     )
 
     def test_stage_inventory_rejects_a_path_escape_before_decoding(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         process = _FakePopen(metadata + b"\t../outside\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
@@ -1257,7 +1294,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
     def test_stage_inventory_rejects_unmerged_index_entries(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 2"
+        metadata = b"100644 " + (b"a" * 40) + b" 2 0"
         process = _FakePopen(metadata + b"\tconflicted.txt\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
@@ -1268,10 +1305,11 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
     def test_stage_inventory_rejects_malformed_object_ids_and_duplicate_paths(self) -> None:
-        valid_metadata = b"100644 " + (b"a" * 40) + b" 0"
+        valid_metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         cases = (
             b"100644 not-an-object-id 0\ttracked.txt\0",
-            b"\xff00644 " + (b"a" * 40) + b" 0\ttracked.txt\0",
+            b"\xff00644 " + (b"a" * 40) + b" 0 0\ttracked.txt\0",
+            b"100644 " + (b"a" * 40) + b" 0 -1\ttracked.txt\0",
             valid_metadata
             + b"\ttracked.txt\0"
             + valid_metadata
@@ -1293,7 +1331,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 )
 
     def test_stage_inventory_rejects_non_utf8_paths_after_bounding(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         process = _FakePopen(metadata + b"\tinvalid-\xff\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:

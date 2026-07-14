@@ -92,6 +92,7 @@ _GATE0_GIT_TIMEOUT_SECONDS = 30.0
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_NO_LAZY_FETCH": "1",
     "GIT_OPTIONAL_LOCKS": "0",
     "GIT_TERMINAL_PROMPT": "0",
     "LC_ALL": "C",
@@ -361,7 +362,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 36f8815d97c2e186c062730cd91c22ab92a5e0f2ffaf931ff8152c1ec9bfe54b
+tools/tests/test_validate_foundation.py a2f764761fae1f5ff9504fdc8e09879104b94d36556d8c51fe36142899ef0497
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -882,7 +883,6 @@ def _read_git_nul_records(
                 and not select.select((process.stdout,), (), (), remaining)[0]
             ):
                 return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
-            # A raw read cannot wait to fill a BufferedReader after select.
             chunk = (
                 os.read(output_descriptor, _GATE0_GIT_READ_CHUNK_BYTES)
                 if output_descriptor is not None
@@ -1191,7 +1191,7 @@ def git_index_entries(
     inventory_findings = findings if findings is not None else []
     result = _read_git_nul_records(
         root,
-        ["ls-files", "--stage"],
+        ["ls-files", "--format=%(objectmode) %(objectname) %(stage) %(objectsize)%x09%(path)"],
         maximum_record_bytes=(
             GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES + 1 + GATE0_MAXIMUM_REPOSITORY_PATH_BYTES
         ),
@@ -1220,10 +1220,11 @@ def git_index_entries(
             or not _git_path_is_relative(raw_path)
             or len(metadata) > GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES
             or len(raw_path) > GATE0_MAXIMUM_REPOSITORY_PATH_BYTES
-            or len(fields) != 3
+            or len(fields) != 4
             or len(fields[0]) != 6
             or any(byte not in b"01234567" for byte in fields[0])
             or fields[2] != b"0"
+            or not fields[3].isdigit()
             or not _git_object_id_is_valid(fields[1])
             or raw_path in seen_paths
         ):
@@ -1709,7 +1710,6 @@ class FoundationValidator:
         try:
             return tomllib.loads(text)
         except RecursionError as exc:
-            # Normalize CPython's recursive TOML limit into a parse error.
             raise tomllib.TOMLDecodeError(
                 "TOML structural nesting exceeds parser capacity"
             ) from exc
@@ -2842,8 +2842,6 @@ class FoundationValidator:
             return raw_target[1 : raw_target.index(">")]
         if raw_target.startswith("#"):
             return raw_target
-        # Markdown titles follow the destination after whitespace. Local spaces
-        # must be percent-encoded or enclosed in angle brackets.
         return raw_target.split(maxsplit=1)[0]
 
     def _validate_json_documents(self) -> None:
@@ -2870,7 +2868,6 @@ class FoundationValidator:
                 f"Gate 0 schema inventory must be exact; missing={sorted(GATE0_SCHEMA_PATHS - observed_schema_paths)}, extra={sorted(observed_schema_paths - GATE0_SCHEMA_PATHS)}",
             )
         for path in schema_paths:
-            # Authenticate the exact buffered schema before compiling patterns.
             schema_bytes = self._read_authenticated_protected_file(relative(path, self.root))
             if schema_bytes is None:
                 continue
@@ -2986,7 +2983,6 @@ class FoundationValidator:
             if schema_path not in schemas:
                 self.add("fixture.schema_missing", manifest_path, f"schema is not registered: {schema_value}")
                 continue
-            # Never execute patterns from a schema that failed audit.
             if schema_path in schemas_with_audit_errors:
                 continue
             try:
@@ -3000,7 +2996,6 @@ class FoundationValidator:
                 schemas,
                 id_registry,
             )
-            # Cross-record checks consume only schema-valid shapes.
             if not issues:
                 issues.extend(validate_cross_record_invariants(instance, schema_path.name))
             if expected_valid and issues:
@@ -4585,8 +4580,6 @@ def markdown_without_fenced_blocks_and_comments(text: str) -> str:
         opening = prose.find("<!--", offset)
         closing = prose.find("-->", offset)
         if closing >= 0 and (opening < 0 or closing < opening):
-            # A stray closer is invalid source, but it is not an opening that
-            # can make later headings semantic; omit it from semantic parsing.
             uncommented.append(prose[offset:closing])
             offset = closing + 3
             continue
