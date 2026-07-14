@@ -598,7 +598,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "abc").write_bytes(b"")
-            accepted = _FakePopen(b"abc\0")
+            accepted = _FakePopen(b"H abc\0")
             findings = []
             with (
                 mock.patch("tools.validate_foundation.GATE0_MAXIMUM_REPOSITORY_PATH_BYTES", 3),
@@ -612,7 +612,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
             self.assertIs(popen.call_args.kwargs["stderr"], subprocess.DEVNULL)
 
-            rejected = _FakePopen(b"abcd\0")
+            rejected = _FakePopen(b"H abcd\0")
             findings = []
             with (
                 mock.patch("tools.validate_foundation.GATE0_MAXIMUM_REPOSITORY_PATH_BYTES", 3),
@@ -625,7 +625,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertEqual((rejected.kill_count, rejected.wait_count), (1, 1))
 
     def test_git_process_environment_replaces_inherited_git_controls(self) -> None:
-        process = _FakePopen(b"file.txt\0")
+        process = _FakePopen(b"H file.txt\0")
         findings = []
         environment = {
             "GIT_DIR": "/redirected/git-dir",
@@ -855,10 +855,10 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
     def test_git_file_count_and_raw_metadata_limits_are_inclusive(self) -> None:
         cases = (
-            ("file count", b"a\0b\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, True),
-            ("file count plus one", b"a\0b\0c\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, False),
-            ("metadata bytes", b"a\0b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 4}, True),
-            ("metadata bytes plus one", b"a\0b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 3}, False),
+            ("file count", b"H a\0H b\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, True),
+            ("file count plus one", b"H a\0H b\0H c\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, False),
+            ("metadata bytes", b"H a\0H b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 8}, True),
+            ("metadata bytes plus one", b"H a\0H b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 7}, False),
         )
         for name, output, limits, accepted in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
@@ -973,7 +973,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
 
     def test_stage_inventory_failure_after_git_file_inventory_is_fatal(self) -> None:
-        file_process = _FakePopen(b"file.txt\0")
+        file_process = _FakePopen(b"H file.txt\0")
         stage_process = _FakePopen(b"", return_code=1)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -989,7 +989,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
 
     def test_stage_inventory_must_be_a_subset_of_the_file_inventory(self) -> None:
-        file_process = _FakePopen(b"file.txt\0")
+        file_process = _FakePopen(b"H file.txt\0")
         metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         stage_process = _FakePopen(metadata + b"\tother.txt\0")
         with tempfile.TemporaryDirectory() as directory:
@@ -1008,7 +1008,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         )
 
     def test_git_file_inventory_rejects_untracked_admitted_paths(self) -> None:
-        file_process = _FakePopen(b"untracked.txt\0")
+        file_process = _FakePopen(b"? untracked.txt\0")
         stage_process = _FakePopen(b"")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1023,6 +1023,53 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             [(finding.code, finding.path) for finding in validator.findings],
             [("git.untracked", "untracked.txt")],
         )
+
+    def test_git_inventory_rejects_hidden_index_state(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "assumed.txt").write_bytes(b"tracked\n")
+            (root / "skipped-intent.txt").write_bytes(b"intent\n")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "assumed.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "add", "-N", "skipped-intent.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "update-index", "--assume-unchanged", "assumed.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "update-index", "--skip-worktree", "skipped-intent.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            validator = FoundationValidator(root)
+
+        self.assertEqual({finding.code for finding in validator.findings}, {"git.index_flags"})
 
     def test_intent_to_add_entries_are_rejected_including_empty_files(self) -> None:
         clean_environment = {
@@ -1081,7 +1128,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(validator.findings, [])
 
     def test_intent_to_add_inventory_failure_is_fatal(self) -> None:
-        file_process = _FakePopen(b"file.txt\0")
+        file_process = _FakePopen(b"H file.txt\0")
         metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         stage_process = _FakePopen(metadata + b"\tfile.txt\0")
         intent_process = _FakePopen(b"", return_code=1)
@@ -1347,7 +1394,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "non-UTF-8 paths require POSIX")
     def test_git_file_inventory_rejects_non_utf8_paths_after_bounding(self) -> None:
         raw_paths = (b"z\xff", b"a\xfe")
-        process = _FakePopen(b"\0".join(reversed(raw_paths)) + b"\0")
+        process = _FakePopen(b"\0".join(b"H " + path for path in reversed(raw_paths)) + b"\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
             raw_root = os.fsencode(directory)
@@ -1383,7 +1430,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFOs are unavailable")
     def test_git_inventory_retains_nonregular_entries_for_preflight_rejection(self) -> None:
-        process = _FakePopen(b"input.pipe\0")
+        process = _FakePopen(b"H input.pipe\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1396,7 +1443,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_successful_git_inventory_rejects_tracked_deletions_after_bounding(self) -> None:
-        process = _FakePopen(b"deleted.txt\0present.txt\0")
+        process = _FakePopen(b"H deleted.txt\0H present.txt\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

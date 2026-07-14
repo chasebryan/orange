@@ -362,7 +362,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py a2f764761fae1f5ff9504fdc8e09879104b94d36556d8c51fe36142899ef0497
+tools/tests/test_validate_foundation.py 4c9918f3a381f3fbf874aaef929b2d2de8f121710144c9d586eedf0d59b14c4a
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -1099,9 +1099,10 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             "ls-files",
             "--cached",
             "--others",
+            "-v",
             *(f"--exclude={pattern}" for pattern in GATE0_IGNORE_PATTERNS),
         ],
-        maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+        maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES + 2,
     )
     if result.finding is not None:
         findings.append(result.finding)
@@ -1127,7 +1128,14 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             )
             return [], False
         return _fallback_repository_files(root, findings), False
-    if any(not _git_path_is_relative(value) for value in result.records):
+    if any(len(value) < 3 or value[1:2] != b" " for value in result.records):
+        findings.append(Finding("resource.inventory_protocol", ".", "Git file inventory tag is malformed"))
+        return [], False
+    if any(value[:1] not in {b"H", b"?"} for value in result.records):
+        findings.append(Finding("git.index_flags", ".", "Git index contains hidden worktree state"))
+        return [], False
+    records = tuple(value[2:] for value in result.records)
+    if any(not _git_path_is_relative(value) for value in records):
         findings.append(
             Finding(
                 "resource.inventory_protocol",
@@ -1136,7 +1144,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             )
         )
         return [], False
-    if len(set(result.records)) != len(result.records):
+    if len(set(records)) != len(records):
         findings.append(
             Finding(
                 "resource.inventory_protocol",
@@ -1146,7 +1154,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         )
         return [], False
     try:
-        paths = [root / value.decode("utf-8") for value in sorted(result.records)]
+        paths = [root / value.decode("utf-8") for value in sorted(records)]
     except UnicodeDecodeError:
         findings.append(
             Finding(
@@ -1159,7 +1167,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     missing = next(
         (
             path
-            for raw_path, path in zip(sorted(result.records), paths, strict=True)
+            for raw_path, path in zip(sorted(records), paths, strict=True)
             if _repository_entry_presence(root, raw_path) is False
         ),
         None,
