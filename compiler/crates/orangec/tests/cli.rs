@@ -1,10 +1,15 @@
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use orange_compiler::MAX_SOURCE_BYTES;
+
+const HOSTILE_CAPTURE_LIMIT_BYTES: usize = 2 * 1024 * 1024;
+const HOSTILE_TIME_LIMIT: Duration = Duration::from_secs(5);
 
 fn orangec() -> Command {
     Command::new(env!("CARGO_BIN_EXE_orangec"))
@@ -28,6 +33,67 @@ fn run_with_stdin(arguments: &[&str], input: &[u8]) -> std::process::Output {
         .unwrap();
     child.stdin.take().unwrap().write_all(input).unwrap();
     child.wait_with_output().unwrap()
+}
+
+fn run_hostile_with_stdin(arguments: &[&str], input: &[u8]) -> std::process::Output {
+    let mut child = orangec()
+        .args(arguments)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input).unwrap();
+
+    let mut stdout = child.stdout.take().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let capture_bytes = u64::try_from(HOSTILE_CAPTURE_LIMIT_BYTES + 1).unwrap();
+    let stdout_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout
+            .by_ref()
+            .take(capture_bytes)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        bytes
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr
+            .by_ref()
+            .take(capture_bytes)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        bytes
+    });
+
+    let deadline = Instant::now() + HOSTILE_TIME_LIMIT;
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            panic!("orangec exceeded the hostile-input time limit for {arguments:?}");
+        }
+        thread::sleep(Duration::from_millis(2));
+    };
+
+    std::process::Output {
+        status,
+        stdout: stdout_reader.join().unwrap(),
+        stderr: stderr_reader.join().unwrap(),
+    }
+}
+
+fn next_corpus_index(state: &mut u64, upper_bound: usize) -> usize {
+    *state = state
+        .wrapping_mul(6_364_136_223_846_793_005)
+        .wrapping_add(1_442_695_040_888_963_407);
+    usize::try_from(*state % u64::try_from(upper_bound).unwrap()).unwrap()
 }
 
 #[test]
@@ -286,8 +352,8 @@ fn check_reports_a_stable_source_diagnostic_and_failure_status() {
             "error[ORC0001]: unexpected character U+00E9\n",
             " --> <stdin>:1:11\n",
             "  |\n",
-            "1 | module café {}\n",
-            "  |           ^ character is not part of Orange 2026\n",
+            "1 | module caf\\u{e9} {}\n",
+            "  |           ^^^^^^ character is not part of Orange 2026\n",
             "  = note: identifiers are ASCII in this pre-alpha edition\n",
         )
     );
@@ -390,4 +456,150 @@ fn usage_errors_have_a_distinct_exit_status() {
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.starts_with("orangec: unknown command `compile`\n\nUsage:"));
+}
+
+#[test]
+fn generated_hostile_inputs_are_bounded_and_repeatable_across_commands() {
+    const CASES: usize = 64;
+    const INVALID_LEXICAL_FRAGMENTS: &[&str] = &[
+        "0x__",
+        "/* unterminated",
+        "\"bad \\x0Z\"",
+        "é",
+        "β",
+        "\u{202e}",
+        "\0",
+    ];
+    const LEXICALLY_VALID_FRAGMENTS: &[&str] = &[
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\r\n",
+        "edition",
+        "2026",
+        "module",
+        "spec",
+        "impl",
+        "game",
+        "proof",
+        "claim",
+        "name",
+        "_x",
+        "Int",
+        "Word",
+        "0",
+        "-0",
+        "42",
+        "0xff",
+        "0b1010",
+        "(",
+        ")",
+        "{",
+        "}",
+        "[",
+        "]",
+        ",",
+        ":",
+        ";",
+        "->",
+        "=>",
+        "..",
+        "::",
+        "+",
+        "-",
+        "*",
+        "/",
+        "/* nested /* comment */ tail */",
+        "// line comment\n",
+        "\"ok\\n\"",
+    ];
+
+    let mut state = 0x000a_6a9e_2026_d003_u64;
+    for case in 0..CASES {
+        let class = case % 4;
+        let source = match class {
+            0 => {
+                let mut source = String::new();
+                let fragments = 1 + next_corpus_index(&mut state, 64);
+                for _ in 0..fragments {
+                    let fragment = if next_corpus_index(&mut state, 4) == 0 {
+                        INVALID_LEXICAL_FRAGMENTS
+                            [next_corpus_index(&mut state, INVALID_LEXICAL_FRAGMENTS.len())]
+                    } else {
+                        LEXICALLY_VALID_FRAGMENTS
+                            [next_corpus_index(&mut state, LEXICALLY_VALID_FRAGMENTS.len())]
+                    };
+                    source.push_str(fragment);
+                }
+                source.push('é');
+                source
+            }
+            1 => {
+                let mut source = String::from("edition 2026; module generated {");
+                let fragments = 1 + next_corpus_index(&mut state, 64);
+                for _ in 0..fragments {
+                    source.push_str(
+                        LEXICALLY_VALID_FRAGMENTS
+                            [next_corpus_index(&mut state, LEXICALLY_VALID_FRAGMENTS.len())],
+                    );
+                    source.push(' ');
+                }
+                source.push_str("spec broken( }");
+                source
+            }
+            2 => format!(
+                "edition 2026; module generated {{ spec valid_{case}() -> Int {{ 42 }} \
+                 spec invalid_{case}() -> Word[8] {{ 256 }} }}"
+            ),
+            3 => {
+                let word = next_corpus_index(&mut state, 256);
+                format!(
+                    "edition 2026; module generated {{ spec integer_{case}() -> Int {{ -42 }} \
+                     spec byte_{case}() -> Word[8] {{ {word} }} impl empty_{case}() {{}} }}"
+                )
+            }
+            _ => unreachable!(),
+        };
+
+        for command in ["lex", "check", "eval"] {
+            let first = run_hostile_with_stdin(&[command, "-"], source.as_bytes());
+            let second = run_hostile_with_stdin(&[command, "-"], source.as_bytes());
+            let expected_status = if class == 3 || command == "lex" && class != 0 {
+                Some(0)
+            } else {
+                Some(1)
+            };
+            assert_eq!(
+                first.status.code(),
+                second.status.code(),
+                "nondeterministic status for generated case {case} under {command}"
+            );
+            assert_eq!(
+                first.stdout, second.stdout,
+                "nondeterministic stdout for generated case {case} under {command}"
+            );
+            assert_eq!(
+                first.stderr, second.stderr,
+                "nondeterministic stderr for generated case {case} under {command}"
+            );
+            assert_eq!(
+                first.status.code(),
+                expected_status,
+                "unexpected pipeline result for generated case {case} under {command}"
+            );
+            assert!(
+                first.stdout.is_ascii(),
+                "non-ASCII stdout for generated case {case} under {command}"
+            );
+            assert!(
+                first.stderr.is_ascii(),
+                "non-ASCII stderr for generated case {case} under {command}"
+            );
+            assert!(
+                first.stdout.len() + first.stderr.len() <= HOSTILE_CAPTURE_LIMIT_BYTES,
+                "unbounded output for generated case {case} under {command}"
+            );
+        }
+    }
 }

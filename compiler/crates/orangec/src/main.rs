@@ -2,7 +2,6 @@
 
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -53,8 +52,11 @@ fn run(
     let action = match parse_arguments(arguments) {
         Ok(action) => action,
         Err(message) => {
-            let _ = writeln!(standard_error, "orangec: {message}\n\n{USAGE}");
-            return USAGE_ERROR;
+            return if writeln!(standard_error, "orangec: {message}\n\n{USAGE}").is_err() {
+                COMPILATION_ERROR
+            } else {
+                USAGE_ERROR
+            };
         }
     };
 
@@ -95,11 +97,10 @@ fn compile(
     let mut output_failed = false;
     let mut standard_error_available = true;
     let mut error_group_written = false;
-    let mut token_output_available = true;
+    let mut standard_output_available = true;
     let mut token_source_written = false;
-    let mut evaluation_output = String::new();
     let show_headers = options.paths.len() > 1;
-    let mut token_output = io::BufWriter::new(standard_output);
+    let mut buffered_output = io::BufWriter::new(standard_output);
 
     for path in &options.paths {
         if path == Path::new("-") {
@@ -213,9 +214,9 @@ fn compile(
             .expect("a source must be available immediately after insertion");
         let result = lex(source, options.edition);
 
-        if options.command == CompilerCommand::Lex && token_output_available {
+        if options.command == CompilerCommand::Lex && standard_output_available {
             match write_tokens(
-                &mut token_output,
+                &mut buffered_output,
                 source,
                 &result,
                 show_headers,
@@ -223,9 +224,9 @@ fn compile(
             ) {
                 Ok(()) => token_source_written = true,
                 Err(error) => {
-                    token_output_available = false;
+                    standard_output_available = false;
+                    output_failed = true;
                     if error.kind() != io::ErrorKind::BrokenPipe {
-                        output_failed = true;
                         emit_error_group(
                             standard_error,
                             &mut standard_error_available,
@@ -324,48 +325,49 @@ fn compile(
                     compilation_failed = true;
                     continue;
                 };
-                for value in values {
-                    let _ = writeln!(evaluation_output, "{value}");
+                // Argument validation guarantees exactly one `eval` source, so
+                // no later source can invalidate output after this point.
+                if standard_output_available {
+                    for value in values {
+                        if let Err(error) = writeln!(buffered_output, "{value}") {
+                            standard_output_available = false;
+                            output_failed = true;
+                            if error.kind() != io::ErrorKind::BrokenPipe {
+                                emit_error_group(
+                                    standard_error,
+                                    &mut standard_error_available,
+                                    &mut error_group_written,
+                                    &mut output_failed,
+                                    "orangec: could not write evaluation output\n",
+                                );
+                            }
+                            break;
+                        }
+                    }
                 }
             }
         }
     }
 
-    if !compilation_failed
-        && options.command == CompilerCommand::Eval
-        && token_output_available
-        && let Err(error) = token_output.write_all(evaluation_output.as_bytes())
-    {
-        token_output_available = false;
+    if standard_output_available && let Err(error) = buffered_output.flush() {
+        output_failed = true;
         if error.kind() != io::ErrorKind::BrokenPipe {
-            output_failed = true;
             emit_error_group(
                 standard_error,
                 &mut standard_error_available,
                 &mut error_group_written,
                 &mut output_failed,
-                "orangec: could not write evaluation output\n",
+                if options.command == CompilerCommand::Eval {
+                    "orangec: could not write evaluation output\n"
+                } else {
+                    "orangec: could not write token output\n"
+                },
             );
         }
     }
-
-    if token_output_available
-        && let Err(error) = token_output.flush()
-        && error.kind() != io::ErrorKind::BrokenPipe
-    {
-        output_failed = true;
-        emit_error_group(
-            standard_error,
-            &mut standard_error_available,
-            &mut error_group_written,
-            &mut output_failed,
-            if options.command == CompilerCommand::Eval {
-                "orangec: could not write evaluation output\n"
-            } else {
-                "orangec: could not write token output\n"
-            },
-        );
-    }
+    // Do not let `BufWriter`'s best-effort drop path retry retained bytes after
+    // an output failure. A successful explicit flush leaves nothing to discard.
+    let (_standard_output, _unwritten_output) = buffered_output.into_parts();
 
     if output_failed || compilation_failed {
         COMPILATION_ERROR
@@ -453,11 +455,23 @@ fn stable_source_name(path: &Path) -> String {
     if path == Path::new("-") {
         return String::from("<stdin>");
     }
-    path.as_os_str()
-        .to_string_lossy()
-        .chars()
-        .flat_map(char::escape_default)
+    let name = path.as_os_str();
+    if let Some(name) = name.to_str() {
+        return escape_display_text(name);
+    }
+
+    // Preserve the target's encoded bytes so distinct non-UTF-8 paths cannot
+    // collapse to the same replacement-character display.
+    name.as_encoded_bytes()
+        .iter()
+        .copied()
+        .flat_map(std::ascii::escape_default)
+        .map(char::from)
         .collect()
+}
+
+fn escape_display_text(text: &str) -> String {
+    text.chars().flat_map(char::escape_default).collect()
 }
 
 fn source_limit_error(path: &Path, error: SourceError) -> String {
@@ -570,7 +584,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Acti
                     continue;
                 }
                 Some(value) if value.starts_with('-') && value != "-" => {
-                    return Err(format!("unknown option `{value}`"));
+                    return Err(format!("unknown option `{}`", escape_display_text(value)));
                 }
                 _ => {}
             }
@@ -581,7 +595,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Acti
                 Some("check") => Some(CompilerCommand::Check),
                 Some("eval") => Some(CompilerCommand::Eval),
                 Some("lex") => Some(CompilerCommand::Lex),
-                Some(value) => return Err(format!("unknown command `{value}`")),
+                Some(value) => {
+                    return Err(format!("unknown command `{}`", escape_display_text(value)));
+                }
                 None => return Err(String::from("command is not valid UTF-8")),
             };
         } else {
@@ -629,6 +645,58 @@ fn parse_edition(value: &OsStr) -> Result<Edition, String> {
 mod tests {
     use super::*;
 
+    struct RejectWrites(io::ErrorKind);
+
+    impl Write for RejectWrites {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from(self.0))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct FailFirstWrite {
+        attempts: usize,
+        bytes: Vec<u8>,
+    }
+
+    impl Write for FailFirstWrite {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.attempts += 1;
+            if self.attempts == 1 {
+                Err(io::Error::from(io::ErrorKind::Other))
+            } else {
+                self.bytes.extend_from_slice(buffer);
+                Ok(buffer.len())
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct MeasureWrites {
+        bytes: usize,
+        largest_write: usize,
+    }
+
+    impl Write for MeasureWrites {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.bytes += buffer.len();
+            self.largest_write = self.largest_write.max(buffer.len());
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
     fn os_arguments(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
     }
@@ -672,6 +740,19 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_source_names_are_escaped_without_lossy_aliases() {
+        use std::os::unix::ffi::OsStringExt as _;
+
+        let first = PathBuf::from(OsString::from_vec(b"source-\x80.or".to_vec()));
+        let second = PathBuf::from(OsString::from_vec(b"source-\x81.or".to_vec()));
+
+        assert_eq!(stable_source_name(&first), "source-\\x80.or");
+        assert_eq!(stable_source_name(&second), "source-\\x81.or");
+        assert_ne!(stable_source_name(&first), stable_source_name(&second));
+    }
+
     #[test]
     fn reports_missing_inputs_and_unknown_editions() {
         assert_eq!(
@@ -686,6 +767,39 @@ mod tests {
                 "unsupported Orange edition; supported editions: 2026"
             ))
         );
+    }
+
+    #[test]
+    fn escapes_untrusted_command_and_option_text() {
+        assert_eq!(
+            parse_arguments(os_arguments(&["bad\ncommand", "source.or"])),
+            Err(String::from("unknown command `bad\\ncommand`"))
+        );
+        assert_eq!(
+            parse_arguments(os_arguments(&["check", "--bad\u{1b}[31m", "source.or"])),
+            Err(String::from("unknown option `--bad\\u{1b}[31m`"))
+        );
+        assert_eq!(
+            parse_arguments(os_arguments(&["check", "--bad\u{202e}", "source.or"])),
+            Err(String::from("unknown option `--bad\\u{202e}`"))
+        );
+    }
+
+    #[test]
+    fn usage_output_failure_has_compilation_status() {
+        let mut input = b"".as_slice();
+        let mut output = Vec::new();
+        let mut error = RejectWrites(io::ErrorKind::BrokenPipe);
+
+        let status = run(
+            os_arguments(&["unknown"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(output, b"");
     }
 
     #[test]
@@ -725,6 +839,104 @@ mod tests {
                 "command `eval` requires exactly one source file"
             ))
         );
+    }
+
+    #[test]
+    fn evaluation_output_failure_has_a_stable_status_and_diagnostic() {
+        let source = b"edition 2026; module values { spec answer() -> Int { 42 } }\n";
+        let mut input = source.as_slice();
+        let mut output = RejectWrites(io::ErrorKind::Other);
+        let mut error = Vec::new();
+
+        let status = run(
+            os_arguments(&["eval", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(error, b"orangec: could not write evaluation output\n");
+    }
+
+    #[test]
+    fn evaluation_output_failure_is_not_retried_during_teardown() {
+        let source = b"edition 2026; module values { spec answer() -> Int { 42 } }\n";
+        let mut input = source.as_slice();
+        let mut output = FailFirstWrite::default();
+        let mut error = Vec::new();
+
+        let status = run(
+            os_arguments(&["eval", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(error, b"orangec: could not write evaluation output\n");
+        assert_eq!(output.attempts, 1);
+        assert_eq!(output.bytes, b"");
+    }
+
+    #[test]
+    fn evaluation_broken_pipe_is_a_quiet_failure() {
+        let source = b"edition 2026; module values { spec answer() -> Int { 42 } }\n";
+        let mut input = source.as_slice();
+        let mut output = RejectWrites(io::ErrorKind::BrokenPipe);
+        let mut error = Vec::new();
+
+        let status = run(
+            os_arguments(&["eval", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(error, b"");
+    }
+
+    #[test]
+    fn token_output_broken_pipe_is_a_quiet_failure() {
+        let mut input = b"edition 2026; module values {}\n".as_slice();
+        let mut output = RejectWrites(io::ErrorKind::BrokenPipe);
+        let mut error = Vec::new();
+
+        let status = run(
+            os_arguments(&["lex", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(error, b"");
+    }
+
+    #[test]
+    fn evaluation_output_is_streamed_by_value() {
+        let module = "m".repeat(16 * 1024);
+        let source = format!(
+            "edition 2026; module {module} {{ \
+             spec first() -> Int {{ 1 }} spec second() -> Int {{ 2 }} }}\n"
+        );
+        let expected_bytes = format!("{module}::first: Int = 1\n{module}::second: Int = 2\n").len();
+        let mut input = source.as_bytes();
+        let mut output = MeasureWrites::default();
+        let mut error = Vec::new();
+
+        let status = run(
+            os_arguments(&["eval", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, SUCCESS);
+        assert_eq!(error, b"");
+        assert_eq!(output.bytes, expected_bytes);
+        assert!(output.largest_write < output.bytes);
     }
 
     impl Action {

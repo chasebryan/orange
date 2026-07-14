@@ -1,6 +1,7 @@
 //! Deterministic reference evaluation for typed Orange Core.
 
 use std::fmt;
+use std::sync::Arc;
 
 use crate::core::{CoreFunctionId, CoreModule, CoreType, CoreValue};
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
@@ -14,7 +15,7 @@ pub struct EvaluatedFunction {
     /// Identity copied from the source-ordered Core function.
     pub id: CoreFunctionId,
     /// Exact ASCII module name.
-    pub module: String,
+    pub module: Arc<str>,
     /// Exact ASCII function name.
     pub name: String,
     /// Statically checked result type.
@@ -57,7 +58,8 @@ pub fn evaluate(core: &CoreModule) -> EvaluationResult {
 }
 
 fn evaluate_with_limit(core: &CoreModule, step_limit: usize) -> EvaluationResult {
-    let mut values = Vec::with_capacity(core.functions.len());
+    let mut values = Vec::with_capacity(core.functions.len().min(step_limit));
+    let module: Arc<str> = Arc::from(core.name.as_str());
     for (steps, function) in core.functions.iter().enumerate() {
         if steps >= step_limit {
             return EvaluationResult {
@@ -78,7 +80,7 @@ fn evaluate_with_limit(core: &CoreModule, step_limit: usize) -> EvaluationResult
         }
         values.push(EvaluatedFunction {
             id: function.id,
-            module: core.name.clone(),
+            module: Arc::clone(&module),
             name: function.name.clone(),
             result_type: function.result_type,
             value: function.value.clone(),
@@ -168,5 +170,17 @@ mod tests {
     fn evaluation_is_repeatable() {
         let core = core("edition 2026; module values { spec answer() -> Int { 42 } }\n");
         assert_eq!(evaluate(&core), evaluate(&core));
+    }
+
+    #[test]
+    fn module_identity_is_shared_across_evaluated_values() {
+        let core = core(concat!(
+            "edition 2026; module a_very_long_shared_module_name {\n",
+            "  spec first() -> Int { 1 }\n",
+            "  spec second() -> Int { 2 }\n",
+            "}\n",
+        ));
+        let values = evaluate(&core).values.unwrap();
+        assert!(Arc::ptr_eq(&values[0].module, &values[1].module));
     }
 }

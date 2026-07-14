@@ -1,9 +1,9 @@
 # D-004 semantic-strata decision suite
 
-Status: draft owner-executable decision protocol; no semantic-strata candidate
-selected
+Status: draft pre-freeze decision protocol; no semantic-strata candidate
+selected and no evidence epoch authorized
 
-Suite version: `d004-v0.1-draft`
+Suite version: `d004-v0.2-draft`
 
 Snapshot: 2026-07-13
 
@@ -78,6 +78,31 @@ The candidate packet freezes:
 - a correction window that applies equally to all candidates; and
 - a variance log in which any changed premise creates a new evidence epoch.
 
+### 2.1 Freeze-readiness review
+
+The preceding list is a protocol requirement, not a statement that a frozen
+packet already exists. The five prose cases are sufficient to review the
+experiment's intended scope, but they are not executable fixtures. An evidence
+epoch cannot start until the following closure artifacts exist at one exact
+repository revision.
+
+| ID | Blocking pre-freeze item | Required closure artifact |
+| --- | --- | --- |
+| FR-01 | The relationship table uses `ST-REL` names even though four candidates may organize the same obligations differently. | One neutral adapter contract plus a complete mapping from every candidate's internal members and routes to the required external observations. |
+| FR-02 | Case inputs and expected observations are prose, not exact bytes. | A byte manifest with paths, modes, SHA-256 digests, model identities, and expected observation records for every positive and negative run. |
+| FR-03 | Mutations have stable names below but no fixture identities or provenance. | One immutable fixture per mutation ID, linked to its base fixture and exact changed byte or structured field; generated fixtures also bind the generator and seed. |
+| FR-04 | Section 7 enumerates result fields but no versioned suite record schema exists. | A versioned suite-index, run-result, and reproduction schema, or an admitted general evidence schema that expresses every required field without free-form substitutes, with positive, negative, and migration fixtures. |
+| FR-05 | Replay principles do not yet identify an executable runner or resource observer. | Content-identified runner and observer artifacts specifying process-tree accounting, timeout and kill behavior, output counting, cache cleanup, temporary-storage accounting, and unsupported hosts. |
+| FR-06 | The packet does not yet bind exact argument vectors, working directories, or the complete affecting environment. | A replay manifest per run and an environment allowlist whose omissions fail closed. |
+| FR-07 | Candidate work order and correction events could create asymmetric learning or repair. | A preregistered authoring and replay order, equal candidate-local correction rules, retained failed runs, and a rule that any shared repair starts a new epoch for all candidates. |
+| FR-08 | The conclusion rule permits a later distinguishing rule but does not make post-hoc within-epoch selection explicitly invalid. | A frozen decision record template stating that a new distinguishing rule changes the suite version, creates a new epoch, and reruns the complete common packet. |
+| FR-09 | D-003, dependency admission, and top-level research inventory are not yet disposed for execution. | Owner-recorded conditional-research authority, the current D-003 dependency state, admitted tool/dependency terms, and the policy change that admits the real evidence tree. |
+
+Freeze readiness is not currently established. These nine items measure
+protocol closure, not candidate quality, and no candidate may gain execution
+evidence by implementing against an unfrozen draft. Closing an item requires
+the named artifact; restating its requirement in prose is not closure.
+
 ## 3. Proposed role map
 
 The role map below is a hypothesis to test, not accepted semantics.
@@ -120,9 +145,18 @@ executable proof semantics and chooses no Proof IR.
 ## 4. Required relationship graph
 
 Every candidate must express the following crossings or a demonstrably
-equivalent graph. Each edge has a versioned name, domain, codomain, definedness
-conditions, obligations, identity inputs, trust role, failure behavior, and
-prohibited reverse inferences.
+equivalent graph. The crossing names use the `ST-REL` hypothesis as readable
+shorthand; they do not require another candidate to copy its node count,
+internal names, or representation boundaries. Each edge has a versioned name,
+domain, codomain, definedness conditions, obligations, identity inputs, trust
+role, failure behavior, and prohibited reverse inferences.
+
+Before a packet freezes, every candidate must provide an adapter map for each
+`SR-*` row. The map records the source role, authoritative meaning, required
+external observations, candidate-internal route, failure point, and dependent
+results invalidated by failure. Equivalent graphs are judged on those frozen
+boundary behaviors. A missing `ST-REL`-named internal node is not itself a
+failure, and a same-named node is not evidence that the behavior exists.
 
 | ID | Required crossing | Mandatory boundary behavior |
 | --- | --- | --- |
@@ -160,6 +194,25 @@ Each candidate must run all five cases from the same frozen packet. Each case
 records inputs, expected observations, positive and negative outcomes, exact
 dependencies, resource use, and a falsification condition. A prose-only claim
 that a case is representable is not execution evidence.
+
+The variant IDs below are stable suite identities. `P00` is the positive run;
+each `M*` ID is one independently replayed mutation of that case's positive
+fixture. They name intended changes but do not become frozen inputs until
+FR-02 and FR-03 close.
+
+| Case | Positive variant | Mutation variants |
+| --- | --- | --- |
+| SC-01 | `SC-01-P00` exact word operations | `SC-01-M01` implicit integer-to-word conversion; `SC-01-M02` implicit endian conversion; `SC-01-M03` width mismatch; `SC-01-M04` unbounded shift |
+| SC-02 | `SC-02-P00` valid in-place transformation | `SC-02-M01` illegal alias; `SC-02-M02` out-of-range access; `SC-02-M03` missing loop invariant; `SC-02-M04` uninitialized read; `SC-02-M05` wrong refinement subject |
+| SC-03 | `SC-03-P00` public-control implementation | `SC-03-M01` secret-dependent branch; `SC-03-M02` secret-dependent address; `SC-03-M03` secret-dependent loop bound; `SC-03-M04` secret-dependent failure path; `SC-03-M05` secret-dependent debug observation |
+| SC-04 | `SC-04-P00` supported vector operation | `SC-04-M01` missing feature; `SC-04-M02` unsupported intrinsic; `SC-04-M03` lane-order mismatch; `SC-04-M04` width mismatch; `SC-04-M05` target-identity substitution; `SC-04-M06` undeclared fallback |
+| SC-05 | `SC-05-P00` explicit finite experiments and reduction | `SC-05-M01` sampling in Specification; `SC-05-M02` ambient randomness; `SC-05-M03` hidden oracle; `SC-05-M04` unbounded sample; `SC-05-M05` subject substitution; `SC-05-M06` altered bound |
+
+A case passes only when its `P00` variant and every listed mutation complete
+with their frozen expected observations. Resource-exhaustion, missing-input,
+digest-mismatch, crash, and unsupported-path fixtures receive additional IDs
+when the executable packet closes; they must not be hidden inside a listed
+semantic mutation.
 
 ### SC-01 — SHA-like word code
 
@@ -395,6 +448,24 @@ focused work recorded by the owner; automation runs are separately bounded by
 each case. Exceeding a budget records non-success. Changing these budgets after
 candidate work starts creates a new epoch and restarts every candidate.
 
+For resource accounting, one replay is one candidate, one case, and one
+variant ID. The stated 15-minute wall-time, 4-GiB peak-resident-memory, 2-GiB
+temporary-storage, and 256-MiB captured-output ceilings apply independently to
+every replay, including resource and unsupported fixtures. Captured output is
+the combined uncompressed stdout, stderr, and runner-owned raw log bytes before
+normalization. Peak memory and timeout cover the complete descendant process
+tree; temporary storage covers every candidate-specific writable path. The
+frozen observer defines platform-specific enforcement, termination, descendant
+cleanup, and what happens when a measurement cannot be made reliably.
+
+Candidate-specific authoring, debugging, and inspection consume that
+candidate's owner-hour budget. Work on the common protocol consumes neither
+candidate budget. Waiting for unattended automation does not consume focused
+owner-hours, but inspecting or repairing its result does. A correction may
+change only candidate-local artifacts under the frozen contract and retains
+the failed record. A shared fixture, observer, schema, rubric, resource rule,
+or decision-rule change creates a new epoch and resets all candidate evidence.
+
 Automated replay uses argument vectors rather than shell strings, a declared
 allowlisted environment, pinned tool and input digests, network denied, an
 empty candidate-specific cache, deterministic output manifests, and explicit
@@ -432,6 +503,12 @@ does not accept D-004. If zero or multiple candidates pass, the result is
 `inconclusive` until the owner records a non-compensable distinguishing rule or
 revises and reruns the common suite.
 
+A distinguishing rule cannot select a candidate from the epoch in which it was
+invented. It changes the suite version, starts a new evidence epoch, and applies
+to the complete common packet for all candidates. Candidate-specific evidence
+cannot be carried forward unless its bytes and every affecting premise remain
+identical and the new rule explicitly admits that reuse for every candidate.
+
 Acceptance requires:
 
 - accepted disposition of D-003 and its product-form record;
@@ -454,9 +531,9 @@ Execution evidence is currently 0/5 candidates and 0/5 cases.
 ## 9. Current handoff
 
 The next authorized actions are to obtain owner intake and disposition for
-D-003, review this conditional D-004 protocol, and resolve any protocol defects
-before freezing an evidence epoch. Running the suite then produces decision
-evidence; it still does not implement S3b.
+D-003, review this conditional D-004 protocol, and close or revise FR-01 through
+FR-09 before freezing an evidence epoch. Only the resulting frozen suite may
+produce decision evidence; it still does not implement S3b.
 
 Until those actions occur, D-004 remains proposed, the architecture role map
 remains a recommendation, the S3a Typed Reference Core remains the only
