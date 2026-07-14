@@ -141,6 +141,7 @@ MINIMUM_REQUIRED_PATHS = {
     "assets/brand/orange-banner2-erased.PNG",
     "assets/brand/orange-banner2.PNG",
     "assets/brand/orange-erased.PNG",
+    "assets/brand/orange-handdrawn-marker-banner.png",
     "assets/brand/orange.jpg",
     "assets/brand/orange.png",
     "assets/brand/orangePNG.PNG",
@@ -250,6 +251,12 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
         "role": "Official working Orange primary emblem with embedded C2PA claim",
         "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
     },
+    {
+        "path": "assets/brand/orange-handdrawn-marker-banner.png",
+        "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735",
+        "role": "Official working Orange hand-drawn README horizontal lockup on a light background",
+        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-14",
+    },
 ]
 GATE0_BRAND_ASSET_METADATA = {
     "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
@@ -260,6 +267,7 @@ GATE0_BRAND_ASSET_METADATA = {
     "orange-banner.png": ("image/png", 2172, 724, False, True),
     "orange.jpg": ("image/jpeg", 1254, 1254, False, False),
     "orange.png": ("image/png", 1254, 1254, False, True),
+    "orange-handdrawn-marker-banner.png": ("image/png", 2048, 682, False, False),
 }
 GATE0_BRAND_SOURCE_FILENAMES = {
     "orange-banner2.PNG": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
@@ -270,6 +278,7 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange-banner.png": "orange-banner.png",
     "orange.jpg": "orange.jpg",
     "orange.png": "orange.png",
+    "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
 }
 GATE0_EXECUTABLE_PATHS = {
     "scripts/ci/check-external-links",
@@ -327,12 +336,12 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
-    "README.md": "bbdf4a4473539ee131dba8162e0b79a91c5cf44c37c73ca48f34d566c8ae4c9c",
+    "README.md": "c7d27098a92933c2322b04dacc5ce7407997c5c3295046738245221fe4e469ed",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "40c7dcc00ad935e8e05ac3b937fedf17c8cc5ff9a25accaa3ac2227e9f653ff7",
-    "assets/brand/manifest.json": "35c65a3e6850badca2b6fc421dcdc5e3f4e1ecb5a5c0fae8620348e915030769",
+    "assets/brand/README.md": "c6bb47562104633525139d5272778b4c534baf845cb1d67c7a284830992d01f4",
+    "assets/brand/manifest.json": "8ade7b9bb7837581961a483cd57d79107a71c4bd2d1af78b2214f49582049056",
     "compiler/crates/orangec/tests/s3a_conformance.rs": "aa80ca33ef594aec277f6812a76efafe5a9a53b787839e1ff267d3fea29c3b0e",
     "compiler/fixtures/s3a/invalid-duplicate-spec.or": "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6",
     "compiler/fixtures/s3a/invalid-int-magnitude.or": "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542",
@@ -366,9 +375,9 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "docs/SEMANTICS_2026.md": "ac5b7d1b3056ea751aa12a0de3a8541482e0114f4dc0807e9bd7b54cb0ab69b6",
     "docs/operations/CI_DEPENDENCIES.md": "21a7ec854592247ec0b3b238136046ca5bf3e4ab78797d53c16cc11f97667309",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
-    "docs/security/OSPS_BASELINE.md": "20f0156db66fa8281793f8c5db3bf00a3a8d1c3e0f286ff667d1c91587f12cb9",
+    "docs/security/OSPS_BASELINE.md": "a3522895aaf4c1b17b61dad8224e5fc88f2d5966026f7b0234cadc11b9d15fb2",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "5b519de46feeec2aa172364aad42a89a4a8297d7fe9723eb5629c054ce1b8e30",
+    "docs/security/THREAT_MODEL.md": "0b2efedd4283c553345e33595b24b4ec08edeed2adf8d68b704a0a4f582cbef6",
     "policy/README.md": "fd87e14f7c6adb0332107c4e3032b5697220c4b235f4b85309d5ac2c96a331d8",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
@@ -381,7 +390,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "b0bdb290f16c239c820a6e5e6641d433760ca060032f0d9b2580cd4b3729dcc0",
-    "tools/tests/test_validate_foundation_hardening.py": "00eaf5054e6cd0e5967c3dbdeb6595c8756c1287db7af0a3106f34d6ecec9971",
+    "tools/tests/test_validate_foundation_hardening.py": "1ecb94986a1a29b6e48b6a9bb0b032b0f6b0087f748b850e1ddcaa8faba709f0",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
