@@ -1,8 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -ne 1 || -z "${1-}" ]]; then
   echo "usage: $0 PATH_TO_LYCHEE" >&2
   exit 2
 fi
@@ -12,7 +12,14 @@ readonly LYCHEE="$1"
 # IACR ePrint currently rejects automated clients with HTTP 403. Keep its
 # primary-source citations, exclude only that exact HTTPS host from automation,
 # and review those links manually when research evidence is refreshed.
-exec "$LYCHEE" \
+exec -- /usr/bin/env \
+  --ignore-environment \
+  -- \
+  LANG=C \
+  LC_ALL=C \
+  PATH=/usr/bin:/bin \
+  TZ=UTC \
+  "$LYCHEE" \
   --exclude '^https://eprint\.iacr\.org/' \
   --exclude-all-private \
   --extensions md,yml \

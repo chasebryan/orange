@@ -287,6 +287,58 @@ cases for every normative rule. At minimum it covers:
 - successful empty output; and
 - repeated semantic and evaluation equality.
 
+### S3a conformance rule index
+
+The identifiers below are stable conformance labels for the existing normative
+obligations; they do not add semantics or widen this snapshot. The conformance
+runner requires exact agreement between this index and its named
+executable-evidence map and requires every declared broad evidence layer (CLI,
+generated CLI, parser unit, or unit) for each rule. It additionally requires the
+corresponding injected-writer, injected-limit, or host-fault capability on tests
+named for specialized evidence labels. Host-failure evidence separately requires
+I/O, allocation, and non-regular host-boundary failures. Every named test must
+have exactly one unconditional declaration at its expected harness location:
+integration tests at file root and unit tests directly inside the source's
+unique `#[cfg(test)] mod tests` container. Declarations inside comments, strings,
+nested functions, or alternate or disabled modules do not qualify. That
+traceability check is not proof that a named test exhausts its rule. Production
+constants remain policy-bound; rules whose maxima cannot be reached by valid
+public source before an earlier bound use explicitly named injected-limit tests
+for exact accounting and fail-closed behavior.
+
+| Rule ID | Clause | Executable obligation | Evidence layer |
+| --- | --- | --- | --- |
+| `S3A-PHASE-01` | Sections 1 and 6 | Clean lexing and parsing gate semantic analysis; `check` and `eval` fail on any compiler-phase diagnostic. | CLI and unit |
+| `S3A-GRAMMAR-01` | Section 2 | Legacy empty declarations remain accepted, only `spec` gains the exact typed-literal alternative, and excluded body forms remain syntax errors. | CLI and parser unit |
+| `S3A-DECL-01` | Section 3 | Namespace keys use declaration kind and exact ASCII name; cross-kind equals succeed and every later same-kind duplicate fails. | CLI and unit |
+| `S3A-TYPE-INT-01` | Section 4 | Only exact, unparameterized `Int` lowers to Core `Int`. | CLI and unit |
+| `S3A-TYPE-WORD8-01` | Section 4 | Only exact `Word[8]` with decimal width spelling `8` lowers to `Word8`. | CLI and unit |
+| `S3A-TYPE-REJECT-01` | Section 4 | Every other parsed type shape or case variant fails without inference or coercion. | CLI and unit |
+| `S3A-LIT-DECODE-01` | Section 5 | Admitted prefixes and separators are removed and magnitudes decode exactly in bases 2, 10, and 16. | CLI and unit |
+| `S3A-LIT-ZEROES-01` | Sections 5 and 9 | Zero has zero significant bits and leading zeroes consume neither the significant-bit nor semantic-event budget. | Generated CLI and unit |
+| `S3A-LIT-BITS-01` | Sections 5 and 9 | Exactly 16,384 significant bits succeed and 16,385 fail with the stable magnitude-limit category. | Generated CLI and unit |
+| `S3A-INT-01` | Section 5 | `Int` denotes exact mathematical integers, including canonical zero for every negative-zero spelling. | CLI and unit |
+| `S3A-WORD-SIGN-01` | Section 5 | Every minus sign on `Word[8]`, including `-0`, is an error. | CLI and unit |
+| `S3A-WORD-RANGE-01` | Section 5 | Values 0 through 255 are exact and larger values fail without wrapping, truncation, saturation, or coercion. | CLI and unit |
+| `S3A-DIAG-01` | Section 6 | Required categories, source order, responsible spans, and independent later diagnostics are deterministic. | CLI and unit |
+| `S3A-ATOMIC-01` | Sections 1 and 6 | Any compiler or evaluator diagnostic prevents an accepted partial Core or value sequence. | CLI and unit |
+| `S3A-CORE-MEMBERSHIP-01` | Section 7 | One Core module contains only typed specifications; empty `spec` and `impl` declarations are absent. | CLI and unit |
+| `S3A-CORE-ORDER-01` | Sections 6 and 7 | Core functions retain typed-spec source order and receive contiguous IDs from zero. | Unit and CLI observation |
+| `S3A-CORE-CONTENT-01` | Sections 3 and 7 | Core retains exact names and normalized type/value content without excluded source or target meaning. | Unit and CLI observation |
+| `S3A-CLI-EVAL-01` | Section 8 | `eval` requires exactly one file or standard-input operand under inherited read limits. | CLI |
+| `S3A-EVAL-LINE-01` | Section 8 | Evaluation visits ascending IDs and emits exactly one correctly framed line per Core function. | CLI and unit |
+| `S3A-EVAL-INT-01` | Section 8 | `Int` display is canonical base 10 with only the required negative sign. | CLI and unit |
+| `S3A-EVAL-WORD8-01` | Section 8 | `Word[8]` display is `0x` plus exactly two lowercase hexadecimal digits. | CLI and unit |
+| `S3A-EVAL-EMPTY-01` | Section 8 | A successful empty Core emits zero bytes. | CLI and unit |
+| `S3A-EVAL-OUTPUT-FAIL-01` | Section 8 | A detected output failure is unsuccessful and evaluation does not intentionally continue a partial value sequence. | Injected writer unit |
+| `S3A-RES-DIAG-01` | Section 9 | One hundred ordinary semantic diagnostics are followed by at most one suppression diagnostic. | Generated CLI and unit |
+| `S3A-RES-CORE-01` | Section 9 | The Core-node cap and module/function/type/value accounting are exact; empty declarations add no nodes. | Injected-limit unit |
+| `S3A-RES-EVENT-01` | Section 9 | The semantic-event cap and every listed event category are counted exactly. | Injected-limit unit |
+| `S3A-RES-EVAL-01` | Section 9 | Evaluation consumes one step per visited function and formatting consumes no extra step. | Injected-limit unit |
+| `S3A-RES-FAIL-01` | Section 9 | Resource exhaustion has one stable out-of-band diagnostic and prevents Core or value acceptance. | Injected-limit unit |
+| `S3A-HOST-FAIL-01` | Section 9 | Allocation, I/O, and host failures are never reported as successful Orange evaluation. | Representative fault-injection unit |
+| `S3A-DETERMINISM-01` | Section 10 | Repeated identical inputs preserve success, diagnostics, normalized Core, IDs, status, and output bytes. | CLI and unit |
+
 Tests establish only the tested implementation behavior at an identified
 revision. They do not prove semantic soundness, completeness, implementation
 independence, or any excluded claim.

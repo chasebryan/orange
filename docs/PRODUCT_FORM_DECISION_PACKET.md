@@ -416,9 +416,10 @@ revision, followed by an acceptance record that binds that revision:
    explicit.
 4. Every unresolved question is either assigned to a later decision or blocks
    acceptance.
-5. `./scripts/ci/check-repository`, `make check`, and
-   `python3 tools/validate_foundation.py --root . --format json` pass at the
-   reviewed bytes.
+5. `./scripts/ci/check-repository` passes at the reviewed bytes. For the
+   machine-readable policy result, `env -i HOME="$HOME" LANG=C LC_ALL=C
+   PATH="$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8
+   tools/validate_foundation.py --root . --format json` also passes.
 6. A follow-up acceptance record binds the exact reviewed commit and a literal
    `solo-reviewed` owner approval record without implying independence.
 

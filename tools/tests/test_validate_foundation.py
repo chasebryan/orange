@@ -18,6 +18,7 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_JSON_NESTING_DEPTH,
     GATE0_MAXIMUM_REPOSITORY_BYTES,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
+    _fallback_repository_files,
     audit_schema_vocabulary,
     checkout_disables_credentials,
     load_json,
@@ -57,8 +58,18 @@ class _FakePopen:
     def kill(self) -> None:
         self.kill_count += 1
 
-    def wait(self) -> int:
+    def wait(self, timeout: float | None = None) -> int:
+        del timeout
         self.wait_count += 1
+        return self.return_code
+
+
+class _FailingFirstWaitPopen(_FakePopen):
+    def wait(self, timeout: float | None = None) -> int:
+        del timeout
+        self.wait_count += 1
+        if self.wait_count == 1:
+            raise OSError("wait failed")
         return self.return_code
 
 
@@ -195,10 +206,9 @@ class TomlParsingTests(unittest.TestCase):
 
 class RepositoryResourceBoundTests(unittest.TestCase):
     @staticmethod
-    def _sparse_file(path: Path, size: int) -> None:
+    def _sized_file(path: Path, size: int) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as destination:
-            destination.truncate(size)
+        path.write_bytes(b"\0" * size)
 
     def test_text_and_binary_file_size_boundaries_are_inclusive(self) -> None:
         cases = (
@@ -208,13 +218,29 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         for name, limit in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                self._sparse_file(root / name, limit)
+                self._sized_file(root / name, limit)
                 validator = FoundationValidator(root)
                 self.assertTrue(validator._preflight_repository_resources())
                 snapshot = validator._read_repository_bytes(root / name)
                 self.assertIsNotNone(snapshot)
                 self.assertEqual(len(snapshot or b""), limit)
                 self.assertEqual(validator.findings, [])
+
+    def test_preflight_fails_closed_without_secure_open_capabilities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "record.txt").write_text("record\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            with mock.patch(
+                "tools.validate_foundation._secure_repository_reads_supported",
+                return_value=False,
+            ):
+                self.assertFalse(validator._preflight_repository_resources())
+
+        self.assertEqual(
+            {finding.code for finding in validator.findings},
+            {"resource.unsupported_host"},
+        )
 
     def test_text_and_binary_files_one_byte_over_the_limit_are_rejected(self) -> None:
         cases = (
@@ -224,7 +250,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         for name, limit in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                self._sparse_file(root / name, limit + 1)
+                self._sized_file(root / name, limit + 1)
                 validator = FoundationValidator(root)
                 self.assertFalse(validator._preflight_repository_resources())
                 self.assertIsNone(validator._read_repository_bytes(root / name))
@@ -236,12 +262,12 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 root = Path(directory)
                 file_count = GATE0_MAXIMUM_REPOSITORY_BYTES // GATE0_MAXIMUM_BINARY_FILE_BYTES
                 for index in range(file_count):
-                    self._sparse_file(
+                    self._sized_file(
                         root / f"asset-{index}.png",
                         GATE0_MAXIMUM_BINARY_FILE_BYTES,
                     )
                 if extra_bytes:
-                    self._sparse_file(root / "extra.txt", extra_bytes)
+                    self._sized_file(root / "extra.txt", extra_bytes)
                 validator = FoundationValidator(root)
                 self.assertEqual(validator._preflight_repository_resources(), expected)
                 aggregate_findings = [
@@ -285,6 +311,116 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 {finding.code for finding in validator.findings},
             )
 
+    def test_first_read_rejects_a_same_size_replacement_after_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "record.txt"
+            path.write_bytes(b"first!")
+            validator = FoundationValidator(root)
+            self.assertTrue(validator._preflight_repository_resources())
+            replacement = root / "replacement.txt"
+            replacement.write_bytes(b"other!")
+            os.replace(replacement, path)
+
+            self.assertIsNone(validator._read_repository_bytes(path))
+
+        self.assertIn(
+            "resource.post_preflight_change",
+            {finding.code for finding in validator.findings},
+        )
+        self.assertEqual(validator._repository_read_bytes, 0)
+
+    @unittest.skipUnless(
+        os.name == "posix" and hasattr(os, "symlink"),
+        "component-relative no-follow opens require POSIX symlinks",
+    )
+    def test_secure_open_does_not_follow_a_parent_swapped_after_inspection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            nested = root / "nested"
+            nested.mkdir(parents=True)
+            path = nested / "record.txt"
+            path.write_text("inside\n", encoding="utf-8")
+            outside = parent / "outside"
+            outside.mkdir()
+            (outside / "record.txt").write_text("outside\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            self.assertTrue(validator._preflight_repository_resources())
+            original_inspect = validator._inspect_repository_file
+            saved = root / "saved"
+            swapped = False
+
+            def inspect_then_swap(candidate: Path):
+                nonlocal swapped
+                result = original_inspect(candidate)
+                if result is not None and not swapped:
+                    nested.rename(saved)
+                    nested.symlink_to(outside, target_is_directory=True)
+                    swapped = True
+                return result
+
+            with mock.patch.object(
+                validator,
+                "_inspect_repository_file",
+                side_effect=inspect_then_swap,
+            ):
+                snapshot = validator._read_repository_bytes(path)
+
+        self.assertIsNone(snapshot)
+        self.assertIn("resource.unreadable", {finding.code for finding in validator.findings})
+        self.assertEqual(validator._repository_read_bytes, 0)
+
+    @unittest.skipUnless(
+        os.name == "posix" and hasattr(os, "symlink"),
+        "component-relative no-follow inspection requires POSIX symlinks",
+    )
+    def test_resource_inspection_does_not_follow_a_parent_swapped_after_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            nested = root / "nested"
+            nested.mkdir(parents=True)
+            path = nested / "record.txt"
+            path.write_text("inside\n", encoding="utf-8")
+            outside = parent / "outside"
+            outside.mkdir()
+            (outside / "record.txt").write_text("outside\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            original_stat = os.stat
+            saved = root / "saved"
+            swapped = False
+
+            def stat_then_swap(
+                target: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+                *,
+                dir_fd: int | None = None,
+                follow_symlinks: bool = True,
+            ) -> os.stat_result:
+                nonlocal swapped
+                metadata = original_stat(
+                    target,
+                    dir_fd=dir_fd,
+                    follow_symlinks=follow_symlinks,
+                )
+                if target == "nested" and dir_fd is not None and not swapped:
+                    nested.rename(saved)
+                    nested.symlink_to(outside, target_is_directory=True)
+                    swapped = True
+                return metadata
+
+            with mock.patch(
+                "tools.validate_foundation._secure_repository_reads_supported",
+                return_value=True,
+            ), mock.patch(
+                "tools.validate_foundation.os.stat",
+                side_effect=stat_then_swap,
+            ):
+                inspected = validator._inspect_repository_file(path)
+
+        self.assertIsNone(inspected)
+        self.assertIn("resource.unreadable", {finding.code for finding in validator.findings})
+
     def test_markdown_anchor_target_uses_the_preflight_snapshot_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -312,8 +448,110 @@ class RepositoryResourceBoundTests(unittest.TestCase):
             self.assertFalse(validator._preflight_repository_resources())
             self.assertIn("resource.symlink", {finding.code for finding in validator.findings})
 
+    @unittest.skipUnless(hasattr(os, "link"), "hard links are unavailable")
+    def test_preflight_rejects_hardlinked_repository_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first.txt"
+            first.write_text("shared\n", encoding="utf-8")
+            os.link(first, root / "second.txt")
+            validator = FoundationValidator(root)
+
+            self.assertFalse(validator._preflight_repository_resources())
+            self.assertEqual(
+                {finding.code for finding in validator.findings},
+                {"resource.hardlink"},
+            )
+
+    @unittest.skipUnless(hasattr(os, "SEEK_HOLE"), "sparse-file discovery is unavailable")
+    def test_preflight_rejects_sparse_repository_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sparse = root / "sparse.txt"
+            with sparse.open("wb") as destination:
+                destination.truncate(64 * 1024)
+            validator = FoundationValidator(root)
+
+            self.assertFalse(validator._preflight_repository_resources())
+            self.assertEqual(
+                {finding.code for finding in validator.findings},
+                {"resource.sparse"},
+            )
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
+    def test_tree_mode_validation_does_not_follow_a_post_preflight_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            root.mkdir()
+            path = root / "checked.txt"
+            path.write_text("checked\n", encoding="utf-8")
+            outside = parent / "outside.txt"
+            outside.write_text("outside\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator.index_entries = [("100644", "checked.txt")]
+            validator.policy = {"executable_paths": [], "allowed_binary_artifacts": []}
+            self.assertTrue(validator._preflight_repository_resources())
+
+            path.unlink()
+            path.symlink_to(outside)
+            original_stat = Path.stat
+
+            def reject_following_stat(candidate: Path, *, follow_symlinks: bool = True):
+                if follow_symlinks:
+                    raise AssertionError("post-preflight mode checks must not follow paths")
+                return original_stat(candidate, follow_symlinks=False)
+
+            with mock.patch.object(Path, "stat", autospec=True, side_effect=reject_following_stat):
+                validator._validate_tree_encoding_and_format()
+
+            self.assertIn("resource.symlink", {finding.code for finding in validator.findings})
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFOs are unavailable")
+    def test_preflight_rejects_a_fifo_without_opening_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fifo = root / "input.pipe"
+            os.mkfifo(fifo)
+
+            validator = FoundationValidator(root)
+
+            self.assertFalse(validator._preflight_repository_resources())
+            self.assertEqual(
+                {finding.code for finding in validator.findings},
+                {"resource.not_file"},
+            )
+
 
 class RepositoryInventoryBoundTests(unittest.TestCase):
+    def test_git_inventory_has_one_deadline_for_output_and_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            root.mkdir()
+            fake_git = parent / "git"
+            fake_git.write_text("#!/bin/sh\n/bin/sleep 60\n", encoding="utf-8")
+            fake_git.chmod(0o700)
+            findings = []
+            with (
+                mock.patch.dict(
+                    "tools.validate_foundation.os.environ",
+                    {"PATH": str(parent)},
+                    clear=True,
+                ),
+                mock.patch(
+                    "tools.validate_foundation._GATE0_GIT_TIMEOUT_SECONDS",
+                    0.05,
+                ),
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_timeout"},
+        )
+
     def test_git_path_limit_is_inclusive_and_one_extra_byte_kills_the_producer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -344,7 +582,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertTrue(rejected.stdout.closed)
             self.assertEqual((rejected.kill_count, rejected.wait_count), (1, 1))
 
-    def test_git_process_environment_removes_inventory_redirections(self) -> None:
+    def test_git_process_environment_replaces_inherited_git_controls(self) -> None:
         process = _FakePopen(b"file.txt\0")
         findings = []
         environment = {
@@ -355,7 +593,12 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             "GIT_CONFIG_COUNT": "1",
             "GIT_CONFIG_KEY_0": "core.worktree",
             "GIT_CONFIG_VALUE_0": "/redirected/worktree",
-            "LC_ALL": "C",
+            "GIT_TRACE": "1",
+            "HOME": "/redirected/home",
+            "HTTPS_PROXY": "http://hostile.invalid",
+            "LD_LIBRARY_PATH": "/redirected/libraries",
+            "LD_PRELOAD": "/redirected/preload.so",
+            "LC_ALL": "host-locale",
             "PATH": "/test/bin",
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -367,9 +610,82 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             ):
                 paths = list(iter_repository_files(root, findings))
         self.assertEqual([path.name for path in paths], ["file.txt"])
+        self.assertEqual(
+            popen.call_args.args[0][:5],
+            ["git", "-c", "core.fsmonitor=false", "-C", str(root)],
+        )
         child_environment = popen.call_args.kwargs["env"]
-        self.assertEqual(child_environment, {"LC_ALL": "C", "PATH": "/test/bin"})
-        self.assertFalse(any(key.upper().startswith("GIT_CONFIG_") for key in child_environment))
+        self.assertEqual(
+            child_environment,
+            {
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CEILING_DIRECTORIES": str(root.parent),
+                "GIT_OPTIONAL_LOCKS": "0",
+                "GIT_TERMINAL_PROMPT": "0",
+                "LC_ALL": "C",
+                "PATH": "/test/bin",
+            },
+        )
+
+    def test_git_wait_failure_stops_and_reaps_the_producer(self) -> None:
+        process = _FailingFirstWaitPopen(b"file.txt\0")
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "file.txt").write_bytes(b"")
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                return_value=process,
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_read"},
+        )
+        self.assertTrue(process.stdout.closed)
+        self.assertEqual((process.kill_count, process.wait_count), (1, 2))
+
+    def test_global_git_excludes_cannot_hide_repository_files(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            home = parent / "home"
+            home.mkdir()
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            global_excludes = home / "global-excludes"
+            global_excludes.write_text("globally-hidden.txt\n", encoding="utf-8")
+            (home / ".gitconfig").write_text(
+                f"[core]\n\texcludesFile = {global_excludes.as_posix()}\n",
+                encoding="utf-8",
+            )
+            (root / ".gitignore").write_text("locally-hidden.txt\n", encoding="utf-8")
+            (root / "globally-hidden.txt").write_text("must be inventoried\n", encoding="utf-8")
+            (root / "locally-hidden.txt").write_text("repository-ignored\n", encoding="utf-8")
+            findings = []
+            with mock.patch.dict(
+                "tools.validate_foundation.os.environ",
+                {"HOME": str(home), "XDG_CONFIG_HOME": str(home / "xdg")},
+                clear=False,
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(
+            [path.name for path in paths],
+            [".gitignore", "globally-hidden.txt"],
+        )
+        self.assertEqual(findings, [])
 
     def test_git_file_count_and_raw_metadata_limits_are_inclusive(self) -> None:
         cases = (
@@ -406,6 +722,19 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertEqual([path.name for path in paths], ["fallback.txt"])
             self.assertEqual(findings, [])
             self.assertEqual((process.kill_count, process.wait_count), (0, 1))
+
+    def test_git_failure_is_fatal_when_repository_metadata_is_present(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".git").mkdir()
+            (root / "must-not-fallback.txt").write_text("data\n", encoding="utf-8")
+            process = _FakePopen(b"", return_code=1)
+            findings = []
+            with mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
 
     def test_alternate_index_environment_cannot_redirect_either_git_inventory(self) -> None:
         clean_environment = {
@@ -457,10 +786,46 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         load_policy.assert_not_called()
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
 
+    def test_stage_inventory_must_be_a_subset_of_the_file_inventory(self) -> None:
+        file_process = _FakePopen(b"file.txt\0")
+        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        stage_process = _FakePopen(metadata + b"\tother.txt\0")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "file.txt").write_bytes(b"")
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                side_effect=(file_process, stage_process),
+            ):
+                validator = FoundationValidator(root)
+
+        self.assertEqual(validator.repository_files, [root / "file.txt"])
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in validator.findings],
+            [("resource.inventory_protocol", "other.txt")],
+        )
+
+    def test_git_file_inventory_rejects_untracked_admitted_paths(self) -> None:
+        file_process = _FakePopen(b"untracked.txt\0")
+        stage_process = _FakePopen(b"")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "untracked.txt").write_bytes(b"")
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                side_effect=(file_process, stage_process),
+            ):
+                validator = FoundationValidator(root)
+
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in validator.findings],
+            [("git.untracked", "untracked.txt")],
+        )
+
     def test_fallback_counts_ignored_entry_but_prunes_its_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            ignored = root / ".git"
+            ignored = root / ".agents"
             ignored.mkdir()
             for index in range(8):
                 (ignored / f"ignored-{index}").write_text("ignored\n", encoding="utf-8")
@@ -483,6 +848,26 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertEqual(paths, [])
             self.assertEqual({finding.code for finding in findings}, {"resource.inventory_entries"})
 
+    def test_fallback_rejects_a_host_without_descriptor_scandir(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "present.txt").write_text("present\n", encoding="utf-8")
+            findings = []
+            with mock.patch(
+                "tools.validate_foundation._secure_repository_discovery_supported",
+                return_value=False,
+            ), mock.patch(
+                "tools.validate_foundation.os.scandir",
+                side_effect=AssertionError("unsupported descriptor scan was attempted"),
+            ):
+                paths = _fallback_repository_files(root, findings)
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.unsupported_host"},
+        )
+
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
     def test_fallback_collects_but_does_not_descend_into_symlinked_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -503,6 +888,56 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual([path.name for path in paths], ["link"])
         self.assertEqual(findings, [])
 
+    @unittest.skipUnless(
+        os.name == "posix" and hasattr(os, "symlink"),
+        "component-relative no-follow discovery requires POSIX symlinks",
+    )
+    def test_fallback_reopen_does_not_follow_a_swapped_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "root"
+            nested = root / "nested"
+            nested.mkdir(parents=True)
+            (nested / "inside.txt").write_text("inside\n", encoding="utf-8")
+            outside = parent / "outside"
+            outside.mkdir()
+            (outside / "outside.txt").write_text("outside\n", encoding="utf-8")
+            saved = root / "saved"
+            raw_root = os.fsencode(root)
+            original_open = os.open
+            root_open_count = 0
+
+            def open_then_swap(
+                path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+                flags: int,
+                mode: int = 0o600,
+                *,
+                dir_fd: int | None = None,
+            ) -> int:
+                nonlocal root_open_count
+                if dir_fd is None and os.fsencode(path) == raw_root:
+                    root_open_count += 1
+                    if root_open_count == 2:
+                        nested.rename(saved)
+                        nested.symlink_to(outside, target_is_directory=True)
+                return original_open(path, flags, mode, dir_fd=dir_fd)
+
+            findings = []
+            with mock.patch(
+                "tools.validate_foundation._secure_repository_reads_supported",
+                return_value=True,
+            ), mock.patch(
+                "tools.validate_foundation.os.open",
+                side_effect=open_then_swap,
+            ):
+                paths = _fallback_repository_files(root, findings)
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_read"},
+        )
+
     def test_unterminated_git_record_is_a_protocol_error_without_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -515,6 +950,18 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
             self.assertTrue(process.stdout.closed)
             self.assertEqual(process.wait_count, 1)
+
+    def test_git_file_inventory_rejects_duplicate_paths(self) -> None:
+        process = _FakePopen(b"duplicate.txt\0duplicate.txt\0")
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "duplicate.txt").write_text("data\n", encoding="utf-8")
+            with mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
     def test_stage_prefix_limit_is_inclusive_and_path_tabs_are_preserved(self) -> None:
         metadata = b"100644 " + (b"a" * 40) + b" 0"
@@ -552,8 +999,58 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(entries, [])
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
-    @unittest.skipUnless(os.name == "posix", "byte-preserving paths require POSIX")
-    def test_git_paths_are_sorted_as_bytes_then_decoded_losslessly(self) -> None:
+    def test_stage_inventory_rejects_unmerged_index_entries(self) -> None:
+        metadata = b"100644 " + (b"a" * 40) + b" 2"
+        process = _FakePopen(metadata + b"\tconflicted.txt\0")
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process):
+                entries = git_index_entries(Path(directory), findings)
+
+        self.assertEqual(entries, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
+
+    def test_stage_inventory_rejects_malformed_object_ids_and_duplicate_paths(self) -> None:
+        valid_metadata = b"100644 " + (b"a" * 40) + b" 0"
+        cases = (
+            b"100644 not-an-object-id 0\ttracked.txt\0",
+            b"\xff00644 " + (b"a" * 40) + b" 0\ttracked.txt\0",
+            valid_metadata
+            + b"\ttracked.txt\0"
+            + valid_metadata
+            + b"\ttracked.txt\0",
+        )
+        for output in cases:
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as directory:
+                process = _FakePopen(output)
+                findings = []
+                with mock.patch(
+                    "tools.validate_foundation.subprocess.Popen", return_value=process
+                ):
+                    entries = git_index_entries(Path(directory), findings)
+
+                self.assertEqual(entries, [])
+                self.assertEqual(
+                    {finding.code for finding in findings},
+                    {"resource.inventory_protocol"},
+                )
+
+    def test_stage_inventory_rejects_non_utf8_paths_after_bounding(self) -> None:
+        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        process = _FakePopen(metadata + b"\tinvalid-\xff\0")
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process):
+                entries = git_index_entries(Path(directory), findings)
+
+        self.assertEqual(entries, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_encoding"},
+        )
+
+    @unittest.skipUnless(os.name == "posix", "non-UTF-8 paths require POSIX")
+    def test_git_file_inventory_rejects_non_utf8_paths_after_bounding(self) -> None:
         raw_paths = (b"z\xff", b"a\xfe")
         process = _FakePopen(b"\0".join(reversed(raw_paths)) + b"\0")
         findings = []
@@ -564,19 +1061,64 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 os.close(descriptor)
             with mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process):
                 paths = list(iter_repository_files(Path(directory), findings))
-        self.assertEqual([os.fsencode(path.name) for path in paths], sorted(raw_paths))
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_encoding"},
+        )
+
+    @unittest.skipUnless(os.name == "posix", "non-UTF-8 paths require POSIX")
+    def test_filesystem_fallback_rejects_non_utf8_paths_after_bounding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            raw_path = os.fsencode(directory) + b"/invalid-\xff"
+            descriptor = os.open(raw_path, os.O_CREAT | os.O_WRONLY, 0o600)
+            os.close(descriptor)
+            findings = []
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                side_effect=OSError("no git"),
+            ):
+                paths = list(iter_repository_files(Path(directory), findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_encoding"},
+        )
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFOs are unavailable")
+    def test_git_inventory_retains_nonregular_entries_for_preflight_rejection(self) -> None:
+        process = _FakePopen(b"input.pipe\0")
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fifo = root / "input.pipe"
+            os.mkfifo(fifo)
+            with mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [fifo])
         self.assertEqual(findings, [])
 
-    def test_successful_git_inventory_filters_tracked_deletions_after_bounding(self) -> None:
+    def test_successful_git_inventory_rejects_tracked_deletions_after_bounding(self) -> None:
         process = _FakePopen(b"deleted.txt\0present.txt\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "present.txt").write_text("present\n", encoding="utf-8")
-            with mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process):
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen", return_value=process
+            ), mock.patch.object(
+                Path, "exists", side_effect=AssertionError("inventory path was statted")
+            ), mock.patch.object(
+                Path, "is_symlink", side_effect=AssertionError("inventory path was statted")
+            ):
                 paths = list(iter_repository_files(root, findings))
-        self.assertEqual([path.name for path in paths], ["present.txt"])
-        self.assertEqual(findings, [])
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in findings],
+            [("resource.inventory_missing", "deleted.txt")],
+        )
 
     def test_inventory_finding_stops_run_before_policy_parsing(self) -> None:
         process = _FakePopen(b"unterminated")
@@ -609,6 +1151,51 @@ class MarkdownTests(unittest.TestCase):
             (root / "target.md").write_text("# Exact heading\n", encoding="utf-8")
             validator = FoundationValidator(root)
             validator._validate_markdown_links()
+            self.assertEqual(validator.findings, [])
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
+    def test_ignored_symlink_target_is_not_treated_as_checkout_content(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            root.mkdir()
+            source = root / "source.md"
+            source.write_text("# Source\n\n[ignored](ignored.md)\n", encoding="utf-8")
+            outside = parent / "outside.md"
+            outside.write_text("# Outside\n", encoding="utf-8")
+            (root / "ignored.md").symlink_to(outside)
+            validator = FoundationValidator(root)
+            validator.repository_files = [source]
+
+            with mock.patch.object(
+                Path, "exists", side_effect=AssertionError("link target was statted")
+            ), mock.patch.object(
+                Path, "is_file", side_effect=AssertionError("link target was statted")
+            ):
+                validator._validate_markdown_links()
+
+            self.assertIn(
+                "markdown.link_missing", {finding.code for finding in validator.findings}
+            )
+
+    def test_directory_link_is_derived_from_inventory_without_stat(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.md"
+            source.write_text("# Source\n\n[docs](docs/)\n", encoding="utf-8")
+            docs = root / "docs"
+            docs.mkdir()
+            target = docs / "target.md"
+            target.write_text("# Target\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+
+            with mock.patch.object(
+                Path, "exists", side_effect=AssertionError("link target was statted")
+            ), mock.patch.object(
+                Path, "is_file", side_effect=AssertionError("link target was statted")
+            ):
+                validator._validate_markdown_links()
+
             self.assertEqual(validator.findings, [])
 
     def test_malformed_uri_targets_are_reported_without_a_parser_crash(self) -> None:
@@ -652,8 +1239,14 @@ class MarkdownTests(unittest.TestCase):
         self.assertIsNone(markdown_fence_error("~~~text\ncontent\n~~~~\n"))
 
     @staticmethod
-    def _orange_book_text(*, byline: str = "By Chase Bryan", chapter_words: int = 1_200) -> str:
+    def _orange_book_text(
+        *,
+        byline: str = "By Chase Bryan",
+        chapter_words: int = 1_200,
+        chapter_two_words: int = 1_200,
+    ) -> str:
         chapter = " ".join("evidence" for _ in range(chapter_words))
+        chapter_two = " ".join("claims" for _ in range(chapter_two_words))
         return f"""# The Orange Book
 
 {byline}
@@ -662,12 +1255,15 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-07-12
 
+Manuscript version: 0.2
+
 This is not a normative language specification.
 
 ## Contents
 
 - [Preface](#preface)
 - [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)
+- [Chapter 2: Claims, Not Labels](#chapter-2-claims-not-labels)
 - [Manuscript map](#manuscript-map)
 - [Sources and drafting disclosure](#sources-and-drafting-disclosure)
 
@@ -679,6 +1275,10 @@ Reader context.
 
 {chapter}
 
+## Chapter 2: Claims, Not Labels
+
+{chapter_two}
+
 ## Manuscript map
 
 Future chapters.
@@ -686,9 +1286,12 @@ Future chapters.
 ## Sources and drafting disclosure
 
 Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.
+
+Manuscript version 0.2 added Chapter 2, drafted with OpenAI Codex, based on
+GPT-5, under Chase Bryan's direction on 2026-07-14.
 """
 
-    def test_orange_book_contract_accepts_v01_structure(self) -> None:
+    def test_orange_book_contract_accepts_v02_structure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / "docs/THE_ORANGE_BOOK.md"
@@ -713,6 +1316,16 @@ Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.
                 {finding.code for finding in validator.findings},
                 {"book.chapter_length", "book.identity"},
             )
+
+    def test_orange_book_contract_rejects_short_second_chapter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(self._orange_book_text(chapter_two_words=20), encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual({finding.code for finding in validator.findings}, {"book.chapter_length"})
 
     def test_orange_book_contract_rejects_reordered_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -751,6 +1364,22 @@ Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.
                 {"book.chapter_length", "book.disclosure"},
             )
 
+    def test_orange_book_contract_rejects_missing_v02_disclosure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            text = self._orange_book_text().replace(
+                "\nManuscript version 0.2 added Chapter 2, drafted with OpenAI Codex, based on\n"
+                "GPT-5, under Chase Bryan's direction on 2026-07-14.\n",
+                "\n",
+                1,
+            )
+            path.write_text(text, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual({finding.code for finding in validator.findings}, {"book.disclosure"})
+
     def test_orange_book_contract_rejects_impossible_snapshot_date(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -761,6 +1390,26 @@ Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.
             validator = FoundationValidator(root)
             validator._validate_orange_book()
             self.assertEqual({finding.code for finding in validator.findings}, {"book.snapshot"})
+
+    def test_orange_book_contract_rejects_missing_wrong_or_duplicate_version(self) -> None:
+        mutations = (
+            lambda text: text.replace("Manuscript version: 0.2\n\n", "", 1),
+            lambda text: text.replace("Manuscript version: 0.2", "Manuscript version: 0.3", 1),
+            lambda text: text.replace(
+                "Manuscript version: 0.2",
+                "Manuscript version: 0.2\n\nManuscript version: 0.2",
+                1,
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / "docs/THE_ORANGE_BOOK.md"
+                path.parent.mkdir(parents=True)
+                path.write_text(mutate(self._orange_book_text()), encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_orange_book()
+                self.assertEqual({finding.code for finding in validator.findings}, {"book.version"})
 
     def test_orange_book_contract_rejects_competing_byline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -915,6 +1564,25 @@ class ProvisionalSchemaTests(unittest.TestCase):
             [(issue.keyword, issue.instance_path, issue.message) for issue in issues],
             [("pattern", "$", "schema pattern expression is invalid")],
         )
+
+    def test_relative_schema_reference_resolution_is_lexical(self) -> None:
+        schema_path = Path("/virtual/root.schema.json")
+        referenced_path = Path("/virtual/referenced.schema.json")
+        schema = {"$ref": "referenced.schema.json"}
+        referenced = {"type": "string"}
+
+        with mock.patch.object(
+            Path, "resolve", side_effect=AssertionError("schema path was resolved")
+        ):
+            issues = validate_schema_instance(
+                "value",
+                schema,
+                schema_path,
+                {schema_path: schema, referenced_path: referenced},
+                {},
+            )
+
+        self.assertEqual(issues, [])
 
     def test_fixture_validation_never_executes_unreviewed_schema_patterns(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

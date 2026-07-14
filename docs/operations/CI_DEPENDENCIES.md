@@ -3,7 +3,7 @@
 Status: current direct-dependency inventory and gap record; not a reproducible-
 build claim or legal approval
 
-Inventory amendment: 2026-07-12
+Inventory amendment: 2026-07-14
 
 Hosted execution snapshot: 2026-07-11
 
@@ -35,18 +35,25 @@ redistribution or grant a license for this repository.
 | Component | Identity and role | Current closure | Known gap |
 | --- | --- | --- | --- |
 | Rust toolchain | `rustc`/Cargo 1.96.1 selected by `rust-toolchain.toml`; compiles and tests the Rust 2024 workspace | Exact release version and required `rustfmt`/`clippy` components are selected; initial Cargo graph has no third-party crates | Platform archives, installer, standard-library bytes, signatures, licenses, and transitive host inputs are not vendored or digest-bound here |
-| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages | Cargo and rustc remain toolchain trust; a lock file cannot archive the toolchain |
+| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages; the protected gate builds optimized `orangec` twice in distinct fresh target trees and requires byte equality | Cargo and rustc remain toolchain trust; a lock file cannot archive the toolchain; same-host repeatability is not an independent or cross-platform rebuild |
 | Rust standard library | Runtime/build interface used by `orange-compiler` and `orangec` | Supplied by the selected toolchain; no additional crate registry input | Target-specific standard-library and OS behavior are trusted; redistribution review remains open |
 
 These records authorize local owner development only. They do not establish a
 hermetic build, toolchain redistribution right, compiler correctness, or release
 provenance.
 
+The byte-comparison check fixes the process environment, toolchain selection,
+locale, timezone, and source-date epoch, then rebuilds the same checkout twice
+with separate target trees. Both builds still share one host, source path,
+toolchain installation, Cargo home, owner, and trust domain. The result is a
+regression check for same-host nondeterminism, not independently reproduced
+release evidence.
+
 ## 3. Workflow map
 
 | Workflow | Trigger and role | Direct external execution dependencies | Network or hosted-state boundary |
 | --- | --- | --- | --- |
-| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | rustup resolves the pinned toolchain when absent; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
+| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | rustup explicitly installs the pinned minimal toolchain with Clippy and rustfmt; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
 | `dependency-review.yml` | Pull-request and merge-queue dependency-policy signal | Checkout and Dependency Review | Depends on GitHub's dependency graph, API, and event comparison state |
 | `external-links.yml` | `main`, scheduled, and manual link observation | Checkout and lychee | Downloads lychee and queries every non-excluded external endpoint at run time |
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
@@ -125,8 +132,8 @@ part of the upstream descriptor and therefore part of the source-review surface.
 
 | Tool | Selected artifact identity | Verification performed by current automation | Upstream license and provenance | Remaining limitation |
 | --- | --- | --- | --- | --- |
-| actionlint 1.7.12 | Linux AMD64 `sha256:8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8`; Linux ARM64 `sha256:325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6` | [`scripts/ci/install-actionlint`](../../scripts/ci/install-actionlint) downloads the named release archive over HTTPS and checks the architecture-specific SHA-256 before extraction | [MIT at release `v1.7.12`](https://github.com/rhysd/actionlint/blob/v1.7.12/LICENSE.txt); [upstream release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12) is the provenance locator | Archive bytes and upstream release metadata are not mirrored or signed into this repository; installer trust still includes DNS, TLS, GitHub availability, and ambient `curl`, `sha256sum`, `tar`, and `install` |
-| lychee 0.24.2 | Linux x86-64 GNU archive `sha256:1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a` | [`scripts/ci/install-lychee`](../../scripts/ci/install-lychee) downloads the named release archive over HTTPS and checks SHA-256 before extraction | Dual [Apache-2.0](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-APACHE) or [MIT](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-MIT) at release `lychee-v0.24.2`; [upstream release](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2) is the provenance locator | Only Linux x86-64 is admitted by the installer; archive and release metadata are not mirrored, and link results depend on live remote endpoints |
+| actionlint 1.7.12 | Linux AMD64 `sha256:8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8`; Linux ARM64 `sha256:325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6` | [`scripts/ci/install-actionlint`](../../scripts/ci/install-actionlint) limits connection setup to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 32 MiB archive cap in both curl and the operating system, caps the extracted member at 64 MiB, checks the architecture-specific SHA-256, extracts only `actionlint` without archive ownership or permissions, and requires one nonempty, regular, non-symlinked, single-link result | [MIT at release `v1.7.12`](https://github.com/rhysd/actionlint/blob/v1.7.12/LICENSE.txt); [upstream release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12) is the provenance locator | Archive bytes and upstream release metadata are not mirrored or signed into this repository; installer trust still includes DNS, TLS, GitHub availability, and ambient `curl`, `sha256sum`, `tar`, `stat`, and `install` |
+| lychee 0.24.2 | Linux x86-64 GNU archive `sha256:1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a` | [`scripts/ci/install-lychee`](../../scripts/ci/install-lychee) limits connection setup to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 64 MiB archive cap in both curl and the operating system, caps the extracted member at 128 MiB, checks SHA-256, extracts only the expected `lychee` member without archive ownership or permissions, and requires one nonempty, regular, non-symlinked, single-link result | Dual [Apache-2.0](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-APACHE) or [MIT](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-MIT) at release `lychee-v0.24.2`; [upstream release](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2) is the provenance locator | Only Linux x86-64 is admitted by the installer; archive and release metadata are not mirrored, and link results depend on live remote endpoints |
 | zizmor 1.26.1 container | `ghcr.io/zizmorcore/zizmor:1.26.1@sha256:d1117e5dbd9ee4970644067b534ab6ab50371f3c6f7f4d05446eb603a6e78f48` | The exact pinned composite Action rejects an unknown version and constructs the image reference from its committed version-to-digest map | [MIT at release `v1.26.1`](https://github.com/zizmorcore/zizmor/blob/v1.26.1/LICENSE); [upstream release](https://github.com/zizmorcore/zizmor/releases/tag/v1.26.1) and GHCR are the provenance locators | The image is content-selected but not mirrored; execution still depends on the registry, ambient Docker daemon/kernel, runner CPU, and network. Online-audit output additionally depends on current GitHub state |
 | Scorecard 2.4.3 container | `ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941` | [`scorecard.yml`](../../.github/workflows/scorecard.yml) invokes `docker run` with the exact digest; repository validation admits that image and enforces the command, read-only event mount, workspace mount, environment forwarding, dropped capabilities, and no-new-privileges | [Apache-2.0](https://github.com/ossf/scorecard-action/blob/4eaacf0543bb3f2c246792bd56e8cdeffafb205a/LICENSE); the image's upstream OCI revision label is [`4eaacf0543bb3f2c246792bd56e8cdeffafb205a`](https://github.com/ossf/scorecard-action/tree/4eaacf0543bb3f2c246792bd56e8cdeffafb205a), and GHCR is the runtime provenance locator | The runtime is content-selected but not mirrored; execution still depends on GHCR availability and integrity, correct publisher provenance and digest admission, and the ambient Docker daemon, kernel, runner CPU, and network. The container root filesystem is read-only, while the workspace remains writable for `results.sarif`. The hosted result is not hermetic or independently reproducible evidence |
 
@@ -148,13 +155,35 @@ enforcement mechanism.
 The required invariant check invokes repository-owned Bash and Python files:
 
 - [`scripts/ci/check-repository`](../../scripts/ci/check-repository) sets
-  locale, timezone, hash seed, UTF-8, bytecode, and source-date variables, then
-  runs the standard-library `unittest` suite and
-  [`tools/validate_foundation.py`](../../tools/validate_foundation.py);
-- the actionlint and lychee installers enforce the archive identities recorded
-  above; and
+  locale, timezone, and source-date variables, then runs the closed-tree
+  [`tools/validate_foundation.py`](../../tools/validate_foundation.py) gate,
+  the standard-library `unittest` suite, and the Rust compiler checks in that
+  serialized order; before Make starts, it removes inherited Make control and
+  shell-startup variables and disables built-in rules and variables;
+- each Python recipe starts from an allowlisted environment with a fixed hash
+  seed, skips `site` initialization, excludes unsafe path injection, suppresses
+  bytecode writes, and forces UTF-8 mode; foundation tests also redirect
+  bytecode lookup to a fresh temporary root so ignored checkout caches cannot
+  execute;
+- the protected `check-compiler` Make recipe runs Cargo from the filesystem
+  root with a fresh temporary Cargo home and target tree, the selected Rust
+  1.96.1 toolchain, offline mode, and an allowlisted process environment;
+- every repository Bash helper selects `/bin/bash` directly in privileged
+  startup mode, suppressing inherited shell functions and `BASH_ENV` before
+  the script body runs;
+- every hosted `run` step likewise selects `/bin/bash -p` by absolute path and
+  retains immediate-exit and pipeline-failure handling through the supported
+  custom-shell command template;
+- the actionlint and lychee installers use only `/usr/bin` and `/bin` for
+  ambient command lookup, reject empty destination arguments, terminate
+  options before caller-selected install destinations, disable curl's default
+  configuration, clear inherited tar/gzip option variables, and enforce the
+  archive identities recorded above; and
 - [`scripts/ci/check-external-links`](../../scripts/ci/check-external-links)
-  defines the live link-check method and its documented IACR exclusion.
+  defines the live link-check method and its documented IACR exclusion, with
+  a nonempty caller-selected executable path, prior option termination, and
+  an allowlisted process environment that excludes ambient checker, proxy,
+  logging, locale, and home-directory configuration.
 
 These are first-party repository methods, not third-party dependencies. The
 repository has no selected license while D-018 is blocked. This inventory does
@@ -173,8 +202,8 @@ tools and services are ambient rather than admitted, fixed inputs:
 | Bash and Python 3 standard library | First-party checks and composite Actions | Runner-provided executables; exact versions and binary/package digests are not captured. No PyPI packages are installed by first-party checks |
 | Git | Checkout implementation | Runner-provided executable; exact version, configuration closure, and binary digest are not captured |
 | Docker daemon, kernel, and CPU | zizmor and Scorecard containers | Runner-provided execution boundary; versions, configuration, and host identity are not captured |
-| `curl`, `sha256sum`, `tar`, `install`, `mktemp`, `rm`, and `uname` | Download, verify, extract, install, and clean temporary tools | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured |
-| `make` | Optional local `make check` entry point | Not invoked by required hosted CI; local version and provenance are operator-controlled and unrecorded |
+| `curl`, `sha256sum`, `tar`, `stat`, `install`, `mktemp`, `rm`, and `uname` | Download, verify, extract, inspect, install, and clean temporary tools | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured |
+| GNU Make | Protected compiler recipe and optional local `make check` entry point | Required hosted CI invokes the compiler target with built-in rules and variables disabled; exact binary version, provenance, and package license are unrecorded |
 | Artifact, code-scanning, GHCR, and external web services | Storage, analysis upload, image retrieval, and link observations | Mutable hosted services; terms and service behavior are external assumptions, not repository-pinned software inputs |
 
 The usual upstream licenses of a tool family are not a substitute for the
@@ -194,7 +223,7 @@ recorded identities and digests.
 
 | Result | What is currently fixed | What the result actually establishes | Why it is not reproducible evidence yet |
 | --- | --- | --- | --- |
-| `make check` or `scripts/ci/check-repository` | Repository bytes, Cargo lock, selected Rust version, and explicit process variables; Cargo runs locked/offline after the toolchain exists | Rust formatting, lint, docs, unit/CLI tests, repository invariants, and synthetic/adversarial fixture expectations pass under the executing toolchain and OS | Rust archives, Python, Bash, kernel, filesystem, and host tools are not content-fixed; no signed execution manifest or independently replayable environment is emitted |
+| `scripts/ci/check-repository` | Repository bytes, Cargo lock, selected Rust version, allowlisted Python and Cargo environments, and fresh bytecode/build cache roots; Cargo runs locked/offline after the toolchain exists | Rust formatting, lint, docs, debug and optimized unit/CLI tests, repository invariants, and synthetic/adversarial fixture expectations pass under the executing toolchain and OS | Rust archives, Python, shell, Make, kernel, filesystem, and host tools are not content-fixed; no signed execution manifest or independently replayable environment is emitted |
 | Required hosted CI | Repository revision, direct Action SHAs, actionlint archive digest, and zizmor image digest | The configured repository, Markdown, workflow, and workflow-security methods passed in one hosted run | Runner image, Node, Git, Docker host, Action bundles, and service behavior are not fully archived or fixed |
 | Dependency Review | Event base/head identities and the selected Action revision | GitHub reported no configured dependency-policy violation for its then-current dependency data | Dependency graph/API state and service implementation are external, time-indexed inputs |
 | External Links | lychee archive digest, link-check flags, and repository locators | The non-excluded endpoints produced accepted responses during the run | Remote content, DNS, TLS, routing, rate limits, and server policy change independently of repository bytes |

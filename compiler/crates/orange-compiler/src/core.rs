@@ -4,6 +4,14 @@ use std::fmt;
 
 use crate::source::Span;
 
+pub(crate) const MAX_EXACT_INTEGER_BITS: usize = 16_384;
+const BINARY_LIMB_BITS: usize = 32;
+const MAX_BINARY_LIMBS: usize = MAX_EXACT_INTEGER_BITS.div_ceil(BINARY_LIMB_BITS);
+// One base-1,000,000,000 limb carries more than 27 binary bits. Using the
+// weaker 27-bit bound keeps this capacity an integer-only, auditable upper
+// bound rather than relying on floating-point logarithms.
+const MAX_DECIMAL_LIMBS: usize = MAX_EXACT_INTEGER_BITS.div_ceil(27);
+
 /// A successfully analyzed Orange module.
 ///
 /// Core storage is read-only outside this crate so callers cannot reorder
@@ -115,22 +123,40 @@ impl CoreFunction {
     }
 }
 
-/// Types admitted by the first typed expression fragment.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CoreType {
-    /// An exact, signed mathematical integer.
-    Int,
-    /// An unsigned 8-bit word.
-    Word8,
+macro_rules! define_core_types {
+    ($($(#[$variant_doc:meta])* $variant:ident => $name:literal,)+) => {
+        /// Types admitted by the first typed expression fragment.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum CoreType {
+            $($(#[$variant_doc])* $variant,)+
+        }
+
+        impl CoreType {
+            /// Returns the stable printable Core type name.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+
+            #[cfg(test)]
+            const ALL: &'static [Self] = &[$(Self::$variant,)+];
+        }
+
+        impl fmt::Display for CoreType {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(self.as_str())
+            }
+        }
+    }
 }
 
-impl fmt::Display for CoreType {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Int => "Int",
-            Self::Word8 => "Word[8]",
-        })
-    }
+define_core_types! {
+    /// An exact, signed mathematical integer.
+    Int => "Int",
+    /// An unsigned 8-bit word.
+    Word8 => "Word[8]",
 }
 
 /// Values admitted by the first typed expression fragment.
@@ -149,6 +175,18 @@ impl CoreValue {
         match self {
             Self::Int(_) => CoreType::Int,
             Self::Word8(_) => CoreType::Word8,
+        }
+    }
+
+    pub(crate) fn try_clone_with_reservation(
+        &self,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<Self> {
+        match self {
+            Self::Int(value) => value
+                .try_clone_with_reservation(reserve_limbs)
+                .map(Self::Int),
+            Self::Word8(value) => Some(Self::Word8(*value)),
         }
     }
 }
@@ -170,7 +208,7 @@ pub struct ExactInteger {
 }
 
 impl ExactInteger {
-    pub(crate) fn new(negative: bool, magnitude: Magnitude) -> Self {
+    pub(crate) const fn new(negative: bool, magnitude: Magnitude) -> Self {
         Self {
             negative: negative && !magnitude.is_zero(),
             magnitude,
@@ -185,7 +223,7 @@ impl ExactInteger {
 
     /// Returns whether this is zero.
     #[must_use]
-    pub fn is_zero(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.magnitude.is_zero()
     }
 
@@ -194,14 +232,25 @@ impl ExactInteger {
     pub fn magnitude_bits(&self) -> usize {
         self.magnitude.bit_len()
     }
+
+    fn try_clone_with_reservation(
+        &self,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<Self> {
+        Some(Self {
+            negative: self.negative,
+            magnitude: self.magnitude.try_clone_with_reservation(reserve_limbs)?,
+        })
+    }
 }
 
 impl fmt::Display for ExactInteger {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let decimal = self.magnitude.decimal_limbs().ok_or(fmt::Error)?;
         if self.negative {
             formatter.write_str("-")?;
         }
-        formatter.write_str(&self.magnitude.to_decimal())
+        decimal.write(formatter)
     }
 }
 
@@ -216,27 +265,92 @@ impl Magnitude {
         Self { limbs: Vec::new() }
     }
 
-    pub(crate) fn multiply_add(&mut self, multiplier: u32, addend: u32) {
+    pub(crate) fn multiply_add_with_reservation(
+        &mut self,
+        multiplier: u32,
+        addend: u32,
+        reserve_limb: impl FnOnce(&mut Vec<u32>) -> bool,
+    ) -> bool {
+        // Determine whether the result needs another limb before modifying the
+        // existing representation. A failed growth reservation must leave a
+        // reusable magnitude unchanged rather than containing a partial
+        // multiply-add result.
         let mut carry = u64::from(addend);
+        for limb in &self.limbs {
+            let Some(value) = u64::from(*limb)
+                .checked_mul(u64::from(multiplier))
+                .and_then(|product| product.checked_add(carry))
+            else {
+                // The u32 operand domain proves this unreachable. Returning
+                // failure still keeps a compiler artifact from being exposed
+                // if that representation invariant ever changes.
+                return false;
+            };
+            carry = value >> u32::BITS;
+        }
+        if carry != 0 && !reserve_limb(&mut self.limbs) {
+            return false;
+        }
+
+        carry = u64::from(addend);
         for limb in &mut self.limbs {
-            let value = u64::from(*limb) * u64::from(multiplier) + carry;
-            *limb = value as u32;
+            let Some(value) = u64::from(*limb)
+                .checked_mul(u64::from(multiplier))
+                .and_then(|product| product.checked_add(carry))
+            else {
+                return false;
+            };
+            // A binary limb is the low half of this exact two-limb value.
+            let Ok(low_limb) = u32::try_from(value & u64::from(u32::MAX)) else {
+                return false;
+            };
+            *limb = low_limb;
             carry = value >> u32::BITS;
         }
         if carry != 0 {
-            self.limbs.push(carry as u32);
+            // The maximum product plus carry is
+            // u32::MAX * (u32::MAX + 1), so its high half fits one limb.
+            let Ok(carry_limb) = u32::try_from(carry) else {
+                return false;
+            };
+            self.limbs.push(carry_limb);
         }
         self.normalize();
+        true
     }
 
-    pub(crate) fn is_zero(&self) -> bool {
+    pub(crate) const fn is_zero(&self) -> bool {
         self.limbs.is_empty()
+    }
+
+    fn try_clone_with_reservation(
+        &self,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<Self> {
+        if self.limbs.is_empty() {
+            return Some(Self::zero());
+        }
+        let mut limbs = Vec::new();
+        if !reserve_limbs(&mut limbs, self.limbs.len()) {
+            return None;
+        }
+        limbs.extend_from_slice(&self.limbs);
+        Some(Self { limbs })
     }
 
     pub(crate) fn bit_len(&self) -> usize {
         self.limbs.last().map_or(0, |most_significant| {
-            (self.limbs.len() - 1) * u32::BITS as usize
-                + (u32::BITS - most_significant.leading_zeros()) as usize
+            self.limbs
+                .len()
+                .checked_sub(1)
+                .and_then(|full_limbs| full_limbs.checked_mul(BINARY_LIMB_BITS))
+                .and_then(|full_bits| {
+                    u32::BITS
+                        .checked_sub(most_significant.leading_zeros())
+                        .and_then(|remaining_bits| usize::try_from(remaining_bits).ok())
+                        .and_then(|remaining_bits| full_bits.checked_add(remaining_bits))
+                })
+                .unwrap_or(usize::MAX)
         })
     }
 
@@ -254,34 +368,72 @@ impl Magnitude {
         }
     }
 
-    fn to_decimal(&self) -> String {
+    fn decimal_limbs(&self) -> Option<DecimalLimbs> {
         const DECIMAL_LIMB: u64 = 1_000_000_000;
 
         if self.is_zero() {
-            return String::from("0");
+            return Some(DecimalLimbs::zero());
         }
-        let mut binary = self.limbs.clone();
-        let mut decimal = Vec::new();
-        while !binary.is_empty() {
+        let mut binary = [0_u32; MAX_BINARY_LIMBS];
+        binary
+            .get_mut(..self.limbs.len())?
+            .copy_from_slice(&self.limbs);
+        let mut binary_len = self.limbs.len();
+        let mut decimal = DecimalLimbs::zero();
+        while binary_len != 0 {
             let mut remainder = 0_u64;
-            for limb in binary.iter_mut().rev() {
+            for limb in binary.get_mut(..binary_len)?.iter_mut().rev() {
                 let dividend = (remainder << u32::BITS) | u64::from(*limb);
-                *limb = u32::try_from(dividend / DECIMAL_LIMB)
-                    .expect("division quotient fits in one binary limb");
+                *limb = u32::try_from(dividend / DECIMAL_LIMB).ok()?;
                 remainder = dividend % DECIMAL_LIMB;
             }
-            while binary.last() == Some(&0) {
-                binary.pop();
+            while let Some(last_index) = binary_len.checked_sub(1) {
+                if binary.get(last_index).copied() != Some(0) {
+                    break;
+                }
+                binary_len = last_index;
             }
-            decimal.push(u32::try_from(remainder).expect("decimal limb fits in u32"));
+            decimal.push(u32::try_from(remainder).ok()?)?;
         }
 
-        let mut output = decimal.pop().unwrap_or(0).to_string();
-        for limb in decimal.iter().rev() {
-            use fmt::Write as _;
-            let _ = write!(output, "{limb:09}");
+        Some(decimal)
+    }
+}
+
+struct DecimalLimbs {
+    limbs: [u32; MAX_DECIMAL_LIMBS],
+    len: usize,
+}
+
+impl DecimalLimbs {
+    const fn zero() -> Self {
+        Self {
+            limbs: [0; MAX_DECIMAL_LIMBS],
+            len: 0,
         }
-        output
+    }
+
+    fn push(&mut self, limb: u32) -> Option<()> {
+        let next_len = self.len.checked_add(1)?;
+        *self.limbs.get_mut(self.len)? = limb;
+        self.len = next_len;
+        Some(())
+    }
+
+    fn write(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.len == 0 {
+            return formatter.write_str("0");
+        }
+        let (most_significant, remaining) = self
+            .limbs
+            .get(..self.len)
+            .and_then(<[u32]>::split_last)
+            .ok_or(fmt::Error)?;
+        write!(formatter, "{most_significant}")?;
+        for limb in remaining.iter().rev() {
+            write!(formatter, "{limb:09}")?;
+        }
+        Ok(())
     }
 }
 
@@ -289,6 +441,15 @@ impl Magnitude {
 mod tests {
     use super::*;
     use crate::source::{SourceMap, TextOffset};
+
+    #[test]
+    fn build_profiles_preserve_debug_assertions_and_overflow_checks() {
+        const { assert!(cfg!(debug_assertions)) };
+        let overflow = std::panic::catch_unwind(|| {
+            std::hint::black_box(u32::MAX) + std::hint::black_box(1_u32)
+        });
+        assert!(overflow.is_err());
+    }
 
     fn test_span() -> Span {
         let mut sources = SourceMap::new();
@@ -304,10 +465,89 @@ mod tests {
     fn exact_integer_decimal_formatting_does_not_collapse_large_values() {
         let mut magnitude = Magnitude::zero();
         for digit in [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9] {
-            magnitude.multiply_add(10, digit);
+            assert!(magnitude.multiply_add_with_reservation(10, digit, |limbs| {
+                limbs.try_reserve(1).is_ok()
+            }));
         }
         let value = ExactInteger::new(true, magnitude);
         assert_eq!(value.to_string(), "-1234567890123456789");
+    }
+
+    #[test]
+    fn magnitude_multiply_add_accepts_the_full_u32_domain_without_overflow() {
+        let mut magnitude = Magnitude::zero();
+        let reserve = |limbs: &mut Vec<u32>| limbs.try_reserve(1).is_ok();
+
+        assert!(magnitude.multiply_add_with_reservation(u32::MAX, u32::MAX, reserve));
+        assert_eq!(magnitude.limbs, [u32::MAX]);
+
+        assert!(magnitude.multiply_add_with_reservation(u32::MAX, u32::MAX, reserve));
+        assert_eq!(magnitude.limbs, [0, u32::MAX]);
+
+        assert!(magnitude.multiply_add_with_reservation(u32::MAX, u32::MAX, reserve));
+        assert_eq!(magnitude.limbs, [u32::MAX, 1, u32::MAX - 1]);
+    }
+
+    #[test]
+    fn magnitude_limb_reservation_failure_preserves_existing_state() {
+        let mut magnitude = Magnitude {
+            limbs: vec![u32::MAX],
+        };
+        let before = magnitude.clone();
+
+        assert!(!magnitude.multiply_add_with_reservation(u32::MAX, u32::MAX, |_| false));
+        assert_eq!(magnitude, before);
+    }
+
+    #[test]
+    fn maximum_exact_integer_uses_the_fixed_decimal_scratch_bound() {
+        let mut magnitude = Magnitude::zero();
+        for _ in 0..MAX_EXACT_INTEGER_BITS {
+            assert!(
+                magnitude
+                    .multiply_add_with_reservation(2, 1, |limbs| { limbs.try_reserve(1).is_ok() })
+            );
+        }
+
+        let decimal = magnitude.decimal_limbs().unwrap();
+        assert!(decimal.len <= MAX_DECIMAL_LIMBS);
+        assert_eq!(magnitude.bit_len(), MAX_EXACT_INTEGER_BITS);
+    }
+
+    #[test]
+    fn zero_decimal_formatting_uses_no_decimal_limbs() {
+        let magnitude = Magnitude::zero();
+
+        assert_eq!(magnitude.decimal_limbs().unwrap().len, 0);
+    }
+
+    #[test]
+    fn oversized_internal_magnitude_returns_a_formatting_error_without_output() {
+        let value = ExactInteger::new(
+            true,
+            Magnitude {
+                limbs: vec![1; MAX_BINARY_LIMBS + 1],
+            },
+        );
+        let mut output = String::new();
+
+        let result = std::fmt::write(&mut output, format_args!("{value}"));
+
+        assert_eq!(result, Err(fmt::Error));
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn decimal_limb_capacity_failure_preserves_existing_state() {
+        let mut decimal = DecimalLimbs::zero();
+        for limb in 0..MAX_DECIMAL_LIMBS {
+            assert_eq!(decimal.push(u32::try_from(limb).unwrap()), Some(()));
+        }
+        let before = decimal.limbs;
+
+        assert_eq!(decimal.push(u32::MAX), None);
+        assert_eq!(decimal.len, MAX_DECIMAL_LIMBS);
+        assert_eq!(decimal.limbs, before);
     }
 
     #[test]
@@ -323,6 +563,36 @@ mod tests {
         assert_eq!(CoreValue::Word8(0).to_string(), "0x00");
         assert_eq!(CoreValue::Word8(10).to_string(), "0x0a");
         assert_eq!(CoreValue::Word8(255).to_string(), "0xff");
+    }
+
+    #[test]
+    fn core_type_inventory_and_display_are_exact() {
+        assert_eq!(CoreType::ALL, &[CoreType::Int, CoreType::Word8]);
+        assert_eq!(
+            CoreType::ALL
+                .iter()
+                .map(|result_type| result_type.as_str())
+                .collect::<Vec<_>>(),
+            ["Int", "Word[8]"]
+        );
+        assert!(
+            CoreType::ALL
+                .iter()
+                .all(|result_type| result_type.to_string() == result_type.as_str())
+        );
+    }
+
+    #[test]
+    fn core_function_id_accepts_the_full_u32_domain() {
+        assert_eq!(CoreFunctionId::from_index(0).unwrap().index(), 0);
+        let maximum = usize::try_from(u32::MAX).unwrap();
+        assert_eq!(
+            CoreFunctionId::from_index(maximum).unwrap().index(),
+            u32::MAX
+        );
+
+        #[cfg(target_pointer_width = "64")]
+        assert!(CoreFunctionId::from_index(maximum.checked_add(1).unwrap()).is_none());
     }
 
     #[test]
@@ -361,5 +631,28 @@ mod tests {
         assert_eq!(module.functions()[1].id().index(), 1);
         assert_eq!(module.functions()[1].result_type(), CoreType::Word8);
         assert_eq!(module.functions()[1].value(), &CoreValue::Word8(8));
+
+        let CoreModule {
+            span: _,
+            name: _,
+            functions,
+        } = module;
+        for function in functions {
+            let CoreFunction {
+                id: _,
+                span: _,
+                name: _,
+                name_span: _,
+                value,
+            } = function;
+            match value {
+                CoreValue::Int(_) | CoreValue::Word8(_) => {}
+            }
+        }
+        for result_type in [CoreType::Int, CoreType::Word8] {
+            match result_type {
+                CoreType::Int | CoreType::Word8 => {}
+            }
+        }
     }
 }

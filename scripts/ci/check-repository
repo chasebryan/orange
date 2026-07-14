@@ -1,18 +1,23 @@
-#!/usr/bin/env bash
+#!/bin/sh -p
 
-set -euo pipefail
+set -eu
 
-readonly SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd)"
 
 cd -- "$REPOSITORY_ROOT"
 
 export LANG=C
 export LC_ALL=C
-export PYTHONDONTWRITEBYTECODE=1
-export PYTHONHASHSEED=0
-export PYTHONUTF8=1
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 export TZ=UTC
 
-make check
+exec env \
+  -u BASH_ENV \
+  -u ENV \
+  -u GNUMAKEFLAGS \
+  -u MAKEFLAGS \
+  -u MAKEFILES \
+  -u MAKEOVERRIDES \
+  -u MFLAGS \
+  make --no-builtin-rules --no-builtin-variables check
