@@ -2,7 +2,17 @@
 
 set -eu
 
-readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+SCRIPT_PATH="$0"
+case "$SCRIPT_PATH" in
+  */*) ;;
+  *) SCRIPT_PATH="./$SCRIPT_PATH" ;;
+esac
+readonly SCRIPT_PATH
+if [ -L "$SCRIPT_PATH" ]; then
+  echo "check-repository must not be invoked through a symbolic link" >&2
+  exit 1
+fi
+readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "${SCRIPT_PATH%/*}" && pwd -P)"
 readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd -P)"
 
 cd -- "$REPOSITORY_ROOT"

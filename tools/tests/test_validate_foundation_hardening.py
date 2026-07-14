@@ -308,8 +308,9 @@ jobs:
         launcher = (source_root / "scripts/ci/check-repository").read_text(
             encoding="utf-8"
         )
+        self.assertIn('if [ -L "$SCRIPT_PATH" ]; then', launcher)
         self.assertIn(
-            'readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"',
+            'readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "${SCRIPT_PATH%/*}" && pwd -P)"',
             launcher,
         )
         self.assertIn(
@@ -318,6 +319,35 @@ jobs:
         )
         self.assertIn("export SOURCE_DATE_EPOCH=0\n", launcher)
         self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
+
+    def test_repository_launcher_rejects_a_direct_script_symlink(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        launcher = source_root / "scripts/ci/check-repository"
+        with tempfile.TemporaryDirectory() as directory:
+            alias_root = Path(directory)
+            alias_directory = alias_root / "scripts/ci"
+            alias_directory.mkdir(parents=True)
+            alias = alias_directory / "check-repository"
+            alias.symlink_to(launcher)
+            marker = alias_root / "wrong-root-make-ran"
+            (alias_root / "Makefile").write_text(
+                f"check:\n\t@touch -- {marker}\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(alias)],
+                cwd=alias_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            marker_exists = marker.exists()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must not be invoked through a symbolic link", result.stderr)
+        self.assertFalse(marker_exists)
 
     def test_ci_bash_helpers_use_hardened_startup_and_bounded_installers(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

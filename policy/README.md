@@ -14,9 +14,10 @@ allowed; product releases and third-party pull requests are not.
 
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX
 privileged shell mode suppresses inherited interpreter startup files before the
-script executes. It resolves its script directory and repository root to their
-physical paths before entering the checkout, so a symlink alias cannot change
-the policy scope. It then removes inherited Make control and shell-startup
+script executes. It rejects a symbolic link in the script's final path
+component, then resolves its parent directory and repository root to physical
+paths before entering the checkout, so a directory alias cannot change the
+policy scope. It then removes inherited Make control and shell-startup
 variables before Make parses any file and validates the closed repository tree
 before foundation unit/adversarial tests and Rust formatting, linting, and
 tests. The Make entrypoint serializes that order even under parallel execution,
