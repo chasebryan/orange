@@ -299,6 +299,73 @@ jobs:
                 self.assertIn("workflow.scorecard_publication", {finding.code for finding in validator.findings})
 
 
+class PolicyShapeHardeningTests(unittest.TestCase):
+    def test_malformed_nested_policy_values_fail_closed_without_crashing(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        baseline = load_json(source_root / "policy/gate0-repository-policy.json")
+        mutations = (
+            (
+                "allowed top-level item",
+                lambda policy: policy["allowed_top_level_paths"].__setitem__(0, []),
+            ),
+            (
+                "required path item",
+                lambda policy: policy["required_paths"].__setitem__(0, []),
+            ),
+            (
+                "Action repository item",
+                lambda policy: policy["github_actions"]["allowed_action_repositories"].__setitem__(0, []),
+            ),
+            (
+                "write-permission mapping",
+                lambda policy: policy["github_actions"].__setitem__("allowed_write_permissions", []),
+            ),
+            (
+                "forbidden-event list",
+                lambda policy: policy["github_actions"].__setitem__("forbidden_events", None),
+            ),
+            (
+                "NUL path",
+                lambda policy: policy["required_paths"].__setitem__(0, "unsafe\0path"),
+            ),
+            (
+                "NUL binary path",
+                lambda policy: policy["allowed_binary_artifacts"][0].__setitem__("path", "unsafe\0path"),
+            ),
+            (
+                "extra NUL forbidden path",
+                lambda policy: policy["forbidden_paths"].append("unsafe\0path"),
+            ),
+            (
+                "duplicate top-level path",
+                lambda policy: policy["allowed_top_level_paths"].append(
+                    policy["allowed_top_level_paths"][0]
+                ),
+            ),
+            (
+                "duplicate Action repository",
+                lambda policy: policy["github_actions"]["allowed_action_repositories"].append(
+                    policy["github_actions"]["allowed_action_repositories"][0]
+                ),
+            ),
+            (
+                "duplicate write permission",
+                lambda policy: policy["github_actions"]["allowed_write_permissions"][
+                    "scorecard.yml"
+                ].append("security-events"),
+            ),
+        )
+        for name, mutate in mutations:
+            with self.subTest(name=name):
+                policy = json.loads(json.dumps(baseline))
+                mutate(policy)
+                validator = FoundationValidator(source_root)
+                with mock.patch.object(validator, "_load_repository_json", return_value=policy):
+                    findings = validator.run()
+                self.assertTrue(any(finding.code.startswith("policy.") for finding in findings))
+                self.assertEqual(validator.policy, {})
+
+
 class RepositoryInventoryHardeningTests(unittest.TestCase):
     def test_cli_root_assertion_cannot_redirect_repository_scope(self) -> None:
         repository_root = Path(__file__).resolve().parents[2]
@@ -972,6 +1039,19 @@ class BrandAssetHardeningTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_brand_assets()
             self.assertIn("brand.manifest_metadata", {finding.code for finding in validator.findings})
+
+    def test_unhashable_brand_manifest_path_is_rejected_without_crashing(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(source_root / "assets/brand", root / "assets/brand")
+            manifest_path = root / "assets/brand/manifest.json"
+            manifest = load_json(manifest_path)
+            manifest["assets"][0]["path"] = []
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_brand_assets()
+            self.assertIn("brand.manifest_item", {finding.code for finding in validator.findings})
 
     def test_brand_manifest_source_filename_mutation_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
