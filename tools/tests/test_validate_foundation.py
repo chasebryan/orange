@@ -1586,13 +1586,18 @@ class MarkdownTests(unittest.TestCase):
             (root / "target.md").write_text("# Target\n", encoding="utf-8")
             (root / "source.md").write_text(
                 "[balanced]((guide).md)\n"
+                "[outer [inner]]((guide).md)\n"
+                "[escaped \\] label]((guide).md)\n"
                 "[angle](<(guide).md>)\n"
                 "[escaped](\\(guide\\).md)\n"
                 "[query](target.md?value=(nested))\n"
                 "[quoted title](target.md \"see (this)\")\n"
                 "[parenthesized title](target.md (see this))\n"
                 "[missing](missing(part).md)\n"
-                "[unterminated title](missing-title.md \"unterminated)\n",
+                "[missing [nested]](nested-missing.md)\n"
+                "[missing \\] label](escaped-missing.md)\n"
+                "[unterminated title](missing-title.md \"unterminated)\n"
+                "[unterminated](ignored.md\r[after cr](cr-missing.md)\n",
                 encoding="utf-8",
             )
             validator = FoundationValidator(root)
@@ -1608,7 +1613,19 @@ class MarkdownTests(unittest.TestCase):
                 ),
                 (
                     "markdown.link_missing",
+                    "local link target does not exist: nested-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: escaped-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
                     'local link target does not exist: missing-title.md "unterminated',
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: cr-missing.md",
                 ),
             ],
         )

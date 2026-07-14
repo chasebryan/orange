@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "8e5ab8ae655b94a87b4eadea18a63012a9dd00296b0b0f18689fc1a31e53b666"
+GATE0_PROTECTED_FILE_DIGEST = "5f98a077d5522fee69cef16a6b1f3674110dcb932701309738a24871985e324c"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -473,7 +473,6 @@ CONTAINER_ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*(docker://[^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
 )
-MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]\n]*\]\(")
 MARKDOWN_REFERENCE_RE = re.compile(r"(?m)^ {0,3}\[[^\]\n]+\]:\s*(<[^>\n]*>|[^\s]+)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FRONT_MATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9-]*):(?:\s*(.*))?$")
@@ -4554,19 +4553,39 @@ def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
 
 def markdown_inline_link_targets(text: str) -> Iterable[str]:
     offset = 0
-    while (opening := MARKDOWN_LINK_RE.search(text, offset)) is not None:
-        start = opening.end()
-        line_end = text.find("\n", start)
-        if line_end < 0:
-            line_end = len(text)
+    while offset < len(text):
+        label_depth = 0
+        escaped = False
+        start = None
+        for index in range(offset, len(text)):
+            character = text[index]
+            if character in "\r\n":
+                label_depth = 0
+                escaped = False
+            elif escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == "[":
+                label_depth += 1
+            elif character == "]":
+                if label_depth and text.startswith("(", index + 1):
+                    start = index + 2
+                    break
+                label_depth = max(0, label_depth - 1)
+        if start is None:
+            return
+        line_end = len(text)
+        for line_break in "\r\n":
+            candidate = text.find(line_break, start)
+            if candidate >= 0:
+                line_end = min(line_end, candidate)
         depth = 0
         quote: str | None = None
         angle = text.startswith("<", start) and text.find(">", start + 1, line_end) >= 0
         escaped = False
         for index in range(start, line_end):
             character = text[index]
-            if character == "\r":
-                break
             if escaped:
                 escaped = False
                 continue
@@ -4599,7 +4618,7 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
         else:
             offset = line_end + 1
             continue
-        if offset <= opening.start():
+        if offset < start:
             offset = line_end + 1
 
 
