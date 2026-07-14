@@ -1,18 +1,53 @@
 .DEFAULT_GOAL := check
+override SHELL := /bin/bash
+override .SHELLFLAGS := -p -c
+unexport BASH_ENV ENV
 
 .PHONY: check check-compiler check-policy test-policy
+.NOTPARALLEL: check
 
-check: check-compiler test-policy check-policy
+check: check-policy test-policy check-compiler
 
 check-compiler:
-	cargo fmt --manifest-path compiler/Cargo.toml --all -- --check
-	cargo clippy --manifest-path compiler/Cargo.toml --workspace --all-targets --locked --offline -- -D warnings
-	RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path compiler/Cargo.toml --workspace --no-deps --locked --offline
-	cargo test --manifest-path compiler/Cargo.toml --workspace --all-targets --locked --offline
-	cargo test --manifest-path compiler/Cargo.toml --workspace --doc --locked --offline
+	@set -euo pipefail; \
+	cargo_home="$$(mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX")"; \
+	trap 'rm -rf -- "$$cargo_home"' EXIT; \
+	run_cargo() { \
+		( \
+			cd -- /; \
+			env -i \
+				CARGO_HOME="$$cargo_home" \
+				CARGO_NET_OFFLINE=true \
+				CARGO_TARGET_DIR="$$cargo_home/target" \
+				CARGO_TERM_COLOR=never \
+				HOME="$$HOME" \
+				LANG=C \
+				LC_ALL=C \
+				PATH="$$PATH" \
+				RUSTDOCFLAGS="-D warnings" \
+				RUSTUP_TOOLCHAIN=1.96.1 \
+				SOURCE_DATE_EPOCH=0 \
+				TZ=UTC \
+				"$$@" \
+		); \
+	}; \
+	manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"; \
+	run_cargo cargo fmt --manifest-path "$$manifest" --all -- --check; \
+	run_cargo cargo clippy --manifest-path "$$manifest" --workspace --all-targets --locked --offline -- -D warnings; \
+	run_cargo cargo clippy --manifest-path "$$manifest" --workspace --lib --bins --locked --offline -- -D warnings -D clippy::arithmetic_side_effects -D clippy::as_conversions -D clippy::string_slice -D clippy::indexing_slicing -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic; \
+	run_cargo cargo doc --manifest-path "$$manifest" --workspace --no-deps --locked --offline; \
+	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --locked --offline; \
+	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --release --locked --offline; \
+	run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-a" cargo build --manifest-path "$$manifest" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-b" cargo build --manifest-path "$$manifest" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo python3 -S -P -B -X utf8 -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ")' "$$cargo_home/repro-a/release/orangec" "$$cargo_home/repro-b/release/orangec"; \
+	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline
 
 check-policy:
-	python3 tools/validate_foundation.py
+	env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py
 
 test-policy:
-	python3 -m unittest discover -s tools/tests -p 'test_*.py'
+	@set -euo pipefail; \
+	pycache="$$(mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX")"; \
+	trap 'rm -rf -- "$$pycache"' EXIT; \
+	env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$pycache" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'

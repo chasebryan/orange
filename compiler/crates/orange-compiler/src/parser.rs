@@ -7,6 +7,7 @@ use crate::source::{SourceFile, Span};
 
 /// Maximum ordinary syntax errors retained before one suppression diagnostic.
 pub const MAX_PARSE_DIAGNOSTICS_PER_SOURCE: usize = 100;
+const MAX_RETAINED_PARSE_DIAGNOSTICS: usize = MAX_PARSE_DIAGNOSTICS_PER_SOURCE.saturating_add(2);
 
 /// Maximum AST nodes constructed for one source.
 pub const MAX_SYNTAX_NODES_PER_SOURCE: usize = 262_144;
@@ -160,13 +161,34 @@ impl FunctionDeclaration {
     }
 }
 
-/// The two function declaration categories admitted by the minimal grammar.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum FunctionKind {
+macro_rules! define_function_kinds {
+    ($($(#[$variant_doc:meta])* $variant:ident => $spelling:literal,)+) => {
+        /// The function declaration categories admitted by the minimal grammar.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum FunctionKind {
+            $($(#[$variant_doc])* $variant,)+
+        }
+
+        impl FunctionKind {
+            /// Returns the stable source-language spelling of this declaration kind.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $spelling,)+
+                }
+            }
+
+            #[cfg(test)]
+            const ALL: &'static [Self] = &[$(Self::$variant,)+];
+        }
+    };
+}
+
+define_function_kinds! {
     /// A `spec` declaration.
-    Spec,
+    Spec => "spec",
     /// An `impl` declaration.
-    Impl,
+    Impl => "impl",
 }
 
 /// The syntactic body forms admitted for a function declaration.
@@ -334,7 +356,7 @@ impl ParseResult {
     ///
     /// This is also true when parsing was skipped because lexing failed.
     #[must_use]
-    pub fn has_errors(&self) -> bool {
+    pub const fn has_errors(&self) -> bool {
         self.ast.is_none()
     }
 }
@@ -351,18 +373,9 @@ impl ParseResult {
 #[must_use]
 pub fn parse(source: &SourceFile, lexed: &Lexed) -> ParseResult {
     if !lexed_is_owned_by(source, lexed) {
-        return ParseResult {
-            ast: None,
-            diagnostics: vec![
-                Diagnostic::error(
-                    DiagnosticCode::InvalidParserInput,
-                    "parser received lexer output owned by another source",
-                    source.lexer_span(0, 0),
-                )
-                .with_label("parsing stopped at this source boundary")
-                .with_note("lex and parse each token stream with the same source file"),
-            ],
-        };
+        return invalid_parser_input(source, |diagnostics| {
+            diagnostics.try_reserve_exact(1).is_ok()
+        });
     }
     if lexed.has_errors() {
         return ParseResult {
@@ -371,6 +384,28 @@ pub fn parse(source: &SourceFile, lexed: &Lexed) -> ParseResult {
         };
     }
     Parser::new(source, lexed.tokens(), Limits::DEFAULT).run()
+}
+
+fn invalid_parser_input(
+    source: &SourceFile,
+    reserve_diagnostic: impl FnOnce(&mut Vec<Diagnostic>) -> bool,
+) -> ParseResult {
+    let mut diagnostics = Vec::new();
+    if reserve_diagnostic(&mut diagnostics) {
+        diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::InvalidParserInput,
+                "parser received lexer output owned by another source",
+                source.lexer_span(0, 0),
+            )
+            .with_label("parsing stopped at this source boundary")
+            .with_note("lex and parse each token stream with the same source file"),
+        );
+    }
+    ParseResult {
+        ast: None,
+        diagnostics,
+    }
 }
 
 fn lexed_is_owned_by(source: &SourceFile, lexed: &Lexed) -> bool {
@@ -417,6 +452,21 @@ struct Parser<'source, 'tokens> {
     events: usize,
     halted: bool,
     limits: Limits,
+    reserve_function_slot: fn(&mut Vec<FunctionDeclaration>) -> bool,
+    reserve_identifier_text: fn(&mut String, usize) -> bool,
+    reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
+}
+
+fn reserve_function_slot(functions: &mut Vec<FunctionDeclaration>) -> bool {
+    functions.try_reserve(1).is_ok()
+}
+
+fn reserve_identifier_text(text: &mut String, bytes: usize) -> bool {
+    text.try_reserve_exact(bytes).is_ok()
+}
+
+fn reserve_diagnostic_slots(diagnostics: &mut Vec<Diagnostic>, capacity: usize) -> bool {
+    diagnostics.try_reserve_exact(capacity).is_ok()
 }
 
 impl<'source, 'tokens> Parser<'source, 'tokens> {
@@ -433,10 +483,19 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             events: 0,
             halted: false,
             limits,
+            reserve_function_slot,
+            reserve_identifier_text,
+            reserve_diagnostic_slots,
         }
     }
 
     fn run(mut self) -> ParseResult {
+        if !(self.reserve_diagnostic_slots)(&mut self.diagnostics, MAX_RETAINED_PARSE_DIAGNOSTICS) {
+            return ParseResult {
+                ast: None,
+                diagnostics: self.diagnostics,
+            };
+        }
         if self.tokens.len() > MAX_TOKENS_PER_SOURCE + 1 {
             self.resource_limit(format!(
                 "parser input exceeds the {}-token stream limit",
@@ -448,7 +507,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             };
         }
         if !self.token_stream_is_valid() {
-            self.resource_limit("parser received an invalid lexer token stream".to_owned());
+            self.resource_limit("parser received an invalid lexer token stream");
             return ParseResult {
                 ast: None,
                 diagnostics: self.diagnostics,
@@ -493,7 +552,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     }
 
     fn token_stream_is_valid(&self) -> bool {
-        let Some(eof) = self.tokens.last() else {
+        let Some((eof, preceding)) = self.tokens.split_last() else {
             return false;
         };
         if eof.kind != TokenKind::Eof
@@ -503,10 +562,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         {
             return false;
         }
-        if self.tokens[..self.tokens.len() - 1]
-            .iter()
-            .any(|token| token.kind == TokenKind::Eof)
-        {
+        if preceding.iter().any(|token| token.kind == TokenKind::Eof) {
             return false;
         }
         if self
@@ -516,9 +572,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         {
             return false;
         }
-        self.tokens
-            .windows(2)
-            .all(|tokens| tokens[0].span.end() <= tokens[1].span.start())
+        self.tokens.windows(2).all(|tokens| {
+            let [left, right] = tokens else {
+                return false;
+            };
+            left.span.end() <= right.span.start()
+        })
     }
 
     fn parse_edition_declaration(&mut self) -> Option<EditionDeclaration> {
@@ -612,7 +671,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             match self.current_kind() {
                 TokenKind::KwSpec | TokenKind::KwImpl => {
                     if let Some(function) = self.parse_function_declaration() {
-                        functions.push(function);
+                        if (self.reserve_function_slot)(&mut functions) {
+                            functions.push(function);
+                        } else {
+                            self.resource_limit_at(
+                                "parser could not allocate module function storage",
+                                function.span,
+                            );
+                        }
                     }
                 }
                 _ => {
@@ -964,14 +1030,22 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
 
     fn parse_identifier(&mut self, role: &str) -> Option<Identifier> {
         if self.current_kind() != TokenKind::Identifier {
-            self.expected(
-                &format!("an identifier for the {role}"),
-                "reserved words cannot be used as names",
-            );
+            self.expected_message("reserved words cannot be used as names", || {
+                format!("expected an identifier for the {role}")
+            });
             return None;
         }
         let token = self.bump()?;
-        let text = token.lexeme(self.source)?.to_owned();
+        let spelling = token.lexeme(self.source)?;
+        let mut text = String::new();
+        if !(self.reserve_identifier_text)(&mut text, spelling.len()) {
+            self.resource_limit_at(
+                "parser could not allocate identifier text storage",
+                token.span,
+            );
+            return None;
+        }
+        text.push_str(spelling);
         self.record_node().then_some(Identifier {
             text,
             span: token.span,
@@ -994,13 +1068,17 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     }
 
     fn expected(&mut self, expected: &str, note: &str) {
-        self.report(
-            DiagnosticCode::ExpectedSyntax,
-            format!("expected {expected}"),
-            self.current_span(),
-            format!("found {}", self.current_kind().name()),
-            note,
-        );
+        self.expected_message(note, || format!("expected {expected}"));
+    }
+
+    fn expected_message(&mut self, note: &str, build_message: impl FnOnce() -> String) {
+        let span = self.current_span();
+        let found = self.current_kind();
+        self.report_lazy(span, || {
+            Diagnostic::error(DiagnosticCode::ExpectedSyntax, build_message(), span)
+                .with_label(format!("found {}", found.name()))
+                .with_note(note)
+        });
     }
 
     fn report(
@@ -1011,16 +1089,20 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         label: impl Into<String>,
         note: impl Into<String>,
     ) {
+        self.report_lazy(span, || {
+            Diagnostic::error(code, message, span)
+                .with_label(label)
+                .with_note(note)
+        });
+    }
+
+    fn report_lazy(&mut self, span: Span, build: impl FnOnce() -> Diagnostic) {
         if self.halted || !self.event() {
             return;
         }
         if self.ordinary_diagnostics < self.limits.diagnostics {
-            self.ordinary_diagnostics += 1;
-            self.diagnostics.push(
-                Diagnostic::error(code, message, span)
-                    .with_label(label)
-                    .with_note(note),
-            );
+            self.ordinary_diagnostics = self.ordinary_diagnostics.saturating_add(1);
+            self.diagnostics.push(build());
         } else if !self.diagnostic_limit_reported {
             self.diagnostic_limit_reported = true;
             self.diagnostics.push(
@@ -1047,7 +1129,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
             match kind {
                 TokenKind::LeftParen | TokenKind::LeftBrace | TokenKind::LeftBracket => {
-                    depth += 1;
+                    depth = depth.saturating_add(1);
                     if depth > self.limits.recovery_depth {
                         self.resource_limit(format!(
                             "parser recovery exceeds the {}-delimiter nesting limit",
@@ -1115,7 +1197,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             ));
             return false;
         }
-        self.nodes += 1;
+        self.nodes = self.nodes.saturating_add(1);
         true
     }
 
@@ -1127,24 +1209,25 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             ));
             return false;
         }
-        self.events += 1;
+        self.events = self.events.saturating_add(1);
         true
     }
 
-    fn resource_limit(&mut self, message: String) {
+    fn resource_limit(&mut self, message: impl Into<String>) {
+        let span = self.current_span();
+        self.resource_limit_at(message, span);
+    }
+
+    fn resource_limit_at(&mut self, message: impl Into<String>, span: Span) {
         self.halted = true;
         if self.resource_limit_reported {
             return;
         }
         self.resource_limit_reported = true;
         self.diagnostics.push(
-            Diagnostic::error(
-                DiagnosticCode::ParserResourceLimit,
-                message,
-                self.current_span(),
-            )
-            .with_label("deterministic parser resource limit reached")
-            .with_note("simplify or split the source before parsing it again"),
+            Diagnostic::error(DiagnosticCode::ParserResourceLimit, message, span)
+                .with_label("deterministic parser resource limit reached")
+                .with_note("simplify or split the source before parsing it again"),
         );
     }
 }
@@ -1154,6 +1237,27 @@ mod tests {
     use super::*;
     use crate::lexer::{Lexed, lex};
     use crate::source::{SourceMap, TextOffset};
+
+    struct CountedMessage<'counter>(&'counter std::cell::Cell<usize>);
+
+    impl From<CountedMessage<'_>> for String {
+        fn from(message: CountedMessage<'_>) -> Self {
+            message.0.set(message.0.get().saturating_add(1));
+            Self::from("counted parser resource failure")
+        }
+    }
+
+    #[test]
+    fn function_kind_inventory_and_spellings_are_exact() {
+        assert_eq!(FunctionKind::ALL, &[FunctionKind::Spec, FunctionKind::Impl]);
+        assert_eq!(
+            FunctionKind::ALL
+                .iter()
+                .map(|kind| kind.as_str())
+                .collect::<Vec<_>>(),
+            ["spec", "impl"]
+        );
+    }
 
     fn parse_text(text: &str) -> (SourceMap, Lexed, ParseResult) {
         let mut sources = SourceMap::new();
@@ -1469,6 +1573,88 @@ mod tests {
     }
 
     #[test]
+    fn suppressed_syntax_diagnostics_are_not_constructed() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("test.or", "").unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let mut parser = Parser::new(
+            source,
+            lexed.tokens(),
+            Limits {
+                diagnostics: 0,
+                ..Limits::DEFAULT
+            },
+        );
+        parser.diagnostics.try_reserve_exact(1).unwrap();
+        let constructed = std::cell::Cell::new(0_usize);
+
+        for _ in 0..2 {
+            parser.expected_message("unused", || {
+                constructed.set(constructed.get().saturating_add(1));
+                String::from("unused")
+            });
+        }
+
+        assert_eq!(constructed.get(), 0);
+        assert_eq!(parser.diagnostics.len(), 1);
+        assert_eq!(
+            parser.diagnostics[0].code(),
+            DiagnosticCode::TooManySyntaxErrors
+        );
+    }
+
+    #[test]
+    fn repeated_parser_resource_failures_do_not_construct_messages() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("test.or", "").unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+        parser.diagnostics.try_reserve_exact(1).unwrap();
+        let conversions = std::cell::Cell::new(0_usize);
+        let span = source.lexer_span(0, 0);
+
+        parser.resource_limit_at(CountedMessage(&conversions), span);
+        parser.resource_limit_at(CountedMessage(&conversions), span);
+
+        assert_eq!(conversions.get(), 1);
+        assert_eq!(parser.diagnostics.len(), 1);
+        assert_eq!(
+            parser.diagnostics[0].code(),
+            DiagnosticCode::ParserResourceLimit
+        );
+    }
+
+    #[test]
+    fn complete_diagnostic_bound_requires_no_capacity_growth() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("test.or", "").unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+        assert!((parser.reserve_diagnostic_slots)(
+            &mut parser.diagnostics,
+            MAX_RETAINED_PARSE_DIAGNOSTICS,
+        ));
+        let initial_capacity = parser.diagnostics.capacity();
+
+        for _ in 0..=MAX_PARSE_DIAGNOSTICS_PER_SOURCE {
+            parser.report(
+                DiagnosticCode::ExpectedSyntax,
+                "synthetic syntax error",
+                parser.current_span(),
+                "synthetic label",
+                "synthetic note",
+            );
+        }
+        parser.resource_limit(String::from("synthetic resource failure"));
+
+        assert_eq!(parser.diagnostics.len(), MAX_RETAINED_PARSE_DIAGNOSTICS);
+        assert_eq!(parser.diagnostics.capacity(), initial_capacity);
+    }
+
+    #[test]
     fn bounds_recovery_delimiter_depth() {
         let text = format!(
             "edition 2026; module m {{ {} x }}",
@@ -1482,6 +1668,156 @@ mod tests {
                 .any(|diagnostic| diagnostic.code() == DiagnosticCode::ParserResourceLimit)
         );
         assert!(parsed.ast.is_none());
+    }
+
+    #[test]
+    fn diagnostic_vector_reservation_failure_returns_no_ast_or_diagnostics() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add("test.or", "edition 2026; module m { spec value() {} }")
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+        parser.reserve_diagnostic_slots = |_, _| false;
+
+        let parsed = parser.run();
+
+        assert!(parsed.has_errors());
+        assert!(parsed.ast().is_none());
+        assert!(parsed.diagnostics().is_empty());
+        assert_eq!(parsed.diagnostics.capacity(), 0);
+    }
+
+    #[test]
+    fn module_function_reservation_failure_returns_no_partial_ast() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add("test.or", "edition 2026; module m { spec value() {} }")
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let parse_with_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_function_slot = |_| false;
+            parser.run()
+        };
+
+        let first = parse_with_failure();
+        let second = parse_with_failure();
+        assert_eq!(first, second);
+        assert!(first.ast().is_none());
+        assert_eq!(first.diagnostics().len(), 1);
+        let diagnostic = &first.diagnostics()[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "parser could not allocate module function storage"
+        );
+        assert_eq!(
+            source.slice(diagnostic.primary_span()),
+            Some("spec value() {}")
+        );
+        assert_eq!(
+            diagnostic.label(),
+            "deterministic parser resource limit reached"
+        );
+    }
+
+    #[test]
+    fn identifier_reservation_failure_returns_no_partial_ast() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add("test.or", "edition 2026; module identifier { }")
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let parse_with_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_identifier_text = |_, _| false;
+            parser.run()
+        };
+
+        let first = parse_with_failure();
+        let second = parse_with_failure();
+        assert_eq!(first, second);
+        assert!(first.ast().is_none());
+        assert_eq!(first.diagnostics().len(), 1);
+        let diagnostic = &first.diagnostics()[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "parser could not allocate identifier text storage"
+        );
+        assert_eq!(source.slice(diagnostic.primary_span()), Some("identifier"));
+        assert_eq!(
+            diagnostic.label(),
+            "deterministic parser resource limit reached"
+        );
+    }
+
+    #[test]
+    fn late_allocation_failures_discard_completed_declarations() {
+        let mut slot_sources = SourceMap::new();
+        let slot_id = slot_sources
+            .add(
+                "slot.or",
+                "edition 2026; module m { spec first() {} spec second() {} }",
+            )
+            .unwrap();
+        let slot_source = slot_sources.get(slot_id).unwrap();
+        let slot_lexed = lex(slot_source, Edition::E2026);
+        let mut slot_parser = Parser::new(slot_source, slot_lexed.tokens(), Limits::DEFAULT);
+        slot_parser.reserve_function_slot =
+            |functions| functions.is_empty() && functions.try_reserve(1).is_ok();
+
+        let slot_failure = slot_parser.run();
+
+        assert!(slot_failure.ast().is_none());
+        assert_eq!(slot_failure.diagnostics().len(), 1);
+        assert_eq!(
+            slot_failure.diagnostics()[0].message(),
+            "parser could not allocate module function storage"
+        );
+        assert_eq!(
+            slot_source.slice(slot_failure.diagnostics()[0].primary_span()),
+            Some("spec second() {}")
+        );
+
+        let mut identifier_sources = SourceMap::new();
+        let identifier_id = identifier_sources
+            .add(
+                "identifier.or",
+                concat!(
+                    "edition 2026; module m {\n",
+                    "  spec a() -> Word[8] { 1 }\n",
+                    "  spec b() -> Int { 2 }\n",
+                    "}\n",
+                ),
+            )
+            .unwrap();
+        let identifier_source = identifier_sources.get(identifier_id).unwrap();
+        let identifier_lexed = lex(identifier_source, Edition::E2026);
+        let mut identifier_parser = Parser::new(
+            identifier_source,
+            identifier_lexed.tokens(),
+            Limits::DEFAULT,
+        );
+        identifier_parser.reserve_identifier_text =
+            |text, bytes| bytes != "Int".len() && text.try_reserve_exact(bytes).is_ok();
+
+        let identifier_failure = identifier_parser.run();
+
+        assert!(identifier_failure.ast().is_none());
+        assert_eq!(identifier_failure.diagnostics().len(), 1);
+        assert_eq!(
+            identifier_failure.diagnostics()[0].message(),
+            "parser could not allocate identifier text storage"
+        );
+        assert_eq!(
+            identifier_source.slice(identifier_failure.diagnostics()[0].primary_span()),
+            Some("Int")
+        );
     }
 
     #[test]
@@ -1609,6 +1945,20 @@ mod tests {
                 "  = note: lex and parse each token stream with the same source file\n",
             )
         );
+    }
+
+    #[test]
+    fn foreign_input_diagnostic_reservation_failure_remains_fail_closed() {
+        let mut sources = SourceMap::new();
+        let id = sources.add("test.or", "edition 2026; module m {}").unwrap();
+        let source = sources.get(id).unwrap();
+
+        let result = invalid_parser_input(source, |_| false);
+
+        assert!(result.has_errors());
+        assert!(result.ast().is_none());
+        assert!(result.diagnostics().is_empty());
+        assert_eq!(result.diagnostics.capacity(), 0);
     }
 
     #[test]

@@ -15,9 +15,11 @@ import hashlib
 import json
 import os
 import re
+import select
 import stat
 import subprocess
 import sys
+import time
 import tomllib
 import unicodedata
 from pathlib import Path, PurePosixPath
@@ -28,17 +30,23 @@ from urllib.parse import unquote, urlsplit
 POLICY_PATH = Path("policy/gate0-repository-policy.json")
 VALIDATOR_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
+ORANGE_BOOK_VERSION = "0.2"
 ORANGE_BOOK_MINIMUM_CHAPTER_WORDS = 1_200
+ORANGE_BOOK_CHAPTERS = (
+    "## Chapter 1: The Seams Are the System",
+    "## Chapter 2: Claims, Not Labels",
+)
 ORANGE_BOOK_REQUIRED_SECTIONS = (
     "## Contents",
     "## Preface",
-    "## Chapter 1: The Seams Are the System",
+    *ORANGE_BOOK_CHAPTERS,
     "## Manuscript map",
     "## Sources and drafting disclosure",
 )
 ORANGE_BOOK_CONTENTS = (
     "- [Preface](#preface)",
     "- [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)",
+    "- [Chapter 2: Claims, Not Labels](#chapter-2-claims-not-labels)",
     "- [Manuscript map](#manuscript-map)",
     "- [Sources and drafting disclosure](#sources-and-drafting-disclosure)",
 )
@@ -46,13 +54,8 @@ IGNORED_PARTS = {".git", ".agents", ".codex", "__pycache__"}
 BINARY_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".wasm"}
 TEXT_TAB_FREE_SUFFIXES = {".json", ".jsonc", ".or", ".py", ".rs", ".sh", ".toml", ".yaml", ".yml"}
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
-# Gate 0 consumes a closed set of compact policy, schema, and evidence
-# documents. Sixty-four structural levels leave ample room for those records
-# while staying well below the host Python recursion limit.
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
-# Resource limits apply before Gate 0 parses any repository-controlled input.
-# Text covers every suffix not explicitly admitted as a binary artifact.
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
@@ -65,14 +68,13 @@ GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
 GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES = 4096
 GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
 _GATE0_GIT_READ_CHUNK_BYTES = 4096
-_GATE0_GIT_ROUTING_ENVIRONMENT = {
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_COMMON_DIR",
-    "GIT_CONFIG",
-    "GIT_DIR",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_WORK_TREE",
+_GATE0_GIT_TIMEOUT_SECONDS = 30.0
+_GATE0_GIT_FIXED_ENVIRONMENT = {
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_OPTIONAL_LOCKS": "0",
+    "GIT_TERMINAL_PROMPT": "0",
+    "LC_ALL": "C",
 }
 MINIMUM_REQUIRED_PATHS = {
     ".editorconfig",
@@ -324,10 +326,10 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     ".github/dependabot.yml": "7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268",
     ".github/dependency-review-config.yml": "66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09",
     ".github/pull_request_template.md": "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f",
-    ".github/workflows/ci.yml": "1ff8f97eb5e6be559b8d592d6127b03b36ff69867bbd989fb8f3902d905faf73",
+    ".github/workflows/ci.yml": "64c0850881c19a8e00cb0a7f7bde57e258d1769b7127baed11ade994a22be24d",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
-    ".github/workflows/external-links.yml": "38315cad7f3e8909bf6b63fa78ef06e2755f18229339719bdd633ea98bb097a2",
-    ".github/workflows/scorecard.yml": "be2ff8f6d336bfb2002c1367b36dbb701c0faf30db19769038e6293a4a204f67",
+    ".github/workflows/external-links.yml": "322aadcba06668a6f50ba4036ce9f4ed98dac630bb1b9d761693f2ce248e1c16",
+    ".github/workflows/scorecard.yml": "4514289283bbb7f38fc2dd861b8f998a24b9d75218d982a98bfb6b0d866fa22d",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
     ".markdownlint-cli2.jsonc": "abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5",
@@ -335,14 +337,14 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
-    "Makefile": "d53d7d969b0e4371417d20be388090dfda950cb50e2b18bb303f5945608ce5c6",
-    "README.md": "c7d27098a92933c2322b04dacc5ce7407997c5c3295046738245221fe4e469ed",
+    "Makefile": "0ecb71250b439a687c95b978194bdb2b15556acb4176e1f95159bd8fc60bf7a1",
+    "README.md": "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
     "assets/brand/README.md": "7d71da4d28befb1b5735244c1ee51ee761e07a923b67b85d2bba9380da602874",
     "assets/brand/manifest.json": "0ae668ae0fb52e04518681afddb2af5c11487bf5c3cda24be0d7f1ecb31c1391",
-    "compiler/crates/orangec/tests/s3a_conformance.rs": "aa80ca33ef594aec277f6812a76efafe5a9a53b787839e1ff267d3fea29c3b0e",
+    "compiler/crates/orangec/tests/s3a_conformance.rs": "653008bb27cc5dc474eec5ba8d819bbcc5967468e9c0e1d837d4ca25875c788c",
     "compiler/fixtures/s3a/invalid-duplicate-spec.or": "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6",
     "compiler/fixtures/s3a/invalid-int-magnitude.or": "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542",
     "compiler/fixtures/s3a/invalid-negative-word.or": "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b",
@@ -372,25 +374,25 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
     "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
-    "docs/SEMANTICS_2026.md": "ac5b7d1b3056ea751aa12a0de3a8541482e0114f4dc0807e9bd7b54cb0ab69b6",
-    "docs/operations/CI_DEPENDENCIES.md": "21a7ec854592247ec0b3b238136046ca5bf3e4ab78797d53c16cc11f97667309",
+    "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
+    "docs/operations/CI_DEPENDENCIES.md": "ad8e4f1654179b9fba1d7290e53076053bdbef2b71313fd05960785e2480d0b2",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
-    "docs/security/OSPS_BASELINE.md": "a3522895aaf4c1b17b61dad8224e5fc88f2d5966026f7b0234cadc11b9d15fb2",
+    "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "0b2efedd4283c553345e33595b24b4ec08edeed2adf8d68b704a0a4f582cbef6",
-    "policy/README.md": "fd87e14f7c6adb0332107c4e3032b5697220c4b235f4b85309d5ac2c96a331d8",
+    "docs/security/THREAT_MODEL.md": "bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f",
+    "policy/README.md": "2ee99ee3acc4f9bdda711854e1f047942132a55475feb4ad1f84d6afcbd6bd3a",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
     "schemas/gate0/repository-control-snapshot-v0.1.schema.json": "f4cfcab41639fac0a5c3f75a99cfd3bef0a30b57fc950109058f5006f40ed8b4",
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
-    "scripts/ci/check-external-links": "da0b282b8e9710625bf323b485b65bb2d15090557c384cace13e90c1ab94dc5c",
-    "scripts/ci/check-repository": "692b0a7b0571891e5dfec985bdfbec3f2e340f9545afccaa76a04b7433621c16",
-    "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
-    "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
-    "tools/tests/test_validate_foundation.py": "e658c77281ddcd18785254e608b1eba4140053b33779652b061db1dfc30a7300",
-    "tools/tests/test_validate_foundation_hardening.py": "cbaae263f7993a8237bf608e4d4d7c4d1682a5316d101dfd05a23fbaf7bbe144",
+    "scripts/ci/check-external-links": "cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875042a4ead79f79602",
+    "scripts/ci/check-repository": "6dd7f8381904385e5e51116a6dcca690c4392f0db6011f0f68af36b3d4873fc4",
+    "scripts/ci/install-actionlint": "c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636",
+    "scripts/ci/install-lychee": "e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced",
+    "tools/tests/test_validate_foundation.py": "a71d47b0c542c07bc5d18b884980e0625592cac6b30fdf1a1f4003dfc3771e3d",
+    "tools/tests/test_validate_foundation_hardening.py": "f617d0a05740fe8fd1c935f80fec2e34dec7f0a69ce57d9c74bd50da00a05273",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -464,6 +466,12 @@ GATE0_RUST_MANIFESTS = {
             "lints": {
                 "rust": {"unsafe_code": "forbid"},
                 "clippy": {"all": "deny"},
+            },
+        },
+        "profile": {
+            "release": {
+                "debug-assertions": True,
+                "overflow-checks": True,
             },
         },
     },
@@ -562,6 +570,16 @@ ORANGE_2026_SPEC_BUDGET_MARKERS = {
         "1,048,576 semantic events": 1_048_576,
         "16,384 significant bits in any decoded integer magnitude": 16_384,
         "1,048,576 reference-evaluation steps": 1_048_576,
+    },
+}
+ORANGEC_OPERATIONAL_BUDGETS = {
+    "compiler/crates/orangec/src/main.rs": {
+        "MAX_SOURCES_PER_INVOCATION": 256,
+    },
+}
+ORANGEC_OPERATIONAL_BUDGET_MARKERS = {
+    "compiler/README.md": {
+        "`orangec` accepts up to 256 source inputs in argument order": 256,
     },
 }
 MINIMUM_CODEOWNERS = {
@@ -790,21 +808,83 @@ def relative(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+def _secure_repository_reads_supported() -> bool:
+    """Return whether the host can open a no-follow path one component at a time."""
+
+    return (
+        os.name == "posix"
+        and all(
+            isinstance(getattr(os, name, None), int)
+            for name in ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK", "SEEK_HOLE")
+        )
+        and os.open in os.supports_dir_fd
+        and os.stat in os.supports_dir_fd
+        and os.stat in os.supports_follow_symlinks
+    )
+
+
+def _secure_repository_discovery_supported() -> bool:
+    """Return whether fallback can scan an opened directory."""
+
+    return _secure_repository_reads_supported() and os.scandir in os.supports_fd
+
+
+def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes]) -> int:
+    """Open a directory below ``root`` without following components."""
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = os.open(root, flags)
+    try:
+        for part in parts:
+            next_descriptor = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except (NotImplementedError, OSError):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        raise
+
+
+def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
+    """Inspect inventory entry presence without following any path component."""
+
+    if not _secure_repository_reads_supported():
+        return None
+    descriptor: int | None = None
+    try:
+        parts = raw_path.split(b"/")
+        descriptor = _open_directory_descriptor(root, parts[:-1])
+        os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+    except (NotImplementedError, OSError):
+        # Let resource preflight classify an indeterminate entry.
+        return None
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 @dataclasses.dataclass(frozen=True)
 class _GitRecordRead:
     records: tuple[bytes, ...] | None
     finding: Finding | None = None
 
 
-def _sanitized_git_environment() -> dict[str, str]:
-    """Preserve the execution environment while removing Git redirections."""
+def _sanitized_git_environment(root: Path) -> dict[str, str]:
+    """Build the minimal environment needed to launch the ambient Git."""
 
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if key.upper() not in _GATE0_GIT_ROUTING_ENVIRONMENT
-        and not key.upper().startswith("GIT_CONFIG_")
-    }
+    environment = {"PATH": os.environ.get("PATH", os.defpath)}
+    environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
+    environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
+    return environment
 
 
 def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
@@ -838,11 +918,11 @@ def _read_git_nul_records(
     resource finding is fail-closed and must never trigger that fallback.
     """
 
-    command = ["git", "-C", str(root), *arguments, "-z"]
+    command = ["git", "-c", "core.fsmonitor=false", "-C", str(root), *arguments, "-z"]
     try:
         process = subprocess.Popen(
             command,
-            env=_sanitized_git_environment(),
+            env=_sanitized_git_environment(root),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -859,6 +939,7 @@ def _read_git_nul_records(
     records: list[bytes] = []
     pending = bytearray()
     raw_bytes = 0
+    deadline = time.monotonic() + _GATE0_GIT_TIMEOUT_SECONDS
 
     def reject(code: str, message: str) -> _GitRecordRead:
         _stop_git_process(process)
@@ -866,6 +947,12 @@ def _read_git_nul_records(
 
     try:
         while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or (
+                hasattr(process.stdout, "fileno")
+                and not select.select((process.stdout,), (), (), remaining)[0]
+            ):
+                return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
             chunk = process.stdout.read(_GATE0_GIT_READ_CHUNK_BYTES)
             if not chunk:
                 break
@@ -919,8 +1006,11 @@ def _read_git_nul_records(
             Finding("resource.inventory_read", ".", f"cannot close bounded Git inventory: {exc}"),
         )
     try:
-        return_code = process.wait()
+        return_code = process.wait(timeout=max(0.0, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
     except OSError as exc:
+        _stop_git_process(process)
         return _GitRecordRead(
             None,
             Finding("resource.inventory_read", ".", f"cannot wait for bounded Git inventory: {exc}"),
@@ -942,17 +1032,34 @@ def _read_git_nul_records(
 def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path]:
     """Collect a bounded, pruned filesystem inventory without following dirs."""
 
+    if not _secure_repository_discovery_supported():
+        findings.append(
+            Finding(
+                "resource.unsupported_host",
+                ".",
+                "host cannot provide component-relative no-follow repository discovery",
+            )
+        )
+        return []
     raw_root = os.fsencode(root)
     ignored = {os.fsencode(part) for part in IGNORED_PARTS}
-    stack: list[tuple[bytes, bytes]] = [(raw_root, b"")]
+    stack: list[bytes] = [b""]
     raw_files: list[bytes] = []
     directory_entries = 0
     raw_metadata_bytes = 0
     while stack:
-        directory, relative_directory = stack.pop()
+        relative_directory = stack.pop()
+        descriptor: int | None = None
         try:
-            iterator = os.scandir(directory)
+            parts = relative_directory.split(b"/") if relative_directory else ()
+            descriptor = _open_directory_descriptor(raw_root, parts)
+            iterator = os.scandir(descriptor)
         except OSError as exc:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
             findings.append(
                 Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
             )
@@ -970,7 +1077,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                             )
                         )
                         return []
-                    name = entry.name
+                    name = os.fsencode(entry.name)
                     raw_path = name if not relative_directory else relative_directory + b"/" + name
                     if len(raw_path) > GATE0_MAXIMUM_REPOSITORY_PATH_BYTES:
                         findings.append(
@@ -1007,8 +1114,8 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                         )
                         return []
                     if is_directory:
-                        stack.append((entry.path, raw_path))
-                    elif is_file or is_symlink:
+                        stack.append(raw_path)
+                    elif is_file or is_symlink or not is_directory:
                         raw_files.append(raw_path)
                         if len(raw_files) > GATE0_MAXIMUM_REPOSITORY_FILES:
                             findings.append(
@@ -1024,7 +1131,23 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                 Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
             )
             return []
-    return [root / os.fsdecode(raw_path) for raw_path in sorted(raw_files)]
+        finally:
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+    try:
+        return [root / raw_path.decode("utf-8") for raw_path in sorted(raw_files)]
+    except UnicodeDecodeError:
+        findings.append(
+            Finding(
+                "resource.inventory_encoding",
+                ".",
+                "filesystem inventory contains a path that is not valid UTF-8",
+            )
+        )
+        return []
 
 
 def _git_path_is_relative(raw_path: bytes) -> bool:
@@ -1033,16 +1156,39 @@ def _git_path_is_relative(raw_path: bytes) -> bool:
     )
 
 
+def _git_object_id_is_valid(value: bytes) -> bool:
+    return len(value) in {40, 64} and all(byte in b"0123456789abcdef" for byte in value)
+
+
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
     result = _read_git_nul_records(
         root,
-        ["ls-files", "--cached", "--others", "--exclude-standard"],
+        ["ls-files", "--cached", "--others", "--exclude-per-directory=.gitignore"],
         maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
     )
     if result.finding is not None:
         findings.append(result.finding)
         return [], False
     if result.records is None:
+        git_metadata_present = _repository_entry_presence(root, b".git")
+        if git_metadata_present is None:
+            findings.append(
+                Finding(
+                    "resource.inventory_git",
+                    ".",
+                    "cannot securely inspect repository Git metadata after inventory failure",
+                )
+            )
+            return [], False
+        if git_metadata_present:
+            findings.append(
+                Finding(
+                    "resource.inventory_git",
+                    ".",
+                    "Git inventory failed even though repository metadata is present",
+                )
+            )
+            return [], False
         return _fallback_repository_files(root, findings), False
     if any(not _git_path_is_relative(value) for value in result.records):
         findings.append(
@@ -1053,10 +1199,44 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             )
         )
         return [], False
-    paths = [root / os.fsdecode(value) for value in sorted(result.records)]
-    # A tracked deletion is still bounded and counted above, but is left for
-    # the ordinary required-path checks instead of becoming a resource error.
-    return [path for path in paths if path.is_file() or path.is_symlink()], True
+    if len(set(result.records)) != len(result.records):
+        findings.append(
+            Finding(
+                "resource.inventory_protocol",
+                ".",
+                "Git inventory contains a duplicate repository path",
+            )
+        )
+        return [], False
+    try:
+        paths = [root / value.decode("utf-8") for value in sorted(result.records)]
+    except UnicodeDecodeError:
+        findings.append(
+            Finding(
+                "resource.inventory_encoding",
+                ".",
+                "Git inventory contains a repository path that is not valid UTF-8",
+            )
+        )
+        return [], False
+    missing = next(
+        (
+            path
+            for raw_path, path in zip(sorted(result.records), paths, strict=True)
+            if _repository_entry_presence(root, raw_path) is False
+        ),
+        None,
+    )
+    if missing is not None:
+        findings.append(
+            Finding(
+                "resource.inventory_missing",
+                relative(missing, root),
+                "Git inventory names a repository entry that is absent from the worktree",
+            )
+        )
+        return [], False
+    return paths, True
 
 
 def iter_repository_files(root: Path, findings: list[Finding] | None = None) -> Iterable[Path]:
@@ -1094,6 +1274,7 @@ def git_index_entries(
         return []
 
     raw_entries: list[tuple[bytes, bytes]] = []
+    seen_paths: set[bytes] = set()
     for record in result.records:
         metadata, separator, raw_path = record.partition(b"\t")
         fields = metadata.split()
@@ -1103,6 +1284,11 @@ def git_index_entries(
             or len(metadata) > GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES
             or len(raw_path) > GATE0_MAXIMUM_REPOSITORY_PATH_BYTES
             or len(fields) != 3
+            or len(fields[0]) != 6
+            or any(byte not in b"01234567" for byte in fields[0])
+            or fields[2] != b"0"
+            or not _git_object_id_is_valid(fields[1])
+            or raw_path in seen_paths
         ):
             inventory_findings.append(
                 Finding(
@@ -1112,11 +1298,22 @@ def git_index_entries(
                 )
             )
             return []
+        seen_paths.add(raw_path)
         raw_entries.append((fields[0], raw_path))
-    return [
-        (os.fsdecode(mode), os.fsdecode(raw_path))
-        for mode, raw_path in sorted(raw_entries, key=lambda entry: (entry[1], entry[0]))
-    ]
+    try:
+        return [
+            (mode.decode("ascii"), raw_path.decode("utf-8"))
+            for mode, raw_path in sorted(raw_entries, key=lambda entry: (entry[1], entry[0]))
+        ]
+    except UnicodeDecodeError:
+        inventory_findings.append(
+            Finding(
+                "resource.inventory_encoding",
+                ".",
+                "Git stage inventory contains a repository path that is not valid UTF-8",
+            )
+        )
+        return []
 
 
 class FoundationValidator:
@@ -1133,6 +1330,27 @@ class FoundationValidator:
             if not self.findings and git_inventory_succeeded
             else []
         )
+        if not self.findings and git_inventory_succeeded:
+            inventory_paths = {relative(path, self.root) for path in self.repository_files}
+            stage_paths = {value for _, value in self.index_entries}
+            unexpected_stage_paths = sorted(stage_paths - inventory_paths)
+            if unexpected_stage_paths:
+                self.findings.append(
+                    Finding(
+                        "resource.inventory_protocol",
+                        unexpected_stage_paths[0],
+                        "Git stage inventory path is absent from the file inventory",
+                    )
+                )
+            untracked_paths = sorted(inventory_paths - stage_paths)
+            if not unexpected_stage_paths and untracked_paths:
+                self.findings.append(
+                    Finding(
+                        "git.untracked",
+                        untracked_paths[0],
+                        "Git file inventory path has no stage-zero index entry",
+                    )
+                )
         self._inventory_has_findings = bool(self.findings)
         self._authenticated_protected_bytes: dict[str, bytes | None] = {}
         self._repository_byte_cache: dict[str, bytes | None] = {}
@@ -1151,6 +1369,36 @@ class FoundationValidator:
         if key not in self._resource_issue_keys:
             self._resource_issue_keys.add(key)
             self.add(code, path_text, message)
+
+    def _inventory_files_in(self, directory: str, *, recursive: bool = False) -> list[Path]:
+        """Select files lexically from the already bounded repository inventory."""
+
+        prefix = PurePosixPath(directory).as_posix().rstrip("/") + "/"
+        selected: list[tuple[str, Path]] = []
+        for path in self.repository_files:
+            value = relative(path, self.root)
+            if not value.startswith(prefix):
+                continue
+            remainder = value[len(prefix) :]
+            if recursive or "/" not in remainder:
+                selected.append((value, path))
+        return [path for _, path in sorted(selected)]
+
+    def _inventory_has_file(self, path: Path) -> bool:
+        """Check file presence without resolving any worktree path component."""
+
+        value = relative(path, self.root)
+        return any(relative(candidate, self.root) == value for candidate in self.repository_files)
+
+    def _inventory_has_path(self, path: Path) -> bool:
+        """Check file-or-directory presence using only the bounded inventory."""
+
+        value = relative(path, self.root).rstrip("/")
+        prefix = value + "/"
+        return any(
+            candidate == value or candidate.startswith(prefix)
+            for candidate in (relative(path, self.root) for path in self.repository_files)
+        )
 
     def _lexical_repository_path(self, path: Path) -> tuple[str, Path] | None:
         unnormalized = path if path.is_absolute() else self.root / path
@@ -1174,6 +1422,7 @@ class FoundationValidator:
             metadata.st_size,
             metadata.st_mtime_ns,
             metadata.st_ctime_ns,
+            metadata.st_nlink,
         )
 
     @staticmethod
@@ -1187,30 +1436,68 @@ class FoundationValidator:
         if lexical_path is None:
             return None
         value, candidate = lexical_path
-        current = self.root
+        if not _secure_repository_reads_supported():
+            self._resource_issue(
+                "resource.unsupported_host",
+                candidate,
+                "host cannot provide component-relative no-follow repository inspection",
+            )
+            return None
+        close_on_exec = getattr(os, "O_CLOEXEC", 0)
+        directory_flags = os.O_RDONLY | close_on_exec | os.O_DIRECTORY | os.O_NOFOLLOW
+        directory_descriptor: int | None = None
         parts = PurePosixPath(value).parts
-        for index, part in enumerate(parts):
-            current /= part
-            try:
-                metadata = current.lstat()
-            except OSError as exc:
-                self._resource_issue("resource.unreadable", candidate, f"cannot inspect repository file: {exc}")
-                return None
-            if stat.S_ISLNK(metadata.st_mode):
-                self._resource_issue(
-                    "resource.symlink",
-                    candidate,
-                    f"repository content traverses symlink {relative(current, self.root)!r}",
+        try:
+            directory_descriptor = os.open(self.root, directory_flags)
+            for index, part in enumerate(parts):
+                metadata = os.stat(
+                    part,
+                    dir_fd=directory_descriptor,
+                    follow_symlinks=False,
                 )
-                return None
-            if index + 1 < len(parts):
-                if not stat.S_ISDIR(metadata.st_mode):
-                    self._resource_issue("resource.not_file", candidate, "repository content has a non-directory parent")
+                current = self.root.joinpath(*parts[: index + 1])
+                if stat.S_ISLNK(metadata.st_mode):
+                    self._resource_issue(
+                        "resource.symlink",
+                        candidate,
+                        f"repository content traverses symlink {relative(current, self.root)!r}",
+                    )
                     return None
-            elif not stat.S_ISREG(metadata.st_mode):
-                self._resource_issue("resource.not_file", candidate, "repository content is not a regular file")
-                return None
-        return value, candidate, metadata
+                if index + 1 < len(parts):
+                    if not stat.S_ISDIR(metadata.st_mode):
+                        self._resource_issue(
+                            "resource.not_file",
+                            candidate,
+                            "repository content has a non-directory parent",
+                        )
+                        return None
+                    next_descriptor = os.open(part, directory_flags, dir_fd=directory_descriptor)
+                    previous_descriptor = directory_descriptor
+                    directory_descriptor = next_descriptor
+                    os.close(previous_descriptor)
+                elif not stat.S_ISREG(metadata.st_mode):
+                    self._resource_issue(
+                        "resource.not_file",
+                        candidate,
+                        "repository content is not a regular file",
+                    )
+                    return None
+                else:
+                    return value, candidate, metadata
+        except (NotImplementedError, OSError) as exc:
+            self._resource_issue(
+                "resource.unreadable",
+                candidate,
+                f"cannot inspect repository file securely: {exc}",
+            )
+            return None
+        finally:
+            if directory_descriptor is not None:
+                try:
+                    os.close(directory_descriptor)
+                except OSError:
+                    pass
+        return None
 
     def _preflight_repository_resources(self) -> bool:
         """Reject unsafe repository metadata before parsing the policy itself."""
@@ -1218,6 +1505,13 @@ class FoundationValidator:
         if self._resource_preflight_complete:
             return not self._resource_issue_keys
         self._resource_preflight_complete = True
+        if not _secure_repository_reads_supported():
+            self._resource_issue(
+                "resource.unsupported_host",
+                ".",
+                "host cannot provide component-relative no-follow repository reads",
+            )
+            return False
         total_bytes = 0
         seen: set[str] = set()
         for path in self.repository_files:
@@ -1229,6 +1523,12 @@ class FoundationValidator:
                 continue
             seen.add(value)
             self._resource_metadata[value] = self._metadata_signature(metadata)
+            if metadata.st_nlink != 1:
+                self._resource_issue(
+                    "resource.hardlink",
+                    candidate,
+                    "repository files must have exactly one filesystem link",
+                )
             limit = self._repository_file_limit(candidate)
             if metadata.st_size > limit:
                 kind = "binary" if candidate.suffix.lower() in BINARY_SUFFIXES else "text"
@@ -1237,6 +1537,37 @@ class FoundationValidator:
                     candidate,
                     f"{kind} file is {metadata.st_size} bytes; Gate 0 permits at most {limit} bytes",
                 )
+            descriptor = self._open_repository_descriptor(value, candidate)
+            if descriptor is not None:
+                try:
+                    opened_metadata = os.fstat(descriptor)
+                    if self._metadata_signature(opened_metadata) != self._metadata_signature(
+                        metadata
+                    ):
+                        self._resource_issue(
+                            "resource.concurrent_change",
+                            candidate,
+                            "repository file changed during resource preflight",
+                        )
+                    elif metadata.st_size and self._descriptor_is_sparse(
+                        descriptor, metadata.st_size
+                    ):
+                        self._resource_issue(
+                            "resource.sparse",
+                            candidate,
+                            "sparse repository files are not admitted",
+                        )
+                except OSError as exc:
+                    self._resource_issue(
+                        "resource.unsupported_host",
+                        candidate,
+                        f"cannot inspect repository file allocation: {exc}",
+                    )
+                finally:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
             total_bytes += metadata.st_size
         if total_bytes > GATE0_MAXIMUM_REPOSITORY_BYTES:
             self._resource_issue(
@@ -1297,11 +1628,8 @@ class FoundationValidator:
             )
             return None
 
-        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-        try:
-            descriptor = os.open(candidate, flags)
-        except OSError as exc:
-            self._resource_issue("resource.unreadable", candidate, f"cannot open repository file: {exc}")
+        descriptor = self._open_repository_descriptor(value, candidate)
+        if descriptor is None:
             return None
         try:
             with os.fdopen(descriptor, "rb") as source:
@@ -1339,6 +1667,43 @@ class FoundationValidator:
         self._repository_read_bytes += len(data)
         self._repository_byte_cache[value] = data
         return data
+
+    def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
+        """Open a regular-file candidate without following any mutable path component."""
+
+        if not _secure_repository_reads_supported():
+            self._resource_issue(
+                "resource.unsupported_host",
+                candidate,
+                "host cannot provide component-relative no-follow repository reads",
+            )
+            return None
+        close_on_exec = getattr(os, "O_CLOEXEC", 0)
+        file_flags = os.O_RDONLY | close_on_exec | os.O_NOFOLLOW | os.O_NONBLOCK
+        directory_descriptor: int | None = None
+        try:
+            parts = PurePosixPath(value).parts
+            directory_descriptor = _open_directory_descriptor(self.root, parts[:-1])
+            return os.open(parts[-1], file_flags, dir_fd=directory_descriptor)
+        except (NotImplementedError, OSError) as exc:
+            self._resource_issue(
+                "resource.unreadable",
+                candidate,
+                f"cannot securely open repository file: {exc}",
+            )
+            return None
+        finally:
+            if directory_descriptor is not None:
+                try:
+                    os.close(directory_descriptor)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _descriptor_is_sparse(descriptor: int, size: int) -> bool:
+        first_hole = os.lseek(descriptor, 0, os.SEEK_HOLE)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        return first_hole < size
 
     def _read_repository_text(self, path: Path) -> str | None:
         data = self._read_repository_bytes(path)
@@ -1379,6 +1744,7 @@ class FoundationValidator:
         if not self.policy:
             return sorted(set(self.findings))
         self._validate_required_and_forbidden_paths()
+        self._validate_makefile_entrypoint()
         self._validate_compiler_dependency_boundary()
         self._validate_compiler_language_boundary()
         self._validate_tree_encoding_and_format()
@@ -1404,7 +1770,7 @@ class FoundationValidator:
 
     def _load_and_validate_policy(self) -> None:
         finding_count = len(self.findings)
-        if not self.policy_path.is_file():
+        if not self._inventory_has_file(self.policy_path):
             self.add("policy.missing", self.policy_path, "solo-bootstrap repository policy is missing")
             return
         try:
@@ -1699,7 +2065,7 @@ class FoundationValidator:
         if expected is None:
             return None
         path = self.root / value
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return None
         data = self._read_repository_bytes(path)
         if data is None:
@@ -1789,7 +2155,7 @@ class FoundationValidator:
             )
         for value in evidence_paths:
             path = self.root / value
-            if not path.is_file():
+            if not self._inventory_has_file(path):
                 self.add("hosted_control.missing", path, "hosted-control evidence document is missing")
                 continue
             text = self._read_repository_text(path)
@@ -1818,17 +2184,11 @@ class FoundationValidator:
                     )
 
     def _policy_path(self, value: str) -> Path | None:
-        try:
-            pure = PurePosixPath(value)
-            if pure.is_absolute() or ".." in pure.parts:
-                self.add("policy.unsafe_path", self.policy_path, "repository path is not a safe relative path")
-                return None
-            resolved = (self.root / pure).resolve()
-            resolved.relative_to(self.root)
-        except (OSError, TypeError, ValueError):
+        candidate = safe_manifest_path(self.root, value)
+        if candidate is None:
             self.add("policy.unsafe_path", self.policy_path, "repository path is not a safe relative path")
             return None
-        return resolved
+        return candidate
 
     def _validate_required_and_forbidden_paths(self) -> None:
         actual_paths = {relative(path, self.root) for path in self.repository_files}
@@ -1845,12 +2205,102 @@ class FoundationValidator:
             self.add("path.inventory", value, "path is not admitted by the exact solo-bootstrap inventory")
         for value in self.policy["required_paths"]:
             path = self._policy_path(value)
-            if path is not None and not path.is_file():
+            if path is not None and not self._inventory_has_file(path):
                 self.add("path.required", value, "required permanent artifact is missing")
         for value in self.policy["forbidden_paths"]:
             path = self._policy_path(value)
-            if path is not None and path.exists():
+            if path is not None and self._inventory_has_path(path):
                 self.add("path.forbidden", value, "path is forbidden until its dependent capability decision closes")
+
+    def _validate_makefile_entrypoint(self) -> None:
+        """Keep the standard local gate policy-first, exact, and serialized."""
+
+        path = self.root / "Makefile"
+        source = self._read_repository_text(path)
+        if source is None:
+            return
+        required_lines = {
+            ".DEFAULT_GOAL := check": "check must remain the default target",
+            "override SHELL := /bin/bash": "the protected recipes must use the selected Bash path",
+            "override .SHELLFLAGS := -p -c": "recipe Bash must suppress inherited startup state",
+            "unexport BASH_ENV ENV": "recipe shells must not inherit startup-hook paths",
+            ".NOTPARALLEL: check": "check prerequisites must remain serialized under parallel Make",
+            "check: check-policy test-policy check-compiler": (
+                "check must validate the closed tree before test discovery or Cargo execution"
+            ),
+        }
+        lines = source.splitlines()
+        for required, meaning in required_lines.items():
+            if lines.count(required) != 1:
+                self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
+        required_compiler_fragments = {
+            'mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
+            "cd -- /;": "Cargo configuration discovery must start at the filesystem root",
+            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': (
+                "compiler checks must start from an empty process environment"
+            ),
+            'CARGO_HOME="$$cargo_home"': "Cargo must use the fresh temporary home",
+            "CARGO_NET_OFFLINE=true": "Cargo must remain offline independently of command flags",
+            'CARGO_TARGET_DIR="$$cargo_home/target"': (
+                "Cargo must compile and execute from a fresh temporary target tree"
+            ),
+            "RUSTUP_TOOLCHAIN=1.96.1": "Cargo must use the selected Rust toolchain",
+            "--workspace --all-targets --release --locked --offline": (
+                "optimized all-target tests must remain part of the compiler gate"
+            ),
+            (
+                "--workspace --lib --bins --locked --offline -- -D warnings "
+                "-D clippy::arithmetic_side_effects -D clippy::as_conversions "
+                "-D clippy::string_slice "
+                "-D clippy::indexing_slicing -D clippy::unwrap_used "
+                "-D clippy::expect_used -D clippy::panic"
+            ): "production targets must retain the strict arithmetic, slicing, and panic lint boundary",
+            (
+                'run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-a" '
+                "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
+                "--release --locked --offline"
+            ): "the first optimized reproducibility build needs an independent target tree",
+            (
+                'run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-b" '
+                "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
+                "--release --locked --offline"
+            ): "the second optimized reproducibility build needs an independent target tree",
+            "optimized orangec builds differ": (
+                "the two independent optimized orangec artifacts must be compared byte for byte"
+            ),
+            'manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': (
+                "the compiler manifest must be anchored to the protected Makefile"
+            ),
+        }
+        for required, meaning in required_compiler_fragments.items():
+            if source.count(required) != 1:
+                self.add("make.compiler_environment_contract", path, f"{meaning}: expected exactly {required!r}")
+        required_python_fragments = {
+            "PYTHONHASHSEED=0": (2, "Python policy checks must use a fixed hash seed"),
+            "python3 -S -P -B -X utf8": (
+                3,
+                "Python policy and artifact checks must skip site initialization, exclude unsafe paths, "
+                "avoid bytecode, and force UTF-8",
+            ),
+        }
+        for required, (expected_count, meaning) in required_python_fragments.items():
+            if source.count(required) != expected_count:
+                self.add(
+                    "make.python_environment_contract",
+                    path,
+                    f"{meaning}: expected exactly {expected_count} {required!r} fragments",
+                )
+        required_test_fragments = {
+            'mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"': (
+                "foundation tests need a fresh bytecode lookup root"
+            ),
+            'PYTHONPYCACHEPREFIX="$$pycache"': (
+                "foundation tests must not load ignored checkout bytecode"
+            ),
+        }
+        for required, meaning in required_test_fragments.items():
+            if source.count(required) != 1:
+                self.add("make.python_cache_contract", path, f"{meaning}: expected exactly {required!r}")
 
     def _validate_compiler_dependency_boundary(self) -> None:
         """Require the exact pinned, safe, first-party-only Rust foundation."""
@@ -2006,57 +2456,70 @@ class FoundationValidator:
             )
 
     def _validate_compiler_language_boundary(self) -> None:
-        """Bind normative Orange 2026 resource budgets to compiled constants."""
+        """Bind normative and CLI resource budgets to compiled constants."""
 
-        for value, expected_constants in ORANGE_2026_RUST_BUDGETS.items():
-            path = self.root / value
-            text = self._read_repository_text(path)
-            if text is None:
-                self.add("compiler.language_budget", path, "cannot read Rust budget source through bounded reader")
-                continue
-            source = rust_code_without_comments_and_literals(text)
-            declarations: dict[str, list[str]] = {}
-            for match in re.finditer(
-                r"(?m)^\s*pub\s+const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*([^;]+);",
-                source,
-            ):
-                declarations.setdefault(match.group(1), []).append(match.group(2))
-            for name, expected in expected_constants.items():
-                expressions = declarations.get(name, [])
-                if len(expressions) != 1:
+        budget_groups = (
+            (ORANGE_2026_RUST_BUDGETS, True, "compiler.language_budget"),
+            (ORANGEC_OPERATIONAL_BUDGETS, False, "compiler.cli_budget"),
+        )
+        for budgets, require_public, finding_code in budget_groups:
+            visibility = r"pub\s+" if require_public else r"(?:pub\s+)?"
+            for value, expected_constants in budgets.items():
+                path = self.root / value
+                text = self._read_repository_text(path)
+                if text is None:
+                    self.add(finding_code, path, "cannot read Rust budget source through bounded reader")
+                    continue
+                source = rust_code_without_comments_and_literals(text)
+                declarations: dict[str, list[str]] = {}
+                for match in re.finditer(
+                    rf"(?m)^\s*{visibility}const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*([^;]+);",
+                    source,
+                ):
+                    declarations.setdefault(match.group(1), []).append(match.group(2))
+                for name, expected in expected_constants.items():
+                    expressions = declarations.get(name, [])
+                    if len(expressions) != 1:
+                        self.add(
+                            finding_code,
+                            path,
+                            f"{name} must have exactly one usize declaration; observed={len(expressions)}",
+                        )
+                        continue
+                    observed = parse_rust_usize_product(expressions[0])
+                    if observed != expected:
+                        self.add(
+                            finding_code,
+                            path,
+                            f"{name} must equal {expected}; observed={observed!r}",
+                        )
+
+        marker_groups = (
+            (ORANGE_2026_SPEC_BUDGET_MARKERS, "compiler.language_spec_budget", "normative specification"),
+            (ORANGEC_OPERATIONAL_BUDGET_MARKERS, "compiler.cli_spec_budget", "compiler contract"),
+        )
+        for markers, finding_code, description in marker_groups:
+            for value, expected_markers in markers.items():
+                specification = self.root / value
+                text = self._read_repository_text(specification)
+                if text is None:
                     self.add(
-                        "compiler.language_budget",
-                        path,
-                        f"{name} must have exactly one public usize declaration; observed={len(expressions)}",
+                        finding_code,
+                        specification,
+                        "cannot read budget documentation through bounded reader",
                     )
                     continue
-                observed = parse_rust_usize_product(expressions[0])
-                if observed != expected:
-                    self.add(
-                        "compiler.language_budget",
-                        path,
-                        f"{name} must equal {expected}; observed={observed!r}",
-                    )
-
-        for value, expected_markers in ORANGE_2026_SPEC_BUDGET_MARKERS.items():
-            specification = self.root / value
-            text = self._read_repository_text(specification)
-            if text is None:
-                self.add(
-                    "compiler.language_spec_budget",
-                    specification,
-                    "cannot read normative budget specification through bounded reader",
-                )
-                continue
-            for marker, expected in expected_markers.items():
-                if marker not in text:
-                    self.add(
-                        "compiler.language_spec_budget",
-                        specification,
-                        f"normative specification must state the exact {expected} budget marker {marker!r}",
-                    )
+                for marker, expected in expected_markers.items():
+                    if marker not in text:
+                        self.add(
+                            finding_code,
+                            specification,
+                            f"{description} must state the exact {expected} budget marker {marker!r}",
+                        )
 
     def _validate_tree_encoding_and_format(self) -> None:
+        if not self._preflight_repository_resources():
+            return
         files = self.repository_files
         casefolded: dict[str, str] = {}
         normalized: dict[str, str] = {}
@@ -2071,13 +2534,21 @@ class FoundationValidator:
                 self.add("git.submodule", value, "gitlinks/submodules are not admitted during Gate 0")
             elif mode not in {"100644", "100755"}:
                 self.add("git.mode", value, f"unsupported Git index mode {mode}")
-            path = self.root / value
-            if path.is_file() and mode in {"100644", "100755"}:
-                worktree_executable = bool(path.stat().st_mode & 0o111)
+            metadata_signature = self._resource_metadata.get(value)
+            if metadata_signature is not None and mode in {"100644", "100755"}:
+                worktree_executable = bool(metadata_signature[2] & 0o111)
                 if worktree_executable != (mode == "100755"):
                     self.add("git.mode_mismatch", value, "Git index and worktree executable modes differ")
         for path in files:
             value = relative(path, self.root)
+            metadata_signature = self._resource_metadata.get(value)
+            if metadata_signature is None:
+                self._resource_issue(
+                    "resource.post_preflight_addition",
+                    path,
+                    "repository file appeared after the resource preflight",
+                )
+                continue
             if re.match(r"^(?:LICENSE|COPYING)(?:\.|$)", path.name, re.IGNORECASE):
                 self.add("file.unratified_license", path, "license/copying files are forbidden until D-018 closes")
             folded = value.casefold()
@@ -2092,10 +2563,7 @@ class FoundationValidator:
                 normalized[nfc] = value
             if value != nfc:
                 self.add("path.not_nfc", path, "repository path must be Unicode NFC")
-            if path.is_symlink():
-                self.add("file.symlink", path, "symlinks are not permitted in the solo-bootstrap repository tree")
-                continue
-            is_executable = bool(path.stat().st_mode & 0o111)
+            is_executable = bool(metadata_signature[2] & 0o111)
             if is_executable and value not in executable_paths:
                 self.add("file.unexpected_executable", path, "executable bit is not authorized by repository policy")
             if value in executable_paths and not is_executable:
@@ -2235,6 +2703,13 @@ class FoundationValidator:
                 self.add("brand.c2pa", asset_path, "canonical source no longer carries its C2PA container")
 
     def _validate_markdown_links(self) -> None:
+        inventory_files = {relative(path, self.root) for path in self.repository_files}
+        inventory_directories = {"."}
+        for value in inventory_files:
+            parts = PurePosixPath(value).parts
+            for depth in range(1, len(parts)):
+                inventory_directories.add("/".join(parts[:depth]))
+
         for path in (path for path in self.repository_files if path.suffix.lower() == ".md"):
             text = self._read_repository_text(path)
             if text is None:
@@ -2262,11 +2737,11 @@ class FoundationValidator:
                 if lexical_target is None:
                     self.add("markdown.link_escape", path, f"link escapes repository: {raw_target}")
                     continue
-                _, resolved = lexical_target
-                if not resolved.exists():
+                target_value, resolved = lexical_target
+                if target_value not in inventory_files and target_value not in inventory_directories:
                     self.add("markdown.link_missing", path, f"local link target does not exist: {raw_target}")
                     continue
-                if fragment and resolved.is_file() and resolved.suffix.lower() == ".md":
+                if fragment and target_value in inventory_files and resolved.suffix.lower() == ".md":
                     target_text = self._read_repository_text(resolved)
                     if target_text is None:
                         continue
@@ -2278,7 +2753,7 @@ class FoundationValidator:
         """Keep the living reader guide identifiable, navigable, and substantive."""
 
         path = self.root / ORANGE_BOOK_PATH
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             self.add("book.missing", path, "the canonical Orange Book manuscript is missing")
             return
         text = self._read_repository_text(path)
@@ -2294,7 +2769,15 @@ class FoundationValidator:
         if bylines != ["By Chase Bryan"]:
             self.add("book.identity", path, "the manuscript must contain only the exact byline 'By Chase Bryan'")
         if lines.count("Status: living pre-alpha reader guide") != 1:
-            self.add("book.status", path, "the v0.1 manuscript must retain its living pre-alpha reader-guide status")
+            self.add("book.status", path, "the manuscript must retain its living pre-alpha reader-guide status")
+
+        version_lines = [line for line in lines if line.startswith("Manuscript version:")]
+        if version_lines != [f"Manuscript version: {ORANGE_BOOK_VERSION}"]:
+            self.add(
+                "book.version",
+                path,
+                f"the manuscript must contain only the exact version {ORANGE_BOOK_VERSION}",
+            )
 
         snapshot_lines = [line for line in lines if line.startswith("Snapshot:")]
         snapshot_valid = len(snapshot_lines) == 1 and re.fullmatch(
@@ -2330,29 +2813,49 @@ class FoundationValidator:
             if observed_contents != list(ORANGE_BOOK_CONTENTS):
                 self.add("book.navigation", path, "contents must list the required manuscript destinations in order")
 
-        try:
-            chapter_start = lines.index("## Chapter 1: The Seams Are the System") + 1
-            chapter_end = lines.index("## Manuscript map")
-        except ValueError:
-            pass
-        else:
+        for index, heading in enumerate(ORANGE_BOOK_CHAPTERS):
+            following_heading = (
+                ORANGE_BOOK_CHAPTERS[index + 1]
+                if index + 1 < len(ORANGE_BOOK_CHAPTERS)
+                else "## Manuscript map"
+            )
+            try:
+                chapter_start = lines.index(heading) + 1
+                chapter_end = lines.index(following_heading)
+            except ValueError:
+                continue
             chapter_text = "\n".join(lines[chapter_start:chapter_end])
             chapter_words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’-]*", chapter_text)
             if len(chapter_words) < ORANGE_BOOK_MINIMUM_CHAPTER_WORDS:
                 self.add(
                     "book.chapter_length",
                     path,
-                    "Chapter 1 must contain at least "
+                    f"{heading.removeprefix('## ')} must contain at least "
                     f"{ORANGE_BOOK_MINIMUM_CHAPTER_WORDS} words; observed {len(chapter_words)}",
                 )
 
         boundary_text = re.sub(r"(?m)^>\s?", "", visible_text)
         if re.search(r"not a\s+normative language specification", boundary_text) is None:
             self.add("book.boundary", path, "the manuscript must state its non-normative boundary")
-        if not all(
-            marker in visible_text for marker in ("OpenAI Codex", "GPT-5", "Chase Bryan is the named author")
-        ):
-            self.add("book.disclosure", path, "the v0.1 AI-assistance and author-accountability disclosure is incomplete")
+        disclosure_text = " ".join(visible_text.split())
+        v01_disclosure = all(
+            marker in disclosure_text
+            for marker in ("OpenAI Codex", "GPT-5", "Chase Bryan is the named author")
+        )
+        v02_disclosure = all(
+            marker in disclosure_text
+            for marker in (
+                "Manuscript version 0.2 added Chapter 2",
+                "drafted with OpenAI Codex, based on GPT-5",
+                "under Chase Bryan's direction on 2026-07-14",
+            )
+        )
+        if not v01_disclosure or not v02_disclosure:
+            self.add(
+                "book.disclosure",
+                path,
+                "the versioned AI-assistance and author-accountability disclosure is incomplete",
+            )
 
     @staticmethod
     def _markdown_destination(raw_target: str) -> str:
@@ -2376,9 +2879,10 @@ class FoundationValidator:
         schemas: dict[Path, Mapping[str, Any]] = {}
         id_registry: dict[str, tuple[Path, Mapping[str, Any]]] = {}
         schemas_with_audit_errors: set[Path] = set()
-        if not schema_dir.is_dir():
+        schema_entries = self._inventory_files_in("schemas/gate0")
+        if not schema_entries:
             return
-        schema_paths = sorted(schema_dir.glob("*.schema.json"))
+        schema_paths = [path for path in schema_entries if path.name.endswith(".schema.json")]
         observed_schema_paths = {relative(path, self.root) for path in schema_paths}
         if observed_schema_paths != GATE0_SCHEMA_PATHS:
             self.add(
@@ -2411,10 +2915,10 @@ class FoundationValidator:
                 id_registry[schema_id] = (path, schema)
             audit_issues = audit_schema_vocabulary(schema)
             if audit_issues:
-                schemas_with_audit_errors.add(path.resolve())
+                schemas_with_audit_errors.add(path)
             for issue in audit_issues:
                 self.add("schema.unsupported_keyword", path, issue)
-            schemas[path.resolve()] = schema
+            schemas[path] = schema
         for schema_path, schema in schemas.items():
             for location, node in iter_schema_nodes(schema):
                 reference = node.get("$ref") if isinstance(node, dict) else None
@@ -2428,7 +2932,7 @@ class FoundationValidator:
                     self.add("schema.unresolved_ref", schema_path, f"unresolved $ref at {location}: {reference}")
 
         manifest_path = self.root / "conformance/foundation/manifest.json"
-        if not manifest_path.is_file():
+        if not self._inventory_has_file(manifest_path):
             return
         try:
             manifest = self._load_repository_json(manifest_path)
@@ -2499,7 +3003,7 @@ class FoundationValidator:
             if schema_path is None or not relative(schema_path, self.root).startswith("schemas/gate0/"):
                 self.add("fixture.unsafe_schema", manifest_path, f"schema path escapes schemas/gate0: {schema_value}")
                 continue
-            if not fixture_path.is_file():
+            if not self._inventory_has_file(fixture_path):
                 self.add("fixture.missing", manifest_path, f"fixture does not exist: {fixture_value}")
                 continue
             if schema_path not in schemas:
@@ -2573,9 +3077,12 @@ class FoundationValidator:
 
         fixture_files = {
             relative(path, self.root)
-            for directory in (self.root / "conformance/foundation/valid", self.root / "conformance/foundation/invalid")
-            if directory.is_dir()
-            for path in directory.rglob("*.json")
+            for directory in (
+                "conformance/foundation/valid",
+                "conformance/foundation/invalid",
+            )
+            for path in self._inventory_files_in(directory, recursive=True)
+            if path.suffix.lower() == ".json"
         }
         omitted = fixture_files - seen_paths
         for value in sorted(omitted):
@@ -2593,7 +3100,12 @@ class FoundationValidator:
     def _validate_workflows(self) -> None:
         workflow_dir = self.root / ".github/workflows"
         required = set(self.policy["required_workflows"])
-        actual = {path.name for path in workflow_dir.glob("*.y*ml")} if workflow_dir.is_dir() else set()
+        workflow_paths = [
+            path
+            for path in self._inventory_files_in(".github/workflows")
+            if PurePosixPath(path.name).match("*.y*ml")
+        ]
+        actual = {path.name for path in workflow_paths}
         if actual != GATE0_WORKFLOW_INVENTORY:
             self.add(
                 "workflow.inventory",
@@ -2609,7 +3121,7 @@ class FoundationValidator:
             name: set(values)
             for name, values in actions_policy.get("allowed_write_permissions", {}).items()
         }
-        for path in sorted(workflow_dir.glob("*.y*ml")) if workflow_dir.is_dir() else []:
+        for path in workflow_paths:
             text = self._read_repository_text(path)
             if text is None:
                 continue
@@ -2709,7 +3221,7 @@ class FoundationValidator:
 
     def _validate_dependabot(self) -> None:
         path = self.root / ".github/dependabot.yml"
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return
         source = self._read_repository_text(path)
         if source is None:
@@ -2724,7 +3236,7 @@ class FoundationValidator:
             if not re.search(pattern, text):
                 self.add("dependabot.configuration", path, f"missing required setting matching {pattern}")
         review_path = self.root / ".github/dependency-review-config.yml"
-        if review_path.is_file():
+        if self._inventory_has_file(review_path):
             review_source = self._read_repository_text(review_path)
             if review_source is None:
                 return
@@ -2747,9 +3259,9 @@ class FoundationValidator:
                 "name: Enforce solo contribution boundary",
                 "github.event.pull_request.user.login != 'chasebryan'",
                 "Solo mode does not accept third-party pull requests until D-018 selects contribution terms.",
-                "run: make check-compiler",
-                "run: python3 -m unittest discover -s tools/tests -p 'test_*.py'",
-                "run: python3 tools/validate_foundation.py",
+                "run: env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES -u MAKEOVERRIDES -u MFLAGS make --no-builtin-rules --no-builtin-variables check-compiler",
+                "run: pycache=\"$(mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; trap 'rm -rf -- \"$pycache\"' EXIT; env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'",
+                "run: env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py",
                 "DavidAnson/markdownlint-cli2-action@",
                 "run: ./scripts/ci/install-actionlint",
                 '"$RUNNER_TEMP/actionlint/actionlint" -color',
@@ -2788,9 +3300,9 @@ class FoundationValidator:
                 (
                     "Checkout",
                     "Enforce solo contribution boundary",
-                    "Validate Rust compiler",
-                    "Run foundation validator unit tests",
                     "Validate solo-bootstrap repository policy",
+                    "Run foundation validator unit tests",
+                    "Validate Rust compiler",
                     "Lint Markdown",
                     "Install actionlint",
                     "Validate GitHub Actions workflows",
@@ -2862,15 +3374,27 @@ class FoundationValidator:
             )
             require(
                 "Validate Rust compiler",
-                ("run: make check-compiler",),
+                (
+                    "run: env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
+                    "-u MAKEOVERRIDES -u MFLAGS make --no-builtin-rules --no-builtin-variables check-compiler",
+                ),
             )
             require(
                 "Run foundation validator unit tests",
-                ("run: python3 -m unittest discover -s tools/tests -p 'test_*.py'",),
+                (
+                    "run: pycache=\"$(mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
+                    "trap 'rm -rf -- \"$pycache\"' EXIT; env -i HOME=\"$HOME\" LANG=C LC_ALL=C "
+                    "PATH=\"$PATH\" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC "
+                    "python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, \".\"); "
+                    "unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'",
+                ),
             )
             require(
                 "Validate solo-bootstrap repository policy",
-                ("run: python3 tools/validate_foundation.py",),
+                (
+                    "run: env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
+                    "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py",
+                ),
             )
             require("Lint Markdown", ("uses: DavidAnson/markdownlint-cli2-action@",))
             require("Install actionlint", ("run: ./scripts/ci/install-actionlint",))
@@ -2882,7 +3406,7 @@ class FoundationValidator:
             require(
                 "Run OpenSSF Scorecard",
                 (
-                    "shell: bash",
+                    "shell: /bin/bash -p -e -o pipefail {0}",
                     "run: |",
                     "set -euo pipefail",
                     'test -n "${INPUT_REPO_TOKEN:-}"',
@@ -2919,7 +3443,7 @@ class FoundationValidator:
             )
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
             expected_scorecard_block = '''      - name: Run OpenSSF Scorecard
-        shell: bash
+        shell: /bin/bash -p -e -o pipefail {0}
         env:
           INPUT_REPO_TOKEN: ${{ github.token }}
         run: |
@@ -3003,7 +3527,7 @@ class FoundationValidator:
 
     def _validate_codeowners(self) -> None:
         path = self.root / ".github/CODEOWNERS"
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return
         text = self._read_repository_text(path)
         if text is None:
@@ -3023,7 +3547,7 @@ class FoundationValidator:
 
     def _validate_decision_gates(self) -> None:
         path = self.root / "docs/DECISIONS.md"
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return
         source = self._read_repository_text(path)
         if source is None:
@@ -3057,7 +3581,10 @@ class FoundationValidator:
         path = self.root / "docs/GATE0_TRACEABILITY.md"
         charter_path = self.root / "docs/PROJECT_CHARTER.md"
         decisions_path = self.root / "docs/DECISIONS.md"
-        if not path.is_file() or not charter_path.is_file() or not decisions_path.is_file():
+        if not all(
+            self._inventory_has_file(candidate)
+            for candidate in (path, charter_path, decisions_path)
+        ):
             return
         source = self._read_repository_text(path)
         charter = self._read_repository_bytes(charter_path)
@@ -3161,7 +3688,7 @@ class FoundationValidator:
 
     def _validate_user_journeys(self) -> None:
         path = self.root / "docs/USER_JOURNEYS.md"
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return
         source = self._read_repository_text(path)
         if source is None:
@@ -3278,7 +3805,7 @@ class FoundationValidator:
 
     def _validate_proof_foundation_suite(self) -> None:
         path = self.root / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return
         source = self._read_repository_text(path)
         if source is None:
@@ -3335,7 +3862,7 @@ class FoundationValidator:
 
     def _validate_product_form_decision_packet(self) -> None:
         path = self.root / "docs/PRODUCT_FORM_DECISION_PACKET.md"
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return
         source = self._read_repository_text(path)
         if source is None:
@@ -3472,7 +3999,7 @@ class FoundationValidator:
 
     def _validate_semantic_strata_suite(self) -> None:
         path = self.root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
-        if not path.is_file():
+        if not self._inventory_has_file(path):
             return
         source = self._read_repository_text(path)
         if source is None:
@@ -3606,11 +4133,12 @@ class FoundationValidator:
             ),
         )
         for directory, prefix, statuses, types in specifications:
-            if not directory.is_dir():
-                continue
             seen: set[str] = set()
             candidates: list[Path] = []
-            for path in sorted(directory.glob("*.md")):
+            directory_value = relative(directory, self.root)
+            for path in self._inventory_files_in(directory_value):
+                if path.suffix.lower() != ".md":
+                    continue
                 if path.name == "README.md":
                     continue
                 filename = RECORD_FILENAME_RE.fullmatch(path.name)
@@ -3794,7 +4322,7 @@ class FoundationValidator:
 
     def _validate_repository_templates(self) -> None:
         security = self.root / "SECURITY.md"
-        if security.is_file():
+        if self._inventory_has_file(security):
             security_text = self._read_repository_text(security)
             if (
                 security_text is not None
@@ -3802,7 +4330,7 @@ class FoundationValidator:
             ):
                 self.add("security.private_reporting", security, "private vulnerability-reporting URL is missing")
         pr = self.root / ".github/pull_request_template.md"
-        if pr.is_file():
+        if self._inventory_has_file(pr):
             text = self._read_repository_text(pr)
             if text is None:
                 return
@@ -3982,9 +4510,10 @@ def safe_manifest_path(root: Path, value: str) -> Path | None:
         pure = PurePosixPath(value)
         if pure.is_absolute() or ".." in pure.parts:
             return None
-        candidate = (root / pure).resolve()
-        candidate.relative_to(root.resolve())
-    except (OSError, ValueError):
+        lexical_root = Path(os.path.normpath(os.fspath(root)))
+        candidate = Path(os.path.normpath(os.fspath(lexical_root / pure)))
+        candidate.relative_to(lexical_root)
+    except (TypeError, ValueError):
         return None
     return candidate
 
@@ -4657,7 +5186,9 @@ def resolve_schema_ref(
         if document_ref in id_registry:
             target_path, target_root = id_registry[document_ref]
         else:
-            candidate = (schema_path.parent / document_ref).resolve()
+            candidate = Path(
+                os.path.normpath(os.fspath(schema_path.parent / document_ref))
+            )
             if candidate not in schemas:
                 return None
             target_path, target_root = candidate, schemas[candidate]

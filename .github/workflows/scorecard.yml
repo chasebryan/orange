@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
 
       - name: Run OpenSSF Scorecard
-        shell: bash
+        shell: /bin/bash -p -e -o pipefail {0}
         env:
           INPUT_REPO_TOKEN: ${{ github.token }}
         run: |

@@ -108,7 +108,7 @@ incomplete:
 Run the deterministic repository and compiler checks with:
 
 ```sh
-make check
+scripts/ci/check-repository
 ```
 
 Passing this check demonstrates the scoped repository invariants, fixture

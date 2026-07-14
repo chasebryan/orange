@@ -17,7 +17,10 @@ pub use core::{CoreFunction, CoreFunctionId, CoreModule, CoreType, CoreValue, Ex
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
 pub use edition::{Edition, ParseEditionError};
 pub use eval::{EvaluatedFunction, EvaluationResult, MAX_EVALUATION_STEPS_PER_SOURCE, evaluate};
-pub use lexer::{Lexed, Token, TokenKind, lex};
+pub use lexer::{
+    Lexed, MAX_DIAGNOSTICS_PER_SOURCE as MAX_LEXICAL_DIAGNOSTICS_PER_SOURCE, MAX_TOKENS_PER_SOURCE,
+    Token, TokenKind, lex,
+};
 pub use parser::{
     EditionDeclaration, FunctionBody, FunctionDeclaration, FunctionKind, Identifier,
     IntegerLiteral, MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE,

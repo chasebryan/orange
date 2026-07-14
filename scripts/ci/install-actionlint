@@ -1,11 +1,19 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 
 set -euo pipefail
 
+readonly PATH="/usr/bin:/bin"
+export PATH
+unset GZIP TAR_OPTIONS
+
 readonly ACTIONLINT_VERSION="1.7.12"
 readonly DOWNLOAD_BASE="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+readonly MAXIMUM_ARCHIVE_BYTES="33554432"
+readonly MAXIMUM_ARCHIVE_KIB="32768"
+readonly MAXIMUM_DOWNLOAD_SECONDS="300"
+readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -ne 1 || -z "${1-}" ]]; then
   echo "usage: $0 DESTINATION_DIRECTORY" >&2
   exit 2
 fi
@@ -33,30 +41,57 @@ esac
 readonly DESTINATION_DIRECTORY="$1"
 TEMPORARY_DIRECTORY="$(mktemp -d)"
 readonly TEMPORARY_DIRECTORY
-trap 'rm -rf "$TEMPORARY_DIRECTORY"' EXIT
+trap 'rm -rf -- "$TEMPORARY_DIRECTORY"' EXIT
 
-curl \
-  --fail \
-  --location \
-  --proto '=https' \
-  --show-error \
-  --silent \
-  --tlsv1.2 \
-  --output "$TEMPORARY_DIRECTORY/$ARCHIVE" \
-  "$DOWNLOAD_BASE/$ARCHIVE"
+(
+  ulimit -c 0
+  ulimit -f "$MAXIMUM_ARCHIVE_KIB"
+  curl \
+    --disable \
+    --connect-timeout 20 \
+    --fail \
+    --location \
+    --max-filesize "$MAXIMUM_ARCHIVE_BYTES" \
+    --max-time "$MAXIMUM_DOWNLOAD_SECONDS" \
+    --proto '=https' \
+    --show-error \
+    --silent \
+    --tlsv1.2 \
+    --output "$TEMPORARY_DIRECTORY/$ARCHIVE" \
+    "$DOWNLOAD_BASE/$ARCHIVE"
+)
 
 printf '%s  %s\n' \
   "$ARCHIVE_SHA256" \
   "$TEMPORARY_DIRECTORY/$ARCHIVE" | sha256sum --check --strict
 
-tar \
-  --extract \
-  --file "$TEMPORARY_DIRECTORY/$ARCHIVE" \
-  --gzip \
-  --directory "$TEMPORARY_DIRECTORY"
+(
+  ulimit -c 0
+  ulimit -f "$MAXIMUM_EXTRACTED_FILE_KIB"
+  tar \
+    --extract \
+    --file "$TEMPORARY_DIRECTORY/$ARCHIVE" \
+    --gzip \
+    --directory "$TEMPORARY_DIRECTORY" \
+    --no-same-owner \
+    --no-same-permissions \
+    -- \
+    actionlint
+)
+
+readonly EXTRACTED_FILE="$TEMPORARY_DIRECTORY/actionlint"
+if [[ ! -f "$EXTRACTED_FILE" || ! -s "$EXTRACTED_FILE" || -L "$EXTRACTED_FILE" ]]; then
+  echo "verified actionlint archive did not contain a nonempty regular actionlint executable" >&2
+  exit 1
+fi
+if [[ "$(stat --format='%h' -- "$EXTRACTED_FILE")" != "1" ]]; then
+  echo "verified actionlint archive produced a hard-linked actionlint executable" >&2
+  exit 1
+fi
 
 install \
   -D \
   -m 0755 \
-  "$TEMPORARY_DIRECTORY/actionlint" \
+  -- \
+  "$EXTRACTED_FILE" \
   "$DESTINATION_DIRECTORY/actionlint"

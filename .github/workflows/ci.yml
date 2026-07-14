@@ -15,7 +15,7 @@ permissions: {}
 
 defaults:
   run:
-    shell: bash
+    shell: /bin/bash -p -e -o pipefail {0}
 
 concurrency:
   group: required-ci-${{ github.event.pull_request.number || github.ref }}
@@ -41,14 +41,14 @@ jobs:
           echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2
           exit 1
 
-      - name: Validate Rust compiler
-        run: make check-compiler
+      - name: Validate solo-bootstrap repository policy
+        run: env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py
 
       - name: Run foundation validator unit tests
-        run: python3 -m unittest discover -s tools/tests -p 'test_*.py'
+        run: pycache="$(mktemp -d -- "$RUNNER_TEMP/orange-python-cache.XXXXXXXX")"; trap 'rm -rf -- "$pycache"' EXIT; env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$pycache" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'
 
-      - name: Validate solo-bootstrap repository policy
-        run: python3 tools/validate_foundation.py
+      - name: Validate Rust compiler
+        run: env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES -u MAKEOVERRIDES -u MFLAGS make --no-builtin-rules --no-builtin-variables check-compiler
 
       - name: Lint Markdown
         uses: DavidAnson/markdownlint-cli2-action@8de2aa07cae85fd17c0b35642db70cf5495f1d25 # v24.0.0

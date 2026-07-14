@@ -26,6 +26,7 @@ The workspace requires the pinned Rust 1.96.1 toolchain and has no third-party
 Rust dependencies. This pre-alpha slice does not declare or test a lower MSRV.
 
 ```sh
+scripts/ci/check-repository
 cargo test --manifest-path compiler/Cargo.toml --workspace
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/typed-answer.or
@@ -34,20 +35,125 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixture
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 ```
 
+The protected repository gate runs all Rust targets in both debug and optimized
+release profiles. The release profile retains debug assertions and integer
+overflow checks, so optimization cannot silently weaken internal invariants;
+the individual commands are useful for focused development. A separate
+production-only Clippy pass denies unchecked arithmetic, silent `as`
+conversions, UTF-8 string slicing, indexing, unwrap/expect, and explicit panic
+sites while leaving test assertions available to state fixture invariants.
+The same isolated gate builds the optimized `orangec` binary in two independent
+fresh target trees and requires the artifact bytes to match. This is same-host
+reproducibility evidence, not a cross-platform or independently rebuilt claim.
+
 `orangec` accepts up to 256 source inputs in argument order. Regular files are
 processed incrementally; `-` is the only stream input and reads standard input
-at most once. `eval` accepts exactly one source and begins output only after
-complete validation and evaluation. A host output failure can leave an
+at most once. Integration coverage requires exactly 256 valid inputs to succeed
+silently and 257 operands to fail as a usage error before any source read. It
+also interleaves file, standard-input, and file failures in exact operand order;
+a repeated `-` emits exactly one `ORC1004` group and still processes a later
+operand.
+The portable regular-file boundary checks path metadata before opening and
+descriptor metadata afterward. This rejects an observed non-regular path or
+opened descriptor, but it is not race-free path confinement: an actor that can
+replace a directory entry between those operations may change the opened
+object or make `open` block on a special file. Compile untrusted filesystem
+trees from a stable copied file or standard input inside an appropriate host
+sandbox; symlink confinement is not claimed.
+`eval` accepts exactly one source and begins output only after complete
+validation and evaluation. A host output failure can leave an
 already-written prefix, but returns status 1; a broken pipe remains quiet and
 is never reported as successful evaluation. Once a standard-output or
 standard-error write failure is observed, later source operands are not read or
-compiled. Ordinary source failures still aggregate diagnostics across later
-inputs. Successful `check` commands are silent. Diagnostics go to standard
-error and use exit status 1; command-line usage errors use status 2. A source
-with lexical errors is not parsed, and a source with syntax errors is not
-analyzed. File and standard-input reads stop at a deterministic 16 MiB
+compiled, and a partially accepted diagnostic prefix is not retried. Ordinary
+source failures still aggregate diagnostics across later inputs. Successful
+`check` commands are silent. Diagnostics go to standard
+error and use exit status 1; distinct compiler or host error groups have exactly
+one blank separator with no leading or extra trailing blank group.
+Every parser, semantic-analysis, and evaluation result is classified
+fail-closed: diagnostics take precedence, an artifact is accepted only without
+diagnostics, and an absent artifact without diagnostics emits `ORC1006` as an
+internal compiler or resource failure.
+Command-line usage errors use status 2 when their diagnostic is written; a
+detected usage-output failure uses status 1 without reading source input. A
+usage diagnostic has one blank separator before the exact help text and one
+trailing newline, while help and version output failures follow the same status
+1 transport rule. All three paths flush explicitly and treat a detected flush
+failure as status 1. Transient `Interrupted` results from stream reads, output
+writes, and explicit output flushes are retried without duplicating accepted
+bytes. Compilation diagnostics are also explicitly flushed after their final
+error group. Compilation standard output is explicitly flushed only after
+successful token or evaluation bytes have been queued; untouched output and
+diagnostic streams are not flushed for a silent `check` or empty `eval`. A
+source with lexical errors is not parsed, and a source with syntax errors is
+not analyzed. File and standard-input reads stop at a deterministic 16 MiB
 per-source limit. Larger inputs fail with `ORC1003` before lexing and are never
-buffered without a bound.
+buffered without a bound. CLI-derived rendered source names reserve their
+complete escaped representation before encoding. Source-map slots, borrowed
+source-name and source-text copies, and derived line/column indexes also use
+checked reservations; an allocation failure rejects the source through
+`ORC1005` without exposing partial source state or consuming an insertion ID.
+Already owned `String` inputs move into the map without an additional
+source-data copy.
+Lexing uses bounded amortized fallible growth while preserving one allocated EOF
+slot and never requesting speculative capacity beyond the complete token-stream
+limit. It fallibly reserves the complete 102-record diagnostic-vector bound
+before scanning. Failure to reserve that vector exposes only the allocation-free
+EOF fallback and is classified by the CLI as a fail-closed `ORC1006` internal
+resource failure. A token-storage reservation failure emits `ORC0008`, discards all
+ordinary tokens, and cannot expose a parser-acceptable partial stream; failure
+to reserve even the initial heap slot uses an allocation-free inline EOF
+fallback, so the public token stream still contains exactly one final EOF. An
+impossible internal UTF-8 cursor mismatch follows the same atomic rejection
+boundary: it emits `ORC0008`, discards partial tokens, and exposes only EOF.
+Parsing reserves every owned identifier copy and each module-function slot
+before installing them, and fallibly pre-reserves its complete 102-record
+diagnostic-vector bound. Identifier or declaration reservation failure emits
+`ORC0106`; diagnostic-vector reservation failure returns no AST or diagnostic
+and is classified by the CLI as `ORC1006`.
+Semantic analysis reserves and deterministically sorts the complete declaration
+namespace index, checks
+exact-integer limb growth, owned Core-name copies, and each pending
+typed-function slot, then reserves the complete Core function table before
+installing its first entry. It also fallibly pre-reserves its complete
+102-record diagnostic-vector bound. Ordinary representation failures emit
+`ORC0209`; diagnostic-vector reservation failure returns no Core or diagnostic
+and is classified by the CLI as `ORC1006`. Identifier spellings echoed by
+semantic diagnostics are capped at 64 bytes plus a deterministic total-length
+suffix.
+Lexical, parser, and semantic reporting admit an ordinary diagnostic before
+constructing its owned message, label, note, or secondary-span fields.
+Post-limit attempts create at most the one suppression record and construct no
+discarded ordinary diagnostic.
+Reference evaluation reserves the complete value-set vector before evaluating
+the first function and checks every copied function name and exact-integer limb
+vector. It also fallibly reserves its single possible diagnostic slot before
+evaluating. Ordinary reservation failures emit `ORC0301` and expose no partial
+value set; diagnostic-slot reservation failure returns no values or diagnostic
+and is classified by the CLI as `ORC1006`. The shared module-name `Arc` control
+block still uses the standard infallible allocator API because stable Rust does
+not provide a fallible `Arc` constructor.
+These checked container reservations do not make the entire diagnostic path
+out-of-memory recoverable. The infallible `RenderedSourceName::from_text` and
+`RenderedSourceName::from_os_str` convenience constructors, owned diagnostic
+messages/labels/notes, owned CLI usage and error strings, rendered diagnostic
+output, and the shared `Arc` control block still use standard infallible Rust
+allocation APIs. The CLI uses the fallible rendered-name constructors. The
+input and output bounds limit amplification, but process-level allocator
+exhaustion can still abort instead of producing an Orange diagnostic.
+Within that residual boundary, diagnostic messages, labels, notes, and source
+names are escaped directly into the final rendered output instead of first
+materializing expanded copies. Excerpt escaping writes into only the bounded
+40-before/80-after window described below.
+Exact-integer decimal display uses fixed stack arrays sized from the normative
+16,384-bit limit, then writes base-1,000,000,000 limbs directly to the
+destination without heap scratch or a materialized decimal output string.
+
+Diagnostic source excerpts include at most 40 Unicode scalars before and 80
+from the responsible position. Unit coverage renders the full 100-diagnostic
+frontend budget beside a 1 MiB line and requires the complete deterministic
+output to remain below 64 KiB, preventing line length from multiplying output
+memory per diagnostic.
 
 CLI-derived source names, diagnostic excerpts, and echoed command or option
 text use an ASCII-safe escape representation for backslashes, controls, and
@@ -59,9 +165,12 @@ canonical name so its already encoded OS path is not escaped a second time.
 
 `orangec lex` streams token records and escapes each spelling through a fixed
 4 KiB scratch buffer instead of materializing an expanded token string. Lex
-output still has no separate byte limit: escape notation and per-token metadata
-can make it larger than the accepted source, so callers processing untrusted
-input should cap output and time.
+output for multiple sources uses an exact `== SOURCE ==` header and one blank
+separator in argument order. A lexical error returns status 1 but does not
+suppress that source's bounded token stream or later sources. Lex output still
+has no separate byte limit: escape notation and per-token metadata can make it
+larger than the accepted source, so callers processing untrusted input should
+cap output and time.
 
 Accepted S3a has no separate evaluation-output byte limit. Each successful
 output line repeats the module name, so a source with a long module name and
@@ -80,6 +189,10 @@ are deliberately conservative:
 
 - each source is at most 16 MiB of UTF-8, and spans are half-open UTF-8 byte
   ranges;
+- each source map receives a unique nonzero process-local identity; exhausting
+  the 64-bit identity space is a sticky failure and can never wrap into an
+  earlier map's span ownership; the CLI uses the fallible constructor and
+  reports exhaustion as a source-representation error;
 - whitespace is limited to tab, line feed, carriage return, and space; line
   feed, CRLF, and bare carriage return each form one logical line ending;
 - identifiers use ASCII letters, digits, and `_` (the first character cannot be
@@ -184,21 +297,70 @@ exact ordered diagnostic-code sequence, the expected diagnostic meaning, and
 the exact primary line and column for every diagnostic. Check and evaluation
 rejection bytes must agree.
 
-Two generated black-box cases exercise boundaries that are impractical as
-ordinary expected-output fixtures. One accepts exactly 16,384 significant bits
-and rejects 16,385 without evaluating the enormous accepted integer. The other
-requires exactly 100 `ORC0203` diagnostics followed by one `ORC0208` suppression
-diagnostic. Every generated command runs twice. The rejected boundary and
-diagnostic-budget sources run through both commands; the accepted boundary uses
-silent checking only so the test does not intentionally capture an enormous
-decimal evaluation result.
+Six generated black-box cases exercise boundaries and combinations that are
+impractical as ordinary expected-output fixtures. They cover the exact
+significant-bit boundary, leading-zero neutrality, the exact semantic diagnostic
+budget with additional post-suppression attempts, mixed-category diagnostic
+source ordering, case-sensitive names and types, and every later same-kind
+duplicate. Every generated command runs twice. The rejected boundary and
+diagnostic-budget sources run through both commands; the accepted 16,384-bit
+boundary uses silent checking only so the test does not intentionally capture
+an enormous decimal evaluation result.
 
-This is the first external S3a corpus, not completion of S3 or the complete
-normative conformance minimum. Internal unit and CLI tests still cover injected
-semantic-event, Core-node, and evaluation budgets, source identity, and
-malformed internal states that valid public source cannot always reach before
-an earlier bound. The external corpus adds no source construct, semantic rule,
-canonical Core identity, proof, target, claim, or S3b authority.
+CLI integration coverage places lexical, parser, and semantic failures before,
+after, and between otherwise valid typed declarations. `eval` remains
+repeatably unsuccessful with zero value bytes in every such ordering, and an
+earlier phase diagnostic prevents later-phase cascades. Multi-file `check`
+coverage interleaves semantic, valid, lexical, and parser inputs and requires
+repeatable diagnostics in argument order rather than phase or code order.
+
+Semantic unit coverage also aggregates independent duplicate, unsupported-type,
+word-width, negative-word, and word-range failures in one source. It requires
+the raw and rendered diagnostic sequences to remain in source order, checks the
+exact responsible source slice for every primary span, and checks that a
+duplicate's secondary span names the first declaration. A duplicate typed
+declaration is still type-checked in semantic traversal order; focused limit
+tests pin the exact event at which its second failure becomes diagnostic
+suppression or resource exhaustion.
+
+A deterministic unit mutation corpus deletes, replaces, and inserts characters
+at every boundary of an accepted mixed S3a module, then adds bounded sequences
+of grammar fragments, comments, line endings, malformed characters, and
+Unicode. The resulting set contains more than 2,500 unique sources. Every
+mutant runs twice through the same gated lexical, parser, semantic, and
+evaluation pipeline; phase results must be structurally equal, rendered
+diagnostic bytes must match, success must remain atomic, and every primary and
+secondary diagnostic span must belong to the mutated source. The corpus must
+reach lexical, parser, and semantic rejection as well as successful evaluation.
+
+Two frontend byte corpora exercise boundaries outside valid source grammar. On
+Unix, 512 generated raw argument strings are classified twice in command,
+option, operand, and post-`--` positions; every error is ASCII and contains no
+control byte. A platform-independent corpus sends 518 fixed and generated raw
+source byte strings—including every possible one-byte input—through `check`,
+`eval`, and `lex` twice each. Status and output bytes must repeat exactly,
+invalid UTF-8 must reach `ORC1002`, diagnostics may contain only ASCII plus line
+feeds, and token output may additionally use its canonical tab separators.
+
+The ten-file external corpus alone is not the full S3a evidence set. The
+conformance runner parses the stable 30-rule index in
+`docs/SEMANTICS_2026.md`, rejects missing or unknown rule IDs, and binds every
+rule to named external or internal tests. It also binds the exact evidence-layer
+declaration and requires the corresponding CLI, generated-CLI, parser-unit, or
+unit observation for every rule. Specialized labels additionally require a
+named test classified as an injected writer or injected limit; host-failure
+coverage separately requires I/O, allocation, and non-regular host-boundary
+failures. Each named test must have exactly one unconditional declaration at the
+expected harness location: integration tests at file root and unit tests
+directly inside the source's unique `#[cfg(test)] mod tests` container.
+Declarations inside comments, strings, nested functions, or alternate or
+disabled modules do not qualify. This is an exact evidence map, not a claim that
+a named test exhausts its rule. Policy validation binds the production
+constants to the specification, while injected-limit unit tests exercise exact
+semantic-event, Core-node, and evaluation accounting and fail-closed behavior
+at reachable boundaries. This indexed mapping does not complete S3 and adds no source
+construct, semantic rule, canonical Core identity, proof, target, claim, or S3b
+authority.
 
 ## Layout
 

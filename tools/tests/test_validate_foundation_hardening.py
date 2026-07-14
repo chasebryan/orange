@@ -23,6 +23,7 @@ from tools.validate_foundation import (
     parse_rust_usize_product,
     relative,
     rust_code_without_comments_and_literals,
+    safe_manifest_path,
     validate_schema_instance,
     workflow_jobs,
     workflow_steps,
@@ -299,6 +300,132 @@ jobs:
                 )
                 self.assertIn("workflow.scorecard_publication", {finding.code for finding in validator.findings})
 
+    def test_ci_bash_helpers_use_hardened_startup_and_bounded_installers(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        for name in ("check-external-links", "install-actionlint", "install-lychee"):
+            with self.subTest(helper=name, contract="interpreter"):
+                script = (source_root / "scripts/ci" / name).read_text(encoding="utf-8")
+                self.assertTrue(script.startswith("#!/bin/bash -p\n"))
+                self.assertIn('[[ $# -ne 1 || -z "${1-}" ]]', script)
+                if name == "check-external-links":
+                    self.assertIn(
+                        "exec -- /usr/bin/env \\\n"
+                        "  --ignore-environment \\\n"
+                        "  -- \\\n"
+                        "  LANG=C \\\n"
+                        "  LC_ALL=C \\\n"
+                        "  PATH=/usr/bin:/bin \\\n"
+                        "  TZ=UTC \\\n"
+                        '  "$LYCHEE" \\\n',
+                        script,
+                    )
+        contracts = (
+            (
+                "install-actionlint",
+                'readonly MAXIMUM_ARCHIVE_BYTES="33554432"',
+                'readonly MAXIMUM_ARCHIVE_KIB="32768"',
+                'readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"',
+                "-- \\\n    actionlint\n",
+                'readonly EXTRACTED_FILE="$TEMPORARY_DIRECTORY/actionlint"',
+            ),
+            (
+                "install-lychee",
+                'readonly MAXIMUM_ARCHIVE_BYTES="67108864"',
+                'readonly MAXIMUM_ARCHIVE_KIB="65536"',
+                'readonly MAXIMUM_EXTRACTED_FILE_KIB="131072"',
+                '-- \\\n    "$ARCHIVE_DIRECTORY/lychee"\n',
+                'readonly EXTRACTED_FILE="$TEMPORARY_DIRECTORY/$ARCHIVE_DIRECTORY/lychee"',
+            ),
+        )
+        for (
+            name,
+            maximum_archive_size,
+            maximum_archive_kib,
+            maximum_file_size,
+            selected_member,
+            extracted_file,
+        ) in contracts:
+            with self.subTest(installer=name):
+                script = (source_root / "scripts/ci" / name).read_text(encoding="utf-8")
+                for required in (
+                    'readonly PATH="/usr/bin:/bin"\nexport PATH\n',
+                    "unset GZIP TAR_OPTIONS",
+                    maximum_archive_size,
+                    maximum_archive_kib,
+                    'readonly MAXIMUM_DOWNLOAD_SECONDS="300"',
+                    maximum_file_size,
+                    '(\n  ulimit -c 0\n  ulimit -f "$MAXIMUM_ARCHIVE_KIB"\n  curl \\\n'
+                    "    --disable \\\n",
+                    "--connect-timeout 20",
+                    '--max-filesize "$MAXIMUM_ARCHIVE_BYTES"',
+                    '--max-time "$MAXIMUM_DOWNLOAD_SECONDS"',
+                    '(\n  ulimit -c 0\n  ulimit -f "$MAXIMUM_EXTRACTED_FILE_KIB"\n  tar \\\n',
+                    "--no-same-owner",
+                    "--no-same-permissions",
+                    selected_member,
+                    extracted_file,
+                    '[[ ! -f "$EXTRACTED_FILE" || ! -s "$EXTRACTED_FILE" || '
+                    '-L "$EXTRACTED_FILE" ]]',
+                    "stat --format='%h' --",
+                    "install \\\n  -D \\\n  -m 0755 \\\n  -- \\\n",
+                ):
+                    self.assertIn(required, script)
+
+    def test_external_link_helper_clears_ambient_environment(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        helper = source_root / "scripts/ci/check-external-links"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            probe = temporary_root / "probe"
+            observed = temporary_root / "environment.json"
+            probe.write_text(
+                "#!/usr/bin/python3\n"
+                "import json\n"
+                "import os\n"
+                "from pathlib import Path\n"
+                "Path(__file__).with_name('environment.json').write_text(\n"
+                "    json.dumps(dict(os.environ)), encoding='utf-8'\n"
+                ")\n",
+                encoding="utf-8",
+            )
+            probe.chmod(0o755)
+            result = subprocess.run(
+                [helper, probe],
+                cwd=source_root,
+                env={
+                    "BASH_ENV": str(temporary_root / "hostile-startup"),
+                    "HOME": str(temporary_root / "hostile-home"),
+                    "HTTPS_PROXY": "http://hostile.invalid",
+                    "LYCHEE_CONFIG": str(temporary_root / "hostile.toml"),
+                    "PATH": str(temporary_root),
+                    "RUST_LOG": "trace",
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                json.loads(observed.read_text(encoding="utf-8")),
+                {
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                    "PATH": "/usr/bin:/bin",
+                    "TZ": "UTC",
+                },
+            )
+
+    def test_hosted_run_steps_use_fixed_privileged_bash(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        shell = "shell: /bin/bash -p -e -o pipefail {0}"
+        for name in ("ci.yml", "external-links.yml", "scorecard.yml"):
+            with self.subTest(workflow=name):
+                workflow = (source_root / ".github/workflows" / name).read_text(
+                    encoding="utf-8"
+                )
+                self.assertEqual(workflow.count(shell), 1)
+                self.assertNotIn("shell: bash\n", workflow)
+
 
 class PolicyShapeHardeningTests(unittest.TestCase):
     def test_malformed_nested_policy_values_fail_closed_without_crashing(self) -> None:
@@ -419,6 +546,11 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
+                "-I",
+                "-S",
+                "-B",
+                "-X",
+                "utf8",
                 str(repository_root / "tools/validate_foundation.py"),
                 "--root",
                 ".",
@@ -442,6 +574,108 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             link = root / "outside-link"
             link.symlink_to(outside, target_is_directory=True)
             self.assertEqual(relative(link, root), "outside-link")
+
+    def test_manifest_path_validation_is_lexical_and_does_not_follow_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "root"
+            outside = parent / "outside"
+            root.mkdir()
+            outside.mkdir()
+            (root / "link").symlink_to(outside, target_is_directory=True)
+
+            self.assertEqual(
+                safe_manifest_path(root, "link/record.json"),
+                root / "link/record.json",
+            )
+            self.assertIsNone(safe_manifest_path(root, "../outside/record.json"))
+            self.assertIsNone(safe_manifest_path(root, str(outside / "record.json")))
+
+    def test_validator_directory_queries_reuse_the_bounded_inventory(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "tools/validate_foundation.py").read_text(encoding="utf-8")
+
+        self.assertNotRegex(source, r"\.(?:rglob|glob|iterdir)\(")
+
+    def test_validator_presence_queries_do_not_stat_worktree_paths(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "tools/validate_foundation.py").read_text(encoding="utf-8")
+        validator_source = source.split("class FoundationValidator:", 1)[1]
+
+        self.assertNotRegex(
+            validator_source,
+            r"\.(?:exists|is_file|is_dir|is_symlink|lstat)\(",
+        )
+
+    def test_required_and_forbidden_paths_use_inventory_without_stat(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = root / "docs/existing.md"
+            existing.parent.mkdir()
+            existing.write_text("# Existing\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator.policy = {
+                "allowed_top_level_paths": ["docs"],
+                "required_paths": ["docs/existing.md", "docs/missing.md"],
+                "forbidden_paths": ["docs", "absent"],
+            }
+
+            with mock.patch.object(
+                Path, "exists", side_effect=AssertionError("worktree path was statted")
+            ), mock.patch.object(
+                Path, "is_file", side_effect=AssertionError("worktree path was statted")
+            ), mock.patch.object(
+                Path, "is_dir", side_effect=AssertionError("worktree path was statted")
+            ), mock.patch.object(
+                Path, "is_symlink", side_effect=AssertionError("worktree path was statted")
+            ):
+                validator._validate_required_and_forbidden_paths()
+
+        path_findings = {
+            (finding.code, finding.path)
+            for finding in validator.findings
+            if finding.code in {"path.required", "path.forbidden"}
+        }
+        self.assertEqual(
+            path_findings,
+            {
+                ("path.required", "docs/missing.md"),
+                ("path.forbidden", "docs"),
+            },
+        )
+
+    def test_inventory_directory_selection_is_lexical_and_depth_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            validator = object.__new__(FoundationValidator)
+            validator.root = root
+            validator.repository_files = [
+                root / "schemas/gate0/z.txt",
+                root / "schemas/gate00/outside.schema.json",
+                root / "schemas/gate0/nested/hidden.schema.json",
+                root / "schemas/gate0/accepted.schema.json",
+            ]
+
+            self.assertEqual(
+                [
+                    relative(path, root)
+                    for path in validator._inventory_files_in("schemas/gate0")
+                ],
+                ["schemas/gate0/accepted.schema.json", "schemas/gate0/z.txt"],
+            )
+            self.assertEqual(
+                [
+                    relative(path, root)
+                    for path in validator._inventory_files_in(
+                        "schemas/gate0", recursive=True
+                    )
+                ],
+                [
+                    "schemas/gate0/accepted.schema.json",
+                    "schemas/gate0/nested/hidden.schema.json",
+                    "schemas/gate0/z.txt",
+                ],
+            )
 
     @staticmethod
     def _path_policy() -> dict[str, object]:
@@ -541,6 +775,10 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = "deny"
+
+[profile.release]
+debug-assertions = true
+overflow-checks = true
 """,
             "compiler/crates/orange-compiler/Cargo.toml": """[package]
 name = "orange-compiler"
@@ -776,6 +1014,8 @@ version = "0.1.0"
             lambda source: source.replace("publish = false", "publish = true"),
             lambda source: source.replace('unsafe_code = "forbid"', 'unsafe_code = "allow"'),
             lambda source: source.replace('all = "deny"', 'all = "warn"'),
+            lambda source: source.replace("debug-assertions = true", "debug-assertions = false"),
+            lambda source: source.replace("overflow-checks = true", "overflow-checks = false"),
         )
         for mutate in mutations:
             with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as directory:
@@ -907,6 +1147,8 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "compiler/crates/orange-compiler/src/parser.rs",
         "compiler/crates/orange-compiler/src/semantics.rs",
         "compiler/crates/orange-compiler/src/eval.rs",
+        "compiler/crates/orangec/src/main.rs",
+        "compiler/README.md",
         "docs/LANGUAGE_2026.md",
         "docs/SEMANTICS_2026.md",
     )
@@ -960,6 +1202,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("compiler/crates/orange-compiler/src/semantics.rs", "1_048_576", "1_048_575"),
             ("compiler/crates/orange-compiler/src/semantics.rs", "16_384", "16_383"),
             ("compiler/crates/orange-compiler/src/eval.rs", "1_048_576", "1_048_575"),
+            ("compiler/crates/orangec/src/main.rs", "usize = 256;", "usize = 255;"),
         )
         for value, old, new in mutations:
             with self.subTest(path=value, old=old), tempfile.TemporaryDirectory() as directory:
@@ -969,7 +1212,20 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 source = path.read_text(encoding="utf-8")
                 self.assertIn(old, source)
                 path.write_text(source.replace(old, new, 1), encoding="utf-8")
-                self.assertIn("compiler.language_budget", self._codes(root))
+                expected = "compiler.cli_budget" if value.endswith("orangec/src/main.rs") else "compiler.language_budget"
+                self.assertIn(expected, self._codes(root))
+
+    def test_cli_source_limit_documentation_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "compiler/README.md"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace("up to 256 source inputs", "up to 255 source inputs", 1),
+                encoding="utf-8",
+            )
+            self.assertIn("compiler.cli_spec_budget", self._codes(root))
 
     def test_oversized_compiled_budget_is_rejected_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1152,6 +1408,67 @@ class BrandAssetHardeningTests(unittest.TestCase):
 
 
 class ProtectedControlHardeningTests(unittest.TestCase):
+    def test_make_check_must_be_policy_first_serialized_and_environment_isolated(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        canonical = (source_root / "Makefile").read_text(encoding="utf-8")
+        mutations = (
+            (".NOTPARALLEL: check\n", "", "make.entrypoint_contract"),
+            ("override .SHELLFLAGS := -p -c\n", "", "make.entrypoint_contract"),
+            ("unexport BASH_ENV ENV\n", "", "make.entrypoint_contract"),
+            (
+                "check: check-policy test-policy check-compiler",
+                "check: check-compiler test-policy check-policy",
+                "make.entrypoint_contract",
+            ),
+            ("env -i", "env", "make.compiler_environment_contract"),
+            (
+                "RUSTUP_TOOLCHAIN=1.96.1",
+                "RUSTUP_TOOLCHAIN=stable",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "--all-targets --release --locked --offline",
+                "--all-targets --locked --offline",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "-D clippy::arithmetic_side_effects",
+                "-W clippy::arithmetic_side_effects",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'CARGO_TARGET_DIR="$$cargo_home/repro-b"',
+                'CARGO_TARGET_DIR="$$cargo_home/repro-a"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'CARGO_TARGET_DIR="$$cargo_home/target"',
+                'CARGO_TARGET_DIR="compiler/target"',
+                "make.compiler_environment_contract",
+            ),
+            ("PYTHONHASHSEED=0", "PYTHONHASHSEED=random", "make.python_environment_contract"),
+            (
+                "python3 -S -P -B -X utf8",
+                "python3 -S",
+                "make.python_environment_contract",
+            ),
+            (
+                'PYTHONPYCACHEPREFIX="$$pycache"',
+                "",
+                "make.python_cache_contract",
+            ),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(mutation=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "Makefile").write_text(canonical.replace(old, new), encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_makefile_entrypoint()
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_codeowners_and_fixture_mutations_are_digest_protected(self) -> None:
         paths = (
             ".github/CODEOWNERS",
