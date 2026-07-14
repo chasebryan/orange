@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Validate Orange's solo-bootstrap foundation deterministically.
 
-This policy tool supports Gate 0's reviewed JSON Schema subset; it is not the
-Orange product checker or a general schema implementation.
+This Gate 0 policy tool is not the product checker or a schema implementation.
 """
 
 from __future__ import annotations
@@ -364,7 +363,7 @@ scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e25
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
 tools/tests/test_validate_foundation.py fd5a2b06948bf1f82aeb6275d8dd114450119d9083a2776b91ac1c6423804c41
-tools/tests/test_validate_foundation_hardening.py a7f184df97ea3fd41c0162d5a1696ac6c63c997c6f3390934f2167ad4518c3af
+tools/tests/test_validate_foundation_hardening.py 05aa5c6637c73f9fd2b40c1189794026d22bfb79cc828c6a1f2e9c348aee0ee6
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -652,7 +651,7 @@ def _require_unicode_scalars(value: Any, source: str) -> None:
 
 
 def _require_bounded_json_nesting(source: str) -> None:
-    """Reject JSON deeper than Gate 0 permits without recursively parsing it."""
+    """Preflight Gate 0's JSON nesting bound."""
     depth = 0
     in_string = False
     escaped = False
@@ -681,7 +680,7 @@ def _require_bounded_json_nesting(source: str) -> None:
 
 
 def _load_json_bytes(data: bytes) -> Any:
-    """Parse already-read Gate 0 JSON bytes without reopening their path."""
+    """Parse one buffered Gate 0 JSON document."""
     source = data.decode("utf-8")
     _require_bounded_json_nesting(source)
     try:
@@ -743,7 +742,7 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 
 def relative(path: Path, root: Path) -> str:
-    """Format a lexical repository-relative path without following symlinks."""
+    """Format a lexical repository-relative path."""
 
     try:
         return path.relative_to(root).as_posix()
@@ -752,7 +751,7 @@ def relative(path: Path, root: Path) -> str:
 
 
 def _secure_repository_reads_supported() -> bool:
-    """Return whether the host can open a no-follow path one component at a time."""
+    """Check secure component-wise open support."""
 
     return (
         os.name == "posix"
@@ -767,13 +766,13 @@ def _secure_repository_reads_supported() -> bool:
 
 
 def _secure_repository_discovery_supported() -> bool:
-    """Return whether fallback can scan an opened directory."""
+    """Check descriptor-based directory scan support."""
 
     return _secure_repository_reads_supported() and os.scandir in os.supports_fd
 
 
 def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes]) -> int:
-    """Open a directory below ``root`` without following components."""
+    """Open a no-follow directory chain below ``root``."""
 
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY | os.O_NOFOLLOW
     descriptor = os.open(root, flags)
@@ -792,7 +791,7 @@ def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes])
 
 
 def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
-    """Inspect inventory entry presence without following any path component."""
+    """Inspect entry presence without following it."""
 
     if not _secure_repository_reads_supported():
         return None
@@ -822,7 +821,7 @@ class _GitRecordRead:
 
 
 def _sanitized_git_environment(root: Path) -> dict[str, str]:
-    """Build the minimal environment needed to launch the ambient Git."""
+    """Build Git's minimal environment."""
 
     environment = {"PATH": os.environ.get("PATH", os.defpath)}
     environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
@@ -832,7 +831,7 @@ def _sanitized_git_environment(root: Path) -> dict[str, str]:
 
 
 def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
-    """Release a bounded Git producer without retaining any more output."""
+    """Terminate and reap a Git producer."""
 
     try:
         process.kill()
@@ -855,7 +854,7 @@ def _read_git_nul_records(
     *,
     maximum_record_bytes: int,
 ) -> _GitRecordRead:
-    """Read bounded NUL-delimited Git metadata under one process deadline."""
+    """Read bounded NUL Git records by deadline."""
 
     command = [
         "git",
@@ -990,7 +989,7 @@ def _read_git_nul_records(
 
 
 def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path]:
-    """Collect a bounded, pruned filesystem inventory without following dirs."""
+    """Collect a bounded no-follow filesystem inventory."""
 
     if not _secure_repository_discovery_supported():
         findings.append(
@@ -4848,6 +4847,9 @@ def audit_schema_vocabulary(schema: Any, location: str = "$") -> list[str]:
     value = schema.get("format")
     if isinstance(value, str) and value not in ("date", "date-time", "uri", "uri-reference"):
         issues.append(f"unsupported format {value!r} at {location}")
+    value = schema.get("$id")
+    if isinstance(value, str) and (location != "$" or "#" in value or not valid_format(value, "uri")):
+        issues.append(f"unsupported $id at {location}")
     type_value = schema.get("type")
     allowed_types = {"array", "boolean", "integer", "null", "number", "object", "string"}
     if type_value is not None:
@@ -5217,7 +5219,7 @@ RFC3986_HEX_DIGITS = frozenset("0123456789ABCDEFabcdef")
 
 
 def has_valid_rfc3986_lexical_form(value: str) -> bool:
-    """Reject octets and malformed percent escapes outside RFC 3986 syntax."""
+    """Check URI characters and percent escapes."""
     if not value.isascii():
         return False
     for index, character in enumerate(value):

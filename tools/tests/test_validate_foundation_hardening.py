@@ -2448,11 +2448,15 @@ class SchemaDeterminismTests(unittest.TestCase):
                 "minLength": -1,
                 "uniqueItems": "yes",
                 "format": "hostname",
+                "$id": "urn:orange:gate0:test#fragment",
                 "properties": [],
             }
         )
-        for fragment in ("type", "required", "enum", "minLength", "uniqueItems", "format", "properties"):
+        for fragment in ("type", "required", "enum", "minLength", "uniqueItems", "format", "$id", "properties"):
             self.assertTrue(any(fragment in finding for finding in findings), fragment)
+
+        nested_id = audit_schema_vocabulary({"properties": {"x": {"$id": "urn:orange:gate0:x"}}})
+        self.assertTrue(any("$id" in finding for finding in nested_id))
 
     def test_schema_profile_rejects_invalid_regular_expression(self) -> None:
         findings = audit_schema_vocabulary({"patternProperties": {"[": {"type": "string"}}})
