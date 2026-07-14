@@ -84,8 +84,9 @@ forbidden, and optional artifact-presence query, are selected lexically from
 that same bounded inventory. Validation does not launch a second filesystem
 glob or ordinary path-status probe that could traverse ignored or concurrently
 replaced directories. Markdown fragment validation computes each target's
-anchor set once per run, so repeated links cannot multiply target scans. Local
-link percent escapes must be complete and decode as strict UTF-8, preventing
+anchor set once per run, so repeated links cannot multiply target scans. Links
+inside HTML comments or fenced examples are not treated as live navigation.
+Local link percent escapes must be complete and decode as strict UTF-8, preventing
 lossy filename aliases. HTML comment balance is scanned directly outside code
 fences, without collision-prone replacement sentinels or whole-file match lists.
 Manifest paths independently reject drive prefixes, backslashes, controls,

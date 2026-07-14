@@ -1360,6 +1360,24 @@ class MarkdownTests(unittest.TestCase):
             validator._validate_markdown_links()
             self.assertIn("markdown.link_missing", {finding.code for finding in validator.findings})
 
+    def test_links_in_comments_and_fences_are_not_live_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "<!-- [commented](commented.md) -->\n\n"
+                "```markdown\n[fenced](fenced.md)\n```\n\n"
+                "[visible](visible.md)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+
+            validator._validate_markdown_links()
+
+            self.assertEqual(
+                [(finding.code, finding.message) for finding in validator.findings],
+                [("markdown.link_missing", "local link target does not exist: visible.md")],
+            )
+
     def test_existing_cross_file_anchor_passes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
