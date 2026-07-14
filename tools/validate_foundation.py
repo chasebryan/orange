@@ -385,7 +385,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 4afebdc72da50b224b6d71c1cd9fede02dc097da809b17e792fbb4faf5ed0721
+policy/README.md 2932baea58551cf8e5f099cdd92b29078e1282464677f16c5ae410c0624c8677
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -397,7 +397,7 @@ scripts/ci/check-repository 252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a8
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
 tools/tests/test_validate_foundation.py e4891051a30f0971c311409a13b002d08abd0cd0ebf0bb5655954fa904677b89
-tools/tests/test_validate_foundation_hardening.py e4874f8766a223a54c54ac28cd58fd7353fb75685c51f3a1f202f21621c3f89d
+tools/tests/test_validate_foundation_hardening.py 311a361b25a6e69a154c38727df32a039f7c952624fa2fa9d05b152bcf0550eb
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -588,43 +588,24 @@ ORANGEC_OPERATIONAL_BUDGET_MARKERS = {
         "`orangec` accepts up to 256 source inputs in argument order": 256,
     },
 }
-MINIMUM_CODEOWNERS = {
-    "* @chasebryan",
-    "/.github/ @chasebryan",
-    "/assets/brand/ @chasebryan",
-    "/SECURITY.md @chasebryan",
-    "/GOVERNANCE.md @chasebryan",
-    "/docs/ASSURANCE.md @chasebryan",
-    "/docs/security/ @chasebryan",
-    "/policy/ @chasebryan",
-    "/scripts/ci/ @chasebryan",
-    "/tools/validate_foundation.py @chasebryan",
-}
-GATE0_ALLOWED_TOP_LEVEL = {
-    ".editorconfig",
-    ".gitattributes",
-    ".github",
-    ".gitignore",
-    ".markdownlint-cli2.jsonc",
-    "CODE_OF_CONDUCT.md",
-    "CONTRIBUTING.md",
-    "compiler",
-    "DEPENDENCY_POLICY.md",
-    "GOVERNANCE.md",
-    "Makefile",
-    "README.md",
-    "RELEASE_POLICY.md",
-    "rust-toolchain.toml",
-    "SECURITY.md",
-    "SUPPORT.md",
-    "assets",
-    "conformance",
-    "docs",
-    "policy",
-    "schemas",
-    "scripts",
-    "tools",
-}
+MINIMUM_CODEOWNERS = set(
+    """* @chasebryan
+/.github/ @chasebryan
+/assets/brand/ @chasebryan
+/SECURITY.md @chasebryan
+/GOVERNANCE.md @chasebryan
+/docs/ASSURANCE.md @chasebryan
+/docs/security/ @chasebryan
+/policy/ @chasebryan
+/scripts/ci/ @chasebryan
+/tools/validate_foundation.py @chasebryan""".splitlines()
+)
+GATE0_ALLOWED_TOP_LEVEL = set(
+    """.editorconfig .gitattributes .github .gitignore .markdownlint-cli2.jsonc
+CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md Makefile
+README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
+docs policy schemas scripts tools""".split()
+)
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
@@ -2865,13 +2846,13 @@ class FoundationValidator:
             except ValueError:
                 continue
             chapter_text = "\n".join(lines[chapter_start:chapter_end])
-            chapter_words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’-]*", chapter_text)
-            if len(chapter_words) < ORANGE_BOOK_MINIMUM_CHAPTER_WORDS:
+            chapter_word_count = sum(1 for _ in re.finditer(r"[A-Za-z0-9][A-Za-z0-9'’-]*", chapter_text))
+            if chapter_word_count < ORANGE_BOOK_MINIMUM_CHAPTER_WORDS:
                 self.add(
                     "book.chapter_length",
                     path,
                     f"{heading.removeprefix('## ')} must contain at least "
-                    f"{ORANGE_BOOK_MINIMUM_CHAPTER_WORDS} words; observed {len(chapter_words)}",
+                    f"{ORANGE_BOOK_MINIMUM_CHAPTER_WORDS} words; observed {chapter_word_count}",
                 )
 
         boundary_text = re.sub(r"(?m)^>\s?", "", visible_text)
@@ -4626,9 +4607,9 @@ def markdown_html_comment_error(text: str) -> str | None:
     # markers by temporarily replacing them with inert sentinels.
     protected = text.replace("<!--", "OPEN_COMMENT_SENTINEL").replace("-->", "CLOSE_COMMENT_SENTINEL")
     unfenced = markdown_without_fenced_blocks_and_comments(protected)
-    tokens = re.findall(r"OPEN_COMMENT_SENTINEL|CLOSE_COMMENT_SENTINEL", unfenced)
     open_comment = False
-    for token in tokens:
+    for match in re.finditer(r"OPEN_COMMENT_SENTINEL|CLOSE_COMMENT_SENTINEL", unfenced):
+        token = match.group()
         if token == "OPEN_COMMENT_SENTINEL":
             if open_comment:
                 return "nested HTML comment opener"
@@ -4690,7 +4671,7 @@ def parse_front_matter(text: str) -> tuple[dict[str, Any], list[str]] | None:
         match = FRONT_MATTER_KEY_RE.match(line)
         if match:
             key, raw = match.group(1), (match.group(2) or "").strip()
-            if key in result:
+            if key in result and len(errors) < GATE0_MAXIMUM_FINDINGS:
                 errors.append(f"duplicate metadata key {key!r} on line {line_number}")
             result[key] = parse_front_matter_value(raw) if raw else []
             current_list = key if not raw else None
@@ -4701,10 +4682,11 @@ def parse_front_matter(text: str) -> tuple[dict[str, Any], list[str]] | None:
             if isinstance(result.get(current_list), list):
                 result[current_list].append(value)
             continue
-        if line.strip():
+        if line.strip() and len(errors) < GATE0_MAXIMUM_FINDINGS:
             errors.append(f"unsupported metadata syntax on line {line_number}")
         current_list = None
-    errors.append("front matter is not closed")
+    if len(errors) < GATE0_MAXIMUM_FINDINGS:
+        errors.append("front matter is not closed")
     return result, errors
 def nonempty_scalar(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())

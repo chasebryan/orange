@@ -21,6 +21,7 @@ from tools.validate_foundation import (
     checkout_disables_credentials,
     load_json,
     parse_arguments,
+    parse_front_matter,
     parse_rust_usize_product,
     relative,
     rust_code_without_comments_and_literals,
@@ -1768,6 +1769,16 @@ Status: accepted
 
 class ChangeRecordHardeningTests(unittest.TestCase):
     _ACCEPTED_REVISION = "0123456789abcdef0123456789abcdef01234567"
+
+    def test_front_matter_error_retention_is_bounded(self) -> None:
+        parsed = parse_front_matter("---\n" + "invalid syntax\n" * (GATE0_MAXIMUM_FINDINGS + 100))
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        _, errors = parsed
+        self.assertEqual(len(errors), GATE0_MAXIMUM_FINDINGS)
+        self.assertIn("line 2", errors[0])
+        self.assertIn(f"line {GATE0_MAXIMUM_FINDINGS + 1}", errors[-1])
 
     def _write_accepted_oep(
         self,
