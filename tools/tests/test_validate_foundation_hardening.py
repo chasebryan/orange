@@ -9,18 +9,20 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import ExitStack, redirect_stderr
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
 from tools.validate_foundation import (
     FoundationValidator,
+    Finding,
     GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
     GATE0_MAXIMUM_FINDINGS,
     audit_schema_vocabulary,
     canonical_json_bytes,
     checkout_disables_credentials,
     load_json,
+    main,
     parse_arguments,
     parse_front_matter,
     parse_rust_usize_product,
@@ -551,6 +553,33 @@ class PolicyShapeHardeningTests(unittest.TestCase):
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
+    def test_text_report_escapes_untrusted_fields_injectively_on_one_line(self) -> None:
+        validator = mock.Mock()
+        validator.policy = {}
+        validator.run.return_value = [
+            Finding("path.test", "safe:path\\name\nforged\x1bé", "message\rsecond\\line")
+        ]
+        output = io.StringIO()
+        with (
+            mock.patch(
+                "tools.validate_foundation.FoundationValidator",
+                return_value=validator,
+            ),
+            redirect_stdout(output),
+        ):
+            status = main(())
+
+        self.assertEqual(status, 1)
+        self.assertEqual(
+            output.getvalue().splitlines(),
+            [
+                "safe\\U0000003apath\\U0000005cname\\U0000000aforged"
+                "\\U0000001b\\U000000e9: "
+                "path.test: message\\U0000000dsecond\\U0000005cline",
+                "Solo-bootstrap repository policy failed with 1 finding(s).",
+            ],
+        )
+
     def test_finding_messages_are_bounded_with_a_truncation_marker(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             validator = FoundationValidator(Path(directory))

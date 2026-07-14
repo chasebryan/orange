@@ -95,7 +95,9 @@ result. The validator and its intermediate schema and record-metadata checkers
 each retain at most 4,096 detailed findings. Final finding messages retain at
 most 4,096 characters, and the report adds one deterministic suppression
 record, preventing bounded repository bytes from amplifying into an unbounded
-diagnostic object or output stream.
+diagnostic object or output stream. Text reports encode backslashes, colons,
+and every non-ASCII or non-printable code point with a fixed-width escape, so untrusted
+paths and messages cannot forge report lines or emit terminal controls.
 
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added

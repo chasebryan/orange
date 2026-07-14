@@ -355,7 +355,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 427e6e074c7f15cdcaed33854977c9dff3803e94f31c84b9b1d8ac444a353a59
+policy/README.md 983f07727f9156d7df3e14269be3992728d3c6a1fec492afb2d490eb7b27017c
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -367,7 +367,7 @@ scripts/ci/check-repository 37fd7608c511f3aad28cc417af63cc9a1806815ecf32f9d755c8
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
 tools/tests/test_validate_foundation.py 98265afa0625a46ab4cc4135643db80cdf9b5fb142047f474ba58f4bfce79edc
-tools/tests/test_validate_foundation_hardening.py b6eb227619d2929b827b0e10e78f453926a3ac15bc007b1d9c00b7557c5bbaf3
+tools/tests/test_validate_foundation_hardening.py 7ab9744471e88ab56033de00c5a17eddf505f09ae67e137190cb600b96f2f6e1
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -582,6 +582,12 @@ class Finding:
         return dataclasses.asdict(self)
 
 
+def _text_report_field(value: str) -> str:
+    return "".join(
+        c if " " <= c <= "~" and c not in "\\:" else f"\\U{ord(c):08x}" for c in value
+    )
+
+
 @dataclasses.dataclass(frozen=True)
 class SchemaIssue:
     keyword: str
@@ -624,9 +630,7 @@ def _parse_i_json_integer(value: str) -> int:
         len(magnitude) == len(_I_JSON_MAXIMUM_INTEGER_MAGNITUDE)
         and magnitude > _I_JSON_MAXIMUM_INTEGER_MAGNITUDE
     ):
-        # Reject lexically before int() so Python's configurable conversion
-        # limit cannot surface as ValueError for an attacker-sized literal.
-        # Keep the diagnostic independent of the literal's size as well.
+        # Reject lexically before int() and keep the diagnostic size-independent.
         raise json.JSONDecodeError(
             "integer exceeds the I-JSON interoperable range",
             value,
@@ -5486,7 +5490,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(output, sort_keys=True, separators=(",", ":")))
     elif findings:
         for finding in findings:
-            print(f"{finding.path}: {finding.code}: {finding.message}")
+            print(
+                f"{_text_report_field(finding.path)}: {finding.code}: "
+                f"{_text_report_field(finding.message)}"
+            )
         print(f"Solo-bootstrap repository policy failed with {len(findings)} finding(s).")
     else:
         print(
