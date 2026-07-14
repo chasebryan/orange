@@ -76,7 +76,8 @@ glob or ordinary path-status probe that could traverse ignored or concurrently
 replaced directories. Markdown fragment validation computes each target's
 anchor set once per run, so repeated links cannot multiply target scans. Local
 link percent escapes must be complete and decode as strict UTF-8, preventing
-lossy filename aliases.
+lossy filename aliases. HTML comment balance is scanned directly outside code
+fences, without collision-prone replacement sentinels or whole-file match lists.
 
 Content reads require POSIX component-relative open support. Every directory
 and final file component is opened with no-follow flags; the final open is also

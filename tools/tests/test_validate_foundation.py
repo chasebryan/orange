@@ -24,6 +24,7 @@ from tools.validate_foundation import (
     load_json,
     markdown_anchors,
     markdown_fence_error,
+    markdown_html_comment_error,
     git_index_entries,
     iter_repository_files,
     unsafe_run_interpolations,
@@ -1132,6 +1133,21 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
 
 class MarkdownTests(unittest.TestCase):
+    def test_html_comment_scan_is_fence_aware_and_sentinel_free(self) -> None:
+        self.assertIsNone(
+            markdown_html_comment_error("OPEN_COMMENT_SENTINEL CLOSE_COMMENT_SENTINEL\n")
+        )
+        self.assertIsNone(markdown_html_comment_error("<!-- balanced -->\n"))
+        self.assertIsNone(markdown_html_comment_error("```text\n<!-- fenced\n```\n"))
+        self.assertEqual(
+            markdown_html_comment_error("<!-- outer <!-- nested -->\n"),
+            "nested HTML comment opener",
+        )
+        self.assertEqual(
+            markdown_html_comment_error("stray -->\n"),
+            "HTML comment closer without opener",
+        )
+
     def test_heading_anchors_match_github_style_duplicates(self) -> None:
         anchors = markdown_anchors("# One heading\n\n## Repeated\n\n## Repeated\n")
         self.assertEqual(anchors, {"one-heading", "repeated", "repeated-1"})
