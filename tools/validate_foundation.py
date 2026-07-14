@@ -362,7 +362,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 0f452b0cf123825916d28a8a82889a99f92a14a4d7f78050a2f7333f294b4e03
+tools/tests/test_validate_foundation.py 59cdd53e1fa55fe29284a7c0f2c421be01dfe7a4d19b2cb799bab905d33740ad
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -1347,7 +1347,7 @@ class FoundationValidator:
             self.add(code, path_text, message)
 
     def _inventory_files_in(self, directory: str, *, recursive: bool = False) -> list[Path]:
-        """Select files lexically from the already bounded repository inventory."""
+        """Select files from the bounded inventory."""
 
         prefix = PurePosixPath(directory).as_posix().rstrip("/") + "/"
         selected: list[tuple[str, Path]] = []
@@ -1361,13 +1361,13 @@ class FoundationValidator:
         return [path for _, path in sorted(selected)]
 
     def _inventory_has_file(self, path: Path) -> bool:
-        """Check file presence without resolving any worktree path component."""
+        """Check lexical file presence."""
 
         value = relative(path, self.root)
         return any(relative(candidate, self.root) == value for candidate in self.repository_files)
 
     def _inventory_has_path(self, path: Path) -> bool:
-        """Check file-or-directory presence using only the bounded inventory."""
+        """Check lexical path presence."""
 
         value = relative(path, self.root).rstrip("/")
         prefix = value + "/"
@@ -1476,7 +1476,7 @@ class FoundationValidator:
         return None
 
     def _preflight_repository_resources(self) -> bool:
-        """Reject unsafe repository metadata before parsing the policy itself."""
+        """Preflight repository metadata and bounds."""
 
         if self._resource_preflight_complete:
             return not self._resource_issue_keys
@@ -1554,7 +1554,7 @@ class FoundationValidator:
         return not self._resource_issue_keys
 
     def _read_repository_bytes(self, path: Path) -> bytes | None:
-        """Read one bounded repository snapshot and reuse it for every consumer."""
+        """Read and cache one bounded repository snapshot."""
 
         lexical_path = self._lexical_repository_path(path)
         if lexical_path is None:
@@ -1645,7 +1645,7 @@ class FoundationValidator:
         return data
 
     def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
-        """Open a regular-file candidate without following any mutable path component."""
+        """Open a no-follow regular-file candidate."""
 
         if not _secure_repository_reads_supported():
             self._resource_issue(
@@ -2026,13 +2026,13 @@ class FoundationValidator:
             self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
-        """Fail closed if a security-critical Gate 0 file differs from reviewed bytes."""
+        """Authenticate security-critical Gate 0 files."""
 
         for value in sorted(GATE0_PROTECTED_FILE_DIGESTS):
             self._read_authenticated_protected_file(value)
 
     def _read_authenticated_protected_file(self, value: str) -> bytes | None:
-        """Read a protected file once and retain only reviewed bytes."""
+        """Cache one authenticated protected file."""
 
         if value in self._authenticated_protected_bytes:
             return self._authenticated_protected_bytes[value]
@@ -5245,7 +5245,12 @@ def valid_format(value: str, format_name: str) -> bool:
             dt.date.fromisoformat(value)
             return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value))
         if format_name == "date-time":
-            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})",
+                value,
+            ) is None:
+                return False
+            parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00" if value[-1] in "Zz" else value)
             return parsed.tzinfo is not None
         if format_name in ("uri", "uri-reference"):
             if not has_valid_rfc3986_lexical_form(value):

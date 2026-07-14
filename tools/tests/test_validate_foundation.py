@@ -1988,6 +1988,23 @@ class ProvisionalSchemaTests(unittest.TestCase):
         ):
             self.assertFalse(valid_format(value, "uri"), value)
 
+    def test_date_time_format_enforces_rfc3339_lexical_form(self) -> None:
+        for value in (
+            "2026-07-14T12:34:56Z",
+            "2026-07-14t12:34:56.123z",
+            "2026-07-14T12:34:56-05:30",
+        ):
+            self.assertTrue(valid_format(value, "date-time"), value)
+        for value in (
+            "2026-07-14 12:34:56+00:00",
+            "2026-07-14T12:34:56+00:00:30",
+            "2026-07-14T12:34:56",
+            "2026-07-14T12:34:56+24:00",
+            "2026-07-14T12:34:60Z",
+            "2026-02-30T12:34:56Z",
+        ):
+            self.assertFalse(valid_format(value, "date-time"), value)
+
     def test_invalid_uri_is_reported_as_a_schema_format_issue(self) -> None:
         schema = {"type": "string", "format": "uri"}
         issues = validate_schema_instance(
