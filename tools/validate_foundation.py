@@ -389,7 +389,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/check-repository": "692b0a7b0571891e5dfec985bdfbec3f2e340f9545afccaa76a04b7433621c16",
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
-    "tools/tests/test_validate_foundation.py": "b0bdb290f16c239c820a6e5e6641d433760ca060032f0d9b2580cd4b3729dcc0",
+    "tools/tests/test_validate_foundation.py": "e658c77281ddcd18785254e608b1eba4140053b33779652b061db1dfc30a7300",
     "tools/tests/test_validate_foundation_hardening.py": "1ecb94986a1a29b6e48b6a9bb0b032b0f6b0087f748b850e1ddcaa8faba709f0",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -2158,7 +2158,15 @@ class FoundationValidator:
                 target = self._markdown_destination(raw_target)
                 if not target:
                     continue
-                parsed = urlsplit(target)
+                try:
+                    parsed = urlsplit(target)
+                except ValueError:
+                    self.add(
+                        "markdown.link_invalid",
+                        path,
+                        "link target is not a valid URI reference",
+                    )
+                    continue
                 if parsed.scheme or target.startswith("//"):
                     continue
                 file_part = unquote(parsed.path)
