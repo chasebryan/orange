@@ -52,9 +52,10 @@ caller-selected policy paths remain unsupported.
 Repository discovery is likewise host-configuration independent. The bounded
 Git inventory passes only the caller's tool-search path plus fixed Git and
 locale controls, disables system and user configuration, disables
-repository-configured filesystem monitors, and applies only checkout
-`.gitignore` files when excluding untracked content. The child environment
-also binds Git's work tree to the validator-owned root, so local
+repository-configured filesystem monitors, and applies an exact static mirror
+of the protected root and compiler `.gitignore` files when excluding untracked
+content. It never trusts untracked ignore files. The child environment also binds Git's
+work tree to the validator-owned root, so local
 `core.worktree` configuration cannot hide actual checkout files. Git case
 folding and Unicode precomposition are pinned off so distinct worktree names
 remain visible to the validator's own collision and NFC checks. One

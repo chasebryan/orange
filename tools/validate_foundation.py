@@ -53,6 +53,29 @@ ORANGE_BOOK_CONTENTS = (
 IGNORED_PARTS = set(".git .agents .codex __pycache__".split())
 BINARY_SUFFIXES = set(".gif .jpeg .jpg .png .wasm".split())
 TEXT_TAB_FREE_SUFFIXES = set(".json .jsonc .or .py .rs .sh .toml .yaml .yml".split())
+GATE0_IGNORE_PATTERNS = tuple(
+    """.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+.cache/
+.tools/
+__pycache__/
+*.py[cod]
+coverage/
+dist/
+out/
+tmp/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+compiler/target/""".splitlines()
+)
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
@@ -332,7 +355,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 5839cfe3ea8f522a07fb6a523775f51c24fbbb6f78c36bdf6cad119f91140850
+policy/README.md cf2574311a6d0228a7062f6ff7df7c362dfc59c970387139da3f69f1e80c472c
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -343,7 +366,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a85b798e8a3b42
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 0603d5aa43dacd7f3c24fed67f39dcc678742bd7ba4ea395948d524e1393f781
+tools/tests/test_validate_foundation.py 98265afa0625a46ab4cc4135643db80cdf9b5fb142047f474ba58f4bfce79edc
 tools/tests/test_validate_foundation_hardening.py e39f4c39e4c184475ff7663f676374fef049b80d11efd68a3f8fc9a4e46c67ca
 """.strip().splitlines()
 )
@@ -1112,7 +1135,12 @@ def _git_object_id_is_valid(value: bytes) -> bool:
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
     result = _read_git_nul_records(
         root,
-        ["ls-files", "--cached", "--others", "--exclude-per-directory=.gitignore"],
+        [
+            "ls-files",
+            "--cached",
+            "--others",
+            *(f"--exclude={pattern}" for pattern in GATE0_IGNORE_PATTERNS),
+        ],
         maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
     )
     if result.finding is not None:

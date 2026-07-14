@@ -17,6 +17,7 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_BINARY_FILE_BYTES,
     GATE0_MAXIMUM_JSON_NESTING_DEPTH,
     GATE0_MAXIMUM_REPOSITORY_BYTES,
+    GATE0_IGNORE_PATTERNS,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     _fallback_repository_files,
     audit_schema_vocabulary,
@@ -525,6 +526,20 @@ class RepositoryResourceBoundTests(unittest.TestCase):
 
 
 class RepositoryInventoryBoundTests(unittest.TestCase):
+    def test_static_git_excludes_match_the_protected_gitignores(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        root_patterns = tuple(
+            line
+            for line in (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        )
+        compiler_patterns = tuple(
+            "compiler/" + line.removeprefix("/")
+            for line in (root / "compiler/.gitignore").read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        )
+        self.assertEqual(GATE0_IGNORE_PATTERNS, root_patterns + compiler_patterns)
+
     def test_git_inventory_has_one_deadline_for_output_and_exit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
@@ -695,7 +710,42 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
         self.assertEqual(
             [path.name for path in paths],
-            [".gitignore", "globally-hidden.txt"],
+            [".gitignore", "globally-hidden.txt", "locally-hidden.txt"],
+        )
+        self.assertEqual(findings, [])
+
+    def test_untracked_nested_gitignore_cannot_hide_repository_files(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            hidden = root / "hidden"
+            hidden.mkdir()
+            (hidden / ".gitignore").write_text("*\n", encoding="utf-8")
+            (hidden / "payload").write_text("must remain visible\n", encoding="utf-8")
+            findings: list = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(
+            [path.relative_to(root).as_posix() for path in paths],
+            ["hidden/.gitignore", "hidden/payload", "tracked.txt"],
         )
         self.assertEqual(findings, [])
 
