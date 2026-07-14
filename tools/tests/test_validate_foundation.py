@@ -1843,6 +1843,16 @@ class ProvisionalSchemaTests(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
+        absolute = {"$ref": referenced_path.as_posix()}
+        issues = validate_schema_instance(
+            "value",
+            absolute,
+            schema_path,
+            {schema_path: absolute, referenced_path: referenced},
+            {},
+        )
+        self.assertEqual([issue.keyword for issue in issues], ["$ref"])
+
     def test_schema_reference_fragments_decode_strict_json_pointers(self) -> None:
         schema_path = Path("/virtual/root.schema.json")
         valid = {"$defs": {"a/b": {"const": 1}}, "$ref": "#/$defs/a%7E1b"}

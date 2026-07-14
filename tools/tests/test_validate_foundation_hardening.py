@@ -18,6 +18,7 @@ from tools.validate_foundation import (
     Finding,
     GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
     GATE0_MAXIMUM_FINDINGS,
+    SCHEMA_DIALECT,
     audit_schema_vocabulary,
     canonical_json_bytes,
     checkout_disables_credentials,
@@ -2457,6 +2458,8 @@ class SchemaDeterminismTests(unittest.TestCase):
 
         nested_id = audit_schema_vocabulary({"properties": {"x": {"$id": "urn:orange:gate0:x"}}})
         self.assertTrue(any("$id" in finding for finding in nested_id))
+        nested_dialect = audit_schema_vocabulary({"properties": {"x": {"$schema": SCHEMA_DIALECT}}})
+        self.assertTrue(any("$schema" in finding for finding in nested_dialect))
 
     def test_schema_profile_rejects_invalid_regular_expression(self) -> None:
         findings = audit_schema_vocabulary({"patternProperties": {"[": {"type": "string"}}})

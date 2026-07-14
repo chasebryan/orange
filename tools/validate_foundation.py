@@ -362,8 +362,8 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py fd5a2b06948bf1f82aeb6275d8dd114450119d9083a2776b91ac1c6423804c41
-tools/tests/test_validate_foundation_hardening.py 05aa5c6637c73f9fd2b40c1189794026d22bfb79cc828c6a1f2e9c348aee0ee6
+tools/tests/test_validate_foundation.py 0f452b0cf123825916d28a8a82889a99f92a14a4d7f78050a2f7333f294b4e03
+tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -4850,6 +4850,8 @@ def audit_schema_vocabulary(schema: Any, location: str = "$") -> list[str]:
     value = schema.get("$id")
     if isinstance(value, str) and (location != "$" or "#" in value or not valid_format(value, "uri")):
         issues.append(f"unsupported $id at {location}")
+    if "$schema" in schema and location != "$":
+        issues.append(f"unsupported nested $schema at {location}")
     type_value = schema.get("type")
     allowed_types = {"array", "boolean", "integer", "null", "number", "object", "string"}
     if type_value is not None:
@@ -5167,6 +5169,8 @@ def resolve_schema_ref(
     if not has_valid_rfc3986_lexical_form(reference):
         return None
     document_ref, marker, fragment = reference.partition("#")
+    if document_ref.startswith("/"):
+        return None
     target_path = schema_path
     target_root = root_schema
     if document_ref:
