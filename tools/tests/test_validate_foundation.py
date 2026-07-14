@@ -1964,10 +1964,16 @@ class ProvisionalSchemaTests(unittest.TestCase):
         self.assertFalse(valid_format("relative/path", "uri"))
         self.assertTrue(valid_format("relative/path", "uri-reference"))
         self.assertTrue(valid_format("https://[2001:db8::1]/source", "uri"))
+        self.assertTrue(valid_format("https://user:pass@example.com:443/source", "uri"))
+        self.assertTrue(valid_format("https://example.com:/source", "uri"))
         for value in (
             "https://example.com/a[b]",
             "https://example.com/?q=[x]",
             "https://example.com/#a#b",
+            "https://example.com:port/source",
+            "https://[2001:db8::1]:port/source",
+            "https://unbracketed:host:443/source",
+            "https://first@second@example.com/source",
             "urn:orange:a[b]",
         ):
             self.assertFalse(valid_format(value, "uri"), value)
