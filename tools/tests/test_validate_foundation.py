@@ -1650,6 +1650,8 @@ class MarkdownTests(unittest.TestCase):
                 "[multiline\nlabel]((guide).md)\n"
                 "[blank\n\nlabel](blank-ignored.md)\n"
                 "[![image](image.png)](outer-missing.md)\n"
+                "[continued destination](\n  continued-inline-missing.md)\n"
+                "[split destination](split-ignored.md\npath)\n"
                 "[angle](<(guide).md>)\n"
                 "[escaped](\\(guide\\).md)\n"
                 "[query](target.md?value=(nested))\n"
@@ -1673,6 +1675,10 @@ class MarkdownTests(unittest.TestCase):
                 (
                     "markdown.link_missing",
                     "local link target does not exist: outer-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: continued-inline-missing.md",
                 ),
                 (
                     "markdown.link_missing",

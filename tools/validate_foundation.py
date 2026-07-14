@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "cf6013c3b10540bf72d0b3d01445049d0e4d02436a0610fc3e465d08c13db433"
+GATE0_PROTECTED_FILE_DIGEST = "59f12a4b9c49a12a5b97c51ca816f80594124135fbb2cf75d3d6d90fcb7d342e"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -4590,16 +4590,24 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
                 label_depth = max(0, label_depth - 1)
         if start is None:
             return
-        if start > line_end:
-            line_end = len(text)
-            for line_break in "\r\n":
-                candidate = text.find(line_break, start)
-                if candidate >= 0:
-                    line_end = min(line_end, candidate)
-            last_delimiter = {
-                delimiter: text.rfind(delimiter, start, line_end)
-                for delimiter in (">", '"', "'")
-            }
+        for continuation in range(2):
+            if start > line_end:
+                line_end = len(text)
+                for line_break in "\r\n":
+                    candidate = text.find(line_break, start)
+                    if candidate >= 0:
+                        line_end = min(line_end, candidate)
+                last_delimiter = {
+                    delimiter: text.rfind(delimiter, start, line_end)
+                    for delimiter in (">", '"', "'")
+                }
+            if continuation or line_end == len(text) or text[start:line_end].strip(" \t"):
+                break
+            start = line_end + 1
+            if text[line_end] == "\r" and text.startswith("\n", start):
+                start += 1
+            while start < len(text) and text[start] in " \t":
+                start += 1
         depth = 0
         quote: str | None = None
         angle = text.startswith("<", start) and start < last_delimiter[">"]
