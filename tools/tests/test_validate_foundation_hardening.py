@@ -20,6 +20,7 @@ from tools.validate_foundation import (
     checkout_disables_credentials,
     load_json,
     parse_arguments,
+    parse_rust_usize_product,
     relative,
     validate_schema_instance,
     workflow_jobs,
@@ -885,6 +886,26 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 path.write_text(source.replace(old, new, 1), encoding="utf-8")
                 self.assertIn("compiler.language_budget", self._codes(root))
 
+    def test_oversized_compiled_budget_is_rejected_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "compiler/crates/orange-compiler/src/source.rs"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace("16 * 1024 * 1024", "9" * 4301, 1),
+                encoding="utf-8",
+            )
+            self.assertIn("compiler.language_budget", self._codes(root))
+
+    def test_rust_usize_product_is_bounded_to_64_bits(self) -> None:
+        maximum = (1 << 64) - 1
+        self.assertEqual(parse_rust_usize_product("18_446_744_073_709_551_615"), maximum)
+        self.assertEqual(parse_rust_usize_product("000000000000000000001"), 1)
+        self.assertIsNone(parse_rust_usize_product("18_446_744_073_709_551_616"))
+        self.assertIsNone(parse_rust_usize_product("9_223_372_036_854_775_808 * 2"))
+        self.assertIsNone(parse_rust_usize_product("9" * 4301))
+
     def test_commented_budget_decoy_cannot_hide_real_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1001,15 +1022,22 @@ class BrandAssetHardeningTests(unittest.TestCase):
         }
         self.assertEqual(observed, expected)
 
-    def test_root_readme_uses_only_the_repository_banner(self) -> None:
+    def test_reader_entrypoints_use_only_the_hand_drawn_banner(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         readme = (source_root / "README.md").read_text(encoding="utf-8")
-        banner = (
+        orange_book = (source_root / "docs/THE_ORANGE_BOOK.md").read_text(encoding="utf-8")
+        readme_banner = (
             "![Hand-drawn Orange carton emblem and wordmark]"
             "(assets/brand/orange-handdrawn-marker-banner.png)"
         )
-        self.assertEqual(readme.count(banner), 1)
+        book_banner = (
+            "![Hand-drawn Orange carton emblem and wordmark]"
+            "(../assets/brand/orange-handdrawn-marker-banner.png)"
+        )
+        self.assertEqual(readme.count(readme_banner), 1)
+        self.assertEqual(orange_book.count(book_banner), 1)
         self.assertNotIn("user-attachments/assets", readme)
+        self.assertNotIn("user-attachments/assets", orange_book)
 
     def test_canonical_c2pa_container_removal_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

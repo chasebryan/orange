@@ -1,6 +1,6 @@
 # The Orange Book
 
-![Official Orange emblem and wordmark](../assets/brand/orange-banner.png)
+![Hand-drawn Orange carton emblem and wordmark](../assets/brand/orange-handdrawn-marker-banner.png)
 
 By Chase Bryan
 
