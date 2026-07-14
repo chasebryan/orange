@@ -82,9 +82,7 @@ _I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
-# Repository discovery is bounded independently from content reads. Git paths
-# are byte strings until every limit and record boundary has been checked, so
-# hostile metadata cannot force an unbounded buffer or premature decoding.
+# Bound discovery separately and keep Git paths as bytes until checked.
 GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
 GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
@@ -366,7 +364,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 19062b68daf08a6815262ee8f69ef4a69ee7a5a56e4855d4e3204c7bf1557b67
+tools/tests/test_validate_foundation.py 80c05bb6da5fda63af325942242d23591bdd33a1fb214f9779260ab5cea2c396
 tools/tests/test_validate_foundation_hardening.py 8ed536c777d0dc8ddc700fc7f3416c961e9f97b8a7da5207919c2eb5881d9759
 """.strip().splitlines()
 )
@@ -5167,6 +5165,8 @@ def resolve_schema_ref(
     schemas: Mapping[Path, Mapping[str, Any]],
     id_registry: Mapping[str, tuple[Path, Mapping[str, Any]]],
 ) -> tuple[Path, Mapping[str, Any] | bool, Mapping[str, Any]] | None:
+    if not has_valid_rfc3986_lexical_form(reference):
+        return None
     document_ref, marker, fragment = reference.partition("#")
     target_path = schema_path
     target_root = root_schema
@@ -5182,9 +5182,15 @@ def resolve_schema_ref(
             target_path, target_root = candidate, schemas[candidate]
     target: Any = target_root
     if marker and fragment:
+        try:
+            fragment = unquote(fragment, errors="strict")
+        except UnicodeDecodeError:
+            return None
         if not fragment.startswith("/"):
             return None
         for token in fragment[1:].split("/"):
+            if re.search(r"~(?:[^01]|$)", token):
+                return None
             token = token.replace("~1", "/").replace("~0", "~")
             if not isinstance(target, dict) or token not in target:
                 return None

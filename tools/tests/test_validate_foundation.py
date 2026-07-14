@@ -1843,6 +1843,16 @@ class ProvisionalSchemaTests(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
+    def test_schema_reference_fragments_decode_strict_json_pointers(self) -> None:
+        schema_path = Path("/virtual/root.schema.json")
+        valid = {"$defs": {"a/b": {"const": 1}}, "$ref": "#/$defs/a%7E1b"}
+        self.assertEqual(validate_schema_instance(1, valid, schema_path, {schema_path: valid}, {}), [])
+
+        for fragment in ("%GG", "~2"):
+            schema = {"$defs": {fragment: True}, "$ref": f"#/$defs/{fragment}"}
+            issues = validate_schema_instance(1, schema, schema_path, {schema_path: schema}, {})
+            self.assertEqual([issue.keyword for issue in issues], ["$ref"])
+
     def test_fixture_validation_never_executes_unreviewed_schema_patterns(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         dangerous_pattern = "^(a+)+$"
