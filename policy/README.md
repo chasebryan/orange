@@ -73,7 +73,8 @@ Schema, fixture, workflow, OEP, and ADR directory queries, plus every required,
 forbidden, and optional artifact-presence query, are selected lexically from
 that same bounded inventory. Validation does not launch a second filesystem
 glob or ordinary path-status probe that could traverse ignored or concurrently
-replaced directories.
+replaced directories. Markdown fragment validation computes each target's
+anchor set once per run, so repeated links cannot multiply target scans.
 
 Content reads require POSIX component-relative open support. Every directory
 and final file component is opened with no-follow flags; the final open is also

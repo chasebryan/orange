@@ -1136,6 +1136,25 @@ class MarkdownTests(unittest.TestCase):
         anchors = markdown_anchors("# One heading\n\n## Repeated\n\n## Repeated\n")
         self.assertEqual(anchors, {"one-heading", "repeated", "repeated-1"})
 
+    def test_repeated_fragment_links_scan_their_target_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "[one](target.md#heading)\n[two](target.md#heading)\n",
+                encoding="utf-8",
+            )
+            (root / "target.md").write_text("# Heading\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+
+            with mock.patch(
+                "tools.validate_foundation.markdown_anchors",
+                wraps=markdown_anchors,
+            ) as anchors:
+                validator._validate_markdown_links()
+
+            self.assertEqual(validator.findings, [])
+            self.assertEqual(anchors.call_count, 1)
+
     def test_missing_relative_link_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

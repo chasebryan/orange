@@ -373,7 +373,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 4aeaa2cd7d05a9790e35820915edf1f3677ef398df333e6fa3d0e6f9c677c353
+policy/README.md 975eba02e1e4282ed524a7bcf91c804aa21bf0091d49d158a500cb89dc47cb2f
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -384,7 +384,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a85b798e8a3b42
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py e4891051a30f0971c311409a13b002d08abd0cd0ebf0bb5655954fa904677b89
+tools/tests/test_validate_foundation.py eff4fcf25166aeb7ee7b3ee7411bc073907298d787140d800890007833b86c48
 tools/tests/test_validate_foundation_hardening.py e39f4c39e4c184475ff7663f676374fef049b80d11efd68a3f8fc9a4e46c67ca
 """.strip().splitlines()
 )
@@ -2704,6 +2704,7 @@ class FoundationValidator:
             for depth in range(1, len(parts)):
                 inventory_directories.add("/".join(parts[:depth]))
 
+        anchor_cache: dict[str, set[str]] = {}
         for path in (path for path in self.repository_files if path.suffix.lower() == ".md"):
             text = self._read_repository_text(path)
             if text is None:
@@ -2736,10 +2737,12 @@ class FoundationValidator:
                     self.add("markdown.link_missing", path, f"local link target does not exist: {raw_target}")
                     continue
                 if fragment and target_value in inventory_files and resolved.suffix.lower() == ".md":
-                    target_text = self._read_repository_text(resolved)
-                    if target_text is None:
-                        continue
-                    anchors = markdown_anchors(target_text)
+                    if target_value not in anchor_cache:
+                        target_text = self._read_repository_text(resolved)
+                        if target_text is None:
+                            continue
+                        anchor_cache[target_value] = markdown_anchors(target_text)
+                    anchors = anchor_cache[target_value]
                     if fragment not in anchors:
                         self.add("markdown.anchor_missing", path, f"anchor not found: {raw_target}")
 
