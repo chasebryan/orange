@@ -87,6 +87,16 @@
       "role": "primary-emblem-on-light",
       "content_credentials": "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified",
       "sha256": "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463"
+    },
+    {
+      "path": "orange-handdrawn-marker-banner.png",
+      "source_filename": "orange-handdrawn-marker-banner.png",
+      "media_type": "image/png",
+      "width": 2048,
+      "height": 682,
+      "alpha": false,
+      "role": "primary-readme-hand-drawn-horizontal-lockup-on-light",
+      "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735"
     }
   ]
 }

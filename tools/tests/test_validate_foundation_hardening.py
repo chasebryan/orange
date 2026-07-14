@@ -1004,7 +1004,10 @@ class BrandAssetHardeningTests(unittest.TestCase):
     def test_root_readme_uses_only_the_repository_banner(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         readme = (source_root / "README.md").read_text(encoding="utf-8")
-        banner = "![Official Orange emblem and wordmark](assets/brand/orange-banner.png)"
+        banner = (
+            "![Hand-drawn Orange carton emblem and wordmark]"
+            "(assets/brand/orange-handdrawn-marker-banner.png)"
+        )
         self.assertEqual(readme.count(banner), 1)
         self.assertNotIn("user-attachments/assets", readme)
 

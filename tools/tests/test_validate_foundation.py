@@ -611,6 +611,37 @@ class MarkdownTests(unittest.TestCase):
             validator._validate_markdown_links()
             self.assertEqual(validator.findings, [])
 
+    def test_malformed_uri_targets_are_reported_without_a_parser_crash(self) -> None:
+        for target in ("https://[", "//["):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "source.md").write_text(
+                    f"# Source\n\n[malformed]({target})\n",
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+
+                validator._validate_markdown_links()
+
+                self.assertEqual(
+                    [(finding.code, finding.message) for finding in validator.findings],
+                    [("markdown.link_invalid", "link target is not a valid URI reference")],
+                )
+
+    def test_valid_network_uri_targets_still_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "# Source\n\n[IPv6](https://[2001:db8::1]/path)\n\n"
+                "[protocol relative](//example.test/path)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+
+            validator._validate_markdown_links()
+
+            self.assertEqual(validator.findings, [])
+
     def test_unclosed_fence_is_rejected(self) -> None:
         self.assertEqual(
             markdown_fence_error("# Document\n\n```text\nnot closed\n"),
