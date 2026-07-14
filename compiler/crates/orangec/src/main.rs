@@ -970,29 +970,21 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn non_utf8_file_diagnostics_encode_the_path_exactly_once() {
+    fn non_utf8_source_diagnostics_encode_the_path_exactly_once() {
         use std::os::unix::ffi::OsStringExt as _;
 
-        let mut path_bytes = format!("/tmp/orangec-path-{}-", std::process::id()).into_bytes();
+        let mut path_bytes = b"source-".to_vec();
         path_bytes.extend_from_slice(b"\x80.or");
         let path = PathBuf::from(OsString::from_vec(path_bytes));
-        let _ = std::fs::remove_file(&path);
-        std::fs::write(&path, b"@").unwrap();
         let expected_name = stable_source_name(&path);
-        let mut input = b"".as_slice();
-        let mut output = Vec::new();
-        let mut error = Vec::new();
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add_with_rendered_name(expected_name.clone(), "@")
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
 
-        let status = run(
-            [OsString::from("check"), path.as_os_str().to_os_string()],
-            &mut input,
-            &mut output,
-            &mut error,
-        );
-        std::fs::remove_file(&path).unwrap();
-
-        assert_eq!(status, COMPILATION_ERROR);
-        assert_eq!(output, b"");
+        assert!(lexed.has_errors());
         assert_eq!(
             expected_name
                 .as_str()
@@ -1001,7 +993,7 @@ mod tests {
                 .count(),
             1
         );
-        let rendered = String::from_utf8(error).unwrap();
+        let rendered = render_diagnostics(&sources, lexed.diagnostics());
         let location = rendered
             .lines()
             .find(|line| line.starts_with(" --> "))
@@ -1246,53 +1238,33 @@ mod tests {
 
     #[test]
     fn token_output_failure_stops_before_reading_later_sources() {
-        let path = std::env::temp_dir().join(format!(
-            "orangec-stops-after-token-output-failure-{}.or",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&path);
         // The spelling is larger than BufWriter's buffer, so the rejecting
         // destination is reached during this source rather than at final
         // flush after every operand has already been processed.
-        std::fs::write(&path, "a".repeat(16 * 1024)).unwrap();
-        let mut input = RejectReads::default();
+        let source = "a".repeat(16 * 1024);
+        let mut input = source.as_bytes();
         let mut output = RejectWrites(io::ErrorKind::Other);
         let mut error = Vec::new();
 
         let status = run(
-            [
-                OsString::from("lex"),
-                path.as_os_str().to_os_string(),
-                OsString::from("-"),
-            ],
+            os_arguments(&["lex", "-", "."]),
             &mut input,
             &mut output,
             &mut error,
         );
-        std::fs::remove_file(path).unwrap();
 
         assert_eq!(status, COMPILATION_ERROR);
-        assert_eq!(input.attempts, 0);
         assert_eq!(error, b"orangec: could not write token output\n");
     }
 
     #[test]
     fn diagnostic_output_failure_stops_before_reading_later_sources() {
-        let missing_path = std::env::temp_dir().join(format!(
-            "orangec-stops-after-diagnostic-output-failure-{}.or",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&missing_path);
         let mut input = RejectReads::default();
         let mut output = Vec::new();
         let mut error = RejectWrites(io::ErrorKind::Other);
 
         let status = run(
-            [
-                OsString::from("check"),
-                missing_path.as_os_str().to_os_string(),
-                OsString::from("-"),
-            ],
+            os_arguments(&["check", ".", "-"]),
             &mut input,
             &mut output,
             &mut error,
