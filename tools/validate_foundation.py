@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "bcf1395c45cfa16dbabb17fe3e48b5f4729a042df1d6356155303ae048917ad3"
+GATE0_PROTECTED_FILE_DIGEST = "cf6013c3b10540bf72d0b3d01445049d0e4d02436a0610fc3e465d08c13db433"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -4561,9 +4561,9 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
     offset = 0
     line_end = -1
     last_delimiter = {">": -1, '"': -1, "'": -1}
+    label_depth = 0
+    escaped = False
     while offset < len(text):
-        label_depth = 0
-        escaped = False
         start = None
         for index in range(offset, len(text)):
             character = text[index]
@@ -4584,6 +4584,7 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
                 label_depth += 1
             elif character == "]":
                 if label_depth and text.startswith("(", index + 1):
+                    label_depth -= 1
                     start = index + 2
                     break
                 label_depth = max(0, label_depth - 1)
@@ -4636,9 +4637,13 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
                     break
         else:
             offset = line_end + 1
+            label_depth = 0
+            escaped = False
             continue
         if offset < start:
             offset = line_end + 1
+            label_depth = 0
+            escaped = False
 
 
 def markdown_without_fenced_blocks(text: str) -> str:

@@ -1641,6 +1641,7 @@ class MarkdownTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "(guide).md").write_text("# Guide\n", encoding="utf-8")
+            (root / "image.png").write_bytes(b"image")
             (root / "target.md").write_text("# Target\n", encoding="utf-8")
             (root / "source.md").write_text(
                 "[balanced]((guide).md)\n"
@@ -1648,6 +1649,7 @@ class MarkdownTests(unittest.TestCase):
                 "[escaped \\] label]((guide).md)\n"
                 "[multiline\nlabel]((guide).md)\n"
                 "[blank\n\nlabel](blank-ignored.md)\n"
+                "[![image](image.png)](outer-missing.md)\n"
                 "[angle](<(guide).md>)\n"
                 "[escaped](\\(guide\\).md)\n"
                 "[query](target.md?value=(nested))\n"
@@ -1668,6 +1670,10 @@ class MarkdownTests(unittest.TestCase):
         self.assertEqual(
             [(finding.code, finding.message) for finding in validator.findings],
             [
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: outer-missing.md",
+                ),
                 (
                     "markdown.link_missing",
                     "local link target does not exist: missing(part).md",
