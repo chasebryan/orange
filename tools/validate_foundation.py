@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "6e2b0c1ec9860746878373fc7a7fd9a24a058454372e0a1a27c2a98c518239e9"
+GATE0_PROTECTED_FILE_DIGEST = "8e5ab8ae655b94a87b4eadea18a63012a9dd00296b0b0f18689fc1a31e53b666"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -473,7 +473,7 @@ CONTAINER_ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*(docker://[^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
 )
-MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]\n]*\]\(([^)\n]+)\)")
+MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]\n]*\]\(")
 MARKDOWN_REFERENCE_RE = re.compile(r"(?m)^ {0,3}\[[^\]\n]+\]:\s*(<[^>\n]*>|[^\s]+)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FRONT_MATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9-]*):(?:\s*(.*))?$")
@@ -2697,13 +2697,16 @@ class FoundationValidator:
                 continue
             text = markdown_without_fenced_blocks_and_comments(text)
             text = markdown_with_masked_inline_syntax(text, "[]()")
-            matches = (
-                match
-                for pattern in (MARKDOWN_LINK_RE, MARKDOWN_REFERENCE_RE)
-                for match in pattern.finditer(text)
+            targets = (
+                target
+                for candidates in (
+                    markdown_inline_link_targets(text),
+                    (match.group(1) for match in MARKDOWN_REFERENCE_RE.finditer(text)),
+                )
+                for target in candidates
             )
-            for match in matches:
-                raw_target = match.group(1).strip()
+            for value in targets:
+                raw_target = value.strip()
                 target = self._markdown_destination(raw_target)
                 if not target:
                     continue
@@ -2855,10 +2858,12 @@ class FoundationValidator:
     @staticmethod
     def _markdown_destination(raw_target: str) -> str:
         if raw_target.startswith("<") and ">" in raw_target:
-            return raw_target[1 : raw_target.index(">")]
-        if raw_target.startswith("#"):
-            return raw_target
-        return raw_target.split(maxsplit=1)[0]
+            target = raw_target[1 : raw_target.index(">")]
+        elif raw_target.startswith("#"):
+            target = raw_target
+        else:
+            target = raw_target.split(maxsplit=1)[0]
+        return re.sub(r"\\([\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])", r"\1", target)
 
     def _validate_json_documents(self) -> None:
         for path in (path for path in self.repository_files if path.suffix.lower() == ".json"):
@@ -4545,6 +4550,57 @@ def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
         elif run_indent is not None and unsafe_fields.search(line):
             result.append(run_start)
     return sorted(set(result))
+
+
+def markdown_inline_link_targets(text: str) -> Iterable[str]:
+    offset = 0
+    while (opening := MARKDOWN_LINK_RE.search(text, offset)) is not None:
+        start = opening.end()
+        line_end = text.find("\n", start)
+        if line_end < 0:
+            line_end = len(text)
+        depth = 0
+        quote: str | None = None
+        angle = text.startswith("<", start) and text.find(">", start + 1, line_end) >= 0
+        escaped = False
+        for index in range(start, line_end):
+            character = text[index]
+            if character == "\r":
+                break
+            if escaped:
+                escaped = False
+                continue
+            if character == "\\":
+                escaped = True
+                continue
+            if quote is not None:
+                if character == quote:
+                    quote = None
+                continue
+            if angle:
+                if character == ">":
+                    angle = False
+                continue
+            if (
+                character in "\"'"
+                and (index == start or text[index - 1].isspace())
+                and text.find(character, index + 1, line_end) >= 0
+            ):
+                quote = character
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                if depth:
+                    depth -= 1
+                else:
+                    yield text[start:index]
+                    offset = index + 1
+                    break
+        else:
+            offset = line_end + 1
+            continue
+        if offset <= opening.start():
+            offset = line_end + 1
 
 
 def markdown_without_fenced_blocks(text: str) -> str:

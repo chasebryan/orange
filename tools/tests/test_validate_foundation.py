@@ -1579,6 +1579,40 @@ class MarkdownTests(unittest.TestCase):
             validator._validate_markdown_links()
             self.assertIn("markdown.link_missing", {finding.code for finding in validator.findings})
 
+    def test_balanced_inline_link_destinations_are_scanned_completely(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "(guide).md").write_text("# Guide\n", encoding="utf-8")
+            (root / "target.md").write_text("# Target\n", encoding="utf-8")
+            (root / "source.md").write_text(
+                "[balanced]((guide).md)\n"
+                "[angle](<(guide).md>)\n"
+                "[escaped](\\(guide\\).md)\n"
+                "[query](target.md?value=(nested))\n"
+                "[quoted title](target.md \"see (this)\")\n"
+                "[parenthesized title](target.md (see this))\n"
+                "[missing](missing(part).md)\n"
+                "[unterminated title](missing-title.md \"unterminated)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+
+            validator._validate_markdown_links()
+
+        self.assertEqual(
+            [(finding.code, finding.message) for finding in validator.findings],
+            [
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: missing(part).md",
+                ),
+                (
+                    "markdown.link_missing",
+                    'local link target does not exist: missing-title.md "unterminated',
+                ),
+            ],
+        )
+
     def test_links_in_comments_and_fences_are_not_live_navigation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1706,7 +1740,7 @@ class MarkdownTests(unittest.TestCase):
             self.assertEqual(validator.findings, [])
 
     def test_malformed_uri_targets_are_reported_without_a_parser_crash(self) -> None:
-        for target in ("https://[", "//["):
+        for target in ("https://[", "//[", "<missing"):
             with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / "source.md").write_text(
