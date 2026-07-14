@@ -355,7 +355,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 45737709a2c144852f2a07e217524b9bd50a7b9768ab560994b69b6edffc3d0c
+policy/README.md 9fbcc8a3f7dac0ebc57625f159e0683a7b6566e2c7169cbe88bf9ebc07b34677
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -367,7 +367,7 @@ scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e25
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
 tools/tests/test_validate_foundation.py 189373477cf3afe0f9a41579d1b66cd4358631626225a9bc41cd928754461c84
-tools/tests/test_validate_foundation_hardening.py bee7c5dd899769d09feca7b0bc8a7a4d4d62ef4a80cbc4e86c7f50aacd4db65c
+tools/tests/test_validate_foundation_hardening.py 8ed536c777d0dc8ddc700fc7f3416c961e9f97b8a7da5207919c2eb5881d9759
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -863,12 +863,7 @@ def _read_git_nul_records(
     *,
     maximum_record_bytes: int,
 ) -> _GitRecordRead:
-    """Read one Git metadata stream without buffering attacker-sized output.
-
-    ``records is None`` without a finding means Git could not provide the
-    inventory and the caller may use its filesystem fallback. A protocol or
-    resource finding is fail-closed and must never trigger that fallback.
-    """
+    """Read bounded NUL-delimited Git metadata under one process deadline."""
 
     command = [
         "git",
@@ -921,10 +916,7 @@ def _read_git_nul_records(
                 and not select.select((process.stdout,), (), (), remaining)[0]
             ):
                 return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
-            # BufferedReader.read(size) may wait to fill `size` after select
-            # reports only one available byte. One raw read preserves the
-            # whole-stream deadline; test doubles without descriptors retain
-            # the bounded in-memory fallback.
+            # A raw read cannot wait to fill a BufferedReader after select.
             chunk = (
                 os.read(output_descriptor, _GATE0_GIT_READ_CHUNK_BYTES)
                 if output_descriptor is not None
@@ -4520,9 +4512,17 @@ def strip_yaml_comment(line: str) -> str:
 def safe_manifest_path(root: Path, value: str) -> Path | None:
     if not isinstance(value, str) or not value:
         return None
+    parts = value.split("/")
+    if (
+        re.match(r"^[A-Za-z]:", value)
+        or "\\" in value
+        or any(part in {"", ".", ".."} for part in parts)
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
+        return None
     try:
         pure = PurePosixPath(value)
-        if pure.is_absolute() or ".." in pure.parts:
+        if pure.is_absolute():
             return None
         lexical_root = Path(os.path.normpath(os.fspath(root)))
         candidate = Path(os.path.normpath(os.fspath(lexical_root / pure)))

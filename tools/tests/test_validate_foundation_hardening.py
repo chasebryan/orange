@@ -732,6 +732,17 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             )
             self.assertIsNone(safe_manifest_path(root, "../outside/record.json"))
             self.assertIsNone(safe_manifest_path(root, str(outside / "record.json")))
+            for value in (
+                ".",
+                "record.json/",
+                "nested//record.json",
+                "nested/./record.json",
+                "C:record.json",
+                "nested\\record.json",
+                "nested/record\n.json",
+            ):
+                with self.subTest(value=value):
+                    self.assertIsNone(safe_manifest_path(root, value))
 
     def test_validator_directory_queries_reuse_the_bounded_inventory(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
