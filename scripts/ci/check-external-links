@@ -30,4 +30,5 @@ exec -- /usr/bin/env \
   --no-progress \
   --require-https \
   --timeout 20 \
-  '*.md' 'docs/**/*.md' '.github/**/*.md' '.github/**/*.yml'
+  -- \
+  . '.github/**/*.md' '.github/**/*.yml'

@@ -472,9 +472,14 @@ jobs:
                 "#!/usr/bin/python3\n"
                 "import json\n"
                 "import os\n"
+                "import sys\n"
                 "from pathlib import Path\n"
                 "Path(__file__).with_name('environment.json').write_text(\n"
-                "    json.dumps(dict(os.environ)), encoding='utf-8'\n"
+                "    json.dumps({\n"
+                "        'arguments': sys.argv[1:],\n"
+                "        'environment': dict(os.environ),\n"
+                "    }),\n"
+                "    encoding='utf-8',\n"
                 ")\n",
                 encoding="utf-8",
             )
@@ -495,8 +500,9 @@ jobs:
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            observation = json.loads(observed.read_text(encoding="utf-8"))
             self.assertEqual(
-                json.loads(observed.read_text(encoding="utf-8")),
+                observation["environment"],
                 {
                     "LANG": "C",
                     "LC_ALL": "C",
@@ -504,6 +510,11 @@ jobs:
                     "TZ": "UTC",
                 },
             )
+            self.assertEqual(
+                observation["arguments"][-4:],
+                ["--", ".", ".github/**/*.md", ".github/**/*.yml"],
+            )
+            self.assertNotIn("docs/**/*.md", observation["arguments"])
 
     def test_hosted_run_steps_use_fixed_privileged_bash(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

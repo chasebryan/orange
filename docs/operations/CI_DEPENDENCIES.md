@@ -184,7 +184,9 @@ The required invariant check invokes repository-owned Bash and Python files:
   defines the live link-check method and its documented IACR exclusion, with
   a nonempty caller-selected executable path, prior option termination, and
   an allowlisted process environment that excludes ambient checker, proxy,
-  logging, locale, and home-directory configuration.
+  logging, locale, and home-directory configuration. It recursively scans
+  every nonignored repository Markdown file and explicitly includes hidden
+  GitHub Markdown and YAML inputs.
 
 These are first-party repository methods, not third-party dependencies. The
 repository has no selected license while D-018 is blocked. This inventory does
