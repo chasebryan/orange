@@ -61,7 +61,8 @@ work tree to the validator-owned root, so local
 `core.worktree` configuration cannot hide actual checkout files. Git case
 folding and Unicode precomposition are pinned off so distinct worktree names
 remain visible to the validator's own collision and NFC checks. One
-30-second deadline covers the complete inventory stream and process exit. If
+30-second deadline covers the complete inventory stream and process exit;
+selector descriptor-range failures become fail-closed findings. If
 Git is unavailable for an exported tree with no `.git` entry, the bounded
 filesystem fallback preserves the same fail-closed resource checks. Each queued
 fallback directory is reopened from the trusted root one component at a time

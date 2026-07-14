@@ -355,7 +355,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md ed5fbbe4dce53a7fbacc19ad39120f7b555caf3c578b26657a142869028a8f72
+policy/README.md 45737709a2c144852f2a07e217524b9bd50a7b9768ab560994b69b6edffc3d0c
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -366,7 +366,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 579ae222cc8d2e7efc5c652c058890fb3cbfa2376fe48e0c47cad369ee63edb1
+tools/tests/test_validate_foundation.py 189373477cf3afe0f9a41579d1b66cd4358631626225a9bc41cd928754461c84
 tools/tests/test_validate_foundation_hardening.py bee7c5dd899769d09feca7b0bc8a7a4d4d62ef4a80cbc4e86c7f50aacd4db65c
 """.strip().splitlines()
 )
@@ -970,7 +970,7 @@ def _read_git_nul_records(
                         "Git inventory exceeds the Gate 0 repository-file limit",
                     )
                 offset = terminator + 1
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return reject("resource.inventory_read", f"cannot read bounded Git inventory: {exc}")
 
     try:

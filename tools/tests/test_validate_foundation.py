@@ -568,6 +568,32 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             {"resource.inventory_timeout"},
         )
 
+    def test_git_selector_range_failure_is_fail_closed_and_reaps_producer(self) -> None:
+        process = _FakePopen(b"file.txt\0")
+        process.stdout.fileno = lambda: 1025
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch(
+                    "tools.validate_foundation.subprocess.Popen",
+                    return_value=process,
+                ),
+                mock.patch(
+                    "tools.validate_foundation.select.select",
+                    side_effect=ValueError("filedescriptor out of range"),
+                ),
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_read"},
+        )
+        self.assertEqual((process.kill_count, process.wait_count), (1, 1))
+
+
     def test_git_path_limit_is_inclusive_and_one_extra_byte_kills_the_producer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
