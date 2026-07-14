@@ -4567,22 +4567,23 @@ def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
 
 
 def markdown_inline_link_targets(text: str) -> Iterable[str]:
+    text_length = len(text)
     offset = 0
     line_end = -1
-    last_delimiter = {">": -1, '"': -1, "'": -1}
+    last_delimiter: dict[str, int] = {}
     label_depth = 0
     escaped = False
-    while offset < len(text):
+    while offset < text_length:
         start = None
-        for index in range(offset, len(text)):
+        for index in range(offset, text_length):
             character = text[index]
             if character in "\r\n":
                 next_line = index + 1
                 if character == "\r" and text.startswith("\n", next_line):
                     next_line += 1
-                while next_line < len(text) and text[next_line] in " \t":
+                while next_line < text_length and text[next_line] in " \t":
                     next_line += 1
-                if next_line >= len(text) or text[next_line] in "\r\n":
+                if next_line >= text_length or text[next_line] in "\r\n":
                     label_depth = 0
                 escaped = False
             elif escaped:
@@ -4601,21 +4602,20 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
             return
         for continuation in range(2):
             if start > line_end:
-                line_end = len(text)
-                for line_break in "\r\n":
-                    candidate = text.find(line_break, start)
-                    if candidate >= 0:
-                        line_end = min(line_end, candidate)
+                line_end = text_length
+                for marker in "\r\n":
+                    position = text.find(marker, start)
+                    if position >= 0:
+                        line_end = min(line_end, position)
                 last_delimiter = {
-                    delimiter: text.rfind(delimiter, start, line_end)
-                    for delimiter in (">", '"', "'")
+                    marker: text.rfind(marker, start, line_end) for marker in ">\"'"
                 }
-            if continuation or line_end == len(text) or text[start:line_end].strip(" \t"):
+            if continuation or line_end == text_length or text[start:line_end].strip(" \t"):
                 break
             start = line_end + 1
             if text[line_end] == "\r" and text.startswith("\n", start):
                 start += 1
-            while start < len(text) and text[start] in " \t":
+            while start < text_length and text[start] in " \t":
                 start += 1
         depth = 0
         quote: str | None = None
@@ -4657,10 +4657,6 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
             label_depth = 0
             escaped = False
             continue
-        if offset < start:
-            offset = line_end + 1
-            label_depth = 0
-            escaped = False
 
 
 def markdown_without_fenced_blocks(text: str) -> str:
