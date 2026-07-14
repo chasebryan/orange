@@ -1513,6 +1513,18 @@ class MarkdownTests(unittest.TestCase):
             markdown_fence_error("# Document\n\n```text\nnot closed\n"),
             "unclosed ``` fence opened on line 3",
         )
+        self.assertIsNone(markdown_fence_error("```invalid`info\n"))
+
+    def test_invalid_backtick_fence_cannot_hide_a_link(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "```invalid`info\n[visible](visible.md)\n```\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
+            self.assertIn("markdown.link_missing", {finding.code for finding in validator.findings})
 
     def test_longer_closing_fence_is_valid(self) -> None:
         self.assertIsNone(markdown_fence_error("~~~text\ncontent\n~~~~\n"))

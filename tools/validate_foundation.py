@@ -362,7 +362,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py fda3c9a3f7aa79d507237212ae014459ecca26602ad4e4c690224c1a0fe9e0c0
+tools/tests/test_validate_foundation.py 93cf57eb237ab180387e936b8fb09ca69d9b03d5ba8b5bb3963af31cc6c49142
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -1704,9 +1704,7 @@ class FoundationValidator:
         try:
             return tomllib.loads(text)
         except RecursionError as exc:
-            # CPython's TOML parser recursively descends through arrays and
-            # inline structures. Normalize its implementation-specific limit
-            # into the parse error already handled by every TOML caller.
+            # Normalize CPython's recursive TOML limit into a parse error.
             raise tomllib.TOMLDecodeError(
                 "TOML structural nesting exceeds parser capacity"
             ) from exc
@@ -2876,9 +2874,7 @@ class FoundationValidator:
                 f"Gate 0 schema inventory must be exact; missing={sorted(GATE0_SCHEMA_PATHS - observed_schema_paths)}, extra={sorted(observed_schema_paths - GATE0_SCHEMA_PATHS)}",
             )
         for path in schema_paths:
-            # Gate 0 schemas are a closed, reviewed set. Authenticate the bytes
-            # before compiling any pattern, then parse this same buffered copy
-            # so a concurrent path replacement cannot introduce regex code.
+            # Authenticate the exact buffered schema before compiling patterns.
             schema_bytes = self._read_authenticated_protected_file(relative(path, self.root))
             if schema_bytes is None:
                 continue
@@ -2994,8 +2990,7 @@ class FoundationValidator:
             if schema_path not in schemas:
                 self.add("fixture.schema_missing", manifest_path, f"schema is not registered: {schema_value}")
                 continue
-            # Schema-audit failures are authoritative. In particular, never
-            # execute an invalid regular expression while validating fixtures.
+            # Never execute patterns from a schema that failed audit.
             if schema_path in schemas_with_audit_errors:
                 continue
             try:
@@ -3009,9 +3004,7 @@ class FoundationValidator:
                 schemas,
                 id_registry,
             )
-            # Cross-record checks rely on the shapes and scalar types guaranteed
-            # by the schema. Preserve the schema findings, and do not pass a
-            # structurally invalid instance into those invariant checks.
+            # Cross-record checks consume only schema-valid shapes.
             if not issues:
                 issues.extend(validate_cross_record_invariants(instance, schema_path.name))
             if expected_valid and issues:
@@ -4383,12 +4376,14 @@ def markdown_fence_error(text: str) -> str | None:
     active_length = 0
     active_line = 0
     for line_number, line in enumerate(text.splitlines(), start=1):
-        match = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if not match:
             continue
         marker, remainder = match.groups()
         char = marker[0]
         if not active_char:
+            if char == "`" and "`" in remainder:
+                continue
             active_char, active_length, active_line = char, len(marker), line_number
         elif char == active_char and len(marker) >= active_length and not remainder.strip():
             active_char, active_length, active_line = "", 0, 0
@@ -4550,12 +4545,15 @@ def markdown_without_fenced_blocks(text: str) -> str:
     fence_char: str | None = None
     fence_length = 0
     for line in text.splitlines():
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})(?:[^`~].*)?$", line)
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if match:
-            marker = match.group(1)
+            marker, remainder = match.groups()
             if fence_char is None:
+                if marker[0] == "`" and "`" in remainder:
+                    result.append(line)
+                    continue
                 fence_char, fence_length = marker[0], len(marker)
-            elif marker[0] == fence_char and len(marker) >= fence_length:
+            elif marker[0] == fence_char and len(marker) >= fence_length and not remainder.strip():
                 fence_char, fence_length = None, 0
             continue
         if fence_char is None:
@@ -5505,8 +5503,7 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
-    # Parsing returns the script-owned checkout constant even when --root is
-    # supplied. The flag asserts identity and never selects caller-owned scope.
+    # --root asserts the script-owned checkout; it never redirects scope.
     repository_root = arguments.root
     validator = FoundationValidator(repository_root)
     findings = validator.run()
