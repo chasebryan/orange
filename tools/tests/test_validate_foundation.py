@@ -26,6 +26,7 @@ from tools.validate_foundation import (
     markdown_anchors,
     markdown_fence_error,
     markdown_html_comment_error,
+    markdown_inline_link_targets,
     git_index_entries,
     iter_repository_files,
     unsafe_run_interpolations,
@@ -1528,6 +1529,28 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
 
 class MarkdownTests(unittest.TestCase):
+    def test_inline_links_reuse_their_physical_line_boundary(self) -> None:
+        class CountingText(str):
+            line_break_searches = 0
+
+            def find(
+                self,
+                substring: str,
+                start: int | None = None,
+                end: int | None = None,
+            ) -> int:
+                if substring in {"\r", "\n"}:
+                    self.line_break_searches += 1
+                begin = 0 if start is None else start
+                if end is None:
+                    return super().find(substring, begin)
+                return super().find(substring, begin, end)
+
+        text = CountingText(" ".join("[label](target.md)" for _ in range(64)))
+
+        self.assertEqual(list(markdown_inline_link_targets(text)), ["target.md"] * 64)
+        self.assertEqual(text.line_break_searches, 2)
+
     def test_html_comment_scan_is_fence_aware_and_sentinel_free(self) -> None:
         self.assertIsNone(
             markdown_html_comment_error("OPEN_COMMENT_SENTINEL CLOSE_COMMENT_SENTINEL\n")

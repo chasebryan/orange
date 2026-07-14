@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "5f98a077d5522fee69cef16a6b1f3674110dcb932701309738a24871985e324c"
+GATE0_PROTECTED_FILE_DIGEST = "5a3d8bde17673dca5130c10d197b1375b2c63b6e3fe05b60274136628e01d909"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -4553,6 +4553,7 @@ def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
 
 def markdown_inline_link_targets(text: str) -> Iterable[str]:
     offset = 0
+    line_end = -1
     while offset < len(text):
         label_depth = 0
         escaped = False
@@ -4575,11 +4576,12 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
                 label_depth = max(0, label_depth - 1)
         if start is None:
             return
-        line_end = len(text)
-        for line_break in "\r\n":
-            candidate = text.find(line_break, start)
-            if candidate >= 0:
-                line_end = min(line_end, candidate)
+        if start > line_end:
+            line_end = len(text)
+            for line_break in "\r\n":
+                candidate = text.find(line_break, start)
+                if candidate >= 0:
+                    line_end = min(line_end, candidate)
         depth = 0
         quote: str | None = None
         angle = text.startswith("<", start) and text.find(">", start + 1, line_end) >= 0
