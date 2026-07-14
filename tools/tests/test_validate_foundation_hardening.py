@@ -15,6 +15,7 @@ from unittest import mock
 
 from tools.validate_foundation import (
     FoundationValidator,
+    GATE0_MAXIMUM_FINDINGS,
     audit_schema_vocabulary,
     canonical_json_bytes,
     checkout_disables_credentials,
@@ -518,6 +519,17 @@ class PolicyShapeHardeningTests(unittest.TestCase):
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
+    def test_finding_retention_is_bounded_with_one_suppression_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            validator = FoundationValidator(Path(directory))
+            for index in range(GATE0_MAXIMUM_FINDINGS + 100):
+                validator.add("synthetic.finding", f"path-{index}", "synthetic")
+
+        self.assertEqual(len(validator.findings), GATE0_MAXIMUM_FINDINGS + 1)
+        self.assertEqual(validator.findings[0].path, "path-0")
+        self.assertEqual(validator.findings[-1].code, "resource.finding_count")
+        self.assertIn(str(GATE0_MAXIMUM_FINDINGS), validator.findings[-1].message)
+
     def test_cli_root_assertion_cannot_redirect_repository_scope(self) -> None:
         repository_root = Path(__file__).resolve().parents[2]
         self.assertEqual(parse_arguments(()).root, repository_root)
