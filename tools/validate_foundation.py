@@ -388,11 +388,11 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875042a4ead79f79602",
-    "scripts/ci/check-repository": "8c8c13c09f66e028b8504d2380beedf91a900c1e3c00cc751b49d1d1cc7c387a",
+    "scripts/ci/check-repository": "252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a85b798e8a3b42",
     "scripts/ci/install-actionlint": "c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636",
     "scripts/ci/install-lychee": "e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced",
     "tools/tests/test_validate_foundation.py": "663287593ddea30dee2ced2b41c1554a619dda3ae7f70676db173396f7466f55",
-    "tools/tests/test_validate_foundation_hardening.py": "b9286fc38f838cb9467729787b3cd37144da3c1820932c6cc4fb8a20d553f433",
+    "tools/tests/test_validate_foundation_hardening.py": "d8cdcf129f757c0991e037ea7a28e07d7ebd0d053d5340ec2aa3cefed7e062fc",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))

@@ -300,10 +300,18 @@ jobs:
                 )
                 self.assertIn("workflow.scorecard_publication", {finding.code for finding in validator.findings})
 
-    def test_repository_launcher_fixes_the_build_epoch(self) -> None:
+    def test_repository_launcher_canonicalizes_scope_and_fixes_the_build_epoch(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         launcher = (source_root / "scripts/ci/check-repository").read_text(
             encoding="utf-8"
+        )
+        self.assertIn(
+            'readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"',
+            launcher,
+        )
+        self.assertIn(
+            'readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd -P)"',
+            launcher,
         )
         self.assertIn("export SOURCE_DATE_EPOCH=0\n", launcher)
         self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
