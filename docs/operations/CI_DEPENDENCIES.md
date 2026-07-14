@@ -53,7 +53,7 @@ release evidence.
 
 | Workflow | Trigger and role | Direct external execution dependencies | Network or hosted-state boundary |
 | --- | --- | --- | --- |
-| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | rustup resolves the pinned toolchain when absent; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
+| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | rustup explicitly installs the pinned minimal toolchain with Clippy and rustfmt; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
 | `dependency-review.yml` | Pull-request and merge-queue dependency-policy signal | Checkout and Dependency Review | Depends on GitHub's dependency graph, API, and event comparison state |
 | `external-links.yml` | `main`, scheduled, and manual link observation | Checkout and lychee | Downloads lychee and queries every non-excluded external endpoint at run time |
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
