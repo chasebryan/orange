@@ -50,9 +50,9 @@ ORANGE_BOOK_CONTENTS = (
     "- [Manuscript map](#manuscript-map)",
     "- [Sources and drafting disclosure](#sources-and-drafting-disclosure)",
 )
-IGNORED_PARTS = {".git", ".agents", ".codex", "__pycache__"}
-BINARY_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".wasm"}
-TEXT_TAB_FREE_SUFFIXES = {".json", ".jsonc", ".or", ".py", ".rs", ".sh", ".toml", ".yaml", ".yml"}
+IGNORED_PARTS = set(".git .agents .codex __pycache__".split())
+BINARY_SUFFIXES = set(".gif .jpeg .jpg .png .wasm".split())
+TEXT_TAB_FREE_SUFFIXES = set(".json .jsonc .or .py .rs .sh .toml .yaml .yml".split())
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
@@ -194,16 +194,12 @@ tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
 """.strip().splitlines()
 )
-MINIMUM_FORBIDDEN_PATHS = {"COPYING", "LICENSE", "crates", "crypto", "formal", "release", "spec", "stdlib", "targets"}
-MINIMUM_REQUIRED_WORKFLOWS = {"ci.yml", "dependency-review.yml", "scorecard.yml"}
-MINIMUM_ACTION_REPOSITORIES = {
-    "DavidAnson/markdownlint-cli2-action",
-    "actions/checkout",
-    "actions/dependency-review-action",
-    "actions/upload-artifact",
-    "github/codeql-action/upload-sarif",
-    "zizmorcore/zizmor-action",
-}
+MINIMUM_FORBIDDEN_PATHS = set("COPYING LICENSE crates crypto formal release spec stdlib targets".split())
+MINIMUM_REQUIRED_WORKFLOWS = set("ci.yml dependency-review.yml scorecard.yml".split())
+MINIMUM_ACTION_REPOSITORIES = set(
+    """DavidAnson/markdownlint-cli2-action actions/checkout actions/dependency-review-action
+actions/upload-artifact github/codeql-action/upload-sarif zizmorcore/zizmor-action""".split()
+)
 GATE0_ALLOWED_CONTAINER_IMAGES = {
     "ghcr.io/ossf/scorecard-action@sha256:"
     "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
@@ -286,13 +282,10 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange.png": "orange.png",
     "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
 }
-GATE0_EXECUTABLE_PATHS = {
-    "scripts/ci/check-external-links",
-    "scripts/ci/check-repository",
-    "scripts/ci/install-actionlint",
-    "scripts/ci/install-lychee",
-    "tools/validate_foundation.py",
-}
+GATE0_EXECUTABLE_PATHS = set(
+    """scripts/ci/check-external-links scripts/ci/check-repository
+scripts/ci/install-actionlint scripts/ci/install-lychee tools/validate_foundation.py""".split()
+)
 GATE0_ALLOWED_WRITE_PERMISSIONS = {"scorecard.yml": {"security-events"}}
 GATE0_HOSTED_REPOSITORY_CONTROLS = {
     "snapshot_date": "2026-07-11",
@@ -303,20 +296,14 @@ GATE0_HOSTED_REPOSITORY_CONTROLS = {
         {"context": "Dependency Review / policy", "integration_id": 15368},
     ],
 }
-GATE0_SCHEMA_PATHS = {
-    "schemas/gate0/claim-record-v0.1.schema.json",
-    "schemas/gate0/evidence-manifest-v0.1.schema.json",
-    "schemas/gate0/repository-control-snapshot-v0.1.schema.json",
-    "schemas/gate0/standards-provenance-v0.1.schema.json",
-    "schemas/gate0/trust-inventory-v0.1.schema.json",
-}
-GATE0_WORKFLOW_INVENTORY = {
-    "ci.yml",
-    "dependency-review.yml",
-    "external-links.yml",
-    "scorecard.yml",
-    "workflow-online-audit.yml",
-}
+GATE0_SCHEMA_PATHS = set(
+    """schemas/gate0/claim-record-v0.1.schema.json schemas/gate0/evidence-manifest-v0.1.schema.json
+schemas/gate0/repository-control-snapshot-v0.1.schema.json
+schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventory-v0.1.schema.json""".split()
+)
+GATE0_WORKFLOW_INVENTORY = set(
+    "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
+)
 GATE0_PROTECTED_FILE_DIGESTS = dict(
     line.rsplit(maxsplit=1)
     for line in """
@@ -405,33 +392,15 @@ GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4f
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
 GATE0_JOURNEY_IDS = tuple(f"J-{index:02d}" for index in range(1, 9))
-GATE0_OPERATION_IDS = (
-    "install",
-    "specify",
-    "implement",
-    "prove",
-    "build",
-    "inspect",
-    "integrate",
-    "update",
-    "revoke",
-    "offline-replay",
-)
-GATE0_CONFORMANCE_CASE_IDS = (
-    "claim-record-valid",
-    "claim-record-assumption-only-satisfied",
-    "evidence-manifest-valid",
-    "evidence-manifest-network-enabled",
-    "evidence-manifest-path-escape",
-    "evidence-manifest-independent-without-review",
-    "repository-control-snapshot-valid",
-    "repository-control-disabled-without-explanation",
-    "repository-control-selected-actions-empty",
-    "standards-provenance-valid",
-    "standards-provenance-malformed-digest",
-    "standards-provenance-reviewed-without-reference",
-    "trust-inventory-valid",
-    "trust-inventory-authority-without-identity",
+GATE0_OPERATION_IDS = tuple("install specify implement prove build inspect integrate update revoke offline-replay".split())
+GATE0_CONFORMANCE_CASE_IDS = tuple(
+    """claim-record-valid claim-record-assumption-only-satisfied evidence-manifest-valid
+evidence-manifest-network-enabled evidence-manifest-path-escape
+evidence-manifest-independent-without-review repository-control-snapshot-valid
+repository-control-disabled-without-explanation repository-control-selected-actions-empty
+standards-provenance-valid standards-provenance-malformed-digest
+standards-provenance-reviewed-without-reference trust-inventory-valid
+trust-inventory-authority-without-identity""".split()
 )
 GATE0_CONFORMANCE_INSTANCE_PATHS = set(
     """conformance/foundation/invalid/claim-record-assumption-only.json
@@ -3632,8 +3601,11 @@ class FoundationValidator:
                     charter_path,
                     f"section 5 changed: expected {GATE0_CHARTER_SECTION_SHA256}, observed {observed}",
                 )
-        recorded_digests = re.findall(r"\b[0-9a-f]{64}\b", text)
-        if recorded_digests.count(GATE0_CHARTER_SECTION_SHA256) != 1:
+        recorded_digest_count = sum(
+            match.group() == GATE0_CHARTER_SECTION_SHA256
+            for match in re.finditer(r"\b[0-9a-f]{64}\b", text)
+        )
+        if recorded_digest_count != 1:
             self.add(
                 "traceability.recorded_digest",
                 path,
@@ -3645,12 +3617,13 @@ class FoundationValidator:
         feature_ids = tuple(row[0] for row in feature_rows)
         if feature_ids != GATE0_FEATURE_IDS:
             self.add("traceability.feature_ids", path, f"feature rows must be exact and ordered: {GATE0_FEATURE_IDS}")
-        known_decisions = set(
-            re.findall(
+        known_decisions = {
+            match.group(1)
+            for match in re.finditer(
                 r"(?m)^##\s+(D-[0-9]{3})\b",
                 markdown_without_fenced_blocks_and_comments(decisions_source),
             )
-        )
+        }
         trace_states: dict[str, str] = {}
         allowed_decision_states = {"accepted", "directed", "proposed", "investigate", "blocked", "superseded"}
         for row in feature_rows:
