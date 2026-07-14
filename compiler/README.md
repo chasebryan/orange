@@ -52,7 +52,10 @@ at most once. Integration coverage requires exactly 256 valid inputs to succeed
 silently and 257 operands to fail as a usage error before any source read. It
 also interleaves file, standard-input, and file failures in exact operand order;
 a repeated `-` emits exactly one `ORC1004` group and still processes a later
-operand.
+operand. The global `--edition` option may appear before or after the command
+but at most once; a repeated split or inline form is a usage error before any
+source read. `--` ends option parsing so dash-prefixed source paths remain
+addressable.
 The portable regular-file boundary checks path metadata before opening and
 descriptor metadata afterward. This rejects an observed non-regular path or
 opened descriptor, but it is not race-free path confinement: an actor that can
