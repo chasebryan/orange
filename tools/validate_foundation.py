@@ -206,60 +206,18 @@ GATE0_ALLOWED_CONTAINER_IMAGES = {
     "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
 }
 GATE0_ALLOWED_BINARY_ARTIFACTS = [
-    {
-        "path": "assets/brand/orange-banner2.PNG",
-        "sha256": "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b",
-        "role": "Official working Orange wordmark on a light background",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orangePNG.PNG",
-        "sha256": "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02",
-        "role": "Official working Orange emblem source variant on a light background",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-banner-jpeg.JPEG",
-        "sha256": "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a",
-        "role": "Official working Orange horizontal lockup JPEG",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-banner2-erased.PNG",
-        "sha256": "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c",
-        "role": "Official working Orange transparent wordmark",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-erased.PNG",
-        "sha256": "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2",
-        "role": "Official working Orange transparent emblem",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-banner.png",
-        "sha256": "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266",
-        "role": "Official working Orange primary horizontal lockup with embedded C2PA claim",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange.jpg",
-        "sha256": "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888",
-        "role": "Official working Orange emblem JPEG on a light background",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange.png",
-        "sha256": "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463",
-        "role": "Official working Orange primary emblem with embedded C2PA claim",
-        "provenance": _BRAND_IMPORT + "2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-handdrawn-marker-banner.png",
-        "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735",
-        "role": "Official working Orange hand-drawn README and Orange Book horizontal lockup on a light background",
-        "provenance": _BRAND_IMPORT + "2026-07-14",
-    },
+    {"path": path, "sha256": digest, "role": role, "provenance": _BRAND_IMPORT + date}
+    for path, digest, role, date in (
+        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "Official working Orange wordmark on a light background", "2026-07-11"),
+        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "Official working Orange emblem source variant on a light background", "2026-07-11"),
+        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "Official working Orange horizontal lockup JPEG", "2026-07-11"),
+        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "Official working Orange transparent wordmark", "2026-07-11"),
+        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "Official working Orange transparent emblem", "2026-07-11"),
+        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "Official working Orange primary horizontal lockup with embedded C2PA claim", "2026-07-11"),
+        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "Official working Orange emblem JPEG on a light background", "2026-07-11"),
+        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "Official working Orange primary emblem with embedded C2PA claim", "2026-07-11"),
+        ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "Official working Orange hand-drawn README and Orange Book horizontal lockup on a light background", "2026-07-14"),
+    )
 ]
 GATE0_BRAND_ASSET_METADATA = {
     "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
@@ -508,9 +466,7 @@ GATE0_RUST_LOCK = {
     ],
 }
 ORANGE_2026_RUST_BUDGETS = {
-    "compiler/crates/orange-compiler/src/source.rs": {
-        "MAX_SOURCE_BYTES": 16 * 1024 * 1024,
-    },
+    "compiler/crates/orange-compiler/src/source.rs": {"MAX_SOURCE_BYTES": 16 * 1024 * 1024},
     "compiler/crates/orange-compiler/src/lexer.rs": {
         "MAX_TOKENS_PER_SOURCE": 262_144,
         "MAX_DIAGNOSTICS_PER_SOURCE": 100,
@@ -527,9 +483,7 @@ ORANGE_2026_RUST_BUDGETS = {
         "MAX_SEMANTIC_EVENTS_PER_SOURCE": 1_048_576,
         "MAX_INTEGER_BITS": 16_384,
     },
-    "compiler/crates/orange-compiler/src/eval.rs": {
-        "MAX_EVALUATION_STEPS_PER_SOURCE": 1_048_576,
-    },
+    "compiler/crates/orange-compiler/src/eval.rs": {"MAX_EVALUATION_STEPS_PER_SOURCE": 1_048_576},
 }
 ORANGE_2026_SPEC_BUDGET_MARKERS = {
     "docs/LANGUAGE_2026.md": {
