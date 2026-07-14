@@ -2447,10 +2447,11 @@ class SchemaDeterminismTests(unittest.TestCase):
                 "enum": ["same", "same"],
                 "minLength": -1,
                 "uniqueItems": "yes",
+                "format": "hostname",
                 "properties": [],
             }
         )
-        for fragment in ("type", "required", "enum", "minLength", "uniqueItems", "properties"):
+        for fragment in ("type", "required", "enum", "minLength", "uniqueItems", "format", "properties"):
             self.assertTrue(any(fragment in finding for finding in findings), fragment)
 
     def test_schema_profile_rejects_invalid_regular_expression(self) -> None:

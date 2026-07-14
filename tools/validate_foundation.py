@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Deterministically validate Orange's solo-bootstrap repository foundation.
+"""Validate Orange's solo-bootstrap foundation deterministically.
 
-This is repository-policy tooling, not the Orange product checker and not a
-general JSON Schema implementation. It deliberately supports and audits the
-small JSON Schema vocabulary used by the provisional Gate 0 evidence fixtures.
+This policy tool supports Gate 0's reviewed JSON Schema subset; it is not the
+Orange product checker or a general schema implementation.
 """
 
 from __future__ import annotations
@@ -365,7 +364,7 @@ scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e25
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
 tools/tests/test_validate_foundation.py fd5a2b06948bf1f82aeb6275d8dd114450119d9083a2776b91ac1c6423804c41
-tools/tests/test_validate_foundation_hardening.py 8ed536c777d0dc8ddc700fc7f3416c961e9f97b8a7da5207919c2eb5881d9759
+tools/tests/test_validate_foundation_hardening.py a7f184df97ea3fd41c0162d5a1696ac6c63c997c6f3390934f2167ad4518c3af
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -4846,6 +4845,9 @@ def audit_schema_vocabulary(schema: Any, location: str = "$") -> list[str]:
             re.compile(pattern)
         except re.error:
             issues.append(f"invalid pattern expression {pattern!r} at {location}")
+    value = schema.get("format")
+    if isinstance(value, str) and value not in ("date", "date-time", "uri", "uri-reference"):
+        issues.append(f"unsupported format {value!r} at {location}")
     type_value = schema.get("type")
     allowed_types = {"array", "boolean", "integer", "null", "number", "object", "string"}
     if type_value is not None:
@@ -5256,8 +5258,6 @@ def valid_format(value: str, format_name: str) -> bool:
             return format_name == "uri-reference" or bool(parsed.scheme)
     except (TypeError, ValueError):
         return False
-    # The Gate 0 schemas may annotate unfamiliar formats, but cannot use them as
-    # validation assertions without adding deterministic support here.
     return False
 
 
