@@ -24,6 +24,8 @@ pub enum DiagnosticCode {
     LexicalTokenLimit,
     /// Further lexical errors were suppressed after the reporting budget.
     TooManyLexicalErrors,
+    /// The lexer could not retain its bounded token-stream representation.
+    LexicalResourceLimit,
     /// A token required by the active grammar production was not present.
     ExpectedSyntax,
     /// The source edition declaration is not exactly `edition 2026;`.
@@ -36,6 +38,8 @@ pub enum DiagnosticCode {
     TooManySyntaxErrors,
     /// A deterministic parser resource budget was exhausted.
     ParserResourceLimit,
+    /// Parsing received lexer output owned by another source.
+    InvalidParserInput,
     /// A second function declaration conflicts in its declaration namespace.
     DuplicateFunction,
     /// A typed literal body appeared on a function kind without semantics.
@@ -54,6 +58,8 @@ pub enum DiagnosticCode {
     TooManySemanticErrors,
     /// A deterministic semantic-analysis resource budget was exhausted.
     SemanticResourceLimit,
+    /// Semantic analysis received a syntax tree owned by another source.
+    InvalidSemanticInput,
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit,
 }
@@ -70,12 +76,14 @@ impl DiagnosticCode {
             Self::MalformedInteger => "ORC0005",
             Self::LexicalTokenLimit => "ORC0006",
             Self::TooManyLexicalErrors => "ORC0007",
+            Self::LexicalResourceLimit => "ORC0008",
             Self::ExpectedSyntax => "ORC0101",
             Self::UnsupportedSourceEdition => "ORC0102",
             Self::ExpectedFunctionDeclaration => "ORC0103",
             Self::TrailingSyntax => "ORC0104",
             Self::TooManySyntaxErrors => "ORC0105",
             Self::ParserResourceLimit => "ORC0106",
+            Self::InvalidParserInput => "ORC0107",
             Self::DuplicateFunction => "ORC0201",
             Self::UnsupportedTypedFunction => "ORC0202",
             Self::UnsupportedType => "ORC0203",
@@ -85,6 +93,7 @@ impl DiagnosticCode {
             Self::WordLiteralOutOfRange => "ORC0207",
             Self::TooManySemanticErrors => "ORC0208",
             Self::SemanticResourceLimit => "ORC0209",
+            Self::InvalidSemanticInput => "ORC0210",
             Self::EvaluationResourceLimit => "ORC0301",
         }
     }
@@ -201,61 +210,110 @@ impl Diagnostic {
         self.primary_span
     }
 
+    /// Returns the concise label rendered beside the primary underline.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
     /// Returns the structured secondary source spans in construction order.
     #[must_use]
     pub fn secondary_spans(&self) -> &[SecondarySpan] {
         &self.secondary_spans
+    }
+
+    /// Returns explanatory notes in construction order.
+    #[must_use]
+    pub fn notes(&self) -> &[String] {
+        &self.notes
     }
 }
 
 /// Renders diagnostics in a canonical total order over their rendered fields.
 ///
 /// The returned text is empty for no diagnostics and otherwise ends in one
-/// newline. Rendering uses no terminal color or locale-sensitive formatting.
+/// newline. Sources owned by `sources` retain their map-local insertion order;
+/// spans from every other source map share the rendered `<unknown>` identity.
+/// Rendering uses no terminal color or locale-sensitive formatting.
 #[must_use]
 pub fn render_diagnostics(sources: &SourceMap, diagnostics: &[Diagnostic]) -> String {
-    let mut ordered: Vec<_> = diagnostics.iter().collect();
-    ordered.sort_by(|left, right| {
-        diagnostic_key(left)
-            .cmp(&diagnostic_key(right))
-            .then_with(|| compare_secondary_spans(&left.secondary_spans, &right.secondary_spans))
-    });
+    let mut ordered: Vec<_> = diagnostics
+        .iter()
+        .map(|diagnostic| OrderedDiagnostic::new(sources, diagnostic))
+        .collect();
+    ordered.sort_by(|left, right| compare_diagnostics(sources, left, right));
 
     let mut rendered = String::new();
-    for (index, diagnostic) in ordered.into_iter().enumerate() {
+    for (index, ordered_diagnostic) in ordered.into_iter().enumerate() {
         if index != 0 {
             rendered.push('\n');
         }
-        render_one(&mut rendered, sources, diagnostic);
+        render_one(
+            &mut rendered,
+            sources,
+            ordered_diagnostic.diagnostic,
+            &ordered_diagnostic.secondary_spans,
+        );
     }
     rendered
 }
 
-fn diagnostic_key(
-    diagnostic: &Diagnostic,
-) -> (
-    crate::source::SourceId,
-    u32,
-    u32,
-    Severity,
-    DiagnosticCode,
-    &str,
-    &str,
-    &[String],
-) {
-    (
-        diagnostic.primary_span.source(),
-        diagnostic.primary_span.start().bytes(),
-        diagnostic.primary_span.end().bytes(),
-        diagnostic.severity,
-        diagnostic.code,
-        &diagnostic.message,
-        &diagnostic.label,
-        &diagnostic.notes,
-    )
+struct OrderedDiagnostic<'a> {
+    diagnostic: &'a Diagnostic,
+    secondary_spans: Vec<&'a SecondarySpan>,
 }
 
-fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic) {
+impl<'a> OrderedDiagnostic<'a> {
+    fn new(sources: &SourceMap, diagnostic: &'a Diagnostic) -> Self {
+        let mut secondary_spans: Vec<_> = diagnostic.secondary_spans.iter().collect();
+        secondary_spans.sort_by(|left, right| compare_secondary_span(sources, left, right));
+        Self {
+            diagnostic,
+            secondary_spans,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum RenderedSourceIdentity {
+    Known(u32),
+    Unknown,
+}
+
+fn rendered_span_key(sources: &SourceMap, span: Span) -> (RenderedSourceIdentity, u32, u32) {
+    let identity = sources
+        .get(span.source())
+        .map_or(RenderedSourceIdentity::Unknown, |source| {
+            RenderedSourceIdentity::Known(source.id().index())
+        });
+    (identity, span.start().bytes(), span.end().bytes())
+}
+
+fn compare_diagnostics(
+    sources: &SourceMap,
+    left: &OrderedDiagnostic<'_>,
+    right: &OrderedDiagnostic<'_>,
+) -> std::cmp::Ordering {
+    let left_diagnostic = left.diagnostic;
+    let right_diagnostic = right.diagnostic;
+    rendered_span_key(sources, left_diagnostic.primary_span)
+        .cmp(&rendered_span_key(sources, right_diagnostic.primary_span))
+        .then_with(|| left_diagnostic.severity.cmp(&right_diagnostic.severity))
+        .then_with(|| left_diagnostic.code.cmp(&right_diagnostic.code))
+        .then_with(|| left_diagnostic.message.cmp(&right_diagnostic.message))
+        .then_with(|| left_diagnostic.label.cmp(&right_diagnostic.label))
+        .then_with(|| left_diagnostic.notes.cmp(&right_diagnostic.notes))
+        .then_with(|| {
+            compare_ordered_secondary_spans(sources, &left.secondary_spans, &right.secondary_spans)
+        })
+}
+
+fn render_one(
+    output: &mut String,
+    sources: &SourceMap,
+    diagnostic: &Diagnostic,
+    secondary_spans: &[&SecondarySpan],
+) {
     let _ = writeln!(
         output,
         "{}[{}]: {}",
@@ -271,7 +329,7 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
             diagnostic.primary_span.start().bytes(),
             diagnostic.primary_span.end().bytes()
         );
-        render_secondary_spans(output, sources, diagnostic);
+        render_secondary_spans(output, sources, secondary_spans);
         render_notes(output, diagnostic);
         return;
     };
@@ -279,11 +337,11 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
         let _ = writeln!(
             output,
             " --> {}:{}..{}",
-            sanitize_inline(source.name()),
+            sanitize_source_name(source),
             diagnostic.primary_span.start().bytes(),
             diagnostic.primary_span.end().bytes()
         );
-        render_secondary_spans(output, sources, diagnostic);
+        render_secondary_spans(output, sources, secondary_spans);
         render_notes(output, diagnostic);
         return;
     };
@@ -291,12 +349,12 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
     let _ = writeln!(
         output,
         " --> {}:{}:{}",
-        sanitize_inline(source.name()),
+        sanitize_source_name(source),
         location.line,
         location.column
     );
     let Some(line) = source.line_text(location.line) else {
-        render_secondary_spans(output, sources, diagnostic);
+        render_secondary_spans(output, sources, secondary_spans);
         render_notes(output, diagnostic);
         return;
     };
@@ -323,29 +381,38 @@ fn render_one(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic)
         let _ = write!(output, " {}", sanitize_inline(&diagnostic.label));
     }
     output.push('\n');
-    render_secondary_spans(output, sources, diagnostic);
+    render_secondary_spans(output, sources, secondary_spans);
     render_notes(output, diagnostic);
 }
 
-fn compare_secondary_spans(left: &[SecondarySpan], right: &[SecondarySpan]) -> std::cmp::Ordering {
+fn compare_secondary_span(
+    sources: &SourceMap,
+    left: &SecondarySpan,
+    right: &SecondarySpan,
+) -> std::cmp::Ordering {
+    rendered_span_key(sources, left.span)
+        .cmp(&rendered_span_key(sources, right.span))
+        .then_with(|| left.label.cmp(&right.label))
+}
+
+fn compare_ordered_secondary_spans(
+    sources: &SourceMap,
+    left: &[&SecondarySpan],
+    right: &[&SecondarySpan],
+) -> std::cmp::Ordering {
     left.iter()
-        .map(secondary_span_key)
-        .cmp(right.iter().map(secondary_span_key))
+        .zip(right)
+        .map(|(left, right)| compare_secondary_span(sources, left, right))
+        .find(|ordering| !ordering.is_eq())
+        .unwrap_or_else(|| left.len().cmp(&right.len()))
 }
 
-fn secondary_span_key(secondary: &SecondarySpan) -> (crate::source::SourceId, u32, u32, &str) {
-    (
-        secondary.span.source(),
-        secondary.span.start().bytes(),
-        secondary.span.end().bytes(),
-        &secondary.label,
-    )
-}
-
-fn render_secondary_spans(output: &mut String, sources: &SourceMap, diagnostic: &Diagnostic) {
-    let mut ordered: Vec<_> = diagnostic.secondary_spans.iter().collect();
-    ordered.sort_by_key(|secondary| secondary_span_key(secondary));
-    for secondary in ordered {
+fn render_secondary_spans(
+    output: &mut String,
+    sources: &SourceMap,
+    secondary_spans: &[&SecondarySpan],
+) {
+    for secondary in secondary_spans {
         render_secondary_span(output, sources, secondary);
     }
 }
@@ -365,7 +432,7 @@ fn render_secondary_span(output: &mut String, sources: &SourceMap, secondary: &S
         let _ = writeln!(
             output,
             " ::: {}:{}..{} {}",
-            sanitize_inline(source.name()),
+            sanitize_source_name(source),
             secondary.span.start().bytes(),
             secondary.span.end().bytes(),
             sanitize_inline(&secondary.label)
@@ -375,7 +442,7 @@ fn render_secondary_span(output: &mut String, sources: &SourceMap, secondary: &S
     let _ = writeln!(
         output,
         " ::: {}:{}:{}",
-        sanitize_inline(source.name()),
+        sanitize_source_name(source),
         location.line,
         location.column
     );
@@ -471,9 +538,7 @@ fn render_excerpt(
 fn sanitize_inline(text: &str) -> String {
     let mut sanitized = String::new();
     for character in text.chars() {
-        if character == '\t' {
-            sanitized.push_str("    ");
-        } else if character.is_control() || is_bidi_control(character) {
+        if character == '\\' || (!character.is_ascii_graphic() && character != ' ') {
             sanitized.extend(character.escape_default());
         } else {
             sanitized.push(character);
@@ -482,12 +547,18 @@ fn sanitize_inline(text: &str) -> String {
     sanitized
 }
 
+fn sanitize_source_name(source: &SourceFile) -> String {
+    if source.name_is_rendered() {
+        source.name().to_owned()
+    } else {
+        sanitize_inline(source.name())
+    }
+}
+
 fn sanitized_width(text: &str) -> usize {
     text.chars()
         .map(|character| {
-            if character == '\t' {
-                4
-            } else if character.is_control() || is_bidi_control(character) {
+            if character == '\\' || (!character.is_ascii_graphic() && character != ' ') {
                 character.escape_default().count()
             } else {
                 1
@@ -496,17 +567,10 @@ fn sanitized_width(text: &str) -> usize {
         .sum()
 }
 
-const fn is_bidi_control(character: char) -> bool {
-    matches!(
-        character,
-        '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::TextOffset;
+    use crate::source::{RenderedSourceName, TextOffset};
 
     #[test]
     fn renders_tabs_and_unicode_columns_deterministically() {
@@ -524,15 +588,116 @@ mod tests {
 
         assert_eq!(
             render_diagnostics(&sources, &[diagnostic]),
-            concat!(
-                "error[ORC0001]: unexpected character '@'\n",
-                " --> sample.or:1:7\n",
-                "  |\n",
-                "1 |     let é@\n",
-                "  |          ^ character is not part of Orange 2026\n",
-                "  = note: identifiers are ASCII in this pre-alpha edition\n",
+            format!(
+                concat!(
+                    "error[ORC0001]: unexpected character '@'\n",
+                    " --> sample.or:1:7\n",
+                    "  |\n",
+                    "1 | \\tlet \\u{{e9}}@\n",
+                    "  | {caret}^ character is not part of Orange 2026\n",
+                    "  = note: identifiers are ASCII in this pre-alpha edition\n",
+                ),
+                caret = " ".repeat(12),
             )
         );
+    }
+
+    #[test]
+    fn inline_encoding_distinguishes_tabs_spaces_backslashes_and_unicode() {
+        let source = "\t\\    é";
+        let sanitized = sanitize_inline(source);
+
+        assert_eq!(sanitized, r"\t\\    \u{e9}");
+        assert_eq!(sanitized_width(source), sanitized.chars().count());
+    }
+
+    #[test]
+    fn escapes_non_ascii_source_text_with_matching_caret_width() {
+        let mut sources = SourceMap::new();
+        let text = "a\u{200b}🟠@\n";
+        let id = sources.add("sample.or", text).unwrap();
+        let source = sources.get(id).unwrap();
+        let at = u32::try_from(text.find('@').unwrap()).unwrap();
+        let span = source
+            .span(TextOffset::new(at), TextOffset::new(at + 1))
+            .unwrap();
+        let diagnostic = Diagnostic::error(
+            DiagnosticCode::UnexpectedCharacter,
+            "unexpected character '@'",
+            span,
+        );
+
+        let rendered = render_diagnostics(&sources, &[diagnostic]);
+        assert!(rendered.is_ascii());
+        assert!(rendered.contains("1 | a\\u{200b}\\u{1f7e0}@\n"));
+        assert!(rendered.contains(&format!("  | {}^\n", " ".repeat(18))));
+    }
+
+    #[test]
+    fn source_name_controls_are_escaped_without_terminal_injection() {
+        let mut sources = SourceMap::new();
+        let control_id = sources.add("line\nbreak.or", "@").unwrap();
+        let control = sources.get(control_id).unwrap();
+        let control_diagnostic = Diagnostic::error(
+            DiagnosticCode::UnexpectedCharacter,
+            "control name",
+            control
+                .span(TextOffset::new(0), TextOffset::new(1))
+                .unwrap(),
+        );
+
+        let control_rendered = render_diagnostics(&sources, &[control_diagnostic]);
+        assert!(control_rendered.contains(" --> line\\nbreak.or:1:1\n"));
+        assert!(!control_rendered.contains(" --> line\nbreak.or"));
+    }
+
+    #[test]
+    fn raw_source_name_encoding_is_injective() {
+        let mut sources = SourceMap::new();
+        let ids = ["é.or", r"\u{e9}.or", "line\nbreak.or", r"line\nbreak.or"]
+            .map(|name| sources.add(name, "@").unwrap());
+        let rendered = ids.map(|id| {
+            let source = sources.get(id).unwrap();
+            let diagnostic = Diagnostic::error(
+                DiagnosticCode::UnexpectedCharacter,
+                "unexpected character",
+                source.span(TextOffset::new(0), TextOffset::new(1)).unwrap(),
+            );
+            render_diagnostics(&sources, &[diagnostic])
+        });
+
+        assert!(rendered[0].contains(r" --> \u{e9}.or:1:1"));
+        assert!(rendered[1].contains(r" --> \\u{e9}.or:1:1"));
+        assert!(rendered[2].contains(r" --> line\nbreak.or:1:1"));
+        assert!(rendered[3].contains(r" --> line\\nbreak.or:1:1"));
+        assert_ne!(rendered[0], rendered[1]);
+        assert_ne!(rendered[2], rendered[3]);
+    }
+
+    #[test]
+    fn canonical_source_names_are_preserved_exactly_once() {
+        let mut sources = SourceMap::new();
+        let ids = ["é.or", r"\u{e9}.or", "line\nbreak.or", r"line\nbreak.or"].map(|name| {
+            sources
+                .add_with_rendered_name(RenderedSourceName::from_text(name), "@")
+                .unwrap()
+        });
+        let rendered = ids.map(|id| {
+            let source = sources.get(id).unwrap();
+            let diagnostic = Diagnostic::error(
+                DiagnosticCode::UnexpectedCharacter,
+                "unexpected character",
+                source.span(TextOffset::new(0), TextOffset::new(1)).unwrap(),
+            );
+            render_diagnostics(&sources, &[diagnostic])
+        });
+
+        assert!(rendered[0].contains(r" --> \u{e9}.or:1:1"));
+        assert!(rendered[1].contains(r" --> \\u{e9}.or:1:1"));
+        assert!(rendered[2].contains(r" --> line\nbreak.or:1:1"));
+        assert!(rendered[3].contains(r" --> line\\nbreak.or:1:1"));
+        assert_ne!(rendered[0], rendered[1]);
+        assert_ne!(rendered[2], rendered[3]);
     }
 
     #[test]
@@ -547,6 +712,59 @@ mod tests {
 
         let output = render_diagnostics(&sources, &[later, earlier]);
         assert!(output.find("earlier").unwrap() < output.find("later").unwrap());
+    }
+
+    #[test]
+    fn foreign_source_creation_order_does_not_affect_rendering() {
+        fn foreign_span(name: &str) -> Span {
+            let mut sources = SourceMap::new();
+            let id = sources.add(name, "@").unwrap();
+            sources
+                .get(id)
+                .unwrap()
+                .span(TextOffset::new(0), TextOffset::new(1))
+                .unwrap()
+        }
+
+        fn render(alpha_first: bool) -> String {
+            let rendering_sources = SourceMap::new();
+            let (alpha, beta) = if alpha_first {
+                (foreign_span("alpha.or"), foreign_span("beta.or"))
+            } else {
+                let beta = foreign_span("beta.or");
+                let alpha = foreign_span("alpha.or");
+                (alpha, beta)
+            };
+            let alpha_diagnostic = Diagnostic::error(
+                DiagnosticCode::UnexpectedCharacter,
+                "alpha diagnostic",
+                alpha,
+            )
+            .with_label("alpha label")
+            .with_secondary_span(beta, "beta related")
+            .with_secondary_span(alpha, "alpha related");
+            let beta_diagnostic =
+                Diagnostic::error(DiagnosticCode::UnexpectedCharacter, "beta diagnostic", beta)
+                    .with_label("beta label")
+                    .with_secondary_span(alpha, "alpha related")
+                    .with_secondary_span(beta, "beta related");
+
+            render_diagnostics(&rendering_sources, &[beta_diagnostic, alpha_diagnostic])
+        }
+
+        let alpha_first = render(true);
+        let beta_first = render(false);
+
+        assert_eq!(alpha_first, beta_first);
+        assert!(
+            alpha_first.find("alpha diagnostic").unwrap()
+                < alpha_first.find("beta diagnostic").unwrap()
+        );
+        let first_diagnostic = alpha_first.split_once("\n\n").unwrap().0;
+        assert!(
+            first_diagnostic.find("alpha related").unwrap()
+                < first_diagnostic.find("beta related").unwrap()
+        );
     }
 
     #[test]

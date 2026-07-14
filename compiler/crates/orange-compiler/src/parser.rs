@@ -18,49 +18,146 @@ pub const MAX_PARSE_EVENTS_PER_SOURCE: usize = 1_048_576;
 pub const MAX_RECOVERY_DELIMITER_DEPTH: usize = 64;
 
 /// A complete minimal Orange source file.
+///
+/// Parsed nodes are read-only outside this crate so later stages can rely on
+/// parser-established source ownership, spans, and ordering.
+///
+/// ```compile_fail
+/// use orange_compiler::{ModuleDeclaration, SyntaxTree};
+///
+/// fn replace_module(tree: &mut SyntaxTree, module: ModuleDeclaration) {
+///     tree.module = module;
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxTree {
     /// Extent from the edition keyword through the module's closing brace.
-    pub span: Span,
+    pub(crate) span: Span,
     /// The mandatory source-edition declaration.
-    pub edition: EditionDeclaration,
+    pub(crate) edition: EditionDeclaration,
     /// The source's single module.
-    pub module: ModuleDeclaration,
+    pub(crate) module: ModuleDeclaration,
+}
+
+impl SyntaxTree {
+    /// Returns the extent from the edition keyword through the module's closing brace.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the mandatory source-edition declaration.
+    #[must_use]
+    pub const fn edition(&self) -> &EditionDeclaration {
+        &self.edition
+    }
+
+    /// Returns the source's single module.
+    #[must_use]
+    pub const fn module(&self) -> &ModuleDeclaration {
+        &self.module
+    }
 }
 
 /// The mandatory `edition 2026;` declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EditionDeclaration {
     /// Full declaration extent.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Edition selected by the declaration.
-    pub edition: Edition,
+    pub(crate) edition: Edition,
     /// Exact span of the `2026` spelling.
-    pub value_span: Span,
+    pub(crate) value_span: Span,
+}
+
+impl EditionDeclaration {
+    /// Returns the full declaration extent.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the edition selected by the declaration.
+    #[must_use]
+    pub const fn edition(&self) -> Edition {
+        self.edition
+    }
+
+    /// Returns the exact span of the `2026` spelling.
+    #[must_use]
+    pub const fn value_span(&self) -> Span {
+        self.value_span
+    }
 }
 
 /// A single `module NAME { ... }` declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModuleDeclaration {
     /// Full module extent.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Module name.
-    pub name: Identifier,
+    pub(crate) name: Identifier,
     /// Functions in source order.
-    pub functions: Vec<FunctionDeclaration>,
+    pub(crate) functions: Vec<FunctionDeclaration>,
+}
+
+impl ModuleDeclaration {
+    /// Returns the full module extent.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the module name.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Returns functions in source order.
+    #[must_use]
+    pub fn functions(&self) -> &[FunctionDeclaration] {
+        &self.functions
+    }
 }
 
 /// A parameterless function declaration in the current Orange 2026 grammar.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionDeclaration {
     /// Full function extent.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Whether this is a `spec` or `impl` declaration.
-    pub kind: FunctionKind,
+    pub(crate) kind: FunctionKind,
     /// Function name.
-    pub name: Identifier,
+    pub(crate) name: Identifier,
     /// Empty legacy syntax or the typed literal body available to `spec`.
-    pub body: FunctionBody,
+    pub(crate) body: FunctionBody,
+}
+
+impl FunctionDeclaration {
+    /// Returns the full function extent.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns whether this is a `spec` or `impl` declaration.
+    #[must_use]
+    pub const fn kind(&self) -> FunctionKind {
+        self.kind
+    }
+
+    /// Returns the function name.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Returns the empty legacy syntax or typed literal body.
+    #[must_use]
+    pub const fn body(&self) -> &FunctionBody {
+        &self.body
+    }
 }
 
 /// The two function declaration categories admitted by the minimal grammar.
@@ -85,54 +182,154 @@ pub enum FunctionBody {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypedLiteralBody {
     /// Full extent from the `->` token through the body's closing brace.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Syntactic result type; semantic analysis resolves its meaning.
-    pub result_type: TypeSyntax,
+    pub(crate) result_type: TypeSyntax,
     /// The function body's sole signed integer literal.
-    pub literal: IntegerLiteral,
+    pub(crate) literal: IntegerLiteral,
+}
+
+impl TypedLiteralBody {
+    /// Returns the full extent from `->` through the body's closing brace.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the syntactic result type.
+    #[must_use]
+    pub const fn result_type(&self) -> &TypeSyntax {
+        &self.result_type
+    }
+
+    /// Returns the function body's sole signed integer literal.
+    #[must_use]
+    pub const fn literal(&self) -> &IntegerLiteral {
+        &self.literal
+    }
 }
 
 /// A syntactic result type name with an optional integer width argument.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeSyntax {
     /// Full type extent, including `[WIDTH]` when present.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Exact type-name spelling and span.
-    pub name: Identifier,
+    pub(crate) name: Identifier,
     /// Exact span of the width integer, excluding brackets.
-    pub width_span: Option<Span>,
+    pub(crate) width_span: Option<Span>,
+}
+
+impl TypeSyntax {
+    /// Returns the full type extent, including `[WIDTH]` when present.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact type-name spelling and span.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Returns the exact span of the width integer, excluding brackets.
+    #[must_use]
+    pub const fn width_span(&self) -> Option<Span> {
+        self.width_span
+    }
 }
 
 /// A signed integer literal syntax node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IntegerLiteral {
     /// Full extent, including a leading `-` when present.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Exact extent of the magnitude's integer token.
-    pub magnitude_span: Span,
+    pub(crate) magnitude_span: Span,
     /// Whether the literal has a leading `-` token.
-    pub negative: bool,
+    pub(crate) negative: bool,
+}
+
+impl IntegerLiteral {
+    /// Returns the full extent, including a leading `-` when present.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact extent of the magnitude's integer token.
+    #[must_use]
+    pub const fn magnitude_span(&self) -> Span {
+        self.magnitude_span
+    }
+
+    /// Returns whether the literal has a leading `-` token.
+    #[must_use]
+    pub const fn is_negative(&self) -> bool {
+        self.negative
+    }
 }
 
 /// An owned ASCII identifier and its source span.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Identifier {
     /// Original identifier spelling.
-    pub text: String,
+    pub(crate) text: String,
     /// Exact spelling extent.
-    pub span: Span,
+    pub(crate) span: Span,
+}
+
+impl Identifier {
+    /// Returns the original identifier spelling.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Returns the exact spelling extent.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
 }
 
 /// The complete result of parsing one token stream.
+///
+/// ```compile_fail
+/// use orange_compiler::ParseResult;
+///
+/// fn replace_ast(result: &mut ParseResult) {
+///     result.ast = None;
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParseResult {
     /// Complete AST, present only when parsing produced zero diagnostics.
-    pub ast: Option<SyntaxTree>,
+    ast: Option<SyntaxTree>,
     /// Syntax and parser-resource diagnostics in deterministic source order.
-    pub diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl ParseResult {
+    /// Returns the complete AST, or `None` after parsing failure or skipped parsing.
+    #[must_use]
+    pub const fn ast(&self) -> Option<&SyntaxTree> {
+        self.ast.as_ref()
+    }
+
+    /// Returns syntax and parser-resource diagnostics in deterministic source order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Consumes this result and returns its complete AST, if one was produced.
+    #[must_use]
+    pub fn into_ast(self) -> Option<SyntaxTree> {
+        self.ast
+    }
+
     /// Returns whether parsing did not produce a complete AST.
     ///
     /// This is also true when parsing was skipped because lexing failed.
@@ -149,9 +346,24 @@ impl ParseResult {
 /// declarations retain empty bodies; `spec` additionally admits a syntactic
 /// result type and one signed integer literal.
 /// Lexically invalid sources are not parsed and therefore cannot produce an
-/// AST or cascading parser diagnostics.
+/// AST or cascading parser diagnostics. Lexer results owned by another source
+/// are rejected before this lexical-error shortcut is considered.
 #[must_use]
 pub fn parse(source: &SourceFile, lexed: &Lexed) -> ParseResult {
+    if !lexed_is_owned_by(source, lexed) {
+        return ParseResult {
+            ast: None,
+            diagnostics: vec![
+                Diagnostic::error(
+                    DiagnosticCode::InvalidParserInput,
+                    "parser received lexer output owned by another source",
+                    source.lexer_span(0, 0),
+                )
+                .with_label("parsing stopped at this source boundary")
+                .with_note("lex and parse each token stream with the same source file"),
+            ],
+        };
+    }
     if lexed.has_errors() {
         return ParseResult {
             ast: None,
@@ -159,6 +371,21 @@ pub fn parse(source: &SourceFile, lexed: &Lexed) -> ParseResult {
         };
     }
     Parser::new(source, lexed.tokens(), Limits::DEFAULT).run()
+}
+
+fn lexed_is_owned_by(source: &SourceFile, lexed: &Lexed) -> bool {
+    !lexed.tokens().is_empty()
+        && lexed
+            .tokens()
+            .iter()
+            .all(|token| token.span.source() == source.id())
+        && lexed.diagnostics().iter().all(|diagnostic| {
+            diagnostic.primary_span().source() == source.id()
+                && diagnostic
+                    .secondary_spans()
+                    .iter()
+                    .all(|secondary| secondary.span().source() == source.id())
+        })
 }
 
 #[derive(Clone, Copy)]
@@ -1358,17 +1585,57 @@ mod tests {
 
         let mut second_sources = SourceMap::new();
         let second_id = second_sources.add("second.or", text).unwrap();
-        let parsed = parse(second_sources.get(second_id).unwrap(), &foreign);
+        let source = second_sources.get(second_id).unwrap();
+        let first = parse(source, &foreign);
+        let second = parse(source, &foreign);
 
-        assert!(parsed.ast.is_none());
-        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(first, second);
+        assert!(first.ast.is_none());
+        assert_eq!(first.diagnostics.len(), 1);
         assert_eq!(
-            parsed.diagnostics[0].code(),
-            DiagnosticCode::ParserResourceLimit
+            first.diagnostics[0].code(),
+            DiagnosticCode::InvalidParserInput
         );
+        assert_eq!(first.diagnostics[0].primary_span().source(), source.id());
+        assert!(first.diagnostics[0].primary_span().is_empty());
         assert_eq!(
-            parsed.diagnostics[0].message(),
-            "parser received an invalid lexer token stream"
+            crate::diagnostic::render_diagnostics(&second_sources, &first.diagnostics),
+            concat!(
+                "error[ORC0107]: parser received lexer output owned by another source\n",
+                " --> second.or:1:1\n",
+                "  |\n",
+                "1 | edition 2026; module m {}\n",
+                "  | ^ parsing stopped at this source boundary\n",
+                "  = note: lex and parse each token stream with the same source file\n",
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_a_lexically_erroneous_result_owned_by_another_source() {
+        let text = "edition 2026; module m { @ }";
+        let mut first_sources = SourceMap::new();
+        let first_id = first_sources.add("first.or", text).unwrap();
+        let foreign = lex(first_sources.get(first_id).unwrap(), Edition::E2026);
+        assert!(foreign.has_errors());
+
+        let mut second_sources = SourceMap::new();
+        let second_id = second_sources.add("second.or", text).unwrap();
+        let source = second_sources.get(second_id).unwrap();
+        let first = parse(source, &foreign);
+        let second = parse(source, &foreign);
+
+        assert_eq!(first, second);
+        assert!(first.ast.is_none());
+        assert_eq!(first.diagnostics.len(), 1);
+        assert_eq!(
+            first.diagnostics[0].code(),
+            DiagnosticCode::InvalidParserInput
+        );
+        assert_eq!(first.diagnostics[0].primary_span().source(), source.id());
+        assert_eq!(
+            first.diagnostics[0].message(),
+            "parser received lexer output owned by another source"
         );
     }
 

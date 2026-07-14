@@ -4,7 +4,10 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use orange_compiler::MAX_SOURCE_BYTES;
+use orange_compiler::{
+    CoreType, CoreValue, Diagnostic, DiagnosticCode, Edition, FunctionBody, FunctionKind,
+    MAX_SOURCE_BYTES, Severity, SourceMap, analyze, evaluate, lex, parse,
+};
 
 fn orangec() -> Command {
     Command::new(env!("CARGO_BIN_EXE_orangec"))
@@ -28,6 +31,115 @@ fn run_with_stdin(arguments: &[&str], input: &[u8]) -> std::process::Output {
         .unwrap();
     child.stdin.take().unwrap().write_all(input).unwrap();
     child.wait_with_output().unwrap()
+}
+
+#[test]
+fn public_compiler_accessors_preserve_checked_structure() {
+    let text = concat!(
+        "edition 2026; module values {\n",
+        "  spec byte() -> Word[8] { 8 }\n",
+        "  impl empty() {}\n",
+        "}\n",
+    );
+    let mut sources = SourceMap::new();
+    let id = sources.add("public-api.or", text).unwrap();
+    let source = sources.get(id).unwrap();
+    let lexed = lex(source, Edition::E2026);
+    let parsed = parse(source, &lexed);
+    assert_eq!(parsed.diagnostics(), []);
+    let ast = parsed.ast().unwrap();
+    assert_eq!(parsed.clone().into_ast().as_ref(), Some(ast));
+
+    assert_eq!(source.slice(ast.span()), Some(text.trim_end()));
+    assert_eq!(ast.edition().edition(), Edition::E2026);
+    assert_eq!(source.slice(ast.edition().span()), Some("edition 2026;"));
+    assert_eq!(source.slice(ast.edition().value_span()), Some("2026"));
+    assert_eq!(ast.module().name().text(), "values");
+    assert_eq!(source.slice(ast.module().name().span()), Some("values"));
+    assert!(
+        source
+            .slice(ast.module().span())
+            .unwrap()
+            .starts_with("module")
+    );
+
+    let functions = ast.module().functions();
+    assert_eq!(functions.len(), 2);
+    assert_eq!(functions[0].kind(), FunctionKind::Spec);
+    assert_eq!(functions[0].name().text(), "byte");
+    assert_eq!(source.slice(functions[0].name().span()), Some("byte"));
+    assert!(
+        source
+            .slice(functions[0].span())
+            .unwrap()
+            .starts_with("spec")
+    );
+    let FunctionBody::TypedLiteral(body) = functions[0].body() else {
+        panic!("expected the public typed-literal body");
+    };
+    assert!(source.slice(body.span()).unwrap().starts_with("->"));
+    assert_eq!(source.slice(body.result_type().span()), Some("Word[8]"));
+    assert_eq!(body.result_type().name().text(), "Word");
+    assert_eq!(source.slice(body.result_type().name().span()), Some("Word"));
+    assert_eq!(
+        source.slice(body.result_type().width_span().unwrap()),
+        Some("8")
+    );
+    assert_eq!(source.slice(body.literal().span()), Some("8"));
+    assert_eq!(source.slice(body.literal().magnitude_span()), Some("8"));
+    assert!(!body.literal().is_negative());
+    assert_eq!(functions[1].kind(), FunctionKind::Impl);
+    assert_eq!(functions[1].body(), &FunctionBody::Empty);
+
+    let analyzed = analyze(source, ast);
+    assert_eq!(analyzed.diagnostics(), []);
+    let core = analyzed.core().unwrap();
+    assert_eq!(analyzed.clone().into_core().as_ref(), Some(core));
+    assert_eq!(source.slice(core.span()), source.slice(ast.module().span()));
+    assert_eq!(core.name(), "values");
+    assert_eq!(core.functions().len(), 1);
+    let function = &core.functions()[0];
+    assert_eq!(function.id().index(), 0);
+    assert_eq!(
+        source.slice(function.span()),
+        source.slice(functions[0].span())
+    );
+    assert_eq!(function.name(), "byte");
+    assert_eq!(source.slice(function.name_span()), Some("byte"));
+    assert_eq!(function.result_type(), CoreType::Word8);
+    assert_eq!(function.value(), &CoreValue::Word8(8));
+
+    let diagnostic = Diagnostic::error(
+        DiagnosticCode::UnsupportedType,
+        "unsupported test type",
+        function.name_span(),
+    )
+    .with_label("primary label")
+    .with_secondary_span(function.span(), "secondary label")
+    .with_note("first note");
+    assert_eq!(diagnostic.severity(), Severity::Error);
+    assert_eq!(diagnostic.code(), DiagnosticCode::UnsupportedType);
+    assert_eq!(diagnostic.message(), "unsupported test type");
+    assert_eq!(diagnostic.primary_span(), function.name_span());
+    assert_eq!(diagnostic.label(), "primary label");
+    assert_eq!(diagnostic.secondary_spans().len(), 1);
+    assert_eq!(diagnostic.secondary_spans()[0].span(), function.span());
+    assert_eq!(diagnostic.secondary_spans()[0].label(), "secondary label");
+    assert_eq!(diagnostic.notes(), ["first note"]);
+
+    let evaluated = evaluate(core);
+    assert_eq!(evaluated.diagnostics(), []);
+    assert!(!evaluated.has_errors());
+    let values = evaluated.values().unwrap();
+    assert_eq!(values.len(), 1);
+    let value = &values[0];
+    assert_eq!(value.id().index(), 0);
+    assert_eq!(value.module(), "values");
+    assert_eq!(value.name(), "byte");
+    assert_eq!(value.result_type(), CoreType::Word8);
+    assert_eq!(value.value(), &CoreValue::Word8(8));
+    assert_eq!(value.to_string(), "values::byte: Word[8] = 0x08");
+    assert_eq!(evaluated.clone().into_values().as_deref(), Some(values));
 }
 
 #[test]
@@ -286,8 +398,8 @@ fn check_reports_a_stable_source_diagnostic_and_failure_status() {
             "error[ORC0001]: unexpected character U+00E9\n",
             " --> <stdin>:1:11\n",
             "  |\n",
-            "1 | module café {}\n",
-            "  |           ^ character is not part of Orange 2026\n",
+            "1 | module caf\\u{e9} {}\n",
+            "  |           ^^^^^^ character is not part of Orange 2026\n",
             "  = note: identifiers are ASCII in this pre-alpha edition\n",
         )
     );

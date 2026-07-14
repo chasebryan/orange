@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tomllib
@@ -45,6 +46,34 @@ IGNORED_PARTS = {".git", ".agents", ".codex", "__pycache__"}
 BINARY_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".wasm"}
 TEXT_TAB_FREE_SUFFIXES = {".json", ".jsonc", ".or", ".py", ".rs", ".sh", ".toml", ".yaml", ".yml"}
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+# Gate 0 consumes a closed set of compact policy, schema, and evidence
+# documents. Sixty-four structural levels leave ample room for those records
+# while staying well below the host Python recursion limit.
+GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
+_I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
+# Resource limits apply before Gate 0 parses any repository-controlled input.
+# Text covers every suffix not explicitly admitted as a binary artifact.
+GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
+GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
+GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
+# Repository discovery is bounded independently from content reads. Git paths
+# are byte strings until every limit and record boundary has been checked, so
+# hostile metadata cannot force an unbounded buffer or premature decoding.
+GATE0_MAXIMUM_REPOSITORY_FILES = 512
+GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
+GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
+GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES = 4096
+GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
+_GATE0_GIT_READ_CHUNK_BYTES = 4096
+_GATE0_GIT_ROUTING_ENVIRONMENT = {
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+}
 MINIMUM_REQUIRED_PATHS = {
     ".editorconfig",
     ".gitattributes",
@@ -339,7 +368,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "20f0156db66fa8281793f8c5db3bf00a3a8d1c3e0f286ff667d1c91587f12cb9",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "483ce30f6a81e2419f0301e2ab77093cb4bccefa974e4a3bd1f4148beda76e46",
+    "docs/security/THREAT_MODEL.md": "5b519de46feeec2aa172364aad42a89a4a8297d7fe9723eb5629c054ce1b8e30",
     "policy/README.md": "fd87e14f7c6adb0332107c4e3032b5697220c4b235f4b85309d5ac2c96a331d8",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
@@ -351,8 +380,8 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/check-repository": "692b0a7b0571891e5dfec985bdfbec3f2e340f9545afccaa76a04b7433621c16",
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
-    "tools/tests/test_validate_foundation.py": "231c8aafa857bfaef5dec11b6a707365a95a68abfd579abf5b7227585802d3ff",
-    "tools/tests/test_validate_foundation_hardening.py": "641298e7d507ec5806f502719a684aaf610a6e41eaac9b617b742875d459a5c3",
+    "tools/tests/test_validate_foundation.py": "b0bdb290f16c239c820a6e5e6641d433760ca060032f0d9b2580cd4b3729dcc0",
+    "tools/tests/test_validate_foundation_hardening.py": "00eaf5054e6cd0e5967c3dbdeb6595c8756c1287db7af0a3106f34d6ecec9971",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -616,10 +645,20 @@ def _reject_floating_point(value: str) -> Any:
 
 
 def _parse_i_json_integer(value: str) -> int:
-    parsed = int(value)
-    if not -(2**53) + 1 <= parsed <= 2**53 - 1:
-        raise json.JSONDecodeError(f"integer {value!r} exceeds the I-JSON interoperable range", value, 0)
-    return parsed
+    magnitude = value[1:] if value.startswith("-") else value
+    if len(magnitude) > len(_I_JSON_MAXIMUM_INTEGER_MAGNITUDE) or (
+        len(magnitude) == len(_I_JSON_MAXIMUM_INTEGER_MAGNITUDE)
+        and magnitude > _I_JSON_MAXIMUM_INTEGER_MAGNITUDE
+    ):
+        # Reject lexically before int() so Python's configurable conversion
+        # limit cannot surface as ValueError for an attacker-sized literal.
+        # Keep the diagnostic independent of the literal's size as well.
+        raise json.JSONDecodeError(
+            "integer exceeds the I-JSON interoperable range",
+            value,
+            0,
+        )
+    return int(value)
 
 
 def _require_unicode_scalars(value: Any, source: str) -> None:
@@ -637,17 +676,63 @@ def _require_unicode_scalars(value: Any, source: str) -> None:
             _require_unicode_scalars(item, source)
 
 
-def load_json(path: Path) -> Any:
-    source = path.read_text(encoding="utf-8")
-    result = json.loads(
-        source,
-        object_pairs_hook=_object_without_duplicates,
-        parse_constant=_reject_non_json_constant,
-        parse_float=_reject_floating_point,
-        parse_int=_parse_i_json_integer,
-    )
-    _require_unicode_scalars(result, source)
+def _require_bounded_json_nesting(source: str) -> None:
+    """Reject JSON deeper than Gate 0 permits without recursively parsing it."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, character in enumerate(source):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character in "[{":
+            depth += 1
+            if depth > GATE0_MAXIMUM_JSON_NESTING_DEPTH:
+                raise json.JSONDecodeError(
+                    "JSON structural nesting exceeds the Gate 0 limit "
+                    f"of {GATE0_MAXIMUM_JSON_NESTING_DEPTH}",
+                    source,
+                    index,
+                )
+        elif character in "]}" and depth:
+            depth -= 1
+
+
+def _load_json_bytes(data: bytes) -> Any:
+    """Parse already-read Gate 0 JSON bytes without reopening their path."""
+    source = data.decode("utf-8")
+    _require_bounded_json_nesting(source)
+    try:
+        result = json.loads(
+            source,
+            object_pairs_hook=_object_without_duplicates,
+            parse_constant=_reject_non_json_constant,
+            parse_float=_reject_floating_point,
+            parse_int=_parse_i_json_integer,
+        )
+        _require_unicode_scalars(result, source)
+    except RecursionError as exc:
+        # The iterative preflight should make this unreachable for ordinary
+        # inputs. Normalize any implementation-specific fallback so every
+        # load_json caller can keep handling malformed JSON uniformly.
+        raise json.JSONDecodeError(
+            "JSON structural nesting exceeds the Gate 0 limit "
+            f"of {GATE0_MAXIMUM_JSON_NESTING_DEPTH}",
+            source,
+            0,
+        ) from exc
     return result
+
+
+def load_json(path: Path) -> Any:
+    return _load_json_bytes(path.read_bytes())
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -696,47 +781,333 @@ def relative(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
-def iter_repository_files(root: Path) -> Iterable[Path]:
+@dataclasses.dataclass(frozen=True)
+class _GitRecordRead:
+    records: tuple[bytes, ...] | None
+    finding: Finding | None = None
+
+
+def _sanitized_git_environment() -> dict[str, str]:
+    """Preserve the execution environment while removing Git redirections."""
+
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() not in _GATE0_GIT_ROUTING_ENVIRONMENT
+        and not key.upper().startswith("GIT_CONFIG_")
+    }
+
+
+def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
+    """Release a bounded Git producer without retaining any more output."""
+
     try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        values = [value for value in result.stdout.split(b"\0") if value]
-        for value in sorted(values):
-            path = root / os.fsdecode(value)
-            if path.is_file() or path.is_symlink():
-                yield path
-        return
-    except (OSError, subprocess.CalledProcessError):
+        process.kill()
+    except OSError:
         pass
-    for path in sorted(root.rglob("*")):
-        if any(part in IGNORED_PARTS for part in path.relative_to(root).parts):
-            continue
-        if path.is_file() or path.is_symlink():
-            yield path
-
-
-def git_index_entries(root: Path) -> list[tuple[str, str]]:
+    if process.stdout is not None:
+        try:
+            process.stdout.close()
+        except OSError:
+            pass
     try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "--stage", "-z"],
-            check=True,
+        process.wait()
+    except OSError:
+        pass
+
+
+def _read_git_nul_records(
+    root: Path,
+    arguments: Sequence[str],
+    *,
+    maximum_record_bytes: int,
+) -> _GitRecordRead:
+    """Read one Git metadata stream without buffering attacker-sized output.
+
+    ``records is None`` without a finding means Git could not provide the
+    inventory and the caller may use its filesystem fallback. A protocol or
+    resource finding is fail-closed and must never trigger that fallback.
+    """
+
+    command = ["git", "-C", str(root), *arguments, "-z"]
+    try:
+        process = subprocess.Popen(
+            command,
+            env=_sanitized_git_environment(),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
         )
-    except (OSError, subprocess.CalledProcessError):
+    except OSError:
+        return _GitRecordRead(None)
+    if process.stdout is None:
+        _stop_git_process(process)
+        return _GitRecordRead(
+            None,
+            Finding("resource.inventory_protocol", ".", "Git inventory did not expose a stdout stream"),
+        )
+
+    records: list[bytes] = []
+    pending = bytearray()
+    raw_bytes = 0
+
+    def reject(code: str, message: str) -> _GitRecordRead:
+        _stop_git_process(process)
+        return _GitRecordRead(None, Finding(code, ".", message))
+
+    try:
+        while True:
+            chunk = process.stdout.read(_GATE0_GIT_READ_CHUNK_BYTES)
+            if not chunk:
+                break
+            if raw_bytes + len(chunk) > GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES:
+                return reject(
+                    "resource.inventory_metadata",
+                    "Git path metadata exceeds the Gate 0 raw-byte limit",
+                )
+            raw_bytes += len(chunk)
+            offset = 0
+            while True:
+                terminator = chunk.find(b"\0", offset)
+                if terminator < 0:
+                    tail = chunk[offset:]
+                    if len(pending) + len(tail) > maximum_record_bytes:
+                        return reject(
+                            "resource.inventory_path",
+                            "Git inventory record exceeds its Gate 0 byte limit",
+                        )
+                    pending.extend(tail)
+                    break
+                segment = chunk[offset:terminator]
+                if len(pending) + len(segment) > maximum_record_bytes:
+                    return reject(
+                        "resource.inventory_path",
+                        "Git inventory record exceeds its Gate 0 byte limit",
+                    )
+                pending.extend(segment)
+                if not pending:
+                    return reject(
+                        "resource.inventory_protocol",
+                        "Git inventory contains an empty NUL-delimited record",
+                    )
+                records.append(bytes(pending))
+                pending.clear()
+                if len(records) > GATE0_MAXIMUM_REPOSITORY_FILES:
+                    return reject(
+                        "resource.inventory_count",
+                        "Git inventory exceeds the Gate 0 repository-file limit",
+                    )
+                offset = terminator + 1
+    except OSError as exc:
+        return reject("resource.inventory_read", f"cannot read bounded Git inventory: {exc}")
+
+    try:
+        process.stdout.close()
+    except OSError as exc:
+        _stop_git_process(process)
+        return _GitRecordRead(
+            None,
+            Finding("resource.inventory_read", ".", f"cannot close bounded Git inventory: {exc}"),
+        )
+    try:
+        return_code = process.wait()
+    except OSError as exc:
+        return _GitRecordRead(
+            None,
+            Finding("resource.inventory_read", ".", f"cannot wait for bounded Git inventory: {exc}"),
+        )
+    if return_code != 0:
+        return _GitRecordRead(None)
+    if pending:
+        return _GitRecordRead(
+            None,
+            Finding(
+                "resource.inventory_protocol",
+                ".",
+                "Git inventory ended with an unterminated NUL-delimited record",
+            ),
+        )
+    return _GitRecordRead(tuple(records))
+
+
+def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path]:
+    """Collect a bounded, pruned filesystem inventory without following dirs."""
+
+    raw_root = os.fsencode(root)
+    ignored = {os.fsencode(part) for part in IGNORED_PARTS}
+    stack: list[tuple[bytes, bytes]] = [(raw_root, b"")]
+    raw_files: list[bytes] = []
+    directory_entries = 0
+    raw_metadata_bytes = 0
+    while stack:
+        directory, relative_directory = stack.pop()
+        try:
+            iterator = os.scandir(directory)
+        except OSError as exc:
+            findings.append(
+                Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
+            )
+            return []
+        try:
+            with iterator:
+                for entry in iterator:
+                    directory_entries += 1
+                    if directory_entries > GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES:
+                        findings.append(
+                            Finding(
+                                "resource.inventory_entries",
+                                ".",
+                                "filesystem inventory exceeds the Gate 0 directory-entry limit",
+                            )
+                        )
+                        return []
+                    name = entry.name
+                    raw_path = name if not relative_directory else relative_directory + b"/" + name
+                    if len(raw_path) > GATE0_MAXIMUM_REPOSITORY_PATH_BYTES:
+                        findings.append(
+                            Finding(
+                                "resource.inventory_path",
+                                ".",
+                                "filesystem inventory path exceeds the Gate 0 byte limit",
+                            )
+                        )
+                        return []
+                    if raw_metadata_bytes + len(raw_path) + 1 > GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES:
+                        findings.append(
+                            Finding(
+                                "resource.inventory_metadata",
+                                ".",
+                                "filesystem path metadata exceeds the Gate 0 raw-byte limit",
+                            )
+                        )
+                        return []
+                    raw_metadata_bytes += len(raw_path) + 1
+                    if name in ignored:
+                        continue
+                    try:
+                        is_directory = entry.is_dir(follow_symlinks=False)
+                        is_file = entry.is_file(follow_symlinks=False)
+                        is_symlink = entry.is_symlink()
+                    except OSError as exc:
+                        findings.append(
+                            Finding(
+                                "resource.inventory_read",
+                                ".",
+                                f"cannot inspect filesystem inventory entry: {exc}",
+                            )
+                        )
+                        return []
+                    if is_directory:
+                        stack.append((entry.path, raw_path))
+                    elif is_file or is_symlink:
+                        raw_files.append(raw_path)
+                        if len(raw_files) > GATE0_MAXIMUM_REPOSITORY_FILES:
+                            findings.append(
+                                Finding(
+                                    "resource.inventory_count",
+                                    ".",
+                                    "filesystem inventory exceeds the Gate 0 repository-file limit",
+                                )
+                            )
+                            return []
+        except OSError as exc:
+            findings.append(
+                Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
+            )
+            return []
+    return [root / os.fsdecode(raw_path) for raw_path in sorted(raw_files)]
+
+
+def _git_path_is_relative(raw_path: bytes) -> bool:
+    return bool(raw_path) and not raw_path.startswith(b"/") and all(
+        part not in {b"", b".", b".."} for part in raw_path.split(b"/")
+    )
+
+
+def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
+    result = _read_git_nul_records(
+        root,
+        ["ls-files", "--cached", "--others", "--exclude-standard"],
+        maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+    )
+    if result.finding is not None:
+        findings.append(result.finding)
+        return [], False
+    if result.records is None:
+        return _fallback_repository_files(root, findings), False
+    if any(not _git_path_is_relative(value) for value in result.records):
+        findings.append(
+            Finding(
+                "resource.inventory_protocol",
+                ".",
+                "Git inventory contains a non-relative repository path",
+            )
+        )
+        return [], False
+    paths = [root / os.fsdecode(value) for value in sorted(result.records)]
+    # A tracked deletion is still bounded and counted above, but is left for
+    # the ordinary required-path checks instead of becoming a resource error.
+    return [path for path in paths if path.is_file() or path.is_symlink()], True
+
+
+def iter_repository_files(root: Path, findings: list[Finding] | None = None) -> Iterable[Path]:
+    inventory_findings = findings if findings is not None else []
+    paths, _ = _repository_file_inventory(root, inventory_findings)
+    return paths
+
+
+def git_index_entries(
+    root: Path,
+    findings: list[Finding] | None = None,
+    *,
+    required: bool = False,
+) -> list[tuple[str, str]]:
+    inventory_findings = findings if findings is not None else []
+    result = _read_git_nul_records(
+        root,
+        ["ls-files", "--stage"],
+        maximum_record_bytes=(
+            GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES + 1 + GATE0_MAXIMUM_REPOSITORY_PATH_BYTES
+        ),
+    )
+    if result.finding is not None:
+        inventory_findings.append(result.finding)
         return []
-    entries: list[tuple[str, str]] = []
-    for record in (value for value in result.stdout.split(b"\0") if value):
+    if result.records is None:
+        if required:
+            inventory_findings.append(
+                Finding(
+                    "resource.inventory_stage",
+                    ".",
+                    "Git stage inventory is unavailable after a successful file inventory",
+                )
+            )
+        return []
+
+    raw_entries: list[tuple[bytes, bytes]] = []
+    for record in result.records:
         metadata, separator, raw_path = record.partition(b"\t")
         fields = metadata.split()
-        if not separator or len(fields) != 3:
-            continue
-        entries.append((os.fsdecode(fields[0]), os.fsdecode(raw_path)))
-    return entries
+        if (
+            not separator
+            or not _git_path_is_relative(raw_path)
+            or len(metadata) > GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES
+            or len(raw_path) > GATE0_MAXIMUM_REPOSITORY_PATH_BYTES
+            or len(fields) != 3
+        ):
+            inventory_findings.append(
+                Finding(
+                    "resource.inventory_protocol",
+                    ".",
+                    "Git stage inventory contains a malformed metadata record",
+                )
+            )
+            return []
+        raw_entries.append((fields[0], raw_path))
+    return [
+        (os.fsdecode(mode), os.fsdecode(raw_path))
+        for mode, raw_path in sorted(raw_entries, key=lambda entry: (entry[1], entry[0]))
+    ]
 
 
 class FoundationValidator:
@@ -745,14 +1116,256 @@ class FoundationValidator:
         self.policy_path = self.root / POLICY_PATH
         self.findings: list[Finding] = []
         self.policy: dict[str, Any] = {}
-        self.repository_files = list(iter_repository_files(self.root))
-        self.index_entries = git_index_entries(self.root)
+        self.repository_files, git_inventory_succeeded = _repository_file_inventory(
+            self.root, self.findings
+        )
+        self.index_entries = (
+            git_index_entries(self.root, self.findings, required=True)
+            if not self.findings and git_inventory_succeeded
+            else []
+        )
+        self._inventory_has_findings = bool(self.findings)
+        self._authenticated_protected_bytes: dict[str, bytes | None] = {}
+        self._repository_byte_cache: dict[str, bytes | None] = {}
+        self._repository_read_bytes = 0
+        self._resource_metadata: dict[str, tuple[int, ...]] = {}
+        self._resource_issue_keys: set[tuple[str, str]] = set()
+        self._resource_preflight_complete = False
 
     def add(self, code: str, path: str | Path, message: str) -> None:
         path_text = relative(path, self.root) if isinstance(path, Path) else path
         self.findings.append(Finding(code, path_text, message))
 
+    def _resource_issue(self, code: str, path: str | Path, message: str) -> None:
+        path_text = relative(path, self.root) if isinstance(path, Path) else path
+        key = (code, path_text)
+        if key not in self._resource_issue_keys:
+            self._resource_issue_keys.add(key)
+            self.add(code, path_text, message)
+
+    def _lexical_repository_path(self, path: Path) -> tuple[str, Path] | None:
+        unnormalized = path if path.is_absolute() else self.root / path
+        candidate = Path(os.path.normpath(os.fspath(unnormalized)))
+        try:
+            lexical = candidate.relative_to(self.root)
+        except ValueError:
+            self._resource_issue("resource.path_escape", candidate, "content read escapes the repository root")
+            return None
+        if not lexical.parts or ".." in lexical.parts:
+            self._resource_issue("resource.path_escape", candidate, "content read escapes the repository root")
+            return None
+        return lexical.as_posix(), self.root / lexical
+
+    @staticmethod
+    def _metadata_signature(metadata: os.stat_result) -> tuple[int, ...]:
+        return (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_mode,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+        )
+
+    @staticmethod
+    def _repository_file_limit(path: Path) -> int:
+        if path.suffix.lower() in BINARY_SUFFIXES:
+            return GATE0_MAXIMUM_BINARY_FILE_BYTES
+        return GATE0_MAXIMUM_TEXT_FILE_BYTES
+
+    def _inspect_repository_file(self, path: Path) -> tuple[str, Path, os.stat_result] | None:
+        lexical_path = self._lexical_repository_path(path)
+        if lexical_path is None:
+            return None
+        value, candidate = lexical_path
+        current = self.root
+        parts = PurePosixPath(value).parts
+        for index, part in enumerate(parts):
+            current /= part
+            try:
+                metadata = current.lstat()
+            except OSError as exc:
+                self._resource_issue("resource.unreadable", candidate, f"cannot inspect repository file: {exc}")
+                return None
+            if stat.S_ISLNK(metadata.st_mode):
+                self._resource_issue(
+                    "resource.symlink",
+                    candidate,
+                    f"repository content traverses symlink {relative(current, self.root)!r}",
+                )
+                return None
+            if index + 1 < len(parts):
+                if not stat.S_ISDIR(metadata.st_mode):
+                    self._resource_issue("resource.not_file", candidate, "repository content has a non-directory parent")
+                    return None
+            elif not stat.S_ISREG(metadata.st_mode):
+                self._resource_issue("resource.not_file", candidate, "repository content is not a regular file")
+                return None
+        return value, candidate, metadata
+
+    def _preflight_repository_resources(self) -> bool:
+        """Reject unsafe repository metadata before parsing the policy itself."""
+
+        if self._resource_preflight_complete:
+            return not self._resource_issue_keys
+        self._resource_preflight_complete = True
+        total_bytes = 0
+        seen: set[str] = set()
+        for path in self.repository_files:
+            inspected = self._inspect_repository_file(path)
+            if inspected is None:
+                continue
+            value, candidate, metadata = inspected
+            if value in seen:
+                continue
+            seen.add(value)
+            self._resource_metadata[value] = self._metadata_signature(metadata)
+            limit = self._repository_file_limit(candidate)
+            if metadata.st_size > limit:
+                kind = "binary" if candidate.suffix.lower() in BINARY_SUFFIXES else "text"
+                self._resource_issue(
+                    "resource.file_size",
+                    candidate,
+                    f"{kind} file is {metadata.st_size} bytes; Gate 0 permits at most {limit} bytes",
+                )
+            total_bytes += metadata.st_size
+        if total_bytes > GATE0_MAXIMUM_REPOSITORY_BYTES:
+            self._resource_issue(
+                "resource.aggregate_size",
+                ".",
+                f"repository files total {total_bytes} bytes; Gate 0 permits at most {GATE0_MAXIMUM_REPOSITORY_BYTES} bytes",
+            )
+        return not self._resource_issue_keys
+
+    def _read_repository_bytes(self, path: Path) -> bytes | None:
+        """Read one bounded repository snapshot and reuse it for every consumer."""
+
+        lexical_path = self._lexical_repository_path(path)
+        if lexical_path is None:
+            return None
+        value, candidate = lexical_path
+        if value in self._repository_byte_cache:
+            return self._repository_byte_cache[value]
+        self._repository_byte_cache[value] = None
+
+        inspected = self._inspect_repository_file(candidate)
+        if inspected is None:
+            return None
+        _, _, metadata = inspected
+        signature = self._metadata_signature(metadata)
+        if self._resource_preflight_complete:
+            expected_signature = self._resource_metadata.get(value)
+            if expected_signature is None:
+                self._resource_issue(
+                    "resource.post_preflight_addition",
+                    candidate,
+                    "repository file appeared after the resource preflight",
+                )
+                return None
+            if signature != expected_signature:
+                self._resource_issue(
+                    "resource.post_preflight_change",
+                    candidate,
+                    "repository file metadata changed after the resource preflight",
+                )
+                return None
+
+        file_limit = self._repository_file_limit(candidate)
+        if metadata.st_size > file_limit:
+            self._resource_issue(
+                "resource.file_size",
+                candidate,
+                f"file is {metadata.st_size} bytes; Gate 0 permits at most {file_limit} bytes",
+            )
+            return None
+        aggregate_remaining = GATE0_MAXIMUM_REPOSITORY_BYTES - self._repository_read_bytes
+        read_limit = min(file_limit, aggregate_remaining)
+        if metadata.st_size > aggregate_remaining:
+            self._resource_issue(
+                "resource.aggregate_size",
+                candidate,
+                "reading this file would exceed the Gate 0 aggregate repository byte limit",
+            )
+            return None
+
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(candidate, flags)
+        except OSError as exc:
+            self._resource_issue("resource.unreadable", candidate, f"cannot open repository file: {exc}")
+            return None
+        try:
+            with os.fdopen(descriptor, "rb") as source:
+                opened_metadata = os.fstat(source.fileno())
+                if not stat.S_ISREG(opened_metadata.st_mode) or self._metadata_signature(opened_metadata) != signature:
+                    self._resource_issue(
+                        "resource.concurrent_change",
+                        candidate,
+                        "repository file changed while it was being opened",
+                    )
+                    return None
+                data = source.read(read_limit + 1)
+                closed_metadata = os.fstat(source.fileno())
+        except OSError as exc:
+            self._resource_issue("resource.unreadable", candidate, f"cannot read repository file: {exc}")
+            return None
+        if self._metadata_signature(closed_metadata) != signature:
+            self._resource_issue(
+                "resource.concurrent_change",
+                candidate,
+                "repository file changed while it was being read",
+            )
+            return None
+        if len(data) > read_limit:
+            code = "resource.file_size" if read_limit == file_limit else "resource.aggregate_size"
+            self._resource_issue(code, candidate, "repository content exceeded its bounded read limit")
+            return None
+        if len(data) != opened_metadata.st_size:
+            self._resource_issue(
+                "resource.concurrent_change",
+                candidate,
+                "repository file produced a short or inconsistent snapshot read",
+            )
+            return None
+        self._repository_read_bytes += len(data)
+        self._repository_byte_cache[value] = data
+        return data
+
+    def _read_repository_text(self, path: Path) -> str | None:
+        data = self._read_repository_bytes(path)
+        if data is None:
+            return None
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            self._resource_issue("resource.utf8", path, f"repository text is not valid UTF-8: {exc}")
+            return None
+
+    def _load_repository_json(self, path: Path) -> Any:
+        data = self._read_repository_bytes(path)
+        if data is None:
+            raise OSError("repository file was rejected by the bounded reader")
+        return _load_json_bytes(data)
+
+    def _load_repository_toml(self, path: Path) -> Any:
+        text = self._read_repository_text(path)
+        if text is None:
+            raise OSError("repository file was rejected by the bounded reader")
+        try:
+            return tomllib.loads(text)
+        except RecursionError as exc:
+            # CPython's TOML parser recursively descends through arrays and
+            # inline structures. Normalize its implementation-specific limit
+            # into the parse error already handled by every TOML caller.
+            raise tomllib.TOMLDecodeError(
+                "TOML structural nesting exceeds parser capacity"
+            ) from exc
+
     def run(self) -> list[Finding]:
+        if self._inventory_has_findings:
+            return sorted(set(self.findings))
+        if not self._preflight_repository_resources():
+            return sorted(set(self.findings))
         self._load_and_validate_policy()
         if not self.policy:
             return sorted(set(self.findings))
@@ -785,7 +1398,7 @@ class FoundationValidator:
             self.add("policy.missing", self.policy_path, "solo-bootstrap repository policy is missing")
             return
         try:
-            policy = load_json(self.policy_path)
+            policy = self._load_repository_json(self.policy_path)
         except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError) as exc:
             self.add("policy.invalid_json", self.policy_path, str(exc))
             return
@@ -978,21 +1591,35 @@ class FoundationValidator:
     def _validate_protected_file_digests(self) -> None:
         """Fail closed if a security-critical Gate 0 file differs from reviewed bytes."""
 
-        for value, expected in sorted(GATE0_PROTECTED_FILE_DIGESTS.items()):
-            path = self.root / value
-            if not path.is_file():
-                continue
-            try:
-                observed = hashlib.sha256(path.read_bytes()).hexdigest()
-            except OSError as exc:
-                self.add("protected_file.unreadable", path, str(exc))
-                continue
-            if observed != expected:
-                self.add(
-                    "protected_file.digest",
-                    path,
-                    f"reviewed SHA-256 changed: expected {expected}, observed {observed}",
-                )
+        for value in sorted(GATE0_PROTECTED_FILE_DIGESTS):
+            self._read_authenticated_protected_file(value)
+
+    def _read_authenticated_protected_file(self, value: str) -> bytes | None:
+        """Read a protected file once and retain only reviewed bytes."""
+
+        if value in self._authenticated_protected_bytes:
+            return self._authenticated_protected_bytes[value]
+        self._authenticated_protected_bytes[value] = None
+        expected = GATE0_PROTECTED_FILE_DIGESTS.get(value)
+        if expected is None:
+            return None
+        path = self.root / value
+        if not path.is_file():
+            return None
+        data = self._read_repository_bytes(path)
+        if data is None:
+            self.add("protected_file.unreadable", path, "bounded repository read failed")
+            return None
+        observed = hashlib.sha256(data).hexdigest()
+        if observed != expected:
+            self.add(
+                "protected_file.digest",
+                path,
+                f"reviewed SHA-256 changed: expected {expected}, observed {observed}",
+            )
+            return None
+        self._authenticated_protected_bytes[value] = data
+        return data
 
     def _validate_hosted_control_evidence(self, *, today: dt.date | None = None) -> None:
         """Keep the current hosted-control snapshot internally coherent."""
@@ -1070,10 +1697,9 @@ class FoundationValidator:
             if not path.is_file():
                 self.add("hosted_control.missing", path, "hosted-control evidence document is missing")
                 continue
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
-                self.add("hosted_control.unreadable", path, str(exc))
+            text = self._read_repository_text(path)
+            if text is None:
+                self.add("hosted_control.unreadable", path, "bounded repository read failed")
                 continue
             marker_prefixes = ("Hosted-control snapshot:", "Required-check binding:")
             observed_markers = [line for line in text.splitlines() if line.startswith(marker_prefixes)]
@@ -1136,8 +1762,7 @@ class FoundationValidator:
 
         toolchain_path = self.root / "rust-toolchain.toml"
         try:
-            with toolchain_path.open("rb") as source:
-                toolchain = tomllib.load(source)
+            toolchain = self._load_repository_toml(toolchain_path)
         except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
             self.add("compiler.toolchain_toml", toolchain_path, f"Rust toolchain file is not valid TOML: {exc}")
         else:
@@ -1167,8 +1792,7 @@ class FoundationValidator:
         for value in sorted(expected_manifest_paths):
             path = self.root / value
             try:
-                with path.open("rb") as source:
-                    manifest = tomllib.load(source)
+                manifest = self._load_repository_toml(path)
             except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
                 self.add("compiler.manifest_toml", path, f"Cargo manifest is not valid TOML: {exc}")
                 continue
@@ -1275,8 +1899,7 @@ class FoundationValidator:
 
         lock_path = self.root / "compiler/Cargo.lock"
         try:
-            with lock_path.open("rb") as source:
-                lock = tomllib.load(source)
+            lock = self._load_repository_toml(lock_path)
         except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
             self.add("compiler.lock_toml", lock_path, f"Cargo lockfile is not valid TOML: {exc}")
             return
@@ -1292,11 +1915,11 @@ class FoundationValidator:
 
         for value, expected_constants in ORANGE_2026_RUST_BUDGETS.items():
             path = self.root / value
-            try:
-                source = rust_code_without_comments_and_literals(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError) as exc:
-                self.add("compiler.language_budget", path, f"cannot read Rust budget source: {exc}")
+            text = self._read_repository_text(path)
+            if text is None:
+                self.add("compiler.language_budget", path, "cannot read Rust budget source through bounded reader")
                 continue
+            source = rust_code_without_comments_and_literals(text)
             declarations: dict[str, list[str]] = {}
             for match in re.finditer(
                 r"(?m)^\s*pub\s+const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*([^;]+);",
@@ -1322,13 +1945,12 @@ class FoundationValidator:
 
         for value, expected_markers in ORANGE_2026_SPEC_BUDGET_MARKERS.items():
             specification = self.root / value
-            try:
-                text = specification.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
+            text = self._read_repository_text(specification)
+            if text is None:
                 self.add(
                     "compiler.language_spec_budget",
                     specification,
-                    f"cannot read normative budget specification: {exc}",
+                    "cannot read normative budget specification through bounded reader",
                 )
                 continue
             for marker, expected in expected_markers.items():
@@ -1383,7 +2005,9 @@ class FoundationValidator:
                 self.add("file.unexpected_executable", path, "executable bit is not authorized by repository policy")
             if value in executable_paths and not is_executable:
                 self.add("file.missing_executable", path, "repository policy requires the executable bit")
-            data = path.read_bytes()
+            data = self._read_repository_bytes(path)
+            if data is None:
+                continue
             if b"\x00" in data or path.suffix.lower() in BINARY_SUFFIXES:
                 admission = binary_artifacts.get(value)
                 if admission is None:
@@ -1420,7 +2044,7 @@ class FoundationValidator:
     def _validate_brand_assets(self) -> None:
         manifest_path = self.root / "assets/brand/manifest.json"
         try:
-            manifest = load_json(manifest_path)
+            manifest = self._load_repository_json(manifest_path)
         except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError) as exc:
             self.add("brand.manifest", manifest_path, str(exc))
             return
@@ -1497,10 +2121,9 @@ class FoundationValidator:
                 self.add("brand.manifest_provenance", manifest_path, f"assets[{index}] C2PA status is incorrect")
 
             asset_path = manifest_path.parent / name
-            try:
-                data = asset_path.read_bytes()
-            except OSError as exc:
-                self.add("brand.asset", asset_path, str(exc))
+            data = self._read_repository_bytes(asset_path)
+            if data is None:
+                self.add("brand.asset", asset_path, "bounded repository read failed")
                 continue
             if media_type == "image/png":
                 if len(data) < 29 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
@@ -1518,9 +2141,8 @@ class FoundationValidator:
 
     def _validate_markdown_links(self) -> None:
         for path in (path for path in self.repository_files if path.suffix.lower() == ".md"):
-            try:
-                text = path.read_text(encoding="utf-8")
-            except UnicodeError:
+            text = self._read_repository_text(path)
+            if text is None:
                 continue
             for match in MARKDOWN_LINK_RE.finditer(text):
                 raw_target = match.group(1).strip()
@@ -1533,17 +2155,19 @@ class FoundationValidator:
                 file_part = unquote(parsed.path)
                 fragment = unquote(parsed.fragment)
                 target_path = path if not file_part else (path.parent / file_part)
-                resolved = target_path.resolve()
-                try:
-                    resolved.relative_to(self.root)
-                except ValueError:
+                lexical_target = self._lexical_repository_path(target_path)
+                if lexical_target is None:
                     self.add("markdown.link_escape", path, f"link escapes repository: {raw_target}")
                     continue
+                _, resolved = lexical_target
                 if not resolved.exists():
                     self.add("markdown.link_missing", path, f"local link target does not exist: {raw_target}")
                     continue
                 if fragment and resolved.is_file() and resolved.suffix.lower() == ".md":
-                    anchors = markdown_anchors(resolved.read_text(encoding="utf-8"))
+                    target_text = self._read_repository_text(resolved)
+                    if target_text is None:
+                        continue
+                    anchors = markdown_anchors(target_text)
                     if fragment not in anchors:
                         self.add("markdown.anchor_missing", path, f"anchor not found: {raw_target}")
 
@@ -1554,10 +2178,9 @@ class FoundationValidator:
         if not path.is_file():
             self.add("book.missing", path, "the canonical Orange Book manuscript is missing")
             return
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            self.add("book.unreadable", path, str(exc))
+        text = self._read_repository_text(path)
+        if text is None:
+            self.add("book.unreadable", path, "bounded repository read failed")
             return
 
         visible_text = markdown_without_fenced_blocks_and_comments(text)
@@ -1641,7 +2264,7 @@ class FoundationValidator:
     def _validate_json_documents(self) -> None:
         for path in (path for path in self.repository_files if path.suffix.lower() == ".json"):
             try:
-                load_json(path)
+                self._load_repository_json(path)
             except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError) as exc:
                 self.add("json.invalid", path, str(exc))
 
@@ -1649,11 +2272,26 @@ class FoundationValidator:
         schema_dir = self.root / "schemas/gate0"
         schemas: dict[Path, Mapping[str, Any]] = {}
         id_registry: dict[str, tuple[Path, Mapping[str, Any]]] = {}
+        schemas_with_audit_errors: set[Path] = set()
         if not schema_dir.is_dir():
             return
-        for path in sorted(schema_dir.glob("*.schema.json")):
+        schema_paths = sorted(schema_dir.glob("*.schema.json"))
+        observed_schema_paths = {relative(path, self.root) for path in schema_paths}
+        if observed_schema_paths != GATE0_SCHEMA_PATHS:
+            self.add(
+                "schema.inventory",
+                schema_dir,
+                f"Gate 0 schema inventory must be exact; missing={sorted(GATE0_SCHEMA_PATHS - observed_schema_paths)}, extra={sorted(observed_schema_paths - GATE0_SCHEMA_PATHS)}",
+            )
+        for path in schema_paths:
+            # Gate 0 schemas are a closed, reviewed set. Authenticate the bytes
+            # before compiling any pattern, then parse this same buffered copy
+            # so a concurrent path replacement cannot introduce regex code.
+            schema_bytes = self._read_authenticated_protected_file(relative(path, self.root))
+            if schema_bytes is None:
+                continue
             try:
-                schema = load_json(path)
+                schema = _load_json_bytes(schema_bytes)
             except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError):
                 continue
             if not isinstance(schema, dict):
@@ -1668,16 +2306,12 @@ class FoundationValidator:
                 self.add("schema.id_duplicate", path, f"duplicate schema $id {schema_id}")
             else:
                 id_registry[schema_id] = (path, schema)
-            for issue in audit_schema_vocabulary(schema):
+            audit_issues = audit_schema_vocabulary(schema)
+            if audit_issues:
+                schemas_with_audit_errors.add(path.resolve())
+            for issue in audit_issues:
                 self.add("schema.unsupported_keyword", path, issue)
             schemas[path.resolve()] = schema
-        observed_schema_paths = {relative(path, self.root) for path in schemas}
-        if observed_schema_paths != GATE0_SCHEMA_PATHS:
-            self.add(
-                "schema.inventory",
-                schema_dir,
-                f"Gate 0 schema inventory must be exact; missing={sorted(GATE0_SCHEMA_PATHS - observed_schema_paths)}, extra={sorted(observed_schema_paths - GATE0_SCHEMA_PATHS)}",
-            )
         for schema_path, schema in schemas.items():
             for location, node in iter_schema_nodes(schema):
                 reference = node.get("$ref") if isinstance(node, dict) else None
@@ -1694,7 +2328,7 @@ class FoundationValidator:
         if not manifest_path.is_file():
             return
         try:
-            manifest = load_json(manifest_path)
+            manifest = self._load_repository_json(manifest_path)
         except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError):
             return
         entries = None
@@ -1768,8 +2402,12 @@ class FoundationValidator:
             if schema_path not in schemas:
                 self.add("fixture.schema_missing", manifest_path, f"schema is not registered: {schema_value}")
                 continue
+            # Schema-audit failures are authoritative. In particular, never
+            # execute an invalid regular expression while validating fixtures.
+            if schema_path in schemas_with_audit_errors:
+                continue
             try:
-                instance = load_json(fixture_path)
+                instance = self._load_repository_json(fixture_path)
             except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError):
                 continue
             issues = validate_schema_instance(
@@ -1779,7 +2417,11 @@ class FoundationValidator:
                 schemas,
                 id_registry,
             )
-            issues.extend(validate_cross_record_invariants(instance, schema_path.name))
+            # Cross-record checks rely on the shapes and scalar types guaranteed
+            # by the schema. Preserve the schema findings, and do not pass a
+            # structurally invalid instance into those invariant checks.
+            if not issues:
+                issues.extend(validate_cross_record_invariants(instance, schema_path.name))
             if expected_valid and issues:
                 first = issues[0]
                 self.add(
@@ -1865,7 +2507,9 @@ class FoundationValidator:
             for name, values in actions_policy.get("allowed_write_permissions", {}).items()
         }
         for path in sorted(workflow_dir.glob("*.y*ml")) if workflow_dir.is_dir() else []:
-            text = path.read_text(encoding="utf-8")
+            text = self._read_repository_text(path)
+            if text is None:
+                continue
             lines = text.splitlines()
             active_text = yaml_without_comments(text)
             active_lines = active_text.splitlines()
@@ -1964,7 +2608,10 @@ class FoundationValidator:
         path = self.root / ".github/dependabot.yml"
         if not path.is_file():
             return
-        text = yaml_without_comments(path.read_text(encoding="utf-8"))
+        source = self._read_repository_text(path)
+        if source is None:
+            return
+        text = yaml_without_comments(source)
         required_patterns = (
             r"package-ecosystem:\s*[\"']?github-actions[\"']?",
             r"directory:\s*[\"']?/[\"']?",
@@ -1975,7 +2622,10 @@ class FoundationValidator:
                 self.add("dependabot.configuration", path, f"missing required setting matching {pattern}")
         review_path = self.root / ".github/dependency-review-config.yml"
         if review_path.is_file():
-            review = yaml_without_comments(review_path.read_text(encoding="utf-8"))
+            review_source = self._read_repository_text(review_path)
+            if review_source is None:
+                return
+            review = yaml_without_comments(review_source)
             required_review_settings = {
                 "fail_on_severity: moderate": "moderate vulnerability threshold",
                 "comment_summary_in_pr: never": "no write-permission PR comment",
@@ -2252,9 +2902,12 @@ class FoundationValidator:
         path = self.root / ".github/CODEOWNERS"
         if not path.is_file():
             return
+        text = self._read_repository_text(path)
+        if text is None:
+            return
         active_lines = {
             line.strip()
-            for line in path.read_text(encoding="utf-8").splitlines()
+            for line in text.splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         }
         for required in self.policy["required_codeowners"]:
@@ -2269,7 +2922,10 @@ class FoundationValidator:
         path = self.root / "docs/DECISIONS.md"
         if not path.is_file():
             return
-        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+        source = self._read_repository_text(path)
+        if source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
         for gate, rule in self.policy["decision_gates"].items():
             decision = re.escape(rule.get("decision", ""))
             expected = rule.get("required_status")
@@ -2300,8 +2956,12 @@ class FoundationValidator:
         decisions_path = self.root / "docs/DECISIONS.md"
         if not path.is_file() or not charter_path.is_file() or not decisions_path.is_file():
             return
-        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
-        charter = charter_path.read_bytes()
+        source = self._read_repository_text(path)
+        charter = self._read_repository_bytes(charter_path)
+        decisions_source = self._read_repository_text(decisions_path)
+        if source is None or charter is None or decisions_source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
         start_marker = b"## 5. In scope for the 1.0 product\n"
         end_marker = b"## 6. Explicit non-goals for 1.0\n"
         start = charter.find(start_marker)
@@ -2332,7 +2992,7 @@ class FoundationValidator:
         known_decisions = set(
             re.findall(
                 r"(?m)^##\s+(D-[0-9]{3})\b",
-                markdown_without_fenced_blocks_and_comments(decisions_path.read_text(encoding="utf-8")),
+                markdown_without_fenced_blocks_and_comments(decisions_source),
             )
         )
         trace_states: dict[str, str] = {}
@@ -2400,7 +3060,10 @@ class FoundationValidator:
         path = self.root / "docs/USER_JOURNEYS.md"
         if not path.is_file():
             return
-        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+        source = self._read_repository_text(path)
+        if source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
         persona_intro = markdown_section(text, "## 1. Purpose and limits")
         persona_rows = table_rows(persona_intro, r"P-[0-9]{2}")
         if tuple(row[0] for row in persona_rows) != GATE0_PERSONA_IDS:
@@ -2513,7 +3176,10 @@ class FoundationValidator:
         path = self.root / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
         if not path.is_file():
             return
-        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+        source = self._read_repository_text(path)
+        if source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
         candidate_rows = table_rows(markdown_section(text, "## 2. Candidate parity and frozen inputs"), r"C-[0-9]{2}")
         if tuple(row[0] for row in candidate_rows) != ("C-01", "C-02"):
             self.add("proof_suite.candidates", path, "candidate table must contain C-01 and C-02 exactly once in order")
@@ -2565,7 +3231,10 @@ class FoundationValidator:
         path = self.root / "docs/PRODUCT_FORM_DECISION_PACKET.md"
         if not path.is_file():
             return
-        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+        source = self._read_repository_text(path)
+        if source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
 
         required_headings = (
             "Abstract",
@@ -2699,7 +3368,10 @@ class FoundationValidator:
         path = self.root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
         if not path.is_file():
             return
-        text = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+        source = self._read_repository_text(path)
+        if source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
 
         candidate_rows = table_rows(
             markdown_section(text, "## 2. Candidate architectures"),
@@ -2843,7 +3515,10 @@ class FoundationValidator:
                     self.add("record.template", path, f"{prefix}-0000 is reserved for the template")
                 candidates.append(path)
             for path in candidates:
-                parsed = front_matter(path)
+                record_source = self._read_repository_text(path)
+                if record_source is None:
+                    continue
+                parsed = parse_front_matter(record_source)
                 if parsed is None:
                     self.add("record.front_matter", path, "numbered record requires YAML front matter")
                     continue
@@ -2947,7 +3622,7 @@ class FoundationValidator:
                             "Rollback and revisit triggers",
                         )
                     )
-                    source = markdown_without_fenced_blocks_and_comments(path.read_text(encoding="utf-8"))
+                    source = markdown_without_fenced_blocks_and_comments(record_source)
                     for heading in required_headings:
                         body = markdown_section(source, f"## {heading}")
                         if len(body.strip()) < 20:
@@ -3013,11 +3688,18 @@ class FoundationValidator:
 
     def _validate_repository_templates(self) -> None:
         security = self.root / "SECURITY.md"
-        if security.is_file() and "https://github.com/chasebryan/orange/security/advisories/new" not in security.read_text(encoding="utf-8"):
-            self.add("security.private_reporting", security, "private vulnerability-reporting URL is missing")
+        if security.is_file():
+            security_text = self._read_repository_text(security)
+            if (
+                security_text is not None
+                and "https://github.com/chasebryan/orange/security/advisories/new" not in security_text
+            ):
+                self.add("security.private_reporting", security, "private vulnerability-reporting URL is missing")
         pr = self.root / ".github/pull_request_template.md"
         if pr.is_file():
-            text = pr.read_text(encoding="utf-8")
+            text = self._read_repository_text(pr)
+            if text is None:
+                return
             for heading in (
                 "## Summary",
                 "## Boundary and non-goals",
@@ -3317,8 +3999,8 @@ def parse_front_matter_value(value: str) -> Any:
     return value.strip("\"'")
 
 
-def front_matter(path: Path) -> tuple[dict[str, Any], list[str]] | None:
-    lines = path.read_text(encoding="utf-8").splitlines()
+def parse_front_matter(text: str) -> tuple[dict[str, Any], list[str]] | None:
+    lines = text.splitlines()
     if not lines or lines[0] != "---":
         return None
     result: dict[str, Any] = {}
@@ -3346,8 +4028,6 @@ def front_matter(path: Path) -> tuple[dict[str, Any], list[str]] | None:
         current_list = None
     errors.append("front matter is not closed")
     return result, errors
-
-
 def nonempty_scalar(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
@@ -3528,6 +4208,12 @@ def audit_schema_vocabulary(schema: Any, location: str = "$") -> list[str]:
     for key in string_keywords:
         if key in schema and not isinstance(schema[key], str):
             issues.append(f"{key} must be a string at {location}")
+    pattern = schema.get("pattern")
+    if isinstance(pattern, str):
+        try:
+            re.compile(pattern)
+        except re.error:
+            issues.append(f"invalid pattern expression {pattern!r} at {location}")
     type_value = schema.get("type")
     allowed_types = {"array", "boolean", "integer", "null", "number", "object", "string"}
     if type_value is not None:
@@ -3709,8 +4395,14 @@ def validate_schema_instance(
             issues.append(SchemaIssue("minLength", instance_path, "string is too short"))
         if "maxLength" in schema and len(instance) > schema["maxLength"]:
             issues.append(SchemaIssue("maxLength", instance_path, "string is too long"))
-        if "pattern" in schema and re.search(schema["pattern"], instance) is None:
-            issues.append(SchemaIssue("pattern", instance_path, "string does not match pattern"))
+        if "pattern" in schema:
+            try:
+                pattern = re.compile(schema["pattern"])
+            except (re.error, TypeError):
+                issues.append(SchemaIssue("pattern", instance_path, "schema pattern expression is invalid"))
+            else:
+                if pattern.search(instance) is None:
+                    issues.append(SchemaIssue("pattern", instance_path, "string does not match pattern"))
         if "format" in schema and not valid_format(instance, schema["format"]):
             issues.append(SchemaIssue("format", instance_path, f"invalid {schema['format']} value"))
     if isinstance(instance, (int, float)) and not isinstance(instance, bool):
@@ -3873,6 +4565,30 @@ def json_type_matches(value: Any, expected: Any) -> bool:
     }.get(expected, False)
 
 
+RFC3986_LITERAL_CHARACTERS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    "0123456789-._~:/?#[]@!$&'()*+,;="
+)
+RFC3986_HEX_DIGITS = frozenset("0123456789ABCDEFabcdef")
+
+
+def has_valid_rfc3986_lexical_form(value: str) -> bool:
+    """Reject octets and malformed percent escapes outside RFC 3986 syntax."""
+    if not value.isascii():
+        return False
+    for index, character in enumerate(value):
+        if character == "%":
+            if index + 2 >= len(value):
+                return False
+            if value[index + 1] not in RFC3986_HEX_DIGITS:
+                return False
+            if value[index + 2] not in RFC3986_HEX_DIGITS:
+                return False
+        elif character not in RFC3986_LITERAL_CHARACTERS:
+            return False
+    return True
+
+
 def valid_format(value: str, format_name: str) -> bool:
     try:
         if format_name == "date":
@@ -3882,9 +4598,13 @@ def valid_format(value: str, format_name: str) -> bool:
             parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
             return parsed.tzinfo is not None
         if format_name == "uri":
+            if not has_valid_rfc3986_lexical_form(value):
+                return False
             parsed = urlsplit(value)
             return bool(parsed.scheme)
         if format_name == "uri-reference":
+            if not has_valid_rfc3986_lexical_form(value):
+                return False
             urlsplit(value)
             return True
     except (TypeError, ValueError):

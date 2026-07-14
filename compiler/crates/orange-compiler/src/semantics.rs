@@ -25,15 +25,41 @@ pub const MAX_SEMANTIC_EVENTS_PER_SOURCE: usize = 1_048_576;
 pub const MAX_INTEGER_BITS: usize = 16_384;
 
 /// The complete result of semantic analysis.
+///
+/// ```compile_fail
+/// use orange_compiler::AnalysisResult;
+///
+/// fn replace_core(result: &mut AnalysisResult) {
+///     result.core = None;
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnalysisResult {
     /// Typed Core, present only when semantic analysis produced no diagnostics.
-    pub core: Option<CoreModule>,
+    core: Option<CoreModule>,
     /// Semantic and semantic-resource diagnostics in deterministic source order.
-    pub diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl AnalysisResult {
+    /// Returns the complete typed Core module, or `None` after analysis failure.
+    #[must_use]
+    pub const fn core(&self) -> Option<&CoreModule> {
+        self.core.as_ref()
+    }
+
+    /// Returns semantic diagnostics in deterministic source order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Consumes this result and returns its complete typed Core module, if produced.
+    #[must_use]
+    pub fn into_core(self) -> Option<CoreModule> {
+        self.core
+    }
+
     /// Returns whether semantic analysis did not produce a complete Core module.
     #[must_use]
     pub fn has_errors(&self) -> bool {
@@ -47,6 +73,20 @@ impl AnalysisResult {
 /// The first semantic fragment assigns meaning only to typed `spec` functions.
 #[must_use]
 pub fn analyze(source: &SourceFile, ast: &SyntaxTree) -> AnalysisResult {
+    if ast.span.source() != source.id() {
+        return AnalysisResult {
+            core: None,
+            diagnostics: vec![
+                Diagnostic::error(
+                    DiagnosticCode::InvalidSemanticInput,
+                    "semantic analysis received a syntax tree owned by another source",
+                    source.lexer_span(0, 0),
+                )
+                .with_label("analysis stopped at this source boundary")
+                .with_note("parse and analyze each syntax tree with the same source file"),
+            ],
+        };
+    }
     Analyzer::new(source, ast, Limits::DEFAULT).run()
 }
 
@@ -84,7 +124,6 @@ struct PendingFunction {
     span: Span,
     name: String,
     name_span: Span,
-    result_type: CoreType,
     value: CoreValue,
 }
 
@@ -176,7 +215,6 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             span: function.span,
             name: function.name.text.clone(),
             name_span: function.name.span,
-            result_type,
             value,
         })
     }
@@ -207,7 +245,6 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 span: pending_function.span,
                 name: pending_function.name,
                 name_span: pending_function.name_span,
-                result_type: pending_function.result_type,
                 value: pending_function.value,
             });
         }
@@ -487,8 +524,8 @@ mod tests {
                 let lexed = lex(source, Edition::E2026);
                 assert_eq!(lexed.diagnostics(), []);
                 let parsed = parse(source, &lexed);
-                assert_eq!(parsed.diagnostics, []);
-                parsed.ast.unwrap()
+                assert_eq!(parsed.diagnostics(), []);
+                parsed.into_ast().unwrap()
             };
             Self { sources, id, ast }
         }
@@ -504,6 +541,67 @@ mod tests {
         fn analyze_with(&self, limits: Limits) -> AnalysisResult {
             Analyzer::new(self.source(), &self.ast, limits).run()
         }
+    }
+
+    #[test]
+    fn rejects_same_index_syntax_trees_from_another_source_map_repeatably() {
+        let text = "edition 2026; module values { spec value() -> Int { 1 } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+
+        let first_result = analyze(second.source(), &first.ast);
+        let second_result = analyze(second.source(), &first.ast);
+
+        assert_eq!(first_result, second_result);
+        assert!(first_result.core.is_none());
+        assert_eq!(first_result.diagnostics.len(), 1);
+        assert_eq!(
+            first_result.diagnostics[0].code(),
+            DiagnosticCode::InvalidSemanticInput
+        );
+        assert_eq!(
+            first_result.diagnostics[0].primary_span().source(),
+            second.source().id()
+        );
+        assert!(first_result.diagnostics[0].primary_span().is_empty());
+        assert_eq!(
+            first_result.diagnostics[0].primary_span().start().bytes(),
+            0
+        );
+        assert_eq!(
+            crate::diagnostic::render_diagnostics(&second.sources, &first_result.diagnostics),
+            concat!(
+                "error[ORC0210]: semantic analysis received a syntax tree owned by another source\n",
+                " --> semantic.or:1:1\n",
+                "  |\n",
+                "1 | edition 2026; module values { spec value() -> Int { 1 } }\n",
+                "  | ^ analysis stopped at this source boundary\n",
+                "  = note: parse and analyze each syntax tree with the same source file\n",
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_another_file_from_the_same_source_map() {
+        let text = "edition 2026; module values { spec value() -> Int { 1 } }\n";
+        let mut sources = SourceMap::new();
+        let first_id = sources.add("first.or", text).unwrap();
+        let second_id = sources.add("second.or", text).unwrap();
+        let ast = {
+            let first = sources.get(first_id).unwrap();
+            let lexed = lex(first, Edition::E2026);
+            parse(first, &lexed).into_ast().unwrap()
+        };
+
+        let result = analyze(sources.get(second_id).unwrap(), &ast);
+
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::InvalidSemanticInput
+        );
+        assert_eq!(result.diagnostics[0].primary_span().source(), second_id);
     }
 
     #[test]
