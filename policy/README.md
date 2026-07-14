@@ -86,6 +86,11 @@ glob or ordinary path-status probe that could traverse ignored or concurrently
 replaced directories. Markdown fragment validation computes each target's
 anchor set once per run, so repeated links cannot multiply target scans. Links
 inside HTML comments or fenced examples are not treated as live navigation.
+Inline navigation scanning preserves balanced and escaped destinations, nested
+image/link depth, multiline link text, and CommonMark line continuations.
+Reference definitions admit escaped or multiline labels through the normative
+999-character boundary. Every discovered target must be a valid URI reference;
+local targets and Markdown fragments must resolve inside the admitted tree.
 Local link percent escapes must be complete and decode as strict UTF-8, preventing
 lossy filename aliases. HTML comment balance is scanned directly outside code
 fences, without collision-prone replacement sentinels or whole-file match lists.

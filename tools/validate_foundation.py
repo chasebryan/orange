@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "800b20cd3938fafcc052e3adca4fdd1ebce99afe50c91de816b90f0d87561c53"
+GATE0_PROTECTED_FILE_DIGEST = "3d23de7151e4131ab6424a44cb8eda96bea88775719053a9d54b1e0b2dfc2ae5"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
