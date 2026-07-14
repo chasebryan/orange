@@ -385,7 +385,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 79f346e2dd263dc004c8e02de2a67df470cfc9f93c5a65f17d8305b32e54048c
+policy/README.md 4afebdc72da50b224b6d71c1cd9fede02dc097da809b17e792fbb4faf5ed0721
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -397,7 +397,7 @@ scripts/ci/check-repository 252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a8
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
 tools/tests/test_validate_foundation.py e4891051a30f0971c311409a13b002d08abd0cd0ebf0bb5655954fa904677b89
-tools/tests/test_validate_foundation_hardening.py f5e7a32dd741070788fb92842bdbd6326878c30e155ee6b32e3865c6531ab2db
+tools/tests/test_validate_foundation_hardening.py e4874f8766a223a54c54ac28cd58fd7353fb75685c51f3a1f202f21621c3f89d
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -658,6 +658,18 @@ class SchemaIssue:
     keyword: str
     instance_path: str
     message: str
+
+
+class _BoundedSchemaIssues(list[SchemaIssue]):
+    def append(self, issue: SchemaIssue) -> None:
+        if len(self) < GATE0_MAXIMUM_FINDINGS:
+            super().append(issue)
+
+    def extend(self, issues: Iterable[SchemaIssue]) -> None:
+        for issue in issues:
+            self.append(issue)
+            if len(self) == GATE0_MAXIMUM_FINDINGS:
+                break
 
 
 def _object_without_duplicates(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
@@ -4832,47 +4844,13 @@ def parse_iso_date(value: Any) -> dt.date | None:
         return None
 
 
-SUPPORTED_SCHEMA_KEYWORDS = {
-    "$comment",
-    "$defs",
-    "$id",
-    "$ref",
-    "$schema",
-    "additionalProperties",
-    "allOf",
-    "anyOf",
-    "const",
-    "default",
-    "deprecated",
-    "description",
-    "enum",
-    "examples",
-    "exclusiveMaximum",
-    "exclusiveMinimum",
-    "format",
-    "items",
-    "maxItems",
-    "maxLength",
-    "maxProperties",
-    "maximum",
-    "minItems",
-    "minLength",
-    "minProperties",
-    "minimum",
-    "multipleOf",
-    "not",
-    "oneOf",
-    "pattern",
-    "patternProperties",
-    "prefixItems",
-    "properties",
-    "readOnly",
-    "required",
-    "title",
-    "type",
-    "uniqueItems",
-    "writeOnly",
-}
+SUPPORTED_SCHEMA_KEYWORDS = set(
+    """$comment $defs $id $ref $schema additionalProperties allOf anyOf const
+default deprecated description enum examples exclusiveMaximum exclusiveMinimum format
+items maxItems maxLength maxProperties maximum minItems minLength minProperties minimum
+multipleOf not oneOf pattern patternProperties prefixItems properties readOnly required title
+type uniqueItems writeOnly""".split()
+)
 
 
 def audit_schema_vocabulary(schema: Any, location: str = "$") -> list[str]:
@@ -5001,7 +4979,7 @@ def validate_schema_instance(
         return []
     if root_schema is None:
         root_schema = schema
-    issues: list[SchemaIssue] = []
+    issues: list[SchemaIssue] = _BoundedSchemaIssues()
     if "$ref" in schema:
         resolved = resolve_schema_ref(str(schema["$ref"]), schema_path, root_schema, schemas, id_registry)
         if resolved is None:

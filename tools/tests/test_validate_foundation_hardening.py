@@ -2283,6 +2283,18 @@ class PlanningTraceHardeningTests(unittest.TestCase):
 
 
 class SchemaDeterminismTests(unittest.TestCase):
+    def test_schema_issue_retention_is_bounded(self) -> None:
+        schema_path = Path("/virtual/record.schema.json")
+        schema = {
+            "type": "object",
+            "required": [f"missing-{index}" for index in range(GATE0_MAXIMUM_FINDINGS + 100)],
+        }
+        issues = validate_schema_instance({}, schema, schema_path, {schema_path: schema}, {})
+
+        self.assertEqual(len(issues), GATE0_MAXIMUM_FINDINGS)
+        self.assertIn("missing-0", issues[0].message)
+        self.assertIn(f"missing-{GATE0_MAXIMUM_FINDINGS - 1}", issues[-1].message)
+
     def test_additional_property_issues_are_sorted(self) -> None:
         schema_path = Path("/virtual/record.schema.json")
         schema = {
