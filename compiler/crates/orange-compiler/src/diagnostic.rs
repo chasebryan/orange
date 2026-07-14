@@ -447,13 +447,13 @@ fn render_excerpt(
     if left_truncated {
         excerpt.push_str("... ");
     }
-    excerpt.push_str(&sanitize_inline(&line[window_start..window_end]));
+    excerpt.push_str(&sanitize_source_inline(&line[window_start..window_end]));
     if right_truncated {
         excerpt.push_str(" ...");
     }
 
-    let caret_offset =
-        usize::from(left_truncated) * 4 + sanitized_width(&line[window_start..relative_start]);
+    let caret_offset = usize::from(left_truncated) * 4
+        + sanitized_source_width(&line[window_start..relative_start]);
     let relative_end = usize::try_from(span.end().bytes().saturating_sub(line_start.bytes()))
         .unwrap_or(line.len())
         .min(window_end)
@@ -463,7 +463,7 @@ fn render_excerpt(
         {
             1
         } else {
-            sanitized_width(&line[relative_start..relative_end]).max(1)
+            sanitized_source_width(&line[relative_start..relative_end]).max(1)
         };
     (excerpt, caret_offset, caret_width)
 }
@@ -471,9 +471,7 @@ fn render_excerpt(
 fn sanitize_inline(text: &str) -> String {
     let mut sanitized = String::new();
     for character in text.chars() {
-        if character == '\t' {
-            sanitized.push_str("    ");
-        } else if character.is_control() || is_bidi_control(character) {
+        if !character.is_ascii_graphic() && character != ' ' {
             sanitized.extend(character.escape_default());
         } else {
             sanitized.push(character);
@@ -482,25 +480,28 @@ fn sanitize_inline(text: &str) -> String {
     sanitized
 }
 
-fn sanitized_width(text: &str) -> usize {
+fn sanitize_source_inline(text: &str) -> String {
+    let mut sanitized = String::new();
+    for character in text.chars() {
+        if character == '\\' || (!character.is_ascii_graphic() && character != ' ') {
+            sanitized.extend(character.escape_default());
+        } else {
+            sanitized.push(character);
+        }
+    }
+    sanitized
+}
+
+fn sanitized_source_width(text: &str) -> usize {
     text.chars()
         .map(|character| {
-            if character == '\t' {
-                4
-            } else if character.is_control() || is_bidi_control(character) {
+            if character == '\\' || (!character.is_ascii_graphic() && character != ' ') {
                 character.escape_default().count()
             } else {
                 1
             }
         })
         .sum()
-}
-
-const fn is_bidi_control(character: char) -> bool {
-    matches!(
-        character,
-        '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
-    )
 }
 
 #[cfg(test)]
@@ -524,15 +525,49 @@ mod tests {
 
         assert_eq!(
             render_diagnostics(&sources, &[diagnostic]),
-            concat!(
-                "error[ORC0001]: unexpected character '@'\n",
-                " --> sample.or:1:7\n",
-                "  |\n",
-                "1 |     let é@\n",
-                "  |          ^ character is not part of Orange 2026\n",
-                "  = note: identifiers are ASCII in this pre-alpha edition\n",
+            format!(
+                concat!(
+                    "error[ORC0001]: unexpected character '@'\n",
+                    " --> sample.or:1:7\n",
+                    "  |\n",
+                    "1 | \\tlet \\u{{e9}}@\n",
+                    "  | {caret}^ character is not part of Orange 2026\n",
+                    "  = note: identifiers are ASCII in this pre-alpha edition\n",
+                ),
+                caret = " ".repeat(12),
             )
         );
+    }
+
+    #[test]
+    fn escaping_distinguishes_tabs_spaces_backslashes_and_unicode() {
+        let source = "\t\\    é";
+        let sanitized = sanitize_source_inline(source);
+
+        assert_eq!(sanitized, r"\t\\    \u{e9}");
+        assert_eq!(sanitized_source_width(source), sanitized.chars().count());
+    }
+
+    #[test]
+    fn escapes_non_ascii_source_text_with_matching_caret_width() {
+        let mut sources = SourceMap::new();
+        let text = "a\u{200b}🟠@\n";
+        let id = sources.add("sample.or", text).unwrap();
+        let source = sources.get(id).unwrap();
+        let at = u32::try_from(text.find('@').unwrap()).unwrap();
+        let span = source
+            .span(TextOffset::new(at), TextOffset::new(at + 1))
+            .unwrap();
+        let diagnostic = Diagnostic::error(
+            DiagnosticCode::UnexpectedCharacter,
+            "unexpected character '@'",
+            span,
+        );
+
+        let rendered = render_diagnostics(&sources, &[diagnostic]);
+        assert!(rendered.is_ascii());
+        assert!(rendered.contains("1 | a\\u{200b}\\u{1f7e0}@\n"));
+        assert!(rendered.contains(&format!("  | {}^\n", " ".repeat(18))));
     }
 
     #[test]

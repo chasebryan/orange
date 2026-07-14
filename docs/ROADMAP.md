@@ -305,8 +305,10 @@ The unapproved
 [D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md) and the
 conditional
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md)
-define the owner-executable research that may run ahead. Neither packet decides
-its subject or authorizes S3b; the D-004 suite retains a zero-evidence baseline.
+define the owner-reviewable decision research that may run ahead. D-003 intake
+and D-004 pre-freeze closure may proceed, but measured D-004 execution awaits
+recorded conditional authority and a frozen packet. Neither packet decides its
+subject or authorizes S3b; the D-004 suite retains a zero-evidence baseline.
 
 ## 7. Quality and claim metrics
 

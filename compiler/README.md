@@ -37,12 +37,25 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance
 `orangec` accepts up to 256 source inputs in argument order. Regular files are
 processed incrementally; `-` is the only stream input and reads standard input
 at most once. `eval` accepts exactly one source and emits no partial result after
-an error. Successful `check` commands are silent. Diagnostics go to standard
-error and use exit status 1; command-line usage errors use status 2. A source
+a language or evaluation error. Successful `check` commands are silent.
+Diagnostics go to standard error and use exit status 1; command-line usage
+errors use status 2. A source
 with lexical errors is not parsed, and a source with syntax errors is not
-analyzed. File and standard-input reads stop at a deterministic 16 MiB
-per-source limit. Larger inputs fail with `ORC1003` before lexing and are never
-buffered without a bound.
+analyzed. Output I/O failures use status 1; a broken pipe remains quiet but is
+not reported as successful evaluation. Displayed source names and echoed
+command or option text escape control and non-ASCII data; invalid encoded path
+bytes use `\xNN` escapes instead of lossy replacement. File and standard-input
+reads stop at a deterministic 16 MiB per-source limit. Larger inputs fail with
+`ORC1003` before lexing and are never buffered without a bound.
+
+Accepted S3a has no separate evaluation-output byte limit. Each successful
+output line repeats the module name, so a source with a long module name and
+many typed specifications can request output much larger than its input. The
+CLI streams values only after complete analysis and evaluation, which bounds
+compiler-owned output buffering but does not bound the requested bytes or time.
+Apply caller-side output and time limits before using `orangec eval` on
+untrusted sources. Adding a fail-closed output ceiling requires an explicit
+edition-aware semantic decision because it would change accepted S3a behavior.
 
 ## Frozen lexical boundary
 
