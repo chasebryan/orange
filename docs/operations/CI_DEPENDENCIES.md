@@ -155,7 +155,8 @@ enforcement mechanism.
 The required invariant check invokes repository-owned Bash and Python files:
 
 - [`scripts/ci/check-repository`](../../scripts/ci/check-repository) sets the
-  locale and timezone, fixes the source-date epoch to zero, then runs the closed-tree
+  locale and timezone, resolves and enters the physical repository root, fixes
+  the source-date epoch to zero, then runs the closed-tree
   [`tools/validate_foundation.py`](../../tools/validate_foundation.py) gate,
   the standard-library `unittest` suite, and the Rust compiler checks in that
   serialized order; before Make starts, it removes inherited Make control and
