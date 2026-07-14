@@ -530,7 +530,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             root = parent / "repository"
             root.mkdir()
             fake_git = parent / "git"
-            fake_git.write_text("#!/bin/sh\n/bin/sleep 60\n", encoding="utf-8")
+            fake_git.write_text("#!/bin/sh\nprintf x\n/bin/sleep 1\n", encoding="utf-8")
             fake_git.chmod(0o700)
             findings = []
             with (
