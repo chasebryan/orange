@@ -53,7 +53,7 @@ release evidence.
 
 | Workflow | Trigger and role | Direct external execution dependencies | Network or hosted-state boundary |
 | --- | --- | --- | --- |
-| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | rustup explicitly installs the pinned minimal toolchain with Clippy and rustfmt; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
+| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | An allowlisted environment runs rustup to install the pinned minimal toolchain with Clippy and rustfmt; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
 | `dependency-review.yml` | Pull-request and merge-queue dependency-policy signal | Checkout and Dependency Review | Depends on GitHub's dependency graph, API, and event comparison state |
 | `external-links.yml` | `main`, scheduled, and manual link observation | Checkout and lychee | Downloads lychee and queries every non-excluded external endpoint at run time |
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
@@ -154,8 +154,8 @@ enforcement mechanism.
 
 The required invariant check invokes repository-owned Bash and Python files:
 
-- [`scripts/ci/check-repository`](../../scripts/ci/check-repository) sets
-  locale, timezone, and source-date variables, then runs the closed-tree
+- [`scripts/ci/check-repository`](../../scripts/ci/check-repository) sets the
+  locale and timezone, fixes the source-date epoch to zero, then runs the closed-tree
   [`tools/validate_foundation.py`](../../tools/validate_foundation.py) gate,
   the standard-library `unittest` suite, and the Rust compiler checks in that
   serialized order; before Make starts, it removes inherited Make control and

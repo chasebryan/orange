@@ -11,6 +11,7 @@ check: check-policy test-policy check-compiler
 check-compiler:
 	@set -euo pipefail; \
 	cargo_home="$$(mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX")"; \
+	cargo_home="$$(cd -- "$$cargo_home" && pwd -P)"; \
 	trap 'rm -rf -- "$$cargo_home"' EXIT; \
 	run_cargo() { \
 		( \

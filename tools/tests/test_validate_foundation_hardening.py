@@ -300,6 +300,14 @@ jobs:
                 )
                 self.assertIn("workflow.scorecard_publication", {finding.code for finding in validator.findings})
 
+    def test_repository_launcher_fixes_the_build_epoch(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        launcher = (source_root / "scripts/ci/check-repository").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("export SOURCE_DATE_EPOCH=0\n", launcher)
+        self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
+
     def test_ci_bash_helpers_use_hardened_startup_and_bounded_installers(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         for name in ("check-external-links", "install-actionlint", "install-lychee"):
@@ -425,6 +433,13 @@ jobs:
                 )
                 self.assertEqual(workflow.count(shell), 1)
                 self.assertNotIn("shell: bash\n", workflow)
+        ci = (source_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            'run: env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC '
+            "rustup toolchain install 1.96.1 --profile minimal "
+            "--component clippy,rustfmt --no-self-update",
+            ci,
+        )
 
 
 class PolicyShapeHardeningTests(unittest.TestCase):
@@ -1421,6 +1436,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.entrypoint_contract",
             ),
             ("env -i", "env", "make.compiler_environment_contract"),
+            (
+                'cargo_home="$$(cd -- "$$cargo_home" && pwd -P)"',
+                'cargo_home="$$cargo_home"',
+                "make.compiler_environment_contract",
+            ),
             (
                 "RUSTUP_TOOLCHAIN=1.96.1",
                 "RUSTUP_TOOLCHAIN=stable",

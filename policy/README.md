@@ -33,8 +33,9 @@ interpreter's standard library before it accepts the closed tree; foundation
 tests add the already validated checkout to `sys.path` only after that startup
 and redirect bytecode lookup to a fresh temporary root.
 
-Compiler checks likewise run through a protected Make recipe with a fresh Cargo
-home, fresh target tree, and allowlisted environment. It invokes Cargo from the
+Compiler checks likewise run through a protected Make recipe with a fresh,
+canonical absolute Cargo home, fresh target tree, and allowlisted environment.
+It invokes Cargo from the
 filesystem root with the exact selected toolchain, preventing caller wrapper
 variables, flags, target runners, home or ancestor Cargo configuration, and
 ignored prior build artifacts from steering the build after policy validation.
