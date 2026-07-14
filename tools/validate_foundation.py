@@ -390,7 +390,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "e658c77281ddcd18785254e608b1eba4140053b33779652b061db1dfc30a7300",
-    "tools/tests/test_validate_foundation_hardening.py": "5646aba7a2ea88f05a5088f48a55f136e9d4818882a16f065a512bd1bc19ee43",
+    "tools/tests/test_validate_foundation_hardening.py": "663fb82719932603ee013b02bfd0b134cdc3e0e05b42133ae491f3eb516bc4e4",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -1403,6 +1403,7 @@ class FoundationValidator:
         return sorted(set(self.findings))
 
     def _load_and_validate_policy(self) -> None:
+        finding_count = len(self.findings)
         if not self.policy_path.is_file():
             self.add("policy.missing", self.policy_path, "solo-bootstrap repository policy is missing")
             return
@@ -1444,7 +1445,100 @@ class FoundationValidator:
                     self.policy_path,
                     f"{key!r} must be {expected_type.__name__}",
                 )
-        if any(f.code.startswith("policy.") and f.code != "policy.missing" for f in self.findings):
+        if len(self.findings) != finding_count:
+            return
+        string_list_keys = (
+            "allowed_top_level_paths",
+            "required_paths",
+            "forbidden_paths",
+            "required_workflows",
+            "workflow_inventory",
+            "executable_paths",
+            "required_codeowners",
+        )
+        for key in string_list_keys:
+            if not all(isinstance(value, str) and value for value in policy[key]):
+                self.add("policy.value", self.policy_path, f"{key} must contain non-empty strings")
+        for key in ("required_paths", "forbidden_paths"):
+            if any(isinstance(value, str) and "\0" in value for value in policy[key]):
+                self.add("policy.value", self.policy_path, f"{key} contains an invalid path string")
+
+        expected_binary_fields = {"path", "sha256", "role", "provenance"}
+        for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
+            if not isinstance(artifact, dict):
+                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] must be an object")
+                continue
+            if set(artifact) != expected_binary_fields:
+                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has invalid fields")
+                continue
+            if not all(isinstance(artifact[field], str) for field in expected_binary_fields):
+                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] fields must be strings")
+
+        action_policy = policy["github_actions"]
+        action_field_types = {
+            "allowed_action_repositories": list,
+            "allowed_container_images": list,
+            "allowed_write_permissions": dict,
+            "forbidden_events": list,
+            "require_full_commit_sha": bool,
+            "require_version_comment": bool,
+        }
+        for key, expected_type in action_field_types.items():
+            if not isinstance(action_policy.get(key), expected_type):
+                self.add(
+                    "policy.type",
+                    self.policy_path,
+                    f"github_actions.{key} must be {expected_type.__name__}",
+                )
+        for key in ("allowed_action_repositories", "allowed_container_images", "forbidden_events"):
+            values = action_policy.get(key)
+            if isinstance(values, list) and not all(isinstance(value, str) and value for value in values):
+                self.add(
+                    "policy.value",
+                    self.policy_path,
+                    f"github_actions.{key} must contain non-empty strings",
+                )
+            elif isinstance(values, list) and len(values) != len(set(values)):
+                self.add(
+                    "policy.duplicate",
+                    self.policy_path,
+                    f"github_actions.{key} contains duplicate values",
+                )
+        write_permissions = action_policy.get("allowed_write_permissions")
+        if isinstance(write_permissions, dict) and not all(
+            isinstance(name, str)
+            and name
+            and isinstance(values, list)
+            and all(isinstance(value, str) and value for value in values)
+            for name, values in write_permissions.items()
+        ):
+            self.add(
+                "policy.value",
+                self.policy_path,
+                "github_actions.allowed_write_permissions must map names to string arrays",
+            )
+        elif isinstance(write_permissions, dict):
+            for values in write_permissions.values():
+                if len(values) != len(set(values)):
+                    self.add(
+                        "policy.duplicate",
+                        self.policy_path,
+                        "github_actions.allowed_write_permissions contains duplicate values",
+                    )
+        protected_digests = policy["protected_file_digests"]
+        if not all(
+            isinstance(path, str)
+            and path
+            and isinstance(digest, str)
+            and re.fullmatch(r"[0-9a-f]{64}", digest)
+            for path, digest in protected_digests.items()
+        ):
+            self.add(
+                "policy.value",
+                self.policy_path,
+                "protected_file_digests must map non-empty paths to lowercase SHA-256 values",
+            )
+        if len(self.findings) != finding_count:
             return
         if policy["repository"] != "chasebryan/orange":
             self.add("policy.scope", self.policy_path, "repository must remain chasebryan/orange")
@@ -1456,17 +1550,8 @@ class FoundationValidator:
             self.add("policy.steward", self.policy_path, "bootstrap steward must remain chasebryan")
         if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", policy["policy_version"]):
             self.add("policy.version", self.policy_path, "solo-bootstrap policy version must be a 0.x semantic version")
-        for key in (
-            "required_paths",
-            "forbidden_paths",
-            "required_workflows",
-            "workflow_inventory",
-            "executable_paths",
-            "required_codeowners",
-        ):
+        for key in string_list_keys:
             values = policy[key]
-            if not all(isinstance(value, str) and value for value in values):
-                self.add("policy.value", self.policy_path, f"{key} must contain non-empty strings")
             if len(values) != len(set(values)):
                 self.add("policy.duplicate", self.policy_path, f"{key} contains duplicate values")
         minimum_sets = {
@@ -1595,7 +1680,8 @@ class FoundationValidator:
         }
         if policy["decision_gates"] != expected_decisions:
             self.add("policy.decision_gates", self.policy_path, "solo-bootstrap decision gates must remain exact")
-        self.policy = policy
+        if len(self.findings) == finding_count:
+            self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
         """Fail closed if a security-critical Gate 0 file differs from reviewed bytes."""
@@ -1732,15 +1818,15 @@ class FoundationValidator:
                     )
 
     def _policy_path(self, value: str) -> Path | None:
-        pure = PurePosixPath(value)
-        if pure.is_absolute() or ".." in pure.parts:
-            self.add("policy.unsafe_path", self.policy_path, f"unsafe repository path {value!r}")
-            return None
-        resolved = (self.root / pure).resolve()
         try:
+            pure = PurePosixPath(value)
+            if pure.is_absolute() or ".." in pure.parts:
+                self.add("policy.unsafe_path", self.policy_path, "repository path is not a safe relative path")
+                return None
+            resolved = (self.root / pure).resolve()
             resolved.relative_to(self.root)
-        except ValueError:
-            self.add("policy.unsafe_path", self.policy_path, f"path escapes repository: {value!r}")
+        except (OSError, TypeError, ValueError):
+            self.add("policy.unsafe_path", self.policy_path, "repository path is not a safe relative path")
             return None
         return resolved
 
@@ -2089,7 +2175,7 @@ class FoundationValidator:
                 self.add("brand.manifest_item", manifest_path, f"assets[{index}] must be an object")
                 continue
             name = item.get("path")
-            if name not in GATE0_BRAND_ASSET_METADATA:
+            if not isinstance(name, str) or name not in GATE0_BRAND_ASSET_METADATA:
                 self.add("brand.manifest_item", manifest_path, f"assets[{index}] has an unadmitted path")
                 continue
             media_type, width, height, alpha, has_c2pa = GATE0_BRAND_ASSET_METADATA[name]
@@ -3890,13 +3976,15 @@ def strip_yaml_comment(line: str) -> str:
 
 
 def safe_manifest_path(root: Path, value: str) -> Path | None:
-    pure = PurePosixPath(value)
-    if pure.is_absolute() or ".." in pure.parts:
+    if not isinstance(value, str) or not value:
         return None
-    candidate = (root / pure).resolve()
     try:
+        pure = PurePosixPath(value)
+        if pure.is_absolute() or ".." in pure.parts:
+            return None
+        candidate = (root / pure).resolve()
         candidate.relative_to(root.resolve())
-    except ValueError:
+    except (OSError, ValueError):
         return None
     return candidate
 
