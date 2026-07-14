@@ -390,7 +390,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "e658c77281ddcd18785254e608b1eba4140053b33779652b061db1dfc30a7300",
-    "tools/tests/test_validate_foundation_hardening.py": "2a1f3f4aa06597989ca4b6054adbc65ccf793d89174875a832ba2a46c28d5cc2",
+    "tools/tests/test_validate_foundation_hardening.py": "5646aba7a2ea88f05a5088f48a55f136e9d4818882a16f065a512bd1bc19ee43",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -3136,8 +3136,9 @@ class FoundationValidator:
                 if f"**{label}:**" not in body:
                     self.add("journey.spec_field", path, f"{journey_id} is missing {label}")
             flow = body.split("**Ordered flow:**", 1)[1].split("**Fail-closed outcomes:**", 1)[0] if "**Ordered flow:**" in body and "**Fail-closed outcomes:**" in body else ""
-            numbers = [int(value) for value in re.findall(r"(?m)^([1-9][0-9]*)\.\s", flow)]
-            if not numbers or numbers != list(range(1, len(numbers) + 1)):
+            numbers = re.findall(r"(?m)^([1-9][0-9]*)\.\s", flow)
+            expected_numbers = [str(index) for index in range(1, len(numbers) + 1)]
+            if not numbers or numbers != expected_numbers:
                 self.add("journey.flow_order", path, f"{journey_id} needs a consecutive ordered flow")
 
         if any(not owners for owners in primary_owners.values()):
@@ -3200,6 +3201,8 @@ class FoundationValidator:
         candidate_rows = table_rows(markdown_section(text, "## 2. Candidate parity and frozen inputs"), r"C-[0-9]{2}")
         if tuple(row[0] for row in candidate_rows) != ("C-01", "C-02"):
             self.add("proof_suite.candidates", path, "candidate table must contain C-01 and C-02 exactly once in order")
+        elif any(len(row) != 4 for row in candidate_rows):
+            self.add("proof_suite.candidates", path, "candidate rows must contain exactly four table fields")
         elif [row[1] for row in candidate_rows] != ["Rocq", "Lean 4"]:
             self.add("proof_suite.candidates", path, "C-01 and C-02 must remain Rocq and Lean 4")
         for row in candidate_rows:
@@ -3231,8 +3234,8 @@ class FoundationValidator:
         if tuple(row[0] for row in metric_rows) != metric_ids or any(len(row) != 4 for row in metric_rows):
             self.add("proof_suite.metrics", path, "metrics must cover M-01 through M-18 exactly once with four fields")
         hard_gates = markdown_section(text, "## 5. Hard gates and anti-gaming rules")
-        gate_numbers = [int(value) for value in re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates)]
-        if gate_numbers != list(range(1, 9)):
+        gate_numbers = re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates)
+        if gate_numbers != [str(index) for index in range(1, 9)]:
             self.add("proof_suite.hard_gates", path, "hard gates must remain the ordered non-compensable set 1 through 8")
         normalized_text = re.sub(r"\s+", " ", text)
         for assertion in (

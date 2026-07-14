@@ -1571,6 +1571,14 @@ class PlanningTraceHardeningTests(unittest.TestCase):
         for name in ("DECISIONS.md", "GATE0_TRACEABILITY.md", "PROJECT_CHARTER.md", "USER_JOURNEYS.md"):
             shutil.copyfile(source / name, docs / name)
 
+    def _copy_proof_suite(self, root: Path) -> Path:
+        docs = root / "docs"
+        docs.mkdir(exist_ok=True)
+        source = Path(__file__).resolve().parents[2] / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
+        target = docs / source.name
+        shutil.copyfile(source, target)
+        return target
+
     def test_duplicate_feature_identifier_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1606,19 +1614,85 @@ class PlanningTraceHardeningTests(unittest.TestCase):
             self.assertIn("journey.operation_ref", codes)
             self.assertIn("journey.operation_coverage", codes)
 
+    def test_oversized_journey_flow_ordinal_is_rejected_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_planning_docs(root)
+            path = root / "docs/USER_JOURNEYS.md"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace("1. Select", f"{'9' * 4301}. Select", 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_user_journeys()
+            self.assertIn("journey.flow_order", {finding.code for finding in validator.findings})
+
     def test_missing_proof_suite_case_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            docs = root / "docs"
-            docs.mkdir()
-            source = Path(__file__).resolve().parents[2] / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
-            target = docs / source.name
-            shutil.copyfile(source, target)
+            target = self._copy_proof_suite(root)
             text = target.read_text(encoding="utf-8")
             target.write_text(text.replace("### DS-07", "### DS-06", 1), encoding="utf-8")
             validator = FoundationValidator(root)
             validator._validate_proof_foundation_suite()
             self.assertIn("proof_suite.case_ids", {finding.code for finding in validator.findings})
+
+    def test_short_proof_candidate_rows_are_rejected_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = self._copy_proof_suite(root)
+            text = target.read_text(encoding="utf-8")
+            text = text.replace(
+                "| C-01 | Rocq | Run the complete frozen suite with idiomatic, fully inventoried candidate artifacts | 0/7 cases |",
+                "| C-01 |",
+                1,
+            ).replace(
+                "| C-02 | Lean 4 | Run the complete frozen suite with idiomatic, fully inventoried candidate artifacts | 0/7 cases |",
+                "| C-02 |",
+                1,
+            )
+            target.write_text(text, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_proof_foundation_suite()
+            self.assertIn("proof_suite.candidates", {finding.code for finding in validator.findings})
+
+    def test_oversized_proof_gate_ordinal_is_rejected_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = self._copy_proof_suite(root)
+            text = target.read_text(encoding="utf-8")
+            target.write_text(
+                text.replace("1. DS-01", f"{'9' * 4301}. DS-01", 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_proof_foundation_suite()
+            self.assertIn("proof_suite.hard_gates", {finding.code for finding in validator.findings})
+
+    def test_zero_padded_planning_ordinals_remain_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_planning_docs(root)
+            journey_path = root / "docs/USER_JOURNEYS.md"
+            journeys = journey_path.read_text(encoding="utf-8")
+            journey_path.write_text(
+                journeys.replace("1. Select", "0001. Select", 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_user_journeys()
+            self.assertIn("journey.flow_order", {finding.code for finding in validator.findings})
+
+            proof_target = self._copy_proof_suite(root)
+            proof_text = proof_target.read_text(encoding="utf-8")
+            proof_target.write_text(
+                proof_text.replace("1. DS-01", "0001. DS-01", 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_proof_foundation_suite()
+            self.assertIn("proof_suite.hard_gates", {finding.code for finding in validator.findings})
 
     def test_semantic_strata_suite_baseline_is_valid(self) -> None:
         root = Path(__file__).resolve().parents[2]
