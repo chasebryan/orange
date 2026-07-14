@@ -1725,14 +1725,41 @@ class MarkdownTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "source.md").write_text(
-                "[guide][docs]\n\n[docs]: missing.md\n\n`[ignored]: ignored.md`\n",
+                "[guide][docs]\n\n"
+                "[docs]: missing.md\n"
+                "[escaped\\]]: escaped-missing.md\n"
+                "[\nmultiline\n]: multiline-missing.md\n"
+                "[continued]:\n  continued-missing.md\n\n"
+                "[invalid[label]: unescaped-ignored.md\n"
+                "[   ]: whitespace-ignored.md\n"
+                f"[{'x' * 999}]: maximum-missing.md\n"
+                f"[{'x' * 1_000}]: oversized-ignored.md\n"
+                "`[ignored]: ignored.md`\n",
                 encoding="utf-8",
             )
             validator = FoundationValidator(root)
             validator._validate_markdown_links()
             self.assertEqual(
                 [(finding.code, finding.message) for finding in validator.findings],
-                [("markdown.link_missing", "local link target does not exist: missing.md")],
+                [
+                    ("markdown.link_missing", "local link target does not exist: missing.md"),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: escaped-missing.md",
+                    ),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: multiline-missing.md",
+                    ),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: continued-missing.md",
+                    ),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: maximum-missing.md",
+                    ),
+                ],
             )
 
     def test_malformed_link_destinations_are_rejected(self) -> None:

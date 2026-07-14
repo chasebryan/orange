@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "1e3aa83a4061f8c67f528da71cf1133d25760ec6e26aab52e2b903fa42d9ae3e"
+GATE0_PROTECTED_FILE_DIGEST = "bb71c488c94732027f6af2546972b79408cad0544f65f5cc57a51f05707a93d1"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -473,7 +473,13 @@ CONTAINER_ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*(docker://[^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
 )
-MARKDOWN_REFERENCE_RE = re.compile(r"(?m)^ {0,3}\[[^\]\n]+\]:\s*(<[^>\n]*>|[^\s]+)")
+MARKDOWN_REFERENCE_RE = re.compile(
+    r"(?m)^ {0,3}\[(?=[\s\S]{1,999}\]:)(?!\s{1,999}\]:)"
+    r"(?:\\[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]|"
+    r"\\(?=[^\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])|[^\[\]\\])+"
+    r"\]:[ \t]*(?:(?:\r\n?|\n)[ \t]*)?"
+    r"(<(?:\\[^\r\n]|[^\\<>\r\n])*>|[^\s]+)"
+)
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FRONT_MATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9-]*):(?:\s*(.*))?$")
 RECORD_FILENAME_RE = re.compile(r"^(?P<prefix>OEP|ADR)-(?P<number>[0-9]{4})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
