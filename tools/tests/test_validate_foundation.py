@@ -1572,14 +1572,21 @@ class MarkdownTests(unittest.TestCase):
                 [("markdown.link_missing", "local link target does not exist: missing.md")],
             )
 
-    def test_malformed_external_link_destinations_are_rejected(self) -> None:
+    def test_malformed_link_destinations_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "target.md").write_text("# Target\n", encoding="utf-8")
+            (root / "with space.md").write_text("# Space\n", encoding="utf-8")
             (root / "source.md").write_text(
                 "[percent](https://example.com/%GG)\n"
                 "[port](https://example.com:port/source)\n"
                 "[fragment](https://example.com/#first#second)\n"
-                "[valid](https://example.com/a%20path)\n",
+                "[local query](target.md?value=%GG)\n"
+                "[local fragment](target.md#first#second)\n"
+                "[local brackets](target[1].md)\n"
+                "[valid](https://example.com/a%20path)\n"
+                "[valid local](target.md?value=%20)\n"
+                "[valid angle](<with space.md>)\n",
                 encoding="utf-8",
             )
             validator = FoundationValidator(root)
@@ -1587,7 +1594,7 @@ class MarkdownTests(unittest.TestCase):
 
         self.assertEqual(
             [finding.code for finding in validator.findings],
-            ["markdown.link_invalid"] * 3,
+            ["markdown.link_invalid"] * 6,
         )
 
     def test_existing_cross_file_anchor_passes(self) -> None:
@@ -1672,7 +1679,14 @@ class MarkdownTests(unittest.TestCase):
 
                 self.assertEqual(
                     [(finding.code, finding.message) for finding in validator.findings],
-                    [("markdown.link_invalid", "link target has invalid percent encoding")],
+                    [
+                        (
+                            "markdown.link_invalid",
+                            "link target has invalid percent encoding"
+                            if target == "%FF.md"
+                            else "link target is not a valid URI reference",
+                        )
+                    ],
                 )
 
     def test_local_links_accept_strict_utf8_percent_encoding(self) -> None:

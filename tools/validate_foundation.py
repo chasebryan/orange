@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Orange's solo-bootstrap foundation deterministically.
-
-This Gate 0 policy tool is not the product checker or a schema implementation.
-"""
+"""Validate Orange's solo-bootstrap foundation deterministically."""
 
 from __future__ import annotations
 
@@ -362,7 +359,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py b5773611f484aeb1c3f4fa87194351ab011a07e7d020c86c6bafc18f7f4c9ad2
+tools/tests/test_validate_foundation.py 2546219ee6bcf78072abfe44b5e016dc5f0e76dc152e960d99d345b4edd131d0
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -2703,6 +2700,10 @@ class FoundationValidator:
                 target = self._markdown_destination(raw_target)
                 if not target:
                     continue
+                uri_target = target.replace(" ", "%20") if raw_target.startswith("<") else target
+                if not valid_format(uri_target, "uri-reference"):
+                    self.add("markdown.link_invalid", path, "link target is not a valid URI reference")
+                    continue
                 try:
                     parsed = urlsplit(target)
                 except ValueError:
@@ -2713,8 +2714,6 @@ class FoundationValidator:
                     )
                     continue
                 if parsed.scheme or target.startswith("//"):
-                    if not valid_format(target, "uri-reference"):
-                        self.add("markdown.link_invalid", path, "link target is not a valid URI reference")
                     continue
                 file_part = decode_uri_component(parsed.path)
                 fragment = decode_uri_component(parsed.fragment)
