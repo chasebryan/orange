@@ -474,10 +474,10 @@ CONTAINER_ACTION_RE = re.compile(
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
 )
 MARKDOWN_REFERENCE_RE = re.compile(
-    r"(?m)^ {0,3}\[(?=[\s\S]{1,999}\]:)(?!\s{1,999}\]:)"
+    r"(?m)^ {0,3}\[("
     r"(?:\\[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]|"
     r"\\(?=[^\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])|[^\[\]\\])+"
-    r"\]:[ \t]*(?:(?:\r\n?|\n)[ \t]*)?"
+    r")\]:[ \t]*(?:(?:\r\n?|\n)[ \t]*)?"
     r"(<(?:\\[^\r\n]|[^\\<>\r\n])*>|[^\s]+)"
 )
 MARKDOWN_CONTINUED_TITLE_RE = re.compile(
@@ -2711,7 +2711,11 @@ class FoundationValidator:
                 for candidates in (
                     markdown_inline_link_targets(text),
                     (match.group(1) for match in MARKDOWN_CONTINUED_TITLE_RE.finditer(text)),
-                    (match.group(1) for match in MARKDOWN_REFERENCE_RE.finditer(text)),
+                    (
+                        match.group(2)
+                        for match in MARKDOWN_REFERENCE_RE.finditer(text)
+                        if len(match.group(1)) <= 999 and match.group(1).strip()
+                    ),
                 )
                 for target in candidates
             )
