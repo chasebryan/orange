@@ -390,7 +390,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "e658c77281ddcd18785254e608b1eba4140053b33779652b061db1dfc30a7300",
-    "tools/tests/test_validate_foundation_hardening.py": "663fb82719932603ee013b02bfd0b134cdc3e0e05b42133ae491f3eb516bc4e4",
+    "tools/tests/test_validate_foundation_hardening.py": "cbaae263f7993a8237bf608e4d4d7c4d1682a5316d101dfd05a23fbaf7bbe144",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -4142,6 +4142,7 @@ def nonempty_scalar(value: Any) -> bool:
 
 RUST_USIZE_MAXIMUM = (1 << 64) - 1
 RUST_USIZE_MAXIMUM_DECIMAL_DIGITS = len(str(RUST_USIZE_MAXIMUM))
+RUST_RAW_STRING_PREFIX_RE = re.compile(r'r(#{0,255})"')
 
 
 def parse_rust_usize_product(value: str) -> int | None:
@@ -4174,10 +4175,10 @@ def rust_code_without_comments_and_literals(value: str) -> str:
     raw_closer = ""
     while index < len(value):
         if state == "code":
-            raw = re.match(r'r(#{0,255})"', value[index:])
+            raw = RUST_RAW_STRING_PREFIX_RE.match(value, index)
             if raw is not None:
                 raw_closer = '"' + raw.group(1)
-                length = raw.end()
+                length = raw.end() - index
                 for offset in range(index, index + length):
                     result[offset] = " "
                 index += length

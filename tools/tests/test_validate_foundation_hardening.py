@@ -22,6 +22,7 @@ from tools.validate_foundation import (
     parse_arguments,
     parse_rust_usize_product,
     relative,
+    rust_code_without_comments_and_literals,
     validate_schema_instance,
     workflow_jobs,
     workflow_steps,
@@ -927,6 +928,23 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             root = Path(directory)
             self._copy_boundary(root)
             self.assertFalse(self._codes(root))
+
+    def test_rust_source_stripping_never_copies_remaining_suffixes(self) -> None:
+        class SliceRejectingString(str):
+            def __getitem__(self, key: object) -> str:
+                if isinstance(key, slice):
+                    raise AssertionError("source suffix was copied")
+                return super().__getitem__(key)
+
+        source = SliceRejectingString(
+            ("a" * 262_144)
+            + ' r###"hidden\nraw"### /* nested /* block */ comment */ "string" // line\ncode'
+        )
+        stripped = rust_code_without_comments_and_literals(source)
+        self.assertEqual(len(stripped), len(source))
+        self.assertEqual(stripped.count("\n"), source.count("\n"))
+        self.assertNotIn("hidden", stripped)
+        self.assertTrue(stripped.endswith("\ncode"))
 
     def test_each_compiled_budget_drift_is_rejected(self) -> None:
         mutations = (
