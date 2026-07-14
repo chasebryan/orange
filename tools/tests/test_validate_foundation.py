@@ -35,6 +35,11 @@ from tools.validate_foundation import (
 )
 
 
+def protected_file_policy() -> dict[str, object]:
+    source = Path(__file__).resolve().parents[2] / "policy/gate0-repository-policy.json"
+    return {"protected_file_digests": load_json(source)["protected_file_digests"]}
+
+
 class _FakePipe:
     def __init__(self, data: bytes) -> None:
         self.data = data
@@ -972,6 +977,48 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(entries, [])
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
 
+    def test_stage_inventory_rejects_an_object_with_the_wrong_type(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "tracked.txt").write_bytes(b"tracked\n")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            tree = subprocess.run(
+                ["git", "-C", str(root), "write-tree"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", str(root), "update-index", "--cacheinfo", f"100644,{tree},tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            findings = []
+            entries = git_index_entries(root, findings, required=True)
+
+        self.assertEqual(entries, [])
+        self.assertEqual({finding.code for finding in findings}, {"git.index_object_type"})
+
     def test_stage_inventory_failure_after_git_file_inventory_is_fatal(self) -> None:
         file_process = _FakePopen(b"H file.txt\0")
         stage_process = _FakePopen(b"", return_code=1)
@@ -992,12 +1039,13 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         file_process = _FakePopen(b"H file.txt\0")
         metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         stage_process = _FakePopen(metadata + b"\tother.txt\0")
+        type_process = _FakePopen((b"a" * 40) + b" blob\0")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "file.txt").write_bytes(b"")
             with mock.patch(
                 "tools.validate_foundation.subprocess.Popen",
-                side_effect=(file_process, stage_process),
+                side_effect=(file_process, stage_process, type_process),
             ):
                 validator = FoundationValidator(root)
 
@@ -1131,13 +1179,14 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         file_process = _FakePopen(b"H file.txt\0")
         metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         stage_process = _FakePopen(metadata + b"\tfile.txt\0")
+        type_process = _FakePopen((b"a" * 40) + b" blob\0")
         intent_process = _FakePopen(b"", return_code=1)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "file.txt").write_bytes(b"")
             with mock.patch(
                 "tools.validate_foundation.subprocess.Popen",
-                side_effect=(file_process, stage_process, intent_process),
+                side_effect=(file_process, stage_process, type_process, intent_process),
             ):
                 validator = FoundationValidator(root)
 
@@ -1317,7 +1366,12 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                         "tools.validate_foundation.GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES",
                         len(metadata) + adjustment,
                     ),
-                    mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process),
+                    mock.patch(
+                        "tools.validate_foundation.subprocess.Popen",
+                        side_effect=(process, _FakePopen((b"a" * 40) + b" blob\0"))
+                        if accepted
+                        else (process,),
+                    ),
                 ):
                     entries = git_index_entries(Path(directory), findings)
                 if accepted:
@@ -2141,6 +2195,7 @@ class ProvisionalSchemaTests(unittest.TestCase):
                 schema_path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
 
                 validator = FoundationValidator(root)
+                validator.policy = protected_file_policy()
                 with mock.patch(
                     "tools.validate_foundation.re.compile",
                     side_effect=guarded_compile,
@@ -2169,6 +2224,7 @@ class ProvisionalSchemaTests(unittest.TestCase):
                 root / "conformance/foundation",
             )
             validator = FoundationValidator(root)
+            validator.policy = protected_file_policy()
             validator._validate_protected_file_digests()
 
             schema_path = root / "schemas/gate0/claim-record-v0.1.schema.json"
@@ -2285,6 +2341,7 @@ class ProvisionalSchemaTests(unittest.TestCase):
                 fixture_path.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
 
                 validator = FoundationValidator(root)
+                validator.policy = protected_file_policy()
                 validator._validate_schema_fixtures()
 
                 findings = [

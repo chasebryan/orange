@@ -14,6 +14,7 @@ import select
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import unicodedata
@@ -279,90 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGESTS = dict(
-    line.rsplit(maxsplit=1)
-    for line in """
-.editorconfig a3766d51a21a904a405f808017eeb34d5426558ad487803a5d4f39a854379ca9
-.gitattributes a5f4501e4eeea215d890813156f46edf1cd9dee83be968e5ff5edc6c136f111d
-.github/CODEOWNERS 8038a3a61117a29c26bfdd7b66a9a5675cb779736bad2c8c1797e680d7484663
-.github/ISSUE_TEMPLATE/conduct-contact.yml 93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541
-.github/ISSUE_TEMPLATE/config.yml ff5a8f986c0a9902d402ac17eecd3fbea8783ad396ba0b33133650826054ffe3
-.github/ISSUE_TEMPLATE/oep-proposal.yml 7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8
-.github/ISSUE_TEMPLATE/planning-defect.yml b190eccb90a1097bd18b53e114429a08c26c6a84bd9bc606789c5a38fe6952ec
-.github/ISSUE_TEMPLATE/planning-question.yml a2936886eb6f13e234eda5cf49923565fcd107539015df93c1245038534b9c2b
-.github/ISSUE_TEMPLATE/research-evidence.yml 60fb04d67cb5acbc822fb9ea613ab0d3b8caebb35544daefe91cf0f59a408f7a
-.github/dependabot.yml 7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268
-.github/dependency-review-config.yml 66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09
-.github/pull_request_template.md 52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f
-.github/workflows/ci.yml c97fd2ad38cc771a1740245a1d4875fcb14ed4b1cd0bea5d91bd54f3440fabaf
-.github/workflows/dependency-review.yml 5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a
-.github/workflows/external-links.yml 322aadcba06668a6f50ba4036ce9f4ed98dac630bb1b9d761693f2ce248e1c16
-.github/workflows/scorecard.yml 4514289283bbb7f38fc2dd861b8f998a24b9d75218d982a98bfb6b0d866fa22d
-.github/workflows/workflow-online-audit.yml c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0
-.gitignore 0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d
-.markdownlint-cli2.jsonc abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5
-CODE_OF_CONDUCT.md 24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a
-CONTRIBUTING.md ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f
-DEPENDENCY_POLICY.md ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438
-GOVERNANCE.md 8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103
-Makefile c98cea38e4884464bad94beba43b07f757c8271a1b535d24d9f6e5c5bc5e211e
-README.md 82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182
-RELEASE_POLICY.md f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45
-SECURITY.md 1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede
-SUPPORT.md 2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db
-assets/brand/README.md 7d71da4d28befb1b5735244c1ee51ee761e07a923b67b85d2bba9380da602874
-assets/brand/manifest.json 0ae668ae0fb52e04518681afddb2af5c11487bf5c3cda24be0d7f1ecb31c1391
-compiler/crates/orangec/tests/s3a_conformance.rs 653008bb27cc5dc474eec5ba8d819bbcc5967468e9c0e1d837d4ca25875c788c
-compiler/fixtures/s3a/invalid-duplicate-spec.or f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6
-compiler/fixtures/s3a/invalid-int-magnitude.or 11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542
-compiler/fixtures/s3a/invalid-negative-word.or 4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b
-compiler/fixtures/s3a/invalid-typed-impl.or 4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07
-compiler/fixtures/s3a/invalid-unsupported-type.or 14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc
-compiler/fixtures/s3a/invalid-word-range.or 4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf
-compiler/fixtures/s3a/invalid-word-width.or d92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2
-compiler/fixtures/s3a/valid-empty-mixed.or c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96
-compiler/fixtures/s3a/valid-int-radices.or 937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4
-compiler/fixtures/s3a/valid-word8-boundaries.or db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee
-compiler/fixtures/typed-answer.or 22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e
-conformance/foundation/README.md 18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294
-conformance/foundation/invalid/claim-record-assumption-only.json 2e8fa46cda4b814f8d2096d19c4e7fec83ae9f28cd355c5012948ce5980ca210
-conformance/foundation/invalid/evidence-manifest-independent-without-review.json b92882efaf1f36a5988a8c4c484e4d7e659219248a6ee287f5928bf2b853f16b
-conformance/foundation/invalid/evidence-manifest-network-enabled.json 955f58b255f4776d1cf1cac730c1fa7f1ab32a9fc5c35919bd74b3d007fe7b85
-conformance/foundation/invalid/evidence-manifest-path-escape.json b376f5435b54c5578ddcdd56acc4f61883625638130d34ee1ab33530c19f6ae0
-conformance/foundation/invalid/repository-control-missing-explanation.json a8bc273991680f616ddf78756cf3a8ad4568e733fefa12dbd3637ece40c8b8c8
-conformance/foundation/invalid/repository-control-selected-actions-empty.json f84cfeefe8cfa73f466a973a54c87b6e207cca9f970bcec6c19b8ed2d10674e4
-conformance/foundation/invalid/standards-provenance-bad-digest.json 1142e67079f9778ccabe497dfae8ca80a72f870f5f3712b0569bc904d449b0cb
-conformance/foundation/invalid/standards-provenance-reviewed-without-reference.json 4d7c311caff8a0d3c68b102f0690e61cc4da8112dff9762f3e03d22be41c2514
-conformance/foundation/invalid/trust-inventory-missing-identity.json ea616685e11fa714b7e99b45dddc4773310d6f4644b9a42fea700fe4ae0cb5e5
-conformance/foundation/manifest.json 07f1ef6e49d2c094793b46a9db5fc56f834f6ad6410caded43fd13ce1957595f
-conformance/foundation/valid/claim-record.json 985c2d0fe14a2961618182e3dd341d1715a3eb0a130ba03c36bfb27fcbb35249
-conformance/foundation/valid/evidence-manifest.json 2e3cde3d86f770894356d90bdaed088ae65162f6590dac46ccdc750d2c34c0a4
-conformance/foundation/valid/repository-control-snapshot.json c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3
-conformance/foundation/valid/standards-provenance.json 1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413
-conformance/foundation/valid/trust-inventory.json edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f
-docs/DECISIONS.md 5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047
-docs/LANGUAGE_2026.md 28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd
-docs/SEMANTICS_2026.md a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33
-docs/operations/CI_DEPENDENCIES.md 1644f752bcf0d3d63f6ed262f1067efca07bce42bb29121d2a2275b88b543d87
-docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b
-docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
-docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
-docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 3199803dabeeaaf40efe71c977f6fda2a98142e2ccb72052f1cab0f325dcbc09
-schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
-schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
-schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
-schemas/gate0/repository-control-snapshot-v0.1.schema.json f4cfcab41639fac0a5c3f75a99cfd3bef0a30b57fc950109058f5006f40ed8b4
-schemas/gate0/standards-provenance-v0.1.schema.json 9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2
-schemas/gate0/trust-inventory-v0.1.schema.json fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222
-scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875042a4ead79f79602
-scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
-scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
-scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 2546219ee6bcf78072abfe44b5e016dc5f0e76dc152e960d99d345b4edd131d0
-tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
-""".strip().splitlines()
-)
+GATE0_PROTECTED_FILE_DIGEST = "6e2b0c1ec9860746878373fc7a7fd9a24a058454372e0a1a27c2a98c518239e9"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -828,6 +746,8 @@ def _read_git_nul_records(
     arguments: Sequence[str],
     *,
     maximum_record_bytes: int,
+    input_records: Sequence[bytes] = (),
+    nul_flag: str = "-z",
 ) -> _GitRecordRead:
     command = [
         "git",
@@ -840,18 +760,47 @@ def _read_git_nul_records(
         "-C",
         str(root),
         *arguments,
-        "-z",
+        nul_flag,
     ]
+    input_file = None
+    if input_records:
+        try:
+            input_file = tempfile.TemporaryFile()
+            input_bytes = b"\0".join(input_records) + b"\0"
+            if input_file.write(input_bytes) != len(input_bytes):
+                raise OSError("short Git input write")
+            input_file.seek(0)
+        except OSError:
+            if input_file is not None:
+                try:
+                    input_file.close()
+                except OSError:
+                    pass
+            return _GitRecordRead(None)
     try:
         process = subprocess.Popen(
             command,
             env=_sanitized_git_environment(root),
-            stdin=subprocess.DEVNULL,
+            stdin=input_file or subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
     except OSError:
+        if input_file is not None:
+            try:
+                input_file.close()
+            except OSError:
+                pass
         return _GitRecordRead(None)
+    if input_file is not None:
+        try:
+            input_file.close()
+        except OSError as exc:
+            _stop_git_process(process)
+            return _GitRecordRead(
+                None,
+                Finding("resource.inventory_read", ".", f"cannot close Git input: {exc}"),
+            )
     if process.stdout is None:
         _stop_git_process(process)
         return _GitRecordRead(
@@ -1215,7 +1164,7 @@ def git_index_entries(
             )
         return []
 
-    raw_entries: list[tuple[bytes, bytes]] = []
+    raw_entries: list[tuple[bytes, bytes, bytes]] = []
     seen_paths: set[bytes] = set()
     for record in result.records:
         metadata, separator, raw_path = record.partition(b"\t")
@@ -1242,11 +1191,13 @@ def git_index_entries(
             )
             return []
         seen_paths.add(raw_path)
-        raw_entries.append((fields[0], raw_path))
+        raw_entries.append((fields[0], fields[1], raw_path))
+    if not raw_entries:
+        return []
     try:
-        return [
-            (mode.decode("ascii"), raw_path.decode("utf-8"))
-            for mode, raw_path in sorted(raw_entries, key=lambda entry: (entry[1], entry[0]))
+        entries = [
+            (mode.decode("ascii"), object_id, raw_path.decode("utf-8"))
+            for mode, object_id, raw_path in sorted(raw_entries, key=lambda entry: (entry[2], entry[0]))
         ]
     except UnicodeDecodeError:
         inventory_findings.append(
@@ -1257,6 +1208,57 @@ def git_index_entries(
             )
         )
         return []
+    object_ids = tuple(dict.fromkeys(object_id for _, object_id, _ in raw_entries))
+    types = _read_git_nul_records(
+        root,
+        ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
+        maximum_record_bytes=GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES,
+        input_records=object_ids,
+        nul_flag="-Z",
+    )
+    if types.finding is not None:
+        inventory_findings.append(types.finding)
+        return []
+    if types.records is None:
+        if required:
+            inventory_findings.append(
+                Finding("resource.inventory_stage", ".", "Git object-type inventory is unavailable")
+            )
+        return []
+    actual_types: dict[bytes, bytes] = {}
+    for object_id, record in zip(object_ids, types.records, strict=False):
+        reported_id, separator, object_type = record.partition(b" ")
+        if (
+            not separator
+            or reported_id != object_id
+            or object_type not in {b"blob", b"commit", b"tree", b"tag"}
+        ):
+            inventory_findings.append(
+                Finding("resource.inventory_protocol", ".", "Git object-type inventory is malformed")
+            )
+            return []
+        actual_types[object_id] = object_type
+    if len(types.records) != len(object_ids):
+        inventory_findings.append(
+            Finding("resource.inventory_protocol", ".", "Git object-type inventory count is incorrect")
+        )
+        return []
+    expected_types = {
+        b"100644": b"blob",
+        b"100755": b"blob",
+        b"120000": b"blob",
+        b"160000": b"commit",
+    }
+    for mode, object_id, path in entries:
+        mode = mode.encode("ascii")
+        if (expected := expected_types.get(mode)) is not None and actual_types[object_id] != expected:
+            inventory_findings.append(
+                Finding(
+                    "git.index_object_type", path, "Git index mode and object type disagree"
+                )
+            )
+            return []
+    return [(mode, path) for mode, _, path in entries]
 
 
 class FoundationValidator:
@@ -1980,7 +1982,12 @@ class FoundationValidator:
             self.add("policy.executables", self.policy_path, "solo-bootstrap executable allowlist must remain exact")
         if set(policy["workflow_inventory"]) != GATE0_WORKFLOW_INVENTORY:
             self.add("policy.workflow_inventory", self.policy_path, "solo-bootstrap workflow inventory must remain exact")
-        if policy["protected_file_digests"] != GATE0_PROTECTED_FILE_DIGESTS:
+        protected_digest = hashlib.sha256(
+            json.dumps(
+                policy["protected_file_digests"], sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        if protected_digest != GATE0_PROTECTED_FILE_DIGEST:
             self.add(
                 "policy.protected_file_digests",
                 self.policy_path,
@@ -2034,14 +2041,14 @@ class FoundationValidator:
             self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
-        for value in sorted(GATE0_PROTECTED_FILE_DIGESTS):
+        for value in sorted(self.policy["protected_file_digests"]):
             self._read_authenticated_protected_file(value)
 
     def _read_authenticated_protected_file(self, value: str) -> bytes | None:
         if value in self._authenticated_protected_bytes:
             return self._authenticated_protected_bytes[value]
         self._authenticated_protected_bytes[value] = None
-        expected = GATE0_PROTECTED_FILE_DIGESTS.get(value)
+        expected = self.policy["protected_file_digests"].get(value)
         if expected is None:
             return None
         path = self.root / value

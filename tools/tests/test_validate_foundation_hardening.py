@@ -53,6 +53,11 @@ def workflow_policy() -> dict[str, object]:
     }
 
 
+def protected_file_policy() -> dict[str, object]:
+    source = Path(__file__).resolve().parents[2] / "policy/gate0-repository-policy.json"
+    return {"protected_file_digests": load_json(source)["protected_file_digests"]}
+
+
 class JsonHardeningTests(unittest.TestCase):
     def test_non_finite_number_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1420,6 +1425,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             path.write_text(source.replace("262,144 syntax nodes", "262,143 syntax nodes", 1), encoding="utf-8")
             self.assertIn("compiler.language_spec_budget", self._codes(root))
             validator = FoundationValidator(root)
+            validator.policy = protected_file_policy()
             validator._validate_protected_file_digests()
             self.assertIn("protected_file.digest", {finding.code for finding in validator.findings})
 
@@ -1642,6 +1648,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 path.write_text("tampered\n", encoding="utf-8")
                 validator = FoundationValidator(root)
+                validator.policy = protected_file_policy()
                 validator._validate_protected_file_digests()
                 self.assertIn("protected_file.digest", {finding.code for finding in validator.findings})
 
@@ -1658,6 +1665,22 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             validator._load_and_validate_policy()
             codes = {finding.code for finding in validator.findings}
             self.assertTrue({"policy.minimum", "policy.required_inventory"} & codes)
+
+    def test_policy_cannot_change_the_protected_digest_mapping(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        policy = load_json(source_root / "policy/gate0-repository-policy.json")
+        policy["protected_file_digests"]["SECURITY.md"] = "0" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "policy/gate0-repository-policy.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(policy), encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._load_and_validate_policy()
+
+        self.assertIn(
+            "policy.protected_file_digests", {finding.code for finding in validator.findings}
+        )
 
 
 class HostedControlEvidenceHardeningTests(unittest.TestCase):
