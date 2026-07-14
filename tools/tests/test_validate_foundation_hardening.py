@@ -457,7 +457,7 @@ jobs:
                     '[[ ! -f "$EXTRACTED_FILE" || ! -s "$EXTRACTED_FILE" || '
                     '-L "$EXTRACTED_FILE" ]]',
                     "stat --format='%h' --",
-                    "install \\\n  -D \\\n  -m 0755 \\\n  -- \\\n",
+                    "install \\\n  -D \\\n  --no-target-directory \\\n  -m 0755 \\\n  -- \\\n",
                 ):
                     self.assertIn(required, script)
 

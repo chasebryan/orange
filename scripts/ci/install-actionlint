@@ -91,6 +91,7 @@ fi
 
 install \
   -D \
+  --no-target-directory \
   -m 0755 \
   -- \
   "$EXTRACTED_FILE" \
