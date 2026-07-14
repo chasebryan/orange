@@ -987,6 +987,23 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertEqual(paths, [])
             self.assertEqual({finding.code for finding in findings}, {"resource.inventory_entries"})
 
+    def test_fallback_only_prunes_service_directories_at_the_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / "nested" / ".agents"
+            nested.mkdir(parents=True)
+            hidden = nested / "repository-content.txt"
+            hidden.write_text("content\n", encoding="utf-8")
+            findings = []
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                side_effect=OSError("no git"),
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [hidden])
+        self.assertEqual(findings, [])
+
     def test_fallback_rejects_a_host_without_descriptor_scandir(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

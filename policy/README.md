@@ -65,7 +65,9 @@ Git is unavailable for an exported tree with no `.git` entry, the bounded
 filesystem fallback preserves the same fail-closed resource checks. Each queued
 fallback directory is reopened from the trusted root one component at a time
 with no-follow flags, so a concurrent directory-to-symlink replacement cannot
-redirect discovery. Git failure is fatal when repository metadata is present,
+redirect discovery. Platform service directories are pruned only at the
+exported tree root; matching nested names remain repository content. Git
+failure is fatal when repository metadata is present,
 and a discovery ceiling prevents an exported tree from inheriting a parent
 repository's index. Inventory paths remain raw bytes through record and
 resource-limit checks, then must decode as UTF-8 before any path is admitted;
