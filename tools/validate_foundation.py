@@ -362,7 +362,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 4c9918f3a381f3fbf874aaef929b2d2de8f121710144c9d586eedf0d59b14c4a
+tools/tests/test_validate_foundation.py b5773611f484aeb1c3f4fa87194351ab011a07e7d020c86c6bafc18f7f4c9ad2
 tools/tests/test_validate_foundation_hardening.py 081d2a56623359cb9b4f58e99974129de67a9ffc4647bed78db35123647ea028
 """.strip().splitlines()
 )
@@ -566,7 +566,7 @@ RECORD_FILENAME_RE = re.compile(r"^(?P<prefix>OEP|ADR)-(?P<number>[0-9]{4})-(?P<
 
 
 class DuplicateKeyError(ValueError):
-    """Raised when JSON contains an ambiguous duplicate object key."""
+    pass
 
 
 @dataclasses.dataclass(frozen=True, order=True)
@@ -2713,6 +2713,8 @@ class FoundationValidator:
                     )
                     continue
                 if parsed.scheme or target.startswith("//"):
+                    if not valid_format(target, "uri-reference"):
+                        self.add("markdown.link_invalid", path, "link target is not a valid URI reference")
                     continue
                 file_part = decode_uri_component(parsed.path)
                 fragment = decode_uri_component(parsed.fragment)
@@ -5489,7 +5491,6 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
-    # --root asserts the script-owned checkout; it never redirects scope.
     repository_root = arguments.root
     validator = FoundationValidator(repository_root)
     findings = validator.run()

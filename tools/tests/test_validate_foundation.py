@@ -1572,6 +1572,24 @@ class MarkdownTests(unittest.TestCase):
                 [("markdown.link_missing", "local link target does not exist: missing.md")],
             )
 
+    def test_malformed_external_link_destinations_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "[percent](https://example.com/%GG)\n"
+                "[port](https://example.com:port/source)\n"
+                "[fragment](https://example.com/#first#second)\n"
+                "[valid](https://example.com/a%20path)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
+
+        self.assertEqual(
+            [finding.code for finding in validator.findings],
+            ["markdown.link_invalid"] * 3,
+        )
+
     def test_existing_cross_file_anchor_passes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
