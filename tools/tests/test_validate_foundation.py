@@ -1234,6 +1234,31 @@ class MarkdownTests(unittest.TestCase):
                     [("markdown.link_invalid", "link target is not a valid URI reference")],
                 )
 
+    def test_local_links_reject_malformed_or_non_utf8_percent_encoding(self) -> None:
+        for target in ("percent%.md", "percent%GG.md", "%FF.md"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "source.md").write_text(f"[target]({target})\n", encoding="utf-8")
+                validator = FoundationValidator(root)
+
+                validator._validate_markdown_links()
+
+                self.assertEqual(
+                    [(finding.code, finding.message) for finding in validator.findings],
+                    [("markdown.link_invalid", "link target has invalid percent encoding")],
+                )
+
+    def test_local_links_accept_strict_utf8_percent_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text("[target](%C3%A9.md)\n", encoding="utf-8")
+            (root / "é.md").write_text("# Target\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+
+            validator._validate_markdown_links()
+
+            self.assertEqual(validator.findings, [])
+
     def test_valid_network_uri_targets_still_pass(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -200,6 +200,7 @@ MINIMUM_ACTION_REPOSITORIES = set(
     """DavidAnson/markdownlint-cli2-action actions/checkout actions/dependency-review-action
 actions/upload-artifact github/codeql-action/upload-sarif zizmorcore/zizmor-action""".split()
 )
+_BRAND_IMPORT = "Byte-for-byte import from the steward-supplied Orange-Assets collection on "
 GATE0_ALLOWED_CONTAINER_IMAGES = {
     "ghcr.io/ossf/scorecard-action@sha256:"
     "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
@@ -209,55 +210,55 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
         "path": "assets/brand/orange-banner2.PNG",
         "sha256": "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b",
         "role": "Official working Orange wordmark on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orangePNG.PNG",
         "sha256": "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02",
         "role": "Official working Orange emblem source variant on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orange-banner-jpeg.JPEG",
         "sha256": "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a",
         "role": "Official working Orange horizontal lockup JPEG",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orange-banner2-erased.PNG",
         "sha256": "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c",
         "role": "Official working Orange transparent wordmark",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orange-erased.PNG",
         "sha256": "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2",
         "role": "Official working Orange transparent emblem",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orange-banner.png",
         "sha256": "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266",
         "role": "Official working Orange primary horizontal lockup with embedded C2PA claim",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orange.jpg",
         "sha256": "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888",
         "role": "Official working Orange emblem JPEG on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orange.png",
         "sha256": "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463",
         "role": "Official working Orange primary emblem with embedded C2PA claim",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
+        "provenance": _BRAND_IMPORT + "2026-07-11",
     },
     {
         "path": "assets/brand/orange-handdrawn-marker-banner.png",
         "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735",
         "role": "Official working Orange hand-drawn README and Orange Book horizontal lockup on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-14",
+        "provenance": _BRAND_IMPORT + "2026-07-14",
     },
 ]
 GATE0_BRAND_ASSET_METADATA = {
@@ -373,7 +374,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 975eba02e1e4282ed524a7bcf91c804aa21bf0091d49d158a500cb89dc47cb2f
+policy/README.md 120377ccce27ebfc9a285cf48d9b712362c2d2aa8e179f136a99b6930cbf74a3
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -384,7 +385,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a85b798e8a3b42
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py eff4fcf25166aeb7ee7b3ee7411bc073907298d787140d800890007833b86c48
+tools/tests/test_validate_foundation.py e7ca56a2a0b49316a54f8510f36b33691faf396558742a8e076c92577a086982
 tools/tests/test_validate_foundation_hardening.py e39f4c39e4c184475ff7663f676374fef049b80d11efd68a3f8fc9a4e46c67ca
 """.strip().splitlines()
 )
@@ -2725,8 +2726,11 @@ class FoundationValidator:
                     continue
                 if parsed.scheme or target.startswith("//"):
                     continue
-                file_part = unquote(parsed.path)
-                fragment = unquote(parsed.fragment)
+                file_part = decode_uri_component(parsed.path)
+                fragment = decode_uri_component(parsed.fragment)
+                if file_part is None or fragment is None:
+                    self.add("markdown.link_invalid", path, "link target has invalid percent encoding")
+                    continue
                 target_path = path if not file_part else (path.parent / file_part)
                 lexical_target = self._lexical_repository_path(target_path)
                 if lexical_target is None:
@@ -4379,6 +4383,15 @@ def markdown_anchors(text: str) -> set[str]:
         counts[base] = count + 1
         anchors.add(base if count == 0 else f"{base}-{count}")
     return anchors
+
+
+def decode_uri_component(value: str) -> str | None:
+    if re.search(r"%(?![0-9A-Fa-f]{2})", value):
+        return None
+    try:
+        return unquote(value, errors="strict")
+    except UnicodeDecodeError:
+        return None
 
 
 def markdown_fence_error(text: str) -> str | None:
