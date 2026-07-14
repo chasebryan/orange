@@ -55,7 +55,9 @@ locale controls, disables system and user configuration, disables
 repository-configured filesystem monitors, and applies only checkout
 `.gitignore` files when excluding untracked content. The child environment
 also binds Git's work tree to the validator-owned root, so local
-`core.worktree` configuration cannot hide actual checkout files. One
+`core.worktree` configuration cannot hide actual checkout files. Git case
+folding and Unicode precomposition are pinned off so distinct worktree names
+remain visible to the validator's own collision and NFC checks. One
 30-second deadline covers the complete inventory stream and process exit. If
 Git is unavailable for an exported tree with no `.git` entry, the bounded
 filesystem fallback preserves the same fail-closed resource checks. Each queued

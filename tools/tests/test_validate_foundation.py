@@ -612,8 +612,18 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 paths = list(iter_repository_files(root, findings))
         self.assertEqual([path.name for path in paths], ["file.txt"])
         self.assertEqual(
-            popen.call_args.args[0][:5],
-            ["git", "-c", "core.fsmonitor=false", "-C", str(root)],
+            popen.call_args.args[0][:9],
+            [
+                "git",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.ignoreCase=false",
+                "-c",
+                "core.precomposeUnicode=false",
+                "-C",
+                str(root),
+            ],
         )
         child_environment = popen.call_args.kwargs["env"]
         self.assertEqual(
@@ -726,6 +736,44 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             paths = list(iter_repository_files(root, findings))
 
         self.assertEqual([path.name for path in paths], ["tracked.txt", "untracked.txt"])
+        self.assertEqual(findings, [])
+
+    def test_local_ignore_case_cannot_hide_case_collisions(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "name.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "name.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "config", "core.ignoreCase", "true"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "NAME.txt").write_text("must remain visible\n", encoding="utf-8")
+            if (root / "NAME.txt").samefile(root / "name.txt"):
+                self.skipTest("case-collision inventory requires a case-sensitive filesystem")
+            findings: list = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual([path.name for path in paths], ["NAME.txt", "name.txt"])
         self.assertEqual(findings, [])
 
     def test_git_file_count_and_raw_metadata_limits_are_inclusive(self) -> None:
