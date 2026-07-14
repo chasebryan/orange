@@ -76,120 +76,122 @@ _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_TERMINAL_PROMPT": "0",
     "LC_ALL": "C",
 }
-MINIMUM_REQUIRED_PATHS = {
-    ".editorconfig",
-    ".gitattributes",
-    ".github/CODEOWNERS",
-    ".github/ISSUE_TEMPLATE/conduct-contact.yml",
-    ".github/ISSUE_TEMPLATE/config.yml",
-    ".github/ISSUE_TEMPLATE/oep-proposal.yml",
-    ".github/ISSUE_TEMPLATE/planning-defect.yml",
-    ".github/ISSUE_TEMPLATE/planning-question.yml",
-    ".github/ISSUE_TEMPLATE/research-evidence.yml",
-    ".github/dependabot.yml",
-    ".github/dependency-review-config.yml",
-    ".github/pull_request_template.md",
-    ".github/workflows/ci.yml",
-    ".github/workflows/dependency-review.yml",
-    ".github/workflows/external-links.yml",
-    ".github/workflows/scorecard.yml",
-    ".github/workflows/workflow-online-audit.yml",
-    ".gitignore",
-    ".markdownlint-cli2.jsonc",
-    "CODE_OF_CONDUCT.md",
-    "CONTRIBUTING.md",
-    "compiler/.gitignore",
-    "compiler/Cargo.lock",
-    "compiler/Cargo.toml",
-    "compiler/README.md",
-    "compiler/crates/orange-compiler/Cargo.toml",
-    "compiler/crates/orange-compiler/src/core.rs",
-    "compiler/crates/orange-compiler/src/diagnostic.rs",
-    "compiler/crates/orange-compiler/src/edition.rs",
-    "compiler/crates/orange-compiler/src/eval.rs",
-    "compiler/crates/orange-compiler/src/lexer.rs",
-    "compiler/crates/orange-compiler/src/lib.rs",
-    "compiler/crates/orange-compiler/src/parser.rs",
-    "compiler/crates/orange-compiler/src/semantics.rs",
-    "compiler/crates/orange-compiler/src/source.rs",
-    "compiler/crates/orangec/Cargo.toml",
-    "compiler/crates/orangec/src/main.rs",
-    "compiler/crates/orangec/tests/cli.rs",
-    "compiler/crates/orangec/tests/s3a_conformance.rs",
-    "compiler/fixtures/hello.or",
-    "compiler/fixtures/s3a/invalid-duplicate-spec.or",
-    "compiler/fixtures/s3a/invalid-int-magnitude.or",
-    "compiler/fixtures/s3a/invalid-negative-word.or",
-    "compiler/fixtures/s3a/invalid-typed-impl.or",
-    "compiler/fixtures/s3a/invalid-unsupported-type.or",
-    "compiler/fixtures/s3a/invalid-word-range.or",
-    "compiler/fixtures/s3a/invalid-word-width.or",
-    "compiler/fixtures/s3a/valid-empty-mixed.or",
-    "compiler/fixtures/s3a/valid-int-radices.or",
-    "compiler/fixtures/s3a/valid-word8-boundaries.or",
-    "compiler/fixtures/typed-answer.or",
-    "DEPENDENCY_POLICY.md",
-    "GOVERNANCE.md",
-    "Makefile",
-    "README.md",
-    "RELEASE_POLICY.md",
-    "rust-toolchain.toml",
-    "SECURITY.md",
-    "SUPPORT.md",
-    "assets/brand/README.md",
-    "assets/brand/manifest.json",
-    "assets/brand/orange-banner-jpeg.JPEG",
-    "assets/brand/orange-banner.png",
-    "assets/brand/orange-banner2-erased.PNG",
-    "assets/brand/orange-banner2.PNG",
-    "assets/brand/orange-erased.PNG",
-    "assets/brand/orange-handdrawn-marker-banner.png",
-    "assets/brand/orange.jpg",
-    "assets/brand/orange.png",
-    "assets/brand/orangePNG.PNG",
-    "conformance/foundation/manifest.json",
-    "conformance/foundation/README.md",
-    "docs/DECISIONS.md",
-    "docs/GATE0_TRACEABILITY.md",
-    "docs/GATE0_SUPPORT_ENVELOPES.md",
-    "docs/LANGUAGE_2026.md",
-    "docs/PRODUCT_FORM_DECISION_PACKET.md",
-    "docs/PROOF_FOUNDATION_DECISION_SUITE.md",
-    "docs/REPRODUCIBILITY.md",
-    "docs/USER_JOURNEYS.md",
-    "docs/ARCHITECTURE.md",
-    "docs/ASSURANCE.md",
-    "docs/PROJECT_CHARTER.md",
-    "docs/RESEARCH.md",
-    "docs/ROADMAP.md",
-    "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-    "docs/SEMANTICS_2026.md",
-    "docs/THE_ORANGE_BOOK.md",
-    "docs/governance/adrs/ADR-0000-template.md",
-    "docs/governance/adrs/README.md",
-    "docs/governance/oeps/OEP-0000-template.md",
-    "docs/governance/oeps/README.md",
-    "docs/operations/CI_DEPENDENCIES.md",
-    "docs/operations/GITHUB_CONTROLS.md",
-    "docs/security/OSPS_BASELINE.md",
-    "docs/security/SECRETS_AND_INCIDENTS.md",
-    "docs/security/THREAT_MODEL.md",
-    "policy/README.md",
-    "policy/gate0-repository-policy.json",
-    "schemas/README.md",
-    "schemas/gate0/claim-record-v0.1.schema.json",
-    "schemas/gate0/evidence-manifest-v0.1.schema.json",
-    "schemas/gate0/repository-control-snapshot-v0.1.schema.json",
-    "schemas/gate0/standards-provenance-v0.1.schema.json",
-    "schemas/gate0/trust-inventory-v0.1.schema.json",
-    "scripts/ci/check-repository",
-    "scripts/ci/check-external-links",
-    "scripts/ci/install-actionlint",
-    "scripts/ci/install-lychee",
-    "tools/validate_foundation.py",
-    "tools/tests/test_validate_foundation.py",
-    "tools/tests/test_validate_foundation_hardening.py",
-}
+MINIMUM_REQUIRED_PATHS = set(
+    """
+.editorconfig
+.gitattributes
+.github/CODEOWNERS
+.github/ISSUE_TEMPLATE/conduct-contact.yml
+.github/ISSUE_TEMPLATE/config.yml
+.github/ISSUE_TEMPLATE/oep-proposal.yml
+.github/ISSUE_TEMPLATE/planning-defect.yml
+.github/ISSUE_TEMPLATE/planning-question.yml
+.github/ISSUE_TEMPLATE/research-evidence.yml
+.github/dependabot.yml
+.github/dependency-review-config.yml
+.github/pull_request_template.md
+.github/workflows/ci.yml
+.github/workflows/dependency-review.yml
+.github/workflows/external-links.yml
+.github/workflows/scorecard.yml
+.github/workflows/workflow-online-audit.yml
+.gitignore
+.markdownlint-cli2.jsonc
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+compiler/.gitignore
+compiler/Cargo.lock
+compiler/Cargo.toml
+compiler/README.md
+compiler/crates/orange-compiler/Cargo.toml
+compiler/crates/orange-compiler/src/core.rs
+compiler/crates/orange-compiler/src/diagnostic.rs
+compiler/crates/orange-compiler/src/edition.rs
+compiler/crates/orange-compiler/src/eval.rs
+compiler/crates/orange-compiler/src/lexer.rs
+compiler/crates/orange-compiler/src/lib.rs
+compiler/crates/orange-compiler/src/parser.rs
+compiler/crates/orange-compiler/src/semantics.rs
+compiler/crates/orange-compiler/src/source.rs
+compiler/crates/orangec/Cargo.toml
+compiler/crates/orangec/src/main.rs
+compiler/crates/orangec/tests/cli.rs
+compiler/crates/orangec/tests/s3a_conformance.rs
+compiler/fixtures/hello.or
+compiler/fixtures/s3a/invalid-duplicate-spec.or
+compiler/fixtures/s3a/invalid-int-magnitude.or
+compiler/fixtures/s3a/invalid-negative-word.or
+compiler/fixtures/s3a/invalid-typed-impl.or
+compiler/fixtures/s3a/invalid-unsupported-type.or
+compiler/fixtures/s3a/invalid-word-range.or
+compiler/fixtures/s3a/invalid-word-width.or
+compiler/fixtures/s3a/valid-empty-mixed.or
+compiler/fixtures/s3a/valid-int-radices.or
+compiler/fixtures/s3a/valid-word8-boundaries.or
+compiler/fixtures/typed-answer.or
+DEPENDENCY_POLICY.md
+GOVERNANCE.md
+Makefile
+README.md
+RELEASE_POLICY.md
+rust-toolchain.toml
+SECURITY.md
+SUPPORT.md
+assets/brand/README.md
+assets/brand/manifest.json
+assets/brand/orange-banner-jpeg.JPEG
+assets/brand/orange-banner.png
+assets/brand/orange-banner2-erased.PNG
+assets/brand/orange-banner2.PNG
+assets/brand/orange-erased.PNG
+assets/brand/orange-handdrawn-marker-banner.png
+assets/brand/orange.jpg
+assets/brand/orange.png
+assets/brand/orangePNG.PNG
+conformance/foundation/manifest.json
+conformance/foundation/README.md
+docs/DECISIONS.md
+docs/GATE0_TRACEABILITY.md
+docs/GATE0_SUPPORT_ENVELOPES.md
+docs/LANGUAGE_2026.md
+docs/PRODUCT_FORM_DECISION_PACKET.md
+docs/PROOF_FOUNDATION_DECISION_SUITE.md
+docs/REPRODUCIBILITY.md
+docs/USER_JOURNEYS.md
+docs/ARCHITECTURE.md
+docs/ASSURANCE.md
+docs/PROJECT_CHARTER.md
+docs/RESEARCH.md
+docs/ROADMAP.md
+docs/SEMANTIC_STRATA_DECISION_SUITE.md
+docs/SEMANTICS_2026.md
+docs/THE_ORANGE_BOOK.md
+docs/governance/adrs/ADR-0000-template.md
+docs/governance/adrs/README.md
+docs/governance/oeps/OEP-0000-template.md
+docs/governance/oeps/README.md
+docs/operations/CI_DEPENDENCIES.md
+docs/operations/GITHUB_CONTROLS.md
+docs/security/OSPS_BASELINE.md
+docs/security/SECRETS_AND_INCIDENTS.md
+docs/security/THREAT_MODEL.md
+policy/README.md
+policy/gate0-repository-policy.json
+schemas/README.md
+schemas/gate0/claim-record-v0.1.schema.json
+schemas/gate0/evidence-manifest-v0.1.schema.json
+schemas/gate0/repository-control-snapshot-v0.1.schema.json
+schemas/gate0/standards-provenance-v0.1.schema.json
+schemas/gate0/trust-inventory-v0.1.schema.json
+scripts/ci/check-repository
+scripts/ci/check-external-links
+scripts/ci/install-actionlint
+scripts/ci/install-lychee
+tools/validate_foundation.py
+tools/tests/test_validate_foundation.py
+tools/tests/test_validate_foundation_hardening.py
+""".strip().splitlines()
+)
 MINIMUM_FORBIDDEN_PATHS = {"COPYING", "LICENSE", "crates", "crypto", "formal", "release", "spec", "stdlib", "targets"}
 MINIMUM_REQUIRED_WORKFLOWS = {"ci.yml", "dependency-review.yml", "scorecard.yml"}
 MINIMUM_ACTION_REPOSITORIES = {
