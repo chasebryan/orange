@@ -1963,6 +1963,14 @@ class ProvisionalSchemaTests(unittest.TestCase):
 
         self.assertFalse(valid_format("relative/path", "uri"))
         self.assertTrue(valid_format("relative/path", "uri-reference"))
+        self.assertTrue(valid_format("https://[2001:db8::1]/source", "uri"))
+        for value in (
+            "https://example.com/a[b]",
+            "https://example.com/?q=[x]",
+            "https://example.com/#a#b",
+            "urn:orange:a[b]",
+        ):
+            self.assertFalse(valid_format(value, "uri"), value)
 
     def test_invalid_uri_is_reported_as_a_schema_format_issue(self) -> None:
         schema = {"type": "string", "format": "uri"}

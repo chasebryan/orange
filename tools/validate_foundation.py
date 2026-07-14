@@ -364,7 +364,7 @@ scripts/ci/check-external-links cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875
 scripts/ci/check-repository 150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
-tools/tests/test_validate_foundation.py 80c05bb6da5fda63af325942242d23591bdd33a1fb214f9779260ab5cea2c396
+tools/tests/test_validate_foundation.py 599ce38a0982610dfec85043a344ec5ca940a45a8c0804221c228c3b51b8c806
 tools/tests/test_validate_foundation_hardening.py 8ed536c777d0dc8ddc700fc7f3416c961e9f97b8a7da5207919c2eb5881d9759
 """.strip().splitlines()
 )
@@ -712,12 +712,7 @@ def load_json(path: Path) -> Any:
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    """Serialize the integer-only Gate 0 JSON profile using RFC 8785 rules.
-
-    Gate 0 rejects floating-point values, unsafe integers, duplicate names, and
-    lone surrogates before this function is called. That narrower domain avoids
-    the ECMAScript floating-point formatting edge cases in full RFC 8785.
-    """
+    """Serialize Gate 0's integer-only RFC 8785 profile."""
 
     _require_unicode_scalars(value, "")
 
@@ -5244,16 +5239,16 @@ def valid_format(value: str, format_name: str) -> bool:
         if format_name == "date-time":
             parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
             return parsed.tzinfo is not None
-        if format_name == "uri":
+        if format_name in ("uri", "uri-reference"):
             if not has_valid_rfc3986_lexical_form(value):
                 return False
             parsed = urlsplit(value)
-            return bool(parsed.scheme)
-        if format_name == "uri-reference":
-            if not has_valid_rfc3986_lexical_form(value):
+            if "#" in parsed.fragment or any(
+                "[" in component or "]" in component
+                for component in (parsed.path, parsed.query, parsed.fragment)
+            ):
                 return False
-            urlsplit(value)
-            return True
+            return format_name == "uri-reference" or bool(parsed.scheme)
     except (TypeError, ValueError):
         return False
     # The Gate 0 schemas may annotate unfamiliar formats, but cannot use them as
