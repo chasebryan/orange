@@ -1651,6 +1651,8 @@ class MarkdownTests(unittest.TestCase):
                 "[blank\n\nlabel](blank-ignored.md)\n"
                 "[![image](image.png)](outer-missing.md)\n"
                 "[continued destination](\n  continued-inline-missing.md)\n"
+                "[continued title](continued-title-missing.md\n  \"title\")\n"
+                "[continued close](continued-close-missing.md\n)\n"
                 "[split destination](split-ignored.md\npath)\n"
                 "[angle](<(guide).md>)\n"
                 "[escaped](\\(guide\\).md)\n"
@@ -1703,6 +1705,14 @@ class MarkdownTests(unittest.TestCase):
                 (
                     "markdown.link_missing",
                     "local link target does not exist: cr-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: continued-title-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: continued-close-missing.md",
                 ),
             ],
         )
