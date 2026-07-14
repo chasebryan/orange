@@ -27,7 +27,8 @@ cryptographic validity has not yet been independently verified.
 - [`orange.png`](orange.png) is the primary emblem for a light background.
 - [`orange-erased.PNG`](orange-erased.PNG) is the primary transparent emblem.
 - [`orange-handdrawn-marker-banner.png`](orange-handdrawn-marker-banner.png) is
-  the primary hand-drawn README banner for a light background.
+  the primary hand-drawn banner for the repository README and The Orange Book
+  on a light background.
 - [`orange-banner.png`](orange-banner.png) is the provenance-bearing horizontal
   emblem and wordmark lockup for a light background.
 - [`orange-banner2-erased.PNG`](orange-banner2-erased.PNG) is the transparent

@@ -254,7 +254,7 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
     {
         "path": "assets/brand/orange-handdrawn-marker-banner.png",
         "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735",
-        "role": "Official working Orange hand-drawn README horizontal lockup on a light background",
+        "role": "Official working Orange hand-drawn README and Orange Book horizontal lockup on a light background",
         "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-14",
     },
 ]
@@ -340,8 +340,8 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "c6bb47562104633525139d5272778b4c534baf845cb1d67c7a284830992d01f4",
-    "assets/brand/manifest.json": "8ade7b9bb7837581961a483cd57d79107a71c4bd2d1af78b2214f49582049056",
+    "assets/brand/README.md": "7d71da4d28befb1b5735244c1ee51ee761e07a923b67b85d2bba9380da602874",
+    "assets/brand/manifest.json": "0ae668ae0fb52e04518681afddb2af5c11487bf5c3cda24be0d7f1ecb31c1391",
     "compiler/crates/orangec/tests/s3a_conformance.rs": "aa80ca33ef594aec277f6812a76efafe5a9a53b787839e1ff267d3fea29c3b0e",
     "compiler/fixtures/s3a/invalid-duplicate-spec.or": "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6",
     "compiler/fixtures/s3a/invalid-int-magnitude.or": "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542",
@@ -390,7 +390,7 @@ GATE0_PROTECTED_FILE_DIGESTS = {
     "scripts/ci/install-actionlint": "b27105dc84be9f15fad5a1de3decbe7b75adc3065d9779d20ee6ba730c6fba4a",
     "scripts/ci/install-lychee": "42c0cca2b7a448d3ce131315b2c515e0492c3ddb343149fe5ddeffaef29198ed",
     "tools/tests/test_validate_foundation.py": "e658c77281ddcd18785254e608b1eba4140053b33779652b061db1dfc30a7300",
-    "tools/tests/test_validate_foundation_hardening.py": "1ecb94986a1a29b6e48b6a9bb0b032b0f6b0087f748b850e1ddcaa8faba709f0",
+    "tools/tests/test_validate_foundation_hardening.py": "2a1f3f4aa06597989ca4b6054adbc65ccf793d89174875a832ba2a46c28d5cc2",
 }
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -4049,14 +4049,27 @@ def nonempty_scalar(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+RUST_USIZE_MAXIMUM = (1 << 64) - 1
+RUST_USIZE_MAXIMUM_DECIMAL_DIGITS = len(str(RUST_USIZE_MAXIMUM))
+
+
 def parse_rust_usize_product(value: str) -> int | None:
-    """Parse the deliberately tiny integer-product form used by Rust budgets."""
+    """Parse a tiny integer product within Orange's admitted 64-bit usize range."""
 
     if re.fullmatch(r"\s*[0-9][0-9_]*(?:\s*\*\s*[0-9][0-9_]*)*\s*", value) is None:
         return None
     result = 1
     for factor in value.split("*"):
-        result *= int(factor.strip().replace("_", ""), 10)
+        digits = factor.strip().replace("_", "")
+        significant_digits = digits.lstrip("0") or "0"
+        if len(significant_digits) > RUST_USIZE_MAXIMUM_DECIMAL_DIGITS:
+            return None
+        parsed = int(significant_digits, 10)
+        if parsed > RUST_USIZE_MAXIMUM:
+            return None
+        if parsed != 0 and result > RUST_USIZE_MAXIMUM // parsed:
+            return None
+        result *= parsed
     return result
 
 
