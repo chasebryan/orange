@@ -82,9 +82,10 @@ snapshot. Preflight rejects hardlinked files and uses `SEEK_HOLE` to reject
 sparse files before parsing policy content. A host or filesystem without these
 primitives receives `resource.unsupported_host` instead of a weaker validation
 result. The validator and its intermediate schema and record-metadata checkers
-each retain at most 4,096 detailed findings; the final report adds one
-deterministic suppression record, preventing bounded repository bytes from
-amplifying into an unbounded diagnostic object or output stream.
+each retain at most 4,096 detailed findings. Final finding messages retain at
+most 4,096 characters, and the report adds one deterministic suppression
+record, preventing bounded repository bytes from amplifying into an unbounded
+diagnostic object or output stream.
 
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added

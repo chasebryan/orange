@@ -67,6 +67,7 @@ GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
 GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
 GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES = 4096
 GATE0_MAXIMUM_FINDINGS = 4096
+GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS = 4096
 GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
 _GATE0_GIT_READ_CHUNK_BYTES = 4096
 _GATE0_GIT_TIMEOUT_SECONDS = 30.0
@@ -385,7 +386,7 @@ docs/operations/GITHUB_CONTROLS.md f86bdf0234e9db17256f4be07e20e65a9913de45e96e1
 docs/security/OSPS_BASELINE.md 38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72
 docs/security/SECRETS_AND_INCIDENTS.md 93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6
 docs/security/THREAT_MODEL.md bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f
-policy/README.md 2932baea58551cf8e5f099cdd92b29078e1282464677f16c5ae410c0624c8677
+policy/README.md 4aeaa2cd7d05a9790e35820915edf1f3677ef398df333e6fa3d0e6f9c677c353
 schemas/README.md 39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774
 schemas/gate0/claim-record-v0.1.schema.json a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131
 schemas/gate0/evidence-manifest-v0.1.schema.json 987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd
@@ -397,7 +398,7 @@ scripts/ci/check-repository 252260b2b7597d121fe2a96dd4c0e5d349fd9481f832d63eb7a8
 scripts/ci/install-actionlint c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636
 scripts/ci/install-lychee e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced
 tools/tests/test_validate_foundation.py e4891051a30f0971c311409a13b002d08abd0cd0ebf0bb5655954fa904677b89
-tools/tests/test_validate_foundation_hardening.py 311a361b25a6e69a154c38727df32a039f7c952624fa2fa9d05b152bcf0550eb
+tools/tests/test_validate_foundation_hardening.py e39f4c39e4c184475ff7663f676374fef049b80d11efd68a3f8fc9a4e46c67ca
 """.strip().splitlines()
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
@@ -432,22 +433,22 @@ GATE0_CONFORMANCE_CASE_IDS = (
     "trust-inventory-valid",
     "trust-inventory-authority-without-identity",
 )
-GATE0_CONFORMANCE_INSTANCE_PATHS = {
-    "conformance/foundation/invalid/claim-record-assumption-only.json",
-    "conformance/foundation/invalid/evidence-manifest-independent-without-review.json",
-    "conformance/foundation/invalid/evidence-manifest-network-enabled.json",
-    "conformance/foundation/invalid/evidence-manifest-path-escape.json",
-    "conformance/foundation/invalid/repository-control-missing-explanation.json",
-    "conformance/foundation/invalid/repository-control-selected-actions-empty.json",
-    "conformance/foundation/invalid/standards-provenance-bad-digest.json",
-    "conformance/foundation/invalid/standards-provenance-reviewed-without-reference.json",
-    "conformance/foundation/invalid/trust-inventory-missing-identity.json",
-    "conformance/foundation/valid/claim-record.json",
-    "conformance/foundation/valid/evidence-manifest.json",
-    "conformance/foundation/valid/repository-control-snapshot.json",
-    "conformance/foundation/valid/standards-provenance.json",
-    "conformance/foundation/valid/trust-inventory.json",
-}
+GATE0_CONFORMANCE_INSTANCE_PATHS = set(
+    """conformance/foundation/invalid/claim-record-assumption-only.json
+conformance/foundation/invalid/evidence-manifest-independent-without-review.json
+conformance/foundation/invalid/evidence-manifest-network-enabled.json
+conformance/foundation/invalid/evidence-manifest-path-escape.json
+conformance/foundation/invalid/repository-control-missing-explanation.json
+conformance/foundation/invalid/repository-control-selected-actions-empty.json
+conformance/foundation/invalid/standards-provenance-bad-digest.json
+conformance/foundation/invalid/standards-provenance-reviewed-without-reference.json
+conformance/foundation/invalid/trust-inventory-missing-identity.json
+conformance/foundation/valid/claim-record.json
+conformance/foundation/valid/evidence-manifest.json
+conformance/foundation/valid/repository-control-snapshot.json
+conformance/foundation/valid/standards-provenance.json
+conformance/foundation/valid/trust-inventory.json""".split()
+)
 GATE0_RUST_TOOLCHAIN = {
     "toolchain": {
         "channel": "1.96.1",
@@ -1372,6 +1373,9 @@ class FoundationValidator:
 
     def add(self, code: str, path: str | Path, message: str) -> None:
         path_text = relative(path, self.root) if isinstance(path, Path) else path
+        truncation = "... [truncated]"
+        if len(message) > GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS:
+            message = message[: GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS - len(truncation)] + truncation
         if len(self.findings) < GATE0_MAXIMUM_FINDINGS:
             self.findings.append(Finding(code, path_text, message))
         elif len(self.findings) == GATE0_MAXIMUM_FINDINGS:

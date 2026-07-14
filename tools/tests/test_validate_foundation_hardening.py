@@ -15,6 +15,7 @@ from unittest import mock
 
 from tools.validate_foundation import (
     FoundationValidator,
+    GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
     GATE0_MAXIMUM_FINDINGS,
     audit_schema_vocabulary,
     canonical_json_bytes,
@@ -520,6 +521,19 @@ class PolicyShapeHardeningTests(unittest.TestCase):
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
+    def test_finding_messages_are_bounded_with_a_truncation_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            validator = FoundationValidator(Path(directory))
+            validator.add(
+                "synthetic.finding",
+                ".",
+                "x" * (GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS + 100),
+            )
+
+        message = validator.findings[0].message
+        self.assertEqual(len(message), GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS)
+        self.assertTrue(message.endswith("... [truncated]"))
+
     def test_finding_retention_is_bounded_with_one_suppression_record(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             validator = FoundationValidator(Path(directory))
