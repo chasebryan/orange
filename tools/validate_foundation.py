@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "5a3d8bde17673dca5130c10d197b1375b2c63b6e3fe05b60274136628e01d909"
+GATE0_PROTECTED_FILE_DIGEST = "1e3aa83a4061f8c67f528da71cf1133d25760ec6e26aab52e2b903fa42d9ae3e"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -4554,6 +4554,7 @@ def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
 def markdown_inline_link_targets(text: str) -> Iterable[str]:
     offset = 0
     line_end = -1
+    last_delimiter = {">": -1, '"': -1, "'": -1}
     while offset < len(text):
         label_depth = 0
         escaped = False
@@ -4582,9 +4583,13 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
                 candidate = text.find(line_break, start)
                 if candidate >= 0:
                     line_end = min(line_end, candidate)
+            last_delimiter = {
+                delimiter: text.rfind(delimiter, start, line_end)
+                for delimiter in (">", '"', "'")
+            }
         depth = 0
         quote: str | None = None
-        angle = text.startswith("<", start) and text.find(">", start + 1, line_end) >= 0
+        angle = text.startswith("<", start) and start < last_delimiter[">"]
         escaped = False
         for index in range(start, line_end):
             character = text[index]
@@ -4605,7 +4610,7 @@ def markdown_inline_link_targets(text: str) -> Iterable[str]:
             if (
                 character in "\"'"
                 and (index == start or text[index - 1].isspace())
-                and text.find(character, index + 1, line_end) >= 0
+                and index < last_delimiter[character]
             ):
                 quote = character
             elif character == "(":
