@@ -788,7 +788,9 @@ version = "0.1.0"
                 )
 
     def test_top_level_run_invokes_compiler_contract(self) -> None:
-        validator = FoundationValidator(Path("/virtual"))
+        temporary_root = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_root.cleanup)
+        validator = FoundationValidator(Path(temporary_root.name))
         other_validation_methods = (
             "_validate_required_and_forbidden_paths",
             "_validate_tree_encoding_and_format",

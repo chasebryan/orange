@@ -29,5 +29,6 @@ pub use semantics::{
     MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE, MAX_SEMANTIC_EVENTS_PER_SOURCE, analyze,
 };
 pub use source::{
-    LineColumn, MAX_SOURCE_BYTES, SourceError, SourceFile, SourceId, SourceMap, Span, TextOffset,
+    LineColumn, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile, SourceId, SourceMap,
+    Span, TextOffset,
 };

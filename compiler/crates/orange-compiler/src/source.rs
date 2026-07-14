@@ -1,5 +1,6 @@
 //! Source ownership, stable file identities, and byte-precise spans.
 
+use std::ffi::OsStr;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -9,6 +10,53 @@ static NEXT_SOURCE_MAP_ID: AtomicU64 = AtomicU64::new(1);
 pub const MAX_SOURCE_BYTES: usize = 16 * 1024 * 1024;
 
 const COLUMN_CHECKPOINT_INTERVAL_BYTES: usize = 256;
+
+/// An injective, ASCII-safe display encoding of an operating-system source name.
+///
+/// Normal UTF-8 library names should be passed directly to [`SourceMap::add`].
+/// This wrapper lets command-line clients preserve non-UTF-8 path identity
+/// without asking diagnostic rendering to interpret an already escaped string.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RenderedSourceName(String);
+
+impl RenderedSourceName {
+    /// Encodes a UTF-8 source name with Rust's stable default character escapes.
+    #[must_use]
+    pub fn from_text(name: &str) -> Self {
+        Self(name.chars().flat_map(char::escape_default).collect())
+    }
+
+    /// Encodes the target representation of an operating-system source name.
+    ///
+    /// Non-UTF-8 identity follows [`OsStr::as_encoded_bytes`] for the current
+    /// target and pinned toolchain; it is not a cross-platform path encoding.
+    #[must_use]
+    pub fn from_os_str(name: &OsStr) -> Self {
+        if let Some(name) = name.to_str() {
+            return Self::from_text(name);
+        }
+        Self(
+            name.as_encoded_bytes()
+                .iter()
+                .copied()
+                .flat_map(std::ascii::escape_default)
+                .map(char::from)
+                .collect(),
+        )
+    }
+
+    /// Returns the canonical ASCII-safe display representation.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for RenderedSourceName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
 
 /// A stable, insertion-ordered source identity within a [`SourceMap`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -118,6 +166,7 @@ pub struct LineColumn {
 pub struct SourceFile {
     id: SourceId,
     name: String,
+    name_is_rendered: bool,
     text: String,
     line_starts: Vec<TextOffset>,
     column_checkpoints: Vec<ColumnCheckpoint>,
@@ -129,13 +178,52 @@ struct ColumnCheckpoint {
     column: u32,
 }
 
+fn logical_line_ending_count(bytes: &[u8]) -> Result<usize, SourceError> {
+    let mut ending_count = 0_usize;
+    let mut previous_was_cr = false;
+
+    for byte in bytes {
+        match *byte {
+            b'\r' => {
+                ending_count = ending_count
+                    .checked_add(1)
+                    .ok_or(SourceError::IndexAllocationFailed)?;
+                previous_was_cr = true;
+            }
+            b'\n' => {
+                if !previous_was_cr {
+                    ending_count = ending_count
+                        .checked_add(1)
+                        .ok_or(SourceError::IndexAllocationFailed)?;
+                }
+                previous_was_cr = false;
+            }
+            _ => previous_was_cr = false,
+        }
+    }
+
+    Ok(ending_count)
+}
+
 impl SourceFile {
-    fn new(id: SourceId, name: String, text: String) -> Result<Self, SourceError> {
+    fn new(
+        id: SourceId,
+        name: String,
+        name_is_rendered: bool,
+        text: String,
+    ) -> Result<Self, SourceError> {
         if text.len() > MAX_SOURCE_BYTES {
             return Err(SourceError::TooLarge);
         }
         let byte_len = u32::try_from(text.len()).map_err(|_| SourceError::TooLarge)?;
-        let mut line_starts = vec![TextOffset::new(0)];
+        let line_count = logical_line_ending_count(text.as_bytes())?
+            .checked_add(1)
+            .ok_or(SourceError::IndexAllocationFailed)?;
+        let mut line_starts = Vec::new();
+        line_starts
+            .try_reserve_exact(line_count)
+            .map_err(|_| SourceError::IndexAllocationFailed)?;
+        line_starts.push(TextOffset::new(0));
         let mut column_checkpoints = Vec::new();
         let mut line_start = 0_usize;
         let mut last_checkpoint = 0_usize;
@@ -158,11 +246,16 @@ impl SourceFile {
             let byte = text.as_bytes()[index];
             if byte == b'\r' || byte == b'\n' {
                 // CRLF is one logical ending; bare CR and LF are endings too.
-                let next = if byte == b'\r' && text.as_bytes().get(index + 1) == Some(&b'\n') {
-                    index + 2
+                let ending_width = if byte == b'\r'
+                    && text.as_bytes().get(index.saturating_add(1)) == Some(&b'\n')
+                {
+                    2
                 } else {
-                    index + 1
+                    1
                 };
+                let next = index
+                    .checked_add(ending_width)
+                    .ok_or(SourceError::TooLarge)?;
                 line_starts.push(TextOffset::new(
                     u32::try_from(next).map_err(|_| SourceError::TooLarge)?,
                 ));
@@ -182,9 +275,11 @@ impl SourceFile {
                 .last()
                 .is_some_and(|offset| offset.0 <= byte_len)
         );
+        debug_assert_eq!(line_starts.len(), line_count);
         Ok(Self {
             id,
             name,
+            name_is_rendered,
             text,
             line_starts,
             column_checkpoints,
@@ -197,10 +292,18 @@ impl SourceFile {
         self.id
     }
 
-    /// Returns the caller-provided display name.
+    /// Returns the caller-provided name representation.
+    ///
+    /// [`SourceMap::add`] preserves the raw UTF-8 name. A source inserted with
+    /// [`SourceMap::add_with_rendered_name`] instead returns its canonical
+    /// ASCII-safe representation here.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub(crate) const fn name_is_rendered(&self) -> bool {
+        self.name_is_rendered
     }
 
     /// Returns the complete UTF-8 source text.
@@ -353,12 +456,33 @@ impl SourceMap {
         name: impl Into<String>,
         text: impl Into<String>,
     ) -> Result<SourceId, SourceError> {
+        self.add_inner(name.into(), false, text.into())
+    }
+
+    /// Adds a source with an already canonical [`RenderedSourceName`].
+    ///
+    /// Diagnostics preserve this representation exactly instead of escaping it
+    /// a second time.
+    pub fn add_with_rendered_name(
+        &mut self,
+        name: RenderedSourceName,
+        text: impl Into<String>,
+    ) -> Result<SourceId, SourceError> {
+        self.add_inner(name.0, true, text.into())
+    }
+
+    fn add_inner(
+        &mut self,
+        name: String,
+        name_is_rendered: bool,
+        text: String,
+    ) -> Result<SourceId, SourceError> {
         let index = u32::try_from(self.files.len()).map_err(|_| SourceError::TooManyFiles)?;
         let id = SourceId {
             map: self.identity,
             index,
         };
-        let file = SourceFile::new(id, name.into(), text.into())?;
+        let file = SourceFile::new(id, name, name_is_rendered, text)?;
         self.files.push(file);
         Ok(id)
     }
@@ -396,13 +520,15 @@ impl Default for SourceMap {
     }
 }
 
-/// A representational source-map limit was exceeded.
+/// A source could not be represented in a source map.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceError {
     /// A single source exceeds [`MAX_SOURCE_BYTES`].
     TooLarge,
     /// A source map already contains `u32::MAX` files.
     TooManyFiles,
+    /// Memory for a source's derived indexing data could not be reserved.
+    IndexAllocationFailed,
 }
 
 impl fmt::Display for SourceError {
@@ -411,6 +537,9 @@ impl fmt::Display for SourceError {
             Self::TooLarge => formatter.write_str("source exceeds the 16 MiB input limit"),
             Self::TooManyFiles => {
                 formatter.write_str("source map exceeds the file representation limit")
+            }
+            Self::IndexAllocationFailed => {
+                formatter.write_str("could not allocate source indexing data")
             }
         }
     }
@@ -421,6 +550,16 @@ impl std::error::Error for SourceError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rendered_source_names_distinguish_text_from_literal_escapes() {
+        let unicode = RenderedSourceName::from_text("é.or");
+        let literal = RenderedSourceName::from_text(r"\u{e9}.or");
+
+        assert_eq!(unicode.as_str(), r"\u{e9}.or");
+        assert_eq!(literal.as_str(), r"\\u{e9}.or");
+        assert_ne!(unicode, literal);
+    }
 
     #[test]
     fn source_ids_follow_insertion_order() {
@@ -462,6 +601,8 @@ mod tests {
         let id = sources.add("endings.or", "a\rb\r\nc\nd").unwrap();
         let source = sources.get(id).unwrap();
 
+        assert_eq!(source.line_starts.len(), 4);
+        assert_eq!(source.line_starts.capacity(), 4);
         assert_eq!(source.line_text(1), Some("a"));
         assert_eq!(source.line_text(2), Some("b"));
         assert_eq!(source.line_text(3), Some("c"));
@@ -477,6 +618,36 @@ mod tests {
         assert_eq!(
             source.line_column(TextOffset::new(7)),
             Some(LineColumn { line: 4, column: 1 })
+        );
+    }
+
+    #[test]
+    fn reserves_the_finished_line_index_just_above_a_power_of_two() {
+        const ENDING_COUNT: usize = 1 << 16;
+
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add("newline-heavy.or", "\n".repeat(ENDING_COUNT))
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let expected_line_count = ENDING_COUNT + 1;
+
+        assert_eq!(source.line_starts.len(), expected_line_count);
+        assert_eq!(source.line_starts.capacity(), expected_line_count);
+        assert_eq!(
+            source.line_column(TextOffset::new(
+                u32::try_from(ENDING_COUNT).expect("test input fits in a text offset")
+            )),
+            Some(LineColumn {
+                line: u32::try_from(expected_line_count).expect("test line count fits in u32"),
+                column: 1,
+            })
+        );
+        assert_eq!(
+            source.line_text(
+                u32::try_from(expected_line_count).expect("test line count fits in u32")
+            ),
+            Some("")
         );
     }
 

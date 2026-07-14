@@ -5,14 +5,45 @@ use std::fmt;
 use crate::source::Span;
 
 /// A successfully analyzed Orange module.
+///
+/// Core storage is read-only outside this crate so callers cannot reorder
+/// functions, duplicate identities, or replace a checked value.
+///
+/// ```compile_fail
+/// use orange_compiler::CoreModule;
+///
+/// fn discard_checked_functions(core: &mut CoreModule) {
+///     core.functions.clear();
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoreModule {
     /// Full source extent of the module declaration.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Exact ASCII module name.
-    pub name: String,
+    pub(crate) name: String,
     /// Typed functions in deterministic source order.
-    pub functions: Vec<CoreFunction>,
+    pub(crate) functions: Vec<CoreFunction>,
+}
+
+impl CoreModule {
+    /// Returns the full source extent of the module declaration.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact ASCII module name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns typed functions in deterministic source order.
+    #[must_use]
+    pub fn functions(&self) -> &[CoreFunction] {
+        &self.functions
+    }
 }
 
 /// A dense, source-ordered identity within one [`CoreModule`].
@@ -35,17 +66,53 @@ impl CoreFunctionId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoreFunction {
     /// Dense source-order identity.
-    pub id: CoreFunctionId,
+    pub(crate) id: CoreFunctionId,
     /// Full source extent of the function declaration.
-    pub span: Span,
+    pub(crate) span: Span,
     /// Exact ASCII function name.
-    pub name: String,
+    pub(crate) name: String,
     /// Source extent of the function name.
-    pub name_span: Span,
-    /// Statically checked result type.
-    pub result_type: CoreType,
+    pub(crate) name_span: Span,
     /// Statically checked literal result.
-    pub value: CoreValue,
+    pub(crate) value: CoreValue,
+}
+
+impl CoreFunction {
+    /// Returns the dense source-order identity.
+    #[must_use]
+    pub const fn id(&self) -> CoreFunctionId {
+        self.id
+    }
+
+    /// Returns the full source extent of the function declaration.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact ASCII function name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the source extent of the function name.
+    #[must_use]
+    pub const fn name_span(&self) -> Span {
+        self.name_span
+    }
+
+    /// Returns the statically checked result type.
+    #[must_use]
+    pub const fn result_type(&self) -> CoreType {
+        self.value.ty()
+    }
+
+    /// Returns the statically checked literal result.
+    #[must_use]
+    pub const fn value(&self) -> &CoreValue {
+        &self.value
+    }
 }
 
 /// Types admitted by the first typed expression fragment.
@@ -221,6 +288,17 @@ impl Magnitude {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::{SourceMap, TextOffset};
+
+    fn test_span() -> Span {
+        let mut sources = SourceMap::new();
+        let id = sources.add("core.or", "x").unwrap();
+        sources
+            .get(id)
+            .unwrap()
+            .span(TextOffset::new(0), TextOffset::new(1))
+            .unwrap()
+    }
 
     #[test]
     fn exact_integer_decimal_formatting_does_not_collapse_large_values() {
@@ -245,5 +323,43 @@ mod tests {
         assert_eq!(CoreValue::Word8(0).to_string(), "0x00");
         assert_eq!(CoreValue::Word8(10).to_string(), "0x0a");
         assert_eq!(CoreValue::Word8(255).to_string(), "0xff");
+    }
+
+    #[test]
+    fn core_accessors_preserve_source_order_and_derive_value_types() {
+        let span = test_span();
+        let functions = vec![
+            CoreFunction {
+                id: CoreFunctionId::from_index(0).unwrap(),
+                span,
+                name: String::from("integer"),
+                name_span: span,
+                value: CoreValue::Int(ExactInteger::new(false, Magnitude::zero())),
+            },
+            CoreFunction {
+                id: CoreFunctionId::from_index(1).unwrap(),
+                span,
+                name: String::from("word"),
+                name_span: span,
+                value: CoreValue::Word8(8),
+            },
+        ];
+        let module = CoreModule {
+            span,
+            name: String::from("values"),
+            functions,
+        };
+
+        assert_eq!(module.span(), span);
+        assert_eq!(module.name(), "values");
+        assert_eq!(module.functions()[0].id().index(), 0);
+        assert_eq!(module.functions()[0].span(), span);
+        assert_eq!(module.functions()[0].name(), "integer");
+        assert_eq!(module.functions()[0].name_span(), span);
+        assert_eq!(module.functions()[0].result_type(), CoreType::Int);
+        assert_eq!(module.functions()[0].value().ty(), CoreType::Int);
+        assert_eq!(module.functions()[1].id().index(), 1);
+        assert_eq!(module.functions()[1].result_type(), CoreType::Word8);
+        assert_eq!(module.functions()[1].value(), &CoreValue::Word8(8));
     }
 }

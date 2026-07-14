@@ -1,6 +1,7 @@
 //! Deterministic reference evaluation for typed Orange Core.
 
 use std::fmt;
+use std::sync::Arc;
 
 use crate::core::{CoreFunctionId, CoreModule, CoreType, CoreValue};
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
@@ -9,18 +10,59 @@ use crate::diagnostic::{Diagnostic, DiagnosticCode};
 pub const MAX_EVALUATION_STEPS_PER_SOURCE: usize = 1_048_576;
 
 /// One evaluated function result in deterministic Core source order.
+///
+/// Evaluated values are read-only outside this crate so their source identity,
+/// order, and checked type cannot be rewritten after evaluation.
+///
+/// ```compile_fail
+/// use orange_compiler::{CoreType, EvaluatedFunction};
+///
+/// fn forge_type(value: &mut EvaluatedFunction) {
+///     value.result_type = CoreType::Word8;
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvaluatedFunction {
     /// Identity copied from the source-ordered Core function.
-    pub id: CoreFunctionId,
-    /// Exact ASCII module name.
-    pub module: String,
+    id: CoreFunctionId,
+    /// Exact ASCII module name, shared by results from the same module.
+    module: Arc<str>,
     /// Exact ASCII function name.
-    pub name: String,
-    /// Statically checked result type.
-    pub result_type: CoreType,
+    name: String,
     /// Exact evaluated value.
-    pub value: CoreValue,
+    value: CoreValue,
+}
+
+impl EvaluatedFunction {
+    /// Returns the source-ordered Core function identity.
+    #[must_use]
+    pub const fn id(&self) -> CoreFunctionId {
+        self.id
+    }
+
+    /// Returns the exact ASCII module name.
+    #[must_use]
+    pub fn module(&self) -> &str {
+        &self.module
+    }
+
+    /// Returns the exact ASCII function name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the statically checked result type.
+    #[must_use]
+    pub const fn result_type(&self) -> CoreType {
+        self.value.ty()
+    }
+
+    /// Returns the exact evaluated value.
+    #[must_use]
+    pub const fn value(&self) -> &CoreValue {
+        &self.value
+    }
 }
 
 impl fmt::Display for EvaluatedFunction {
@@ -28,21 +70,50 @@ impl fmt::Display for EvaluatedFunction {
         write!(
             formatter,
             "{}::{}: {} = {}",
-            self.module, self.name, self.result_type, self.value
+            self.module(),
+            self.name(),
+            self.result_type(),
+            self.value()
         )
     }
 }
 
 /// The complete result of reference evaluation.
+///
+/// ```compile_fail
+/// use orange_compiler::EvaluationResult;
+///
+/// fn replace_values(result: &mut EvaluationResult) {
+///     result.values = None;
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvaluationResult {
     /// Results in source order, present only when evaluation produced no diagnostics.
-    pub values: Option<Vec<EvaluatedFunction>>,
+    values: Option<Vec<EvaluatedFunction>>,
     /// Evaluation-resource diagnostics in deterministic source order.
-    pub diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl EvaluationResult {
+    /// Returns results in source order, or `None` after evaluation failure.
+    #[must_use]
+    pub fn values(&self) -> Option<&[EvaluatedFunction]> {
+        self.values.as_deref()
+    }
+
+    /// Returns evaluation-resource diagnostics in deterministic source order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Consumes this result and returns its complete value set, if produced.
+    #[must_use]
+    pub fn into_values(self) -> Option<Vec<EvaluatedFunction>> {
+        self.values
+    }
+
     /// Returns whether reference evaluation did not produce a complete value set.
     #[must_use]
     pub fn has_errors(&self) -> bool {
@@ -57,7 +128,8 @@ pub fn evaluate(core: &CoreModule) -> EvaluationResult {
 }
 
 fn evaluate_with_limit(core: &CoreModule, step_limit: usize) -> EvaluationResult {
-    let mut values = Vec::with_capacity(core.functions.len());
+    let mut values = Vec::with_capacity(core.functions.len().min(step_limit));
+    let mut shared_module = None;
     for (steps, function) in core.functions.iter().enumerate() {
         if steps >= step_limit {
             return EvaluationResult {
@@ -76,11 +148,11 @@ fn evaluate_with_limit(core: &CoreModule, step_limit: usize) -> EvaluationResult
                 ],
             };
         }
+        let module = Arc::clone(shared_module.get_or_insert_with(|| Arc::from(core.name.as_str())));
         values.push(EvaluatedFunction {
             id: function.id,
-            module: core.name.clone(),
+            module,
             name: function.name.clone(),
-            result_type: function.result_type,
             value: function.value.clone(),
         });
     }
@@ -106,10 +178,10 @@ mod tests {
         let lexed = lex(source, Edition::E2026);
         assert_eq!(lexed.diagnostics(), []);
         let parsed = parse(source, &lexed);
-        assert_eq!(parsed.diagnostics, []);
-        let analyzed = analyze(source, parsed.ast.as_ref().unwrap());
-        assert_eq!(analyzed.diagnostics, []);
-        analyzed.core.unwrap()
+        assert_eq!(parsed.diagnostics(), []);
+        let analyzed = analyze(source, parsed.ast().unwrap());
+        assert_eq!(analyzed.diagnostics(), []);
+        analyzed.into_core().unwrap()
     }
 
     #[test]
@@ -122,9 +194,9 @@ mod tests {
             "}\n",
         ));
         let result = evaluate(&core);
-        assert_eq!(result.diagnostics, []);
+        assert_eq!(result.diagnostics(), []);
         let rendered: Vec<_> = result
-            .values
+            .values()
             .unwrap()
             .iter()
             .map(ToString::to_string)
@@ -143,8 +215,8 @@ mod tests {
     fn empty_core_evaluates_to_an_empty_value_set() {
         let core = core("edition 2026; module values { spec empty() {} }\n");
         let result = evaluate(&core);
-        assert_eq!(result.values, Some(Vec::new()));
-        assert_eq!(result.diagnostics, []);
+        assert_eq!(result.values().unwrap(), []);
+        assert_eq!(result.diagnostics(), []);
     }
 
     #[test]
@@ -156,10 +228,11 @@ mod tests {
             "}\n",
         ));
         let result = evaluate_with_limit(&core, 1);
-        assert!(result.values.is_none());
-        assert_eq!(result.diagnostics.len(), 1);
+        assert!(result.has_errors());
+        assert!(result.values().is_none());
+        assert_eq!(result.diagnostics().len(), 1);
         assert_eq!(
-            result.diagnostics[0].code(),
+            result.diagnostics()[0].code(),
             DiagnosticCode::EvaluationResourceLimit
         );
     }
@@ -168,5 +241,18 @@ mod tests {
     fn evaluation_is_repeatable() {
         let core = core("edition 2026; module values { spec answer() -> Int { 42 } }\n");
         assert_eq!(evaluate(&core), evaluate(&core));
+    }
+
+    #[test]
+    fn module_identity_is_shared_across_evaluated_values() {
+        let core = core(concat!(
+            "edition 2026; module a_very_long_shared_module_name {\n",
+            "  spec first() -> Int { 1 }\n",
+            "  spec second() -> Int { 2 }\n",
+            "}\n",
+        ));
+        let result = evaluate(&core);
+        let values = result.values().unwrap();
+        assert!(Arc::ptr_eq(&values[0].module, &values[1].module));
     }
 }

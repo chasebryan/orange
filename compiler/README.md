@@ -36,13 +36,42 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance
 
 `orangec` accepts up to 256 source inputs in argument order. Regular files are
 processed incrementally; `-` is the only stream input and reads standard input
-at most once. `eval` accepts exactly one source and emits no partial result after
-an error. Successful `check` commands are silent. Diagnostics go to standard
+at most once. `eval` accepts exactly one source and begins output only after
+complete validation and evaluation. A host output failure can leave an
+already-written prefix, but returns status 1; a broken pipe remains quiet and
+is never reported as successful evaluation. Once a standard-output or
+standard-error write failure is observed, later source operands are not read or
+compiled. Ordinary source failures still aggregate diagnostics across later
+inputs. Successful `check` commands are silent. Diagnostics go to standard
 error and use exit status 1; command-line usage errors use status 2. A source
 with lexical errors is not parsed, and a source with syntax errors is not
 analyzed. File and standard-input reads stop at a deterministic 16 MiB
 per-source limit. Larger inputs fail with `ORC1003` before lexing and are never
 buffered without a bound.
+
+CLI-derived source names, diagnostic excerpts, and echoed command or option
+text use an ASCII-safe escape representation for backslashes, controls, and
+non-ASCII scalars. Invalid encoded path bytes use `\xNN` identities rather than
+lossy replacement, and literal escape-looking path input remains
+distinguishable from the byte it resembles. Library-provided raw source names
+are escaped injectively during diagnostic rendering; the CLI passes a tagged
+canonical name so its already encoded OS path is not escaped a second time.
+
+`orangec lex` streams token records and escapes each spelling through a fixed
+4 KiB scratch buffer instead of materializing an expanded token string. Lex
+output still has no separate byte limit: escape notation and per-token metadata
+can make it larger than the accepted source, so callers processing untrusted
+input should cap output and time.
+
+Accepted S3a has no separate evaluation-output byte limit. Each successful
+output line repeats the module name, so a source with a long module name and
+many typed specifications can request output much larger than its input. The
+CLI shares the evaluated module identity and streams values through a fixed
+buffer, which bounds compiler-owned output buffering but does not bound the
+requested bytes or time. Apply caller-side output and time limits before using
+`orangec eval` on untrusted sources. Adding a fail-closed output ceiling requires
+an explicit edition-aware semantic decision because it would change accepted
+S3a behavior.
 
 ## Frozen lexical boundary
 
@@ -105,6 +134,18 @@ representation and does not silently wrap;
 Duplicate names are syntactically valid, then semantic analysis rejects a
 duplicate within the same declaration-kind namespace. Empty declarations have
 no value, and a typed `impl` remains a syntax error.
+
+The reusable syntax-tree and Typed Reference Core nodes, together with parser,
+analysis, and evaluation result envelopes, are read-only outside the compiler
+crate. Callers can inspect parsed, checked, and evaluated spans, names,
+source-ordered declarations, identities, types, and values through accessors,
+but cannot mutate compiler-established structure or replace a checked or
+evaluated value.
+Parsing rejects lexer output paired with a different source as `ORC0107`, even
+when that lexer output already contains errors. Semantic analysis rejects a
+syntax tree paired with a different source as `ORC0210`. A Core function's
+reported type is derived from its value, so a type/value mismatch is not
+representable at the public Core boundary.
 
 `orangec eval` prints every typed specification in source order:
 

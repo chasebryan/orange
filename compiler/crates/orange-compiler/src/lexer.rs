@@ -241,7 +241,14 @@ impl<'source> Lexer<'source> {
         }
     }
 
-    fn run(mut self) -> Lexed {
+    fn run(self) -> Lexed {
+        self.run_with_eof_reservation(|tokens| tokens.try_reserve_exact(1).is_ok())
+    }
+
+    fn run_with_eof_reservation(
+        mut self,
+        reserve_eof: impl FnOnce(&mut Vec<Token>) -> bool,
+    ) -> Lexed {
         while self.cursor < self.text.len() {
             if self.skip_trivia() {
                 continue;
@@ -280,7 +287,31 @@ impl<'source> Lexer<'source> {
         }
 
         let end = self.text.len();
-        self.push_token(TokenKind::Eof, end, end);
+        if self.tokens.len() == MAX_TOKENS_PER_SOURCE && !reserve_eof(&mut self.tokens) {
+            // The stream is already at its deterministic maximum, so there is
+            // an ordinary token slot available to preserve the mandatory EOF
+            // invariant without making another allocation attempt. The
+            // resource diagnostic prevents this incomplete stream from being
+            // consumed by the parser.
+            *self
+                .tokens
+                .last_mut()
+                .expect("the positive token limit guarantees a final token") = Token {
+                kind: TokenKind::Eof,
+                span: self.span(end, end),
+            };
+            self.push_resource_diagnostic(
+                Diagnostic::error(
+                    DiagnosticCode::LexicalResourceLimit,
+                    "lexer could not reserve the bounded token stream representation",
+                    self.span(end, end),
+                )
+                .with_label("lexing stopped before token storage became incomplete")
+                .with_note("the source was not accepted and no parser input was produced"),
+            );
+        } else {
+            self.push_token(TokenKind::Eof, end, end);
+        }
         Lexed {
             tokens: self.tokens,
             diagnostics: self.diagnostics,
@@ -823,6 +854,52 @@ mod tests {
         assert_eq!(
             lexed.diagnostics[0].message(),
             format!("source exceeds the {MAX_TOKENS_PER_SOURCE}-token lexical limit")
+        );
+    }
+
+    #[test]
+    fn exact_token_boundary_reserves_only_the_mandatory_eof_slot() {
+        let text = "x ".repeat(MAX_TOKENS_PER_SOURCE);
+        let (_, lexed) = lex_text(&text);
+
+        assert!(lexed.diagnostics.is_empty());
+        assert_eq!(lexed.tokens.len(), MAX_TOKENS_PER_SOURCE + 1);
+        assert_eq!(lexed.tokens.capacity(), MAX_TOKENS_PER_SOURCE + 1);
+        assert_eq!(lexed.tokens.last().unwrap().kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn eof_reservation_failure_preserves_eof_and_fails_closed() {
+        let text = "x ".repeat(MAX_TOKENS_PER_SOURCE);
+        let mut sources = SourceMap::new();
+        let id = sources.add("test.or", text).unwrap();
+        let source = sources.get(id).unwrap();
+
+        let lexed = Lexer::new(source, Edition::E2026).run_with_eof_reservation(|tokens| {
+            assert_eq!(tokens.len(), MAX_TOKENS_PER_SOURCE);
+            false
+        });
+
+        assert_eq!(lexed.tokens.len(), MAX_TOKENS_PER_SOURCE);
+        assert_eq!(lexed.tokens.capacity(), MAX_TOKENS_PER_SOURCE);
+        let eof = lexed.tokens.last().unwrap();
+        assert_eq!(eof.kind, TokenKind::Eof);
+        assert_eq!(eof.span.start(), source.byte_len());
+        assert_eq!(eof.span.end(), source.byte_len());
+        assert_eq!(lexed.diagnostics.len(), 1);
+        let diagnostic = &lexed.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::LexicalResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "lexer could not reserve the bounded token stream representation"
+        );
+        assert_eq!(
+            diagnostic.label(),
+            "lexing stopped before token storage became incomplete"
+        );
+        assert_eq!(
+            diagnostic.notes(),
+            &["the source was not accepted and no parser input was produced"]
         );
     }
 
