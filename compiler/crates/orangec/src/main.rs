@@ -515,7 +515,8 @@ fn compile(
         }
     }
 
-    if standard_output_available
+    if !output_failed
+        && standard_output_available
         && standard_output_written
         && let Err(error) = flush_retry_interrupted(&mut buffered_output)
     {
@@ -2547,6 +2548,23 @@ mod tests {
 
         assert_eq!(status, COMPILATION_ERROR);
         assert_eq!(input.attempts, 0);
+        assert_eq!(output, b"");
+    }
+
+    #[test]
+    fn diagnostic_output_failure_discards_buffered_token_output() {
+        let mut input = b"@".as_slice();
+        let mut output = Vec::new();
+        let mut error = RejectWrites(io::ErrorKind::Other);
+
+        let status = run(
+            os_arguments(&["lex", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
         assert_eq!(output, b"");
     }
 

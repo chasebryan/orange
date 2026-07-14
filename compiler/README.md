@@ -82,11 +82,13 @@ trailing newline, while help and version output failures follow the same status
 failure as status 1. Transient `Interrupted` results from stream reads, output
 writes, and explicit output flushes are retried without duplicating accepted
 bytes. Compilation diagnostics are also explicitly flushed after their final
-error group. Compilation standard output is explicitly flushed only after
-successful token or evaluation bytes have been queued; untouched output and
-diagnostic streams are not flushed for a silent `check` or empty `eval`. A
-source with lexical errors is not parsed, and a source with syntax errors is
-not analyzed. File and standard-input reads stop at a deterministic 16 MiB
+error group. After any detected stream failure, retained buffered standard
+output is discarded instead of being flushed as later command output.
+Compilation standard output is explicitly flushed only after successful token
+or evaluation bytes have been queued; untouched output and diagnostic streams
+are not flushed for a silent `check` or empty `eval`. A source with lexical
+errors is not parsed, and a source with syntax errors is not analyzed. File and
+standard-input reads stop at a deterministic 16 MiB
 per-source limit. Larger inputs fail with `ORC1003` before lexing and are never
 buffered without a bound. CLI-derived rendered source names reserve their
 complete escaped representation before encoding. Source-map slots, borrowed
