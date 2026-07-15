@@ -130,6 +130,36 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_editorconfig_contract_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        target = source_root / ".editorconfig"
+        source = target.read_bytes()
+        mutations = (
+            (b"end_of_line = lf", b"end_of_line = crlf"),
+            (b"trim_trailing_whitespace = true", b"trim_trailing_whitespace = false"),
+        )
+        for old, new in mutations:
+            with self.subTest(setting=old):
+                self.assertIn(old, source)
+                validator = FoundationValidator(source_root)
+                read_repository_bytes = validator._read_repository_bytes
+
+                def substituted_read(path: Path) -> bytes | None:
+                    if path == target:
+                        return source.replace(old, new, 1)
+                    return read_repository_bytes(path)
+
+                with mock.patch.object(
+                    validator,
+                    "_read_repository_bytes",
+                    side_effect=substituted_read,
+                ):
+                    findings = validator.run()
+                self.assertIn(
+                    "editorconfig.contract",
+                    {finding.code for finding in findings},
+                )
+
     def test_gitignore_contract_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         mutations = (
