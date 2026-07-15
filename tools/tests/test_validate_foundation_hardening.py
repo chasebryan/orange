@@ -128,7 +128,7 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
-    def test_checkout_and_dependency_review_inputs_are_exact(self) -> None:
+    def test_critical_workflow_step_contracts_are_exact(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         mutations = (
             (
@@ -142,6 +142,12 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "          config-file: ./.github/dependency-review-config.yml\n",
                 "          config-file: ./.github/dependency-review-config.yml\n          warn-only: true\n",
                 "workflow.dependency_review_contract",
+            ),
+            (
+                "ci.yml",
+                '          echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2\n          exit 1\n',
+                '          if false; then\n            echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2\n            exit 1\n          fi\n',
+                "workflow.solo_boundary_contract",
             ),
         )
         for name, original, replacement, expected_code in mutations:

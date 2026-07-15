@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "b0714875f788dbe811bf1f9bc48212c1fa284addbe66417558651bd6d19143db"
+GATE0_PROTECTED_FILE_DIGEST = "59202a158b89468a9739b55b8879845775a3e9a952e90986748c23985d31c09e"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3416,14 +3416,14 @@ class FoundationValidator:
             self.add("workflow.checkout_contract", path, f"{job_name}/Checkout must match the reviewed revision-bound contract")
 
         if path.name == "ci.yml":
-            require(
-                "Enforce solo contribution boundary",
-                (
-                    "if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}",
-                    'echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2',
-                    "exit 1",
-                ),
-            )
+            boundary = yaml_without_comments("\n".join(steps.get("Enforce solo contribution boundary", [])))
+            expected_boundary = '''      - name: Enforce solo contribution boundary
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}
+        run: |
+          echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2
+          exit 1'''
+            if boundary != expected_boundary:
+                self.add("workflow.solo_boundary_contract", path, "the solo contribution guard must match its reviewed fail-closed contract")
             require(
                 "Validate Rust compiler",
                 (GATE0_CI_COMPILER_RUN,),
