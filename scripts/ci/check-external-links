@@ -14,8 +14,8 @@ if [[ ! -f "$1" || ! -s "$1" || ! -x "$1" || -L "$1" ]]; then
   echo "PATH_TO_LYCHEE must be a nonempty executable regular file" >&2
   exit 2
 fi
-if [[ "$(/usr/bin/stat --format=%h -- "$1")" != "1" ]]; then
-  echo "PATH_TO_LYCHEE must not be hard linked" >&2
+if [[ "$(/usr/bin/stat --format='%a:%h' -- "$1")" != "755:1" ]]; then
+  echo "PATH_TO_LYCHEE must have mode 0755 and one link" >&2
   exit 2
 fi
 
