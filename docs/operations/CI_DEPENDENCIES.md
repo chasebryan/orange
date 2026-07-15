@@ -163,7 +163,8 @@ The required invariant check invokes repository-owned Bash and Python files:
   shell-startup variables, selects its link-count inspection, environment
   filter, and GNU Make control commands by absolute path, and disables built-in
   rules and variables; Make recipes retain the caller's path so the selected
-  Rust toolchain remains reachable;
+  Rust toolchain remains reachable, and unexpected launcher arguments fail
+  before repository inspection or Make execution;
 - each Python recipe starts from an allowlisted environment with a fixed hash
   seed, skips `site` initialization, excludes unsafe path injection, suppresses
   bytecode writes, and forces UTF-8 mode; foundation tests also redirect
@@ -179,7 +180,7 @@ The required invariant check invokes repository-owned Bash and Python files:
   retains immediate-exit and pipeline-failure handling through the supported
   custom-shell command template;
 - the actionlint and lychee installers use only `/usr/bin` and `/bin` for
-  ambient command lookup, reject empty destination arguments, terminate
+  ambient command lookup, require one absolute destination directory, terminate
   options before caller-selected install destinations, disable curl's default
   configuration, clear inherited tar/gzip option variables, and enforce the
   archive identities recorded above; and

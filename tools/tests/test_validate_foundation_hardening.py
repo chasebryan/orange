@@ -328,6 +328,7 @@ jobs:
         )
         self.assertIn("export SOURCE_DATE_EPOCH=0\n", launcher)
         self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
+        self.assertIn('if [ "$#" -ne 0 ]; then\n', launcher)
         self.assertIn('/usr/bin/find "$SCRIPT_PATH" -prune -links 1 -print', launcher)
         self.assertIn("exec /usr/bin/env \\\n", launcher)
         self.assertIn(
@@ -364,6 +365,21 @@ jobs:
                 f"\t@/usr/bin/env > {observed}\n",
                 encoding="utf-8",
             )
+            rejected = subprocess.run(
+                [copied_launcher, "--unexpected"],
+                cwd=test_root,
+                env={"PATH": str(hostile_path)},
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertEqual(rejected.stdout, "")
+            self.assertIn("usage:", rejected.stderr)
+            self.assertFalse(marker.exists())
+            self.assertFalse(observed.exists())
+
             result = subprocess.run(
                 [copied_launcher],
                 cwd=test_root,
@@ -523,6 +539,17 @@ jobs:
                     "install \\\n  -D \\\n  --no-target-directory \\\n  -m 0755 \\\n  -- \\\n",
                 ):
                     self.assertIn(required, script)
+                rejected = subprocess.run(
+                    [source_root / "scripts/ci" / name, "relative-destination"],
+                    cwd=source_root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(rejected.returncode, 2)
+                self.assertEqual(rejected.stdout, "")
+                self.assertIn("DESTINATION_DIRECTORY must be absolute", rejected.stderr)
 
     def test_external_link_helper_clears_ambient_environment(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

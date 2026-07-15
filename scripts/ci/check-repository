@@ -2,6 +2,11 @@
 
 set -eu
 
+if [ "$#" -ne 0 ]; then
+  echo "usage: $0" >&2
+  exit 2
+fi
+
 SCRIPT_PATH="$0"
 case "$SCRIPT_PATH" in
   /*) ;;

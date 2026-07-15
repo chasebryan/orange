@@ -17,6 +17,10 @@ if [[ $# -ne 1 || -z "${1-}" ]]; then
   echo "usage: $0 DESTINATION_DIRECTORY" >&2
   exit 2
 fi
+if [[ "$1" != /* ]]; then
+  echo "DESTINATION_DIRECTORY must be absolute" >&2
+  exit 2
+fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "install-actionlint currently supports Linux only" >&2
