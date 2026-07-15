@@ -158,6 +158,38 @@ class WorkflowHardeningTests(unittest.TestCase):
                     {finding.code for finding in validator.findings},
                 )
 
+    def test_dependency_admission_contract_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "DEPENDENCY_POLICY.md").read_text(encoding="utf-8")
+        mutations = (
+            (
+                "It admits no third-party\nRust crates.",
+                "It admits third-party Rust crates without a separate admission record.",
+            ),
+            (
+                "GitHub Actions and reusable workflows use a full 40-character commit SHA",
+                "GitHub Actions and reusable workflows may use mutable tags",
+            ),
+            (
+                "No\nexception may waive an assurance stop-ship condition.",
+                "An exception may waive an assurance stop-ship condition.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertIn(old, source)
+                (root / "DEPENDENCY_POLICY.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "dependency.admission_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_conduct_reporting_boundary_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         source = (source_root / "CODE_OF_CONDUCT.md").read_text(encoding="utf-8")
