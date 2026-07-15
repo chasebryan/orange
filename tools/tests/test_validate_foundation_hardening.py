@@ -130,6 +130,34 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_public_project_status_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "README.md").read_text(encoding="utf-8")
+        mutations = (
+            (
+                "Orange is now in solo, pre-alpha compiler development.",
+                "Orange is now a production-ready compiler and toolchain.",
+            ),
+            (
+                "Implemented behavior is solo-authored and solo-reviewed. It is not independently\nreviewed, formally verified, production-ready, or a cryptographic assurance\nclaim.",
+                "Implemented behavior is independently reviewed, formally verified, production-ready, and a cryptographic assurance claim.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertIn(old, source)
+                (root / "README.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "project.public_status_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_conduct_reporting_boundary_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         source = (source_root / "CODE_OF_CONDUCT.md").read_text(encoding="utf-8")
