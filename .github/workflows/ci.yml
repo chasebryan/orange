@@ -45,7 +45,7 @@ jobs:
         run: /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py
 
       - name: Run foundation validator unit tests
-        run: pycache="$(/usr/bin/mktemp -d -- "$RUNNER_TEMP/orange-python-cache.XXXXXXXX")"; pycache="$(CDPATH= cd -- "$pycache" && pwd -P)"; trap '/usr/bin/rm -rf -- "$pycache"' EXIT; /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$pycache" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'
+        run: pycache="$(/usr/bin/mktemp -d -- "$RUNNER_TEMP/orange-python-cache.XXXXXXXX")"; pycache="$(CDPATH= cd -- "$pycache" && pwd -P)"; trap '/usr/bin/rm -rf -- "$pycache"' EXIT; /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$pycache" TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'
 
       - name: Install selected Rust components
         run: /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt --no-self-update

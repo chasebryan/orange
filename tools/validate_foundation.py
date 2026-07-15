@@ -95,15 +95,15 @@ _RI_ENCODING = "resource.inventory_encoding"
 _R_UNSUPPORTED = "resource.unsupported_host"
 _R_CONCURRENT = "resource.concurrent_change"
 _ABA = "allowed_binary_artifacts["
-_CROSS = "cross_invariant"
+_X = "cross_invariant"
 _G = "github_actions"
 _AR = "allowed_action_repositories"
 _WP = "allowed_write_permissions"
 _PD = "protected_file_digests"
 _RS = "required_status"
-_CDT = "compiler.dependency_table"
+_T = "compiler.dependency_table"
 _RA = "record.acceptance"
-_DATE = "2026-07-11"
+_D = "2026-07-11"
 _WS = "workspace"
 _AB = "allowed_binary_artifacts"
 _CT = "compiler/Cargo.toml"
@@ -111,7 +111,7 @@ _AI = "allowed_container_images"
 _OCM = "compiler/crates/orange-compiler/Cargo.toml"
 _CCM = "compiler/crates/orangec/Cargo.toml"
 _OC = "orange-compiler"
-_DEPS = "dependencies"
+_DS = "dependencies"
 _RP = "required_paths"
 _TP = "allowed_top_level_paths"
 _FS = "require_full_commit_sha"
@@ -268,14 +268,14 @@ GATE0_ALLOWED_CONTAINER_IMAGES = {
 GATE0_ALLOWED_BINARY_ARTIFACTS = [
     {"path": path, "sha256": digest, "role": _BRAND_ROLE + role, "provenance": _BRAND_IMPORT + date}
     for path, digest, role, date in (
-        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "wordmark on a light background", _DATE),
-        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "emblem source variant on a light background", _DATE),
-        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "horizontal lockup JPEG", _DATE),
-        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "transparent wordmark", _DATE),
-        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "transparent emblem", _DATE),
-        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "primary horizontal lockup with embedded C2PA claim", _DATE),
-        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "emblem JPEG on a light background", _DATE),
-        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "primary emblem with embedded C2PA claim", _DATE),
+        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "wordmark on a light background", _D),
+        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "emblem source variant on a light background", _D),
+        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "horizontal lockup JPEG", _D),
+        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "transparent wordmark", _D),
+        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "transparent emblem", _D),
+        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "primary horizontal lockup with embedded C2PA claim", _D),
+        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "emblem JPEG on a light background", _D),
+        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "primary emblem with embedded C2PA claim", _D),
         ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "hand-drawn README and Orange Book horizontal lockup on a light background", "2026-07-14"),
     )
 ]
@@ -307,7 +307,7 @@ scripts/ci/install-actionlint scripts/ci/install-lychee tools/validate_foundatio
 )
 GATE0_ALLOWED_WRITE_PERMISSIONS = {_SC: {"security-events"}}
 GATE0_HOSTED_REPOSITORY_CONTROLS = {
-    "snapshot_date": _DATE,
+    "snapshot_date": _D,
     "review_due_date": "2026-10-11",
     "main_ruleset_id": 18810248,
     "required_checks": [
@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "6294ce6f58f26bd3b333c3f3f39ad0f682765bc693f4e9b0f5b951f856a24f9e"
+GATE0_PROTECTED_FILE_DIGEST = "722c7408ad1dab9f9448d93c09659d163d6bbe84ee6a3808d31caecca84b7ef7"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -332,7 +332,7 @@ GATE0_CI_POLICY_TEST_RUN = (
     "run: pycache=\"$(/usr/bin/mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
     "pycache=\"$(CDPATH= cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; "
     "/usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
-    "PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; "
+    "PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; "
     "sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'"
 )
 GATE0_CI_POLICY_RUN = (
@@ -422,7 +422,7 @@ GATE0_RUST_MANIFESTS = {
             "rust-version": {_WS: True},
             "publish": {_WS: True},
         },
-        _DEPS: {
+        _DS: {
             _OC: {"path": "../orange-compiler"},
         },
         "lints": {_WS: True},
@@ -441,7 +441,7 @@ GATE0_RUST_DEPENDENCY_TABLES = {
     _CT: {},
     _OCM: {},
     _CCM: {
-        _DEPS: {
+        _DS: {
             _OC: {"path": "../orange-compiler"},
         },
     },
@@ -453,7 +453,7 @@ GATE0_RUST_LOCK = {
         {
             "name": "orangec",
             "version": "0.0.1",
-            _DEPS: [_OC],
+            _DS: [_OC],
         },
     ],
 }
@@ -2424,6 +2424,7 @@ class FoundationValidator:
             'PYTHONPYCACHEPREFIX="$$pycache"': (
                 "foundation tests must not load ignored checkout bytecode"
             ),
+            "-W error::ResourceWarning": "foundation tests must fail on leaked resources",
         }
         for required, meaning in required_test_fragments.items():
             if source.count(required) != 1:
@@ -2498,7 +2499,7 @@ class FoundationValidator:
             def record_table(label: str, table: Any) -> None:
                 if not isinstance(table, dict):
                     self.add(
-                        _CDT,
+                        _T,
                         path,
                         f"Cargo dependency table {label!r} must be a table",
                     )
@@ -2506,7 +2507,7 @@ class FoundationValidator:
                 if table:
                     observed_tables[label] = table
 
-            for kind in (_DEPS, "dev-dependencies", "build-dependencies"):
+            for kind in (_DS, "dev-dependencies", "build-dependencies"):
                 if kind in manifest:
                     record_table(kind, manifest[kind])
 
@@ -2516,30 +2517,30 @@ class FoundationValidator:
                     self.add("compiler.workspace", path, "Cargo workspace declaration must be a table")
                 elif value != _CT:
                     self.add("compiler.workspace", path, "only the root manifest may declare a workspace")
-                elif _DEPS in workspace:
-                    record_table("workspace.dependencies", workspace[_DEPS])
+                elif _DS in workspace:
+                    record_table("workspace.dependencies", workspace[_DS])
 
             targets = manifest.get("target")
             if targets is not None:
                 if not isinstance(targets, dict):
-                    self.add(_CDT, path, "Cargo target declaration must be a table")
+                    self.add(_T, path, "Cargo target declaration must be a table")
                 else:
                     for target_name, target in sorted(targets.items()):
                         if not isinstance(target, dict):
                             self.add(
-                                _CDT,
+                                _T,
                                 path,
                                 f"Cargo target {target_name!r} must be a table",
                             )
                             continue
-                        for kind in (_DEPS, "dev-dependencies", "build-dependencies"):
+                        for kind in (_DS, "dev-dependencies", "build-dependencies"):
                             if kind in target:
                                 record_table(f"target.{target_name}.{kind}", target[kind])
 
             patches = manifest.get("patch")
             if patches is not None:
                 if not isinstance(patches, dict):
-                    self.add(_CDT, path, "Cargo patch declaration must be a table")
+                    self.add(_T, path, "Cargo patch declaration must be a table")
                 else:
                     for source_name, table in sorted(patches.items()):
                         record_table(f"patch.{source_name}", table)
@@ -2738,7 +2739,7 @@ class FoundationValidator:
             "schema_version": "orange-brand-assets/v1",
             "status": "official",
             "authority": "chasebryan",
-            "designated_on": _DATE,
+            "designated_on": _D,
             "source_collection": "Orange-Assets",
             "import_mode": "byte-for-byte",
         }
@@ -5524,7 +5525,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
             if not has_checked_basis:
                 issues.append(
                     SchemaIssue(
-                        _CROSS,
+                        _X,
                         "$/basis",
                         "a satisfied claim requires a checked non-assumption basis",
                     )
@@ -5537,7 +5538,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if reference not in assumptions:
                     issues.append(
                         SchemaIssue(
-                            _CROSS,
+                            _X,
                             f"$/basis/{index}/assumption_ref",
                             "assumption basis reference does not resolve",
                         )
@@ -5546,7 +5547,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
         files = instance.get("files", [])
         file_paths = identifiers(files, "path", "$/files", issues)
         if isinstance(files, list) and [item.get("path") for item in files if isinstance(item, dict)] != sorted(file_paths):
-            issues.append(SchemaIssue(_CROSS, "$/files", "file records must be ordered by path"))
+            issues.append(SchemaIssue(_X, "$/files", "file records must be ordered by path"))
         external = instance.get("external_sources", [])
         if isinstance(external, list):
             identifiers(external, "source_id", "$/external_sources", issues, optional=True)
@@ -5555,7 +5556,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
             toolchains = replay.get("toolchains", [])
             names = identifiers(toolchains, "name", "$/replay/toolchains", issues)
             if isinstance(toolchains, list) and [item.get("name") for item in toolchains if isinstance(item, dict)] != sorted(names):
-                issues.append(SchemaIssue(_CROSS, "$/replay/toolchains", "toolchains must be ordered by name"))
+                issues.append(SchemaIssue(_X, "$/replay/toolchains", "toolchains must be ordered by name"))
     elif schema_name == "repository-control-snapshot-v0.1.schema.json":
         sources = identifiers(instance.get("evidence_sources"), "evidence_id", "$/evidence_sources", issues)
         for path, references in repository_control_evidence_refs(instance):
@@ -5563,7 +5564,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if reference not in sources:
                     issues.append(
                         SchemaIssue(
-                            _CROSS,
+                            _X,
                             path,
                             f"repository-control evidence reference does not resolve: {reference}",
                         )
@@ -5572,7 +5573,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
         standards = instance.get("standards", [])
         standard_ids = identifiers(standards, "standard_id", "$/standards", issues)
         if isinstance(standards, list) and [item.get("standard_id") for item in standards if isinstance(item, dict)] != sorted(standard_ids):
-            issues.append(SchemaIssue(_CROSS, "$/standards", "standards must be ordered by standard_id"))
+            issues.append(SchemaIssue(_X, "$/standards", "standards must be ordered by standard_id"))
         for index, standard in enumerate(standards if isinstance(standards, list) else []):
             if not isinstance(standard, dict):
                 continue
@@ -5589,7 +5590,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if component.get("assumption_ref") not in axioms:
                     issues.append(
                         SchemaIssue(
-                            _CROSS,
+                            _X,
                             f"$/components/{index}/assumption_ref",
                             "assumed component reference does not resolve to an axiom",
                         )
@@ -5608,7 +5609,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                     if reference not in valid_ids:
                         issues.append(
                             SchemaIssue(
-                                _CROSS,
+                                _X,
                                 f"$/claim_closures/{index}/{field}",
                                 f"trust-closure reference does not resolve: {reference}",
                             )
@@ -5637,7 +5638,7 @@ def identifiers(
         if identifier in result:
             issues.append(
                 SchemaIssue(
-                    _CROSS,
+                    _X,
                     f"{instance_path}/{index}/{field}",
                     f"duplicate identifier {identifier}",
                 )
@@ -5666,7 +5667,7 @@ def repository_control_evidence_refs(instance: Mapping[str, Any]) -> list[tuple[
 
 
 def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
-    if issue.keyword == _CROSS and schema_name.startswith("claim-record-"):
+    if issue.keyword == _X and schema_name.startswith("claim-record-"):
         return "CLAIM_SATISFIED_WITHOUT_CHECKED_BASIS"
     if issue.keyword == "const":
         return "SCHEMA_CONST"

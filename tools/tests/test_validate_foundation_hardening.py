@@ -366,6 +366,12 @@ class WorkflowHardeningTests(unittest.TestCase):
             ),
             (
                 "ci.yml",
+                " -W error::ResourceWarning -c",
+                " -c",
+                "workflow.ci_gate_contract",
+            ),
+            (
+                "ci.yml",
                 "        run: ./scripts/ci/install-actionlint \"$RUNNER_TEMP/actionlint\"\n",
                 "        run: ./scripts/ci/install-actionlint \"$RUNNER_TEMP/actionlint\" || :\n",
                 "workflow.ci_tool_contract",
@@ -2122,6 +2128,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             ),
             (
                 'PYTHONPYCACHEPREFIX="$$pycache"',
+                "",
+                "make.python_cache_contract",
+            ),
+            (
+                "-W error::ResourceWarning",
                 "",
                 "make.python_cache_contract",
             ),
