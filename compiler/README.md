@@ -60,10 +60,10 @@ documentation, and Rust tests use the same extracted check root. A third policy
 check runs after all Rust commands. The gate then verifies that the original
 archive and path inventory retained their captured identities, extracts a fresh
 reference, and compares every tracked file's type, complete mode, and bytes with
-the tested check root. This exact comparison rejects policy-valid source drift
-before the gate can pass. Optimized `orangec` builds use two more extractions and
-separate target trees,
-and their artifact bytes must match. This is source-relocated same-host
+the tested check root and both relocated reproducibility roots. This exact
+comparison rejects policy-valid source drift before the gate can pass. Optimized
+`orangec` builds use the two relocated roots and separate target trees, and their
+artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing

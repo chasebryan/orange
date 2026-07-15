@@ -83,11 +83,14 @@ check-compiler:
 	verify_capture_identity; \
 	copy_compiler_source "$$cargo_home/check-reference"; \
 	while IFS= read -r -d '' relative_path; do \
-		[[ -f "$$cargo_home/check-src/$$relative_path" && ! -L "$$cargo_home/check-src/$$relative_path" && -f "$$cargo_home/check-reference/$$relative_path" && ! -L "$$cargo_home/check-reference/$$relative_path" ]] || { printf 'tested source type changed during checks: %s\n' "$$relative_path" >&2; exit 1; }; \
-		checked_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/check-src/$$relative_path")"; \
+		[[ -f "$$cargo_home/check-reference/$$relative_path" && ! -L "$$cargo_home/check-reference/$$relative_path" ]] || { printf 'captured source type is invalid during final comparison: %s\n' "$$relative_path" >&2; exit 1; }; \
 		reference_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/check-reference/$$relative_path")"; \
-		[[ "$$checked_mode" == "$$reference_mode" ]] || { printf 'tested source mode changed during checks: %s (%s -> %s)\n' "$$relative_path" "$$reference_mode" "$$checked_mode" >&2; exit 1; }; \
-		/usr/bin/cmp --silent -- "$$cargo_home/check-src/$$relative_path" "$$cargo_home/check-reference/$$relative_path" || { printf 'tested source bytes changed during checks: %s\n' "$$relative_path" >&2; exit 1; }; \
+		for tested_root in check-src repro-src-a repro-src-b; do \
+			[[ -f "$$cargo_home/$$tested_root/$$relative_path" && ! -L "$$cargo_home/$$tested_root/$$relative_path" ]] || { printf 'tested source type changed during checks: %s/%s\n' "$$tested_root" "$$relative_path" >&2; exit 1; }; \
+			tested_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/$$tested_root/$$relative_path")"; \
+			[[ "$$tested_mode" == "$$reference_mode" ]] || { printf 'tested source mode changed during checks: %s/%s (%s -> %s)\n' "$$tested_root" "$$relative_path" "$$reference_mode" "$$tested_mode" >&2; exit 1; }; \
+			/usr/bin/cmp --silent -- "$$cargo_home/$$tested_root/$$relative_path" "$$cargo_home/check-reference/$$relative_path" || { printf 'tested source bytes changed during checks: %s/%s\n' "$$tested_root" "$$relative_path" >&2; exit 1; }; \
+		done; \
 	done < "$$repro_source_paths"; \
 	verify_capture_identity
 

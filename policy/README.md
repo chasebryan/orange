@@ -57,9 +57,10 @@ A third policy check runs after all Rust commands. The gate also retains
 unexported SHA-256 identities for the original archive and NUL-delimited tracked
 path inventory, verifies those identities before and after its final comparison,
 extracts a fresh reference, and compares every tracked file's type, complete
-mode, and bytes with the tested check root. Policy-valid source drift therefore
-cannot produce a passing gate unless a trusted child restores the original
-state before comparison.
+mode, and bytes with the tested check root and both relocated reproducibility
+roots. Policy-valid source drift in any compiler input root therefore cannot
+produce a passing gate unless a trusted child restores the original state before
+comparison.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an
