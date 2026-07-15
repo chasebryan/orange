@@ -3,7 +3,7 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fmt::{self, Write as _};
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -230,50 +230,14 @@ fn compile(
         };
         let bytes = match read_source(path, standard_input) {
             Ok(bytes) => bytes,
-            Err(ReadSourceError::Io(error)) => {
+            Err(error) => {
                 compilation_failed = true;
                 emit_error_group(
                     standard_error,
                     &mut standard_error_available,
                     &mut error_group_written,
                     &mut output_failed,
-                    &render_cli_error(
-                        CliDiagnosticCode::ReadSource,
-                        format_args!("could not read source file `{display_name}`"),
-                        io_error_reason(error.kind()),
-                    ),
-                );
-                continue;
-            }
-            Err(ReadSourceError::NotRegular) => {
-                compilation_failed = true;
-                emit_error_group(
-                    standard_error,
-                    &mut standard_error_available,
-                    &mut error_group_written,
-                    &mut output_failed,
-                    &render_cli_error(
-                        CliDiagnosticCode::ReadSource,
-                        format_args!("could not read source file `{display_name}`"),
-                        "path does not name a regular file",
-                    ),
-                );
-                continue;
-            }
-            Err(ReadSourceError::TooLarge) => {
-                compilation_failed = true;
-                emit_error_group(
-                    standard_error,
-                    &mut standard_error_available,
-                    &mut error_group_written,
-                    &mut output_failed,
-                    &render_cli_error(
-                        CliDiagnosticCode::SourceTooLarge,
-                        format_args!(
-                            "source file `{display_name}` exceeds the {MAX_SOURCE_BYTES}-byte input limit"
-                        ),
-                        "the pre-alpha compiler accepts at most 16 MiB per source",
-                    ),
+                    &render_read_source_error(&display_name, error),
                 );
                 continue;
             }
@@ -558,23 +522,40 @@ fn read_source(path: &Path, standard_input: &mut impl Read) -> Result<Vec<u8>, R
     if path == Path::new("-") {
         read_bounded(standard_input)
     } else {
-        let metadata = path.metadata().map_err(ReadSourceError::Io)?;
-        if !metadata.is_file() {
+        let path_metadata = path.metadata().map_err(ReadSourceError::Io)?;
+        if !path_metadata.is_file() {
             return Err(ReadSourceError::NotRegular);
         }
-        if metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
+        if path_metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::TooLarge);
         }
 
         let file = File::open(path).map_err(ReadSourceError::Io)?;
-        let metadata = file.metadata().map_err(ReadSourceError::Io)?;
-        if !metadata.is_file() {
+        let opened_metadata = file.metadata().map_err(ReadSourceError::Io)?;
+        if !opened_metadata.is_file() {
             return Err(ReadSourceError::NotRegular);
         }
-        if metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
+        if !opened_file_matches_path_metadata(&path_metadata, &opened_metadata) {
+            return Err(ReadSourceError::ChangedDuringOpen);
+        }
+        if opened_metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::TooLarge);
         }
         read_bounded(file)
+    }
+}
+
+fn opened_file_matches_path_metadata(path_metadata: &Metadata, opened_metadata: &Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+
+        path_metadata.dev() == opened_metadata.dev() && path_metadata.ino() == opened_metadata.ino()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path_metadata, opened_metadata);
+        true
     }
 }
 
@@ -712,6 +693,33 @@ fn stable_source_name(path: &Path) -> Result<RenderedSourceName, SourceError> {
     RenderedSourceName::try_from_os_str(path.as_os_str())
 }
 
+fn render_read_source_error(display_name: &RenderedSourceName, error: ReadSourceError) -> String {
+    match error {
+        ReadSourceError::Io(error) => render_cli_error(
+            CliDiagnosticCode::ReadSource,
+            format_args!("could not read source file `{display_name}`"),
+            io_error_reason(error.kind()),
+        ),
+        ReadSourceError::NotRegular => render_cli_error(
+            CliDiagnosticCode::ReadSource,
+            format_args!("could not read source file `{display_name}`"),
+            "path does not name a regular file",
+        ),
+        ReadSourceError::ChangedDuringOpen => render_cli_error(
+            CliDiagnosticCode::ReadSource,
+            format_args!("could not read source file `{display_name}`"),
+            "path changed while the source file was being opened",
+        ),
+        ReadSourceError::TooLarge => render_cli_error(
+            CliDiagnosticCode::SourceTooLarge,
+            format_args!(
+                "source file `{display_name}` exceeds the {MAX_SOURCE_BYTES}-byte input limit"
+            ),
+            "the pre-alpha compiler accepts at most 16 MiB per source",
+        ),
+    }
+}
+
 struct EscapedDisplayText<'text>(&'text str);
 
 impl fmt::Display for EscapedDisplayText<'_> {
@@ -755,6 +763,7 @@ fn source_limit_error(display_name: &RenderedSourceName, error: SourceError) -> 
 enum ReadSourceError {
     Io(io::Error),
     NotRegular,
+    ChangedDuringOpen,
     TooLarge,
 }
 
@@ -2359,6 +2368,36 @@ mod tests {
                 "  = note: the operating system could not allocate memory\n",
             )
             .as_bytes()
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unix_opened_file_identity_rejects_a_different_regular_file() {
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let source_path = crate_root.join("src/main.rs");
+        let manifest_path = crate_root.join("Cargo.toml");
+        let path_metadata = source_path.metadata().unwrap();
+        let opened_metadata = File::open(&source_path).unwrap().metadata().unwrap();
+        let other_metadata = File::open(manifest_path).unwrap().metadata().unwrap();
+
+        assert!(opened_file_matches_path_metadata(
+            &path_metadata,
+            &opened_metadata
+        ));
+        assert!(!opened_file_matches_path_metadata(
+            &path_metadata,
+            &other_metadata
+        ));
+        assert_eq!(
+            render_read_source_error(
+                &RenderedSourceName::try_from_text("changed.or").unwrap(),
+                ReadSourceError::ChangedDuringOpen,
+            ),
+            concat!(
+                "error[ORC1001]: could not read source file `changed.or`\n",
+                "  = note: path changed while the source file was being opened\n",
+            )
         );
     }
 

@@ -57,12 +57,14 @@ but at most once; a repeated split or inline form is a usage error before any
 source read. `--` ends option parsing so dash-prefixed source paths remain
 addressable.
 The portable regular-file boundary checks path metadata before opening and
-descriptor metadata afterward. This rejects an observed non-regular path or
-opened descriptor, but it is not race-free path confinement: an actor that can
-replace a directory entry between those operations may change the opened
-object or make `open` block on a special file. Compile untrusted filesystem
-trees from a stable copied file or standard input inside an appropriate host
-sandbox; symlink confinement is not claimed.
+descriptor metadata afterward. On Unix, the opened descriptor must also have
+the same device and inode as the pre-open path target, so a regular-file
+substitution during `open` is rejected. This remains short of race-free path
+confinement: an actor can replace the entry with a special file and make
+`open` block before the post-open check, or mutate the same inode while it is
+read; non-Unix hosts do not receive the device/inode comparison. Compile
+untrusted filesystem trees from a stable copied file or standard input inside
+an appropriate host sandbox; symlink confinement is not claimed.
 `eval` accepts exactly one source and begins output only after complete
 validation and evaluation. A host output failure can leave an
 already-written prefix, but returns status 1; a broken pipe remains quiet and
