@@ -5,7 +5,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fmt::{self, Write as _};
 use std::fs::{File, Metadata};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -750,6 +750,9 @@ fn read_source_with_post_read(
         }
         let bytes = read_bounded_for_invocation(&mut file, remaining_source_bytes)?;
         post_read();
+        if !source_descriptor_matches_snapshot(&mut file, &bytes).map_err(ReadSourceError::Io)? {
+            return Err(ReadSourceError::ChangedDuringRead);
+        }
         let closed_metadata = file.metadata().map_err(ReadSourceError::Io)?;
         let final_path_metadata = path
             .symlink_metadata()
@@ -824,6 +827,48 @@ fn opened_file_metadata_unchanged(opened_metadata: &Metadata, closed_metadata: &
 
 fn source_read_length_matches_metadata(read_length: usize, metadata_length: u64) -> bool {
     u64::try_from(read_length).ok() == Some(metadata_length)
+}
+
+fn source_descriptor_matches_snapshot(
+    reader: &mut (impl Read + Seek),
+    expected: &[u8],
+) -> io::Result<bool> {
+    if reader.seek(SeekFrom::Start(0))? != 0 {
+        return Err(invalid_data_error());
+    }
+
+    let mut buffer = [0_u8; SOURCE_READ_BUFFER_BYTES];
+    let mut verified = 0_usize;
+    while verified < expected.len() {
+        let remaining = expected
+            .len()
+            .checked_sub(verified)
+            .ok_or_else(invalid_data_error)?;
+        let buffer_length = remaining.min(buffer.len());
+        let destination = buffer
+            .get_mut(..buffer_length)
+            .ok_or_else(invalid_data_error)?;
+        let read = read_retry_interrupted(reader, destination)?;
+        if read == 0 {
+            return Ok(false);
+        }
+        let chunk = destination.get(..read).ok_or_else(invalid_data_error)?;
+        let end = verified
+            .checked_add(chunk.len())
+            .ok_or_else(invalid_data_error)?;
+        let expected_chunk = expected.get(verified..end).ok_or_else(invalid_data_error)?;
+        if chunk != expected_chunk {
+            return Ok(false);
+        }
+        verified = end;
+    }
+
+    let mut probe = [0_u8; 1];
+    match read_retry_interrupted(reader, &mut probe)? {
+        0 => Ok(true),
+        1 => Ok(false),
+        _ => Err(invalid_data_error()),
+    }
 }
 
 #[cfg(test)]
@@ -3099,6 +3144,28 @@ mod tests {
         ));
         assert!(!source_read_length_matches_metadata(0, 1));
         assert!(!source_read_length_matches_metadata(1, 0));
+    }
+
+    #[test]
+    fn source_snapshot_requires_an_exact_second_descriptor_read() {
+        let cases: &[(&[u8], &[u8], bool)] = &[
+            (b"", b"", true),
+            (b"abc", b"abc", true),
+            (b"abd", b"abc", false),
+            (b"ab", b"abc", false),
+            (b"abcd", b"abc", false),
+        ];
+
+        for &(descriptor, expected, matches) in cases {
+            let mut reader = io::Cursor::new(descriptor);
+            reader.set_position(u64::try_from(descriptor.len()).unwrap());
+
+            assert_eq!(
+                source_descriptor_matches_snapshot(&mut reader, expected).unwrap(),
+                matches,
+                "descriptor={descriptor:?}, expected={expected:?}",
+            );
+        }
     }
 
     #[test]
