@@ -130,6 +130,34 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_release_boundary_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "RELEASE_POLICY.md").read_text(encoding="utf-8")
+        mutations = (
+            (
+                "A merge,\narchive, CI artifact, Cargo build, or planning snapshot is not an Orange product\nrelease",
+                "A merge, archive, CI artifact, Cargo build, or planning snapshot is an Orange product release",
+            ),
+            (
+                "prohibit crate,\npackage-registry, and binary distribution until their exact release boundary is\nrecorded",
+                "permit crate, package-registry, and binary distribution before an exact release boundary is recorded",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertIn(old, source)
+                (root / "RELEASE_POLICY.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "release.boundary_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_contribution_legal_boundary_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         source = (source_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
