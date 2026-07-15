@@ -387,6 +387,28 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 {finding.code for finding in validator.findings},
             )
 
+    def test_final_snapshot_rejects_late_additions_and_replacements(self) -> None:
+        for mutation in ("addition", "replacement"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / "record.txt"
+                path.write_bytes(b"original")
+                validator = FoundationValidator(root)
+                self.assertTrue(validator._preflight_repository_resources())
+
+                if mutation == "addition":
+                    (root / "added.txt").write_bytes(b"added")
+                else:
+                    replacement = root / "replacement.txt"
+                    replacement.write_bytes(b"replaced")
+                    os.replace(replacement, path)
+                validator._end()
+
+                self.assertIn(
+                    "resource.concurrent_change",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_first_read_rejects_a_post_preflight_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -437,7 +459,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
             (outside / "record.txt").write_text("outside\n", encoding="utf-8")
             validator = FoundationValidator(root)
             self.assertTrue(validator._preflight_repository_resources())
-            original_inspect = validator._inspect_repository_file
+            original_inspect = validator._if
             saved = root / "saved"
             swapped = False
 
@@ -452,7 +474,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
 
             with mock.patch.object(
                 validator,
-                "_inspect_repository_file",
+                "_if",
                 side_effect=inspect_then_swap,
             ):
                 snapshot = validator._read_repository_bytes(path)
@@ -506,7 +528,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 "tools.validate_foundation.os.stat",
                 side_effect=stat_then_swap,
             ):
-                inspected = validator._inspect_repository_file(path)
+                inspected = validator._if(path)
 
         self.assertIsNone(inspected)
         self.assertIn("resource.unreadable", {finding.code for finding in validator.findings})
