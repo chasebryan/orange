@@ -227,6 +227,24 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.event_contract",
             ),
             (
+                "ci.yml",
+                "  group: required-ci-${{ github.event.pull_request.number || github.ref }}\n",
+                "  group: required-ci\n",
+                "workflow.concurrency",
+            ),
+            (
+                "scorecard.yml",
+                "  group: openssf-scorecard-${{ github.ref }}\n",
+                "  group: required-ci-${{ github.ref }}\n",
+                "workflow.concurrency",
+            ),
+            (
+                "dependency-review.yml",
+                "  cancel-in-progress: true\n",
+                "  cancel-in-progress: false\n",
+                "workflow.concurrency",
+            ),
+            (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - release\n",

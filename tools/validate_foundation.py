@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "8725d147faa98dc96245d1db5d29d2e4e1797595326bde8b2a452fe2dd425d8d"
+GATE0_PROTECTED_FILE_DIGEST = "a39dfae94789944c2e5a29ed7cec90c96ee9b0f9dbf47c9c9192f1bb37ed9f1c"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3353,10 +3353,11 @@ class FoundationValidator:
             for line_number in unsafe_run_interpolations(lines):
                 self.add("workflow.untrusted_interpolation", path, f"untrusted event data is interpolated into run near line {line_number}")
             concurrency = top_level_block(active_lines, "concurrency")
-            if not any(re.fullmatch(r"\s{2}cancel-in-progress:\s*true\s*", line) for line in concurrency):
-                self.add("workflow.concurrency", path, "top-level concurrency must set cancel-in-progress: true")
-            if any(re.search(r"cancel-in-progress:\s*false", line) for line in active_lines):
-                self.add("workflow.concurrency_false", path, "cancel-in-progress: false is forbidden")
+            p = {"ci.yml": "required-ci", _SC: "openssf-scorecard"}.get(path.name, path.stem)
+            c = "github.event.pull_request.number || github.ref" if path.name in {"ci.yml", _DR} else "github.ref"
+            reviewed = (f"  group: {p}-${{{{ {c} }}}}", "  cancel-in-progress: true")
+            if tuple(concurrency) != reviewed:
+                self.add("workflow.concurrency", path, "concurrency contract drift")
             self._validate_required_workflow_content(path, active_text)
 
     def _validate_dependabot(self) -> None:
