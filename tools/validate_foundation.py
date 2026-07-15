@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "4cb6fd1d2da3c2e01176f86bedc6415a4efe6169677a22b423c04c64cbb6b580"
+_PHD = "7fdfdc9826a50ad778eaf9ed8c82f63fa2a28694fa4934c2caa74c65d228019e"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1532,7 +1532,7 @@ class FoundationValidator:
                 selected.append((value, path))
         return [path for _, path in sorted(selected)]
 
-    def _inventory_has_file(self, path: Path) -> bool:
+    def _hf(self, path: Path) -> bool:
         value = relative(path, self.root)
         return any(relative(candidate, self.root) == value for candidate in self.repository_files)
 
@@ -1911,8 +1911,15 @@ class FoundationValidator:
     def _end(self) -> None:
         final_findings: list[Finding] = []
         final_files, _ = _repository_file_inventory(self.root, final_findings)
+        final_index = (
+            git_index_entries(self.root, final_findings, required=True)
+            if self.index_entries
+            else []
+        )
         for finding in final_findings:
             self.add(finding.code, finding.path, finding.message)
+        if self.index_entries and final_index != self.index_entries:
+            self._ri(_RC, ".git", "Git stage-zero path or mode inventory changed during validation")
         expected = {relative(path, self.root) for path in self.repository_files}
         observed = {relative(path, self.root) for path in final_files}
         if observed != expected:
@@ -1926,7 +1933,7 @@ class FoundationValidator:
 
     def _load_and_validate_policy(self) -> None:
         finding_count = len(self.findings)
-        if not self._inventory_has_file(self.policy_path):
+        if not self._hf(self.policy_path):
             self.add("policy.missing", self.policy_path, "solo-bootstrap repository policy is missing")
             return
         try:
@@ -2222,7 +2229,7 @@ class FoundationValidator:
         if expected is None:
             return None
         path = self.root / value
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return None
         data = self._read_repository_bytes(path)
         if data is None:
@@ -2310,7 +2317,7 @@ class FoundationValidator:
             )
         for value in evidence_paths:
             path = self.root / value
-            if not self._inventory_has_file(path):
+            if not self._hf(path):
                 self.add("hosted_control.missing", path, "hosted-control evidence document is missing")
                 continue
             text = self._rt(path)
@@ -2360,7 +2367,7 @@ class FoundationValidator:
             self.add("path.inventory", value, "path is not admitted by the exact solo-bootstrap inventory")
         for value in self.policy[_RP]:
             path = self._policy_path(value)
-            if path is not None and not self._inventory_has_file(path):
+            if path is not None and not self._hf(path):
                 self.add("path.required", value, "required permanent artifact is missing")
         for value in self.policy[_FP]:
             path = self._policy_path(value)
@@ -2935,7 +2942,7 @@ class FoundationValidator:
 
     def _validate_orange_book(self) -> None:
         path = self.root / ORANGE_BOOK_PATH
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             self.add("book.missing", path, "the canonical Orange Book manuscript is missing")
             return
         text = self._rt(path)
@@ -3111,7 +3118,7 @@ class FoundationValidator:
                     self.add("schema.unresolved_ref", schema_path, f"unresolved $ref at {location}: {reference}")
 
         manifest_path = self.root / "conformance/foundation/manifest.json"
-        if not self._inventory_has_file(manifest_path):
+        if not self._hf(manifest_path):
             return
         try:
             manifest = self._load_repository_json(manifest_path)
@@ -3182,7 +3189,7 @@ class FoundationValidator:
             if schema_path is None or not relative(schema_path, self.root).startswith("schemas/gate0/"):
                 self.add("fixture.unsafe_schema", manifest_path, f"schema path escapes schemas/gate0: {schema_value}")
                 continue
-            if not self._inventory_has_file(fixture_path):
+            if not self._hf(fixture_path):
                 self.add("fixture.missing", manifest_path, f"fixture does not exist: {fixture_value}")
                 continue
             if schema_path not in schemas:
@@ -3398,7 +3405,7 @@ class FoundationValidator:
 
     def _validate_dependabot(self) -> None:
         path = self.root / ".github/dependabot.yml"
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return
         source = self._rt(path)
         if source is None:
@@ -3413,7 +3420,7 @@ class FoundationValidator:
             if not re.search(pattern, text):
                 self.add("dependabot.configuration", path, f"missing required setting matching {pattern}")
         review_path = self.root / ".github/dependency-review-config.yml"
-        if self._inventory_has_file(review_path):
+        if self._hf(review_path):
             review_source = self._rt(review_path)
             if review_source is None:
                 return
@@ -3663,7 +3670,7 @@ class FoundationValidator:
 
     def _validate_codeowners(self) -> None:
         path = self.root / ".github/CODEOWNERS"
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return
         text = self._rt(path)
         if text is None:
@@ -3683,7 +3690,7 @@ class FoundationValidator:
 
     def _validate_decision_gates(self) -> None:
         path = self.root / "docs/DECISIONS.md"
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return
         source = self._rt(path)
         if source is None:
@@ -3718,7 +3725,7 @@ class FoundationValidator:
         charter_path = self.root / "docs/PROJECT_CHARTER.md"
         decisions_path = self.root / "docs/DECISIONS.md"
         if not all(
-            self._inventory_has_file(candidate)
+            self._hf(candidate)
             for candidate in (path, charter_path, decisions_path)
         ):
             return
@@ -3828,7 +3835,7 @@ class FoundationValidator:
 
     def _validate_user_journeys(self) -> None:
         path = self.root / "docs/USER_JOURNEYS.md"
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return
         source = self._rt(path)
         if source is None:
@@ -3945,7 +3952,7 @@ class FoundationValidator:
 
     def _validate_proof_foundation_suite(self) -> None:
         path = self.root / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return
         source = self._rt(path)
         if source is None:
@@ -4002,7 +4009,7 @@ class FoundationValidator:
 
     def _validate_product_form_decision_packet(self) -> None:
         path = self.root / "docs/PRODUCT_FORM_DECISION_PACKET.md"
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return
         source = self._rt(path)
         if source is None:
@@ -4139,7 +4146,7 @@ class FoundationValidator:
 
     def _validate_semantic_strata_suite(self) -> None:
         path = self.root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
-        if not self._inventory_has_file(path):
+        if not self._hf(path):
             return
         source = self._rt(path)
         if source is None:
@@ -4462,7 +4469,7 @@ class FoundationValidator:
 
     def _validate_repository_templates(self) -> None:
         security = self.root / "SECURITY.md"
-        if self._inventory_has_file(security):
+        if self._hf(security):
             security_text = self._rt(security)
             if (
                 security_text is not None
@@ -4470,7 +4477,7 @@ class FoundationValidator:
             ):
                 self.add("security.private_reporting", security, "private vulnerability-reporting URL is missing")
         pr = self.root / ".github/pull_request_template.md"
-        if self._inventory_has_file(pr):
+        if self._hf(pr):
             text = self._rt(pr)
             if text is None:
                 return
