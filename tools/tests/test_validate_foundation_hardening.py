@@ -24,6 +24,7 @@ from tools.validate_foundation import (
     audit_schema_vocabulary,
     canonical_json_bytes,
     checkout_disables_credentials,
+    duplicate_yaml_mapping_key,
     load_json,
     main,
     parse_arguments,
@@ -128,6 +129,62 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_duplicate_yaml_mapping_keys_are_rejected_outside_scripts(self) -> None:
+        self.assertIsNone(
+            duplicate_yaml_mapping_key("run: |2-\n  label: script text\n  label: still script text\n")
+        )
+        self.assertEqual(
+            duplicate_yaml_mapping_key(
+                "steps:\n  - name: Checkout\n    with:\n      persist-credentials: false\n      persist-credentials: true\n"
+            ),
+            "persist-credentials",
+        )
+        self.assertIsNone(
+            duplicate_yaml_mapping_key(
+                "steps:\n  - name: First\n    env:\n      VALUE: one\n  - name: Second\n    env:\n      VALUE: two\n"
+            )
+        )
+        source = """name: CI
+on:
+  pull_request:
+  push:
+  merge_group:
+permissions: {}
+concurrency:
+  group: ci
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Script
+        run: |
+          label: allowed inside the script
+          label: still script text
+jobs:
+  replacement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps: []
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow_dir = root / ".github/workflows"
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "ci.yml").write_text(source, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator.policy = workflow_policy()
+
+            validator._validate_workflows()
+
+            self.assertIn(
+                "workflow.duplicate_key",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_yaml_indirection_syntax_is_rejected(self) -> None:
         base = """name: CI
 on:

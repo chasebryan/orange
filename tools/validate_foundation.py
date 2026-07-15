@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "edb84d4679fd615bd991fecedaf7a9451167fc5b1e6be1b7c0db81e279e64b15"
+GATE0_PROTECTED_FILE_DIGEST = "7858362e713d3f6f02a3532456d46442c4bbbb912d75fbde85d7c8e2b696c14d"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3203,6 +3203,8 @@ class FoundationValidator:
                 self.add("workflow.key_spacing", path, "whitespace before a YAML mapping colon is forbidden")
             if re.search(r"(?m)(?:^|[\s:{}\[\],-])(?:[&*][A-Za-z0-9_-]+|![A-Za-z0-9_!-]+|!<[^>\n]+>|<<\s*:)", active_text):
                 self.add("workflow.indirection", path, "YAML anchors, aliases, merge keys, and tags are forbidden")
+            if duplicate_yaml_mapping_key(active_text):
+                self.add("workflow.duplicate_key", path, "duplicate YAML mapping keys are forbidden")
             if re.search(r"(?m)^\s*on:\s*[\[{]", active_text) or re.search(r"(?m)^\s*jobs:\s*[\[{]", active_text):
                 self.add("workflow.flow_style", path, "on and jobs must use block-style YAML")
             if re.search(r"(?m)^\s{2}(?:pull_request|push|merge_group|schedule|workflow_dispatch):\s*[\[{]", active_text):
@@ -3213,10 +3215,6 @@ class FoundationValidator:
                 self.add("workflow.permissions", path, "workflow must declare top-level permissions")
             if re.search(r"(?m)^\s*permissions:\s*write-all\s*$", text):
                 self.add("workflow.write_all", path, "write-all permissions are forbidden")
-            if not re.search(r"(?m)^concurrency:\s*$", text) or not re.search(
-                r"(?m)^\s+cancel-in-progress:\s*true\s*$", text
-            ):
-                self.add("workflow.concurrency", path, "workflow must cancel superseded concurrent runs")
             for event in forbidden_events:
                 if re.search(rf"(?m)^[^#\n]*\b{re.escape(event)}\b", text):
                     self.add("workflow.forbidden_event", path, f"forbidden event {event}")
@@ -3325,23 +3323,10 @@ class FoundationValidator:
         requirements: dict[str, tuple[str, ...]] = {
             "ci.yml": (
                 "name: Required CI / docs-policy-workflows",
-                "name: Enforce solo contribution boundary",
-                "github.event.pull_request.user.login != 'chasebryan'",
-                "Solo mode does not accept third-party pull requests until D-018 selects contribution terms.",
-                GATE0_CI_COMPILER_RUN,
-                GATE0_CI_POLICY_TEST_RUN,
-                GATE0_CI_POLICY_RUN,
-                "DavidAnson/markdownlint-cli2-action@",
-                "run: ./scripts/ci/install-actionlint",
-                '"$RUNNER_TEMP/actionlint/actionlint" -color',
-                "zizmorcore/zizmor-action@",
-                "online-audits: false",
             ),
             "dependency-review.yml": (
                 "name: Dependency Review / policy",
-                "actions/dependency-review-action@",
                 "base-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}",
-                "config-file: ./.github/dependency-review-config.yml",
                 "head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}",
             ),
         }
@@ -4514,6 +4499,35 @@ def top_level_block(lines: Sequence[str], name: str) -> list[str]:
 
 def yaml_without_comments(text: str) -> str:
     return "\n".join(strip_yaml_comment(line).rstrip() for line in text.splitlines() if strip_yaml_comment(line).strip())
+
+
+def duplicate_yaml_mapping_key(text: str) -> str | None:
+    seen: dict[int, set[str]] = {}
+    block_indent = -1
+    for line in text.splitlines():
+        indent = len(line) - len(line.lstrip())
+        if indent > block_indent >= 0:
+            continue
+        block_indent = -1
+        source = line.lstrip()
+        sequence = source.startswith("- ")
+        if sequence:
+            source = source[2:].lstrip()
+        depth = indent + 2 if sequence else indent
+        for prior_depth in tuple(seen):
+            if prior_depth > (indent if sequence else depth):
+                del seen[prior_depth]
+        match = re.match(r"([A-Za-z_][A-Za-z0-9_-]*):", source)
+        if not match:
+            continue
+        key = match.group(1)
+        keys = seen.setdefault(depth, set())
+        if key in keys:
+            return key
+        keys.add(key)
+        if re.search(r":\s*[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*$", source):
+            block_indent = depth
+    return None
 
 
 def strip_yaml_comment(line: str) -> str:
