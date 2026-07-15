@@ -16,6 +16,35 @@
     },
     {
       "finding_code": "make.compiler_environment_contract",
+      "match": "ordered",
+      "expected_count": 1,
+      "fragments": [
+        "/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C \"$$repository_root\" ls-files --cached -z > \"$$repro_source_paths\"",
+        "--create --file=\"$$repro_source_archive\"",
+        "copy_compiler_source \"$$cargo_home/check-src\"",
+        "/usr/bin/cmp --silent -- \"$$repository_root/$$relative_path\" \"$$cargo_home/check-src/$$relative_path\"",
+        "ls-files --cached -z > \"$$repro_source_paths_after\"",
+        "/usr/bin/cmp --silent -- \"$$repro_source_paths\" \"$$repro_source_paths_after\"",
+        "repro_source_archive_identity=\"$$(/usr/bin/sha256sum --binary -- \"$$repro_source_archive\")\"",
+        "repro_source_paths_identity=\"$$(/usr/bin/sha256sum --binary -- \"$$repro_source_paths\")\"",
+        "manifest=\"$$cargo_home/check-src/compiler/Cargo.toml\"",
+        "PYTHONPYCACHEPREFIX=\"$$cargo_home/snapshot-python-cache\"",
+        "run_cargo cargo fmt --manifest-path \"$$manifest\" --all -- --check",
+        "run_cargo cargo clippy --manifest-path \"$$manifest\" --workspace --lib --bins --locked --offline",
+        "run_cargo cargo test --manifest-path \"$$manifest\" --workspace --all-targets --release --locked --offline",
+        "copy_compiler_source \"$$cargo_home/repro-a\"",
+        "copy_compiler_source \"$$repro_home_b/deep/src\"",
+        "run_cargo /usr/bin/env CARGO_TARGET_DIR=\"$$cargo_home/target-a\" cargo build",
+        "run_cargo /usr/bin/env CARGO_HOME=\"$$repro_home_b/cargo\" CARGO_TARGET_DIR=\"$$repro_home_b/deep/target\" cargo build",
+        "filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False)",
+        "run_cargo cargo test --manifest-path \"$$manifest\" --workspace --doc --locked --offline",
+        "verify_capture_identity; \\\n\tcopy_compiler_source \"$$cargo_home/check-reference\"",
+        "tested_roots=(\"$$cargo_home/check-src\" \"$$cargo_home/repro-a\" \"$$repro_home_b/deep/src\")",
+        "done < \"$$repro_source_paths\"; \\\n\tverify_capture_identity"
+      ]
+    },
+    {
+      "finding_code": "make.compiler_environment_contract",
       "match": "source",
       "expected_count": 1,
       "fragments": [
