@@ -57,6 +57,12 @@ check-compiler:
 	done < "$$repro_source_paths"; \
 	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths_after"; \
 	/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after" || { printf '%s\n' 'tracked source membership changed during archive capture' >&2; exit 1; }; \
+	repro_source_archive_identity="$$(/usr/bin/sha256sum --binary -- "$$repro_source_archive")"; \
+	repro_source_paths_identity="$$(/usr/bin/sha256sum --binary -- "$$repro_source_paths")"; \
+	verify_capture_identity() { \
+		[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_archive")" == "$$repro_source_archive_identity" ]] || { printf '%s\n' 'captured source archive changed during checks' >&2; exit 1; }; \
+		[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_paths")" == "$$repro_source_paths_identity" ]] || { printf '%s\n' 'captured source path inventory changed during checks' >&2; exit 1; }; \
+	}; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$cargo_home/snapshot-python-cache" /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); unittest.main(module=None)' "$$cargo_home/check-src" discover -s "$$cargo_home/check-src/tools/tests" -p 'test_*.py'; \
@@ -73,7 +79,17 @@ check-compiler:
 	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" cargo build --manifest-path "$$cargo_home/repro-src-b/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/repro-target-a/release/orangec" "$$cargo_home/repro-target-b/release/orangec"; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline; \
-	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"
+	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
+	verify_capture_identity; \
+	copy_compiler_source "$$cargo_home/check-reference"; \
+	while IFS= read -r -d '' relative_path; do \
+		[[ -f "$$cargo_home/check-src/$$relative_path" && ! -L "$$cargo_home/check-src/$$relative_path" && -f "$$cargo_home/check-reference/$$relative_path" && ! -L "$$cargo_home/check-reference/$$relative_path" ]] || { printf 'tested source type changed during checks: %s\n' "$$relative_path" >&2; exit 1; }; \
+		checked_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/check-src/$$relative_path")"; \
+		reference_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/check-reference/$$relative_path")"; \
+		[[ "$$checked_mode" == "$$reference_mode" ]] || { printf 'tested source mode changed during checks: %s (%s -> %s)\n' "$$relative_path" "$$reference_mode" "$$checked_mode" >&2; exit 1; }; \
+		/usr/bin/cmp --silent -- "$$cargo_home/check-src/$$relative_path" "$$cargo_home/check-reference/$$relative_path" || { printf 'tested source bytes changed during checks: %s\n' "$$relative_path" >&2; exit 1; }; \
+	done < "$$repro_source_paths"; \
+	verify_capture_identity
 
 check-policy:
 	/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 TZ=UTC /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py
