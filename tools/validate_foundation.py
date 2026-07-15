@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "2496025a2e465db45027318d780adb976b6110b8eb28fe9b46c58f7988fdc7f5"
+_PHD = "22e89cf3818f78d646fda259bd69c8525bf10c74f0b937e8c3bc151f9eb93565"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2421,18 +2421,21 @@ class FoundationValidator:
                 'cargo build --manifest-path "$$cargo_home/repro-src-a/Cargo.toml" '
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
-            ): "the first optimized reproducibility build needs independent source and target trees",
+            ): "first build needs separate source and target trees",
             (
                 'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" '
                 'cargo build --manifest-path "$$cargo_home/repro-src-b/Cargo.toml" '
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
-            ): "the second optimized reproducibility build needs independent source and target trees",
-            'copy_compiler_source "$$cargo_home/repro-src-a"': "the first build needs a relocated source copy",
-            'copy_compiler_source "$$cargo_home/repro-src-b"': "the second build needs a relocated source copy",
-            "--exclude=./target": "source copies must exclude ambient local build output",
+            ): "second build needs separate source and target trees",
+            'copy_compiler_source "$$cargo_home/repro-src-a"': "first source copy is required",
+            'copy_compiler_source "$$cargo_home/repro-src-b"': "second source copy is required",
+            '--create --file="$$repro_source_archive" --exclude=./target': (
+                "archive must exclude target output"
+            ),
+            '--extract --file="$$repro_source_archive"': "copies must use captured archive",
             "optimized orangec builds differ across source roots": (
-                "the source-relocated optimized artifacts must be compared byte for byte"
+                "relocated artifacts must match"
             ),
             'manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': (
                 "the compiler manifest must be anchored to the protected Makefile"

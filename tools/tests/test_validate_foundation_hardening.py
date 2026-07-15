@@ -2232,6 +2232,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                '--extract --file="$$repro_source_archive"',
+                "--extract --file=-",
+                "make.compiler_environment_contract",
+            ),
+            (
                 'CARGO_TARGET_DIR="$$cargo_home/target"',
                 'CARGO_TARGET_DIR="compiler/target"',
                 "make.compiler_environment_contract",
