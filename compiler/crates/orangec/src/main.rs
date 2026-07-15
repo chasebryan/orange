@@ -28,7 +28,8 @@ const USAGE: &str = concat!(
     "  lex      Print the deterministic token stream\n",
     "\n",
     "Options:\n",
-    "      --edition <YEAR>  Select the Orange edition [default: 2026]\n",
+    "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+    "      --                End option parsing\n",
     "  -h, --help            Print help\n",
     "  -V, --version         Print version\n",
     "\n",
@@ -1021,7 +1022,7 @@ mod tests {
             edition_line,
             Some(
                 format!(
-                    "      --edition <YEAR>  Select the Orange edition [default: {}]",
+                    "      --edition <YEAR>  Select the Orange edition [default: {}; at most once]",
                     Edition::CURRENT
                 )
                 .as_str()
