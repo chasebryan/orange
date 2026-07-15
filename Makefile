@@ -72,7 +72,8 @@ check-compiler:
 	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" cargo build --manifest-path "$$cargo_home/repro-src-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
 	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" cargo build --manifest-path "$$cargo_home/repro-src-b/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/repro-target-a/release/orangec" "$$cargo_home/repro-target-b/release/orangec"; \
-	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline
+	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline; \
+	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"
 
 check-policy:
 	/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 TZ=UTC /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py
