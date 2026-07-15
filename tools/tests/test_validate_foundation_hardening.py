@@ -175,6 +175,12 @@ class WorkflowHardeningTests(unittest.TestCase):
             ),
             (
                 "dependency-review.yml",
+                "    branches:\n      - main\n",
+                "    branches:\n      - main\n    paths-ignore:\n      - compiler/**\n",
+                "workflow.path_filter",
+            ),
+            (
+                "dependency-review.yml",
                 "    runs-on: ubuntu-24.04\n",
                 "    defaults:\n      run:\n        shell: bash {0}\n    runs-on: ubuntu-24.04\n",
                 "workflow.defaults_contract",

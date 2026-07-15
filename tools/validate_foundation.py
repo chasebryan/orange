@@ -296,7 +296,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "fc8a2a2ac05fa90bc38c4fa20b9e4176b536ab70c227eb8aab82f0ef44b8622a"
+GATE0_PROTECTED_FILE_DIGEST = "e6ba5b87320bc02bfaa57512b655b461db3bfffd94ab435f0c89b948354fb43d"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3263,8 +3263,8 @@ class FoundationValidator:
                 for event in ("pull_request", "push", "merge_group"):
                     if not re.search(rf"(?m)^\s{{2}}{event}\s*:", text):
                         self.add("workflow.ci_event", path, f"required CI event is missing: {event}")
-                if re.search(r"\bpaths(?:-ignore)?\s*:", active_text):
-                    self.add("workflow.path_filter", path, "required CI must not use path filters")
+            if re.search(r"\bpaths(?:-ignore)?\s*:", active_text):
+                self.add("workflow.path_filter", path, "protected workflows must not use path filters")
             for line_number, line in enumerate(lines, start=1):
                 container_match = CONTAINER_ACTION_RE.search(line)
                 match = None if container_match else ACTION_RE.search(line)
