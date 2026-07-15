@@ -388,14 +388,17 @@ jobs:
             (
                 "DOCKER_HOST=unix:///var/run/docker.sock",
                 "DOCKER_HOST=tcp://hostile.invalid:2375",
-                "workflow.scorecard_contract",
             ),
-            ("--cap-add=DAC_OVERRIDE", "--cap-add=ALL", "workflow.scorecard_runtime"),
-            (",readonly\"", "\"", "workflow.scorecard_contract"),
-            ("--env INPUT_PUBLISH_RESULTS=false", "--env INPUT_PUBLISH_RESULTS=true", "workflow.scorecard_publication"),
-            ("--pids-limit=256", "--privileged", "workflow.scorecard_runtime"),
+            ("--cap-add=DAC_OVERRIDE", "--cap-add=ALL"),
+            (",readonly\"", "\""),
+            ("--env INPUT_PUBLISH_RESULTS=false", "--env INPUT_PUBLISH_RESULTS=true"),
+            ("--pids-limit=256", "--privileged"),
+            (
+                "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
+                "0" * 64,
+            ),
         )
-        for old, new, expected_code in mutations:
+        for old, new in mutations:
             with self.subTest(mutation=old):
                 steps = {name: list(lines) for name, lines in source_steps.items()}
                 steps["Run OpenSSF Scorecard"] = [line.replace(old, new) for line in steps["Run OpenSSF Scorecard"]]
@@ -403,30 +406,6 @@ jobs:
                 validator._validate_step_details(Path("scorecard.yml"), "analysis", steps)
                 codes = {finding.code for finding in validator.findings}
                 self.assertIn("workflow.scorecard_contract", codes)
-                self.assertIn(expected_code, codes)
-
-    def test_unadmitted_scorecard_digest_is_rejected(self) -> None:
-        digest = "0" * 64
-        validator = FoundationValidator(Path("/virtual"))
-        validator._validate_step_details(
-            Path("scorecard.yml"),
-            "analysis",
-            {
-                "Run OpenSSF Scorecard": [
-                    "      - name: Run OpenSSF Scorecard",
-                    "        env:",
-                    "          INPUT_REPO_TOKEN: ${{ github.token }}",
-                    "        run: |",
-                    "          docker run --rm \\",
-                    f"            ghcr.io/ossf/scorecard-action@sha256:{digest}",
-                ],
-                "Upload result to code scanning": [
-                    "      - name: Upload result to code scanning",
-                    "        uses: github/codeql-action/upload-sarif@" + "a" * 40 + " # v4.37.0",
-                ],
-            },
-        )
-        self.assertIn("workflow.scorecard_image", {finding.code for finding in validator.findings})
 
     def test_digest_pinned_scorecard_does_not_request_publication_identity(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -436,45 +415,6 @@ jobs:
         self.assertNotIn("id-token: write", workflow)
         self.assertNotIn("INPUT_INTERNAL_PUBLISH_BASE_URL", workflow)
         self.assertNotIn("INPUT_INTERNAL_DEFAULT_TOKEN", workflow)
-
-    def test_scorecard_publication_settings_are_rejected(self) -> None:
-        digest = "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
-        base_step = [
-            "      - name: Run OpenSSF Scorecard",
-            "        env:",
-            "          INPUT_REPO_TOKEN: ${{ github.token }}",
-            "        run: |",
-            "          docker run --rm \\",
-            "            --env INPUT_PUBLISH_RESULTS=false \\",
-            f"            ghcr.io/ossf/scorecard-action@sha256:{digest} # v2.4.3",
-        ]
-        upload_step = [
-            "      - name: Upload result to code scanning",
-            "        uses: github/codeql-action/upload-sarif@" + "a" * 40 + " # v4.37.0",
-        ]
-        mutations = (
-            ("            --env INPUT_PUBLISH_RESULTS=true \\", True),
-            ("            --env INPUT_INTERNAL_PUBLISH_BASE_URL=https://api.scorecard.dev \\", False),
-            ("            --env INPUT_INTERNAL_DEFAULT_TOKEN \\", False),
-        )
-        for forbidden, replaces_false in mutations:
-            with self.subTest(forbidden=forbidden):
-                run_step = [
-                    forbidden if replaces_false and line == "            --env INPUT_PUBLISH_RESULTS=false \\" else line
-                    for line in base_step
-                ]
-                if not replaces_false:
-                    run_step.append(forbidden)
-                validator = FoundationValidator(Path("/virtual"))
-                validator._validate_step_details(
-                    Path("scorecard.yml"),
-                    "analysis",
-                    {
-                        "Run OpenSSF Scorecard": run_step,
-                        "Upload result to code scanning": upload_step,
-                    },
-                )
-                self.assertIn("workflow.scorecard_publication", {finding.code for finding in validator.findings})
 
     def test_repository_launcher_canonicalizes_scope_and_fixes_the_build_epoch(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

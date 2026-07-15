@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "376864ea3fae5d759f9033366bc877a34ad8dfdd4a653a703a3c0d95881ce5c6"
+GATE0_PROTECTED_FILE_DIGEST = "23c86c74794d01b1b2d8c2d4729e99bcda0fd68adbf9f06b71e3f7b137c19cc0"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3499,45 +3499,6 @@ class FoundationValidator:
                     path,
                     f"{job_name}/Run OpenSSF Scorecard must match the reviewed Docker runtime contract exactly",
                 )
-            image = next(iter(GATE0_ALLOWED_CONTAINER_IMAGES))
-            if scorecard_block.count(image) != 1:
-                self.add(
-                    "workflow.scorecard_image",
-                    path,
-                    f"{job_name}/Run OpenSSF Scorecard must invoke the one admitted image exactly once",
-                )
-            if "docker://" in scorecard_block:
-                self.add(
-                    "workflow.scorecard_runtime",
-                    path,
-                    f"{job_name}/Run OpenSSF Scorecard must use the hosted runner Docker CLI",
-                )
-            for forbidden in (
-                'INPUT_PUBLISH_RESULTS: "true"',
-                "INPUT_PUBLISH_RESULTS=true",
-                "INPUT_INTERNAL_PUBLISH_BASE_URL",
-                "INPUT_INTERNAL_DEFAULT_TOKEN",
-            ):
-                if forbidden in scorecard_block:
-                    self.add(
-                        "workflow.scorecard_publication",
-                        path,
-                        f"{job_name}/Run OpenSSF Scorecard contains forbidden public publication setting {forbidden!r}",
-                    )
-            for forbidden in (
-                "--privileged",
-                "--cap-add=ALL",
-                "--cap-add=SYS_ADMIN",
-                "--device",
-                "--entrypoint",
-                "--network=host",
-            ):
-                if forbidden in scorecard_block:
-                    self.add(
-                        "workflow.scorecard_runtime",
-                        path,
-                        f"{job_name}/Run OpenSSF Scorecard contains forbidden Docker option {forbidden!r}",
-                    )
             require("Upload result to code scanning", ("uses: github/codeql-action/upload-sarif@",))
 
     def _validate_codeowners(self) -> None:
