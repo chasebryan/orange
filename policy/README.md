@@ -78,7 +78,10 @@ record is checked for worktree presence one component at a time without
 following symlinks, so a stale tracked deletion cannot disappear from the exact
 path inventory. When Git metadata is present, the bounded file and stage-zero
 path sets must be exactly equal; nonignored untracked content is rejected even
-if its name would otherwise be admitted.
+if its name would otherwise be admitted. The stage-zero snapshot does not
+compare blob IDs or require a clean worktree: validation targets the bounded
+worktree bytes so local pre-commit changes remain admissible. Hosted evidence
+therefore applies only to the revision actually checked out by that run.
 Schema, fixture, workflow, OEP, and ADR directory queries, plus every required,
 forbidden, and optional artifact-presence query, are selected lexically from
 that same bounded inventory. Validation does not launch a second filesystem
