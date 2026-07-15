@@ -78,8 +78,9 @@ record is checked for worktree presence one component at a time without
 following symlinks, so a stale tracked deletion cannot disappear from the exact
 path inventory. When Git metadata is present, the bounded file and stage-zero
 path sets must be exactly equal; nonignored untracked content is rejected even
-if its name would otherwise be admitted. The stage-zero snapshot does not
-compare blob IDs or require a clean worktree: validation targets the bounded
+if its name would otherwise be admitted. The stage-zero snapshot retains blob
+IDs only to detect index drift during validation; it does not compare them with
+worktree bytes or require a clean worktree. Validation targets the bounded
 worktree bytes so local pre-commit changes remain admissible. Hosted evidence
 therefore applies only to the revision actually checked out by that run.
 Schema, fixture, workflow, OEP, and ADR directory queries, plus every required,
@@ -114,8 +115,8 @@ filesystem without these primitives receives `resource.unsupported_host`
 instead of a weaker validation result. Before reporting success, a second
 bounded inventory and metadata sweep rejects late additions, deletions, and
 replacements; repositories with Git metadata also repeat the stage-zero path,
-mode, and object-type inventory. The validator and its intermediate
-schema and record-metadata checkers
+mode, object-identity, and object-type inventory. The validator and its
+intermediate schema and record-metadata checkers
 each retain at most 4,096 detailed findings. Final finding messages retain at
 most 4,096 characters, and the report adds one deterministic suppression
 record, preventing bounded repository bytes from amplifying into an unbounded

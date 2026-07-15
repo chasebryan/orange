@@ -456,9 +456,10 @@ class RepositoryResourceBoundTests(unittest.TestCase):
 
     def test_final_snapshot_rejects_late_git_index_drift(self) -> None:
         cases = (
-            ("mode", [("100755", "record.txt")]),
-            ("object_type", [("120000", "record.txt")]),
-            ("path", [("100644", "other.txt")]),
+            ("content", [("100644", b"new", "record.txt")]),
+            ("mode", [("100755", b"old", "record.txt")]),
+            ("object_type", [("120000", b"old", "record.txt")]),
+            ("path", [("100644", b"old", "other.txt")]),
         )
         for drift, final_index in cases:
             with self.subTest(drift=drift), tempfile.TemporaryDirectory() as directory:
@@ -467,7 +468,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 path.write_bytes(b"record")
                 validator = FoundationValidator(root)
                 self.assertTrue(validator._preflight_repository_resources())
-                validator.index_entries = [("100644", "record.txt")]
+                validator.index_entries = [("100644", b"old", "record.txt")]
 
                 with mock.patch(
                     "tools.validate_foundation.git_index_entries",
@@ -480,7 +481,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                     {finding.code for finding in validator.findings},
                 )
                 self.assertIn(
-                    "path, mode, or object type",
+                    "path, mode, object identity, or type",
                     next(
                         finding.message
                         for finding in validator.findings
@@ -680,7 +681,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
             outside = parent / "outside.txt"
             outside.write_text("outside\n", encoding="utf-8")
             validator = FoundationValidator(root)
-            validator.index_entries = [("100644", "checked.txt")]
+            validator.index_entries = [("100644", b"object", "checked.txt")]
             validator.policy = {"executable_paths": [], "allowed_binary_artifacts": []}
             self.assertTrue(validator._preflight_repository_resources())
 
@@ -1418,7 +1419,10 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 paths = list(iter_repository_files(root, findings))
                 entries = git_index_entries(root, findings, required=True)
         self.assertEqual([path.name for path in paths], ["tracked.txt"])
-        self.assertEqual(entries, [("100644", "tracked.txt")])
+        self.assertEqual(
+            [(mode, path) for mode, _, path in entries],
+            [("100644", "tracked.txt")],
+        )
         self.assertEqual(findings, [])
 
     def test_stage_inventory_allows_modified_worktree_bytes(self) -> None:
@@ -1446,7 +1450,10 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             path.write_bytes(b"modified worktree bytes\n")
 
             validator = FoundationValidator(root)
-            self.assertEqual(validator.index_entries, [("100644", "tracked.txt")])
+            self.assertEqual(
+                [(mode, name) for mode, _, name in validator.index_entries],
+                [("100644", "tracked.txt")],
+            )
             self.assertTrue(validator._preflight_repository_resources())
             self.assertEqual(
                 validator._read_repository_bytes(path),
@@ -1903,7 +1910,10 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 ):
                     entries = git_index_entries(Path(directory), findings)
                 if accepted:
-                    self.assertEqual(entries, [("100644", os.fsdecode(raw_path))])
+                    self.assertEqual(
+                        entries,
+                        [("100644", b"a" * 40, os.fsdecode(raw_path))],
+                    )
                     self.assertEqual(findings, [])
                 else:
                     self.assertEqual(entries, [])
