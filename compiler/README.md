@@ -178,19 +178,20 @@ canonical name so its already encoded OS path is not escaped a second time.
 output for multiple sources uses an exact `== SOURCE ==` header and one blank
 separator in argument order. A lexical error returns status 1 but does not
 suppress that source's bounded token stream or later sources. Lex output still
-has no separate byte limit: escape notation and per-token metadata can make it
-larger than the accepted source, so callers processing untrusted input should
-cap output and time.
+can be larger than the accepted source because of escape notation and per-token
+metadata. `orangec` caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)
+per invocation. Reaching that limit returns status 1, emits `ORC1007`, stops
+before reading later sources, and can leave an already-accepted output prefix;
+callers processing untrusted input should also cap time.
 
-Accepted S3a has no separate evaluation-output byte limit. Each successful
-output line repeats the module name, so a source with a long module name and
-many typed specifications can request output much larger than its input. The
-CLI shares the evaluated module identity and streams values through a fixed
-buffer, which bounds compiler-owned output buffering but does not bound the
-requested bytes or time. Apply caller-side output and time limits before using
-`orangec eval` on untrusted sources. Adding a fail-closed output ceiling requires
-an explicit edition-aware semantic decision because it would change accepted
-S3a behavior.
+Accepted S3a assigns no separate semantic budget to evaluation-output bytes.
+Each successful output line repeats the module name, so a source with a long
+module name and many typed specifications can request output much larger than
+its input. The CLI shares the evaluated module identity and streams values
+through a fixed buffer, while the operational 64 MiB standard-output ceiling
+above bounds the bytes actually accepted per invocation. Exceeding it is an
+unsuccessful output operation rather than an accepted partial evaluation.
+Apply caller-side time limits before using `orangec eval` on untrusted sources.
 
 ## Frozen lexical boundary
 

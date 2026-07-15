@@ -1,5 +1,6 @@
 //! `orangec`, the pre-alpha Orange compiler command-line frontend.
 
+use std::borrow::Cow;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fmt::{self, Write as _};
@@ -17,6 +18,7 @@ const SUCCESS: u8 = 0;
 const COMPILATION_ERROR: u8 = 1;
 const USAGE_ERROR: u8 = 2;
 const MAX_SOURCES_PER_INVOCATION: usize = 256;
+const MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 const USAGE: &str = concat!(
@@ -63,6 +65,7 @@ define_cli_diagnostic_codes! {
     DuplicateStandardInput => "ORC1004",
     SourceRepresentation => "ORC1005",
     MissingPhaseArtifact => "ORC1006",
+    OutputTooLarge => "ORC1007",
 }
 
 fn main() -> ExitCode {
@@ -94,6 +97,62 @@ impl<W: Write> Write for CountCheckedWriter<W> {
         if written > buffer.len() {
             return Err(invalid_data_error());
         }
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+struct OutputLimitedWriter<W> {
+    inner: W,
+    remaining: usize,
+}
+
+#[derive(Debug)]
+struct OutputLimitExceeded;
+
+impl fmt::Display for OutputLimitExceeded {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("standard output limit exceeded")
+    }
+}
+
+impl std::error::Error for OutputLimitExceeded {}
+
+fn output_limit_error() -> io::Error {
+    io::Error::new(io::ErrorKind::FileTooLarge, OutputLimitExceeded)
+}
+
+impl<W> OutputLimitedWriter<W> {
+    const fn new(inner: W, limit: usize) -> Self {
+        Self {
+            inner,
+            remaining: limit,
+        }
+    }
+
+    fn into_inner(self) -> W {
+        self.inner
+    }
+}
+
+impl<W: Write> Write for OutputLimitedWriter<W> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        let allowed = buffer.len().min(self.remaining);
+        if allowed == 0 {
+            return Err(output_limit_error());
+        }
+        let buffer = buffer.get(..allowed).ok_or_else(invalid_data_error)?;
+        let written = self.inner.write(buffer)?;
+        self.remaining = self
+            .remaining
+            .checked_sub(written)
+            .ok_or_else(invalid_data_error)?;
         Ok(written)
     }
 
@@ -175,6 +234,22 @@ fn compile(
     standard_output: &mut impl Write,
     standard_error: &mut impl Write,
 ) -> u8 {
+    compile_with_output_limit(
+        options,
+        standard_input,
+        standard_output,
+        standard_error,
+        MAX_STANDARD_OUTPUT_BYTES,
+    )
+}
+
+fn compile_with_output_limit(
+    options: &Options,
+    standard_input: &mut impl Read,
+    standard_output: &mut impl Write,
+    standard_error: &mut impl Write,
+    output_limit: usize,
+) -> u8 {
     let mut standard_input_seen = false;
     let mut compilation_failed = false;
     let mut output_failed = false;
@@ -184,7 +259,8 @@ fn compile(
     let mut standard_output_written = false;
     let mut token_source_written = false;
     let show_headers = options.paths.len() > 1;
-    let mut buffered_output = io::BufWriter::new(standard_output);
+    let buffered_output = io::BufWriter::new(standard_output);
+    let mut buffered_output = OutputLimitedWriter::new(buffered_output, output_limit);
 
     for path in &options.paths {
         // A failed result stream makes status 1 unavoidable and prevents any
@@ -323,13 +399,13 @@ fn compile(
                 Err(error) => {
                     standard_output_available = false;
                     output_failed = true;
-                    if error.kind() != io::ErrorKind::BrokenPipe {
+                    if let Some(group) = output_failure_group(options.command, &error) {
                         emit_error_group(
                             standard_error,
                             &mut standard_error_available,
                             &mut error_group_written,
                             &mut output_failed,
-                            "orangec: could not write token output\n",
+                            &group,
                         );
                     }
                 }
@@ -462,13 +538,13 @@ fn compile(
                             Err(error) => {
                                 standard_output_available = false;
                                 output_failed = true;
-                                if error.kind() != io::ErrorKind::BrokenPipe {
+                                if let Some(group) = output_failure_group(options.command, &error) {
                                     emit_error_group(
                                         standard_error,
                                         &mut standard_error_available,
                                         &mut error_group_written,
                                         &mut output_failed,
-                                        "orangec: could not write evaluation output\n",
+                                        &group,
                                     );
                                 }
                                 break;
@@ -486,22 +562,19 @@ fn compile(
         && let Err(error) = flush_retry_interrupted(&mut buffered_output)
     {
         output_failed = true;
-        if error.kind() != io::ErrorKind::BrokenPipe {
+        if let Some(group) = output_failure_group(options.command, &error) {
             emit_error_group(
                 standard_error,
                 &mut standard_error_available,
                 &mut error_group_written,
                 &mut output_failed,
-                if options.command == CompilerCommand::Eval {
-                    "orangec: could not write evaluation output\n"
-                } else {
-                    "orangec: could not write token output\n"
-                },
+                &group,
             );
         }
     }
     // Do not let `BufWriter`'s best-effort drop path retry retained bytes after
     // an output failure. A successful explicit flush leaves nothing to discard.
+    let buffered_output = buffered_output.into_inner();
     let (_standard_output, _unwritten_output) = buffered_output.into_parts();
 
     if standard_error_available
@@ -515,6 +588,29 @@ fn compile(
         COMPILATION_ERROR
     } else {
         SUCCESS
+    }
+}
+
+fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<Cow<'static, str>> {
+    if error
+        .get_ref()
+        .is_some_and(|cause| cause.is::<OutputLimitExceeded>())
+    {
+        return Some(Cow::Owned(render_cli_error(
+            CliDiagnosticCode::OutputTooLarge,
+            format_args!(
+                "standard output exceeds the {MAX_STANDARD_OUTPUT_BYTES}-byte invocation limit"
+            ),
+            "orangec writes at most 64 MiB to standard output per invocation",
+        )));
+    }
+    match error.kind() {
+        io::ErrorKind::BrokenPipe => None,
+        _ => Some(Cow::Borrowed(if command == CompilerCommand::Eval {
+            "orangec: could not write evaluation output\n"
+        } else {
+            "orangec: could not write token output\n"
+        })),
     }
 }
 
@@ -1044,7 +1140,7 @@ mod tests {
             .map(|code| code.as_str())
             .collect::<Vec<_>>();
         let expected = [
-            "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006",
+            "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007",
         ];
 
         assert_eq!(actual, expected);
@@ -1054,6 +1150,58 @@ mod tests {
                 && code.starts_with("ORC")
                 && code[3..].bytes().all(|byte| byte.is_ascii_digit())
         }));
+    }
+
+    #[test]
+    fn standard_output_limit_accepts_only_the_exact_prefix_and_reports_orc1007() {
+        let mut bytes = Vec::new();
+        {
+            let mut output = OutputLimitedWriter::new(CountCheckedWriter::new(&mut bytes), 3);
+
+            let error = output.write_all(b"abcd").unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::FileTooLarge);
+            assert_eq!(output.write(&[]).unwrap(), 0);
+            output.flush().unwrap();
+            assert_eq!(
+                output_failure_group(CompilerCommand::Lex, &error).as_deref(),
+                Some(concat!(
+                    "error[ORC1007]: standard output exceeds the 67108864-byte invocation limit\n",
+                    "  = note: orangec writes at most 64 MiB to standard output per invocation\n",
+                ))
+            );
+            assert_eq!(
+                output_failure_group(
+                    CompilerCommand::Lex,
+                    &io::Error::from(io::ErrorKind::FileTooLarge),
+                )
+                .as_deref(),
+                Some("orangec: could not write token output\n")
+            );
+        }
+
+        assert_eq!(bytes, b"abc");
+
+        let options = Options {
+            command: CompilerCommand::Lex,
+            edition: Edition::CURRENT,
+            paths: vec![PathBuf::from("-")],
+        };
+        let mut input = b"edition 2026; module m {}".as_slice();
+        let mut output = Vec::new();
+        let mut diagnostic = Vec::new();
+        let status =
+            compile_with_output_limit(&options, &mut input, &mut output, &mut diagnostic, 3);
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(output, b"");
+        assert_eq!(
+            diagnostic,
+            concat!(
+                "error[ORC1007]: standard output exceeds the 67108864-byte invocation limit\n",
+                "  = note: orangec writes at most 64 MiB to standard output per invocation\n",
+            )
+            .as_bytes()
+        );
     }
 
     #[test]

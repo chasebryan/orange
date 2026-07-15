@@ -1879,6 +1879,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("compiler/crates/orange-compiler/src/semantics.rs", "16_384", "16_383"),
             ("compiler/crates/orange-compiler/src/eval.rs", "1_048_576", "1_048_575"),
             ("compiler/crates/orangec/src/main.rs", "usize = 256;", "usize = 255;"),
+            ("compiler/crates/orangec/src/main.rs", "64 * 1024 * 1024", "63 * 1024 * 1024"),
         )
         for value, old, new in mutations:
             with self.subTest(path=value, old=old), tempfile.TemporaryDirectory() as directory:
@@ -1891,17 +1892,18 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 expected = "compiler.cli_budget" if value.endswith("orangec/src/main.rs") else "compiler.language_budget"
                 self.assertIn(expected, self._codes(root))
 
-    def test_cli_source_limit_documentation_drift_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self._copy_boundary(root)
-            path = root / "compiler/README.md"
-            source = path.read_text(encoding="utf-8")
-            path.write_text(
-                source.replace("up to 256 source inputs", "up to 255 source inputs", 1),
-                encoding="utf-8",
-            )
-            self.assertIn("compiler.cli_spec_budget", self._codes(root))
+    def test_cli_operational_limit_documentation_drift_is_rejected(self) -> None:
+        for old, new in (
+            ("up to 256 source inputs", "up to 255 source inputs"),
+            ("64 * 1024 * 1024", "63 * 1024 * 1024"),
+        ):
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "compiler/README.md"
+                source = path.read_text(encoding="utf-8")
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("compiler.cli_spec_budget", self._codes(root))
 
     def test_oversized_compiled_budget_is_rejected_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
