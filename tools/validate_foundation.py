@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "f1ac63f360aa271a0ae1b7a7b62fc51dd99f1f60ecf2bd8fc572852d8547818b"
+GATE0_PROTECTED_FILE_DIGEST = "0ba8e7d27a6a3a088ed75002132817fdd3306f008c82828b931c1348fa9bf4d3"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1094,6 +1094,16 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             )
         )
         return [], False
+    for raw_path in (b".git/commondir", b".git/objects/info/alternates"):
+        if git_metadata_present and _repository_entry_presence(root, raw_path) is not False:
+            findings.append(
+                Finding(
+                    "resource.inventory_git",
+                    os.fsdecode(raw_path),
+                    "repository Git metadata must not redirect shared state or objects",
+                )
+            )
+            return [], False
     result = _read_git_nul_records(
         root,
         [

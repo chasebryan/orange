@@ -719,6 +719,28 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             {"resource.inventory_git"},
         )
 
+    def test_git_inventory_rejects_local_metadata_redirects(self) -> None:
+        for relative_path in ("commondir", "objects/info/alternates"):
+            with self.subTest(path=relative_path), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / "worktree"
+                subprocess.run(
+                    [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                    check=True,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+                redirect = root / ".git" / relative_path
+                redirect.parent.mkdir(parents=True, exist_ok=True)
+                redirect.write_text("../../external\n", encoding="utf-8")
+                findings = []
+
+                paths = list(iter_repository_files(root, findings))
+
+            self.assertEqual(paths, [])
+            self.assertEqual(
+                {finding.code for finding in findings},
+                {"resource.inventory_git"},
+            )
+
     def test_git_wait_failure_stops_and_reaps_the_producer(self) -> None:
         process = _FailingFirstWaitPopen(b"file.txt\0")
         findings = []
