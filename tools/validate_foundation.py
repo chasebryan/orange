@@ -79,7 +79,7 @@ _JM = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_VALIDATOR_BYTES = 384 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
-GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
+GATE0_MAXIMUM_REPOSITORY_BYTES = 12 * 1024 * 1024
 GATE0_GIT_EXECUTABLE = "/usr/bin/git"
 GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
@@ -327,7 +327,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "f94248fb7743567a781543498d71ff7ba5c83c9bf9328d67b26d6c8981a495ec"
+_PHD = "af953b578c2504de1fc5a54c7975aaf1c0be12d502631ce84a7e87e652d7fe2f"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"

@@ -280,6 +280,12 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"\0" * size)
 
+    def test_repository_byte_bounds_are_exact(self) -> None:
+        self.assertEqual(GATE0_MAXIMUM_TEXT_FILE_BYTES, 256 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 384 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_BINARY_FILE_BYTES, 2 * 1024 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 12 * 1024 * 1024)
+
     def test_text_and_binary_file_size_boundaries_are_inclusive(self) -> None:
         cases = (
             ("record.txt", GATE0_MAXIMUM_TEXT_FILE_BYTES),
