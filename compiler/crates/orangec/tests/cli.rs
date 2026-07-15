@@ -973,4 +973,15 @@ fn usage_errors_have_a_distinct_exit_status() {
         String::from_utf8(first.stderr).unwrap(),
         format!("orangec: unknown command `compile`\n\n{help}")
     );
+
+    let repeated_edition = orangec()
+        .args(["--edition=2026", "check", "--edition", "2026", "missing.or"])
+        .output()
+        .unwrap();
+    assert_eq!(repeated_edition.status.code(), Some(2));
+    assert_eq!(repeated_edition.stdout, b"");
+    assert_eq!(
+        String::from_utf8(repeated_edition.stderr).unwrap(),
+        format!("orangec: option `--edition` may be specified at most once\n\n{help}")
+    );
 }
