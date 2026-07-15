@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "7ebd56acd7fada35b41aff7fc0394985305c47a78234072b329a615f92b7cb2c"
+_PHD = "136b0fe5908226d69f0d18af3c0700fa274a1f5572a6e07b563c8bb9d5abeac1"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1919,7 +1919,7 @@ class FoundationValidator:
         for finding in final_findings:
             self.add(finding.code, finding.path, finding.message)
         if self.index_entries and final_index != self.index_entries:
-            self._ri(_RC, ".git", "Git stage-zero path or mode inventory changed during validation")
+            self._ri(_RC, ".git", "Git stage-zero path, mode, or object type changed during validation")
         expected = {relative(path, self.root) for path in self.repository_files}
         observed = {relative(path, self.root) for path in final_files}
         if observed != expected:
