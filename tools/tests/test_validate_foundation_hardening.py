@@ -130,6 +130,38 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_pull_request_safety_contract_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (
+                "Every row must say `Changed` or `No change` and explain why.",
+                "Every row should explain the impact when practical.",
+            ),
+            (
+                "I included no secret, private key, embargoed vulnerability, or private cryptographic material.",
+                "I included no secret, private key, or private cryptographic material.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                github_dir = root / ".github"
+                github_dir.mkdir()
+                source = (source_root / ".github/pull_request_template.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn(old, source)
+                (github_dir / "pull_request_template.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "template.pr_safety_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_issue_routing_configuration_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         mutations = (

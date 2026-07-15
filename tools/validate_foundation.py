@@ -340,6 +340,7 @@ contact_links:
     url: https://support.github.com/request/landing?tags=report-abuse
     about: Use GitHub's private platform channel for abuse, harassment, or content-policy violations.
 '''
+_PRD = "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f"
 _GAC = '''* text=auto eol=lf
 
 *.json text eol=lf
@@ -402,7 +403,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "24ad8488922ab629e1d81219488038da415ab443f5191935d7f9a6b444184430"
+_PHD = "12011d0a1906ea892842b57d911db558dabdb7642c792a751bde5973eb90abb8"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4759,6 +4760,12 @@ class FoundationValidator:
             text = self._rt(pr)
             if text is None:
                 return
+            if hashlib.sha256(text.encode("utf-8")).hexdigest() != _PRD:
+                self.add(
+                    "template.pr_safety_contract",
+                    pr,
+                    "pull-request guidance and safeguards must match the exact reviewed contract",
+                )
             for heading in (
                 "## Summary",
                 "## Boundary and non-goals",
