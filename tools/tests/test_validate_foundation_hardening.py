@@ -128,6 +128,44 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_yaml_indirection_syntax_is_rejected(self) -> None:
+        base = """name: CI
+on:
+  pull_request:
+  push:
+  merge_group:
+permissions: {}
+concurrency:
+  group: ci
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps: []
+"""
+        for syntax in (
+            "anchor: &shared value\n",
+            "alias: *shared\n",
+            "merge: {<<: *shared}\n",
+            "tagged: !custom value\n",
+        ):
+            with self.subTest(syntax=syntax), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workflow_dir = root / ".github/workflows"
+                workflow_dir.mkdir(parents=True)
+                (workflow_dir / "ci.yml").write_text(base + syntax, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator.policy = workflow_policy()
+
+                validator._validate_workflows()
+
+                self.assertIn(
+                    "workflow.indirection",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_legacy_container_action_policy_field_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         policy = load_json(source_root / "policy/gate0-repository-policy.json")

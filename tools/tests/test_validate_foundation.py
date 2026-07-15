@@ -683,7 +683,6 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             {
                 "GIT_CONFIG_GLOBAL": os.devnull,
                 "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CEILING_DIRECTORIES": str(root.parent),
                 "GIT_DIR": str(root / ".git"),
                 "GIT_NO_LAZY_FETCH": "1",
                 "GIT_OPTIONAL_LOCKS": "0",

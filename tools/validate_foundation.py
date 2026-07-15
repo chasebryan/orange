@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "2d2948101291dea1eb9f032ca8d5073bb355dc51bbad774c35f5fefae62ad9af"
+GATE0_PROTECTED_FILE_DIGEST = "edb84d4679fd615bd991fecedaf7a9451167fc5b1e6be1b7c0db81e279e64b15"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -750,7 +750,6 @@ class _GitRecordRead:
 def _sanitized_git_environment(root: Path) -> dict[str, str]:
     environment = {"PATH": "/usr/bin:/bin"}
     environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
-    environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
     environment["GIT_DIR"] = str(root / ".git")
     environment["GIT_WORK_TREE"] = str(root)
     return environment
@@ -3202,6 +3201,8 @@ class FoundationValidator:
                 self.add("workflow.quoted_key", path, "quoted workflow keys are forbidden by the canonical source dialect")
             if re.search(r"(?m)^\s*[A-Za-z_][A-Za-z0-9_-]*\s+:", active_text):
                 self.add("workflow.key_spacing", path, "whitespace before a YAML mapping colon is forbidden")
+            if re.search(r"(?m)(?:^|[\s:{}\[\],-])(?:[&*][A-Za-z0-9_-]+|![A-Za-z0-9_!-]+|!<[^>\n]+>|<<\s*:)", active_text):
+                self.add("workflow.indirection", path, "YAML anchors, aliases, merge keys, and tags are forbidden")
             if re.search(r"(?m)^\s*on:\s*[\[{]", active_text) or re.search(r"(?m)^\s*jobs:\s*[\[{]", active_text):
                 self.add("workflow.flow_style", path, "on and jobs must use block-style YAML")
             if re.search(r"(?m)^\s{2}(?:pull_request|push|merge_group|schedule|workflow_dispatch):\s*[\[{]", active_text):
@@ -3342,15 +3343,6 @@ class FoundationValidator:
                 "base-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}",
                 "config-file: ./.github/dependency-review-config.yml",
                 "head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}",
-            ),
-            "scorecard.yml": (
-                "name: OpenSSF Scorecard / analysis",
-                "if: ${{ github.ref == 'refs/heads/main' }}",
-                "/usr/bin/env -i",
-                "DOCKER_HOST=unix:///var/run/docker.sock",
-                "/usr/bin/docker run --rm",
-                "ghcr.io/ossf/scorecard-action@sha256:",
-                "github/codeql-action/upload-sarif@",
             ),
         }
         for required in requirements.get(path.name, ()):
