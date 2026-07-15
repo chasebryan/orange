@@ -113,9 +113,10 @@ the first operand that would exceed the remaining total budget fails with
 bounded input buffer, even when the operand is later rejected. The one-byte
 probe used to diagnose per-source overflow is also charged whenever aggregate
 budget remains, so a rejected oversized operand cannot donate that byte to a
-later operand. Source bytes are never buffered without a bound. CLI-derived
-rendered source names reserve their complete escaped representation before
-encoding.
+later operand. Once no aggregate budget remains, a reader may consume one
+unbuffered probe byte only to distinguish end of input from overflow. Source
+bytes are never buffered without a bound. CLI-derived rendered source names
+reserve their complete escaped representation before encoding.
 Source-map slots, borrowed
 source-name and source-text copies, and derived line/column indexes also use
 checked reservations; an allocation failure rejects the source through
