@@ -2253,6 +2253,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "--hard-dereference --null",
+                "--null",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "--null --verbatim-files-from --no-recursion",
                 "--null --files-from",
                 "make.compiler_environment_contract",
@@ -2265,6 +2270,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             (
                 '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path"',
                 '/usr/bin/true -- "$$repository_root/$$relative_path"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '! -L "$$cargo_home/check-src/$$relative_path" ]]',
+                '-e "$$cargo_home/check-src/$$relative_path" ]]',
                 "make.compiler_environment_contract",
             ),
             (

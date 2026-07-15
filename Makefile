@@ -44,9 +44,10 @@ check-compiler:
 		/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --extract --file="$$repro_source_archive" --directory="$$destination"; \
 	}; \
 	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"; \
-	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t' --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"; \
+	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t' --hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"; \
 	copy_compiler_source "$$cargo_home/check-src"; \
 	while IFS= read -r -d '' relative_path; do \
+		[[ -f "$$repository_root/$$relative_path" && ! -L "$$repository_root/$$relative_path" && -f "$$cargo_home/check-src/$$relative_path" && ! -L "$$cargo_home/check-src/$$relative_path" ]] || { printf '%s\n' 'tracked source type changed during archive capture' >&2; exit 1; }; \
 		/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path" || { printf '%s\n' 'tracked source changed during archive capture' >&2; exit 1; }; \
 	done < "$$repro_source_paths"; \
 	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths_after"; \

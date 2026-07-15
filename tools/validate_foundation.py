@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "e171f8acdfe4c651110e3e2751f5df964bef1a6a26194699543f4ba83ee38cad"
+_PHD = "057274c2350d520d2c500a4eae138cc17816bc861dc7f224bfdaa5946edc004d"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2394,23 +2394,23 @@ class FoundationValidator:
             if lines.count(required) != 1:
                 self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
         required_compiler_fragments = {
-            "umask 077;": "mask required",
-            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "fresh state required",
-            'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "absolute home required",
-            "cd -- /;": "discovery starts at /",
-            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': "empty env required",
-            'CARGO_HOME="$$cargo_home"': "fresh home required",
-            "CARGO_NET_OFFLINE=true": "offline required",
-            'CARGO_TARGET_DIR="$$cargo_home/target"': "target required",
-            "RUSTUP_TOOLCHAIN=1.96.1": "toolchain required",
-            "--workspace --all-targets --release --locked --offline": "release required",
+            "umask 077;": "mask",
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "fresh state",
+            'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "absolute home",
+            "cd -- /;": "root cwd",
+            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': "empty env",
+            'CARGO_HOME="$$cargo_home"': "fresh home",
+            "CARGO_NET_OFFLINE=true": "offline",
+            'CARGO_TARGET_DIR="$$cargo_home/target"': "target",
+            "RUSTUP_TOOLCHAIN=1.96.1": "toolchain",
+            "--workspace --all-targets --release --locked --offline": "release",
             (
                 "--workspace --lib --bins --locked --offline -- -D warnings "
                 "-D clippy::arithmetic_side_effects -D clippy::as_conversions "
                 "-D clippy::string_slice "
                 "-D clippy::indexing_slicing -D clippy::unwrap_used "
                 "-D clippy::expect_used -D clippy::panic"
-            ): "lints required",
+            ): "lints",
             (
                 'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" '
                 'cargo build --manifest-path "$$cargo_home/repro-src-a/compiler/Cargo.toml" '
@@ -2431,8 +2431,9 @@ class FoundationValidator:
             "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'": "metadata fixed",
             '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"': "tracked list required",
             'ls-files --cached -z > "$$repro_source_paths_after"': "final list",
-            '--null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"': "safe list required",
+            '--hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"': "safe list",
             '--extract --file="$$repro_source_archive"': "extraction required",
+            '! -L "$$cargo_home/check-src/$$relative_path" ]]': "regular snapshot",
             '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"': "capture check",
             '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"': "membership check",
             "optimized orangec builds differ across source roots": "artifacts must match",
