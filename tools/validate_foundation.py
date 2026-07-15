@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "b5c8f939ebd13d78daa22c9f2d7f70abd55ead1280ec27ab3c4a88927b014bb8"
+_PHD = "b95a2c0cbcb115650dc2ec9f0af86dfc51dff4c99f47f4d7110b7fbf6491e130"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -5733,7 +5733,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "valid": not findings,
             "findings": [finding.as_dict() for finding in findings],
         }
-        print(json.dumps(output, sort_keys=True, separators=(",", ":")))
+        json.dump(output, sys.stdout, sort_keys=True, separators=(",", ":"))
+        sys.stdout.write("\n")
     elif findings:
         for finding in findings:
             print(
