@@ -326,7 +326,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "4824f078c2c38df50187727151120784d9545f5e407e0b3fe4b96f37edd4949c"
+_PHD = "061d58ed3946003d933dbe9c59d11720491a3e29bc72a24a8b4a5a3f6d52bdc4"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2384,7 +2384,7 @@ class FoundationValidator:
         contract_path = self.root / MAKEFILE_CONTRACT_PATH
         try:
             contract = self._load_repository_json(contract_path)
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        except (OSError, UnicodeError, json.JSONDecodeError, DuplicateKeyError) as exc:
             self.add("make.contract", contract_path, f"invalid Makefile contract: {exc}")
             return
         if (
