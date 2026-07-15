@@ -35,25 +35,27 @@ redistribution or grant a license for this repository.
 | Component | Identity and role | Current closure | Known gap |
 | --- | --- | --- | --- |
 | Rust toolchain | `rustc`/Cargo 1.96.1 selected by `rust-toolchain.toml`; compiles and tests the Rust 2024 workspace | Exact release version and required `rustfmt`/`clippy` components are selected; initial Cargo graph has no third-party crates | Platform archives, installer, standard-library bytes, signatures, licenses, and transitive host inputs are not vendored or digest-bound here |
-| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages; every compiler check uses one archive whose NUL-delimited member list is exactly the tracked Git index paths while bytes come from the working tree, with two additional extractions and separate target trees for byte-equal optimized `orangec` builds | Git, Cargo, rustc, tar, and the source-copy tools remain trusted; a lock file cannot archive the toolchain; source-relocated same-host repeatability is not an independent or cross-platform rebuild |
+| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages; every compiler check uses one archive whose NUL-delimited member list is exactly the tracked Git index paths while bytes come from the working tree, with two additional extractions and separate target trees for byte-equal optimized `orangec` builds | Git, Cargo, rustc, tar, `cmp`, and the source-copy tools remain trusted; a lock file cannot archive the toolchain; source-relocated same-host repeatability is not an independent or cross-platform rebuild |
 | Rust standard library | Runtime/build interface used by `orange-compiler` and `orangec` | Supplied by the selected toolchain; no additional crate registry input | Target-specific standard-library and OS behavior are trusted; redistribution review remains open |
 
 These records authorize local owner development only. They do not establish a
 hermetic build, toolchain redistribution right, compiler correctness, or release
 provenance.
 
-The byte-comparison check fixes the process environment, private file-creation
+The compiler check fixes the process environment, private file-creation
 mask, toolchain selection, locale, timezone, and source-date epoch. Before Cargo
 runs, a sanitized Git command writes a NUL-delimited inventory of exactly tracked
 index paths; tar reads those paths from the working tree, so tracked local edits
 are tested while untracked and ignored state is excluded by construction. The
 GNU format, path order, epoch modification times, numeric zero owner/group
 headers, and file modes are fixed: ordinary files are `0644`, admitted
-executables are `0755`, and write and special bits are cleared. Every check uses
-one extraction; two more absolute roots and separate target trees supply the
-byte comparison. Both builds still share one host, toolchain installation, Cargo
-home, owner, and trust domain. The result detects source-path-sensitive and other
-same-host nondeterminism; it is not independently reproduced release evidence.
+executables are `0755`, and write and special bits are cleared. Before Cargo
+runs, every tracked working-tree file must byte-match the first extraction,
+rejecting observed capture drift. Every check uses that extraction; two more
+absolute roots and separate target trees supply the artifact byte comparison.
+Both builds still share one host, toolchain installation, Cargo home, owner, and
+trust domain. The result detects source-path-sensitive and other same-host
+nondeterminism; it is not independently reproduced release evidence.
 
 ## 3. Workflow map
 
@@ -231,7 +233,7 @@ tools and services are ambient rather than admitted, fixed inputs:
 | Bash and Python 3 standard library | First-party checks and composite Actions | Runner-provided executables; exact versions and binary/package digests are not captured. No PyPI packages are installed by first-party checks |
 | Git | Checkout implementation and validator repository inventory | The first-party validator selects `/usr/bin/git`, fixes child-command lookup to `/usr/bin:/bin`, requires a literal local `.git` directory with regular config/index files and no common-directory or object alternates, clears inherited/system/global Git controls, and overrides the local settings relevant to its commands; other local config remains an ambient input, and the runner executable's exact version, package provenance, license, and binary digest are not captured |
 | Docker daemon, kernel, and CPU | zizmor and Scorecard containers | Runner-provided execution boundary; versions, configuration, and host identity are not captured |
-| `curl`, `sha256sum`, `tar`, `stat`, `install`, `mktemp`, `rm`, and `uname` | Download, verify, extract, inspect, install, and clean temporary tools | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured |
+| `cmp`, `curl`, `sha256sum`, `tar`, `stat`, `install`, `mktemp`, `rm`, and `uname` | Compare captured sources; download, verify, extract, inspect, install, and clean temporary tools | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured |
 | GNU Make | Protected compiler recipe and optional local `make check` entry point | Required hosted CI invokes the compiler target with built-in rules and variables disabled; exact binary version, provenance, and package license are unrecorded |
 | Artifact, code-scanning, GHCR, and external web services | Storage, analysis upload, image retrieval, and link observations | Mutable hosted services; terms and service behavior are external assumptions, not repository-pinned software inputs |
 
