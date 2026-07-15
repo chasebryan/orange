@@ -62,16 +62,17 @@ but at most once; a repeated split or inline form is a usage error before any
 source read. `--` ends option parsing so dash-prefixed source paths remain
 addressable.
 The portable regular-file boundary checks path metadata before opening and
-descriptor metadata after opening and again after reading. On Unix, the opened
-descriptor must have the same device and inode as the pre-open path target, and
-its device, inode, length, modification time, and change time must remain stable
-through the read. Other hosts compare length and modification time after the
-read. This remains short of race-free path confinement: replacing the entry
-with a special file can make `open` block before the post-open check, and
-metadata-preserving mutation or unusual filesystem semantics can evade the
-snapshot comparison. Compile untrusted filesystem trees from a stable copied
-file or standard input inside an appropriate host sandbox; symlink confinement
-is not claimed.
+descriptor metadata after opening and again after reading. It also rechecks the
+path after reading. On Unix, the opened descriptor must have the same device and
+inode as both path snapshots, and its device, inode, length, modification time,
+and change time must remain stable through the read. Other hosts compare length
+and modification time at each boundary. This remains short of race-free path
+confinement: replacing the entry with a special file can make `open` block
+before the post-open check, a path can change away and back between snapshots,
+and metadata-preserving mutation or unusual filesystem semantics can evade the
+comparison. Compile untrusted filesystem trees from a stable copied file or
+standard input inside an appropriate host sandbox; symlink confinement is not
+claimed.
 `eval` accepts exactly one source and begins output only after complete
 validation and evaluation. A host output failure can leave an
 already-written prefix, but returns status 1; a broken pipe remains quiet and
