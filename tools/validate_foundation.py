@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Orange's solo-bootstrap foundation deterministically."""
+"""Orange foundation validator."""
 
 from __future__ import annotations
 
@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "5cea99992b128ea56130e75bebc56867898cdd547147097097a489dadc483e3c"
+_PHD = "bae597a770109ca625786e2aaaee13666a3dd23979cd7af2cea7e756ac572497"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4867,18 +4867,18 @@ def markdown_without_fenced_blocks_and_comments(text: str) -> str:
 
 
 def markdown_html_comment_error(text: str) -> str | None:
-    opened = False
-    prose = markdown_with_masked_inline_syntax(markdown_without_fenced_blocks(text), "<>")
-    for token in re.finditer(r"<!--|-->", prose):
-        if token.group() == "<!--":
-            if opened:
-                return "nested HTML comment opener"
-            opened = True
-        elif not opened:
-            return "HTML comment closer without opener"
-        else:
-            opened = False
-    return "unclosed HTML comment" if opened else None
+    open_ = False
+    body = markdown_with_masked_inline_syntax(markdown_without_fenced_blocks(text), "<>")
+    at = 0
+    while at < len(body):
+        begin = body.startswith("<!--", at)
+        end = body.startswith("-->", at)
+        if begin == open_ and (begin or end):
+            return ("HTML comment closer without opener", "nested HTML comment opener")[open_]
+        if begin or end:
+            open_ = begin
+        at += 4 if begin else 3 if end else 1
+    return "unclosed HTML comment" if open_ else None
 
 
 def markdown_section(
