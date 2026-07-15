@@ -315,7 +315,7 @@ GATE0_HOSTED_REPOSITORY_CONTROLS = {
         {"context": "Dependency Review / policy", "integration_id": 15368},
     ],
 }
-GATE0_SCHEMA_PATHS = set(
+_SP = set(
     """schemas/gate0/claim-record-v0.1.schema.json schemas/gate0/evidence-manifest-v0.1.schema.json
 schemas/gate0/repository-control-snapshot-v0.1.schema.json
 schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventory-v0.1.schema.json""".split()
@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "ddb55ca594b361021958e3a3d3089c26083e4c29ecc4eea923ac931ef00ae28e"
+_PHD = "16d616c36de8b140ce3605468142e1684914f5c5e4722a2f5ae07e7b5e031878"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1779,6 +1779,7 @@ class FoundationValidator:
                     )
                     return None
                 data = source.read(read_limit + 1)
+                self._repository_read_bytes += min(len(data), aggregate_remaining)
                 closed_metadata = os.fstat(source.fileno())
         except OSError as exc:
             self._resource_issue("resource.unreadable", candidate, f"cannot read repository file: {exc}")
@@ -1801,7 +1802,6 @@ class FoundationValidator:
                 "repository file produced a short or inconsistent snapshot read",
             )
             return None
-        self._repository_read_bytes += len(data)
         self._repository_byte_cache[value] = data
         return data
 
@@ -2133,7 +2133,7 @@ class FoundationValidator:
                 policy[_PD], sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
         ).hexdigest()
-        if protected_digest != GATE0_PROTECTED_FILE_DIGEST:
+        if protected_digest != _PHD:
             self.add(
                 "policy.protected_file_digests",
                 self.policy_path,
@@ -3042,11 +3042,11 @@ class FoundationValidator:
             return
         schema_paths = [path for path in schema_entries if path.name.endswith(".schema.json")]
         observed_schema_paths = {relative(path, self.root) for path in schema_paths}
-        if observed_schema_paths != GATE0_SCHEMA_PATHS:
+        if observed_schema_paths != _SP:
             self.add(
                 "schema.inventory",
                 schema_dir,
-                f"Gate 0 schema inventory must be exact; missing={sorted(GATE0_SCHEMA_PATHS - observed_schema_paths)}, extra={sorted(observed_schema_paths - GATE0_SCHEMA_PATHS)}",
+                f"Gate 0 schema inventory must be exact; missing={sorted(_SP - observed_schema_paths)}, extra={sorted(observed_schema_paths - _SP)}",
             )
         for path in schema_paths:
             schema_bytes = self._read_authenticated_protected_file(relative(path, self.root))

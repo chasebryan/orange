@@ -100,10 +100,14 @@ empty segments, and dot segments before any normalization.
 Content reads require POSIX component-relative open support. Every directory
 and final file component is opened with no-follow flags; the final open is also
 nonblocking before its descriptor metadata is compared with the preflight
-snapshot. Preflight rejects hardlinked files and uses `SEEK_HOLE` to reject
-sparse files before parsing policy content. A host or filesystem without these
-primitives receives `resource.unsupported_host` instead of a weaker validation
-result. The validator and its intermediate schema and record-metadata checkers
+snapshot. Returned payload bytes consume the 8 MiB aggregate read allowance as
+soon as they enter the bounded reader; each read uses at most one additional
+byte only to detect overflow. A later snapshot or representation rejection
+cannot refund already buffered input. Preflight rejects hardlinked files and
+uses `SEEK_HOLE` to reject sparse files before parsing policy content. A host or
+filesystem without these primitives receives `resource.unsupported_host`
+instead of a weaker validation result. The validator and its intermediate
+schema and record-metadata checkers
 each retain at most 4,096 detailed findings. Final finding messages retain at
 most 4,096 characters, and the report adds one deterministic suppression
 record, preventing bounded repository bytes from amplifying into an unbounded
