@@ -305,7 +305,7 @@
     "scripts/ci/install-actionlint": "0088f1ebc40cc27d96a2869171c10628fd75b7452feea081467a9892c8b014cd",
     "scripts/ci/install-lychee": "1c329cd592c5a575c3bc4ff95adb8607a45fd11528680ef4a489a73c416ddb18",
     "tools/tests/test_validate_foundation.py": "d256691be454addf286be5882665dcd7881b772372027ff2aa11f9c95548d520",
-    "tools/tests/test_validate_foundation_hardening.py": "ee5b3a92fe432332fc762027723d7d454a82b5081476452b9ba515ba3e5a3b3f"
+    "tools/tests/test_validate_foundation_hardening.py": "a8bdcf9920bf96c1598b787b2fe5dc48c073056430307fc0600a2883b6faa70a"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

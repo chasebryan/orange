@@ -281,6 +281,12 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.required_content",
             ),
             (
+                "workflow-online-audit.yml",
+                "    name: Workflow Online Audit / upstream metadata\n",
+                "    name: Unreviewed metadata job\n",
+                "workflow.required_content",
+            ),
+            (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - release\n",
@@ -320,6 +326,12 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "dependency-review.yml",
                 "    runs-on: ubuntu-24.04\n",
                 "    runs-on: ubuntu-22.04\n",
+                "workflow.runner",
+            ),
+            (
+                "external-links.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "",
                 "workflow.runner",
             ),
             (

@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "cdd6d818f52c753d2ae9d65a148bb6a7ae8bef501929b93924dd748537be15da"
+GATE0_PROTECTED_FILE_DIGEST = "1a32ccf60a4833ead3483d808bed17c387f9cd98404ece8ff1b4d2d150567ca1"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3337,14 +3337,11 @@ class FoundationValidator:
                         path,
                         f"line {line_number}: {write_match.group(1)}: write is not allowed in this workflow",
                     )
-                runner_match = re.match(r"^\s+runs-on:\s*(.+?)\s*$", line)
-                if runner_match:
-                    runner = runner_match.group(1).strip().strip("\"'")
-                    if runner != "ubuntu-24.04":
-                        self.add("workflow.runner", path, f"line {line_number}: runner must be a fixed GitHub-hosted image")
             minutes = {_DR: 10, _SC: 20}.get(n, 15)
             for job_name, block in workflow_jobs(active_lines):
                 block_text = "\n".join(block)
+                if block.count("    runs-on: ubuntu-24.04") != 1:
+                    self.add("workflow.runner", path, f"job {job_name} runner drift")
                 if not re.search(rf"(?m)^\s{{4}}timeout-minutes:\s*{minutes}\s*$", block_text):
                     self.add("workflow.timeout", path, f"job {job_name} timeout drift")
                 q = "    permissions:\n      contents: read" + ("\n      security-events: write" if n == _SC else "")
@@ -3418,7 +3415,7 @@ class FoundationValidator:
         )
         if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
             self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
-        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy"}.get(n)
+        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy", _SC: "OpenSSF Scorecard / analysis", _EL: "External Links / scheduled audit", _O: "Workflow Online Audit / upstream metadata"}.get(n)
         if required_name and f"    name: {required_name}" not in text.splitlines():
             self.add("workflow.required_content", path, f"missing protected job name: {required_name}")
         if n == _SC and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
