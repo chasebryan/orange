@@ -2583,6 +2583,26 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             validator._validate_makefile_entrypoint()
             self.assertIn("make.contract", {finding.code for finding in validator.findings})
 
+    def test_make_contract_rejects_duplicate_keys(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        canonical = (source_root / "policy/makefile-entrypoint-contract-v0.1.json").read_text(
+            encoding="utf-8"
+        )
+        duplicate = canonical.replace(
+            '  "schema_version": "0.1.0",',
+            '  "schema_version": "0.1.0",\n  "schema_version": "0.1.0",',
+            1,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_bytes((source_root / "Makefile").read_bytes())
+            contract_path = root / "policy/makefile-entrypoint-contract-v0.1.json"
+            contract_path.parent.mkdir()
+            contract_path.write_text(duplicate, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_makefile_entrypoint()
+            self.assertIn("make.contract", {finding.code for finding in validator.findings})
+
     def test_make_contract_rejects_unhashable_check_fields(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         canonical = load_json(source_root / "policy/makefile-entrypoint-contract-v0.1.json")
