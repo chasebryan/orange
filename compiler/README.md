@@ -57,8 +57,12 @@ validator first policy-checks that exact exported tree before its foundation
 test modules import. After those tests, it policy-checks the tree again before
 Cargo, so Python-test drift cannot reach Rust execution. Formatting, linting,
 documentation, and Rust tests use the same extracted check root. A third policy
-check after all Rust commands rejects Rust-side snapshot drift before the gate
-can pass. Optimized `orangec` builds use two more extractions and separate target trees,
+check runs after all Rust commands. The gate then verifies that the original
+archive and path inventory retained their captured identities, extracts a fresh
+reference, and compares every tracked file's type, complete mode, and bytes with
+the tested check root. This exact comparison rejects policy-valid source drift
+before the gate can pass. Optimized `orangec` builds use two more extractions and
+separate target trees,
 and their artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
 
