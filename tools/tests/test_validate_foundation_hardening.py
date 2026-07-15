@@ -150,6 +150,18 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.job_condition_contract",
             ),
             (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    env:\n      NODE_OPTIONS: --require=./bootstrap.js\n    runs-on: ubuntu-24.04\n",
+                "workflow.ambient_env",
+            ),
+            (
+                "dependency-review.yml",
+                "permissions: {}\n",
+                "permissions: {}\nenv:\n  NODE_OPTIONS: --require=./bootstrap.js\n",
+                "workflow.ambient_env",
+            ),
+            (
                 "scorecard.yml",
                 "    if: ${{ github.ref == 'refs/heads/main' }}\n",
                 "    if: false\n",

@@ -94,6 +94,8 @@ _RI_GIT = "resource.inventory_git"
 _RI_ENCODING = "resource.inventory_encoding"
 _R_UNSUPPORTED = "resource.unsupported_host"
 _R_CONCURRENT = "resource.concurrent_change"
+_ABA = "allowed_binary_artifacts["
+_CROSS = "cross_invariant"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -289,7 +291,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "d7338addeeb9cba7a7df1e4ef246e5c8b3f4082380b6c0de86485a9ea03d24ff"
+GATE0_PROTECTED_FILE_DIGEST = "6909ea8832d8af26a492ed6c926242caec6820e82b2a287a1eb4e03aabb07522"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1919,13 +1921,13 @@ class FoundationValidator:
         expected_binary_fields = {"path", "sha256", "role", "provenance"}
         for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
             if not isinstance(artifact, dict):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] must be an object")
+                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
             if set(artifact) != expected_binary_fields:
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has invalid fields")
+                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has invalid fields")
                 continue
             if not all(isinstance(artifact[field], str) for field in expected_binary_fields):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] fields must be strings")
+                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] fields must be strings")
 
         action_policy = policy["github_actions"]
         action_field_types = {
@@ -2030,18 +2032,18 @@ class FoundationValidator:
             )
         for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
             if not isinstance(artifact, dict):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] must be an object")
+                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
             if set(artifact) != {"path", "sha256", "role", "provenance"}:
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has invalid fields")
+                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has invalid fields")
                 continue
             if not isinstance(artifact["path"], str) or safe_manifest_path(self.root, artifact["path"]) is None:
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has unsafe path")
+                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has unsafe path")
             if not isinstance(artifact["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"]):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has invalid SHA-256")
+                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has invalid SHA-256")
             for field in ("role", "provenance"):
                 if not isinstance(artifact[field], str) or not artifact[field].strip():
-                    self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] needs {field}")
+                    self.add("policy.binary", self.policy_path, f"{_ABA}{index}] needs {field}")
         if policy["allowed_binary_artifacts"] != GATE0_ALLOWED_BINARY_ARTIFACTS:
             self.add(
                 "policy.binary_inventory",
@@ -3233,6 +3235,8 @@ class FoundationValidator:
                 self.add("workflow.quoted_key", path, "quoted workflow keys are forbidden by the canonical source dialect")
             if re.search(r"(?m)^\s*[A-Za-z_][A-Za-z0-9_-]*\s+:", active_text):
                 self.add("workflow.key_spacing", path, "whitespace before a YAML mapping colon is forbidden")
+            if re.search(r"(?m)^(?:env| {4}env):", active_text):
+                self.add("workflow.ambient_env", path, "workflow and job env are forbidden")
             if re.search(r"(?m)(?:^|[\s:{}\[\],-])(?:[&*][A-Za-z0-9_-]+|![A-Za-z0-9_!-]+|!<[^>\n]+>|<<\s*:)", active_text):
                 self.add("workflow.indirection", path, "YAML anchors, aliases, merge keys, and tags are forbidden")
             if duplicate_yaml_mapping_key(active_text):
@@ -5464,7 +5468,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
             if not has_checked_basis:
                 issues.append(
                     SchemaIssue(
-                        "cross_invariant",
+                        _CROSS,
                         "$/basis",
                         "a satisfied claim requires a checked non-assumption basis",
                     )
@@ -5477,7 +5481,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if reference not in assumptions:
                     issues.append(
                         SchemaIssue(
-                            "cross_invariant",
+                            _CROSS,
                             f"$/basis/{index}/assumption_ref",
                             "assumption basis reference does not resolve",
                         )
@@ -5486,7 +5490,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
         files = instance.get("files", [])
         file_paths = identifiers(files, "path", "$/files", issues)
         if isinstance(files, list) and [item.get("path") for item in files if isinstance(item, dict)] != sorted(file_paths):
-            issues.append(SchemaIssue("cross_invariant", "$/files", "file records must be ordered by path"))
+            issues.append(SchemaIssue(_CROSS, "$/files", "file records must be ordered by path"))
         external = instance.get("external_sources", [])
         if isinstance(external, list):
             identifiers(external, "source_id", "$/external_sources", issues, optional=True)
@@ -5495,7 +5499,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
             toolchains = replay.get("toolchains", [])
             names = identifiers(toolchains, "name", "$/replay/toolchains", issues)
             if isinstance(toolchains, list) and [item.get("name") for item in toolchains if isinstance(item, dict)] != sorted(names):
-                issues.append(SchemaIssue("cross_invariant", "$/replay/toolchains", "toolchains must be ordered by name"))
+                issues.append(SchemaIssue(_CROSS, "$/replay/toolchains", "toolchains must be ordered by name"))
     elif schema_name == "repository-control-snapshot-v0.1.schema.json":
         sources = identifiers(instance.get("evidence_sources"), "evidence_id", "$/evidence_sources", issues)
         for path, references in repository_control_evidence_refs(instance):
@@ -5503,7 +5507,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if reference not in sources:
                     issues.append(
                         SchemaIssue(
-                            "cross_invariant",
+                            _CROSS,
                             path,
                             f"repository-control evidence reference does not resolve: {reference}",
                         )
@@ -5512,7 +5516,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
         standards = instance.get("standards", [])
         standard_ids = identifiers(standards, "standard_id", "$/standards", issues)
         if isinstance(standards, list) and [item.get("standard_id") for item in standards if isinstance(item, dict)] != sorted(standard_ids):
-            issues.append(SchemaIssue("cross_invariant", "$/standards", "standards must be ordered by standard_id"))
+            issues.append(SchemaIssue(_CROSS, "$/standards", "standards must be ordered by standard_id"))
         for index, standard in enumerate(standards if isinstance(standards, list) else []):
             if not isinstance(standard, dict):
                 continue
@@ -5529,7 +5533,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if component.get("assumption_ref") not in axioms:
                     issues.append(
                         SchemaIssue(
-                            "cross_invariant",
+                            _CROSS,
                             f"$/components/{index}/assumption_ref",
                             "assumed component reference does not resolve to an axiom",
                         )
@@ -5548,7 +5552,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                     if reference not in valid_ids:
                         issues.append(
                             SchemaIssue(
-                                "cross_invariant",
+                                _CROSS,
                                 f"$/claim_closures/{index}/{field}",
                                 f"trust-closure reference does not resolve: {reference}",
                             )
@@ -5577,7 +5581,7 @@ def identifiers(
         if identifier in result:
             issues.append(
                 SchemaIssue(
-                    "cross_invariant",
+                    _CROSS,
                     f"{instance_path}/{index}/{field}",
                     f"duplicate identifier {identifier}",
                 )
@@ -5606,7 +5610,7 @@ def repository_control_evidence_refs(instance: Mapping[str, Any]) -> list[tuple[
 
 
 def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
-    if issue.keyword == "cross_invariant" and schema_name.startswith("claim-record-"):
+    if issue.keyword == _CROSS and schema_name.startswith("claim-record-"):
         return "CLAIM_SATISFIED_WITHOUT_CHECKED_BASIS"
     if issue.keyword == "const":
         return "SCHEMA_CONST"
