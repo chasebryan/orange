@@ -1889,6 +1889,11 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 "MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024",
                 "MAX_STANDARD_OUTPUT_BYTES: usize = 63 * 1024 * 1024",
             ),
+            (
+                "compiler/crates/orangec/src/main.rs",
+                "MAX_STANDARD_ERROR_BYTES: usize = 64 * 1024 * 1024",
+                "MAX_STANDARD_ERROR_BYTES: usize = 63 * 1024 * 1024",
+            ),
         )
         for value, old, new in mutations:
             with self.subTest(path=value, old=old), tempfile.TemporaryDirectory() as directory:
@@ -1911,6 +1916,10 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             (
                 "caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)",
                 "caps standard output at 63 MiB (`63 * 1024 * 1024` bytes)",
+            ),
+            (
+                "caps standard error at 64 MiB (`64 * 1024 * 1024` bytes)",
+                "caps standard error at 63 MiB (`63 * 1024 * 1024` bytes)",
             ),
         ):
             with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:

@@ -20,6 +20,7 @@ const USAGE_ERROR: u8 = 2;
 const MAX_SOURCES_PER_INVOCATION: usize = 256;
 const MAX_SOURCE_BYTES_PER_INVOCATION: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+const MAX_STANDARD_ERROR_BYTES: usize = 64 * 1024 * 1024;
 const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 const USAGE: &str = concat!(
@@ -182,8 +183,25 @@ fn run(
     standard_output: &mut impl Write,
     standard_error: &mut impl Write,
 ) -> u8 {
+    run_with_standard_error_limit(
+        arguments,
+        standard_input,
+        standard_output,
+        standard_error,
+        MAX_STANDARD_ERROR_BYTES,
+    )
+}
+
+fn run_with_standard_error_limit(
+    arguments: impl IntoIterator<Item = OsString>,
+    standard_input: &mut impl Read,
+    standard_output: &mut impl Write,
+    standard_error: &mut impl Write,
+    standard_error_limit: usize,
+) -> u8 {
     let mut standard_output = CountCheckedWriter::new(standard_output);
-    let mut standard_error = CountCheckedWriter::new(standard_error);
+    let standard_error = CountCheckedWriter::new(standard_error);
+    let mut standard_error = OutputLimitedWriter::new(standard_error, standard_error_limit);
     let action = match parse_arguments(arguments) {
         Ok(action) => action,
         Err(message) => {
@@ -1277,6 +1295,26 @@ mod tests {
             )
             .as_bytes()
         );
+    }
+
+    #[test]
+    fn standard_error_limit_accepts_only_the_exact_prefix_before_source_access() {
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut error = Vec::new();
+
+        let status = run_with_standard_error_limit(
+            os_arguments(&["unknown", "source.or"]),
+            &mut input,
+            &mut output,
+            &mut error,
+            3,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(input.attempts, 0);
+        assert_eq!(output, b"");
+        assert_eq!(error, b"ora");
     }
 
     #[test]

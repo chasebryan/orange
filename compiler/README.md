@@ -90,8 +90,12 @@ trailing newline, while help and version output failures follow the same status
 failure as status 1. Transient `Interrupted` results from stream reads, output
 writes, and explicit output flushes are retried without duplicating accepted
 bytes. Compilation diagnostics are also explicitly flushed after their final
-error group. After any detected stream failure, retained buffered standard
-output is discarded instead of being flushed as later command output.
+error group. `orangec` caps standard error at 64 MiB (`64 * 1024 * 1024` bytes)
+per invocation. Reaching the cap returns status 1 and stops before later source
+operands; because the diagnostic channel itself is exhausted, an already
+accepted prefix can end without a final limit notice. After any detected stream
+failure, retained buffered standard output is discarded instead of being
+flushed as later command output.
 Compilation standard output is explicitly flushed only after successful token
 or evaluation bytes have been queued; untouched output and diagnostic streams
 are not flushed for a silent `check` or empty `eval`. A source with lexical
