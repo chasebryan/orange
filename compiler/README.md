@@ -42,12 +42,12 @@ the individual commands are useful for focused development. A separate
 production-only Clippy pass denies unchecked arithmetic, silent `as`
 conversions, UTF-8 string slicing, indexing, unwrap/expect, and explicit panic
 sites while leaving test assertions available to state fixture invariants.
-The same isolated gate fixes a private file-creation mask and captures one
-repository source archive before Cargo runs so repository-relative compiler test
-inputs are included while Git metadata, local agent state, Python caches, and
-ambient compiler target output are excluded. The archive format, path order,
-timestamps, numeric owner/group fields, and permission modes are fixed; ordinary
-files are `0644`, and directories plus admitted executables are `0755`.
+The same isolated gate fixes a private file-creation mask and captures one source
+archive before Cargo runs. A sanitized, NUL-delimited Git index inventory admits
+exactly tracked paths, while archive bytes come from the working tree so tracked
+local edits are tested; untracked and ignored local state cannot enter. The
+archive format, path order, timestamps, numeric owner/group fields, and file
+modes are fixed: ordinary files are `0644` and admitted executables are `0755`.
 Formatting, linting, documentation, and tests use one extracted check root;
 optimized `orangec` builds use two more extractions and separate target trees,
 and their artifact bytes must match. This is source-relocated same-host

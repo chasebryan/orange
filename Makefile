@@ -34,13 +34,16 @@ check-compiler:
 		); \
 	}; \
 	repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"; \
+	repository_root="$${repository_manifest%/compiler/Cargo.toml}"; \
 	repro_source_archive="$$cargo_home/repro-source.tar"; \
+	repro_source_paths="$$cargo_home/repro-source.paths"; \
 	copy_compiler_source() { \
 		local destination="$$1"; \
 		/usr/bin/mkdir -- "$$destination"; \
 		/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --extract --file="$$repro_source_archive" --directory="$$destination"; \
 	}; \
-	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t' --exclude=./.git --exclude=./.agents --exclude=./.codex --exclude='*/__pycache__' --exclude=./compiler/target --directory="$${repository_manifest%/compiler/Cargo.toml}" -- .; \
+	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"; \
+	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t' --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"; \
 	copy_compiler_source "$$cargo_home/check-src"; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
 	run_cargo cargo fmt --manifest-path "$$manifest" --all -- --check; \
