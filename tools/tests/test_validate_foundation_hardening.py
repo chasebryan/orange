@@ -630,9 +630,16 @@ jobs:
                 self.assertNotIn("shell: bash\n", workflow)
         ci = (source_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertIn(
-            'run: env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC '
+            'run: /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC '
             "rustup toolchain install 1.96.1 --profile minimal "
             "--component clippy,rustfmt --no-self-update",
+            ci,
+        )
+        self.assertIn('pycache="$(/usr/bin/mktemp -d -- ', ci)
+        self.assertIn('pycache="$(cd -- "$pycache" && pwd -P)"', ci)
+        self.assertIn("trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT", ci)
+        self.assertIn(
+            "-u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables",
             ci,
         )
 

@@ -183,6 +183,10 @@ The required invariant check invokes repository-owned Bash and Python files:
 - every hosted `run` step likewise selects `/bin/bash -p` by absolute path and
   retains immediate-exit and pipeline-failure handling through the supported
   custom-shell command template;
+- hosted required-CI policy and compiler steps select `env`, `mktemp`, `rm`,
+  and Make by absolute system paths while leaving Rust and Python discovery on
+  the explicit inherited toolchain path; the hosted Python cache is
+  canonicalized before its cleanup trap is armed;
 - the actionlint and lychee installers use only `/usr/bin` and `/bin` for
   ambient command lookup, require one absolute destination directory, terminate
   options before caller-selected install destinations, disable curl's default
