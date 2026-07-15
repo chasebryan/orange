@@ -2956,46 +2956,66 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn unix_source_same_length_rewrite_after_read_is_rejected() {
-        use std::os::unix::fs::MetadataExt as _;
-        use std::time::SystemTime;
+    fn unix_source_metadata_drift_after_read_is_rejected() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        use std::time::{Duration, SystemTime};
 
-        let mut temporary = None;
-        for suffix in 0..1_024 {
-            let path = std::env::temp_dir().join(format!(
-                "orangec-source-rewrite-{}-{suffix}",
-                std::process::id()
-            ));
-            match std::fs::create_dir(&path) {
-                Ok(()) => {
-                    temporary = Some(path);
-                    break;
+        for mutation in ["mode", "rewrite"] {
+            let mut temporary = None;
+            for suffix in 0..1_024 {
+                let path = std::env::temp_dir().join(format!(
+                    "orangec-source-metadata-{}-{suffix}",
+                    std::process::id()
+                ));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => {
+                        temporary = Some(path);
+                        break;
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(error) => {
+                        panic!("could not create source metadata test directory: {error}")
+                    }
                 }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(error) => panic!("could not create source rewrite test directory: {error}"),
             }
+            let directory = temporary.expect("could not allocate a source metadata test directory");
+            let source = directory.join("source.or");
+            std::fs::write(&source, b"before").unwrap();
+            File::open(&source)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(SystemTime::UNIX_EPOCH))
+                .unwrap();
+            let initial_metadata = source.metadata().unwrap();
+            let mut input = &b""[..];
+            let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
+
+            let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
+                if mutation == "mode" {
+                    std::thread::sleep(Duration::from_millis(1));
+                    let mut permissions = source.metadata().unwrap().permissions();
+                    permissions.set_mode(permissions.mode() ^ 0o100);
+                    std::fs::set_permissions(&source, permissions).unwrap();
+                } else {
+                    std::fs::write(&source, b"after!").unwrap();
+                }
+            });
+            let final_metadata = source.metadata().unwrap();
+
+            assert_eq!(initial_metadata.ino(), final_metadata.ino());
+            assert_eq!(initial_metadata.len(), final_metadata.len());
+            if mutation == "mode" {
+                assert_eq!(initial_metadata.mtime(), final_metadata.mtime());
+                assert_eq!(initial_metadata.mtime_nsec(), final_metadata.mtime_nsec());
+                assert_ne!(initial_metadata.mode(), final_metadata.mode());
+                assert_ne!(
+                    (initial_metadata.ctime(), initial_metadata.ctime_nsec()),
+                    (final_metadata.ctime(), final_metadata.ctime_nsec())
+                );
+            }
+            assert!(matches!(result, Err(ReadSourceError::ChangedDuringRead)));
+            std::fs::remove_file(source).unwrap();
+            std::fs::remove_dir(directory).unwrap();
         }
-        let directory = temporary.expect("could not allocate a source rewrite test directory");
-        let source = directory.join("source.or");
-        std::fs::write(&source, b"before").unwrap();
-        File::open(&source)
-            .unwrap()
-            .set_times(std::fs::FileTimes::new().set_modified(SystemTime::UNIX_EPOCH))
-            .unwrap();
-        let initial_metadata = source.metadata().unwrap();
-        let mut input = &b""[..];
-        let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
-
-        let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
-            std::fs::write(&source, b"after!").unwrap();
-        });
-        let final_metadata = source.metadata().unwrap();
-
-        assert_eq!(initial_metadata.ino(), final_metadata.ino());
-        assert_eq!(initial_metadata.len(), final_metadata.len());
-        assert!(matches!(result, Err(ReadSourceError::ChangedDuringRead)));
-        std::fs::remove_file(source).unwrap();
-        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]
