@@ -72,9 +72,10 @@ operand. The global `--edition` option may appear before or after the command
 but at most once; a repeated split or inline form is a usage error before any
 source read. `--` ends option parsing so dash-prefixed source paths remain
 addressable.
-The portable regular-file boundary checks path metadata before opening and
-descriptor metadata after opening and again after reading. It also rechecks the
-path after reading and requires the final target to remain a regular file. On
+The portable regular-file boundary checks path-entry metadata without following
+a final symlink before opening and after reading, rejecting an observed symlink
+as non-regular. It checks descriptor metadata after opening and again after
+reading, and requires the final path entry to remain a regular file. On
 Unix, the opened descriptor's device, inode, mode, owner, group, link count,
 length, modification time, and change time must match both path snapshots and
 remain stable through the read. The completed byte snapshot

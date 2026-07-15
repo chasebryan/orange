@@ -658,7 +658,7 @@ fn read_source_with_post_read(
     if path == Path::new("-") {
         read_bounded_for_invocation(standard_input, remaining_source_bytes)
     } else {
-        let path_metadata = path.metadata().map_err(ReadSourceError::Io)?;
+        let path_metadata = path.symlink_metadata().map_err(ReadSourceError::Io)?;
         if !path_metadata.is_file() {
             return Err(ReadSourceError::NotRegular);
         }
@@ -687,7 +687,7 @@ fn read_source_with_post_read(
         post_read();
         let closed_metadata = file.metadata().map_err(ReadSourceError::Io)?;
         let final_path_metadata = path
-            .metadata()
+            .symlink_metadata()
             .map_err(|_| ReadSourceError::ChangedDuringRead)?;
         if !final_path_metadata.is_file()
             || !source_read_length_matches_metadata(bytes.len(), opened_metadata.len())
