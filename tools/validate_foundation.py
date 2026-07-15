@@ -121,7 +121,13 @@ _SC = "scorecard.yml"
 _DR = "dependency-review.yml"
 _EL = "external-links.yml"
 _WOA = "workflow-online-audit.yml"
-_BRF = "bounded repository read failed"
+_BF = "bounded repository read failed"
+_E = "evidence_refs"
+_FE = "forbidden_events"
+_CO = "required_codeowners"
+_FP = "forbidden_paths"
+_PV = "policy_version"
+_RW = "required_workflows"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -317,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "bef2affafb79adf9ed14f75cf453c3454add2e6076475c0c5772f0404d39f4e7"
+GATE0_PROTECTED_FILE_DIGEST = "9668a9a6724f05cd432ad10bdc2cc3c2751d4332bafc93e254d549fa3634e2aa"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1137,10 +1143,12 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
                 )
             )
             return [], False
+    worktree_config_present = False
     for raw_path in (b".git/commondir", b".git/config.worktree", b".git/objects/info/alternates"):
         metadata = _repository_entry_metadata(root, raw_path)
-        safe_empty = raw_path == b".git/config.worktree" and isinstance(metadata, os.stat_result) and stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1 and metadata.st_size == 0
-        if git_metadata_present and metadata is not False and not safe_empty:
+        local_config = raw_path == b".git/config.worktree" and isinstance(metadata, os.stat_result) and stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+        worktree_config_present |= local_config
+        if git_metadata_present and metadata is not False and not local_config:
             findings.append(
                 Finding(
                     _RI_GIT,
@@ -1150,8 +1158,9 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             )
             return [], False
     for arguments, terminator, expected in (
-        ("rev-parse --shared-index-path".split(), b"\n", ()),
-        (r"config -z --local --no-includes --get-regexp ^include(\.|if\.)".split(), b"\0", None),
+        ("rev-parse --shared-index-path".split(), b"\n", ((),)),
+        (r"config -z --local --no-includes --get-regexp ^include(\.|if\.)".split(), b"\0", (None,)),
+        ("config -z --file .git/config.worktree --list".split(), b"\0", (((), (b"core.sparsecheckout\nfalse", b"core.sparsecheckoutcone\nfalse", b"index.sparse\nfalse")) if worktree_config_present else (None,))),
     ):
         if not git_metadata_present:
             break
@@ -1165,7 +1174,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         if indirect.finding is not None:
             findings.append(indirect.finding)
             return [], False
-        if indirect.records != expected:
+        if indirect.records not in expected:
             findings.append(
                 Finding(_RI_GIT, ".git", "Git metadata indirection is not admitted")
             )
@@ -1896,7 +1905,7 @@ class FoundationValidator:
             self.add("policy.invalid_json", self.policy_path, str(exc))
             return
         required = {
-            "policy_version": str,
+            _PV: str,
             "repository": str,
             "stage": str,
             "status": str,
@@ -1905,14 +1914,14 @@ class FoundationValidator:
             _ATP: list,
             _AB: list,
             _RP: list,
-            "forbidden_paths": list,
-            "required_workflows": list,
+            _FP: list,
+            _RW: list,
             "workflow_inventory": list,
             _PFD: dict,
             "executable_paths": list,
             _GA: dict,
             "hosted_repository_controls": dict,
-            "required_codeowners": list,
+            _CO: list,
             "decision_gates": dict,
             "temporary_constraints": dict,
         }
@@ -1933,16 +1942,16 @@ class FoundationValidator:
         string_list_keys = (
             _ATP,
             _RP,
-            "forbidden_paths",
-            "required_workflows",
+            _FP,
+            _RW,
             "workflow_inventory",
             "executable_paths",
-            "required_codeowners",
+            _CO,
         )
         for key in string_list_keys:
             if not all(isinstance(value, str) and value for value in policy[key]):
                 self.add("policy.value", self.policy_path, f"{key} must contain non-empty strings")
-        for key in (_RP, "forbidden_paths"):
+        for key in (_RP, _FP):
             if any(isinstance(value, str) and "\0" in value for value in policy[key]):
                 self.add("policy.value", self.policy_path, f"{key} contains an invalid path string")
 
@@ -1962,7 +1971,7 @@ class FoundationValidator:
             _AAR: list,
             _ACI: list,
             _AWP: dict,
-            "forbidden_events": list,
+            _FE: list,
             _RFS: bool,
             _RVC: bool,
         }
@@ -1973,7 +1982,7 @@ class FoundationValidator:
                     self.policy_path,
                     f"github_actions.{key} must be {expected_type.__name__}",
                 )
-        for key in (_AAR, _ACI, "forbidden_events"):
+        for key in (_AAR, _ACI, _FE):
             values = action_policy.get(key)
             if isinstance(values, list) and not all(isinstance(value, str) and value for value in values):
                 self.add(
@@ -2031,7 +2040,7 @@ class FoundationValidator:
             self.add("policy.default_branch", self.policy_path, "solo-bootstrap default branch must remain main")
         if policy["bootstrap_steward"] != "chasebryan":
             self.add("policy.steward", self.policy_path, "bootstrap steward must remain chasebryan")
-        if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", policy["policy_version"]):
+        if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", policy[_PV]):
             self.add("policy.version", self.policy_path, "solo-bootstrap policy version must be a 0.x semantic version")
         for key in string_list_keys:
             values = policy[key]
@@ -2039,9 +2048,9 @@ class FoundationValidator:
                 self.add("policy.duplicate", self.policy_path, f"{key} contains duplicate values")
         minimum_sets = {
             _RP: MINIMUM_REQUIRED_PATHS,
-            "forbidden_paths": MINIMUM_FORBIDDEN_PATHS,
-            "required_workflows": MINIMUM_REQUIRED_WORKFLOWS,
-            "required_codeowners": MINIMUM_CODEOWNERS,
+            _FP: MINIMUM_FORBIDDEN_PATHS,
+            _RW: MINIMUM_REQUIRED_WORKFLOWS,
+            _CO: MINIMUM_CODEOWNERS,
         }
         for key, minimum in minimum_sets.items():
             missing = sorted(minimum - set(policy[key]))
@@ -2082,7 +2091,7 @@ class FoundationValidator:
             _AAR,
             _ACI,
             _AWP,
-            "forbidden_events",
+            _FE,
             _RFS,
             _RVC,
         }
@@ -2135,7 +2144,7 @@ class FoundationValidator:
             self.add("policy.action_sha", self.policy_path, "full Action commit SHA enforcement cannot be disabled")
         if policy[_GA].get(_RVC) is not True:
             self.add("policy.action_comment", self.policy_path, "Action version comments cannot be disabled")
-        if "pull_request_target" not in policy[_GA].get("forbidden_events", []):
+        if "pull_request_target" not in policy[_GA].get(_FE, []):
             self.add("policy.forbidden_event", self.policy_path, "pull_request_target must remain forbidden")
         if policy["hosted_repository_controls"] != GATE0_HOSTED_REPOSITORY_CONTROLS:
             self.add(
@@ -2187,7 +2196,7 @@ class FoundationValidator:
             return None
         data = self._read_repository_bytes(path)
         if data is None:
-            self.add("protected_file.unreadable", path, _BRF)
+            self.add("protected_file.unreadable", path, _BF)
             return None
         observed = hashlib.sha256(data).hexdigest()
         if observed != expected:
@@ -2276,7 +2285,7 @@ class FoundationValidator:
                 continue
             text = self._read_repository_text(path)
             if text is None:
-                self.add("hosted_control.unreadable", path, _BRF)
+                self.add("hosted_control.unreadable", path, _BF)
                 continue
             marker_prefixes = ("Hosted-control snapshot:", "Required-check binding:")
             observed_markers = [line for line in text.splitlines() if line.startswith(marker_prefixes)]
@@ -2323,7 +2332,7 @@ class FoundationValidator:
             path = self._policy_path(value)
             if path is not None and not self._inventory_has_file(path):
                 self.add("path.required", value, "required permanent artifact is missing")
-        for value in self.policy["forbidden_paths"]:
+        for value in self.policy[_FP]:
             path = self._policy_path(value)
             if path is not None and self._inventory_has_path(path):
                 self.add("path.forbidden", value, "path is forbidden until its dependent capability decision closes")
@@ -2800,7 +2809,7 @@ class FoundationValidator:
             asset_path = manifest_path.parent / name
             data = self._read_repository_bytes(asset_path)
             if data is None:
-                self.add("brand.asset", asset_path, _BRF)
+                self.add("brand.asset", asset_path, _BF)
                 continue
             if media_type == "image/png":
                 if len(data) < 29 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
@@ -2895,7 +2904,7 @@ class FoundationValidator:
             return
         text = self._read_repository_text(path)
         if text is None:
-            self.add("book.unreadable", path, _BRF)
+            self.add("book.unreadable", path, _BF)
             return
 
         visible_text = markdown_without_fenced_blocks_and_comments(text)
@@ -3228,7 +3237,7 @@ class FoundationValidator:
 
     def _validate_workflows(self) -> None:
         workflow_dir = self.root / ".github/workflows"
-        required = set(self.policy["required_workflows"])
+        required = set(self.policy[_RW])
         workflow_paths = [
             path
             for path in self._inventory_files_in(".github/workflows")
@@ -3245,7 +3254,7 @@ class FoundationValidator:
             self.add("workflow.required", f".github/workflows/{name}", "required workflow is missing")
         actions_policy = self.policy[_GA]
         allowed = set(actions_policy.get(_AAR, []))
-        forbidden_events = set(actions_policy.get("forbidden_events", []))
+        forbidden_events = set(actions_policy.get(_FE, []))
         allowed_writes = {
             name: set(values)
             for name, values in actions_policy.get(_AWP, {}).items()
@@ -3634,7 +3643,7 @@ class FoundationValidator:
             for line in text.splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         }
-        for required in self.policy["required_codeowners"]:
+        for required in self.policy[_CO]:
             if required not in active_lines:
                 self.add("codeowners.required", path, f"missing critical ownership rule: {required}")
         for line in active_lines:
@@ -5648,17 +5657,17 @@ def repository_control_evidence_refs(instance: Mapping[str, Any]) -> list[tuple[
     security = instance.get("security_features")
     if isinstance(security, dict):
         for name, control in security.items():
-            if isinstance(control, dict) and isinstance(control.get("evidence_refs"), list):
-                result.append((f"$/security_features/{pointer_escape(name)}/evidence_refs", control["evidence_refs"]))
+            if isinstance(control, dict) and isinstance(control.get(_E), list):
+                result.append((f"$/security_features/{pointer_escape(name)}/evidence_refs", control[_E]))
     actions = instance.get("actions")
     if isinstance(actions, dict):
         enabled = actions.get("enabled")
-        if isinstance(enabled, dict) and isinstance(enabled.get("evidence_refs"), list):
-            result.append(("$/actions/enabled/evidence_refs", enabled["evidence_refs"]))
+        if isinstance(enabled, dict) and isinstance(enabled.get(_E), list):
+            result.append(("$/actions/enabled/evidence_refs", enabled[_E]))
     for field in ("default_branch_policy", "merge_policy"):
         value = instance.get(field)
-        if isinstance(value, dict) and isinstance(value.get("evidence_refs"), list):
-            result.append((f"$/{field}/evidence_refs", value["evidence_refs"]))
+        if isinstance(value, dict) and isinstance(value.get(_E), list):
+            result.append((f"$/{field}/evidence_refs", value[_E]))
     return result
 
 
@@ -5712,7 +5721,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = {
             "schema_version": "0.1.0",
             "repository": validator.policy.get("repository", "unknown"),
-            "policy_version": validator.policy.get("policy_version", "unknown"),
+            _PV: validator.policy.get(_PV, "unknown"),
             "valid": not findings,
             "findings": [finding.as_dict() for finding in findings],
         }

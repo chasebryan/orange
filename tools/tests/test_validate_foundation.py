@@ -806,6 +806,33 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(paths, [])
         self.assertEqual(findings, [])
 
+    def test_git_inventory_accepts_checkout_worktree_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "sparse-checkout", "disable"],
+                cwd=root,
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "config", "--local", "--unset-all", "extensions.worktreeConfig"],
+                cwd=root,
+                check=False,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(findings, [])
+
     def test_git_inventory_rejects_linked_empty_worktree_config(self) -> None:
         for link_kind in ("hardlink", "symlink"):
             if link_kind == "symlink" and not hasattr(os, "symlink"):
