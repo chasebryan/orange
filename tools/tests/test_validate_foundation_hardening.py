@@ -328,6 +328,69 @@ jobs:
         )
         self.assertIn("export SOURCE_DATE_EPOCH=0\n", launcher)
         self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
+        self.assertIn('/usr/bin/find "$SCRIPT_PATH" -prune -links 1 -print', launcher)
+        self.assertIn("exec /usr/bin/env \\\n", launcher)
+        self.assertIn(
+            "/usr/bin/make --no-builtin-rules --no-builtin-variables check\n",
+            launcher,
+        )
+
+    def test_repository_launcher_uses_absolute_control_commands(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        launcher = source_root / "scripts/ci/check-repository"
+        with tempfile.TemporaryDirectory() as directory:
+            test_root = Path(directory)
+            script_directory = test_root / "scripts/ci"
+            script_directory.mkdir(parents=True)
+            copied_launcher = script_directory / "check-repository"
+            shutil.copy2(launcher, copied_launcher)
+
+            hostile_path = test_root / "hostile-path"
+            hostile_path.mkdir()
+            marker = test_root / "hostile-command-ran"
+            for command in ("env", "find", "make"):
+                replacement = hostile_path / command
+                replacement.write_text(
+                    "#!/bin/sh\n"
+                    f"/usr/bin/touch -- {marker}\n"
+                    "exit 97\n",
+                    encoding="utf-8",
+                )
+                replacement.chmod(0o755)
+
+            observed = test_root / "environment.txt"
+            (test_root / "Makefile").write_text(
+                "check:\n"
+                f"\t@/usr/bin/env > {observed}\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [copied_launcher],
+                cwd=test_root,
+                env={
+                    "BASH_ENV": str(test_root / "hostile-bash-startup"),
+                    "ENV": str(test_root / "hostile-shell-startup"),
+                    "MAKEFLAGS": "--invalid-hostile-flag",
+                    "PATH": str(hostile_path),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(marker.exists())
+            environment = dict(
+                line.split("=", 1)
+                for line in observed.read_text(encoding="utf-8").splitlines()
+                if "=" in line
+            )
+            self.assertEqual(environment["PATH"], str(hostile_path))
+            self.assertEqual(environment["SOURCE_DATE_EPOCH"], "0")
+            self.assertNotEqual(environment.get("MAKEFLAGS"), "--invalid-hostile-flag")
+            self.assertNotIn("BASH_ENV", environment)
+            self.assertNotIn("ENV", environment)
 
     def test_repository_launcher_rejects_a_direct_script_symlink(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

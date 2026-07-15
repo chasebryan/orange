@@ -12,7 +12,7 @@ if [ -L "$SCRIPT_PATH" ]; then
   echo "check-repository must not be invoked through a symbolic link" >&2
   exit 1
 fi
-if [ "$(find "$SCRIPT_PATH" -prune -links 1 -print)" != "$SCRIPT_PATH" ]; then
+if [ "$(/usr/bin/find "$SCRIPT_PATH" -prune -links 1 -print)" != "$SCRIPT_PATH" ]; then
   echo "check-repository must not be invoked through a hard link" >&2
   exit 1
 fi
@@ -26,7 +26,7 @@ export LC_ALL=C
 export SOURCE_DATE_EPOCH=0
 export TZ=UTC
 
-exec env \
+exec /usr/bin/env \
   -u BASH_ENV \
   -u ENV \
   -u GNUMAKEFLAGS \
@@ -34,4 +34,4 @@ exec env \
   -u MAKEFILES \
   -u MAKEOVERRIDES \
   -u MFLAGS \
-  make --no-builtin-rules --no-builtin-variables check
+  /usr/bin/make --no-builtin-rules --no-builtin-variables check

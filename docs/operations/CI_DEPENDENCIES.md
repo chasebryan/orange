@@ -160,7 +160,10 @@ The required invariant check invokes repository-owned Bash and Python files:
   [`tools/validate_foundation.py`](../../tools/validate_foundation.py) gate,
   the standard-library `unittest` suite, and the Rust compiler checks in that
   serialized order; before Make starts, it removes inherited Make control and
-  shell-startup variables and disables built-in rules and variables;
+  shell-startup variables, selects its link-count inspection, environment
+  filter, and GNU Make control commands by absolute path, and disables built-in
+  rules and variables; Make recipes retain the caller's path so the selected
+  Rust toolchain remains reachable;
 - each Python recipe starts from an allowlisted environment with a fixed hash
   seed, skips `site` initialization, excludes unsafe path injection, suppresses
   bytecode writes, and forces UTF-8 mode; foundation tests also redirect

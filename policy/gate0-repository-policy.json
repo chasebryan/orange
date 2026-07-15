@@ -288,7 +288,7 @@
     "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
     "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
-    "docs/operations/CI_DEPENDENCIES.md": "936ebfbd11c6c612e05f63632b34a7b78fd977156890897c578564be1f5e6af7",
+    "docs/operations/CI_DEPENDENCIES.md": "a1dfe0f7617354141c979883c5e46d41bb973436b2256b4204ff492803c7b3e5",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
@@ -301,11 +301,11 @@
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "80e9b36c34433d7700a9edf9465a83a3164000f67fe0bc092bf1690ff1983ff9",
-    "scripts/ci/check-repository": "150f56c2410b606dd7bf624b7e123ccc160284560ae6872a9e2543d9af01ef0b",
+    "scripts/ci/check-repository": "c99244ca3d34eaa8817c3b37759d87ea1c30530f6dc0baf47887552c2ad5a756",
     "scripts/ci/install-actionlint": "b43625cdf9120ed849b82ad07511adfd27309fb3a8bae58e09fdb27100d29e08",
     "scripts/ci/install-lychee": "307f62d80ea83fc7a5c2c5100662c4614bcc0b8f4c06196323ad1f6a45d78640",
     "tools/tests/test_validate_foundation.py": "38169d01c51bb88e53ad7558d3dc8b8e695aa767599873b86615ced2b267b8c6",
-    "tools/tests/test_validate_foundation_hardening.py": "1a32c337dc8a5d30ac50f26230550dbf8da3fc94ee9616d1a405ddb66e865623"
+    "tools/tests/test_validate_foundation_hardening.py": "16b4824eac720a21b69a655185c8cc19705f3e43bbaf0f99c6d2ae740b5e85b2"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
