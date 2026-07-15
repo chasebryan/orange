@@ -42,10 +42,11 @@ the individual commands are useful for focused development. A separate
 production-only Clippy pass denies unchecked arithmetic, silent `as`
 conversions, UTF-8 string slicing, indexing, unwrap/expect, and explicit panic
 sites while leaving test assertions available to state fixture invariants.
-The same isolated gate copies the compiler into two different fresh source
-roots, builds the optimized `orangec` binary into separate target trees, and
-requires the artifact bytes to match. This is source-relocated same-host
-reproducibility evidence, not a cross-platform or independently rebuilt claim.
+The same isolated gate captures one compiler source archive, extracts it into
+two different fresh source roots, builds the optimized `orangec` binary into
+separate target trees, and requires the artifact bytes to match. This is
+source-relocated same-host reproducibility evidence, not a cross-platform or
+independently rebuilt claim.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing
 inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line
