@@ -13,6 +13,7 @@ readonly ARCHIVE_SHA256="1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5c
 readonly DOWNLOAD_BASE="https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}"
 readonly MAXIMUM_ARCHIVE_BYTES="67108864"
 readonly MAXIMUM_ARCHIVE_KIB="65536"
+readonly MAXIMUM_CONNECTION_SECONDS="20"
 readonly MAXIMUM_DOWNLOAD_SECONDS="300"
 readonly MAXIMUM_EXTRACTED_FILE_KIB="131072"
 
@@ -45,7 +46,7 @@ trap '/usr/bin/rm -rf -- "$TEMPORARY_DIRECTORY"' EXIT
   ulimit -f "$MAXIMUM_ARCHIVE_KIB"
   curl \
     --disable \
-    --connect-timeout 20 \
+    --connect-timeout "$MAXIMUM_CONNECTION_SECONDS" \
     --fail \
     --location \
     --max-filesize "$MAXIMUM_ARCHIVE_BYTES" \

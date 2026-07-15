@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.61",
+  "policy_version": "0.2.62",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -304,10 +304,10 @@
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "18e59d0a957a15e00c92c06cf43addd485f007f8aa5f4704b8af79c81ee4481b",
     "scripts/ci/check-repository": "7d896bcffff1d737852c2bf740c8262e97b2f2fad6e9a1fdd03283c887d6feff",
-    "scripts/ci/install-actionlint": "61d83dbca3977255ed5457ed0f6fa6b943b0e268df0b5a0271e2ef3c080c7bf3",
-    "scripts/ci/install-lychee": "36999c6fe2b7e46b2c60f931bc3293ceb8706f5851cdf2d144e0c35bcc7489cd",
+    "scripts/ci/install-actionlint": "ac2e08280a32b7d213fb3993f43e5f9d9431dc3f960a41dedea551be2d9433b5",
+    "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/tests/test_validate_foundation.py": "428996f350509478ba525b5c63b55fa1a1a52c6d9d65f4cba4d354ad76bfacb0",
-    "tools/tests/test_validate_foundation_hardening.py": "5c8bb7152e5c0e0b329442cb124e065e9246f87151221a9077c56d4618afa5af"
+    "tools/tests/test_validate_foundation_hardening.py": "91ec110e4d7af47c52ccc78f191f1aafd257847c3788677a90096e351cadd6d8"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
