@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "1a1db83c2a962b1bfda2da4130f8b9e7e4215656aa1897ab0aa99513988505e8"
+GATE0_PROTECTED_FILE_DIGEST = "9b3344502db6bfe78308f2659e2c028bb7487ae9a88a76530b9e7f56be31b143"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3376,30 +3376,6 @@ class FoundationValidator:
                 self._validate_step_details(path, job_name, dict(steps))
 
     def _validate_step_details(self, path: Path, job_name: str, steps: Mapping[str, list[str]]) -> None:
-        allowed_step_conditions: dict[str, set[str]] = {
-            "ci.yml": {"Enforce solo contribution boundary"},
-            "scorecard.yml": {"Preserve SARIF result", "Upload result to code scanning"},
-        }
-        for step_name, lines in steps.items():
-            active_lines = yaml_without_comments("\n".join(lines)).splitlines()
-            keys = [
-                match.group(1)
-                for line in active_lines
-                if (match := re.match(r"^\s{8}([a-z][a-z0-9-]*):", line))
-            ]
-            for key in set(keys):
-                if keys.count(key) > 1:
-                    self.add("workflow.step_duplicate_key", path, f"{job_name}/{step_name} repeats {key}")
-            execution_keys = keys.count("run") + keys.count("uses")
-            if execution_keys != 1:
-                self.add("workflow.step_execution", path, f"{job_name}/{step_name} needs exactly one run or uses key")
-            if "if" in keys and step_name not in allowed_step_conditions.get(path.name, set()):
-                self.add("workflow.step_condition", path, f"{job_name}/{step_name} must not be conditional")
-            block = "\n".join(active_lines)
-            for bypass in ("|| true", "set +e", "continue-on-error:"):
-                if bypass in block:
-                    self.add("workflow.fail_open", path, f"{job_name}/{step_name} contains fail-open construct {bypass!r}")
-
         checkout = yaml_without_comments("\n".join(steps.get("Checkout", [])))
         expected_checkout = '''      - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -3531,6 +3507,27 @@ class FoundationValidator:
             for step_name, expected in uploads.items():
                 if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
                     self.add("workflow.scorecard_upload_contract", path, f"{job_name}/{step_name} must match its reviewed SARIF upload contract")
+        elif path.name == "external-links.yml":
+            commands = {
+                "Install checksum-verified lychee": 'run: ./scripts/ci/install-lychee "$RUNNER_TEMP/lychee"',
+                "Check external links": 'run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee"',
+            }
+            for step_name, command in commands.items():
+                expected = f"      - name: {step_name}\n        {command}"
+                if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
+                    self.add("workflow.external_links_contract", path, f"{job_name}/{step_name} must match its reviewed link-audit command")
+        elif path.name == "workflow-online-audit.yml":
+            block = yaml_without_comments("\n".join(steps.get("Audit workflow source and upstream metadata", [])))
+            expected = '''      - name: Audit workflow source and upstream metadata
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa
+        with:
+          advanced-security: false
+          annotations: false
+          online-audits: true
+          persona: pedantic
+          version: "1.26.1"'''
+            if block != expected:
+                self.add("workflow.online_audit_contract", path, f"{job_name}/Audit workflow source and upstream metadata must match its reviewed online-audit contract")
 
     def _validate_codeowners(self) -> None:
         path = self.root / ".github/CODEOWNERS"

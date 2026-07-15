@@ -167,6 +167,18 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "            **/*.md\n",
                 "workflow.ci_tool_contract",
             ),
+            (
+                "external-links.yml",
+                '        run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee"\n',
+                '        run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee" || :\n',
+                "workflow.external_links_contract",
+            ),
+            (
+                "workflow-online-audit.yml",
+                "          online-audits: true\n",
+                "          online-audits: false\n",
+                "workflow.online_audit_contract",
+            ),
         )
         for name, original, replacement, expected_code in mutations:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
