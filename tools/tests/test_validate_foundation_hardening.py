@@ -884,6 +884,8 @@ jobs:
                 for required in (
                     'readonly PATH="/usr/bin:/bin"\nexport PATH\n',
                     "unset GZIP TAR_OPTIONS",
+                    'if [[ -e "$1" || -L "$1" ]]; then',
+                    'echo "DESTINATION_DIRECTORY must not already exist" >&2',
                     f"/usr/bin/mktemp -d -- {temporary_template}",
                     'TEMPORARY_DIRECTORY="$(CDPATH= cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"',
                     "trap '/usr/bin/rm -rf -- \"$TEMPORARY_DIRECTORY\"' EXIT",
@@ -904,9 +906,20 @@ jobs:
                     '[[ ! -f "$EXTRACTED_FILE" || ! -s "$EXTRACTED_FILE" || '
                     '-L "$EXTRACTED_FILE" ]]',
                     "stat --format='%h' --",
-                    "install \\\n  -D \\\n  --no-target-directory \\\n  -m 0755 \\\n  -- \\\n",
+                    '/usr/bin/mkdir --mode=0700 -- "$DESTINATION_DIRECTORY"',
+                    "install \\\n  --no-target-directory \\\n  -m 0755 \\\n  -- \\\n",
                 ):
                     self.assertIn(required, script)
+                self.assertNotIn("install \\\n  -D \\\n", script)
+                self.assertEqual(
+                    script.count('/usr/bin/mkdir --mode=0700 -- "$DESTINATION_DIRECTORY'),
+                    2 if name == "install-lychee" else 1,
+                )
+                if name == "install-lychee":
+                    self.assertIn(
+                        '/usr/bin/mkdir --mode=0700 -- "$DESTINATION_DIRECTORY/bin"',
+                        script,
+                    )
                 missing = subprocess.run(
                     [source_root / "scripts/ci" / name],
                     cwd=source_root,
@@ -932,6 +945,35 @@ jobs:
                 self.assertEqual(rejected.returncode, 2)
                 self.assertEqual(rejected.stdout, "")
                 self.assertIn("DESTINATION_DIRECTORY must be absolute", rejected.stderr)
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    existing = root / "existing"
+                    existing.mkdir()
+                    occupied = subprocess.run(
+                        [source_root / "scripts/ci" / name, existing],
+                        cwd=source_root,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    dangling = root / "dangling"
+                    dangling.symlink_to(root / "missing", target_is_directory=True)
+                    redirected = subprocess.run(
+                        [source_root / "scripts/ci" / name, dangling],
+                        cwd=source_root,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                for result in (occupied, redirected):
+                    self.assertEqual(result.returncode, 2)
+                    self.assertEqual(result.stdout, "")
+                    self.assertEqual(
+                        result.stderr,
+                        "DESTINATION_DIRECTORY must not already exist\n",
+                    )
 
     def test_external_link_helper_clears_ambient_environment(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
