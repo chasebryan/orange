@@ -181,6 +181,12 @@ class WorkflowHardeningTests(unittest.TestCase):
             ),
             (
                 "dependency-review.yml",
+                "  merge_group:\n",
+                "  push:\n    branches:\n      - main\n  merge_group:\n",
+                "workflow.event_contract",
+            ),
+            (
+                "dependency-review.yml",
                 "    runs-on: ubuntu-24.04\n",
                 "    defaults:\n      run:\n        shell: bash {0}\n    runs-on: ubuntu-24.04\n",
                 "workflow.defaults_contract",

@@ -104,6 +104,17 @@ _RS = "required_status"
 _CDT = "compiler.dependency_table"
 _RA = "record.acceptance"
 _DATE = "2026-07-11"
+_WS = "workspace"
+_AB = "allowed_binary_artifacts"
+_CT = "compiler/Cargo.toml"
+_ACI = "allowed_container_images"
+_OCM = "compiler/crates/orange-compiler/Cargo.toml"
+_CCM = "compiler/crates/orangec/Cargo.toml"
+_OC = "orange-compiler"
+_DEPS = "dependencies"
+_RP = "required_paths"
+_ATP = "allowed_top_level_paths"
+_RFS = "require_full_commit_sha"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -299,7 +310,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "85acf66afc42d7ac87ce6f576c516650f87fd79558fc55c45faccf2009811206"
+GATE0_PROTECTED_FILE_DIGEST = "b3d4042e9734c4c9c98daef6025369f9fe3e723bd91ed702eb0f2857d6640123"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -353,8 +364,8 @@ GATE0_RUST_TOOLCHAIN = {
     },
 }
 GATE0_RUST_MANIFESTS = {
-    "compiler/Cargo.toml": {
-        "workspace": {
+    _CT: {
+        _WS: {
             "members": [
                 "crates/orange-compiler",
                 "crates/orangec",
@@ -378,58 +389,58 @@ GATE0_RUST_MANIFESTS = {
             },
         },
     },
-    "compiler/crates/orange-compiler/Cargo.toml": {
+    _OCM: {
         "package": {
-            "name": "orange-compiler",
+            "name": _OC,
             "description": "Permanent compiler foundations for the Orange language",
-            "version": {"workspace": True},
-            "edition": {"workspace": True},
-            "rust-version": {"workspace": True},
-            "publish": {"workspace": True},
+            "version": {_WS: True},
+            "edition": {_WS: True},
+            "rust-version": {_WS: True},
+            "publish": {_WS: True},
         },
-        "lints": {"workspace": True},
+        "lints": {_WS: True},
     },
-    "compiler/crates/orangec/Cargo.toml": {
+    _CCM: {
         "package": {
             "name": "orangec",
             "description": "Command-line frontend for the Orange compiler",
-            "version": {"workspace": True},
-            "edition": {"workspace": True},
-            "rust-version": {"workspace": True},
-            "publish": {"workspace": True},
+            "version": {_WS: True},
+            "edition": {_WS: True},
+            "rust-version": {_WS: True},
+            "publish": {_WS: True},
         },
-        "dependencies": {
-            "orange-compiler": {"path": "../orange-compiler"},
+        _DEPS: {
+            _OC: {"path": "../orange-compiler"},
         },
-        "lints": {"workspace": True},
+        "lints": {_WS: True},
     },
 }
 GATE0_RUST_MANIFEST_PACKAGES = {
-    "compiler/Cargo.toml": None,
-    "compiler/crates/orange-compiler/Cargo.toml": "orange-compiler",
-    "compiler/crates/orangec/Cargo.toml": "orangec",
+    _CT: None,
+    _OCM: _OC,
+    _CCM: "orangec",
 }
 GATE0_RUST_WORKSPACE_MEMBERS = [
     "crates/orange-compiler",
     "crates/orangec",
 ]
 GATE0_RUST_DEPENDENCY_TABLES = {
-    "compiler/Cargo.toml": {},
-    "compiler/crates/orange-compiler/Cargo.toml": {},
-    "compiler/crates/orangec/Cargo.toml": {
-        "dependencies": {
-            "orange-compiler": {"path": "../orange-compiler"},
+    _CT: {},
+    _OCM: {},
+    _CCM: {
+        _DEPS: {
+            _OC: {"path": "../orange-compiler"},
         },
     },
 }
 GATE0_RUST_LOCK = {
     "version": 4,
     "package": [
-        {"name": "orange-compiler", "version": "0.0.1"},
+        {"name": _OC, "version": "0.0.1"},
         {
             "name": "orangec",
             "version": "0.0.1",
-            "dependencies": ["orange-compiler"],
+            _DEPS: [_OC],
         },
     ],
 }
@@ -1882,9 +1893,9 @@ class FoundationValidator:
             "status": str,
             "default_branch": str,
             "bootstrap_steward": str,
-            "allowed_top_level_paths": list,
-            "allowed_binary_artifacts": list,
-            "required_paths": list,
+            _ATP: list,
+            _AB: list,
+            _RP: list,
             "forbidden_paths": list,
             "required_workflows": list,
             "workflow_inventory": list,
@@ -1911,8 +1922,8 @@ class FoundationValidator:
         if len(self.findings) != finding_count:
             return
         string_list_keys = (
-            "allowed_top_level_paths",
-            "required_paths",
+            _ATP,
+            _RP,
             "forbidden_paths",
             "required_workflows",
             "workflow_inventory",
@@ -1922,12 +1933,12 @@ class FoundationValidator:
         for key in string_list_keys:
             if not all(isinstance(value, str) and value for value in policy[key]):
                 self.add("policy.value", self.policy_path, f"{key} must contain non-empty strings")
-        for key in ("required_paths", "forbidden_paths"):
+        for key in (_RP, "forbidden_paths"):
             if any(isinstance(value, str) and "\0" in value for value in policy[key]):
                 self.add("policy.value", self.policy_path, f"{key} contains an invalid path string")
 
         expected_binary_fields = {"path", "sha256", "role", "provenance"}
-        for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
+        for index, artifact in enumerate(policy[_AB]):
             if not isinstance(artifact, dict):
                 self.add("policy.binary", self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
@@ -1940,10 +1951,10 @@ class FoundationValidator:
         action_policy = policy[_GA]
         action_field_types = {
             _AAR: list,
-            "allowed_container_images": list,
+            _ACI: list,
             _AWP: dict,
             "forbidden_events": list,
-            "require_full_commit_sha": bool,
+            _RFS: bool,
             "require_version_comment": bool,
         }
         for key, expected_type in action_field_types.items():
@@ -1953,7 +1964,7 @@ class FoundationValidator:
                     self.policy_path,
                     f"github_actions.{key} must be {expected_type.__name__}",
                 )
-        for key in (_AAR, "allowed_container_images", "forbidden_events"):
+        for key in (_AAR, _ACI, "forbidden_events"):
             values = action_policy.get(key)
             if isinstance(values, list) and not all(isinstance(value, str) and value for value in values):
                 self.add(
@@ -2018,7 +2029,7 @@ class FoundationValidator:
             if len(values) != len(set(values)):
                 self.add("policy.duplicate", self.policy_path, f"{key} contains duplicate values")
         minimum_sets = {
-            "required_paths": MINIMUM_REQUIRED_PATHS,
+            _RP: MINIMUM_REQUIRED_PATHS,
             "forbidden_paths": MINIMUM_FORBIDDEN_PATHS,
             "required_workflows": MINIMUM_REQUIRED_WORKFLOWS,
             "required_codeowners": MINIMUM_CODEOWNERS,
@@ -2027,9 +2038,9 @@ class FoundationValidator:
             missing = sorted(minimum - set(policy[key]))
             if missing:
                 self.add("policy.minimum", self.policy_path, f"{key} omits protected values: {', '.join(missing)}")
-        if set(policy["required_paths"]) != MINIMUM_REQUIRED_PATHS:
+        if set(policy[_RP]) != MINIMUM_REQUIRED_PATHS:
             self.add("policy.required_inventory", self.policy_path, "solo-bootstrap required-path inventory must remain exact")
-        top_level = set(policy["allowed_top_level_paths"])
+        top_level = set(policy[_ATP])
         if top_level != GATE0_ALLOWED_TOP_LEVEL:
             missing = sorted(GATE0_ALLOWED_TOP_LEVEL - top_level)
             extra = sorted(top_level - GATE0_ALLOWED_TOP_LEVEL)
@@ -2038,7 +2049,7 @@ class FoundationValidator:
                 self.policy_path,
                 f"solo-bootstrap top-level allowlist drifted; missing={missing}, extra={extra}",
             )
-        for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
+        for index, artifact in enumerate(policy[_AB]):
             if not isinstance(artifact, dict):
                 self.add("policy.binary", self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
@@ -2052,7 +2063,7 @@ class FoundationValidator:
             for field in ("role", "provenance"):
                 if not isinstance(artifact[field], str) or not artifact[field].strip():
                     self.add("policy.binary", self.policy_path, f"{_ABA}{index}] needs {field}")
-        if policy["allowed_binary_artifacts"] != GATE0_ALLOWED_BINARY_ARTIFACTS:
+        if policy[_AB] != GATE0_ALLOWED_BINARY_ARTIFACTS:
             self.add(
                 "policy.binary_inventory",
                 self.policy_path,
@@ -2060,10 +2071,10 @@ class FoundationValidator:
             )
         expected_action_policy_keys = {
             _AAR,
-            "allowed_container_images",
+            _ACI,
             _AWP,
             "forbidden_events",
-            "require_full_commit_sha",
+            _RFS,
             "require_version_comment",
         }
         observed_action_policy_keys = set(policy[_GA])
@@ -2082,7 +2093,7 @@ class FoundationValidator:
                 self.policy_path,
                 f"Action identities must be exact; missing={sorted(MINIMUM_ACTION_REPOSITORIES - action_repositories)}, extra={sorted(action_repositories - MINIMUM_ACTION_REPOSITORIES)}",
             )
-        container_images = set(policy[_GA].get("allowed_container_images", []))
+        container_images = set(policy[_GA].get(_ACI, []))
         if container_images != GATE0_ALLOWED_CONTAINER_IMAGES:
             self.add(
                 "policy.container_allowlist",
@@ -2111,7 +2122,7 @@ class FoundationValidator:
         }
         if actual_writes != GATE0_ALLOWED_WRITE_PERMISSIONS:
             self.add("policy.write_permissions", self.policy_path, "workflow write-permission exceptions must remain exact")
-        if policy[_GA].get("require_full_commit_sha") is not True:
+        if policy[_GA].get(_RFS) is not True:
             self.add("policy.action_sha", self.policy_path, "full Action commit SHA enforcement cannot be disabled")
         if policy[_GA].get("require_version_comment") is not True:
             self.add("policy.action_comment", self.policy_path, "Action version comments cannot be disabled")
@@ -2289,7 +2300,7 @@ class FoundationValidator:
     def _validate_required_and_forbidden_paths(self) -> None:
         actual_paths = {relative(path, self.root) for path in self.repository_files}
         actual_top_level = {PurePosixPath(value).parts[0] for value in actual_paths}
-        for value in sorted(actual_top_level - set(self.policy["allowed_top_level_paths"])):
+        for value in sorted(actual_top_level - set(self.policy[_ATP])):
             self.add("path.top_level", value, "top-level path is not admitted during Gate 0")
         static_paths = MINIMUM_REQUIRED_PATHS | GATE0_CONFORMANCE_INSTANCE_PATHS
         for value in sorted(actual_paths - static_paths):
@@ -2299,7 +2310,7 @@ class FoundationValidator:
             ):
                 continue
             self.add("path.inventory", value, "path is not admitted by the exact solo-bootstrap inventory")
-        for value in self.policy["required_paths"]:
+        for value in self.policy[_RP]:
             path = self._policy_path(value)
             if path is not None and not self._inventory_has_file(path):
                 self.add("path.required", value, "required permanent artifact is missing")
@@ -2454,7 +2465,7 @@ class FoundationValidator:
                 if expected_package is None
                 else isinstance(package, dict)
                 and observed_package == expected_package
-                and "workspace" not in package
+                and _WS not in package
             )
             if not package_is_exact:
                 self.add(
@@ -2477,18 +2488,18 @@ class FoundationValidator:
                 if table:
                     observed_tables[label] = table
 
-            for kind in ("dependencies", "dev-dependencies", "build-dependencies"):
+            for kind in (_DEPS, "dev-dependencies", "build-dependencies"):
                 if kind in manifest:
                     record_table(kind, manifest[kind])
 
-            workspace = manifest.get("workspace")
+            workspace = manifest.get(_WS)
             if workspace is not None:
                 if not isinstance(workspace, dict):
                     self.add("compiler.workspace", path, "Cargo workspace declaration must be a table")
-                elif value != "compiler/Cargo.toml":
+                elif value != _CT:
                     self.add("compiler.workspace", path, "only the root manifest may declare a workspace")
-                elif "dependencies" in workspace:
-                    record_table("workspace.dependencies", workspace["dependencies"])
+                elif _DEPS in workspace:
+                    record_table("workspace.dependencies", workspace[_DEPS])
 
             targets = manifest.get("target")
             if targets is not None:
@@ -2503,7 +2514,7 @@ class FoundationValidator:
                                 f"Cargo target {target_name!r} must be a table",
                             )
                             continue
-                        for kind in ("dependencies", "dev-dependencies", "build-dependencies"):
+                        for kind in (_DEPS, "dev-dependencies", "build-dependencies"):
                             if kind in target:
                                 record_table(f"target.{target_name}.{kind}", target[kind])
 
@@ -2526,15 +2537,15 @@ class FoundationValidator:
                     f"expected={expected_tables!r}, observed={observed_tables!r}",
                 )
 
-        root_manifest = manifests.get("compiler/Cargo.toml")
+        root_manifest = manifests.get(_CT)
         if root_manifest is not None:
-            workspace = root_manifest.get("workspace")
+            workspace = root_manifest.get(_WS)
             observed_members = workspace.get("members") if isinstance(workspace, dict) else None
             observed_excludes = workspace.get("exclude", []) if isinstance(workspace, dict) else None
             if observed_members != GATE0_RUST_WORKSPACE_MEMBERS or observed_excludes != []:
                 self.add(
                     "compiler.workspace_members",
-                    self.root / "compiler/Cargo.toml",
+                    self.root / _CT,
                     "workspace members must remain the exact admitted package directories with no exclusions",
                 )
 
@@ -2620,7 +2631,7 @@ class FoundationValidator:
         executable_paths = set(self.policy["executable_paths"])
         binary_artifacts = {
             artifact["path"]: artifact
-            for artifact in self.policy["allowed_binary_artifacts"]
+            for artifact in self.policy[_AB]
             if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
         }
         for mode, value in self.index_entries:
@@ -3294,7 +3305,7 @@ class FoundationValidator:
                         continue
                     if action not in allowed:
                         self.add("workflow.action_allowlist", path, f"line {line_number}: action not allowed: {action}")
-                    if actions_policy.get("require_full_commit_sha") and not re.fullmatch(r"[0-9a-f]{40}", ref):
+                    if actions_policy.get(_RFS) and not re.fullmatch(r"[0-9a-f]{40}", ref):
                         self.add("workflow.mutable_action", path, f"line {line_number}: action ref must be a full commit SHA")
                     if actions_policy.get("require_version_comment") and not version:
                         self.add("workflow.version_comment", path, f"line {line_number}: pinned action needs a version comment")
@@ -3364,6 +3375,20 @@ class FoundationValidator:
                     self.add("dependency_review.configuration", review_path, f"missing {meaning}: {setting}")
 
     def _validate_required_workflow_content(self, path: Path, text: str) -> None:
+        event_contracts = {
+            "ci.yml": "merge_group pull_request push",
+            "dependency-review.yml": "merge_group pull_request",
+            "scorecard.yml": "push schedule",
+            "external-links.yml": "push schedule workflow_dispatch",
+            "workflow-online-audit.yml": "push schedule workflow_dispatch",
+        }
+        events = {
+            match.group(1)
+            for line in top_level_block(text.splitlines(), "on")
+            if (match := re.fullmatch(r"  ([a-z_]+):", line))
+        }
+        if events != set(event_contracts[path.name].split()):
+            self.add("workflow.event_contract", path, "workflow event set must match its reviewed contract")
         defaults = tuple(top_level_block(text.splitlines(), "defaults"))
         reviewed_defaults = (
             ("  run:", "    shell: /bin/bash -p -e -o pipefail {0}")
