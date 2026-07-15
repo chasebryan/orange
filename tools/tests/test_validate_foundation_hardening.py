@@ -2243,6 +2243,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "--sort=name --mtime=@0",
+                "--sort=none --mtime=@1",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "--exclude='*/__pycache__'",
                 "--exclude='*/missing-cache'",
                 "make.compiler_environment_contract",

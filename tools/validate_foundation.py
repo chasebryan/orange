@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "116e87c1fda655603883950e85066ac7b5f685703a5d25a846fbf1fe401f63d9"
+_PHD = "6d5f8a79363c1a6b1466fdb5477b108fa449724fded7bd6db607a8654e76ee0a"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2402,7 +2402,7 @@ class FoundationValidator:
             'CARGO_HOME="$$cargo_home"': "fresh home required",
             "CARGO_NET_OFFLINE=true": "offline required",
             'CARGO_TARGET_DIR="$$cargo_home/target"': "fresh target required",
-            "RUSTUP_TOOLCHAIN=1.96.1": "selected toolchain required",
+            "RUSTUP_TOOLCHAIN=1.96.1": "toolchain required",
             "--workspace --all-targets --release --locked --offline": "optimized tests required",
             (
                 "--workspace --lib --bins --locked --offline -- -D warnings "
@@ -2426,8 +2426,9 @@ class FoundationValidator:
             'copy_compiler_source "$$cargo_home/repro-src-a"': "first copy required",
             'copy_compiler_source "$$cargo_home/repro-src-b"': "second copy required",
             'copy_compiler_source "$$cargo_home/check-src"': "check copy required",
-            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "captured manifest required",
-            '--create --file="$$repro_source_archive"': "source archive required",
+            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "manifest required",
+            '--create --file="$$repro_source_archive"': "archive required",
+            "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner": "metadata fixed",
             "--exclude=./.git": "Git metadata excluded",
             "--exclude=./.agents": "agent state excluded",
             "--exclude=./.codex": "Codex state excluded",

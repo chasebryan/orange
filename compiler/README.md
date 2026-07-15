@@ -45,11 +45,12 @@ sites while leaving test assertions available to state fixture invariants.
 The same isolated gate fixes a private file-creation mask and captures one
 repository source archive before Cargo runs so repository-relative compiler test
 inputs are included while Git metadata, local agent state, Python caches, and
-ambient compiler target output are excluded. Formatting, linting, documentation,
-and tests use one extracted check root; optimized `orangec` builds use two more
-extractions and separate target trees, and their artifact bytes must match. This
-is source-relocated same-host reproducibility evidence, not a cross-platform or
-independently rebuilt claim.
+ambient compiler target output are excluded. The archive format, path order,
+timestamps, and numeric owner/group fields are fixed. Formatting, linting,
+documentation, and tests use one extracted check root; optimized `orangec`
+builds use two more extractions and separate target trees, and their artifact
+bytes must match. This is source-relocated same-host reproducibility evidence,
+not a cross-platform or independently rebuilt claim.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing
 inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line
