@@ -867,6 +867,7 @@ jobs:
                 'readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"',
                 "-- \\\n    actionlint\n",
                 'readonly EXTRACTED_FILE="$TEMPORARY_DIRECTORY/actionlint"',
+                'readonly INSTALLED_FILE="$DESTINATION_DIRECTORY/actionlint"',
             ),
             (
                 "install-lychee",
@@ -876,6 +877,7 @@ jobs:
                 'readonly MAXIMUM_EXTRACTED_FILE_KIB="131072"',
                 '-- \\\n    "$ARCHIVE_DIRECTORY/lychee"\n',
                 'readonly EXTRACTED_FILE="$TEMPORARY_DIRECTORY/$ARCHIVE_DIRECTORY/lychee"',
+                'readonly INSTALLED_FILE="$DESTINATION_DIRECTORY/bin/lychee"',
             ),
         )
         for (
@@ -886,6 +888,7 @@ jobs:
             maximum_file_size,
             selected_member,
             extracted_file,
+            installed_file,
         ) in contracts:
             with self.subTest(installer=name):
                 script = (source_root / "scripts/ci" / name).read_text(encoding="utf-8")
@@ -911,11 +914,16 @@ jobs:
                     "--no-same-permissions",
                     selected_member,
                     extracted_file,
+                    installed_file,
                     '[[ ! -f "$EXTRACTED_FILE" || ! -s "$EXTRACTED_FILE" || '
                     '-L "$EXTRACTED_FILE" ]]',
                     "stat --format='%h' --",
                     '/usr/bin/mkdir --mode=0700 -- "$DESTINATION_DIRECTORY"',
                     "install \\\n  --no-target-directory \\\n  -m 0755 \\\n  -- \\\n",
+                    '[[ ! -f "$INSTALLED_FILE" || ! -s "$INSTALLED_FILE" || '
+                    '! -x "$INSTALLED_FILE" || -L "$INSTALLED_FILE" ]]',
+                    "stat --format='%a:%h' --",
+                    '/usr/bin/cmp --silent -- "$EXTRACTED_FILE" "$INSTALLED_FILE"',
                 ):
                     self.assertIn(required, script)
                 self.assertNotIn("install \\\n  -D \\\n", script)

@@ -99,9 +99,22 @@ if [[ "$(stat --format='%h' -- "$EXTRACTED_FILE")" != "1" ]]; then
 fi
 
 /usr/bin/mkdir --mode=0700 -- "$DESTINATION_DIRECTORY"
+readonly INSTALLED_FILE="$DESTINATION_DIRECTORY/actionlint"
 install \
   --no-target-directory \
   -m 0755 \
   -- \
   "$EXTRACTED_FILE" \
-  "$DESTINATION_DIRECTORY/actionlint"
+  "$INSTALLED_FILE"
+if [[ ! -f "$INSTALLED_FILE" || ! -s "$INSTALLED_FILE" || ! -x "$INSTALLED_FILE" || -L "$INSTALLED_FILE" ]]; then
+  echo "installed actionlint is not a nonempty executable regular file" >&2
+  exit 1
+fi
+if [[ "$(stat --format='%a:%h' -- "$INSTALLED_FILE")" != "755:1" ]]; then
+  echo "installed actionlint does not have mode 0755 and one link" >&2
+  exit 1
+fi
+if ! /usr/bin/cmp --silent -- "$EXTRACTED_FILE" "$INSTALLED_FILE"; then
+  echo "installed actionlint differs from verified extracted bytes" >&2
+  exit 1
+fi
