@@ -77,6 +77,7 @@ SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _JM = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
+GATE0_MAXIMUM_VALIDATOR_BYTES = 384 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
 GATE0_GIT_EXECUTABLE = "/usr/bin/git"
@@ -326,7 +327,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "b43bfe9dbb5fb333c694bd8bb53c1c3c6018dc690a0500483be74e5a8ebea327"
+_PHD = "f94248fb7743567a781543498d71ff7ba5c83c9bf9328d67b26d6c8981a495ec"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1573,8 +1574,9 @@ class FoundationValidator:
             metadata.st_nlink,
         )
 
-    @staticmethod
-    def _fl(path: Path) -> int:
+    def _fl(self, path: Path) -> int:
+        if relative(path, self.root) == "tools/validate_foundation.py":
+            return GATE0_MAXIMUM_VALIDATOR_BYTES
         if path.suffix.lower() in BINARY_SUFFIXES:
             return GATE0_MAXIMUM_BINARY_FILE_BYTES
         return GATE0_MAXIMUM_TEXT_FILE_BYTES

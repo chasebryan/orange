@@ -20,6 +20,7 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_REPOSITORY_BYTES,
     GATE0_IGNORE_PATTERNS,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
+    GATE0_MAXIMUM_VALIDATOR_BYTES,
     _fallback_repository_files,
     audit_schema_vocabulary,
     git_index_entries,
@@ -294,6 +295,28 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 self.assertIsNotNone(snapshot)
                 self.assertEqual(len(snapshot or b""), limit)
                 self.assertEqual(validator.findings, [])
+
+    def test_validator_has_a_narrow_larger_maintenance_bound(self) -> None:
+        cases = (
+            ("record.txt", GATE0_MAXIMUM_TEXT_FILE_BYTES),
+            ("tools/validate_foundation.py", GATE0_MAXIMUM_VALIDATOR_BYTES),
+        )
+        for name, limit in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._sized_file(root / name, limit)
+                validator = FoundationValidator(root)
+                self.assertTrue(validator._preflight_repository_resources())
+                self.assertEqual(validator._fl(root / name), limit)
+                self.assertEqual(len(validator._read_repository_bytes(root / name) or b""), limit)
+
+                self._sized_file(root / name, limit + 1)
+                validator = FoundationValidator(root)
+                self.assertFalse(validator._preflight_repository_resources())
+                self.assertIn(
+                    "resource.file_size",
+                    {finding.code for finding in validator.findings},
+                )
 
     def test_preflight_fails_closed_without_secure_open_capabilities(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
