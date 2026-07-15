@@ -2238,6 +2238,16 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "--exclude=./.git",
+                "--exclude=./missing-git",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "--exclude='*/__pycache__'",
+                "--exclude='*/missing-cache'",
+                "make.compiler_environment_contract",
+            ),
+            (
                 '--extract --file="$$repro_source_archive"',
                 "--extract --file=-",
                 "make.compiler_environment_contract",
