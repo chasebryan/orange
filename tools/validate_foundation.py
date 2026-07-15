@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "4089d2349810ef88dd9f51c9e9a120b93da8cf25fc0d5462305023625ddd8200"
+_PHD = "375697566825b4442a0c2967dd025017e44e21b309dab6653cef505849b13185"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2432,6 +2432,7 @@ class FoundationValidator:
             '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"': "tracked list required",
             '--null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"': "safe list required",
             '--extract --file="$$repro_source_archive"': "extraction required",
+            '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"': "capture check",
             "optimized orangec builds differ across source roots": "artifacts must match",
             'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': "anchor required",
         }
@@ -2442,10 +2443,9 @@ class FoundationValidator:
             "PYTHONHASHSEED=0": (3, "Python checks must use a fixed hash seed"),
             "python3 -S -P -B -X utf8": (
                 3,
-                "Python policy and artifact checks must skip site initialization, exclude unsafe paths, "
-                "avoid bytecode, and force UTF-8",
+                "Python checks must isolate startup, paths, bytecode, and encoding",
             ),
-            "-W error::ResourceWarning": (3, "Python invocations must fail on leaked resources"),
+            "-W error::ResourceWarning": (3, "Python must fail on resource leaks"),
         }
         for required, (expected_count, meaning) in required_python_fragments.items():
             if source.count(required) != expected_count:

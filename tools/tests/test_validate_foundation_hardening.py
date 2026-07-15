@@ -2258,6 +2258,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path"',
+                '/usr/bin/true -- "$$repository_root/$$relative_path"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 'CARGO_TARGET_DIR="$$cargo_home/target"',
                 'CARGO_TARGET_DIR="compiler/target"',
                 "make.compiler_environment_contract",
