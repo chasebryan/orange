@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.54",
+  "policy_version": "0.2.55",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -293,7 +293,7 @@
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "de2a057c491dd3c84b2ac01b0355d2de1780435322c96a70adefd20678a42294",
+    "docs/security/THREAT_MODEL.md": "343bb19b15d3003271b546fe498996a2455216c7398b3ecbb93a5c1147865333",
     "policy/README.md": "334141e74af948033d45db33b303ec83be112420fe64d6f75590ad03825f0c07",
     "policy/makefile-entrypoint-contract-v0.1.json": "2647d555deefd02ad69870cdd113ba16e5ae1b74fb08f0e007adcc490f40f04f",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",

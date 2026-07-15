@@ -122,7 +122,8 @@ trailing newline, while help and version output failures follow the same status
 1 transport rule. All three paths flush explicitly and treat a detected flush
 failure as status 1. Transient `Interrupted` results from stream reads, output
 writes, and explicit output flushes are retried without duplicating accepted
-bytes. Every output adapter rejects an impossible write count larger than the
+bytes, but fail closed after 1,024 consecutive attempts for one operation.
+Every output adapter rejects an impossible write count larger than the
 offered byte slice. Compilation diagnostics are also explicitly flushed after
 their final error group. When diagnostics and buffered token output are both
 pending, the diagnostic stream is flushed first so a detected diagnostic-flush

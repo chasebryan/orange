@@ -22,6 +22,7 @@ const MAX_ARGUMENT_BYTES_PER_INVOCATION: usize = 4 * 1024 * 1024;
 const MAX_SOURCE_BYTES_PER_INVOCATION: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_ERROR_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS: usize = 1_024;
 const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 const USAGE: &str = concat!(
@@ -87,21 +88,41 @@ fn main() -> ExitCode {
 
 struct CountCheckedWriter<W> {
     inner: W,
+    interrupted_writes: usize,
 }
 
 impl<W> CountCheckedWriter<W> {
     const fn new(inner: W) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            interrupted_writes: 0,
+        }
     }
 }
 
 impl<W: Write> Write for CountCheckedWriter<W> {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let written = self.inner.write(buffer)?;
-        if written > buffer.len() {
-            return Err(invalid_data_error());
+        match self.inner.write(buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                if record_interrupted_attempt(&mut self.interrupted_writes) {
+                    Err(interrupted_io_limit_error())
+                } else {
+                    Err(error)
+                }
+            }
+            Err(error) => {
+                self.interrupted_writes = 0;
+                Err(error)
+            }
+            Ok(written) => {
+                self.interrupted_writes = 0;
+                if written > buffer.len() {
+                    Err(invalid_data_error())
+                } else {
+                    Ok(written)
+                }
+            }
         }
-        Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -172,10 +193,24 @@ fn invalid_data_error() -> io::Error {
     io::Error::from(io::ErrorKind::InvalidData)
 }
 
+fn interrupted_io_limit_error() -> io::Error {
+    io::Error::other("consecutive interrupted I/O attempt limit exceeded")
+}
+
+fn record_interrupted_attempt(attempts: &mut usize) -> bool {
+    *attempts = attempts.saturating_add(1);
+    *attempts >= MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS
+}
+
 fn flush_retry_interrupted(output: &mut impl Write) -> io::Result<()> {
+    let mut interrupted_attempts = 0;
     loop {
         match output.flush() {
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                if record_interrupted_attempt(&mut interrupted_attempts) {
+                    return Err(interrupted_io_limit_error());
+                }
+            }
             result => return result,
         }
     }
@@ -844,12 +879,7 @@ fn read_bounded_with_limit_and_reservation(
         let buffer = buffer
             .get_mut(..buffer_length)
             .ok_or_else(|| ReadSourceError::Io(invalid_data_error()))?;
-        let read = loop {
-            match reader.read(buffer) {
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                result => break result.map_err(ReadSourceError::Io)?,
-            }
-        };
+        let read = read_retry_interrupted(&mut reader, buffer).map_err(ReadSourceError::Io)?;
         if read == 0 {
             return Ok(bytes);
         }
@@ -865,18 +895,29 @@ fn read_bounded_with_limit_and_reservation(
     }
 
     let mut probe = [0_u8; 1];
-    loop {
-        match reader.read(&mut probe) {
-            Ok(0) => return Ok(bytes),
-            Ok(1) => {
-                if let Some(remaining) = remaining_source_bytes.checked_sub(1) {
-                    *remaining_source_bytes = remaining;
-                }
-                return Err(exceeded);
+    match read_retry_interrupted(&mut reader, &mut probe) {
+        Ok(0) => Ok(bytes),
+        Ok(1) => {
+            if let Some(remaining) = remaining_source_bytes.checked_sub(1) {
+                *remaining_source_bytes = remaining;
             }
-            Ok(_) => return Err(ReadSourceError::Io(invalid_data_error())),
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(ReadSourceError::Io(error)),
+            Err(exceeded)
+        }
+        Ok(_) => Err(ReadSourceError::Io(invalid_data_error())),
+        Err(error) => Err(ReadSourceError::Io(error)),
+    }
+}
+
+fn read_retry_interrupted(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
+    let mut interrupted_attempts = 0;
+    loop {
+        match reader.read(buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                if record_interrupted_attempt(&mut interrupted_attempts) {
+                    return Err(interrupted_io_limit_error());
+                }
+            }
+            result => return result,
         }
     }
 }
@@ -1630,6 +1671,40 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct InterruptEveryWrite {
+        attempts: usize,
+    }
+
+    impl Write for InterruptEveryWrite {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            self.attempts += 1;
+            Err(io::Error::from(io::ErrorKind::Interrupted))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct InterruptEveryFlush {
+        attempts: usize,
+        bytes: Vec<u8>,
+    }
+
+    impl Write for InterruptEveryFlush {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.attempts += 1;
+            Err(io::Error::from(io::ErrorKind::Interrupted))
+        }
+    }
+
     struct InstrumentedSourceReader {
         remaining: usize,
         maximum_partial_read: usize,
@@ -2155,6 +2230,98 @@ mod tests {
         assert_eq!(output, b"");
         assert_eq!(error.flush_attempts, 2);
         assert!(error.bytes.starts_with(b"error[ORC0001]:"));
+    }
+
+    #[test]
+    fn persistent_interrupted_writes_are_bounded_across_output_classes() {
+        let mut input = RejectReads::default();
+        let mut output = InterruptEveryWrite::default();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["--help"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(input.attempts, 0);
+        assert_eq!(output.attempts, MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS);
+        assert_eq!(error, b"");
+
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut error = InterruptEveryWrite::default();
+        let status = run(
+            os_arguments(&["unknown", "source.or"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(input.attempts, 0);
+        assert_eq!(output, b"");
+        assert_eq!(error.attempts, MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS);
+    }
+
+    #[test]
+    fn persistent_interrupted_flushes_are_bounded_across_output_classes() {
+        let mut input = RejectReads::default();
+        let mut output = InterruptEveryFlush::default();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["--help"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(input.attempts, 0);
+        assert_eq!(output.attempts, MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS);
+        assert_eq!(output.bytes, USAGE.as_bytes());
+        assert_eq!(error, b"");
+
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut error = InterruptEveryFlush::default();
+        let status = run(
+            os_arguments(&["unknown", "source.or"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(input.attempts, 0);
+        assert_eq!(output, b"");
+        assert_eq!(error.attempts, MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS);
+        assert!(error.bytes.starts_with(b"orangec: unknown command"));
+    }
+
+    #[test]
+    fn persistent_interrupted_source_reads_fail_closed() {
+        let mut input = RejectReads {
+            attempts: 0,
+            error_kind: io::ErrorKind::Interrupted,
+        };
+        let mut output = Vec::new();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["check", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(input.attempts, MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS);
+        assert_eq!(output, b"");
+        assert_eq!(
+            error,
+            concat!(
+                "error[ORC1001]: could not read source file `<stdin>`\n",
+                "  = note: the operating system reported an I/O error\n",
+            )
+            .as_bytes()
+        );
     }
 
     #[test]
