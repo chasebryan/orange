@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "4189a48a2209f856f2d42275cfaed9761007f99b55471139c981a976f06438f4"
+GATE0_PROTECTED_FILE_DIGEST = "5ba3655391b6211e952742ec3bbe57830bdc70d44d62bdcee5a095514232e906"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -715,15 +715,14 @@ def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes])
         raise
 
 
-def _repository_entry_mode(root: Path, raw_path: bytes) -> int | bool | None:
+def _repository_entry_metadata(root: Path, raw_path: bytes) -> os.stat_result | bool | None:
     if not _secure_repository_reads_supported():
         return None
     descriptor: int | None = None
     try:
         parts = raw_path.split(b"/")
         descriptor = _open_directory_descriptor(root, parts[:-1])
-        metadata = os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
-        return metadata.st_mode
+        return os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
     except FileNotFoundError:
         return False
     except (NotImplementedError, OSError):
@@ -737,8 +736,8 @@ def _repository_entry_mode(root: Path, raw_path: bytes) -> int | bool | None:
 
 
 def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
-    mode = _repository_entry_mode(root, raw_path)
-    return mode if mode is False or mode is None else True
+    metadata = _repository_entry_metadata(root, raw_path)
+    return metadata if metadata is False or metadata is None else True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1064,10 +1063,10 @@ def _git_object_id_is_valid(value: bytes) -> bool:
 
 
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
-    git_metadata_present = _repository_entry_presence(root, b".git")
-    git_metadata_mode = _repository_entry_mode(root, b".git")
+    git_metadata = _repository_entry_metadata(root, b".git")
+    git_metadata_present = git_metadata if git_metadata is False or git_metadata is None else True
     if git_metadata_present and (
-        git_metadata_mode is None or not stat.S_ISDIR(git_metadata_mode)
+        git_metadata is None or not stat.S_ISDIR(git_metadata.st_mode)
     ):
         findings.append(
             Finding(
@@ -1078,18 +1077,21 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         )
         return [], False
     for raw_path, required in ((b".git/config", True), (b".git/index", False)):
-        present = _repository_entry_presence(root, raw_path)
-        mode = _repository_entry_mode(root, raw_path)
+        metadata = _repository_entry_metadata(root, raw_path)
+        present = metadata if metadata is False or metadata is None else True
         if git_metadata_present and (
             (required and present is not True)
             or (not required and present is None)
-            or (present is True and (mode is None or not stat.S_ISREG(mode)))
+            or (
+                present is True
+                and (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1)
+            )
         ):
             findings.append(
                 Finding(
                     "resource.inventory_git",
                     os.fsdecode(raw_path),
-                    "repository Git configuration and index must be local regular files",
+                    "repository Git configuration and index must be local, singly linked regular files",
                 )
             )
             return [], False
