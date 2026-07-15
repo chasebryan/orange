@@ -46,12 +46,13 @@ The byte-comparison check fixes the process environment, private file-creation
 mask, toolchain selection, locale, timezone, and source-date epoch. It captures
 one repository source archive before Cargo runs, including repository-relative
 compiler test inputs while excluding Git metadata, `.agents`, `.codex`, Python
-bytecode caches, and compiler target output. It performs every check from an
-extracted root, then extracts the same archive into two more absolute roots for
-builds with separate target trees. Both builds still share one host, toolchain
-installation, Cargo home, owner, and trust domain. The result detects
-source-path-sensitive and other same-host nondeterminism; it is not independently
-reproduced release evidence.
+bytecode caches, and compiler target output. The GNU archive format, lexical path
+order, epoch modification times, and numeric zero owner/group headers are fixed.
+It performs every check from an extracted root, then extracts the same archive
+into two more absolute roots for builds with separate target trees. Both builds
+still share one host, toolchain installation, Cargo home, owner, and trust
+domain. The result detects source-path-sensitive and other same-host
+nondeterminism; it is not independently reproduced release evidence.
 
 ## 3. Workflow map
 
