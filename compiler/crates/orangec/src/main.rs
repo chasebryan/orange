@@ -686,7 +686,8 @@ fn read_source_with_post_read(
         let final_path_metadata = path
             .metadata()
             .map_err(|_| ReadSourceError::ChangedDuringRead)?;
-        if !opened_file_metadata_unchanged(&opened_metadata, &closed_metadata)
+        if !source_read_length_matches_metadata(bytes.len(), opened_metadata.len())
+            || !opened_file_metadata_unchanged(&opened_metadata, &closed_metadata)
             || !opened_file_matches_path_metadata(&final_path_metadata, &closed_metadata)
         {
             return Err(ReadSourceError::ChangedDuringRead);
@@ -733,6 +734,10 @@ fn opened_file_metadata_unchanged(opened_metadata: &Metadata, closed_metadata: &
                 .ok()
                 .is_some_and(|modified| closed_metadata.modified().ok() == Some(modified))
     }
+}
+
+fn source_read_length_matches_metadata(read_length: usize, metadata_length: u64) -> bool {
+    u64::try_from(read_length).ok() == Some(metadata_length)
 }
 
 #[cfg(test)]
@@ -2839,6 +2844,19 @@ mod tests {
             )
             .as_bytes()
         );
+    }
+
+    #[test]
+    fn source_snapshot_requires_the_exact_metadata_length() {
+        let maximum = u64::try_from(MAX_SOURCE_BYTES).unwrap();
+
+        assert!(source_read_length_matches_metadata(0, 0));
+        assert!(source_read_length_matches_metadata(
+            MAX_SOURCE_BYTES,
+            maximum
+        ));
+        assert!(!source_read_length_matches_metadata(0, 1));
+        assert!(!source_read_length_matches_metadata(1, 0));
     }
 
     #[test]
