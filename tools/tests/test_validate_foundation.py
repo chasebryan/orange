@@ -388,16 +388,23 @@ class RepositoryResourceBoundTests(unittest.TestCase):
             )
 
     def test_final_snapshot_rejects_late_tree_drift(self) -> None:
-        for mutation in ("addition", "deletion", "replacement", "mode"):
+        for mutation in ("addition", "content", "deletion", "replacement", "mode"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path = root / "record.txt"
                 path.write_bytes(b"original")
+                if mutation == "content":
+                    os.utime(path, ns=(0, 0))
                 validator = FoundationValidator(root)
                 self.assertTrue(validator._preflight_repository_resources())
 
                 if mutation == "addition":
                     (root / "added.txt").write_bytes(b"added")
+                elif mutation == "content":
+                    before = path.stat()
+                    path.write_bytes(b"modified")
+                    after = path.stat()
+                    self.assertEqual((after.st_ino, after.st_size), (before.st_ino, before.st_size))
                 elif mutation == "deletion":
                     path.unlink()
                 elif mutation == "replacement":
