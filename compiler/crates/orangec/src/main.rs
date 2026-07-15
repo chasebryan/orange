@@ -530,7 +530,7 @@ fn read_source(path: &Path, standard_input: &mut impl Read) -> Result<Vec<u8>, R
             return Err(ReadSourceError::TooLarge);
         }
 
-        let file = File::open(path).map_err(ReadSourceError::Io)?;
+        let mut file = File::open(path).map_err(ReadSourceError::Io)?;
         let opened_metadata = file.metadata().map_err(ReadSourceError::Io)?;
         if !opened_metadata.is_file() {
             return Err(ReadSourceError::NotRegular);
@@ -541,7 +541,12 @@ fn read_source(path: &Path, standard_input: &mut impl Read) -> Result<Vec<u8>, R
         if opened_metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::TooLarge);
         }
-        read_bounded(file)
+        let bytes = read_bounded(&mut file)?;
+        let closed_metadata = file.metadata().map_err(ReadSourceError::Io)?;
+        if !opened_file_metadata_unchanged(&opened_metadata, &closed_metadata) {
+            return Err(ReadSourceError::ChangedDuringRead);
+        }
+        Ok(bytes)
     }
 }
 
@@ -556,6 +561,29 @@ fn opened_file_matches_path_metadata(path_metadata: &Metadata, opened_metadata: 
     {
         let _ = (path_metadata, opened_metadata);
         true
+    }
+}
+
+fn opened_file_metadata_unchanged(opened_metadata: &Metadata, closed_metadata: &Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+
+        opened_metadata.dev() == closed_metadata.dev()
+            && opened_metadata.ino() == closed_metadata.ino()
+            && opened_metadata.len() == closed_metadata.len()
+            && opened_metadata.mtime() == closed_metadata.mtime()
+            && opened_metadata.mtime_nsec() == closed_metadata.mtime_nsec()
+            && opened_metadata.ctime() == closed_metadata.ctime()
+            && opened_metadata.ctime_nsec() == closed_metadata.ctime_nsec()
+    }
+    #[cfg(not(unix))]
+    {
+        opened_metadata.len() == closed_metadata.len()
+            && opened_metadata
+                .modified()
+                .ok()
+                .is_some_and(|modified| closed_metadata.modified().ok() == Some(modified))
     }
 }
 
@@ -710,6 +738,11 @@ fn render_read_source_error(display_name: &RenderedSourceName, error: ReadSource
             format_args!("could not read source file `{display_name}`"),
             "path changed while the source file was being opened",
         ),
+        ReadSourceError::ChangedDuringRead => render_cli_error(
+            CliDiagnosticCode::ReadSource,
+            format_args!("could not read source file `{display_name}`"),
+            "source file changed while it was being read",
+        ),
         ReadSourceError::TooLarge => render_cli_error(
             CliDiagnosticCode::SourceTooLarge,
             format_args!(
@@ -764,6 +797,7 @@ enum ReadSourceError {
     Io(io::Error),
     NotRegular,
     ChangedDuringOpen,
+    ChangedDuringRead,
     TooLarge,
 }
 
@@ -2373,7 +2407,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn unix_opened_file_identity_rejects_a_different_regular_file() {
+    fn unix_opened_file_identity_and_snapshot_reject_different_regular_files() {
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let source_path = crate_root.join("src/main.rs");
         let manifest_path = crate_root.join("Cargo.toml");
@@ -2389,6 +2423,14 @@ mod tests {
             &path_metadata,
             &other_metadata
         ));
+        assert!(opened_file_metadata_unchanged(
+            &opened_metadata,
+            &opened_metadata
+        ));
+        assert!(!opened_file_metadata_unchanged(
+            &opened_metadata,
+            &other_metadata
+        ));
         assert_eq!(
             render_read_source_error(
                 &RenderedSourceName::try_from_text("changed.or").unwrap(),
@@ -2399,6 +2441,58 @@ mod tests {
                 "  = note: path changed while the source file was being opened\n",
             )
         );
+        assert_eq!(
+            render_read_source_error(
+                &RenderedSourceName::try_from_text("changed.or").unwrap(),
+                ReadSourceError::ChangedDuringRead,
+            ),
+            concat!(
+                "error[ORC1001]: could not read source file `changed.or`\n",
+                "  = note: source file changed while it was being read\n",
+            )
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unix_opened_file_snapshot_rejects_a_same_inode_size_change() {
+        use std::os::unix::fs::MetadataExt as _;
+
+        let mut temporary = None;
+        for suffix in 0..1_024 {
+            let path = std::env::temp_dir().join(format!(
+                "orangec-source-snapshot-{}-{suffix}.or",
+                std::process::id()
+            ));
+            match std::fs::OpenOptions::new()
+                .create_new(true)
+                .read(true)
+                .write(true)
+                .open(&path)
+            {
+                Ok(file) => {
+                    temporary = Some((path, file));
+                    break;
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => panic!("could not create snapshot test file: {error}"),
+            }
+        }
+        let (path, mut file) = temporary.expect("could not allocate a snapshot test file name");
+        file.write_all(b"a").unwrap();
+        let opened_metadata = file.metadata().unwrap();
+        file.write_all(b"b").unwrap();
+        let closed_metadata = file.metadata().unwrap();
+
+        assert_eq!(opened_metadata.ino(), closed_metadata.ino());
+        assert_ne!(opened_metadata.len(), closed_metadata.len());
+        assert!(!opened_file_metadata_unchanged(
+            &opened_metadata,
+            &closed_metadata
+        ));
+
+        drop(file);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
