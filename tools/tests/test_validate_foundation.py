@@ -551,6 +551,20 @@ class RepositoryResourceBoundTests(unittest.TestCase):
 
 
 class RepositoryInventoryBoundTests(unittest.TestCase):
+    def test_inventory_rejects_an_unsupported_host_before_spawning_git(self) -> None:
+        findings = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch(
+            "tools.validate_foundation._secure_repository_reads_supported",
+            return_value=False,
+        ), mock.patch(
+            "tools.validate_foundation.subprocess.Popen",
+            side_effect=AssertionError("Git was spawned on an unsupported host"),
+        ):
+            paths = list(iter_repository_files(Path(directory), findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.unsupported_host"})
+
     def test_static_git_excludes_match_the_protected_gitignores(self) -> None:
         root = Path(__file__).resolve().parents[2]
         root_patterns = tuple(

@@ -289,7 +289,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "8018dec52e6e6ad87bddf840c51963f527547b8a4679cd65f7db5de3d4579d02"
+GATE0_PROTECTED_FILE_DIGEST = "baacc0dd0b75ae9890f07431551cb6e1b1cc535911dfa441b3ceba942a0087df"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1072,6 +1072,11 @@ def _git_object_id_is_valid(value: bytes) -> bool:
 
 
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
+    if not _secure_repository_reads_supported():
+        findings.append(
+            Finding(_R_UNSUPPORTED, ".", "host cannot securely inspect repository metadata")
+        )
+        return [], False
     git_metadata = _repository_entry_metadata(root, b".git")
     git_metadata_present = git_metadata if git_metadata is False or git_metadata is None else True
     if git_metadata_present and (
