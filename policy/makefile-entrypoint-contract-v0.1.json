@@ -57,7 +57,7 @@
         "verify_capture_identity() {",
         "[[ \"$$(/usr/bin/sha256sum --binary -- \"$$repro_source_archive\")\" == \"$$repro_source_archive_identity\" ]]",
         "[[ \"$$(/usr/bin/sha256sum --binary -- \"$$repro_source_paths\")\" == \"$$repro_source_paths_identity\" ]]",
-        "verify_capture_identity; \\",
+        "verify_capture_identity; \\\n\tcopy_compiler_source \"$$cargo_home/check-reference\"",
         "done < \"$$repro_source_paths\"; \\\n\tverify_capture_identity",
         "artifact_a=\"$$cargo_home/target-a/release/orangec\"",
         "artifact_b=\"$$repro_home_b/deep/target/release/orangec\"",

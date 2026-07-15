@@ -295,7 +295,7 @@
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "de2a057c491dd3c84b2ac01b0355d2de1780435322c96a70adefd20678a42294",
     "policy/README.md": "334141e74af948033d45db33b303ec83be112420fe64d6f75590ad03825f0c07",
-    "policy/makefile-entrypoint-contract-v0.1.json": "b6c434a23dde70ceab51ec4de95833268e4cfbcd552fc2c01c139fe5a21d0155",
+    "policy/makefile-entrypoint-contract-v0.1.json": "9e0452aaf787c3fb81dda419fe3828ab87d40c26bfcd02298fa220cf5c5db75d",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
