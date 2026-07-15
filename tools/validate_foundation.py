@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "2e71fff24b300f901417fddda7667280006a249acf067e45aa8299aa895cd63b"
+_PHD = "41795b3d30e7a544f29b13851868ee2fbcd334e8073e39d41f040f29b5f5fc18"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2412,8 +2412,8 @@ class FoundationValidator:
                 "-D clippy::expect_used -D clippy::panic"
             ): "lints",
             (
-                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" '
-                'cargo build --manifest-path "$$cargo_home/repro-src-a/compiler/Cargo.toml" '
+                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/target-a" '
+                'cargo build --manifest-path "$$cargo_home/repro-a/compiler/Cargo.toml" '
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
             ): "first roots",
@@ -2423,7 +2423,7 @@ class FoundationValidator:
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
             ): "second roots",
-            'copy_compiler_source "$$cargo_home/repro-src-a"': "first copy",
+            'copy_compiler_source "$$cargo_home/repro-a"': "first copy",
             'copy_compiler_source "$$cargo_home/repro-src-b"': "second copy",
             'copy_compiler_source "$$cargo_home/check-src"': "check copy",
             'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "manifest",
