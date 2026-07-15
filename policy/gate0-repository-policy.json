@@ -257,7 +257,7 @@
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
     "assets/brand/README.md": "7d71da4d28befb1b5735244c1ee51ee761e07a923b67b85d2bba9380da602874",
     "assets/brand/manifest.json": "0ae668ae0fb52e04518681afddb2af5c11487bf5c3cda24be0d7f1ecb31c1391",
-    "compiler/crates/orangec/tests/s3a_conformance.rs": "653008bb27cc5dc474eec5ba8d819bbcc5967468e9c0e1d837d4ca25875c788c",
+    "compiler/crates/orangec/tests/s3a_conformance.rs": "3ad9f4fb570c2ff9598d9565aa4b1211b487b3a99bf7741825f3985788a39b92",
     "compiler/fixtures/s3a/invalid-duplicate-spec.or": "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6",
     "compiler/fixtures/s3a/invalid-int-magnitude.or": "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542",
     "compiler/fixtures/s3a/invalid-negative-word.or": "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b",
@@ -305,7 +305,7 @@
     "scripts/ci/install-actionlint": "0088f1ebc40cc27d96a2869171c10628fd75b7452feea081467a9892c8b014cd",
     "scripts/ci/install-lychee": "1c329cd592c5a575c3bc4ff95adb8607a45fd11528680ef4a489a73c416ddb18",
     "tools/tests/test_validate_foundation.py": "d256691be454addf286be5882665dcd7881b772372027ff2aa11f9c95548d520",
-    "tools/tests/test_validate_foundation_hardening.py": "3da0bce696e6a1639a994b060583d0010d22875fca7b2497f08063c8313d5212"
+    "tools/tests/test_validate_foundation_hardening.py": "4d2b1bbc9d54d7fede7ababbedd3c1939d13cd5331a42914b63145da53aecf86"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

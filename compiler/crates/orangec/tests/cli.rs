@@ -1,3 +1,5 @@
+//! Black-box contract tests for the `orangec` command-line interface.
+
 use std::fs;
 use std::fs::File;
 use std::io::Write;
