@@ -10,6 +10,7 @@ check: check-policy test-policy check-compiler
 
 check-compiler:
 	@set -euo pipefail; \
+	umask 077; \
 	cargo_home="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX")"; \
 	cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"; \
 	trap '/usr/bin/rm -rf -- "$$cargo_home"' EXIT; \

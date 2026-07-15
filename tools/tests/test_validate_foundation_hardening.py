@@ -2190,6 +2190,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             (".NOTPARALLEL: check\n", "", "make.entrypoint_contract"),
             ("override .SHELLFLAGS := -p -c\n", "", "make.entrypoint_contract"),
             ("unexport BASH_ENV ENV\n", "", "make.entrypoint_contract"),
+            ("umask 077; \\\n", "umask 022; \\\n", "make.compiler_environment_contract"),
             (
                 "check: check-policy test-policy check-compiler",
                 "check: check-compiler test-policy check-policy",

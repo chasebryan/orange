@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "22e89cf3818f78d646fda259bd69c8525bf10c74f0b937e8c3bc151f9eb93565"
+_PHD = "e768af277ab1b44bb990b90203eba1886fcdbdce1d2342a79039dae8d5c5ecaa"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2394,18 +2394,19 @@ class FoundationValidator:
             if lines.count(required) != 1:
                 self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
         required_compiler_fragments = {
+            "umask 077;": "compiler checks need a fixed private creation mask",
             '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
             'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "Cargo home must be absolute",
             "cd -- /;": "Cargo configuration discovery must start at the filesystem root",
             'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': (
-                "compiler checks must start from an empty process environment"
+                "compiler environment must start empty"
             ),
             'CARGO_HOME="$$cargo_home"': "Cargo must use the fresh temporary home",
             "CARGO_NET_OFFLINE=true": "Cargo must remain offline independently of command flags",
             'CARGO_TARGET_DIR="$$cargo_home/target"': (
-                "Cargo must compile and execute from a fresh temporary target tree"
+                "Cargo needs a fresh target tree"
             ),
-            "RUSTUP_TOOLCHAIN=1.96.1": "Cargo must use the selected Rust toolchain",
+            "RUSTUP_TOOLCHAIN=1.96.1": "Cargo needs the selected toolchain",
             "--workspace --all-targets --release --locked --offline": (
                 "optimized all-target tests must remain part of the compiler gate"
             ),
