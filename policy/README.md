@@ -100,7 +100,9 @@ empty segments, and dot segments before any normalization.
 Content reads require POSIX component-relative open support. Every directory
 and final file component is opened with no-follow flags; the final open is also
 nonblocking before its descriptor metadata is compared with the preflight
-snapshot. Returned payload bytes consume the 8 MiB aggregate read allowance as
+snapshot. After each read, the descriptor and its component-relative directory
+entry must still match that snapshot. Returned payload bytes consume the 8 MiB
+aggregate read allowance as
 soon as they enter the bounded reader; each read uses at most one additional
 byte only to detect overflow. A later snapshot or representation rejection
 cannot refund already buffered input. Preflight rejects hardlinked files and
