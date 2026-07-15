@@ -186,6 +186,18 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.defaults_contract",
             ),
             (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    strategy:\n      matrix:\n        mode: [review, bypass]\n    runs-on: ubuntu-24.04\n",
+                "workflow.job_extension",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    needs: missing-gate\n    runs-on: ubuntu-24.04\n",
+                "workflow.job_extension",
+            ),
+            (
                 "scorecard.yml",
                 "    if: ${{ github.ref == 'refs/heads/main' }}\n",
                 "    if: false\n",

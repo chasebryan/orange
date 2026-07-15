@@ -101,6 +101,9 @@ _AAR = "allowed_action_repositories"
 _AWP = "allowed_write_permissions"
 _PFD = "protected_file_digests"
 _RS = "required_status"
+_CDT = "compiler.dependency_table"
+_RA = "record.acceptance"
+_DATE = "2026-07-11"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -241,14 +244,14 @@ GATE0_ALLOWED_CONTAINER_IMAGES = {
 GATE0_ALLOWED_BINARY_ARTIFACTS = [
     {"path": path, "sha256": digest, "role": _BRAND_ROLE + role, "provenance": _BRAND_IMPORT + date}
     for path, digest, role, date in (
-        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "wordmark on a light background", "2026-07-11"),
-        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "emblem source variant on a light background", "2026-07-11"),
-        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "horizontal lockup JPEG", "2026-07-11"),
-        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "transparent wordmark", "2026-07-11"),
-        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "transparent emblem", "2026-07-11"),
-        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "primary horizontal lockup with embedded C2PA claim", "2026-07-11"),
-        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "emblem JPEG on a light background", "2026-07-11"),
-        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "primary emblem with embedded C2PA claim", "2026-07-11"),
+        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "wordmark on a light background", _DATE),
+        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "emblem source variant on a light background", _DATE),
+        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "horizontal lockup JPEG", _DATE),
+        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "transparent wordmark", _DATE),
+        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "transparent emblem", _DATE),
+        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "primary horizontal lockup with embedded C2PA claim", _DATE),
+        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "emblem JPEG on a light background", _DATE),
+        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "primary emblem with embedded C2PA claim", _DATE),
         ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "hand-drawn README and Orange Book horizontal lockup on a light background", "2026-07-14"),
     )
 ]
@@ -280,7 +283,7 @@ scripts/ci/install-actionlint scripts/ci/install-lychee tools/validate_foundatio
 )
 GATE0_ALLOWED_WRITE_PERMISSIONS = {"scorecard.yml": {"security-events"}}
 GATE0_HOSTED_REPOSITORY_CONTROLS = {
-    "snapshot_date": "2026-07-11",
+    "snapshot_date": _DATE,
     "review_due_date": "2026-10-11",
     "main_ruleset_id": 18810248,
     "required_checks": [
@@ -296,7 +299,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "e6ba5b87320bc02bfaa57512b655b461db3bfffd94ab435f0c89b948354fb43d"
+GATE0_PROTECTED_FILE_DIGEST = "b4f04837310b493963c638f2350e5ee203d2075a70f4a04263494d2e6970443e"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2466,7 +2469,7 @@ class FoundationValidator:
             def record_table(label: str, table: Any) -> None:
                 if not isinstance(table, dict):
                     self.add(
-                        "compiler.dependency_table",
+                        _CDT,
                         path,
                         f"Cargo dependency table {label!r} must be a table",
                     )
@@ -2490,12 +2493,12 @@ class FoundationValidator:
             targets = manifest.get("target")
             if targets is not None:
                 if not isinstance(targets, dict):
-                    self.add("compiler.dependency_table", path, "Cargo target declaration must be a table")
+                    self.add(_CDT, path, "Cargo target declaration must be a table")
                 else:
                     for target_name, target in sorted(targets.items()):
                         if not isinstance(target, dict):
                             self.add(
-                                "compiler.dependency_table",
+                                _CDT,
                                 path,
                                 f"Cargo target {target_name!r} must be a table",
                             )
@@ -2507,7 +2510,7 @@ class FoundationValidator:
             patches = manifest.get("patch")
             if patches is not None:
                 if not isinstance(patches, dict):
-                    self.add("compiler.dependency_table", path, "Cargo patch declaration must be a table")
+                    self.add(_CDT, path, "Cargo patch declaration must be a table")
                 else:
                     for source_name, table in sorted(patches.items()):
                         record_table(f"patch.{source_name}", table)
@@ -2706,7 +2709,7 @@ class FoundationValidator:
             "schema_version": "orange-brand-assets/v1",
             "status": "official",
             "authority": "chasebryan",
-            "designated_on": "2026-07-11",
+            "designated_on": _DATE,
             "source_collection": "Orange-Assets",
             "import_mode": "byte-for-byte",
         }
@@ -3242,6 +3245,8 @@ class FoundationValidator:
                 self.add("workflow.key_spacing", path, "whitespace before a YAML mapping colon is forbidden")
             if re.search(r"(?m)^(?:env| {4}env):", active_text):
                 self.add("workflow.ambient_env", path, "workflow and job env are forbidden")
+            if re.search(r"(?m)^ {4}(?:concurrency|environment|needs|outputs|strategy|uses):", active_text):
+                self.add("workflow.job_extension", path, "job extension is not reviewed")
             if re.search(r"(?m)(?:^|[\s:{}\[\],-])(?:[&*][A-Za-z0-9_-]+|![A-Za-z0-9_!-]+|!<[^>\n]+>|<<\s*:)", active_text):
                 self.add("workflow.indirection", path, "YAML anchors, aliases, merge keys, and tags are forbidden")
             if duplicate_yaml_mapping_key(active_text):
@@ -4325,11 +4330,11 @@ class FoundationValidator:
                     decision_revision = metadata.get("decision-revision")
                     approval_records = metadata.get("approval-records")
                     if not isinstance(decision_revision, str) or not re.fullmatch(r"[0-9a-f]{40}", decision_revision):
-                        self.add("record.acceptance", path, "Accepted record needs a full reviewed commit in decision-revision")
+                        self.add(_RA, path, "Accepted record needs a full reviewed commit in decision-revision")
                     if not isinstance(approval_records, list) or not approval_records or not all(
                         nonempty_scalar(item) for item in approval_records
                     ):
-                        self.add("record.acceptance", path, "Accepted record needs immutable approval-record references")
+                        self.add(_RA, path, "Accepted record needs immutable approval-record references")
                     if prefix == "OEP":
                         if isinstance(decision_revision, str) and re.fullmatch(r"[0-9a-f]{40}", decision_revision):
                             bound_revision = re.compile(
@@ -4340,15 +4345,15 @@ class FoundationValidator:
                                 for item in approval_records
                             ):
                                 self.add(
-                                    "record.acceptance",
+                                    _RA,
                                     path,
                                     "Accepted OEP approval-records must bind the exact decision-revision",
                                 )
                         if parse_iso_date(metadata.get("decision-date")) is None:
-                            self.add("record.acceptance", path, "Accepted OEP needs an exact decision-date")
+                            self.add(_RA, path, "Accepted OEP needs an exact decision-date")
                         related = metadata.get("related-decisions")
                         if not isinstance(related, list) or not related:
-                            self.add("record.acceptance", path, "Accepted OEP needs at least one related decision")
+                            self.add(_RA, path, "Accepted OEP needs at least one related decision")
                         authorities = metadata.get("review-authorities")
                         if authorities != ["Orange Project Owner"]:
                             self.add(
@@ -4361,7 +4366,7 @@ class FoundationValidator:
                             for item in approval_records
                         ):
                             self.add(
-                                "record.acceptance",
+                                _RA,
                                 path,
                                 "Accepted solo-mode OEP needs a literal solo-reviewed approval record",
                             )
