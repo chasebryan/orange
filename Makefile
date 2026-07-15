@@ -6,7 +6,7 @@ unexport BASH_ENV ENV
 .PHONY: check check-compiler check-policy test-policy
 .NOTPARALLEL: check
 
-check: check-policy test-policy check-compiler
+check: check-policy check-compiler
 
 check-compiler:
 	@set -euo pipefail; \
@@ -59,6 +59,7 @@ check-compiler:
 	/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after" || { printf '%s\n' 'tracked source membership changed during archive capture' >&2; exit 1; }; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
+	run_cargo /usr/bin/env PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$cargo_home/snapshot-python-cache" /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); unittest.main(module=None)' "$$cargo_home/check-src" discover -s "$$cargo_home/check-src/tools/tests" -p 'test_*.py'; \
 	run_cargo cargo fmt --manifest-path "$$manifest" --all -- --check; \
 	run_cargo cargo clippy --manifest-path "$$manifest" --workspace --all-targets --locked --offline -- -D warnings; \
 	run_cargo cargo clippy --manifest-path "$$manifest" --workspace --lib --bins --locked --offline -- -D warnings -D clippy::arithmetic_side_effects -D clippy::as_conversions -D clippy::string_slice -D clippy::indexing_slicing -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic; \

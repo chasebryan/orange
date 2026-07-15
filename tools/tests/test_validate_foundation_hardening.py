@@ -2252,6 +2252,21 @@ class BrandAssetHardeningTests(unittest.TestCase):
         source_root = Path(__file__).resolve().parents[2]
         manifest = load_json(source_root / "assets/brand/manifest.json")
         paths = [f"assets/brand/{asset['path']}" for asset in manifest["assets"]]
+        if not (source_root / ".git").exists():
+            attributes = set(
+                (source_root / ".gitattributes").read_text(encoding="utf-8").splitlines()
+            )
+            binary_rules = {
+                ".jpeg": "*.[jJ][pP][eE][gG] binary !eol",
+                ".jpg": "*.[jJ][pP][gG] binary !eol",
+                ".png": "*.[pP][nN][gG] binary !eol",
+            }
+            self.assertTrue(paths)
+            for path in paths:
+                rule = binary_rules.get(Path(path).suffix.lower())
+                self.assertIsNotNone(rule, path)
+                self.assertIn(rule, attributes, path)
+            return
         result = subprocess.run(
             [
                 "git",
@@ -2325,8 +2340,8 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             ("unexport BASH_ENV ENV\n", "", "make.entrypoint_contract"),
             ("umask 077; \\\n", "umask 022; \\\n", "make.compiler_environment_contract"),
             (
-                "check: check-policy test-policy check-compiler",
-                "check: check-compiler test-policy check-policy",
+                "check: check-policy check-compiler",
+                "check: check-compiler check-policy",
                 "make.entrypoint_contract",
             ),
             ("env -i", "env", "make.compiler_environment_contract"),
@@ -2369,6 +2384,14 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 "
                 "-S -P -B -X utf8 -W error::ResourceWarning "
                 '"$$cargo_home/check-src/tools/validate_foundation.py"',
+                "/usr/bin/true",
+                "make.python_environment_contract",
+            ),
+            (
+                "PYTHONPYCACHEPREFIX=\"$$cargo_home/snapshot-python-cache\" "
+                "/usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "
+                "-c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); "
+                "unittest.main(module=None)' \"$$cargo_home/check-src\" discover",
                 "/usr/bin/true",
                 "make.python_environment_contract",
             ),

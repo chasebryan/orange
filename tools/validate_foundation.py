@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "a5cae8b8bede839294497546d4647f4481c5bb872d6a2407b41675e07e3d9318"
+_PHD = "03b180cdfb5cf46d891cd596832efbcb24d9c53ee6f0e8de1ac0f371c745d7ba"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2385,8 +2385,8 @@ class FoundationValidator:
             "override .SHELLFLAGS := -p -c": "startup state suppressed",
             "unexport BASH_ENV ENV": "hooks unexported",
             ".NOTPARALLEL: check": "check serialized",
-            "check: check-policy test-policy check-compiler": (
-                "policy/tests precede Cargo"
+            "check: check-policy check-compiler": (
+                "policy before snapshot tests and Cargo"
             ),
         }
         lines = source.splitlines()
@@ -2445,12 +2445,12 @@ class FoundationValidator:
             if source.count(required) != 1:
                 self.add("make.compiler_environment_contract", path, f"{meaning}: expected exactly {required!r}")
         required_python_fragments = {
-            "PYTHONHASHSEED=0": (4, "fixed Python hash seed"),
+            "PYTHONHASHSEED=0": (5, "fixed Python hash seed"),
             "/usr/bin/python3 -S -P -B -X utf8": (
-                4,
+                5,
                 "isolated Python startup/path/bytecode/encoding",
             ),
-            "-W error::ResourceWarning": (4, "leaks fail"),
+            "-W error::ResourceWarning": (5, "leaks fail"),
         }
         for required, (expected_count, meaning) in required_python_fragments.items():
             if source.count(required) != expected_count:
