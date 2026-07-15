@@ -182,11 +182,12 @@ The required invariant check invokes repository-owned Bash and Python files:
   archive identities recorded above; and
 - [`scripts/ci/check-external-links`](../../scripts/ci/check-external-links)
   defines the live link-check method and its documented IACR exclusion, with
-  a nonempty caller-selected executable path, prior option termination, and
+  an absolute caller-selected executable path, prior option termination, and
   an allowlisted process environment that excludes ambient checker, proxy,
-  logging, locale, and home-directory configuration. It recursively scans
-  every nonignored repository Markdown file and explicitly includes hidden
-  GitHub Markdown and YAML inputs.
+  logging, locale, and home-directory configuration. Requiring an absolute
+  path prevents an assignment-shaped checker argument from changing that
+  environment. The helper recursively scans every nonignored repository
+  Markdown file and explicitly includes hidden GitHub Markdown and YAML inputs.
 
 These are first-party repository methods, not third-party dependencies. The
 repository has no selected license while D-018 is blocked. This inventory does

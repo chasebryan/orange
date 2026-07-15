@@ -484,6 +484,18 @@ jobs:
                 encoding="utf-8",
             )
             probe.chmod(0o755)
+            rejected = subprocess.run(
+                [helper, f"PATH={temporary_root}"],
+                cwd=source_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertEqual(rejected.stdout, "")
+            self.assertIn("PATH_TO_LYCHEE must be absolute", rejected.stderr)
+            self.assertFalse(observed.exists())
+
             result = subprocess.run(
                 [helper, probe],
                 cwd=source_root,
