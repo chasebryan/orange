@@ -59,9 +59,10 @@ Cargo, so Python-test drift cannot reach Rust execution. Formatting, linting,
 documentation, and Rust tests use the same extracted check root. A third policy
 check runs after all Rust commands. The gate then verifies that the original
 archive and path inventory retained their captured identities, extracts a fresh
-reference, and compares every tracked file's type, complete mode, and bytes with
-the tested check root and both relocated reproducibility roots. This exact
-comparison rejects policy-valid source drift before the gate can pass. Optimized
+reference, compares the NUL-safe sorted non-directory membership of all three
+compiler input roots, and compares every tracked file's type, complete mode, and
+bytes with the reference. These exact comparisons reject added source entries
+and policy-valid tracked-source drift before the gate can pass. Optimized
 `orangec` builds use the two relocated roots and separate target trees, and their
 artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
