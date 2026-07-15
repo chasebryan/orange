@@ -409,6 +409,26 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                     {finding.code for finding in validator.findings},
                 )
 
+    def test_final_snapshot_rejects_late_git_index_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "record.txt"
+            path.write_bytes(b"record")
+            validator = FoundationValidator(root)
+            self.assertTrue(validator._preflight_repository_resources())
+            validator.index_entries = [("100644", "record.txt")]
+
+            with mock.patch(
+                "tools.validate_foundation.git_index_entries",
+                return_value=[("100755", "record.txt")],
+            ):
+                validator._end()
+
+            self.assertIn(
+                "resource.concurrent_change",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_first_read_rejects_a_post_preflight_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
