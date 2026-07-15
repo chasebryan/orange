@@ -844,7 +844,7 @@ jobs:
                         script,
                     )
                     self.assertIn(
-                        '$(/usr/bin/stat --format=%h -- "$1")',
+                        '$(/usr/bin/stat --format=\'%a:%h\' -- "$1")',
                         script,
                     )
                     self.assertIn(
@@ -1060,6 +1060,23 @@ jobs:
                     "PATH_TO_LYCHEE must be a nonempty executable regular file\n",
                 )
 
+            wrong_mode = temporary_root / "wrong-mode"
+            wrong_mode.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            wrong_mode.chmod(0o700)
+            mode_rejected = subprocess.run(
+                [helper, wrong_mode],
+                cwd=source_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(mode_rejected.returncode, 2)
+            self.assertEqual(mode_rejected.stdout, "")
+            self.assertEqual(
+                mode_rejected.stderr,
+                "PATH_TO_LYCHEE must have mode 0755 and one link\n",
+            )
+
             linked_source = temporary_root / "linked-source"
             linked_source.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             linked_source.chmod(0o755)
@@ -1076,7 +1093,7 @@ jobs:
             self.assertEqual(linked.stdout, "")
             self.assertEqual(
                 linked.stderr,
-                "PATH_TO_LYCHEE must not be hard linked\n",
+                "PATH_TO_LYCHEE must have mode 0755 and one link\n",
             )
 
             result = subprocess.run(
