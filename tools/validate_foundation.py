@@ -289,7 +289,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "c63a2845e183b160a7aa6fac09d6f3df18fc8e7092f169a3443607f1154419fc"
+GATE0_PROTECTED_FILE_DIGEST = "d7338addeeb9cba7a7df1e4ef246e5c8b3f4082380b6c0de86485a9ea03d24ff"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3365,10 +3365,6 @@ class FoundationValidator:
             self.add("workflow.privileged_dispatch", path, "Scorecard must not allow manual ref selection")
         if "continue-on-error:" in text:
             self.add("workflow.continue_on_error", path, "continue-on-error is forbidden in Gate 0 workflows")
-        if path.name == "ci.yml":
-            for job_name, block in workflow_jobs(text.splitlines()):
-                if job_name == "required" and any(re.match(r"^\s{4}if:\s*", line) for line in block):
-                    self.add("workflow.required_job_condition", path, "required CI job must not have a job-level condition")
         expected_steps: dict[str, tuple[str, tuple[str, ...]]] = {
             "ci.yml": (
                 "required",
@@ -3401,6 +3397,14 @@ class FoundationValidator:
             if job_name not in jobs:
                 self.add("workflow.step_contract", path, f"missing protected job {job_name}")
             else:
+                conditions = tuple(
+                    line.strip() for line in jobs[job_name] if line.startswith("    if:")
+                )
+                expected_conditions = (
+                    ("if: ${{ github.ref == 'refs/heads/main' }}",) if path.name == "scorecard.yml" else ()
+                )
+                if conditions != expected_conditions:
+                    self.add("workflow.job_condition_contract", path, "job condition must match its reviewed contract")
                 steps = workflow_steps(jobs[job_name])
                 observed_names = tuple(name for name, _ in steps)
                 if observed_names != names:

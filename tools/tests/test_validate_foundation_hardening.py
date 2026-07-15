@@ -144,6 +144,18 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.dependency_review_contract",
             ),
             (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    if: false\n    runs-on: ubuntu-24.04\n",
+                "workflow.job_condition_contract",
+            ),
+            (
+                "scorecard.yml",
+                "    if: ${{ github.ref == 'refs/heads/main' }}\n",
+                "    if: false\n",
+                "workflow.job_condition_contract",
+            ),
+            (
                 "ci.yml",
                 '          echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2\n          exit 1\n',
                 '          if false; then\n            echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2\n            exit 1\n          fi\n',
