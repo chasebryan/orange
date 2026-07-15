@@ -75,6 +75,12 @@ Job deadlines are exact: `ci.yml`, `external-links.yml`, and
 `workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits
 10 minutes; and `scorecard.yml` permits 20 minutes.
 
+Dependency Review examines runtime, development, and unknown scopes; fails on
+moderate-or-higher vulnerabilities; checks licenses and vulnerabilities; retries
+snapshot warnings for at most 120 seconds; warns below OpenSSF Scorecard level 5;
+shows patched versions; never comments on the pull request; and does not use
+warn-only mode.
+
 `ci.yml` and `dependency-review.yml` supply the two required merge checks bound
 to GitHub Actions by ruleset `18810248`; effective rules still require separate
 readback during drift review. The other three

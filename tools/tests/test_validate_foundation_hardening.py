@@ -130,6 +130,29 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_dependency_review_configuration_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            github = root / ".github"
+            github.mkdir()
+            shutil.copyfile(source_root / ".github/dependabot.yml", github / "dependabot.yml")
+            source = (source_root / ".github/dependency-review-config.yml").read_text(
+                encoding="utf-8"
+            )
+            old = "retry_on_snapshot_warnings_timeout: 120"
+            self.assertIn(old, source)
+            (github / "dependency-review-config.yml").write_text(
+                source.replace(old, "retry_on_snapshot_warnings_timeout: 121", 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_dependabot()
+            self.assertIn(
+                "dependency_review.configuration",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_unreviewed_workflow_is_reported_without_crashing(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
@@ -2163,6 +2186,17 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             self.assertIn(old, source)
             path.write_text(source.replace(old, "`dependency-review.yml` permits\n11 minutes", 1), encoding="utf-8")
             self.assertIn("ci.workflow_timeout_spec", self._codes(root))
+
+    def test_dependency_review_documentation_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "docs/operations/CI_DEPENDENCIES.md"
+            source = path.read_text(encoding="utf-8")
+            old = "snapshot warnings for at most 120 seconds"
+            self.assertIn(old, source)
+            path.write_text(source.replace(old, "snapshot warnings for at most 121 seconds", 1), encoding="utf-8")
+            self.assertIn("ci.dependency_review_spec", self._codes(root))
 
     def test_rust_source_stripping_never_copies_remaining_suffixes(self) -> None:
         class SliceRejectingString(str):
