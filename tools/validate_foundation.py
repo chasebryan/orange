@@ -327,7 +327,8 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "c38d950c436abae509e75435498f42dbd2c3d336ed60256a2f4bdb1d17963a48"
+_WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_PHD = "0459b4f27a7a488b672e2fcfa5508f9331aac264a7ce9921c1af13ad528a956d"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -588,6 +589,15 @@ _LM = {
             "The live invocation caps\n  per-host concurrency at 2, total concurrency at 16, "
             "retries at 3, and each\n  request at 20 seconds."
         ): (2, 16, 3, 20),
+    },
+}
+_WM = {
+    "docs/operations/CI_DEPENDENCIES.md": {
+        (
+            "Job deadlines are exact: `ci.yml`, `external-links.yml`, and\n"
+            "`workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits\n"
+            "10 minutes; and `scorecard.yml` permits 20 minutes."
+        ): tuple(_WT[value] for value in sorted(_WT)),
     },
 }
 _PM = {
@@ -2774,6 +2784,7 @@ class FoundationValidator:
             (_OM, "compiler.cli_spec_budget", "compiler contract"),
             (_IM, "ci.installer_spec_budget", "installer contract"),
             (_LM, "ci.external_link_spec_budget", "external-link contract"),
+            (_WM, "ci.workflow_timeout_spec", "workflow timeout contract"),
             (_PM, "policy.resource_budget", "repository policy"),
         )
         for markers, finding_code, description in marker_groups:
@@ -3492,12 +3503,15 @@ class FoundationValidator:
                         path,
                         f"line {line_number}: {write_match.group(1)}: write is not allowed in this workflow",
                     )
-            minutes = {_DR: 10, _SC: 20}.get(n, 15)
+            minutes = _WT.get(n)
             for job_name, block in workflow_jobs(active_lines):
                 block_text = "\n".join(block)
                 if block.count("    runs-on: ubuntu-24.04") != 1:
                     self.add("workflow.runner", path, f"job {job_name} runner drift")
-                if not re.search(rf"(?m)^\s{{4}}timeout-minutes:\s*{minutes}\s*$", block_text):
+                if minutes is not None and not re.search(
+                    rf"(?m)^\s{{4}}timeout-minutes:\s*{minutes}\s*$",
+                    block_text,
+                ):
                     self.add("workflow.timeout", path, f"job {job_name} timeout drift")
                 q = "    permissions:\n      contents: read" + ("\n      security-events: write" if n == _SC else "")
                 if f"{q}\n    steps:" not in block_text:
