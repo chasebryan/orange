@@ -288,7 +288,7 @@
     "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
     "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
-    "docs/operations/CI_DEPENDENCIES.md": "0e0728a1cee3e5b3266d2fa0e0eced522da41f02ce19c0f8dcc7593e95f745c7",
+    "docs/operations/CI_DEPENDENCIES.md": "3c98ece84f3cf4c7561656033be955c3a265ba6f67b713da4722557c79bccdba",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
@@ -302,10 +302,10 @@
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "b1d22a4f46e1b4eadb32b5a239fa494ec127802473132fc041d7854558e3b0fa",
     "scripts/ci/check-repository": "1e793a816bceac77e4ded0a12d4061e85eb7089c0b9801a712cc70d6f5400aee",
-    "scripts/ci/install-actionlint": "fbc536447de66cf540d7aa42e9bf4019aa55c82e9bd4dd93db7181f74633aded",
-    "scripts/ci/install-lychee": "bdc62415227e5facabab2c0b67ab728a8345b1f7b1fb51fafe5e3ac03baf256b",
+    "scripts/ci/install-actionlint": "7ea0a0d32108d5cd2578df9d55d3042636add79b4407e686ac0649625eadfa83",
+    "scripts/ci/install-lychee": "e24b104b11f8f96870361355258d82260a50d60fd45bc9d6eb83a16a22981e45",
     "tools/tests/test_validate_foundation.py": "38169d01c51bb88e53ad7558d3dc8b8e695aa767599873b86615ced2b267b8c6",
-    "tools/tests/test_validate_foundation_hardening.py": "d4fa76f1a4712a605d1c2504f94a1d8cafd356092b3f4ade4ef617310477bba9"
+    "tools/tests/test_validate_foundation_hardening.py": "1a2705bf04b85f59dbe61039d6bdf11f839bc21c1d05b1d3c2c81cbf900b8306"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

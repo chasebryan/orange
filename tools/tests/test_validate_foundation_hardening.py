@@ -491,6 +491,7 @@ jobs:
         contracts = (
             (
                 "install-actionlint",
+                '"${TMPDIR:-/tmp}/orange-actionlint.XXXXXXXX"',
                 'readonly MAXIMUM_ARCHIVE_BYTES="33554432"',
                 'readonly MAXIMUM_ARCHIVE_KIB="32768"',
                 'readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"',
@@ -499,6 +500,7 @@ jobs:
             ),
             (
                 "install-lychee",
+                '"${TMPDIR:-/tmp}/orange-lychee.XXXXXXXX"',
                 'readonly MAXIMUM_ARCHIVE_BYTES="67108864"',
                 'readonly MAXIMUM_ARCHIVE_KIB="65536"',
                 'readonly MAXIMUM_EXTRACTED_FILE_KIB="131072"',
@@ -508,6 +510,7 @@ jobs:
         )
         for (
             name,
+            temporary_template,
             maximum_archive_size,
             maximum_archive_kib,
             maximum_file_size,
@@ -519,6 +522,9 @@ jobs:
                 for required in (
                     'readonly PATH="/usr/bin:/bin"\nexport PATH\n',
                     "unset GZIP TAR_OPTIONS",
+                    f"/usr/bin/mktemp -d -- {temporary_template}",
+                    'TEMPORARY_DIRECTORY="$(cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"',
+                    "trap '/usr/bin/rm -rf -- \"$TEMPORARY_DIRECTORY\"' EXIT",
                     maximum_archive_size,
                     maximum_archive_kib,
                     'readonly MAXIMUM_DOWNLOAD_SECONDS="300"',

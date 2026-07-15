@@ -190,8 +190,9 @@ The required invariant check invokes repository-owned Bash and Python files:
 - the actionlint and lychee installers use only `/usr/bin` and `/bin` for
   ambient command lookup, require one absolute destination directory, terminate
   options before caller-selected install destinations, disable curl's default
-  configuration, clear inherited tar/gzip option variables, and enforce the
-  archive identities recorded above; and
+  configuration, clear inherited tar/gzip option variables, canonicalize their
+  temporary cleanup roots before arming recursive cleanup traps, and enforce
+  the archive identities recorded above; and
 - [`scripts/ci/check-external-links`](../../scripts/ci/check-external-links)
   defines the live link-check method and its documented IACR exclusion, with
   an absolute caller-selected executable path, prior option termination, and
