@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "a62cb860a7eff16abea1564a6e8b3afb6e9bc573f8747ea6b71902799acbaede"
+_PHD = "ea26928a50876e6c40fb275e9a7ce2d9a42e57c6df1c36a0278b2e028d36863c"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -5750,5 +5750,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 1 if findings else 0
 
 
+def _cli() -> int:
+    try:
+        status = main()
+        sys.stdout.flush()
+    except OSError:
+        fd = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(fd, sys.stdout.fileno())
+        os.close(fd)
+        return 1
+    return status
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_cli())
