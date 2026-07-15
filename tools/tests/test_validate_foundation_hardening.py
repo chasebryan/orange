@@ -231,6 +231,9 @@ jobs:
             "set -euo pipefail",
             "printf '::add-mask::%s\\n'",
             '/usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
+            "/usr/bin/env -i",
+            "DOCKER_HOST=unix:///var/run/docker.sock",
+            'HOME="$RUNNER_TEMP"',
             "/usr/bin/docker run --rm",
             "--read-only",
             "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
@@ -252,6 +255,11 @@ jobs:
         jobs = dict(workflow_jobs(workflow.splitlines()))
         source_steps = dict(workflow_steps(jobs["analysis"]))
         mutations = (
+            (
+                "DOCKER_HOST=unix:///var/run/docker.sock",
+                "DOCKER_HOST=tcp://hostile.invalid:2375",
+                "workflow.scorecard_contract",
+            ),
             ("--cap-add=DAC_OVERRIDE", "--cap-add=ALL", "workflow.scorecard_runtime"),
             (",readonly\"", "\"", "workflow.scorecard_contract"),
             ("--env INPUT_PUBLISH_RESULTS=false", "--env INPUT_PUBLISH_RESULTS=true", "workflow.scorecard_publication"),

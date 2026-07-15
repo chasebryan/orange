@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "b3069e957c39df0c130416e3d5a4d01843e4350df6cc84f2e6f91afe4a82dbc3"
+GATE0_PROTECTED_FILE_DIGEST = "d7b212724d8b8d300a55f4c364421451692f07e8ab562b32c00cd91d5adc21c9"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3301,6 +3301,8 @@ class FoundationValidator:
             "scorecard.yml": (
                 "name: OpenSSF Scorecard / analysis",
                 "if: ${{ github.ref == 'refs/heads/main' }}",
+                "/usr/bin/env -i",
+                "DOCKER_HOST=unix:///var/run/docker.sock",
                 "/usr/bin/docker run --rm",
                 "ghcr.io/ossf/scorecard-action@sha256:",
                 "github/codeql-action/upload-sarif@",
@@ -3415,44 +3417,6 @@ class FoundationValidator:
         elif path.name == "dependency-review.yml":
             require("Review dependency changes", ("uses: actions/dependency-review-action@", "base-ref:", "head-ref:", "config-file:"))
         elif path.name == "scorecard.yml":
-            require(
-                "Run OpenSSF Scorecard",
-                (
-                    "shell: /bin/bash -p -e -o pipefail {0}",
-                    "run: |",
-                    "set -euo pipefail",
-                    'test -n "${INPUT_REPO_TOKEN:-}"',
-                    'test -r "$GITHUB_EVENT_PATH"',
-                    'test -d "$GITHUB_WORKSPACE"',
-                    "printf '::add-mask::%s\\n' \"$INPUT_REPO_TOKEN\"",
-                    '/usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
-                    "/usr/bin/docker run --rm",
-                    "--read-only",
-                    "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
-                    "--cap-drop=ALL",
-                    "--cap-add=DAC_OVERRIDE",
-                    "--security-opt=no-new-privileges=true",
-                    "--pids-limit=256",
-                    '--mount "type=bind,source=${GITHUB_EVENT_PATH},target=/github/workflow/event.json,readonly"',
-                    '--mount "type=bind,source=${GITHUB_WORKSPACE},target=/github/workspace"',
-                    "--workdir /github/workspace",
-                    "--env GITHUB_ACTIONS=true",
-                    "--env GITHUB_API_URL",
-                    "--env GITHUB_EVENT_NAME",
-                    "--env GITHUB_EVENT_PATH=/github/workflow/event.json",
-                    "--env GITHUB_REF",
-                    "--env GITHUB_REPOSITORY",
-                    "--env GITHUB_WORKSPACE=/github/workspace",
-                    "--env INPUT_FILE_MODE=archive",
-                    "--env INPUT_PUBLISH_RESULTS=false",
-                    "--env INPUT_REPO_TOKEN",
-                    "--env INPUT_RESULTS_FILE=results.sarif",
-                    "--env INPUT_RESULTS_FORMAT=sarif",
-                    "ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
-                    "INPUT_REPO_TOKEN: ${{ github.token }}",
-                    'test -s "$GITHUB_WORKSPACE/results.sarif"',
-                ),
-            )
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
             expected_scorecard_block = '''      - name: Run OpenSSF Scorecard
         shell: /bin/bash -p -e -o pipefail {0}
@@ -3465,7 +3429,15 @@ class FoundationValidator:
           test -d "$GITHUB_WORKSPACE"
           printf '::add-mask::%s\\n' "$INPUT_REPO_TOKEN"
           /usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"
-          /usr/bin/docker run --rm \\
+          /usr/bin/env -i \\
+            DOCKER_HOST=unix:///var/run/docker.sock \\
+            GITHUB_API_URL="$GITHUB_API_URL" \\
+            GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \\
+            GITHUB_REF="$GITHUB_REF" \\
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \\
+            HOME="$RUNNER_TEMP" \\
+            INPUT_REPO_TOKEN="$INPUT_REPO_TOKEN" \\
+            /usr/bin/docker run --rm \\
             --read-only \\
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777 \\
             --cap-drop=ALL \\
@@ -3527,7 +3499,6 @@ class FoundationValidator:
                 "--device",
                 "--entrypoint",
                 "--network=host",
-                "/var/run/docker.sock",
             ):
                 if forbidden in scorecard_block:
                     self.add(

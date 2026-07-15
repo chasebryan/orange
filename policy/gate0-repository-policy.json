@@ -242,7 +242,7 @@
     ".github/workflows/ci.yml": "238f8356a80af2618d236e84e0e6071b3476da9372991bb96492a1256ceabdeb",
     ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
     ".github/workflows/external-links.yml": "322aadcba06668a6f50ba4036ce9f4ed98dac630bb1b9d761693f2ce248e1c16",
-    ".github/workflows/scorecard.yml": "825e04c630b434bc44fec58f2aca894ace4fce2623234e56a5a357ead4c6de86",
+    ".github/workflows/scorecard.yml": "1352270408ffb727b4207938eea220f850043f8029ef566c9094a0d70ca16a1d",
     ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
     ".markdownlint-cli2.jsonc": "abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5",
@@ -288,7 +288,7 @@
     "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
     "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
-    "docs/operations/CI_DEPENDENCIES.md": "cc48e7c104fa729a1cb3ad192f06b1d5792b99d68f423820e4186ed293607374",
+    "docs/operations/CI_DEPENDENCIES.md": "87f42d8787b05ea506a9e33fc42923043084a9e6e42a50735eb26cafe47fef03",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
@@ -305,7 +305,7 @@
     "scripts/ci/install-actionlint": "7ea0a0d32108d5cd2578df9d55d3042636add79b4407e686ac0649625eadfa83",
     "scripts/ci/install-lychee": "e24b104b11f8f96870361355258d82260a50d60fd45bc9d6eb83a16a22981e45",
     "tools/tests/test_validate_foundation.py": "3a7dd658a07797ef1fbba8e8c08ab2438d1d3d1cb3478490f1fe4d43fdd3a5b5",
-    "tools/tests/test_validate_foundation_hardening.py": "bbc77888d6314d1932d2133d61454f210adf49e293098bb023d059568efa4a7c"
+    "tools/tests/test_validate_foundation_hardening.py": "dce7474e82a8c90f71f49026074ba88061de1c2432b8783034e382e7f4f050e7"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

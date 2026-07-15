@@ -188,7 +188,9 @@ The required invariant check invokes repository-owned Bash and Python files:
   the explicit inherited toolchain path; the hosted Python cache is
   canonicalized before its cleanup trap is armed;
 - the hosted Scorecard runtime selects its cleanup and Docker client by
-  absolute system paths before invoking the exact reviewed container contract;
+  absolute system paths, gives that client a minimal environment and an
+  explicit local daemon endpoint, then invokes the exact reviewed container
+  contract;
 - the actionlint and lychee installers use only `/usr/bin` and `/bin` for
   ambient command lookup, require one absolute destination directory, terminate
   options before caller-selected install destinations, disable curl's default
