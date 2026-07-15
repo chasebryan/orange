@@ -1260,6 +1260,13 @@ fn parse_edition(value: &OsStr) -> Result<Edition, String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    fn unix_test_root() -> PathBuf {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/orangec-tests");
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
     #[test]
     fn cli_diagnostic_code_inventory_is_exact_ordered_and_unique() {
         let actual = CliDiagnosticCode::ALL
@@ -2918,9 +2925,10 @@ mod tests {
     fn unix_opened_file_snapshot_rejects_a_same_inode_size_change() {
         use std::os::unix::fs::MetadataExt as _;
 
+        let test_root = unix_test_root();
         let mut temporary = None;
         for suffix in 0..1_024 {
-            let path = std::env::temp_dir().join(format!(
+            let path = test_root.join(format!(
                 "orangec-source-snapshot-{}-{suffix}.or",
                 std::process::id()
             ));
@@ -2962,10 +2970,11 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn unix_source_path_drift_after_read_is_rejected() {
+        let test_root = unix_test_root();
         for mutation in ["deletion", "non_regular", "replacement"] {
             let mut temporary = None;
             for suffix in 0..1_024 {
-                let path = std::env::temp_dir().join(format!(
+                let path = test_root.join(format!(
                     "orangec-source-path-{}-{suffix}",
                     std::process::id()
                 ));
@@ -3015,10 +3024,8 @@ mod tests {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
         use std::time::SystemTime;
 
+        let test_root = unix_test_root();
         for mutation in ["hardlink", "mode", "rewrite"] {
-            let test_root =
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/orangec-tests");
-            std::fs::create_dir_all(&test_root).unwrap();
             let mut temporary = None;
             for suffix in 0..1_024 {
                 let path = test_root.join(format!(

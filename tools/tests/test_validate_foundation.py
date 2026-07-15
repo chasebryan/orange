@@ -2195,6 +2195,10 @@ class MarkdownTests(unittest.TestCase):
             markdown_html_comment_error("stray -->\n"),
             "HTML comment closer without opener",
         )
+        self.assertEqual(
+            markdown_html_comment_error("<!-- browser-only close --!>\n"),
+            "unclosed HTML comment",
+        )
 
     def test_heading_anchors_match_github_style_duplicates(self) -> None:
         anchors = markdown_anchors("# One heading\n\n## Repeated\n\n## Repeated\n\n## Use `orange`\n")
