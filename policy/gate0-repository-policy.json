@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.60",
+  "policy_version": "0.2.61",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -294,7 +294,7 @@
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "14bd9e8fd3e5477a47f6292d09de5882afb1e5f03923e661957b82d6415512f2",
-    "policy/README.md": "d38e6dc393b1287e1b247b0a9699e477aa68928816ed3bce8e9460cdaa92ce0b",
+    "policy/README.md": "c53c6f4e68b30181c9cb6db0dfd940483b997128fd36acd325f42826e83e745a",
     "policy/makefile-entrypoint-contract-v0.1.json": "2647d555deefd02ad69870cdd113ba16e5ae1b74fb08f0e007adcc490f40f04f",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
@@ -306,8 +306,8 @@
     "scripts/ci/check-repository": "7d896bcffff1d737852c2bf740c8262e97b2f2fad6e9a1fdd03283c887d6feff",
     "scripts/ci/install-actionlint": "61d83dbca3977255ed5457ed0f6fa6b943b0e268df0b5a0271e2ef3c080c7bf3",
     "scripts/ci/install-lychee": "36999c6fe2b7e46b2c60f931bc3293ceb8706f5851cdf2d144e0c35bcc7489cd",
-    "tools/tests/test_validate_foundation.py": "ec7ba66808bd6d71b18fcfa44f288fa57dcf4bdb188d70323660ac3de29fa3c6",
-    "tools/tests/test_validate_foundation_hardening.py": "0fe320fe3684d12db42492c00e52623e374ca2e7f98d53a0c5747f9924a6e9ac"
+    "tools/tests/test_validate_foundation.py": "428996f350509478ba525b5c63b55fa1a1a52c6d9d65f4cba4d354ad76bfacb0",
+    "tools/tests/test_validate_foundation_hardening.py": "5c8bb7152e5c0e0b329442cb124e065e9246f87151221a9077c56d4618afa5af"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

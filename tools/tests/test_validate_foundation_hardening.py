@@ -2151,6 +2151,23 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 "at most 4,096 entries in one\nfallback directory",
                 "at most 4,095 entries in one\nfallback directory",
             ),
+            ("One\n30-second deadline", "One\n29-second deadline"),
+            (
+                "each retain at most 4,096 detailed findings",
+                "each retain at most 4,095 detailed findings",
+            ),
+            (
+                "Final finding messages retain at\nmost 4,096 characters",
+                "Final finding messages retain at\nmost 4,095 characters",
+            ),
+            (
+                "Each stage-zero metadata prefix is\ncapped at 128 bytes",
+                "Each stage-zero metadata prefix is\ncapped at 127 bytes",
+            ),
+            (
+                "Structural JSON nesting is capped at 64 levels",
+                "Structural JSON nesting is capped at 63 levels",
+            ),
         ):
             with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)

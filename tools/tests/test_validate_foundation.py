@@ -17,6 +17,9 @@ from tools.validate_foundation import (
     GATE0_GIT_EXECUTABLE,
     GATE0_MAXIMUM_BINARY_FILE_BYTES,
     GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES,
+    GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
+    GATE0_MAXIMUM_FINDINGS,
+    GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES,
     GATE0_MAXIMUM_JSON_NESTING_DEPTH,
     GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES,
     GATE0_MAXIMUM_REPOSITORY_BYTES,
@@ -293,6 +296,10 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_PATH_BYTES, 1024)
         self.assertEqual(GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES, 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES, 4096)
+        self.assertEqual(GATE0_MAXIMUM_JSON_NESTING_DEPTH, 64)
+        self.assertEqual(GATE0_MAXIMUM_FINDINGS, 4096)
+        self.assertEqual(GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS, 4096)
+        self.assertEqual(GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES, 128)
 
     def test_text_and_binary_file_size_boundaries_are_inclusive(self) -> None:
         cases = (
