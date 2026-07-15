@@ -371,6 +371,7 @@ contact_links:
 '''
 _PRD = "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f"
 _SRD = "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede"
+_CLD = "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f"
 _GAC = '''* text=auto eol=lf
 
 *.json text eol=lf
@@ -433,7 +434,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "3e952ef8fcbcb6c746bf91f37c97e201f520ab728a3e2ddcf98ad9fc6a9d78f7"
+_PHD = "35185a2ac8459dfa170838d65d2f0d810ff963187df428cc93f491fadbfa2285"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4825,6 +4826,19 @@ class FoundationValidator:
                     "template.issue_routing_contract",
                     issue_config,
                     "issue routing must match the exact reviewed private-reporting contract",
+                )
+        contributing = self.root / "CONTRIBUTING.md"
+        if self._hf(contributing):
+            contributing_text = self._rt(contributing)
+            if (
+                contributing_text is not None
+                and hashlib.sha256(contributing_text.encode("utf-8")).hexdigest()
+                != _CLD
+            ):
+                self.add(
+                    "contribution.legal_boundary_contract",
+                    contributing,
+                    "the unresolved-license contribution boundary must match the exact reviewed contract",
                 )
         security = self.root / "SECURITY.md"
         if self._hf(security):
