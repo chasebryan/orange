@@ -1439,6 +1439,7 @@ rust-version = "1.96.1"
 publish = false
 
 [workspace.lints.rust]
+missing_docs = "deny"
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
@@ -1680,6 +1681,7 @@ version = "0.1.0"
             lambda source: source.replace('edition = "2024"', 'edition = "2021"'),
             lambda source: source.replace('rust-version = "1.96.1"', 'rust-version = "1.85"'),
             lambda source: source.replace("publish = false", "publish = true"),
+            lambda source: source.replace('missing_docs = "deny"', 'missing_docs = "allow"'),
             lambda source: source.replace('unsafe_code = "forbid"', 'unsafe_code = "allow"'),
             lambda source: source.replace('all = "deny"', 'all = "warn"'),
             lambda source: source.replace("debug-assertions = true", "debug-assertions = false"),

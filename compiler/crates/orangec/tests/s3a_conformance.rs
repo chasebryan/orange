@@ -1,3 +1,5 @@
+//! External conformance evidence for the accepted Orange 2026 S3a slice.
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;

@@ -88,7 +88,7 @@ GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS = 4096
 GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
 _GATE0_GIT_READ_CHUNK_BYTES = 4096
 _GATE0_GIT_TIMEOUT_SECONDS = 30.0
-_RI_PROTOCOL = "resource.inventory_protocol"
+_IP = "resource.inventory_protocol"
 _RI_READ = "resource.inventory_read"
 _RI_GIT = "resource.inventory_git"
 _RI_ENCODING = "resource.inventory_encoding"
@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "722c7408ad1dab9f9448d93c09659d163d6bbe84ee6a3808d31caecca84b7ef7"
+GATE0_PROTECTED_FILE_DIGEST = "d0fbfb3a155d1c88bd8f13fcddd5081fc821324167f6d105ad1cc33a3a6aee66"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -391,7 +391,7 @@ GATE0_RUST_MANIFESTS = {
                 "publish": False,
             },
             "lints": {
-                "rust": {"unsafe_code": "forbid"},
+                "rust": {"missing_docs": "deny", "unsafe_code": "forbid"},
                 "clippy": {"all": "deny"},
             },
         },
@@ -879,7 +879,7 @@ def _read_git_records(
         _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
-            Finding(_RI_PROTOCOL, ".", "Git inventory did not expose a stdout stream"),
+            Finding(_IP, ".", "Git inventory did not expose a stdout stream"),
         )
 
     records: list[bytes] = []
@@ -893,7 +893,7 @@ def _read_git_records(
     try:
         output_descriptor = process.stdout.fileno()
     except (AttributeError, OSError, ValueError):
-        return reject(_RI_PROTOCOL, "Git inventory stdout has no usable descriptor")
+        return reject(_IP, "Git inventory stdout has no usable descriptor")
 
     try:
         while True:
@@ -930,7 +930,7 @@ def _read_git_records(
                 pending.extend(segment)
                 if not pending:
                     return reject(
-                        _RI_PROTOCOL,
+                        _IP,
                         "Git inventory contains an empty NUL-delimited record",
                     )
                 records.append(bytes(pending))
@@ -968,7 +968,7 @@ def _read_git_records(
         return _GitRecordRead(
             None,
             Finding(
-                _RI_PROTOCOL,
+                _IP,
                 ".",
                 "Git inventory ended with an unterminated record",
             ),
@@ -1215,7 +1215,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             return [], False
         return _fallback_repository_files(root, findings), False
     if any(len(value) < 3 or value[1:2] != b" " for value in result.records):
-        findings.append(Finding(_RI_PROTOCOL, ".", "Git file inventory tag is malformed"))
+        findings.append(Finding(_IP, ".", "Git file inventory tag is malformed"))
         return [], False
     if any(value[:1] not in {b"H", b"?"} for value in result.records):
         findings.append(Finding("git.index_flags", ".", "Git index contains hidden worktree state"))
@@ -1224,7 +1224,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     if any(not _git_path_is_relative(value) for value in records):
         findings.append(
             Finding(
-                _RI_PROTOCOL,
+                _IP,
                 ".",
                 "Git inventory contains a non-relative repository path",
             )
@@ -1233,7 +1233,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     if len(set(records)) != len(records):
         findings.append(
             Finding(
-                _RI_PROTOCOL,
+                _IP,
                 ".",
                 "Git inventory contains a duplicate repository path",
             )
@@ -1324,7 +1324,7 @@ def git_index_entries(
         ):
             inventory_findings.append(
                 Finding(
-                    _RI_PROTOCOL,
+                    _IP,
                     ".",
                     "Git stage inventory contains a malformed metadata record",
                 )
@@ -1374,13 +1374,13 @@ def git_index_entries(
             or object_type not in {b"blob", b"commit", b"tree", b"tag"}
         ):
             inventory_findings.append(
-                Finding(_RI_PROTOCOL, ".", "Git object-type inventory is malformed")
+                Finding(_IP, ".", "Git object-type inventory is malformed")
             )
             return []
         actual_types[object_id] = object_type
     if len(types.records) != len(object_ids):
         inventory_findings.append(
-            Finding(_RI_PROTOCOL, ".", "Git object-type inventory count is incorrect")
+            Finding(_IP, ".", "Git object-type inventory count is incorrect")
         )
         return []
     expected_types = {
@@ -1422,7 +1422,7 @@ class FoundationValidator:
             if unexpected_stage_paths:
                 self.findings.append(
                     Finding(
-                        _RI_PROTOCOL,
+                        _IP,
                         unexpected_stage_paths[0],
                         "Git stage inventory path is absent from the file inventory",
                     )
@@ -1460,7 +1460,7 @@ class FoundationValidator:
                 ) != len(intent.records):
                     self.findings.append(
                         Finding(
-                            _RI_PROTOCOL,
+                            _IP,
                             ".",
                             "Git intent inventory has malformed paths",
                         )
