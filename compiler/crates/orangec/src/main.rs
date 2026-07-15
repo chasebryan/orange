@@ -823,7 +823,12 @@ fn read_bounded_with_limit_and_reservation(
     loop {
         match reader.read(&mut probe) {
             Ok(0) => return Ok(bytes),
-            Ok(1) => return Err(exceeded),
+            Ok(1) => {
+                if let Some(remaining) = remaining_source_bytes.checked_sub(1) {
+                    *remaining_source_bytes = remaining;
+                }
+                return Err(exceeded);
+            }
             Ok(_) => return Err(ReadSourceError::Io(invalid_data_error())),
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(ReadSourceError::Io(error)),
@@ -2670,6 +2675,25 @@ mod tests {
         assert_eq!(remaining_source_bytes, SOURCE_READ_BUFFER_BYTES);
         assert_eq!(reader.remaining, SOURCE_READ_BUFFER_BYTES);
         assert_eq!(reader.requested_buffer_lengths, [SOURCE_READ_BUFFER_BYTES]);
+    }
+
+    #[test]
+    fn per_source_probe_byte_consumes_the_invocation_budget() {
+        let mut reader = InstrumentedSourceReader::new(4);
+        let mut remaining_source_bytes = 10;
+
+        let result = read_bounded_with_limit_and_reservation(
+            &mut reader,
+            3,
+            ReadSourceError::TooLarge,
+            &mut remaining_source_bytes,
+            reserve_bounded_source_capacity,
+        );
+
+        assert!(matches!(result, Err(ReadSourceError::TooLarge)));
+        assert_eq!(remaining_source_bytes, 6);
+        assert_eq!(reader.remaining, 0);
+        assert_eq!(reader.requested_buffer_lengths, [3, 1]);
     }
 
     #[test]

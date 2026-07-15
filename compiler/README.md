@@ -110,9 +110,12 @@ individual inputs fail with `ORC1003` before lexing. `orangec` buffers at most
 64 MiB (`64 * 1024 * 1024` bytes) across all source operands per invocation;
 the first operand that would exceed the remaining total budget fails with
 `ORC1008`. Bytes consume that shared budget as soon as they are read into the
-bounded input buffer, even when the operand is later rejected. Source bytes are
-never buffered without a bound. CLI-derived rendered source names reserve their
-complete escaped representation before encoding.
+bounded input buffer, even when the operand is later rejected. The one-byte
+probe used to diagnose per-source overflow is also charged whenever aggregate
+budget remains, so a rejected oversized operand cannot donate that byte to a
+later operand. Source bytes are never buffered without a bound. CLI-derived
+rendered source names reserve their complete escaped representation before
+encoding.
 Source-map slots, borrowed
 source-name and source-text copies, and derived line/column indexes also use
 checked reservations; an allocation failure rejects the source through
