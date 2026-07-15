@@ -1881,6 +1881,11 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("compiler/crates/orangec/src/main.rs", "usize = 256;", "usize = 255;"),
             (
                 "compiler/crates/orangec/src/main.rs",
+                "MAX_ARGUMENT_BYTES_PER_INVOCATION: usize = 4 * 1024 * 1024",
+                "MAX_ARGUMENT_BYTES_PER_INVOCATION: usize = 3 * 1024 * 1024",
+            ),
+            (
+                "compiler/crates/orangec/src/main.rs",
                 "MAX_SOURCE_BYTES_PER_INVOCATION: usize = 64 * 1024 * 1024",
                 "MAX_SOURCE_BYTES_PER_INVOCATION: usize = 63 * 1024 * 1024",
             ),
@@ -1909,6 +1914,10 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
     def test_cli_operational_limit_documentation_drift_is_rejected(self) -> None:
         for old, new in (
             ("up to 256 source inputs", "up to 255 source inputs"),
+            (
+                "inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line",
+                "inspects at most 3 MiB (`3 * 1024 * 1024` bytes) of encoded command-line",
+            ),
             (
                 "buffers at most\n64 MiB (`64 * 1024 * 1024` bytes)",
                 "buffers at most\n63 MiB (`63 * 1024 * 1024` bytes)",

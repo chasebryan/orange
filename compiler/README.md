@@ -47,10 +47,14 @@ roots, builds the optimized `orangec` binary into separate target trees, and
 requires the artifact bytes to match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
 
-`orangec` accepts up to 256 source inputs in argument order. Regular files are
-processed incrementally; `-` is the only stream input and reads standard input
-at most once. Integration coverage requires exactly 256 valid inputs to succeed
-silently and 257 operands to fail as a usage error before any source read. It
+`orangec` accepts up to 256 source inputs in argument order. Argument parsing
+inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line
+arguments per invocation, charged before each argument is interpreted.
+Exceeding the byte allowance is a usage error before any source read. Regular
+files are processed incrementally; `-` is the only stream input and reads
+standard input at most once. Integration coverage requires exactly 256 valid
+inputs to succeed silently and 257 operands to fail as a usage error before any
+source read. It
 also interleaves file, standard-input, and file failures in exact operand order;
 a repeated `-` emits exactly one `ORC1004` group and still processes a later
 operand. The global `--edition` option may appear before or after the command
