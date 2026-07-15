@@ -149,6 +149,12 @@ class WorkflowHardeningTests(unittest.TestCase):
                 '          if false; then\n            echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2\n            exit 1\n          fi\n',
                 "workflow.solo_boundary_contract",
             ),
+            (
+                "ci.yml",
+                "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py\n",
+                "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py || :\n",
+                "workflow.ci_gate_contract",
+            ),
         )
         for name, original, replacement, expected_code in mutations:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:

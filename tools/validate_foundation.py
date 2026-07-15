@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "59202a158b89468a9739b55b8879845775a3e9a952e90986748c23985d31c09e"
+GATE0_PROTECTED_FILE_DIGEST = "376864ea3fae5d759f9033366bc877a34ad8dfdd4a653a703a3c0d95881ce5c6"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3424,18 +3424,16 @@ class FoundationValidator:
           exit 1'''
             if boundary != expected_boundary:
                 self.add("workflow.solo_boundary_contract", path, "the solo contribution guard must match its reviewed fail-closed contract")
-            require(
-                "Validate Rust compiler",
-                (GATE0_CI_COMPILER_RUN,),
-            )
-            require(
-                "Run foundation validator unit tests",
-                (GATE0_CI_POLICY_TEST_RUN,),
-            )
-            require(
-                "Validate solo-bootstrap repository policy",
-                (GATE0_CI_POLICY_RUN,),
-            )
+            ci_runs = {
+                "Validate solo-bootstrap repository policy": GATE0_CI_POLICY_RUN,
+                "Run foundation validator unit tests": GATE0_CI_POLICY_TEST_RUN,
+                "Install selected Rust components": 'run: /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt --no-self-update',
+                "Validate Rust compiler": GATE0_CI_COMPILER_RUN,
+            }
+            for step_name, expected_run in ci_runs.items():
+                block = yaml_without_comments("\n".join(steps.get(step_name, [])))
+                if block != f"      - name: {step_name}\n        {expected_run}":
+                    self.add("workflow.ci_gate_contract", path, f"{job_name}/{step_name} must match its reviewed fail-closed command")
             require("Lint Markdown", ("uses: DavidAnson/markdownlint-cli2-action@",))
             require("Install actionlint", ("run: ./scripts/ci/install-actionlint",))
             require("Validate GitHub Actions workflows", ('"$RUNNER_TEMP/actionlint/actionlint" -color',))
