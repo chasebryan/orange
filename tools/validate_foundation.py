@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "af25441a13acb65b95322c8f86aa541dc8e9cd34e786abe1655dae3fe273f71b"
+GATE0_PROTECTED_FILE_DIGEST = "6294ce6f58f26bd3b333c3f3f39ad0f682765bc693f4e9b0f5b951f856a24f9e"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3416,6 +3416,8 @@ class FoundationValidator:
         if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
             self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
         required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy", _SC: "OpenSSF Scorecard / analysis", _EL: "External Links / scheduled audit", _O: "Workflow Online Audit / upstream metadata"}.get(n)
+        if required_name and f"name: {required_name.split(' /')[0]}" not in text.splitlines()[:1]:
+            self.add("workflow.name_contract", path, "workflow name drift")
         if required_name and f"    name: {required_name}" not in text.splitlines():
             self.add("workflow.required_content", path, f"missing protected job name: {required_name}")
         if n == _SC and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):

@@ -293,6 +293,12 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.required_content",
             ),
             (
+                "scorecard.yml",
+                "name: OpenSSF Scorecard\n",
+                "name: Scorecard fork\n# name: OpenSSF Scorecard\n",
+                "workflow.name_contract",
+            ),
+            (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - release\n",
