@@ -445,6 +445,14 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                     "resource.concurrent_change",
                     {finding.code for finding in validator.findings},
                 )
+                self.assertIn(
+                    "path, mode, or object type",
+                    next(
+                        finding.message
+                        for finding in validator.findings
+                        if finding.code == "resource.concurrent_change"
+                    ),
+                )
 
     def test_first_read_rejects_a_post_preflight_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
