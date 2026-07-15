@@ -115,6 +115,8 @@ _DEPS = "dependencies"
 _RP = "required_paths"
 _ATP = "allowed_top_level_paths"
 _RFS = "require_full_commit_sha"
+_PB = "policy.binary"
+_RVC = "require_version_comment"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -310,7 +312,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "b3d4042e9734c4c9c98daef6025369f9fe3e723bd91ed702eb0f2857d6640123"
+GATE0_PROTECTED_FILE_DIGEST = "8eb548d7a48db2ef5ae36c6ab334b4bfb97c109a51025038502791115d87a0ee"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1940,13 +1942,13 @@ class FoundationValidator:
         expected_binary_fields = {"path", "sha256", "role", "provenance"}
         for index, artifact in enumerate(policy[_AB]):
             if not isinstance(artifact, dict):
-                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] must be an object")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
             if set(artifact) != expected_binary_fields:
-                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has invalid fields")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has invalid fields")
                 continue
             if not all(isinstance(artifact[field], str) for field in expected_binary_fields):
-                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] fields must be strings")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] fields must be strings")
 
         action_policy = policy[_GA]
         action_field_types = {
@@ -1955,7 +1957,7 @@ class FoundationValidator:
             _AWP: dict,
             "forbidden_events": list,
             _RFS: bool,
-            "require_version_comment": bool,
+            _RVC: bool,
         }
         for key, expected_type in action_field_types.items():
             if not isinstance(action_policy.get(key), expected_type):
@@ -2051,18 +2053,18 @@ class FoundationValidator:
             )
         for index, artifact in enumerate(policy[_AB]):
             if not isinstance(artifact, dict):
-                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] must be an object")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
             if set(artifact) != {"path", "sha256", "role", "provenance"}:
-                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has invalid fields")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has invalid fields")
                 continue
             if not isinstance(artifact["path"], str) or safe_manifest_path(self.root, artifact["path"]) is None:
-                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has unsafe path")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has unsafe path")
             if not isinstance(artifact["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"]):
-                self.add("policy.binary", self.policy_path, f"{_ABA}{index}] has invalid SHA-256")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has invalid SHA-256")
             for field in ("role", "provenance"):
                 if not isinstance(artifact[field], str) or not artifact[field].strip():
-                    self.add("policy.binary", self.policy_path, f"{_ABA}{index}] needs {field}")
+                    self.add(_PB, self.policy_path, f"{_ABA}{index}] needs {field}")
         if policy[_AB] != GATE0_ALLOWED_BINARY_ARTIFACTS:
             self.add(
                 "policy.binary_inventory",
@@ -2075,7 +2077,7 @@ class FoundationValidator:
             _AWP,
             "forbidden_events",
             _RFS,
-            "require_version_comment",
+            _RVC,
         }
         observed_action_policy_keys = set(policy[_GA])
         if observed_action_policy_keys != expected_action_policy_keys:
@@ -2124,7 +2126,7 @@ class FoundationValidator:
             self.add("policy.write_permissions", self.policy_path, "workflow write-permission exceptions must remain exact")
         if policy[_GA].get(_RFS) is not True:
             self.add("policy.action_sha", self.policy_path, "full Action commit SHA enforcement cannot be disabled")
-        if policy[_GA].get("require_version_comment") is not True:
+        if policy[_GA].get(_RVC) is not True:
             self.add("policy.action_comment", self.policy_path, "Action version comments cannot be disabled")
         if "pull_request_target" not in policy[_GA].get("forbidden_events", []):
             self.add("policy.forbidden_event", self.policy_path, "pull_request_target must remain forbidden")
@@ -3281,6 +3283,8 @@ class FoundationValidator:
                         self.add("workflow.ci_event", path, f"required CI event is missing: {event}")
             if re.search(r"\bpaths(?:-ignore)?\s*:", active_text):
                 self.add("workflow.path_filter", path, "protected workflows must not use path filters")
+            if re.search(r"(?m)^    branches(?!:\n      - main$(?!\n      -))", active_text):
+                self.add("workflow.branch_contract", path, "branch drift")
             for line_number, line in enumerate(lines, start=1):
                 container_match = CONTAINER_ACTION_RE.search(line)
                 match = None if container_match else ACTION_RE.search(line)
@@ -3307,7 +3311,7 @@ class FoundationValidator:
                         self.add("workflow.action_allowlist", path, f"line {line_number}: action not allowed: {action}")
                     if actions_policy.get(_RFS) and not re.fullmatch(r"[0-9a-f]{40}", ref):
                         self.add("workflow.mutable_action", path, f"line {line_number}: action ref must be a full commit SHA")
-                    if actions_policy.get("require_version_comment") and not version:
+                    if actions_policy.get(_RVC) and not version:
                         self.add("workflow.version_comment", path, f"line {line_number}: pinned action needs a version comment")
                     elif version and not re.fullmatch(r"v[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?", version):
                         self.add("workflow.version_comment", path, f"line {line_number}: invalid action version comment {version!r}")

@@ -187,6 +187,24 @@ class WorkflowHardeningTests(unittest.TestCase):
             ),
             (
                 "dependency-review.yml",
+                "      - main\n",
+                "      - release\n",
+                "workflow.branch_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "      - main\n",
+                "      - main\n      - release\n",
+                "workflow.branch_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    branches:\n",
+                "    branches-ignore:\n",
+                "workflow.branch_contract",
+            ),
+            (
+                "dependency-review.yml",
                 "    runs-on: ubuntu-24.04\n",
                 "    defaults:\n      run:\n        shell: bash {0}\n    runs-on: ubuntu-24.04\n",
                 "workflow.defaults_contract",
