@@ -75,9 +75,9 @@ addressable.
 The portable regular-file boundary checks path metadata before opening and
 descriptor metadata after opening and again after reading. It also rechecks the
 path after reading and requires the final target to remain a regular file. On
-Unix, the opened descriptor's device, inode, length,
-modification time, and change time must match both path snapshots and remain
-stable through the read. The completed byte snapshot
+Unix, the opened descriptor's device, inode, mode, owner, group, link count,
+length, modification time, and change time must match both path snapshots and
+remain stable through the read. The completed byte snapshot
 must also have exactly the descriptor's reported length. Other hosts compare
 length and modification time at each boundary. This remains short of race-free
 path confinement: replacing the entry with a special file can make `open` block

@@ -711,6 +711,10 @@ fn opened_file_metadata_unchanged(opened_metadata: &Metadata, closed_metadata: &
 
         opened_metadata.dev() == closed_metadata.dev()
             && opened_metadata.ino() == closed_metadata.ino()
+            && opened_metadata.mode() == closed_metadata.mode()
+            && opened_metadata.uid() == closed_metadata.uid()
+            && opened_metadata.gid() == closed_metadata.gid()
+            && opened_metadata.nlink() == closed_metadata.nlink()
             && opened_metadata.len() == closed_metadata.len()
             && opened_metadata.mtime() == closed_metadata.mtime()
             && opened_metadata.mtime_nsec() == closed_metadata.mtime_nsec()
@@ -3009,9 +3013,9 @@ mod tests {
     #[cfg(unix)]
     fn unix_source_metadata_drift_after_read_is_rejected() {
         use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-        use std::time::{Duration, SystemTime};
+        use std::time::SystemTime;
 
-        for mutation in ["mode", "rewrite"] {
+        for mutation in ["hardlink", "mode", "rewrite"] {
             let mut temporary = None;
             for suffix in 0..1_024 {
                 let path = std::env::temp_dir().join(format!(
@@ -3041,8 +3045,9 @@ mod tests {
             let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
 
             let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
-                if mutation == "mode" {
-                    std::thread::sleep(Duration::from_millis(1));
+                if mutation == "hardlink" {
+                    std::fs::hard_link(&source, directory.join("alias.or")).unwrap();
+                } else if mutation == "mode" {
                     let mut permissions = source.metadata().unwrap().permissions();
                     permissions.set_mode(permissions.mode() ^ 0o100);
                     std::fs::set_permissions(&source, permissions).unwrap();
@@ -3058,14 +3063,15 @@ mod tests {
                 &initial_metadata,
                 &final_metadata
             ));
-            if mutation == "mode" {
+            if mutation == "hardlink" {
+                assert_eq!(initial_metadata.mtime(), final_metadata.mtime());
+                assert_eq!(initial_metadata.mtime_nsec(), final_metadata.mtime_nsec());
+                assert_ne!(initial_metadata.nlink(), final_metadata.nlink());
+                std::fs::remove_file(directory.join("alias.or")).unwrap();
+            } else if mutation == "mode" {
                 assert_eq!(initial_metadata.mtime(), final_metadata.mtime());
                 assert_eq!(initial_metadata.mtime_nsec(), final_metadata.mtime_nsec());
                 assert_ne!(initial_metadata.mode(), final_metadata.mode());
-                assert_ne!(
-                    (initial_metadata.ctime(), initial_metadata.ctime_nsec()),
-                    (final_metadata.ctime(), final_metadata.ctime_nsec())
-                );
             }
             assert!(matches!(result, Err(ReadSourceError::ChangedDuringRead)));
             std::fs::remove_file(source).unwrap();
