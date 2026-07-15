@@ -1735,6 +1735,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "",
                 "make.python_cache_contract",
             ),
+            (
+                'pycache="$$(cd -- "$$pycache" && pwd -P)"',
+                'pycache="$$pycache"',
+                "make.python_cache_contract",
+            ),
         )
         for old, new, expected_code in mutations:
             with self.subTest(mutation=old), tempfile.TemporaryDirectory() as directory:

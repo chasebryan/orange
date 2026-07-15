@@ -165,6 +165,10 @@ The required invariant check invokes repository-owned Bash and Python files:
   rules and variables; Make recipes retain the caller's path so the selected
   Rust toolchain remains reachable, and unexpected launcher arguments fail
   before repository inspection or Make execution;
+- the protected Make recipes select environment filtering, temporary-directory
+  creation, and cleanup utilities by absolute system paths while continuing to
+  discover the selected Rust and Python toolchains through the caller's path;
+  both temporary cleanup roots are canonicalized before their traps are armed;
 - each Python recipe starts from an allowlisted environment with a fixed hash
   seed, skips `site` initialization, excludes unsafe path injection, suppresses
   bytecode writes, and forces UTF-8 mode; foundation tests also redirect

@@ -280,7 +280,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "5943778e3cfc9016570f989faa7f196a7b07888ef8b373c7e494429aa9843ad6"
+GATE0_PROTECTED_FILE_DIGEST = "41289e81977ee760765673eaa6d7b36c04adb3f353f50172479957072859aecf"
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -2226,7 +2226,7 @@ class FoundationValidator:
             if lines.count(required) != 1:
                 self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
         required_compiler_fragments = {
-            'mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
             'cargo_home="$$(cd -- "$$cargo_home" && pwd -P)"': "Cargo home must be absolute",
             "cd -- /;": "Cargo configuration discovery must start at the filesystem root",
             'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': (
@@ -2249,12 +2249,12 @@ class FoundationValidator:
                 "-D clippy::expect_used -D clippy::panic"
             ): "production targets must retain the strict arithmetic, slicing, and panic lint boundary",
             (
-                'run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-a" '
+                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-a" '
                 "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
                 "--release --locked --offline"
             ): "the first optimized reproducibility build needs an independent target tree",
             (
-                'run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-b" '
+                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-b" '
                 "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
                 "--release --locked --offline"
             ): "the second optimized reproducibility build needs an independent target tree",
@@ -2284,8 +2284,11 @@ class FoundationValidator:
                     f"{meaning}: expected exactly {expected_count} {required!r} fragments",
                 )
         required_test_fragments = {
-            'mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"': (
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"': (
                 "foundation tests need a fresh bytecode lookup root"
+            ),
+            'pycache="$$(cd -- "$$pycache" && pwd -P)"': (
+                "the foundation-test bytecode root must be canonical before cleanup"
             ),
             'PYTHONPYCACHEPREFIX="$$pycache"': (
                 "foundation tests must not load ignored checkout bytecode"
