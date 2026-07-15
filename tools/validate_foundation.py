@@ -373,6 +373,7 @@ _PRD = "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f"
 _SRD = "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede"
 _CLD = "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f"
 _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
+_SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GAC = '''* text=auto eol=lf
 
 *.json text eol=lf
@@ -435,7 +436,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "41babbf085a2a2ea7872d09c2eeb9b6f73a99845b9014f5f7e9e22676421ca8c"
+_PHD = "5e088562d555f417f68c6f14a51d7a149b0720377b6cde422ba780a95fd31f29"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4840,6 +4841,19 @@ class FoundationValidator:
                     "release.boundary_contract",
                     release_policy,
                     "release identity, authorization, and publication safeguards must match the exact reviewed contract",
+                )
+        support_policy = self.root / "SUPPORT.md"
+        if self._hf(support_policy):
+            support_text = self._rt(support_policy)
+            if (
+                support_text is not None
+                and hashlib.sha256(support_text.encode("utf-8")).hexdigest()
+                != _SPD
+            ):
+                self.add(
+                    "support.claim_boundary_contract",
+                    support_policy,
+                    "support state, non-guarantees, and SLA boundaries must match the exact reviewed contract",
                 )
         contributing = self.root / "CONTRIBUTING.md"
         if self._hf(contributing):
