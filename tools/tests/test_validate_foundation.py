@@ -81,6 +81,17 @@ class _FailingFirstWaitPopen(_FakePopen):
         return self.return_code
 
 
+class _TimeoutWaitPopen(_FakePopen):
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.wait_timeouts: list[float | None] = []
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_count += 1
+        self.wait_timeouts.append(timeout)
+        raise subprocess.TimeoutExpired("git", timeout)
+
+
 class JsonParsingTests(unittest.TestCase):
     def test_duplicate_keys_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -784,6 +795,23 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         )
         self.assertTrue(process.stdout.closed)
         self.assertEqual((process.kill_count, process.wait_count), (1, 2))
+
+    def test_git_timeout_cleanup_never_uses_an_unbounded_wait(self) -> None:
+        process = _TimeoutWaitPopen(b"file.txt\0")
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "file.txt").write_bytes(b"")
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                return_value=process,
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_timeout"})
+        self.assertEqual((process.kill_count, process.wait_count), (1, 2))
+        self.assertTrue(all(timeout is not None for timeout in process.wait_timeouts))
 
     def test_global_git_excludes_cannot_hide_repository_files(self) -> None:
         clean_environment = {

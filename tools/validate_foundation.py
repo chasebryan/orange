@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "9b3344502db6bfe78308f2659e2c028bb7487ae9a88a76530b9e7f56be31b143"
+GATE0_PROTECTED_FILE_DIGEST = "8dca4059c4d4d96d9cf32422843bd13e046a46ecd4afbe6d35091d0e7d5d36ab"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -755,7 +755,7 @@ def _sanitized_git_environment(root: Path) -> dict[str, str]:
     return environment
 
 
-def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
+def _stop_git_process(process: subprocess.Popen[bytes], timeout: float = 0.0) -> None:
     try:
         process.kill()
     except OSError:
@@ -766,8 +766,8 @@ def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
         except OSError:
             pass
     try:
-        process.wait()
-    except OSError:
+        process.wait(timeout=max(0.0, timeout))
+    except (OSError, subprocess.TimeoutExpired):
         pass
 
 
@@ -822,17 +822,19 @@ def _read_git_nul_records(
             except OSError:
                 pass
         return _GitRecordRead(None)
+    cleanup_deadline = time.monotonic() + _GATE0_GIT_TIMEOUT_SECONDS
+    deadline = cleanup_deadline - min(1.0, _GATE0_GIT_TIMEOUT_SECONDS / 2.0)
     if input_file is not None:
         try:
             input_file.close()
         except OSError as exc:
-            _stop_git_process(process)
+            _stop_git_process(process, cleanup_deadline - time.monotonic())
             return _GitRecordRead(
                 None,
                 Finding("resource.inventory_read", ".", f"cannot close Git input: {exc}"),
             )
     if process.stdout is None:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
             Finding("resource.inventory_protocol", ".", "Git inventory did not expose a stdout stream"),
@@ -841,14 +843,13 @@ def _read_git_nul_records(
     records: list[bytes] = []
     pending = bytearray()
     raw_bytes = 0
-    deadline = time.monotonic() + _GATE0_GIT_TIMEOUT_SECONDS
     try:
         output_descriptor = process.stdout.fileno()
     except (AttributeError, OSError, ValueError):
         output_descriptor = None
 
     def reject(code: str, message: str) -> _GitRecordRead:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(None, Finding(code, ".", message))
 
     try:
@@ -910,7 +911,7 @@ def _read_git_nul_records(
     try:
         process.stdout.close()
     except OSError as exc:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
             Finding("resource.inventory_read", ".", f"cannot close bounded Git inventory: {exc}"),
@@ -920,7 +921,7 @@ def _read_git_nul_records(
     except subprocess.TimeoutExpired:
         return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
     except OSError as exc:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
             Finding("resource.inventory_read", ".", f"cannot wait for bounded Git inventory: {exc}"),
