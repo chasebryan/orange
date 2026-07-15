@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "23c86c74794d01b1b2d8c2d4729e99bcda0fd68adbf9f06b71e3f7b137c19cc0"
+GATE0_PROTECTED_FILE_DIGEST = "1debb215dda1905e91a42221faea49b4342f1deabda346d277046738b764c12e"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3434,10 +3434,30 @@ class FoundationValidator:
                 block = yaml_without_comments("\n".join(steps.get(step_name, [])))
                 if block != f"      - name: {step_name}\n        {expected_run}":
                     self.add("workflow.ci_gate_contract", path, f"{job_name}/{step_name} must match its reviewed fail-closed command")
-            require("Lint Markdown", ("uses: DavidAnson/markdownlint-cli2-action@",))
-            require("Install actionlint", ("run: ./scripts/ci/install-actionlint",))
-            require("Validate GitHub Actions workflows", ('"$RUNNER_TEMP/actionlint/actionlint" -color',))
-            require("Audit GitHub Actions security", ("uses: zizmorcore/zizmor-action@", "online-audits: false", "persona: pedantic"))
+            ci_tools = {
+                "Lint Markdown": '''      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@8de2aa07cae85fd17c0b35642db70cf5495f1d25
+        with:
+          globs: |
+            **/*.md
+            .github/**/*.md''',
+                "Install actionlint": '''      - name: Install actionlint
+        run: ./scripts/ci/install-actionlint "$RUNNER_TEMP/actionlint"''',
+                "Validate GitHub Actions workflows": '''      - name: Validate GitHub Actions workflows
+        run: |
+          "$RUNNER_TEMP/actionlint/actionlint" -color''',
+                "Audit GitHub Actions security": '''      - name: Audit GitHub Actions security
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa
+        with:
+          advanced-security: false
+          annotations: false
+          online-audits: false
+          persona: pedantic
+          version: "1.26.1"''',
+            }
+            for step_name, expected in ci_tools.items():
+                if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
+                    self.add("workflow.ci_tool_contract", path, f"{job_name}/{step_name} must match its reviewed tool contract")
         elif path.name == "dependency-review.yml":
             review = yaml_without_comments("\n".join(steps.get("Review dependency changes", [])))
             expected_review = '''      - name: Review dependency changes

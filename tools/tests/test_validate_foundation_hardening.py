@@ -155,6 +155,18 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py || :\n",
                 "workflow.ci_gate_contract",
             ),
+            (
+                "ci.yml",
+                "        run: ./scripts/ci/install-actionlint \"$RUNNER_TEMP/actionlint\"\n",
+                "        run: ./scripts/ci/install-actionlint \"$RUNNER_TEMP/actionlint\" || :\n",
+                "workflow.ci_tool_contract",
+            ),
+            (
+                "ci.yml",
+                "            **/*.md\n            .github/**/*.md\n",
+                "            **/*.md\n",
+                "workflow.ci_tool_contract",
+            ),
         )
         for name, original, replacement, expected_code in mutations:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
