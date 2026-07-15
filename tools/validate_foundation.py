@@ -282,7 +282,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "cecaa41083a719251999708a963cb28806362ccfdac7e0c471b7295ca9831194"
+GATE0_PROTECTED_FILE_DIGEST = "71054553b9a82174e998688bcb960c2b11d5dc049543372f44fae8fae15bc18d"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -771,13 +771,14 @@ def _stop_git_process(process: subprocess.Popen[bytes], timeout: float = 0.0) ->
         pass
 
 
-def _read_git_nul_records(
+def _read_git_records(
     root: Path,
     arguments: Sequence[str],
     *,
     maximum_record_bytes: int,
     input_records: Sequence[bytes] = (),
-    nul_flag: str = "-z",
+    terminator: bytes = b"\0",
+    flag: str | None = "-z",
 ) -> _GitRecordRead:
     command = [
         GATE0_GIT_EXECUTABLE,
@@ -790,7 +791,7 @@ def _read_git_nul_records(
         "-C",
         str(root),
         *arguments,
-        nul_flag,
+        *((flag,) if flag else ()),
     ]
     input_file = None
     if input_records:
@@ -869,8 +870,8 @@ def _read_git_nul_records(
             raw_bytes += len(chunk)
             offset = 0
             while True:
-                terminator = chunk.find(b"\0", offset)
-                if terminator < 0:
+                end = chunk.find(terminator, offset)
+                if end < 0:
                     tail = chunk[offset:]
                     if len(pending) + len(tail) > maximum_record_bytes:
                         return reject(
@@ -879,7 +880,7 @@ def _read_git_nul_records(
                         )
                     pending.extend(tail)
                     break
-                segment = chunk[offset:terminator]
+                segment = chunk[offset:end]
                 if len(pending) + len(segment) > maximum_record_bytes:
                     return reject(
                         "resource.inventory_path",
@@ -898,7 +899,7 @@ def _read_git_nul_records(
                         "resource.inventory_count",
                         "Git inventory exceeds the Gate 0 repository-file limit",
                     )
-                offset = terminator + 1
+                offset = end + len(terminator)
     except (OSError, ValueError) as exc:
         return reject("resource.inventory_read", f"cannot read bounded Git inventory: {exc}")
 
@@ -928,7 +929,7 @@ def _read_git_nul_records(
             Finding(
                 "resource.inventory_protocol",
                 ".",
-                "Git inventory ended with an unterminated NUL-delimited record",
+                "Git inventory ended with an unterminated record",
             ),
         )
     return _GitRecordRead(tuple(records))
@@ -1106,7 +1107,23 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
                 )
             )
             return [], False
-    result = _read_git_nul_records(
+    if git_metadata_present:
+        shared_index = _read_git_records(
+            root,
+            ["rev-parse", "--shared-index-path"],
+            maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+            terminator=b"\n",
+            flag=None,
+        )
+        if shared_index.finding is not None:
+            findings.append(shared_index.finding)
+            return [], False
+        if shared_index.records is None or shared_index.records:
+            findings.append(
+                Finding("resource.inventory_git", ".git/index", "Git split indexes are not admitted")
+            )
+            return [], False
+    result = _read_git_records(
         root,
         [
             "ls-files",
@@ -1210,7 +1227,7 @@ def git_index_entries(
     required: bool = False,
 ) -> list[tuple[str, str]]:
     inventory_findings = findings if findings is not None else []
-    result = _read_git_nul_records(
+    result = _read_git_records(
         root,
         ["ls-files", "--format=%(objectmode) %(objectname) %(stage) %(objectsize)%x09%(path)"],
         maximum_record_bytes=(
@@ -1276,12 +1293,12 @@ def git_index_entries(
         )
         return []
     object_ids = tuple(dict.fromkeys(object_id for _, object_id, _ in raw_entries))
-    types = _read_git_nul_records(
+    types = _read_git_records(
         root,
         ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
         maximum_record_bytes=GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES,
         input_records=object_ids,
-        nul_flag="-Z",
+        flag="-Z",
     )
     if types.finding is not None:
         inventory_findings.append(types.finding)
@@ -1364,7 +1381,7 @@ class FoundationValidator:
                     )
                 )
         if not self.findings and git_inventory_succeeded:
-            intent = _read_git_nul_records(
+            intent = _read_git_records(
                 self.root,
                 [
                     "diff-files",

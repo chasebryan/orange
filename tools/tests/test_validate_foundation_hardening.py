@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.validate_foundation import (
-    _read_git_nul_records,
+    _read_git_records,
     FoundationValidator,
     Finding,
     GATE0_GIT_EXECUTABLE,
@@ -111,7 +111,7 @@ class JsonHardeningTests(unittest.TestCase):
             fake_git.chmod(0o755)
 
             with mock.patch.dict("os.environ", {"PATH": str(hostile_bin)}):
-                _read_git_nul_records(
+                _read_git_records(
                     root,
                     ["ls-files"],
                     maximum_record_bytes=128,
