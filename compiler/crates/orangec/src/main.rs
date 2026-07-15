@@ -669,7 +669,7 @@ fn read_source_with_post_read(
             return Err(ReadSourceError::InvocationTooLarge);
         }
 
-        let mut file = File::open(path).map_err(ReadSourceError::Io)?;
+        let mut file = open_source_file(path).map_err(ReadSourceError::Io)?;
         let opened_metadata = file.metadata().map_err(ReadSourceError::Io)?;
         if !opened_metadata.is_file() {
             return Err(ReadSourceError::NotRegular);
@@ -697,6 +697,32 @@ fn read_source_with_post_read(
             return Err(ReadSourceError::ChangedDuringRead);
         }
         Ok(bytes)
+    }
+}
+
+fn open_source_file(path: &Path) -> io::Result<File> {
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+
+        // Stable Linux UAPI values on the admitted x86-64 and AArch64 hosts.
+        const O_NONBLOCK: i32 = 0o004_000;
+        const O_NOFOLLOW: i32 = 0o400_000;
+
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(O_NONBLOCK | O_NOFOLLOW)
+            .open(path)
+    }
+    #[cfg(not(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
+    {
+        File::open(path)
     }
 }
 
@@ -2918,6 +2944,42 @@ mod tests {
                 "  = note: source file changed while it was being read\n",
             )
         );
+    }
+
+    #[test]
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    fn linux_hardened_source_open_rejects_a_final_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let target = crate_root.join("src/main.rs");
+        assert!(File::open(&target).is_ok());
+
+        let test_root = unix_test_root();
+        let mut temporary = None;
+        for suffix in 0..1_024 {
+            let path = test_root.join(format!(
+                "orangec-source-open-symlink-{}-{suffix}.or",
+                std::process::id()
+            ));
+            match symlink(&target, &path) {
+                Ok(()) => {
+                    temporary = Some(path);
+                    break;
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => panic!("could not create source-open test symlink: {error}"),
+            }
+        }
+        let path = temporary.expect("could not allocate a source-open test symlink name");
+
+        let result = open_source_file(&path);
+
+        std::fs::remove_file(path).unwrap();
+        assert!(result.is_err());
     }
 
     #[test]
