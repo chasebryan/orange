@@ -354,6 +354,40 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 {finding.code for finding in validator.findings},
             )
 
+    def test_overflow_probe_retains_its_aggregate_charge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "record.txt"
+            self._sized_file(path, GATE0_MAXIMUM_TEXT_FILE_BYTES)
+            validator = FoundationValidator(root)
+            original_fstat = os.fstat
+            calls = 0
+
+            def grow_after_open(descriptor: int) -> os.stat_result:
+                nonlocal calls
+                calls += 1
+                metadata = original_fstat(descriptor)
+                if calls == 1:
+                    with path.open("ab") as output:
+                        output.write(b"x")
+                return metadata
+
+            with mock.patch(
+                "tools.validate_foundation.os.fstat",
+                side_effect=grow_after_open,
+            ):
+                self.assertIsNone(validator._read_repository_bytes(path))
+
+            self.assertEqual(calls, 2)
+            self.assertEqual(
+                validator._repository_read_bytes,
+                GATE0_MAXIMUM_TEXT_FILE_BYTES + 1,
+            )
+            self.assertIn(
+                "resource.concurrent_change",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_post_read_path_replacement_is_rejected_and_charged(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
