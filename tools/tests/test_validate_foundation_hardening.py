@@ -2512,6 +2512,28 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                '[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_archive")" '
+                '== "$$repro_source_archive_identity" ]]',
+                '[[ "$$repro_source_archive_identity" == "$$repro_source_archive_identity" ]]',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_paths")" '
+                '== "$$repro_source_paths_identity" ]]',
+                '[[ "$$repro_source_paths_identity" == "$$repro_source_paths_identity" ]]',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'verify_capture_identity; \\\n\tcopy_compiler_source "$$cargo_home/check-reference"',
+                'copy_compiler_source "$$cargo_home/check-reference"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'done < "$$repro_source_paths"; \\\n\tverify_capture_identity',
+                'done < "$$repro_source_paths"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 'CARGO_TARGET_DIR="$$cargo_home/target"',
                 'CARGO_TARGET_DIR="compiler/target"',
                 "make.compiler_environment_contract",
