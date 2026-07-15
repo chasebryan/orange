@@ -377,6 +377,7 @@ _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
 _RDC = "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182"
+_DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
 *.json text eol=lf
@@ -439,7 +440,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "7a2f47630d8c67162157e6f2a800b6247c4e9416fb22d478d8689050edaf5efe"
+_PHD = "1bae8744c7cc4987ec0f92855bfd3977811472cf898e9325a96de4c15ea2b7a8"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4844,6 +4845,19 @@ class FoundationValidator:
                     "project.public_status_contract",
                     readme,
                     "public project status, implemented scope, and assurance non-claims must match the exact reviewed contract",
+                )
+        dependency_policy = self.root / "DEPENDENCY_POLICY.md"
+        if self._hf(dependency_policy):
+            dependency_text = self._rt(dependency_policy)
+            if (
+                dependency_text is not None
+                and hashlib.sha256(dependency_text.encode("utf-8")).hexdigest()
+                != _DPD
+            ):
+                self.add(
+                    "dependency.admission_contract",
+                    dependency_policy,
+                    "dependency admission, immutable-reference, and assurance exception safeguards must match the exact reviewed contract",
                 )
         conduct = self.root / "CODE_OF_CONDUCT.md"
         if self._hf(conduct):
