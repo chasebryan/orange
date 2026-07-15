@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "37f7c79a6d2d78bb6d691b89484d6979e18d22659d7fb80a7b3a3bc8b8282d0b"
+GATE0_PROTECTED_FILE_DIGEST = "8b6da41ee37f92a16aedc86e47cce84dbcb47a6ef2a80603a009528771194a45"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3260,6 +3260,7 @@ class FoundationValidator:
             for name, values in actions_policy.get(_WP, {}).items()
         }
         for path in workflow_paths:
+            n = path.name
             text = self._read_repository_text(path)
             if text is None:
                 continue
@@ -3293,7 +3294,7 @@ class FoundationValidator:
             for event in forbidden_events:
                 if re.search(rf"(?m)^[^#\n]*\b{re.escape(event)}\b", text):
                     self.add("workflow.forbidden_event", path, f"forbidden event {event}")
-            if path.name == "ci.yml":
+            if n == "ci.yml":
                 for event in ("pull_request", "push", "merge_group"):
                     if not re.search(rf"(?m)^\s{{2}}{event}\s*:", text):
                         self.add("workflow.ci_event", path, f"required CI event is missing: {event}")
@@ -3330,7 +3331,7 @@ class FoundationValidator:
                     elif version and not re.fullmatch(r"v[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?", version):
                         self.add("workflow.version_comment", path, f"line {line_number}: invalid action version comment {version!r}")
                 write_match = re.match(r"^\s+([a-z][a-z0-9-]*)\s*:\s*[\"']?write[\"']?(?:\s+#.*)?\s*$", line)
-                if write_match and write_match.group(1) not in allowed_writes.get(path.name, set()):
+                if write_match and write_match.group(1) not in allowed_writes.get(n, set()):
                     self.add(
                         "workflow.write_permission",
                         path,
@@ -3341,21 +3342,22 @@ class FoundationValidator:
                     runner = runner_match.group(1).strip().strip("\"'")
                     if runner != "ubuntu-24.04":
                         self.add("workflow.runner", path, f"line {line_number}: runner must be a fixed GitHub-hosted image")
-            minutes = {_DR: 10, _SC: 20}.get(path.name, 15)
-            for job_name, block in workflow_jobs(lines):
+            minutes = {_DR: 10, _SC: 20}.get(n, 15)
+            for job_name, block in workflow_jobs(active_lines):
                 block_text = "\n".join(block)
                 if not re.search(rf"(?m)^\s{{4}}timeout-minutes:\s*{minutes}\s*$", block_text):
                     self.add("workflow.timeout", path, f"job {job_name} timeout drift")
-                if not re.search(r"(?m)^\s{4}permissions:\s*(?:\{\})?\s*$", block_text):
-                    self.add("workflow.job_permissions", path, f"job {job_name} needs explicit permissions")
+                q = "    permissions:\n      contents: read" + ("\n      security-events: write" if n == _SC else "")
+                if f"{q}\n    steps:" not in block_text:
+                    self.add("workflow.job_permissions", path, f"job {job_name} permission drift")
             jobs = workflow_jobs(lines)
             if not jobs:
                 self.add("workflow.jobs", path, "workflow must contain canonical two-space-indented jobs")
             for line_number in unsafe_run_interpolations(lines):
                 self.add("workflow.untrusted_interpolation", path, f"untrusted event data is interpolated into run near line {line_number}")
             concurrency = top_level_block(active_lines, "concurrency")
-            p = {"ci.yml": "required-ci", _SC: "openssf-scorecard"}.get(path.name, path.stem)
-            c = "github.event.pull_request.number || github.ref" if path.name in {"ci.yml", _DR} else "github.ref"
+            p = {"ci.yml": "required-ci", _SC: "openssf-scorecard"}.get(n, path.stem)
+            c = "github.event.pull_request.number || github.ref" if n in {"ci.yml", _DR} else "github.ref"
             reviewed = (f"  group: {p}-${{{{ {c} }}}}", "  cancel-in-progress: true")
             if tuple(concurrency) != reviewed:
                 self.add("workflow.concurrency", path, "concurrency contract drift")
@@ -3395,6 +3397,7 @@ class FoundationValidator:
                     self.add("dependency_review.configuration", review_path, f"missing {meaning}: {setting}")
 
     def _validate_required_workflow_content(self, path: Path, text: str) -> None:
+        n = path.name
         push = "  push:\n    branches:\n      - main"
         pull = push.replace("push", "pull_request")
         merge = "  merge_group:\n    types:\n      - checks_requested"
@@ -3406,12 +3409,12 @@ class FoundationValidator:
             _EL: f'{push}\n  schedule:\n    - cron: "23 4 * * 1"{dispatch}',
             _O: f'{push}\n  schedule:\n    - cron: "17 6 * * 3"{dispatch}',
         }
-        if "\n".join(top_level_block(text.splitlines(), "on")) != event_contracts.get(path.name):
+        if "\n".join(top_level_block(text.splitlines(), "on")) != event_contracts.get(n):
             self.add("workflow.event_contract", path, "workflow triggers must match their reviewed contract")
         defaults = tuple(top_level_block(text.splitlines(), "defaults"))
         reviewed_defaults = (
             ("  run:", "    shell: /bin/bash -p -e -o pipefail {0}")
-            if path.name in {"ci.yml", _EL} else ()
+            if n in {"ci.yml", _EL} else ()
         )
         if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
             self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
@@ -3423,10 +3426,10 @@ class FoundationValidator:
                 "name: Dependency Review / policy",
             ),
         }
-        for required in requirements.get(path.name, ()):
+        for required in requirements.get(n, ()):
             if required not in text:
                 self.add("workflow.required_content", path, f"missing protected workflow content: {required}")
-        if path.name == _SC and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
+        if n == _SC and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
             self.add("workflow.privileged_dispatch", path, "Scorecard must not allow manual ref selection")
         if "continue-on-error:" in text:
             self.add("workflow.continue_on_error", path, "continue-on-error is forbidden in Gate 0 workflows")
@@ -3454,8 +3457,8 @@ class FoundationValidator:
             _EL: ("links", ("Checkout", "Install checksum-verified lychee", "Check external links")),
             _O: ("metadata", ("Checkout", "Audit workflow source and upstream metadata")),
         }
-        if path.name in expected_steps:
-            job_name, names = expected_steps[path.name]
+        if n in expected_steps:
+            job_name, names = expected_steps[n]
             jobs = dict(workflow_jobs(text.splitlines()))
             if set(jobs) != {job_name}:
                 self.add("workflow.job_contract", path, f"workflow job set must be exactly {{{job_name}}}")
@@ -3466,7 +3469,7 @@ class FoundationValidator:
                     line.strip() for line in jobs[job_name] if line.startswith("    if:")
                 )
                 expected_conditions = (
-                    ("if: ${{ github.ref == 'refs/heads/main' }}",) if path.name == _SC else ()
+                    ("if: ${{ github.ref == 'refs/heads/main' }}",) if n == _SC else ()
                 )
                 if conditions != expected_conditions:
                     self.add("workflow.job_condition_contract", path, "job condition must match its reviewed contract")
@@ -3477,6 +3480,7 @@ class FoundationValidator:
                 self._validate_step_details(path, job_name, dict(steps))
 
     def _validate_step_details(self, path: Path, job_name: str, steps: Mapping[str, list[str]]) -> None:
+        n = path.name
         checkout = yaml_without_comments("\n".join(steps.get("Checkout", [])))
         expected_checkout = '''      - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -3486,7 +3490,7 @@ class FoundationValidator:
         if checkout != expected_checkout:
             self.add("workflow.checkout_contract", path, f"{job_name}/Checkout must match the reviewed revision-bound contract")
 
-        if path.name == "ci.yml":
+        if n == "ci.yml":
             boundary = yaml_without_comments("\n".join(steps.get("Enforce solo contribution boundary", [])))
             expected_boundary = '''      - name: Enforce solo contribution boundary
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}
@@ -3529,7 +3533,7 @@ class FoundationValidator:
             for step_name, expected in ci_tools.items():
                 if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
                     self.add("workflow.ci_tool_contract", path, f"{job_name}/{step_name} must match its reviewed tool contract")
-        elif path.name == _DR:
+        elif n == _DR:
             review = yaml_without_comments("\n".join(steps.get("Review dependency changes", [])))
             expected_review = '''      - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
@@ -3539,7 +3543,7 @@ class FoundationValidator:
           head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}'''
             if review != expected_review:
                 self.add("workflow.dependency_review_contract", path, "dependency review must use only the reviewed configuration file and revision inputs")
-        elif path.name == _SC:
+        elif n == _SC:
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
             expected_scorecard_block = '''      - name: Run OpenSSF Scorecard
         shell: /bin/bash -p -e -o pipefail {0}
@@ -3608,7 +3612,7 @@ class FoundationValidator:
             for step_name, expected in uploads.items():
                 if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
                     self.add("workflow.scorecard_upload_contract", path, f"{job_name}/{step_name} must match its reviewed SARIF upload contract")
-        elif path.name == _EL:
+        elif n == _EL:
             commands = {
                 "Install checksum-verified lychee": 'run: ./scripts/ci/install-lychee "$RUNNER_TEMP/lychee"',
                 "Check external links": 'run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee"',
@@ -3617,7 +3621,7 @@ class FoundationValidator:
                 expected = f"      - name: {step_name}\n        {command}"
                 if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
                     self.add("workflow.external_links_contract", path, f"{job_name}/{step_name} must match its reviewed link-audit command")
-        elif path.name == _O:
+        elif n == _O:
             block = yaml_without_comments("\n".join(steps.get("Audit workflow source and upstream metadata", [])))
             expected = '''      - name: Audit workflow source and upstream metadata
         uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa

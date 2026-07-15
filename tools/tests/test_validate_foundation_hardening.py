@@ -257,6 +257,24 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.timeout",
             ),
             (
+                "ci.yml",
+                "      contents: read\n",
+                "      contents: none\n",
+                "workflow.job_permissions",
+            ),
+            (
+                "dependency-review.yml",
+                "      contents: read\n",
+                "      contents: read\n      issues: read\n",
+                "workflow.job_permissions",
+            ),
+            (
+                "scorecard.yml",
+                "      security-events: write # Required to upload SARIF to code scanning.\n",
+                "      security-events: read # Cannot upload SARIF.\n",
+                "workflow.job_permissions",
+            ),
+            (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - release\n",
