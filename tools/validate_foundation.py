@@ -326,7 +326,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "c36fdea0818510a6fde7bd0ce6caa152f814470edda82809ee0832cd59dff2ca"
+_PHD = "754710047970e4b49d2a05b89ae20a5094d7f3adbb03b1f315e2a83c52db4e52"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2421,9 +2421,10 @@ class FoundationValidator:
                 type(code) is not str
                 or code not in allowed_codes
                 or type(match) is not str
-                or match not in {"line", "source"}
+                or match not in {"line", "ordered", "source"}
                 or type(count) is not int
                 or not 1 <= count <= 8
+                or (match == "ordered" and count != 1)
                 or not isinstance(fragments, list)
                 or not fragments
                 or any(type(fragment) is not str or not fragment for fragment in fragments)
@@ -2437,9 +2438,17 @@ class FoundationValidator:
         lines = source.splitlines()
         for code, match, count, fragments in parsed_checks:
             haystack = lines if match == "line" else source
+            positions: list[int] = []
             for fragment in fragments:
-                if haystack.count(fragment) != count:
+                observed = haystack.count(fragment)
+                if observed != count:
                     self.add(code, path, f"expected {count} {fragment!r} fragments")
+                elif match == "ordered":
+                    positions.append(source.find(fragment))
+            if match == "ordered" and len(positions) == len(fragments) and any(
+                left >= right for left, right in zip(positions, positions[1:])
+            ):
+                self.add(code, path, "ordered Makefile contract fragments are out of order")
 
     def _validate_compiler_dependency_boundary(self) -> None:
         toolchain_path = self.root / "rust-toolchain.toml"

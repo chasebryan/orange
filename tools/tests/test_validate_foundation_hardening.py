@@ -2605,6 +2605,45 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             validator._validate_makefile_entrypoint()
             self.assertIn("make.contract", {finding.code for finding in validator.findings})
 
+    def test_make_contract_enforces_compiler_phase_order(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        canonical = (source_root / "Makefile").read_text(encoding="utf-8")
+        contract = (source_root / "policy/makefile-entrypoint-contract-v0.1.json").read_bytes()
+        earlier = 'run_cargo cargo fmt --manifest-path "$$manifest" --all -- --check; \\\n'
+        later = (
+            'verify_capture_identity; \\\n'
+            '\tcopy_compiler_source "$$cargo_home/check-reference"; \\\n'
+        )
+        marker = "__ORANGE_ORDERED_CONTRACT_MARKER__\n"
+        reordered = canonical.replace(earlier, marker, 1).replace(later, earlier, 1).replace(marker, later, 1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_text(reordered, encoding="utf-8")
+            contract_path = root / "policy/makefile-entrypoint-contract-v0.1.json"
+            contract_path.parent.mkdir()
+            contract_path.write_bytes(contract)
+            validator = FoundationValidator(root)
+            validator._validate_makefile_entrypoint()
+            self.assertIn(
+                "make.compiler_environment_contract",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_make_contract_rejects_repeated_ordered_fragments(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        canonical = load_json(source_root / "policy/makefile-entrypoint-contract-v0.1.json")
+        ordered = next(check for check in canonical["checks"] if check["match"] == "ordered")
+        ordered["expected_count"] = 2
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_bytes((source_root / "Makefile").read_bytes())
+            contract_path = root / "policy/makefile-entrypoint-contract-v0.1.json"
+            contract_path.parent.mkdir()
+            contract_path.write_text(json.dumps(canonical), encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_makefile_entrypoint()
+            self.assertIn("make.contract", {finding.code for finding in validator.findings})
+
     def test_make_contract_rejects_duplicate_keys(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         canonical = (source_root / "policy/makefile-entrypoint-contract-v0.1.json").read_text(
