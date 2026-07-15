@@ -47,11 +47,13 @@ archive before Cargo runs. A sanitized, NUL-delimited Git index inventory admits
 exactly tracked paths, while archive bytes come from the working tree so tracked
 local edits are tested; untracked and ignored local state cannot enter. The
 archive format, path order, timestamps, numeric owner/group fields, and file
-modes are fixed: ordinary files are `0644` and admitted executables are `0755`.
-Before Cargo runs, every tracked file in the first extraction must byte-match
-the working tree and a fresh Git inventory must match the original path list,
-rejecting observed content or membership edits during capture. Formatting,
-linting, documentation, and tests use that extracted check root;
+modes are fixed: ordinary files are `0644`, admitted executables are `0755`,
+and hard links are archived as independent files. Before Cargo runs, every
+tracked path in the working tree and first extraction must be a regular,
+non-symlinked file, their bytes must match, and a fresh Git inventory must match
+the original path list, rejecting observed type, content, or membership edits
+during capture. Formatting, linting, documentation, and tests use that extracted
+check root;
 optimized `orangec` builds use two more extractions and separate target trees,
 and their artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.

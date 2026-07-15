@@ -49,10 +49,11 @@ index paths; tar reads those paths from the working tree, so tracked local edits
 are tested while untracked and ignored state is excluded by construction. The
 GNU format, path order, epoch modification times, numeric zero owner/group
 headers, and file modes are fixed: ordinary files are `0644`, admitted
-executables are `0755`, and write and special bits are cleared. Before Cargo
-runs, every tracked working-tree file must byte-match the first extraction,
-then a fresh sanitized Git inventory must byte-match the original NUL stream,
-rejecting observed content or membership drift. Every check uses that
+executables are `0755`, write and special bits are cleared, and hard links are
+archived independently. Before Cargo runs, every tracked working-tree and
+extracted path must be a regular, non-symlinked file, their bytes must match,
+and a fresh sanitized Git inventory must byte-match the original NUL stream,
+rejecting observed type, content, or membership drift. Every check uses that
 extraction; two more absolute roots and separate target trees supply the
 artifact byte comparison.
 Both builds still share one host, toolchain installation, Cargo home, owner, and
