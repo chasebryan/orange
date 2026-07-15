@@ -96,6 +96,11 @@ _R_UNSUPPORTED = "resource.unsupported_host"
 _R_CONCURRENT = "resource.concurrent_change"
 _ABA = "allowed_binary_artifacts["
 _CROSS = "cross_invariant"
+_GA = "github_actions"
+_AAR = "allowed_action_repositories"
+_AWP = "allowed_write_permissions"
+_PFD = "protected_file_digests"
+_RS = "required_status"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -291,7 +296,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "6909ea8832d8af26a492ed6c926242caec6820e82b2a287a1eb4e03aabb07522"
+GATE0_PROTECTED_FILE_DIGEST = "fc8a2a2ac05fa90bc38c4fa20b9e4176b536ab70c227eb8aab82f0ef44b8622a"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1880,9 +1885,9 @@ class FoundationValidator:
             "forbidden_paths": list,
             "required_workflows": list,
             "workflow_inventory": list,
-            "protected_file_digests": dict,
+            _PFD: dict,
             "executable_paths": list,
-            "github_actions": dict,
+            _GA: dict,
             "hosted_repository_controls": dict,
             "required_codeowners": list,
             "decision_gates": dict,
@@ -1929,11 +1934,11 @@ class FoundationValidator:
             if not all(isinstance(artifact[field], str) for field in expected_binary_fields):
                 self.add("policy.binary", self.policy_path, f"{_ABA}{index}] fields must be strings")
 
-        action_policy = policy["github_actions"]
+        action_policy = policy[_GA]
         action_field_types = {
-            "allowed_action_repositories": list,
+            _AAR: list,
             "allowed_container_images": list,
-            "allowed_write_permissions": dict,
+            _AWP: dict,
             "forbidden_events": list,
             "require_full_commit_sha": bool,
             "require_version_comment": bool,
@@ -1945,7 +1950,7 @@ class FoundationValidator:
                     self.policy_path,
                     f"github_actions.{key} must be {expected_type.__name__}",
                 )
-        for key in ("allowed_action_repositories", "allowed_container_images", "forbidden_events"):
+        for key in (_AAR, "allowed_container_images", "forbidden_events"):
             values = action_policy.get(key)
             if isinstance(values, list) and not all(isinstance(value, str) and value for value in values):
                 self.add(
@@ -1959,7 +1964,7 @@ class FoundationValidator:
                     self.policy_path,
                     f"github_actions.{key} contains duplicate values",
                 )
-        write_permissions = action_policy.get("allowed_write_permissions")
+        write_permissions = action_policy.get(_AWP)
         if isinstance(write_permissions, dict) and not all(
             isinstance(name, str)
             and name
@@ -1980,7 +1985,7 @@ class FoundationValidator:
                         self.policy_path,
                         "github_actions.allowed_write_permissions contains duplicate values",
                     )
-        protected_digests = policy["protected_file_digests"]
+        protected_digests = policy[_PFD]
         if not all(
             isinstance(path, str)
             and path
@@ -2051,14 +2056,14 @@ class FoundationValidator:
                 "official binary artifact paths, digests, roles, and provenance must remain exact",
             )
         expected_action_policy_keys = {
-            "allowed_action_repositories",
+            _AAR,
             "allowed_container_images",
-            "allowed_write_permissions",
+            _AWP,
             "forbidden_events",
             "require_full_commit_sha",
             "require_version_comment",
         }
-        observed_action_policy_keys = set(policy["github_actions"])
+        observed_action_policy_keys = set(policy[_GA])
         if observed_action_policy_keys != expected_action_policy_keys:
             self.add(
                 "policy.action_fields",
@@ -2067,14 +2072,14 @@ class FoundationValidator:
                 f"missing={sorted(expected_action_policy_keys - observed_action_policy_keys)}, "
                 f"extra={sorted(observed_action_policy_keys - expected_action_policy_keys)}",
             )
-        action_repositories = set(policy["github_actions"].get("allowed_action_repositories", []))
+        action_repositories = set(policy[_GA].get(_AAR, []))
         if action_repositories != MINIMUM_ACTION_REPOSITORIES:
             self.add(
                 "policy.action_allowlist",
                 self.policy_path,
                 f"Action identities must be exact; missing={sorted(MINIMUM_ACTION_REPOSITORIES - action_repositories)}, extra={sorted(action_repositories - MINIMUM_ACTION_REPOSITORIES)}",
             )
-        container_images = set(policy["github_actions"].get("allowed_container_images", []))
+        container_images = set(policy[_GA].get("allowed_container_images", []))
         if container_images != GATE0_ALLOWED_CONTAINER_IMAGES:
             self.add(
                 "policy.container_allowlist",
@@ -2087,7 +2092,7 @@ class FoundationValidator:
             self.add("policy.workflow_inventory", self.policy_path, "solo-bootstrap workflow inventory must remain exact")
         protected_digest = hashlib.sha256(
             json.dumps(
-                policy["protected_file_digests"], sort_keys=True, separators=(",", ":")
+                policy[_PFD], sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
         ).hexdigest()
         if protected_digest != GATE0_PROTECTED_FILE_DIGEST:
@@ -2098,16 +2103,16 @@ class FoundationValidator:
             )
         actual_writes = {
             name: set(values)
-            for name, values in policy["github_actions"].get("allowed_write_permissions", {}).items()
+            for name, values in policy[_GA].get(_AWP, {}).items()
             if isinstance(values, list)
         }
         if actual_writes != GATE0_ALLOWED_WRITE_PERMISSIONS:
             self.add("policy.write_permissions", self.policy_path, "workflow write-permission exceptions must remain exact")
-        if policy["github_actions"].get("require_full_commit_sha") is not True:
+        if policy[_GA].get("require_full_commit_sha") is not True:
             self.add("policy.action_sha", self.policy_path, "full Action commit SHA enforcement cannot be disabled")
-        if policy["github_actions"].get("require_version_comment") is not True:
+        if policy[_GA].get("require_version_comment") is not True:
             self.add("policy.action_comment", self.policy_path, "Action version comments cannot be disabled")
-        if "pull_request_target" not in policy["github_actions"].get("forbidden_events", []):
+        if "pull_request_target" not in policy[_GA].get("forbidden_events", []):
             self.add("policy.forbidden_event", self.policy_path, "pull_request_target must remain forbidden")
         if policy["hosted_repository_controls"] != GATE0_HOSTED_REPOSITORY_CONTROLS:
             self.add(
@@ -2129,14 +2134,14 @@ class FoundationValidator:
                 f"solo-bootstrap constraints must remain exact: {expected_constraints}",
             )
         expected_decisions = {
-            "implementation_language": {"decision": "D-008", "required_status": "directed"},
-            "project_name": {"decision": "D-017", "required_status": "directed"},
-            "licenses": {"decision": "D-018", "required_status": "directed"},
-            "governance": {"decision": "D-019", "required_status": "directed"},
-            "solo_project": {"decision": "D-023", "required_status": "directed"},
-            "compiler_foundation": {"decision": "D-024", "required_status": "directed"},
-            "edition_2026_parser": {"decision": "D-025", "required_status": "directed"},
-            "typed_literal_semantics": {"decision": "D-026", "required_status": "directed"},
+            "implementation_language": {"decision": "D-008", _RS: "directed"},
+            "project_name": {"decision": "D-017", _RS: "directed"},
+            "licenses": {"decision": "D-018", _RS: "directed"},
+            "governance": {"decision": "D-019", _RS: "directed"},
+            "solo_project": {"decision": "D-023", _RS: "directed"},
+            "compiler_foundation": {"decision": "D-024", _RS: "directed"},
+            "edition_2026_parser": {"decision": "D-025", _RS: "directed"},
+            "typed_literal_semantics": {"decision": "D-026", _RS: "directed"},
         }
         if policy["decision_gates"] != expected_decisions:
             self.add("policy.decision_gates", self.policy_path, "solo-bootstrap decision gates must remain exact")
@@ -2144,14 +2149,14 @@ class FoundationValidator:
             self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
-        for value in sorted(self.policy["protected_file_digests"]):
+        for value in sorted(self.policy[_PFD]):
             self._read_authenticated_protected_file(value)
 
     def _read_authenticated_protected_file(self, value: str) -> bytes | None:
         if value in self._authenticated_protected_bytes:
             return self._authenticated_protected_bytes[value]
         self._authenticated_protected_bytes[value] = None
-        expected = self.policy["protected_file_digests"].get(value)
+        expected = self.policy[_PFD].get(value)
         if expected is None:
             return None
         path = self.root / value
@@ -3215,12 +3220,12 @@ class FoundationValidator:
             )
         for name in sorted(required - actual):
             self.add("workflow.required", f".github/workflows/{name}", "required workflow is missing")
-        actions_policy = self.policy["github_actions"]
-        allowed = set(actions_policy.get("allowed_action_repositories", []))
+        actions_policy = self.policy[_GA]
+        allowed = set(actions_policy.get(_AAR, []))
         forbidden_events = set(actions_policy.get("forbidden_events", []))
         allowed_writes = {
             name: set(values)
-            for name, values in actions_policy.get("allowed_write_permissions", {}).items()
+            for name, values in actions_policy.get(_AWP, {}).items()
         }
         for path in workflow_paths:
             text = self._read_repository_text(path)
@@ -3354,6 +3359,13 @@ class FoundationValidator:
                     self.add("dependency_review.configuration", review_path, f"missing {meaning}: {setting}")
 
     def _validate_required_workflow_content(self, path: Path, text: str) -> None:
+        defaults = tuple(top_level_block(text.splitlines(), "defaults"))
+        reviewed_defaults = (
+            ("  run:", "    shell: /bin/bash -p -e -o pipefail {0}")
+            if path.name in {"ci.yml", "external-links.yml"} else ()
+        )
+        if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
+            self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
         requirements: dict[str, tuple[str, ...]] = {
             "ci.yml": (
                 "name: Required CI / docs-policy-workflows",
@@ -3599,7 +3611,7 @@ class FoundationValidator:
         text = markdown_without_fenced_blocks_and_comments(source)
         for gate, rule in self.policy["decision_gates"].items():
             decision = re.escape(rule.get("decision", ""))
-            expected = rule.get("required_status")
+            expected = rule.get(_RS)
             sections = list(re.finditer(
                 rf"(?ms)^##\s+{decision}\b[^\n]*\n(?P<body>.*?)(?=^##\s+|\Z)",
                 text,

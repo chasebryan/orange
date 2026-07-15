@@ -162,6 +162,24 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.ambient_env",
             ),
             (
+                "ci.yml",
+                "    shell: /bin/bash -p -e -o pipefail {0}\n",
+                "    shell: bash {0}\n",
+                "workflow.defaults_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "permissions: {}\n",
+                "permissions: {}\ndefaults:\n  run:\n    shell: /bin/bash -p -e -o pipefail {0}\n",
+                "workflow.defaults_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    defaults:\n      run:\n        shell: bash {0}\n    runs-on: ubuntu-24.04\n",
+                "workflow.defaults_contract",
+            ),
+            (
                 "scorecard.yml",
                 "    if: ${{ github.ref == 'refs/heads/main' }}\n",
                 "    if: false\n",
