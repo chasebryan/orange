@@ -93,14 +93,19 @@ symlink swap fails at the descriptor open and a swapped FIFO cannot wait for a
 peer. On Unix, the opened descriptor's device, inode, mode, owner, group, link
 count, length, modification time, and change time must match both path
 snapshots and remain stable through the read. The completed byte snapshot must
-also have exactly the descriptor's reported length. Other hosts compare length
-and modification time at each boundary. This remains short of race-free path
+also have exactly the descriptor's reported length. Before the final metadata
+comparison, `orangec` seeks the same opened descriptor to offset zero and
+requires a second bounded read to match every retained byte plus exact EOF. The
+verification read allocates no second source snapshot and does not charge the
+invocation's buffered-source allowance twice. Other hosts compare length and
+modification time at each boundary. This remains short of race-free path
 confinement: portable-host opens can still block on a swapped special file,
 parent components are not confined, a path can change away and back between
-snapshots, and metadata-preserving mutation or unusual filesystem semantics can
-evade the comparison. Compile untrusted filesystem trees from a stable copied
-file or standard input inside an appropriate host sandbox; full path
-confinement is not claimed.
+snapshots, and coordinated mutation or unusual filesystem semantics that
+reproduce the same bytes and metadata across both reads can evade the
+comparison. Compile untrusted filesystem trees from a stable copied file or
+standard input inside an appropriate host sandbox; full path confinement is not
+claimed.
 `eval` accepts exactly one source and begins output only after complete
 validation and evaluation. A host output failure can leave an
 already-written prefix, but returns status 1; a broken pipe remains quiet and
