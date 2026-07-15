@@ -1110,7 +1110,7 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
     def test_json_report_streams_without_materializing_the_serialization(self) -> None:
         validator = mock.Mock()
         validator.policy = {"repository": "owner/repository", "policy_version": "test"}
-        validator.run.return_value = [Finding("path.test", "record.or", "message")]
+        validator.run.return_value = [Finding("path.test", "record.or", "m\u00e9ssage\n")]
         output = io.StringIO()
         with (
             mock.patch(
@@ -1126,18 +1126,11 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             status = main(("--format", "json"))
 
         self.assertEqual(status, 1)
-        self.assertTrue(output.getvalue().endswith("\n"))
         self.assertEqual(
-            json.loads(output.getvalue()),
-            {
-                "schema_version": "0.1.0",
-                "repository": "owner/repository",
-                "policy_version": "test",
-                "valid": False,
-                "findings": [
-                    {"code": "path.test", "path": "record.or", "message": "message"}
-                ],
-            },
+            output.getvalue(),
+            '{"findings":[{"code":"path.test","message":"m\\u00e9ssage\\n",'
+            '"path":"record.or"}],"policy_version":"test","repository":'
+            '"owner/repository","schema_version":"0.1.0","valid":false}\n',
         )
 
     def test_text_report_escapes_untrusted_fields_injectively_on_one_line(self) -> None:

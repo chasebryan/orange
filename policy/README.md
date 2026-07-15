@@ -115,7 +115,8 @@ diagnostic object or output stream. Text reports encode backslashes, colons,
 and every non-ASCII or non-printable code point with a fixed-width escape, so untrusted
 paths and messages cannot forge report lines or emit terminal controls. JSON
 reports stream encoder chunks directly to standard output without materializing
-the complete serialization.
+the complete serialization. The compact, sorted-key, ASCII-only encoding and
+final newline remain stable.
 
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added
