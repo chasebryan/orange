@@ -65,7 +65,8 @@ bytes with the reference. These exact comparisons reject added source entries
 and policy-valid tracked-source drift before the gate can pass. Optimized
 `orangec` builds use independently created temporary ancestors, relocated
 source roots, separate Cargo homes, and separate target trees whose names differ
-in bytes, length, and directory depth; their artifact bytes must match. This is
+in bytes, length, and directory depth. Both artifacts must be regular
+non-symlink files with identical complete modes and bytes. This is
 source-relocated same-host reproducibility evidence, not a cross-platform or
 independently rebuilt claim.
 

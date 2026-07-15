@@ -81,7 +81,15 @@ check-compiler:
 	copy_compiler_source "$$repro_home_b/deep/src"; \
 	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/target-a" cargo build --manifest-path "$$cargo_home/repro-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
 	run_cargo /usr/bin/env CARGO_HOME="$$repro_home_b/cargo" CARGO_TARGET_DIR="$$repro_home_b/deep/target" cargo build --manifest-path "$$repro_home_b/deep/src/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
-	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/target-a/release/orangec" "$$repro_home_b/deep/target/release/orangec"; \
+	artifact_a="$$cargo_home/target-a/release/orangec"; \
+	artifact_b="$$repro_home_b/deep/target/release/orangec"; \
+	for artifact in "$$artifact_a" "$$artifact_b"; do \
+		[[ -f "$$artifact" && ! -L "$$artifact" ]] || { printf 'optimized orangec artifact type is invalid: %s\n' "$$artifact" >&2; exit 1; }; \
+	done; \
+	artifact_a_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_a")"; \
+	artifact_b_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_b")"; \
+	[[ "$$artifact_a_mode" == "$$artifact_b_mode" ]] || { printf 'optimized orangec artifact modes differ: %s -> %s\n' "$$artifact_a_mode" "$$artifact_b_mode" >&2; exit 1; }; \
+	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$artifact_a" "$$artifact_b"; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	verify_capture_identity; \
