@@ -328,6 +328,22 @@ _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
 _WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_GAC = '''* text=auto eol=lf
+
+*.json text eol=lf
+*.jsonc text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+*.[pP][nN][gG] binary !eol
+*.[jJ][pP][gG] binary !eol
+*.[jJ][pP][eE][gG] binary !eol
+*.[gG][iI][fF] binary !eol
+*.wasm binary !eol
+'''
 _MLC = '''{
   "ignores": [
     "compiler/target/**"
@@ -374,7 +390,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "5185e74c1698ee6c03543e3e4ec1def984868e9fb7aa630dbfbe3c18bceb8f29"
+_PHD = "88794c2fbc8539e69250a3c3576f9124a4f943d47bbede71ca95c03dc8e8e050"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2994,6 +3010,14 @@ class FoundationValidator:
                     self.add("markdown.html_comment", path, comment_error)
 
     def _validate_brand_assets(self) -> None:
+        attributes_path = self.root / ".gitattributes"
+        attributes_source = self._rt(attributes_path)
+        if attributes_source is not None and attributes_source != _GAC:
+            self.add(
+                "gitattributes.contract",
+                attributes_path,
+                "Git attribute rules must match the exact reviewed text and binary contract",
+            )
         manifest_path = self.root / "assets/brand/manifest.json"
         try:
             manifest = self._load_repository_json(manifest_path)
