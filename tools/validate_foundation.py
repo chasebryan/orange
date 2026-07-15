@@ -78,6 +78,7 @@ _I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
+GATE0_GIT_EXECUTABLE = "/usr/bin/git"
 GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
 GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
@@ -280,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "b467dbc506dc2c2094c3c57ea500048ea9bfaaeea13ed13027803fbaa2f7ddb6"
+GATE0_PROTECTED_FILE_DIGEST = "2aeafb6be9777e7dfd7da75597db78c2416598875097fad0b8308f0e5da488c2"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -774,7 +775,7 @@ def _read_git_nul_records(
     nul_flag: str = "-z",
 ) -> _GitRecordRead:
     command = [
-        "git",
+        GATE0_GIT_EXECUTABLE,
         "-c",
         "core.fsmonitor=false",
         "-c",

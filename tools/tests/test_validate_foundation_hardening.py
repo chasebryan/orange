@@ -14,8 +14,10 @@ from pathlib import Path
 from unittest import mock
 
 from tools.validate_foundation import (
+    _read_git_nul_records,
     FoundationValidator,
     Finding,
+    GATE0_GIT_EXECUTABLE,
     GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
     GATE0_MAXIMUM_FINDINGS,
     SCHEMA_DIALECT,
@@ -92,6 +94,30 @@ class JsonHardeningTests(unittest.TestCase):
             canonical_json_bytes(value),
             '{"a":[true,null,"x"],"😀":2,"":1}'.encode("utf-8"),
         )
+
+    def test_git_inventory_ignores_a_hostile_path(self) -> None:
+        self.assertEqual(GATE0_GIT_EXECUTABLE, "/usr/bin/git")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "hostile-git-ran"
+            hostile_bin = root / "bin"
+            hostile_bin.mkdir()
+            fake_git = hostile_bin / "git"
+            fake_git.write_text(
+                "#!/bin/sh\n"
+                f"/usr/bin/touch -- {marker}\n",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+
+            with mock.patch.dict("os.environ", {"PATH": str(hostile_bin)}):
+                _read_git_nul_records(
+                    root,
+                    ["ls-files"],
+                    maximum_record_bytes=128,
+                )
+
+            self.assertFalse(marker.exists())
 
     def test_schema_equality_distinguishes_booleans_from_integers(self) -> None:
         schema_path = Path("/virtual/equality.schema.json")

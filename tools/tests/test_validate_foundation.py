@@ -14,6 +14,7 @@ from unittest import mock
 from tools.validate_foundation import (
     DuplicateKeyError,
     FoundationValidator,
+    GATE0_GIT_EXECUTABLE,
     GATE0_MAXIMUM_BINARY_FILE_BYTES,
     GATE0_MAXIMUM_JSON_NESTING_DEPTH,
     GATE0_MAXIMUM_REPOSITORY_BYTES,
@@ -562,6 +563,10 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                     clear=True,
                 ),
                 mock.patch(
+                    "tools.validate_foundation.GATE0_GIT_EXECUTABLE",
+                    str(fake_git),
+                ),
+                mock.patch(
                     "tools.validate_foundation._GATE0_GIT_TIMEOUT_SECONDS",
                     0.05,
                 ),
@@ -661,7 +666,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(
             popen.call_args.args[0][:9],
             [
-                "git",
+                GATE0_GIT_EXECUTABLE,
                 "-c",
                 "core.fsmonitor=false",
                 "-c",
