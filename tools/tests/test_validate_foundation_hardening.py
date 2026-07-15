@@ -130,6 +130,35 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_issue_routing_configuration_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            ("blank_issues_enabled: false", "blank_issues_enabled: true"),
+            (
+                "https://github.com/chasebryan/orange/security/advisories/new",
+                "https://github.com/chasebryan/orange/issues/new",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(setting=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                template_dir = root / ".github/ISSUE_TEMPLATE"
+                template_dir.mkdir(parents=True)
+                source = (source_root / ".github/ISSUE_TEMPLATE/config.yml").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn(old, source)
+                (template_dir / "config.yml").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "template.issue_routing_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_markdownlint_configuration_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
