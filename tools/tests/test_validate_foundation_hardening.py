@@ -419,6 +419,18 @@ jobs:
                 codes = {finding.code for finding in validator.findings}
                 self.assertIn("workflow.scorecard_contract", codes)
 
+        steps = {name: list(lines) for name, lines in source_steps.items()}
+        steps["Upload result to code scanning"] = [
+            "        if: false" if "        if:" in line else line
+            for line in steps["Upload result to code scanning"]
+        ]
+        validator = FoundationValidator(Path("/virtual"))
+        validator._validate_step_details(Path("scorecard.yml"), "analysis", steps)
+        self.assertIn(
+            "workflow.scorecard_upload_contract",
+            {finding.code for finding in validator.findings},
+        )
+
     def test_digest_pinned_scorecard_does_not_request_publication_identity(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         workflow = (source_root / ".github/workflows/scorecard.yml").read_text(encoding="utf-8")

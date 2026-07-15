@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "1debb215dda1905e91a42221faea49b4342f1deabda346d277046738b764c12e"
+GATE0_PROTECTED_FILE_DIGEST = "1a1db83c2a962b1bfda2da4130f8b9e7e4215656aa1897ab0aa99513988505e8"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3376,12 +3376,6 @@ class FoundationValidator:
                 self._validate_step_details(path, job_name, dict(steps))
 
     def _validate_step_details(self, path: Path, job_name: str, steps: Mapping[str, list[str]]) -> None:
-        def require(step_name: str, values: Sequence[str]) -> None:
-            block = yaml_without_comments("\n".join(steps.get(step_name, [])))
-            for value in values:
-                if value not in block:
-                    self.add("workflow.step_contract", path, f"{job_name}/{step_name} is missing {value!r}")
-
         allowed_step_conditions: dict[str, set[str]] = {
             "ci.yml": {"Enforce solo contribution boundary"},
             "scorecard.yml": {"Preserve SARIF result", "Upload result to code scanning"},
@@ -3519,7 +3513,24 @@ class FoundationValidator:
                     path,
                     f"{job_name}/Run OpenSSF Scorecard must match the reviewed Docker runtime contract exactly",
                 )
-            require("Upload result to code scanning", ("uses: github/codeql-action/upload-sarif@",))
+            uploads = {
+                "Preserve SARIF result": '''      - name: Preserve SARIF result
+        if: ${{ always() && hashFiles('results.sarif') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          if-no-files-found: error
+          name: openssf-scorecard-sarif
+          path: results.sarif
+          retention-days: 14''',
+                "Upload result to code scanning": '''      - name: Upload result to code scanning
+        if: ${{ always() && hashFiles('results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9
+        with:
+          sarif_file: results.sarif''',
+            }
+            for step_name, expected in uploads.items():
+                if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
+                    self.add("workflow.scorecard_upload_contract", path, f"{job_name}/{step_name} must match its reviewed SARIF upload contract")
 
     def _validate_codeowners(self) -> None:
         path = self.root / ".github/CODEOWNERS"
