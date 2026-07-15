@@ -309,7 +309,7 @@ fn compile_with_limits(
                 continue;
             }
         };
-        let bytes = match read_source(path, standard_input, remaining_source_bytes) {
+        let bytes = match read_source(path, standard_input, &mut remaining_source_bytes) {
             Ok(bytes) => bytes,
             Err(error) => {
                 compilation_failed = true;
@@ -323,18 +323,6 @@ fn compile_with_limits(
                 continue;
             }
         };
-        let Some(remaining) = remaining_source_bytes.checked_sub(bytes.len()) else {
-            compilation_failed = true;
-            emit_error_group(
-                standard_error,
-                &mut standard_error_available,
-                &mut error_group_written,
-                &mut output_failed,
-                &render_read_source_error(&display_name, ReadSourceError::InvocationTooLarge),
-            );
-            continue;
-        };
-        remaining_source_bytes = remaining;
         let text = match String::from_utf8(bytes) {
             Ok(text) => text,
             Err(error) => {
@@ -634,7 +622,7 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
 fn read_source(
     path: &Path,
     standard_input: &mut impl Read,
-    remaining_source_bytes: usize,
+    remaining_source_bytes: &mut usize,
 ) -> Result<Vec<u8>, ReadSourceError> {
     if path == Path::new("-") {
         read_bounded_for_invocation(standard_input, remaining_source_bytes)
@@ -646,7 +634,7 @@ fn read_source(
         if path_metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::TooLarge);
         }
-        if path_metadata.len() > u64::try_from(remaining_source_bytes).unwrap_or(u64::MAX) {
+        if path_metadata.len() > u64::try_from(*remaining_source_bytes).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::InvocationTooLarge);
         }
 
@@ -661,7 +649,7 @@ fn read_source(
         if opened_metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::TooLarge);
         }
-        if opened_metadata.len() > u64::try_from(remaining_source_bytes).unwrap_or(u64::MAX) {
+        if opened_metadata.len() > u64::try_from(*remaining_source_bytes).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::InvocationTooLarge);
         }
         let bytes = read_bounded_for_invocation(&mut file, remaining_source_bytes)?;
@@ -712,20 +700,22 @@ fn opened_file_metadata_unchanged(opened_metadata: &Metadata, closed_metadata: &
 
 #[cfg(test)]
 fn read_bounded(reader: impl Read) -> Result<Vec<u8>, ReadSourceError> {
+    let mut remaining_source_bytes = MAX_SOURCE_BYTES;
     read_bounded_with_limit_and_reservation(
         reader,
         MAX_SOURCE_BYTES,
         ReadSourceError::TooLarge,
+        &mut remaining_source_bytes,
         reserve_bounded_source_capacity,
     )
 }
 
 fn read_bounded_for_invocation(
     reader: impl Read,
-    remaining_source_bytes: usize,
+    remaining_source_bytes: &mut usize,
 ) -> Result<Vec<u8>, ReadSourceError> {
-    let limit = MAX_SOURCE_BYTES.min(remaining_source_bytes);
-    let exceeded = if remaining_source_bytes < MAX_SOURCE_BYTES {
+    let limit = MAX_SOURCE_BYTES.min(*remaining_source_bytes);
+    let exceeded = if *remaining_source_bytes < MAX_SOURCE_BYTES {
         ReadSourceError::InvocationTooLarge
     } else {
         ReadSourceError::TooLarge
@@ -734,6 +724,7 @@ fn read_bounded_for_invocation(
         reader,
         limit,
         exceeded,
+        remaining_source_bytes,
         reserve_bounded_source_capacity,
     )
 }
@@ -743,10 +734,12 @@ fn read_bounded_with_reservation(
     mut reader: impl Read,
     mut reserve: impl FnMut(&mut Vec<u8>, usize) -> Result<(), ReadSourceError>,
 ) -> Result<Vec<u8>, ReadSourceError> {
+    let mut remaining_source_bytes = MAX_SOURCE_BYTES;
     read_bounded_with_limit_and_reservation(
         &mut reader,
         MAX_SOURCE_BYTES,
         ReadSourceError::TooLarge,
+        &mut remaining_source_bytes,
         &mut reserve,
     )
 }
@@ -755,6 +748,7 @@ fn read_bounded_with_limit_and_reservation(
     mut reader: impl Read,
     limit: usize,
     exceeded: ReadSourceError,
+    remaining_source_bytes: &mut usize,
     mut reserve: impl FnMut(&mut Vec<u8>, usize) -> Result<(), ReadSourceError>,
 ) -> Result<Vec<u8>, ReadSourceError> {
     let mut bytes = Vec::new();
@@ -781,6 +775,9 @@ fn read_bounded_with_limit_and_reservation(
         let chunk = buffer
             .get(..read)
             .ok_or_else(|| ReadSourceError::Io(invalid_data_error()))?;
+        *remaining_source_bytes = remaining_source_bytes
+            .checked_sub(chunk.len())
+            .ok_or(ReadSourceError::InvocationTooLarge)?;
         reserve(&mut bytes, chunk.len())?;
         bytes.extend_from_slice(chunk);
     }
@@ -2550,6 +2547,33 @@ mod tests {
             panic!("expected the injected allocation failure");
         };
         assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
+        assert_eq!(reader.remaining, SOURCE_READ_BUFFER_BYTES);
+        assert_eq!(reader.requested_buffer_lengths, [SOURCE_READ_BUFFER_BYTES]);
+    }
+
+    #[test]
+    fn invocation_budget_charges_bytes_before_a_body_reservation_failure() {
+        let mut reader = InstrumentedSourceReader::new(SOURCE_READ_BUFFER_BYTES * 2);
+        let mut remaining_source_bytes = SOURCE_READ_BUFFER_BYTES * 2;
+        let result = read_bounded_with_limit_and_reservation(
+            &mut reader,
+            SOURCE_READ_BUFFER_BYTES * 2,
+            ReadSourceError::InvocationTooLarge,
+            &mut remaining_source_bytes,
+            |bytes, additional| {
+                assert!(bytes.is_empty());
+                assert_eq!(additional, SOURCE_READ_BUFFER_BYTES);
+                Err(ReadSourceError::Io(io::Error::from(
+                    io::ErrorKind::OutOfMemory,
+                )))
+            },
+        );
+
+        let Err(ReadSourceError::Io(error)) = result else {
+            panic!("expected the injected allocation failure");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
+        assert_eq!(remaining_source_bytes, SOURCE_READ_BUFFER_BYTES);
         assert_eq!(reader.remaining, SOURCE_READ_BUFFER_BYTES);
         assert_eq!(reader.requested_buffer_lengths, [SOURCE_READ_BUFFER_BYTES]);
     }

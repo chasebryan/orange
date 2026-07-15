@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "80137d6efe3a7e7aeb8fe257bec1a9b1057b29e5ebcb71a7e85c11d8fd1e6bd1"
+GATE0_PROTECTED_FILE_DIGEST = "d89a153e391b524917dfba0f38be3f690b5b9083693e6217aa0f02123806e1ef"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -505,7 +505,7 @@ _OB = {
 _OM = {
     "compiler/README.md": {
         "`orangec` accepts up to 256 source inputs in argument order": 256,
-        "`orangec` reads at most\n64 MiB (`64 * 1024 * 1024` bytes) across all source operands per invocation": 64 * 1024 * 1024,
+        "`orangec` buffers at most\n64 MiB (`64 * 1024 * 1024` bytes) across all source operands per invocation": 64 * 1024 * 1024,
         "`orangec` caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
     },
 }
