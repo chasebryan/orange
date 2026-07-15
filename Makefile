@@ -40,7 +40,7 @@ check-compiler:
 		/usr/bin/mkdir -- "$$destination"; \
 		/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --extract --file="$$repro_source_archive" --directory="$$destination"; \
 	}; \
-	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --exclude=./.git --exclude=./.agents --exclude=./.codex --exclude='*/__pycache__' --exclude=./compiler/target --directory="$${repository_manifest%/compiler/Cargo.toml}" -- .; \
+	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t' --exclude=./.git --exclude=./.agents --exclude=./.codex --exclude='*/__pycache__' --exclude=./compiler/target --directory="$${repository_manifest%/compiler/Cargo.toml}" -- .; \
 	copy_compiler_source "$$cargo_home/check-src"; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
 	run_cargo cargo fmt --manifest-path "$$manifest" --all -- --check; \
