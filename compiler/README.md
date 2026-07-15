@@ -53,11 +53,10 @@ tracked path in the working tree and first extraction must be a regular,
 non-symlinked file, their executable classifications and bytes must match, and a
 fresh Git inventory must match the original path list, rejecting observed type,
 executable-mode, content, or membership edits during capture. The copied
-validator then policy-checks that exact exported tree before any
-repository-controlled Python or Rust executes. The foundation validator unit
-tests then import and discover only from that snapshot, and Cargo is bound to
-the same tree that passed policy. Formatting, linting, documentation, and Rust
-tests use the same extracted check root;
+validator first policy-checks that exact exported tree before its foundation
+test modules import. After those tests, it policy-checks the tree again before
+Cargo, so test-side drift cannot reach Rust execution. Formatting, linting,
+documentation, and Rust tests use the same extracted check root;
 optimized `orangec` builds use two more extractions and separate target trees,
 and their artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
