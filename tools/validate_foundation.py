@@ -281,14 +281,14 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "d7b212724d8b8d300a55f4c364421451692f07e8ab562b32c00cd91d5adc21c9"
+GATE0_PROTECTED_FILE_DIGEST = "589b64ec48a9bac71f1eb37164d12fb8cb5bccd6368b0f6ec3a187afbcb7f9c0"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
 )
 GATE0_CI_POLICY_TEST_RUN = (
     "run: pycache=\"$(/usr/bin/mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
-    "pycache=\"$(cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; "
+    "pycache=\"$(CDPATH= cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; "
     "/usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
     "PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; "
     "sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'"
@@ -2243,7 +2243,7 @@ class FoundationValidator:
                 self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
         required_compiler_fragments = {
             '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
-            'cargo_home="$$(cd -- "$$cargo_home" && pwd -P)"': "Cargo home must be absolute",
+            'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "Cargo home must be absolute",
             "cd -- /;": "Cargo configuration discovery must start at the filesystem root",
             'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': (
                 "compiler checks must start from an empty process environment"
@@ -2303,7 +2303,7 @@ class FoundationValidator:
             '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"': (
                 "foundation tests need a fresh bytecode lookup root"
             ),
-            'pycache="$$(cd -- "$$pycache" && pwd -P)"': (
+            'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"': (
                 "the foundation-test bytecode root must be canonical before cleanup"
             ),
             'PYTHONPYCACHEPREFIX="$$pycache"': (

@@ -44,7 +44,7 @@ esac
 
 readonly DESTINATION_DIRECTORY="$1"
 TEMPORARY_DIRECTORY="$(/usr/bin/mktemp -d -- "${TMPDIR:-/tmp}/orange-actionlint.XXXXXXXX")"
-TEMPORARY_DIRECTORY="$(cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"
+TEMPORARY_DIRECTORY="$(CDPATH= cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"
 readonly TEMPORARY_DIRECTORY
 trap '/usr/bin/rm -rf -- "$TEMPORARY_DIRECTORY"' EXIT
 

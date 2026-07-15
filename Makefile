@@ -11,7 +11,7 @@ check: check-policy test-policy check-compiler
 check-compiler:
 	@set -euo pipefail; \
 	cargo_home="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX")"; \
-	cargo_home="$$(cd -- "$$cargo_home" && pwd -P)"; \
+	cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"; \
 	trap '/usr/bin/rm -rf -- "$$cargo_home"' EXIT; \
 	run_cargo() { \
 		( \
@@ -50,6 +50,6 @@ check-policy:
 test-policy:
 	@set -euo pipefail; \
 	pycache="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX")"; \
-	pycache="$$(cd -- "$$pycache" && pwd -P)"; \
+	pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"; \
 	trap '/usr/bin/rm -rf -- "$$pycache"' EXIT; \
 	/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$pycache" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'

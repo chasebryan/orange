@@ -558,7 +558,7 @@ jobs:
                     'readonly PATH="/usr/bin:/bin"\nexport PATH\n',
                     "unset GZIP TAR_OPTIONS",
                     f"/usr/bin/mktemp -d -- {temporary_template}",
-                    'TEMPORARY_DIRECTORY="$(cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"',
+                    'TEMPORARY_DIRECTORY="$(CDPATH= cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"',
                     "trap '/usr/bin/rm -rf -- \"$TEMPORARY_DIRECTORY\"' EXIT",
                     maximum_archive_size,
                     maximum_archive_kib,
@@ -704,7 +704,7 @@ jobs:
             ci,
         )
         self.assertIn('pycache="$(/usr/bin/mktemp -d -- ', ci)
-        self.assertIn('pycache="$(cd -- "$pycache" && pwd -P)"', ci)
+        self.assertIn('pycache="$(CDPATH= cd -- "$pycache" && pwd -P)"', ci)
         self.assertIn("trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT", ci)
         self.assertIn(
             "-u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables",
@@ -1770,7 +1770,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             ),
             ("env -i", "env", "make.compiler_environment_contract"),
             (
-                'cargo_home="$$(cd -- "$$cargo_home" && pwd -P)"',
+                'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"',
                 'cargo_home="$$cargo_home"',
                 "make.compiler_environment_contract",
             ),
@@ -1811,7 +1811,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.python_cache_contract",
             ),
             (
-                'pycache="$$(cd -- "$$pycache" && pwd -P)"',
+                'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"',
                 'pycache="$$pycache"',
                 "make.python_cache_contract",
             ),

@@ -168,7 +168,8 @@ The required invariant check invokes repository-owned Bash and Python files:
 - the protected Make recipes select environment filtering, temporary-directory
   creation, and cleanup utilities by absolute system paths while continuing to
   discover the selected Rust and Python toolchains through the caller's path;
-  both temporary cleanup roots are canonicalized before their traps are armed;
+  both temporary cleanup roots are canonicalized with `CDPATH` disabled before
+  their traps are armed;
 - each Python recipe starts from an allowlisted environment with a fixed hash
   seed, skips `site` initialization, excludes unsafe path injection, suppresses
   bytecode writes, and forces UTF-8 mode; foundation tests also redirect
@@ -186,7 +187,7 @@ The required invariant check invokes repository-owned Bash and Python files:
 - hosted required-CI policy and compiler steps select `env`, `mktemp`, `rm`,
   and Make by absolute system paths while leaving Rust and Python discovery on
   the explicit inherited toolchain path; the hosted Python cache is
-  canonicalized before its cleanup trap is armed;
+  canonicalized with `CDPATH` disabled before its cleanup trap is armed;
 - the hosted Scorecard runtime selects its cleanup and Docker client by
   absolute system paths, gives that client a minimal environment and an
   explicit local daemon endpoint, then invokes the exact reviewed container
@@ -195,8 +196,8 @@ The required invariant check invokes repository-owned Bash and Python files:
   ambient command lookup, require one absolute destination directory, terminate
   options before caller-selected install destinations, disable curl's default
   configuration, clear inherited tar/gzip option variables, canonicalize their
-  temporary cleanup roots before arming recursive cleanup traps, and enforce
-  the archive identities recorded above; and
+  temporary cleanup roots with `CDPATH` disabled before arming recursive
+  cleanup traps, and enforce the archive identities recorded above; and
 - [`scripts/ci/check-external-links`](../../scripts/ci/check-external-links)
   defines the live link-check method and its documented IACR exclusion, with
   an absolute caller-selected executable path, prior option termination, and
