@@ -130,6 +130,34 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_support_claim_boundary_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "SUPPORT.md").read_text(encoding="utf-8")
+        mutations = (
+            (
+                "It is not a supported product and provides no\nproduction, compatibility, cryptographic, or software-security guarantee.",
+                "It is a supported product with production, compatibility, cryptographic, and software-security guarantees.",
+            ),
+            (
+                "No response-time SLA is currently offered.",
+                "A response-time SLA is currently offered.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertIn(old, source)
+                (root / "SUPPORT.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "support.claim_boundary_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_release_boundary_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         source = (source_root / "RELEASE_POLICY.md").read_text(encoding="utf-8")
