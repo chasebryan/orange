@@ -198,6 +198,12 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.job_extension",
             ),
             (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    runs-on: ubuntu-22.04\n",
+                "workflow.runner",
+            ),
+            (
                 "scorecard.yml",
                 "    if: ${{ github.ref == 'refs/heads/main' }}\n",
                 "    if: false\n",

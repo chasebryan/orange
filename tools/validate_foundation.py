@@ -299,7 +299,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "b4f04837310b493963c638f2350e5ee203d2075a70f4a04263494d2e6970443e"
+GATE0_PROTECTED_FILE_DIGEST = "85acf66afc42d7ac87ce6f576c516650f87fd79558fc55c45faccf2009811206"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3310,7 +3310,7 @@ class FoundationValidator:
                 runner_match = re.match(r"^\s+runs-on:\s*(.+?)\s*$", line)
                 if runner_match:
                     runner = runner_match.group(1).strip().strip("\"'")
-                    if "${{" in runner or "self-hosted" in runner or "latest" in runner:
+                    if runner != "ubuntu-24.04":
                         self.add("workflow.runner", path, f"line {line_number}: runner must be a fixed GitHub-hosted image")
             for job_name, block in workflow_jobs(lines):
                 block_text = "\n".join(block)
