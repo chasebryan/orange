@@ -599,7 +599,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                     str(fake_git),
                 ),
                 mock.patch(
-                    "tools.validate_foundation._GATE0_GIT_TIMEOUT_SECONDS",
+                    "tools.validate_foundation._GT",
                     0.05,
                 ),
             ):
