@@ -2911,37 +2911,47 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn unix_source_path_replacement_after_read_is_rejected() {
-        let mut temporary = None;
-        for suffix in 0..1_024 {
-            let path = std::env::temp_dir().join(format!(
-                "orangec-source-path-{}-{suffix}",
-                std::process::id()
-            ));
-            match std::fs::create_dir(&path) {
-                Ok(()) => {
-                    temporary = Some(path);
-                    break;
+    fn unix_source_path_drift_after_read_is_rejected() {
+        for mutation in ["deletion", "replacement"] {
+            let mut temporary = None;
+            for suffix in 0..1_024 {
+                let path = std::env::temp_dir().join(format!(
+                    "orangec-source-path-{}-{suffix}",
+                    std::process::id()
+                ));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => {
+                        temporary = Some(path);
+                        break;
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(error) => panic!("could not create source path test directory: {error}"),
                 }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(error) => panic!("could not create source path test directory: {error}"),
             }
+            let directory = temporary.expect("could not allocate a source path test directory");
+            let source = directory.join("source.or");
+            let replacement = directory.join("replacement.or");
+            std::fs::write(&source, b"edition 2026; module original {}").unwrap();
+            if mutation == "replacement" {
+                std::fs::write(&replacement, b"edition 2026; module replaced {}").unwrap();
+            }
+            let mut input = &b""[..];
+            let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
+
+            let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
+                if mutation == "replacement" {
+                    std::fs::rename(&replacement, &source).unwrap();
+                } else {
+                    std::fs::remove_file(&source).unwrap();
+                }
+            });
+
+            assert!(matches!(result, Err(ReadSourceError::ChangedDuringRead)));
+            if mutation == "replacement" {
+                std::fs::remove_file(source).unwrap();
+            }
+            std::fs::remove_dir(directory).unwrap();
         }
-        let directory = temporary.expect("could not allocate a source path test directory");
-        let source = directory.join("source.or");
-        let replacement = directory.join("replacement.or");
-        std::fs::write(&source, b"edition 2026; module original {}").unwrap();
-        std::fs::write(&replacement, b"edition 2026; module replaced {}").unwrap();
-        let mut input = &b""[..];
-        let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
-
-        let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
-            std::fs::rename(&replacement, &source).unwrap();
-        });
-
-        assert!(matches!(result, Err(ReadSourceError::ChangedDuringRead)));
-        std::fs::remove_file(source).unwrap();
-        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]
