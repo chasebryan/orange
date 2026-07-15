@@ -2366,6 +2366,13 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 "
+                "-S -P -B -X utf8 -W error::ResourceWarning "
+                '"$$cargo_home/check-src/tools/validate_foundation.py"',
+                "/usr/bin/true",
+                "make.python_environment_contract",
+            ),
+            (
                 'ls-files --cached -z > "$$repro_source_paths"',
                 'ls-files --others -z > "$$repro_source_paths"',
                 "make.compiler_environment_contract",
