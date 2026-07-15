@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "87734986d80b9a00c3cb8b4f83c77bf713fa0c1311a2db43f630abeb7e519272"
+_PHD = "4f7687848ac1d38a138eabdd5af69074f4797d8b1733cdd8420e90271dc27d51"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1544,7 +1544,7 @@ class FoundationValidator:
             for candidate in (relative(path, self.root) for path in self.repository_files)
         )
 
-    def _lexical_repository_path(self, path: Path) -> tuple[str, Path] | None:
+    def _lp(self, path: Path) -> tuple[str, Path] | None:
         unnormalized = path if path.is_absolute() else self.root / path
         candidate = Path(os.path.normpath(os.fspath(unnormalized)))
         try:
@@ -1558,7 +1558,7 @@ class FoundationValidator:
         return lexical.as_posix(), self.root / lexical
 
     @staticmethod
-    def _metadata_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    def _ms(metadata: os.stat_result) -> tuple[int, ...]:
         return (
             metadata.st_dev,
             metadata.st_ino,
@@ -1570,13 +1570,13 @@ class FoundationValidator:
         )
 
     @staticmethod
-    def _repository_file_limit(path: Path) -> int:
+    def _fl(path: Path) -> int:
         if path.suffix.lower() in BINARY_SUFFIXES:
             return GATE0_MAXIMUM_BINARY_FILE_BYTES
         return GATE0_MAXIMUM_TEXT_FILE_BYTES
 
     def _inspect_repository_file(self, path: Path) -> tuple[str, Path, os.stat_result] | None:
-        lexical_path = self._lexical_repository_path(path)
+        lexical_path = self._lp(path)
         if lexical_path is None:
             return None
         value, candidate = lexical_path
@@ -1664,14 +1664,14 @@ class FoundationValidator:
             if value in seen:
                 continue
             seen.add(value)
-            self._resource_metadata[value] = self._metadata_signature(metadata)
+            self._resource_metadata[value] = self._ms(metadata)
             if metadata.st_nlink != 1:
                 self._resource_issue(
                     "resource.hardlink",
                     candidate,
                     "repository files must have exactly one filesystem link",
                 )
-            limit = self._repository_file_limit(candidate)
+            limit = self._fl(candidate)
             if metadata.st_size > limit:
                 kind = "binary" if candidate.suffix.lower() in BINARY_SUFFIXES else "text"
                 self._resource_issue(
@@ -1683,9 +1683,7 @@ class FoundationValidator:
             if descriptor is not None:
                 try:
                     opened_metadata = os.fstat(descriptor)
-                    if self._metadata_signature(opened_metadata) != self._metadata_signature(
-                        metadata
-                    ):
+                    if self._ms(opened_metadata) != self._ms(metadata):
                         self._resource_issue(
                             _RC,
                             candidate,
@@ -1720,7 +1718,7 @@ class FoundationValidator:
         return not self._resource_issue_keys
 
     def _read_repository_bytes(self, path: Path) -> bytes | None:
-        lexical_path = self._lexical_repository_path(path)
+        lexical_path = self._lp(path)
         if lexical_path is None:
             return None
         value, candidate = lexical_path
@@ -1732,7 +1730,7 @@ class FoundationValidator:
         if inspected is None:
             return None
         _, _, metadata = inspected
-        signature = self._metadata_signature(metadata)
+        signature = self._ms(metadata)
         if self._resource_preflight_complete:
             expected_signature = self._resource_metadata.get(value)
             if expected_signature is None:
@@ -1750,7 +1748,7 @@ class FoundationValidator:
                 )
                 return None
 
-        file_limit = self._repository_file_limit(candidate)
+        file_limit = self._fl(candidate)
         if metadata.st_size > file_limit:
             self._resource_issue(
                 "resource.file_size",
@@ -1774,7 +1772,7 @@ class FoundationValidator:
         try:
             with os.fdopen(descriptor, "rb") as source:
                 opened_metadata = os.fstat(source.fileno())
-                if not stat.S_ISREG(opened_metadata.st_mode) or self._metadata_signature(opened_metadata) != signature:
+                if not stat.S_ISREG(opened_metadata.st_mode) or self._ms(opened_metadata) != signature:
                     self._resource_issue(
                         _RC,
                         candidate,
@@ -1787,12 +1785,18 @@ class FoundationValidator:
         except OSError as exc:
             self._resource_issue("resource.unreadable", candidate, f"cannot read repository file: {exc}")
             return None
-        if self._metadata_signature(closed_metadata) != signature:
+        if self._ms(closed_metadata) != signature:
             self._resource_issue(
                 _RC,
                 candidate,
                 "repository file changed while it was being read",
             )
+            return None
+        final = self._inspect_repository_file(candidate)
+        if final is None:
+            return None
+        if self._ms(final[2]) != signature:
+            self._resource_issue(_RC, candidate, "repository path changed while its file was being read")
             return None
         if len(data) > read_limit:
             code = "resource.file_size" if read_limit == file_limit else "resource.aggregate_size"
@@ -2894,7 +2898,7 @@ class FoundationValidator:
                     self.add("markdown.link_invalid", path, "link target has invalid percent encoding")
                     continue
                 target_path = path if not file_part else (path.parent / file_part)
-                lexical_target = self._lexical_repository_path(target_path)
+                lexical_target = self._lp(target_path)
                 if lexical_target is None:
                     self.add("markdown.link_escape", path, f"link escapes repository: {raw_target}")
                     continue
