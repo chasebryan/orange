@@ -360,8 +360,14 @@ class WorkflowHardeningTests(unittest.TestCase):
             ),
             (
                 "ci.yml",
-                "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py\n",
-                "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py || :\n",
+                "TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py\n",
+                "TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py || :\n",
+                "workflow.ci_gate_contract",
+            ),
+            (
+                "ci.yml",
+                " -W error::ResourceWarning tools/validate_foundation.py",
+                " tools/validate_foundation.py",
                 "workflow.ci_gate_contract",
             ),
             (
@@ -2146,7 +2152,12 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             (
                 "-W error::ResourceWarning",
                 "",
-                "make.python_cache_contract",
+                "make.python_environment_contract",
+            ),
+            (
+                "-W error::ResourceWarning tools/validate_foundation.py",
+                "tools/validate_foundation.py",
+                "make.python_environment_contract",
             ),
             (
                 'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"',

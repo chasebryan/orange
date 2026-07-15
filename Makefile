@@ -53,7 +53,7 @@ check-compiler:
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline
 
 check-policy:
-	/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py
+	/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py
 
 test-policy:
 	@set -euo pipefail; \
