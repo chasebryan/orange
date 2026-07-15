@@ -42,13 +42,13 @@ These records authorize local owner development only. They do not establish a
 hermetic build, toolchain redistribution right, compiler correctness, or release
 provenance.
 
-The byte-comparison check fixes the process environment, toolchain selection,
-locale, timezone, and source-date epoch, captures one compiler source archive,
-extracts it into two different absolute roots without local target state, then
-rebuilds it with separate target trees. Both builds still share one host,
-toolchain installation, Cargo home, owner, and trust domain. The result detects
-source-path-sensitive and other same-host nondeterminism; it is not
-independently reproduced release evidence.
+The byte-comparison check fixes the process environment, private file-creation
+mask, toolchain selection, locale, timezone, and source-date epoch, captures one
+compiler source archive, extracts it into two different absolute roots without
+local target state, then rebuilds it with separate target trees. Both builds
+still share one host, toolchain installation, Cargo home, owner, and trust
+domain. The result detects source-path-sensitive and other same-host
+nondeterminism; it is not independently reproduced release evidence.
 
 ## 3. Workflow map
 
