@@ -52,8 +52,11 @@ and hard links are archived as independent files. Before Cargo runs, every
 tracked path in the working tree and first extraction must be a regular,
 non-symlinked file, their executable classifications and bytes must match, and a
 fresh Git inventory must match the original path list, rejecting observed type,
-executable-mode, content, or membership edits during capture. Formatting,
-linting, documentation, and tests use that extracted check root;
+executable-mode, content, or membership edits during capture. The copied
+validator then policy-checks that exact exported tree before any
+repository-controlled Rust executes, binding Cargo to the same snapshot that
+passed policy. Formatting, linting, documentation, and tests use that extracted
+check root;
 optimized `orangec` builds use two more extractions and separate target trees,
 and their artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.

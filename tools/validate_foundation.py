@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "e073ce24a26701990a1630784173b862a3b0f46257bbd07952703e166b781de9"
+_PHD = "a5cae8b8bede839294497546d4647f4481c5bb872d6a2407b41675e07e3d9318"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2445,12 +2445,12 @@ class FoundationValidator:
             if source.count(required) != 1:
                 self.add("make.compiler_environment_contract", path, f"{meaning}: expected exactly {required!r}")
         required_python_fragments = {
-            "PYTHONHASHSEED=0": (3, "fixed Python hash seed"),
+            "PYTHONHASHSEED=0": (4, "fixed Python hash seed"),
             "/usr/bin/python3 -S -P -B -X utf8": (
-                3,
+                4,
                 "isolated Python startup/path/bytecode/encoding",
             ),
-            "-W error::ResourceWarning": (3, "leaks fail"),
+            "-W error::ResourceWarning": (4, "leaks fail"),
         }
         for required, (expected_count, meaning) in required_python_fragments.items():
             if source.count(required) != expected_count:

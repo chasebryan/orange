@@ -46,8 +46,10 @@ and redirect bytecode lookup to a fresh temporary root.
 
 Compiler checks likewise run through a protected Make recipe with a fresh,
 canonical absolute Cargo home, fresh target tree, and allowlisted environment.
-It invokes Cargo from the filesystem root with the exact selected toolchain,
-preventing caller wrapper
+After capture consistency checks, the validator copied into the exact tracked
+source snapshot policy-checks that exported tree before any repository-controlled
+Rust executes. Cargo then runs from the filesystem root with the exact selected
+toolchain, preventing caller wrapper
 variables, flags, target runners, home or ancestor Cargo configuration, and
 ignored prior build artifacts from steering the build after policy validation.
 
