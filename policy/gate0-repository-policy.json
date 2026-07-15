@@ -300,12 +300,12 @@
     "schemas/gate0/repository-control-snapshot-v0.1.schema.json": "f4cfcab41639fac0a5c3f75a99cfd3bef0a30b57fc950109058f5006f40ed8b4",
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
-    "scripts/ci/check-external-links": "80e9b36c34433d7700a9edf9465a83a3164000f67fe0bc092bf1690ff1983ff9",
-    "scripts/ci/check-repository": "fc38827b5d959f7e67f4f78b43771146c22c9346ee100b70478fb6ace1adeb93",
-    "scripts/ci/install-actionlint": "26be5be9005b2d46f2775594305a7dd13ce50722881f03bd61a57929ee1d08c5",
-    "scripts/ci/install-lychee": "711655c34bc67862dd68c5be6f6ec5fd9befe36f28ba10c332c9139cd5c7a8cf",
+    "scripts/ci/check-external-links": "b1d22a4f46e1b4eadb32b5a239fa494ec127802473132fc041d7854558e3b0fa",
+    "scripts/ci/check-repository": "1e793a816bceac77e4ded0a12d4061e85eb7089c0b9801a712cc70d6f5400aee",
+    "scripts/ci/install-actionlint": "fbc536447de66cf540d7aa42e9bf4019aa55c82e9bd4dd93db7181f74633aded",
+    "scripts/ci/install-lychee": "bdc62415227e5facabab2c0b67ab728a8345b1f7b1fb51fafe5e3ac03baf256b",
     "tools/tests/test_validate_foundation.py": "38169d01c51bb88e53ad7558d3dc8b8e695aa767599873b86615ced2b267b8c6",
-    "tools/tests/test_validate_foundation_hardening.py": "6e8c08ebf72f7d3b148141cb604b57599688ce95b3680c355545c9f5dd9bf685"
+    "tools/tests/test_validate_foundation_hardening.py": "d4fa76f1a4712a605d1c2504f94a1d8cafd356092b3f4ade4ef617310477bba9"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

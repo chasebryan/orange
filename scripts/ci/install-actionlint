@@ -14,7 +14,7 @@ readonly MAXIMUM_DOWNLOAD_SECONDS="300"
 readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"
 
 if [[ $# -ne 1 || -z "${1-}" ]]; then
-  echo "usage: $0 DESTINATION_DIRECTORY" >&2
+  echo "usage: install-actionlint DESTINATION_DIRECTORY" >&2
   exit 2
 fi
 if [[ "$1" != /* ]]; then

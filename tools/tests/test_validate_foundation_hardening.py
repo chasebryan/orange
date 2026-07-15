@@ -376,7 +376,7 @@ jobs:
             )
             self.assertEqual(rejected.returncode, 2)
             self.assertEqual(rejected.stdout, "")
-            self.assertIn("usage:", rejected.stderr)
+            self.assertEqual(rejected.stderr, "usage: check-repository\n")
             self.assertFalse(marker.exists())
             self.assertFalse(observed.exists())
 
@@ -539,6 +539,20 @@ jobs:
                     "install \\\n  -D \\\n  --no-target-directory \\\n  -m 0755 \\\n  -- \\\n",
                 ):
                     self.assertIn(required, script)
+                missing = subprocess.run(
+                    [source_root / "scripts/ci" / name],
+                    cwd=source_root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(missing.returncode, 2)
+                self.assertEqual(missing.stdout, "")
+                self.assertEqual(
+                    missing.stderr,
+                    f"usage: {name} DESTINATION_DIRECTORY\n",
+                )
                 rejected = subprocess.run(
                     [source_root / "scripts/ci" / name, "relative-destination"],
                     cwd=source_root,
@@ -574,6 +588,19 @@ jobs:
                 encoding="utf-8",
             )
             probe.chmod(0o755)
+            missing = subprocess.run(
+                [helper],
+                cwd=source_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(missing.returncode, 2)
+            self.assertEqual(missing.stdout, "")
+            self.assertEqual(
+                missing.stderr,
+                "usage: check-external-links PATH_TO_LYCHEE\n",
+            )
             rejected = subprocess.run(
                 [helper, f"PATH={temporary_root}"],
                 cwd=source_root,
