@@ -230,7 +230,8 @@ jobs:
         for required in (
             "set -euo pipefail",
             "printf '::add-mask::%s\\n'",
-            "docker run --rm",
+            '/usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
+            "/usr/bin/docker run --rm",
             "--read-only",
             "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
             "--cap-drop=ALL",

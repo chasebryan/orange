@@ -187,6 +187,8 @@ The required invariant check invokes repository-owned Bash and Python files:
   and Make by absolute system paths while leaving Rust and Python discovery on
   the explicit inherited toolchain path; the hosted Python cache is
   canonicalized before its cleanup trap is armed;
+- the hosted Scorecard runtime selects its cleanup and Docker client by
+  absolute system paths before invoking the exact reviewed container contract;
 - the actionlint and lychee installers use only `/usr/bin` and `/bin` for
   ambient command lookup, require one absolute destination directory, terminate
   options before caller-selected install destinations, disable curl's default

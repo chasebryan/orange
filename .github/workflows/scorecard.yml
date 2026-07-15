@@ -39,9 +39,9 @@ jobs:
           test -r "$GITHUB_EVENT_PATH"
           test -d "$GITHUB_WORKSPACE"
           printf '::add-mask::%s\n' "$INPUT_REPO_TOKEN"
-          rm -f -- "$GITHUB_WORKSPACE/results.sarif"
+          /usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"
 
-          docker run --rm \
+          /usr/bin/docker run --rm \
             --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777 \
             --cap-drop=ALL \

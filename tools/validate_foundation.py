@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "2aeafb6be9777e7dfd7da75597db78c2416598875097fad0b8308f0e5da488c2"
+GATE0_PROTECTED_FILE_DIGEST = "b3069e957c39df0c130416e3d5a4d01843e4350df6cc84f2e6f91afe4a82dbc3"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3301,7 +3301,7 @@ class FoundationValidator:
             "scorecard.yml": (
                 "name: OpenSSF Scorecard / analysis",
                 "if: ${{ github.ref == 'refs/heads/main' }}",
-                "docker run --rm",
+                "/usr/bin/docker run --rm",
                 "ghcr.io/ossf/scorecard-action@sha256:",
                 "github/codeql-action/upload-sarif@",
             ),
@@ -3425,8 +3425,8 @@ class FoundationValidator:
                     'test -r "$GITHUB_EVENT_PATH"',
                     'test -d "$GITHUB_WORKSPACE"',
                     "printf '::add-mask::%s\\n' \"$INPUT_REPO_TOKEN\"",
-                    'rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
-                    "docker run --rm",
+                    '/usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
+                    "/usr/bin/docker run --rm",
                     "--read-only",
                     "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
                     "--cap-drop=ALL",
@@ -3464,8 +3464,8 @@ class FoundationValidator:
           test -r "$GITHUB_EVENT_PATH"
           test -d "$GITHUB_WORKSPACE"
           printf '::add-mask::%s\\n' "$INPUT_REPO_TOKEN"
-          rm -f -- "$GITHUB_WORKSPACE/results.sarif"
-          docker run --rm \\
+          /usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"
+          /usr/bin/docker run --rm \\
             --read-only \\
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777 \\
             --cap-drop=ALL \\
