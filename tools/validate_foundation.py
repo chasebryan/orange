@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "aed187de45103cb7b997b5e092513ec9672838bfc3eeed9c070dfca967d597b8"
+_PHD = "4026c8df7860316eba70f6160b5e53f483c01694f0d37ab97ba2d3eda51b52e4"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1290,7 +1290,7 @@ def git_index_entries(
     findings: list[Finding] | None = None,
     *,
     required: bool = False,
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, bytes, str]]:
     inventory_findings = findings if findings is not None else []
     result = _read_git_records(
         root,
@@ -1407,7 +1407,7 @@ def git_index_entries(
                 )
             )
             return []
-    return [(mode, path) for mode, _, path in entries]
+    return entries
 
 
 class FoundationValidator:
@@ -1426,7 +1426,7 @@ class FoundationValidator:
         )
         if not self.findings and git_inventory_succeeded:
             inventory_paths = {relative(path, self.root) for path in self.repository_files}
-            stage_paths = {value for _, value in self.index_entries}
+            stage_paths = {value for _, _, value in self.index_entries}
             unexpected_stage_paths = sorted(stage_paths - inventory_paths)
             if unexpected_stage_paths:
                 self.findings.append(
@@ -1919,7 +1919,7 @@ class FoundationValidator:
         for finding in final_findings:
             self.add(finding.code, finding.path, finding.message)
         if self.index_entries and final_index != self.index_entries:
-            self._ri(_RC, ".git", "Git stage-zero path, mode, or object type changed during validation")
+            self._ri(_RC, ".git", "Git stage-zero path, mode, object identity, or type changed during validation")
         expected = {relative(path, self.root) for path in self.repository_files}
         observed = {relative(path, self.root) for path in final_files}
         if observed != expected:
@@ -2695,7 +2695,7 @@ class FoundationValidator:
             for artifact in self.policy[_AB]
             if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
         }
-        for mode, value in self.index_entries:
+        for mode, _, value in self.index_entries:
             if mode == "160000":
                 self.add("git.submodule", value, "gitlinks/submodules are not admitted during Gate 0")
             elif mode not in {"100644", "100755"}:
