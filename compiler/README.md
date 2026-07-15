@@ -63,8 +63,9 @@ reference, compares the NUL-safe sorted non-directory membership of all three
 compiler input roots, and compares every tracked file's type, complete mode, and
 bytes with the reference. These exact comparisons reject added source entries
 and policy-valid tracked-source drift before the gate can pass. Optimized
-`orangec` builds use the two relocated roots and separate target trees, and their
-artifact bytes must match. This is source-relocated same-host
+`orangec` builds use two relocated roots and separate target trees whose names
+differ in both bytes and length, and their artifact bytes must match. This is
+source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing

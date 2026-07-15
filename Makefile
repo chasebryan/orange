@@ -73,24 +73,24 @@ check-compiler:
 	run_cargo cargo doc --manifest-path "$$manifest" --workspace --no-deps --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --release --locked --offline; \
-	copy_compiler_source "$$cargo_home/repro-src-a"; \
+	copy_compiler_source "$$cargo_home/repro-a"; \
 	copy_compiler_source "$$cargo_home/repro-src-b"; \
-	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" cargo build --manifest-path "$$cargo_home/repro-src-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/target-a" cargo build --manifest-path "$$cargo_home/repro-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
 	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" cargo build --manifest-path "$$cargo_home/repro-src-b/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
-	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/repro-target-a/release/orangec" "$$cargo_home/repro-target-b/release/orangec"; \
+	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/target-a/release/orangec" "$$cargo_home/repro-target-b/release/orangec"; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	verify_capture_identity; \
 	copy_compiler_source "$$cargo_home/check-reference"; \
 	/usr/bin/find "$$cargo_home/check-reference" -mindepth 1 ! -type d -printf '%P\0' | /usr/bin/sort --zero-terminated > "$$cargo_home/check-reference.paths"; \
-	for tested_root in check-src repro-src-a repro-src-b; do \
+	for tested_root in check-src repro-a repro-src-b; do \
 		/usr/bin/find "$$cargo_home/$$tested_root" -mindepth 1 ! -type d -printf '%P\0' | /usr/bin/sort --zero-terminated > "$$cargo_home/$$tested_root.paths"; \
 		/usr/bin/cmp --silent -- "$$cargo_home/$$tested_root.paths" "$$cargo_home/check-reference.paths" || { printf 'tested source membership changed during checks: %s\n' "$$tested_root" >&2; exit 1; }; \
 	done; \
 	while IFS= read -r -d '' relative_path; do \
 		[[ -f "$$cargo_home/check-reference/$$relative_path" && ! -L "$$cargo_home/check-reference/$$relative_path" ]] || { printf 'captured source type is invalid during final comparison: %s\n' "$$relative_path" >&2; exit 1; }; \
 		reference_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/check-reference/$$relative_path")"; \
-		for tested_root in check-src repro-src-a repro-src-b; do \
+		for tested_root in check-src repro-a repro-src-b; do \
 			[[ -f "$$cargo_home/$$tested_root/$$relative_path" && ! -L "$$cargo_home/$$tested_root/$$relative_path" ]] || { printf 'tested source type changed during checks: %s/%s\n' "$$tested_root" "$$relative_path" >&2; exit 1; }; \
 			tested_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/$$tested_root/$$relative_path")"; \
 			[[ "$$tested_mode" == "$$reference_mode" ]] || { printf 'tested source mode changed during checks: %s/%s (%s -> %s)\n' "$$tested_root" "$$relative_path" "$$reference_mode" "$$tested_mode" >&2; exit 1; }; \
