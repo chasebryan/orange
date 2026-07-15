@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "28b5a8a669a408c2daccdc4027ec140f3b402b52ec5429050b1f4ee964765ef2"
+GATE0_PROTECTED_FILE_DIGEST = "c9db870f3d19e0bf70cb25773ba0edb5148371ed1d7ebea97c52730e45078fb8"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2407,13 +2407,13 @@ class FoundationValidator:
             if source.count(required) != 1:
                 self.add("make.compiler_environment_contract", path, f"{meaning}: expected exactly {required!r}")
         required_python_fragments = {
-            "PYTHONHASHSEED=0": (2, "Python policy checks must use a fixed hash seed"),
+            "PYTHONHASHSEED=0": (3, "Python checks must use a fixed hash seed"),
             "python3 -S -P -B -X utf8": (
                 3,
                 "Python policy and artifact checks must skip site initialization, exclude unsafe paths, "
                 "avoid bytecode, and force UTF-8",
             ),
-            "-W error::ResourceWarning": (2, "Python policy checks must fail on leaked resources"),
+            "-W error::ResourceWarning": (3, "Python invocations must fail on leaked resources"),
         }
         for required, (expected_count, meaning) in required_python_fragments.items():
             if source.count(required) != expected_count:

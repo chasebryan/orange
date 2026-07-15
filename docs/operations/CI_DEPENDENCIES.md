@@ -171,11 +171,12 @@ The required invariant check invokes repository-owned Bash and Python files:
   discover the selected Rust and Python toolchains through the caller's path;
   both temporary cleanup roots are canonicalized with `CDPATH` disabled before
   their traps are armed;
-- each Python recipe starts from an allowlisted environment with a fixed hash
-  seed, skips `site` initialization, excludes unsafe path injection, suppresses
-  bytecode writes, forces UTF-8 mode, and promotes resource-leak warnings to
-  errors; foundation tests also redirect bytecode lookup to a fresh temporary
-  root so ignored checkout caches cannot execute;
+- each Python invocation in a protected Make recipe starts from an allowlisted
+  environment with a fixed hash seed, skips `site` initialization, excludes
+  unsafe path injection, suppresses bytecode writes, forces UTF-8 mode, and
+  promotes resource-leak warnings to errors; foundation tests also redirect
+  bytecode lookup to a fresh temporary root so ignored checkout caches cannot
+  execute;
 - the protected `check-compiler` Make recipe runs Cargo from the filesystem
   root with a fresh temporary Cargo home and target tree, the selected Rust
   1.96.1 toolchain, offline mode, and an allowlisted process environment;
