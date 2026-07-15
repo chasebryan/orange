@@ -1387,6 +1387,39 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(entries, [("100644", "tracked.txt")])
         self.assertEqual(findings, [])
 
+    def test_stage_inventory_allows_modified_worktree_bytes(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            path = root / "tracked.txt"
+            path.write_bytes(b"staged bytes\n")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            path.write_bytes(b"modified worktree bytes\n")
+
+            validator = FoundationValidator(root)
+            self.assertEqual(validator.index_entries, [("100644", "tracked.txt")])
+            self.assertTrue(validator._preflight_repository_resources())
+            self.assertEqual(
+                validator._read_repository_bytes(path),
+                b"modified worktree bytes\n",
+            )
+            self.assertEqual(validator.findings, [])
+
     def test_stage_inventory_rejects_a_missing_index_object(self) -> None:
         clean_environment = {
             key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
