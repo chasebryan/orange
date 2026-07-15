@@ -2153,6 +2153,17 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             path.write_text(source.replace(old, "per-host concurrency at 3", 1), encoding="utf-8")
             self.assertIn("ci.external_link_spec_budget", self._codes(root))
 
+    def test_workflow_timeout_documentation_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "docs/operations/CI_DEPENDENCIES.md"
+            source = path.read_text(encoding="utf-8")
+            old = "`dependency-review.yml` permits\n10 minutes"
+            self.assertIn(old, source)
+            path.write_text(source.replace(old, "`dependency-review.yml` permits\n11 minutes", 1), encoding="utf-8")
+            self.assertIn("ci.workflow_timeout_spec", self._codes(root))
+
     def test_rust_source_stripping_never_copies_remaining_suffixes(self) -> None:
         class SliceRejectingString(str):
             def __getitem__(self, key: object) -> str:

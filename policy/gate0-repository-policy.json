@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.63",
+  "policy_version": "0.2.64",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -289,7 +289,7 @@
     "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
     "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
-    "docs/operations/CI_DEPENDENCIES.md": "fc260d0c2ed93eabaced16f3470cfc7b4a053ee083644abb8abc66538af09afc",
+    "docs/operations/CI_DEPENDENCIES.md": "3354387bb8e11073250a8f7e8b3e461d0e7e3d17491cbdf2453c54d5955b8fbe",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
@@ -307,7 +307,7 @@
     "scripts/ci/install-actionlint": "ac2e08280a32b7d213fb3993f43e5f9d9431dc3f960a41dedea551be2d9433b5",
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/tests/test_validate_foundation.py": "428996f350509478ba525b5c63b55fa1a1a52c6d9d65f4cba4d354ad76bfacb0",
-    "tools/tests/test_validate_foundation_hardening.py": "7f50eac4a450713923685e37165b33f7d455b356d37e08a3e27015a9af125541"
+    "tools/tests/test_validate_foundation_hardening.py": "d22282318cd6b37c3f4661e5e9b594de2bbea960dc0876a51e17d156bb3e7309"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
