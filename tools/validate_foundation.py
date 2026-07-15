@@ -375,6 +375,7 @@ _CLD = "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f"
 _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
+_CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
 _GAC = '''* text=auto eol=lf
 
 *.json text eol=lf
@@ -437,7 +438,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "6762e3e0bc5d7d59f647f920603991174ba32eed31eac89d486bc355156c8ff8"
+_PHD = "d09a03c3f74cdd74ad6490fba9852ec55fa68df1f2296613ec9e04d2c7477ad5"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4829,6 +4830,19 @@ class FoundationValidator:
                     "template.issue_routing_contract",
                     issue_config,
                     "issue routing must match the exact reviewed private-reporting contract",
+                )
+        conduct = self.root / "CODE_OF_CONDUCT.md"
+        if self._hf(conduct):
+            conduct_text = self._rt(conduct)
+            if (
+                conduct_text is not None
+                and hashlib.sha256(conduct_text.encode("utf-8")).hexdigest()
+                != _CCD
+            ):
+                self.add(
+                    "conduct.reporting_contract",
+                    conduct,
+                    "public-intake safeguards and moderator independence non-claims must match the exact reviewed contract",
                 )
         governance = self.root / "GOVERNANCE.md"
         if self._hf(governance):
