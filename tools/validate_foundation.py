@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "4f7687848ac1d38a138eabdd5af69074f4797d8b1733cdd8420e90271dc27d51"
+_PHD = "4cb6fd1d2da3c2e01176f86bedc6415a4efe6169677a22b423c04c64cbb6b580"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1513,7 +1513,7 @@ class FoundationValidator:
                 )
             )
 
-    def _resource_issue(self, code: str, path: str | Path, message: str) -> None:
+    def _ri(self, code: str, path: str | Path, message: str) -> None:
         path_text = relative(path, self.root) if isinstance(path, Path) else path
         key = (code, path_text)
         if key not in self._resource_issue_keys:
@@ -1550,10 +1550,10 @@ class FoundationValidator:
         try:
             lexical = candidate.relative_to(self.root)
         except ValueError:
-            self._resource_issue("resource.path_escape", candidate, "content read escapes the repository root")
+            self._ri("resource.path_escape", candidate, "content read escapes the repository root")
             return None
         if not lexical.parts or ".." in lexical.parts:
-            self._resource_issue("resource.path_escape", candidate, "content read escapes the repository root")
+            self._ri("resource.path_escape", candidate, "content read escapes the repository root")
             return None
         return lexical.as_posix(), self.root / lexical
 
@@ -1575,13 +1575,13 @@ class FoundationValidator:
             return GATE0_MAXIMUM_BINARY_FILE_BYTES
         return GATE0_MAXIMUM_TEXT_FILE_BYTES
 
-    def _inspect_repository_file(self, path: Path) -> tuple[str, Path, os.stat_result] | None:
+    def _if(self, path: Path) -> tuple[str, Path, os.stat_result] | None:
         lexical_path = self._lp(path)
         if lexical_path is None:
             return None
         value, candidate = lexical_path
         if not _secure_repository_reads_supported():
-            self._resource_issue(
+            self._ri(
                 _RU,
                 candidate,
                 "host cannot provide component-relative no-follow repository inspection",
@@ -1601,7 +1601,7 @@ class FoundationValidator:
                 )
                 current = self.root.joinpath(*parts[: index + 1])
                 if stat.S_ISLNK(metadata.st_mode):
-                    self._resource_issue(
+                    self._ri(
                         "resource.symlink",
                         candidate,
                         f"repository content traverses symlink {relative(current, self.root)!r}",
@@ -1609,7 +1609,7 @@ class FoundationValidator:
                     return None
                 if index + 1 < len(parts):
                     if not stat.S_ISDIR(metadata.st_mode):
-                        self._resource_issue(
+                        self._ri(
                             "resource.not_file",
                             candidate,
                             "repository content has a non-directory parent",
@@ -1620,7 +1620,7 @@ class FoundationValidator:
                     directory_descriptor = next_descriptor
                     os.close(previous_descriptor)
                 elif not stat.S_ISREG(metadata.st_mode):
-                    self._resource_issue(
+                    self._ri(
                         "resource.not_file",
                         candidate,
                         "repository content is not a regular file",
@@ -1629,7 +1629,7 @@ class FoundationValidator:
                 else:
                     return value, candidate, metadata
         except (NotImplementedError, OSError) as exc:
-            self._resource_issue(
+            self._ri(
                 "resource.unreadable",
                 candidate,
                 f"cannot inspect repository file securely: {exc}",
@@ -1648,7 +1648,7 @@ class FoundationValidator:
             return not self._resource_issue_keys
         self._resource_preflight_complete = True
         if not _secure_repository_reads_supported():
-            self._resource_issue(
+            self._ri(
                 _RU,
                 ".",
                 "host cannot provide component-relative no-follow repository reads",
@@ -1657,7 +1657,7 @@ class FoundationValidator:
         total_bytes = 0
         seen: set[str] = set()
         for path in self.repository_files:
-            inspected = self._inspect_repository_file(path)
+            inspected = self._if(path)
             if inspected is None:
                 continue
             value, candidate, metadata = inspected
@@ -1666,7 +1666,7 @@ class FoundationValidator:
             seen.add(value)
             self._resource_metadata[value] = self._ms(metadata)
             if metadata.st_nlink != 1:
-                self._resource_issue(
+                self._ri(
                     "resource.hardlink",
                     candidate,
                     "repository files must have exactly one filesystem link",
@@ -1674,7 +1674,7 @@ class FoundationValidator:
             limit = self._fl(candidate)
             if metadata.st_size > limit:
                 kind = "binary" if candidate.suffix.lower() in BINARY_SUFFIXES else "text"
-                self._resource_issue(
+                self._ri(
                     "resource.file_size",
                     candidate,
                     f"{kind} file is {metadata.st_size} bytes; Gate 0 permits at most {limit} bytes",
@@ -1684,7 +1684,7 @@ class FoundationValidator:
                 try:
                     opened_metadata = os.fstat(descriptor)
                     if self._ms(opened_metadata) != self._ms(metadata):
-                        self._resource_issue(
+                        self._ri(
                             _RC,
                             candidate,
                             "repository file changed during resource preflight",
@@ -1692,13 +1692,13 @@ class FoundationValidator:
                     elif metadata.st_size and self._descriptor_is_sparse(
                         descriptor, metadata.st_size
                     ):
-                        self._resource_issue(
+                        self._ri(
                             "resource.sparse",
                             candidate,
                             "sparse repository files are not admitted",
                         )
                 except OSError as exc:
-                    self._resource_issue(
+                    self._ri(
                         _RU,
                         candidate,
                         f"cannot inspect repository file allocation: {exc}",
@@ -1710,7 +1710,7 @@ class FoundationValidator:
                         pass
             total_bytes += metadata.st_size
         if total_bytes > GATE0_MAXIMUM_REPOSITORY_BYTES:
-            self._resource_issue(
+            self._ri(
                 "resource.aggregate_size",
                 ".",
                 f"repository files total {total_bytes} bytes; Gate 0 permits at most {GATE0_MAXIMUM_REPOSITORY_BYTES} bytes",
@@ -1726,7 +1726,7 @@ class FoundationValidator:
             return self._repository_byte_cache[value]
         self._repository_byte_cache[value] = None
 
-        inspected = self._inspect_repository_file(candidate)
+        inspected = self._if(candidate)
         if inspected is None:
             return None
         _, _, metadata = inspected
@@ -1734,14 +1734,14 @@ class FoundationValidator:
         if self._resource_preflight_complete:
             expected_signature = self._resource_metadata.get(value)
             if expected_signature is None:
-                self._resource_issue(
+                self._ri(
                     "resource.post_preflight_addition",
                     candidate,
                     "repository file appeared after the resource preflight",
                 )
                 return None
             if signature != expected_signature:
-                self._resource_issue(
+                self._ri(
                     "resource.post_preflight_change",
                     candidate,
                     "repository file metadata changed after the resource preflight",
@@ -1750,7 +1750,7 @@ class FoundationValidator:
 
         file_limit = self._fl(candidate)
         if metadata.st_size > file_limit:
-            self._resource_issue(
+            self._ri(
                 "resource.file_size",
                 candidate,
                 f"file is {metadata.st_size} bytes; Gate 0 permits at most {file_limit} bytes",
@@ -1759,7 +1759,7 @@ class FoundationValidator:
         aggregate_remaining = GATE0_MAXIMUM_REPOSITORY_BYTES - self._repository_read_bytes
         read_limit = min(file_limit, aggregate_remaining)
         if metadata.st_size > aggregate_remaining:
-            self._resource_issue(
+            self._ri(
                 "resource.aggregate_size",
                 candidate,
                 "reading this file would exceed the Gate 0 aggregate repository byte limit",
@@ -1773,7 +1773,7 @@ class FoundationValidator:
             with os.fdopen(descriptor, "rb") as source:
                 opened_metadata = os.fstat(source.fileno())
                 if not stat.S_ISREG(opened_metadata.st_mode) or self._ms(opened_metadata) != signature:
-                    self._resource_issue(
+                    self._ri(
                         _RC,
                         candidate,
                         "repository file changed while it was being opened",
@@ -1783,27 +1783,27 @@ class FoundationValidator:
                 self._repository_read_bytes += min(len(data), aggregate_remaining)
                 closed_metadata = os.fstat(source.fileno())
         except OSError as exc:
-            self._resource_issue("resource.unreadable", candidate, f"cannot read repository file: {exc}")
+            self._ri("resource.unreadable", candidate, f"cannot read repository file: {exc}")
             return None
         if self._ms(closed_metadata) != signature:
-            self._resource_issue(
+            self._ri(
                 _RC,
                 candidate,
                 "repository file changed while it was being read",
             )
             return None
-        final = self._inspect_repository_file(candidate)
+        final = self._if(candidate)
         if final is None:
             return None
         if self._ms(final[2]) != signature:
-            self._resource_issue(_RC, candidate, "repository path changed while its file was being read")
+            self._ri(_RC, candidate, "repository path changed while its file was being read")
             return None
         if len(data) > read_limit:
             code = "resource.file_size" if read_limit == file_limit else "resource.aggregate_size"
-            self._resource_issue(code, candidate, "repository content exceeded its bounded read limit")
+            self._ri(code, candidate, "repository content exceeded its bounded read limit")
             return None
         if len(data) != opened_metadata.st_size:
-            self._resource_issue(
+            self._ri(
                 _RC,
                 candidate,
                 "repository file produced a short or inconsistent snapshot read",
@@ -1814,7 +1814,7 @@ class FoundationValidator:
 
     def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
         if not _secure_repository_reads_supported():
-            self._resource_issue(
+            self._ri(
                 _RU,
                 candidate,
                 "host cannot provide component-relative no-follow repository reads",
@@ -1828,7 +1828,7 @@ class FoundationValidator:
             directory_descriptor = _open_directory_descriptor(self.root, parts[:-1])
             return os.open(parts[-1], file_flags, dir_fd=directory_descriptor)
         except (NotImplementedError, OSError) as exc:
-            self._resource_issue(
+            self._ri(
                 "resource.unreadable",
                 candidate,
                 f"cannot securely open repository file: {exc}",
@@ -1847,14 +1847,14 @@ class FoundationValidator:
         os.lseek(descriptor, 0, os.SEEK_SET)
         return first_hole < size
 
-    def _read_repository_text(self, path: Path) -> str | None:
+    def _rt(self, path: Path) -> str | None:
         data = self._read_repository_bytes(path)
         if data is None:
             return None
         try:
             return data.decode("utf-8")
         except UnicodeDecodeError as exc:
-            self._resource_issue("resource.utf8", path, f"repository text is not valid UTF-8: {exc}")
+            self._ri("resource.utf8", path, f"repository text is not valid UTF-8: {exc}")
             return None
 
     def _load_repository_json(self, path: Path) -> Any:
@@ -1864,7 +1864,7 @@ class FoundationValidator:
         return _load_json_bytes(data)
 
     def _load_repository_toml(self, path: Path) -> Any:
-        text = self._read_repository_text(path)
+        text = self._rt(path)
         if text is None:
             raise OSError("repository file was rejected by the bounded reader")
         try:
@@ -1905,7 +1905,24 @@ class FoundationValidator:
         self._validate_semantic_strata_suite()
         self._validate_change_records()
         self._validate_repository_templates()
+        self._end()
         return sorted(set(self.findings))
+
+    def _end(self) -> None:
+        final_findings: list[Finding] = []
+        final_files, _ = _repository_file_inventory(self.root, final_findings)
+        for finding in final_findings:
+            self.add(finding.code, finding.path, finding.message)
+        expected = {relative(path, self.root) for path in self.repository_files}
+        observed = {relative(path, self.root) for path in final_files}
+        if observed != expected:
+            self._ri(_RC, ".", "repository inventory changed during validation")
+            return
+        for path in final_files:
+            inspected = self._if(path)
+            value = relative(path, self.root)
+            if inspected is not None and self._ms(inspected[2]) != self._resource_metadata.get(value):
+                self._ri(_RC, path, "repository file metadata changed during validation")
 
     def _load_and_validate_policy(self) -> None:
         finding_count = len(self.findings)
@@ -2296,7 +2313,7 @@ class FoundationValidator:
             if not self._inventory_has_file(path):
                 self.add("hosted_control.missing", path, "hosted-control evidence document is missing")
                 continue
-            text = self._read_repository_text(path)
+            text = self._rt(path)
             if text is None:
                 self.add("hosted_control.unreadable", path, _BF)
                 continue
@@ -2352,7 +2369,7 @@ class FoundationValidator:
 
     def _validate_makefile_entrypoint(self) -> None:
         path = self.root / "Makefile"
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         if source is None:
             return
         required_lines = {
@@ -2608,7 +2625,7 @@ class FoundationValidator:
             visibility = r"pub\s+" if require_public else r"(?:pub\s+)?"
             for value, expected_constants in budgets.items():
                 path = self.root / value
-                text = self._read_repository_text(path)
+                text = self._rt(path)
                 if text is None:
                     self.add(finding_code, path, "cannot read Rust budget source through bounded reader")
                     continue
@@ -2643,7 +2660,7 @@ class FoundationValidator:
         for markers, finding_code, description in marker_groups:
             for value, expected_markers in markers.items():
                 specification = self.root / value
-                text = self._read_repository_text(specification)
+                text = self._rt(specification)
                 if text is None:
                     self.add(
                         finding_code,
@@ -2685,7 +2702,7 @@ class FoundationValidator:
             value = relative(path, self.root)
             metadata_signature = self._resource_metadata.get(value)
             if metadata_signature is None:
-                self._resource_issue(
+                self._ri(
                     "resource.post_preflight_addition",
                     path,
                     "repository file appeared after the resource preflight",
@@ -2854,7 +2871,7 @@ class FoundationValidator:
 
         anchor_cache: dict[str, set[str]] = {}
         for path in (path for path in self.repository_files if path.suffix.lower() == ".md"):
-            text = self._read_repository_text(path)
+            text = self._rt(path)
             if text is None:
                 continue
             text = markdown_without_fenced_blocks_and_comments(text)
@@ -2908,7 +2925,7 @@ class FoundationValidator:
                     continue
                 if fragment and target_value in inventory_files and resolved.suffix.lower() == ".md":
                     if target_value not in anchor_cache:
-                        target_text = self._read_repository_text(resolved)
+                        target_text = self._rt(resolved)
                         if target_text is None:
                             continue
                         anchor_cache[target_value] = markdown_anchors(target_text)
@@ -2921,7 +2938,7 @@ class FoundationValidator:
         if not self._inventory_has_file(path):
             self.add("book.missing", path, "the canonical Orange Book manuscript is missing")
             return
-        text = self._read_repository_text(path)
+        text = self._rt(path)
         if text is None:
             self.add("book.unreadable", path, _BF)
             return
@@ -3280,7 +3297,7 @@ class FoundationValidator:
         }
         for path in workflow_paths:
             n = path.name
-            text = self._read_repository_text(path)
+            text = self._rt(path)
             if text is None:
                 continue
             lines = text.splitlines()
@@ -3383,7 +3400,7 @@ class FoundationValidator:
         path = self.root / ".github/dependabot.yml"
         if not self._inventory_has_file(path):
             return
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         if source is None:
             return
         text = yaml_without_comments(source)
@@ -3397,7 +3414,7 @@ class FoundationValidator:
                 self.add("dependabot.configuration", path, f"missing required setting matching {pattern}")
         review_path = self.root / ".github/dependency-review-config.yml"
         if self._inventory_has_file(review_path):
-            review_source = self._read_repository_text(review_path)
+            review_source = self._rt(review_path)
             if review_source is None:
                 return
             review = yaml_without_comments(review_source)
@@ -3648,7 +3665,7 @@ class FoundationValidator:
         path = self.root / ".github/CODEOWNERS"
         if not self._inventory_has_file(path):
             return
-        text = self._read_repository_text(path)
+        text = self._rt(path)
         if text is None:
             return
         active_lines = {
@@ -3668,7 +3685,7 @@ class FoundationValidator:
         path = self.root / "docs/DECISIONS.md"
         if not self._inventory_has_file(path):
             return
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
@@ -3705,9 +3722,9 @@ class FoundationValidator:
             for candidate in (path, charter_path, decisions_path)
         ):
             return
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         charter = self._read_repository_bytes(charter_path)
-        decisions_source = self._read_repository_text(decisions_path)
+        decisions_source = self._rt(decisions_path)
         if source is None or charter is None or decisions_source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
@@ -3813,7 +3830,7 @@ class FoundationValidator:
         path = self.root / "docs/USER_JOURNEYS.md"
         if not self._inventory_has_file(path):
             return
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
@@ -3930,7 +3947,7 @@ class FoundationValidator:
         path = self.root / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
         if not self._inventory_has_file(path):
             return
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
@@ -3987,7 +4004,7 @@ class FoundationValidator:
         path = self.root / "docs/PRODUCT_FORM_DECISION_PACKET.md"
         if not self._inventory_has_file(path):
             return
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
@@ -4124,7 +4141,7 @@ class FoundationValidator:
         path = self.root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
         if not self._inventory_has_file(path):
             return
-        source = self._read_repository_text(path)
+        source = self._rt(path)
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
@@ -4272,7 +4289,7 @@ class FoundationValidator:
                     self.add("record.template", path, f"{prefix}-0000 is reserved for the template")
                 candidates.append(path)
             for path in candidates:
-                record_source = self._read_repository_text(path)
+                record_source = self._rt(path)
                 if record_source is None:
                     continue
                 parsed = parse_front_matter(record_source)
@@ -4446,7 +4463,7 @@ class FoundationValidator:
     def _validate_repository_templates(self) -> None:
         security = self.root / "SECURITY.md"
         if self._inventory_has_file(security):
-            security_text = self._read_repository_text(security)
+            security_text = self._rt(security)
             if (
                 security_text is not None
                 and "https://github.com/chasebryan/orange/security/advisories/new" not in security_text
@@ -4454,7 +4471,7 @@ class FoundationValidator:
                 self.add("security.private_reporting", security, "private vulnerability-reporting URL is missing")
         pr = self.root / ".github/pull_request_template.md"
         if self._inventory_has_file(pr):
-            text = self._read_repository_text(pr)
+            text = self._rt(pr)
             if text is None:
                 return
             for heading in (

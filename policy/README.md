@@ -108,7 +108,9 @@ byte only to detect overflow. A later snapshot or representation rejection
 cannot refund already buffered input. Preflight rejects hardlinked files and
 uses `SEEK_HOLE` to reject sparse files before parsing policy content. A host or
 filesystem without these primitives receives `resource.unsupported_host`
-instead of a weaker validation result. The validator and its intermediate
+instead of a weaker validation result. Before reporting success, a second
+bounded inventory and metadata sweep rejects late additions, deletions, and
+replacements. The validator and its intermediate
 schema and record-metadata checkers
 each retain at most 4,096 detailed findings. Final finding messages retain at
 most 4,096 characters, and the report adds one deterministic suppression
