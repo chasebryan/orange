@@ -51,8 +51,10 @@ GNU format, path order, epoch modification times, numeric zero owner/group
 headers, and file modes are fixed: ordinary files are `0644`, admitted
 executables are `0755`, and write and special bits are cleared. Before Cargo
 runs, every tracked working-tree file must byte-match the first extraction,
-rejecting observed capture drift. Every check uses that extraction; two more
-absolute roots and separate target trees supply the artifact byte comparison.
+then a fresh sanitized Git inventory must byte-match the original NUL stream,
+rejecting observed content or membership drift. Every check uses that
+extraction; two more absolute roots and separate target trees supply the
+artifact byte comparison.
 Both builds still share one host, toolchain installation, Cargo home, owner, and
 trust domain. The result detects source-path-sensitive and other same-host
 nondeterminism; it is not independently reproduced release evidence.

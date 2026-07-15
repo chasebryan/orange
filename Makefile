@@ -37,6 +37,7 @@ check-compiler:
 	repository_root="$${repository_manifest%/compiler/Cargo.toml}"; \
 	repro_source_archive="$$cargo_home/repro-source.tar"; \
 	repro_source_paths="$$cargo_home/repro-source.paths"; \
+	repro_source_paths_after="$$cargo_home/repro-source-after.paths"; \
 	copy_compiler_source() { \
 		local destination="$$1"; \
 		/usr/bin/mkdir -- "$$destination"; \
@@ -48,6 +49,8 @@ check-compiler:
 	while IFS= read -r -d '' relative_path; do \
 		/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path" || { printf '%s\n' 'tracked source changed during archive capture' >&2; exit 1; }; \
 	done < "$$repro_source_paths"; \
+	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths_after"; \
+	/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after" || { printf '%s\n' 'tracked source membership changed during archive capture' >&2; exit 1; }; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
 	run_cargo cargo fmt --manifest-path "$$manifest" --all -- --check; \
 	run_cargo cargo clippy --manifest-path "$$manifest" --workspace --all-targets --locked --offline -- -D warnings; \

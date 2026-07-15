@@ -49,8 +49,9 @@ local edits are tested; untracked and ignored local state cannot enter. The
 archive format, path order, timestamps, numeric owner/group fields, and file
 modes are fixed: ordinary files are `0644` and admitted executables are `0755`.
 Before Cargo runs, every tracked file in the first extraction must byte-match
-the working tree, rejecting observed edits during capture. Formatting, linting,
-documentation, and tests use that extracted check root;
+the working tree and a fresh Git inventory must match the original path list,
+rejecting observed content or membership edits during capture. Formatting,
+linting, documentation, and tests use that extracted check root;
 optimized `orangec` builds use two more extractions and separate target trees,
 and their artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.

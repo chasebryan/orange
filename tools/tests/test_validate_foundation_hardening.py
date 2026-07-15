@@ -2238,6 +2238,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                'ls-files --cached -z > "$$repro_source_paths_after"',
+                'ls-files --others -z > "$$repro_source_paths_after"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 "--sort=name --mtime=@0",
                 "--sort=none --mtime=@1",
                 "make.compiler_environment_contract",
@@ -2260,6 +2265,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             (
                 '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path"',
                 '/usr/bin/true -- "$$repository_root/$$relative_path"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '/usr/bin/cmp --silent -- "$$repro_source_paths"',
+                '/usr/bin/true -- "$$repro_source_paths"',
                 "make.compiler_environment_contract",
             ),
             (
