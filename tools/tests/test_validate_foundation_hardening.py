@@ -130,6 +130,34 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_security_reporting_contract_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "SECURITY.md").read_text(encoding="utf-8")
+        mutations = (
+            (
+                "Never disclose an unpatched",
+                "You may disclose an unpatched",
+            ),
+            (
+                "Give the project\na reasonable opportunity to remediate before disclosure.",
+                "Immediate public disclosure is encouraged.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertIn(old, source)
+                (root / "SECURITY.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "security.reporting_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_editorconfig_contract_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         target = source_root / ".editorconfig"

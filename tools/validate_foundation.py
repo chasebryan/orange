@@ -370,6 +370,7 @@ contact_links:
     about: Use GitHub's private platform channel for abuse, harassment, or content-policy violations.
 '''
 _PRD = "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f"
+_SRD = "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede"
 _GAC = '''* text=auto eol=lf
 
 *.json text eol=lf
@@ -432,7 +433,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "69dfc09e7f5371db5c5707c71602ef592a2fc5ca457688172bcdffbcb596e921"
+_PHD = "3e952ef8fcbcb6c746bf91f37c97e201f520ab728a3e2ddcf98ad9fc6a9d78f7"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4828,6 +4829,15 @@ class FoundationValidator:
         security = self.root / "SECURITY.md"
         if self._hf(security):
             security_text = self._rt(security)
+            if (
+                security_text is not None
+                and hashlib.sha256(security_text.encode("utf-8")).hexdigest() != _SRD
+            ):
+                self.add(
+                    "security.reporting_contract",
+                    security,
+                    "private reporting and coordinated-disclosure guidance must match the exact reviewed contract",
+                )
             if (
                 security_text is not None
                 and "https://github.com/chasebryan/orange/security/advisories/new" not in security_text
