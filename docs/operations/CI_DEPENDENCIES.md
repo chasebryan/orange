@@ -35,7 +35,7 @@ redistribution or grant a license for this repository.
 | Component | Identity and role | Current closure | Known gap |
 | --- | --- | --- | --- |
 | Rust toolchain | `rustc`/Cargo 1.96.1 selected by `rust-toolchain.toml`; compiles and tests the Rust 2024 workspace | Exact release version and required `rustfmt`/`clippy` components are selected; initial Cargo graph has no third-party crates | Platform archives, installer, standard-library bytes, signatures, licenses, and transitive host inputs are not vendored or digest-bound here |
-| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages; the protected gate extracts one captured compiler source archive into two distinct fresh roots, builds optimized `orangec` in separate target trees, and requires byte equality | Cargo, rustc, and the source-copy tools remain trusted; a lock file cannot archive the toolchain; source-relocated same-host repeatability is not an independent or cross-platform rebuild |
+| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages; every compiler check uses one captured repository archive including relative test inputs, with two additional extractions and separate target trees for byte-equal optimized `orangec` builds | Cargo, rustc, and the source-copy tools remain trusted; a lock file cannot archive the toolchain; source-relocated same-host repeatability is not an independent or cross-platform rebuild |
 | Rust standard library | Runtime/build interface used by `orange-compiler` and `orangec` | Supplied by the selected toolchain; no additional crate registry input | Target-specific standard-library and OS behavior are trusted; redistribution review remains open |
 
 These records authorize local owner development only. They do not establish a
@@ -43,12 +43,14 @@ hermetic build, toolchain redistribution right, compiler correctness, or release
 provenance.
 
 The byte-comparison check fixes the process environment, private file-creation
-mask, toolchain selection, locale, timezone, and source-date epoch, captures one
-compiler source archive, extracts it into two different absolute roots without
-local target state, then rebuilds it with separate target trees. Both builds
-still share one host, toolchain installation, Cargo home, owner, and trust
-domain. The result detects source-path-sensitive and other same-host
-nondeterminism; it is not independently reproduced release evidence.
+mask, toolchain selection, locale, timezone, and source-date epoch. It captures
+one repository source archive before Cargo runs, including repository-relative
+compiler test inputs, performs every check from an extracted root without local
+target state, then extracts the same archive into two more absolute roots for
+builds with separate target trees. Both builds still share one host, toolchain
+installation, Cargo home, owner, and trust domain. The result detects
+source-path-sensitive and other same-host nondeterminism; it is not independently
+reproduced release evidence.
 
 ## 3. Workflow map
 

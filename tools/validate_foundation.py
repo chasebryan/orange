@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "e768af277ab1b44bb990b90203eba1886fcdbdce1d2342a79039dae8d5c5ecaa"
+_PHD = "99f847d8ddf527b43c98e8a2506591a1d0d1fea9eb81a78065307e85d36598c5"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2394,21 +2394,21 @@ class FoundationValidator:
             if lines.count(required) != 1:
                 self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
         required_compiler_fragments = {
-            "umask 077;": "compiler checks need a fixed private creation mask",
-            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
+            "umask 077;": "compiler checks need a private creation mask",
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need fresh Cargo state",
             'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "Cargo home must be absolute",
-            "cd -- /;": "Cargo configuration discovery must start at the filesystem root",
+            "cd -- /;": "Cargo discovery must start at /",
             'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': (
                 "compiler environment must start empty"
             ),
-            'CARGO_HOME="$$cargo_home"': "Cargo must use the fresh temporary home",
-            "CARGO_NET_OFFLINE=true": "Cargo must remain offline independently of command flags",
+            'CARGO_HOME="$$cargo_home"': "Cargo needs the fresh home",
+            "CARGO_NET_OFFLINE=true": "Cargo must remain offline",
             'CARGO_TARGET_DIR="$$cargo_home/target"': (
                 "Cargo needs a fresh target tree"
             ),
             "RUSTUP_TOOLCHAIN=1.96.1": "Cargo needs the selected toolchain",
             "--workspace --all-targets --release --locked --offline": (
-                "optimized all-target tests must remain part of the compiler gate"
+                "optimized tests are required"
             ),
             (
                 "--workspace --lib --bins --locked --offline -- -D warnings "
@@ -2416,31 +2416,31 @@ class FoundationValidator:
                 "-D clippy::string_slice "
                 "-D clippy::indexing_slicing -D clippy::unwrap_used "
                 "-D clippy::expect_used -D clippy::panic"
-            ): "production targets must retain the strict arithmetic, slicing, and panic lint boundary",
+            ): "production lint boundary is required",
             (
                 'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" '
-                'cargo build --manifest-path "$$cargo_home/repro-src-a/Cargo.toml" '
+                'cargo build --manifest-path "$$cargo_home/repro-src-a/compiler/Cargo.toml" '
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
             ): "first build needs separate source and target trees",
             (
                 'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" '
-                'cargo build --manifest-path "$$cargo_home/repro-src-b/Cargo.toml" '
+                'cargo build --manifest-path "$$cargo_home/repro-src-b/compiler/Cargo.toml" '
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
             ): "second build needs separate source and target trees",
             'copy_compiler_source "$$cargo_home/repro-src-a"': "first source copy is required",
             'copy_compiler_source "$$cargo_home/repro-src-b"': "second source copy is required",
-            '--create --file="$$repro_source_archive" --exclude=./target': (
+            'copy_compiler_source "$$cargo_home/check-src"': "checks need captured source",
+            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "checks need captured manifest",
+            '--create --file="$$repro_source_archive" --exclude=./compiler/target': (
                 "archive must exclude target output"
             ),
             '--extract --file="$$repro_source_archive"': "copies must use captured archive",
             "optimized orangec builds differ across source roots": (
                 "relocated artifacts must match"
             ),
-            'manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': (
-                "the compiler manifest must be anchored to the protected Makefile"
-            ),
+            'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': "repository manifest must be anchored",
         }
         for required, meaning in required_compiler_fragments.items():
             if source.count(required) != 1:

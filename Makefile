@@ -33,24 +33,26 @@ check-compiler:
 				"$$@" \
 		); \
 	}; \
-	manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"; \
+	repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"; \
 	repro_source_archive="$$cargo_home/repro-source.tar"; \
 	copy_compiler_source() { \
 		local destination="$$1"; \
 		/usr/bin/mkdir -- "$$destination"; \
 		/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --extract --file="$$repro_source_archive" --directory="$$destination"; \
 	}; \
+	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --exclude=./compiler/target --directory="$${repository_manifest%/compiler/Cargo.toml}" -- .; \
+	copy_compiler_source "$$cargo_home/check-src"; \
+	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
 	run_cargo cargo fmt --manifest-path "$$manifest" --all -- --check; \
 	run_cargo cargo clippy --manifest-path "$$manifest" --workspace --all-targets --locked --offline -- -D warnings; \
 	run_cargo cargo clippy --manifest-path "$$manifest" --workspace --lib --bins --locked --offline -- -D warnings -D clippy::arithmetic_side_effects -D clippy::as_conversions -D clippy::string_slice -D clippy::indexing_slicing -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic; \
 	run_cargo cargo doc --manifest-path "$$manifest" --workspace --no-deps --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --release --locked --offline; \
-	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --exclude=./target --directory="$${manifest%/Cargo.toml}" -- .; \
 	copy_compiler_source "$$cargo_home/repro-src-a"; \
 	copy_compiler_source "$$cargo_home/repro-src-b"; \
-	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" cargo build --manifest-path "$$cargo_home/repro-src-a/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
-	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" cargo build --manifest-path "$$cargo_home/repro-src-b/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" cargo build --manifest-path "$$cargo_home/repro-src-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" cargo build --manifest-path "$$cargo_home/repro-src-b/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/repro-target-a/release/orangec" "$$cargo_home/repro-target-b/release/orangec"; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline
 

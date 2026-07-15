@@ -2228,7 +2228,12 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                "--exclude=./target",
+                'copy_compiler_source "$$cargo_home/check-src"',
+                'copy_compiler_source "$$cargo_home/repro-src-a"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                "--exclude=./compiler/target",
                 "--exclude=./missing",
                 "make.compiler_environment_contract",
             ),
