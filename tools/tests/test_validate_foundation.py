@@ -684,6 +684,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 "GIT_CONFIG_GLOBAL": os.devnull,
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_CEILING_DIRECTORIES": str(root.parent),
+                "GIT_DIR": str(root / ".git"),
                 "GIT_NO_LAZY_FETCH": "1",
                 "GIT_OPTIONAL_LOCKS": "0",
                 "GIT_TERMINAL_PROMPT": "0",
@@ -691,6 +692,31 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 "LC_ALL": "C",
                 "PATH": "/usr/bin:/bin",
             },
+        )
+
+    def test_git_inventory_rejects_external_gitdir_indirection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "worktree"
+            root.mkdir()
+            external_git = parent / "external.git"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--bare", "--quiet", external_git],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            (root / ".git").write_text(
+                f"gitdir: {external_git}\n",
+                encoding="utf-8",
+            )
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_git"},
         )
 
     def test_git_wait_failure_stops_and_reaps_the_producer(self) -> None:

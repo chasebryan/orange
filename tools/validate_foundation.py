@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "7bd7d31d50ce73a93ed08de2d07c37150051cad79bcd0a132158c9e610ee1075"
+GATE0_PROTECTED_FILE_DIGEST = "f1ac63f360aa271a0ae1b7a7b62fc51dd99f1f60ecf2bd8fc572852d8547818b"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -736,6 +736,25 @@ def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
                 pass
 
 
+def _repository_entry_is_directory(root: Path, raw_path: bytes) -> bool | None:
+    if not _secure_repository_reads_supported():
+        return None
+    descriptor: int | None = None
+    try:
+        parts = raw_path.split(b"/")
+        descriptor = _open_directory_descriptor(root, parts[:-1])
+        metadata = os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
+        return stat.S_ISDIR(metadata.st_mode)
+    except (NotImplementedError, OSError):
+        return False
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 @dataclasses.dataclass(frozen=True)
 class _GitRecordRead:
     records: tuple[bytes, ...] | None
@@ -746,6 +765,7 @@ def _sanitized_git_environment(root: Path) -> dict[str, str]:
     environment = {"PATH": "/usr/bin:/bin"}
     environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
     environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
+    environment["GIT_DIR"] = str(root / ".git")
     environment["GIT_WORK_TREE"] = str(root)
     return environment
 
@@ -1064,6 +1084,16 @@ def _git_object_id_is_valid(value: bytes) -> bool:
 
 
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
+    git_metadata_present = _repository_entry_presence(root, b".git")
+    if git_metadata_present and _repository_entry_is_directory(root, b".git") is not True:
+        findings.append(
+            Finding(
+                "resource.inventory_git",
+                ".git",
+                "repository Git metadata must be a local directory",
+            )
+        )
+        return [], False
     result = _read_git_nul_records(
         root,
         [
