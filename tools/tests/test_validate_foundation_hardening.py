@@ -245,6 +245,18 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.concurrency",
             ),
             (
+                "ci.yml",
+                "    timeout-minutes: 15\n",
+                "    timeout-minutes: 1\n",
+                "workflow.timeout",
+            ),
+            (
+                "scorecard.yml",
+                "    timeout-minutes: 20\n",
+                "    timeout-minutes: 200\n",
+                "workflow.timeout",
+            ),
+            (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - release\n",
