@@ -306,6 +306,40 @@ fn evaluation_of_an_empty_core_succeeds_without_output() {
 }
 
 #[test]
+fn option_marker_addresses_a_dash_prefixed_source_path() {
+    let process_id = std::process::id();
+    let directory = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("orangec-option-marker-{process_id}"));
+    let path = directory.join("--generated.or");
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    fs::write(&path, b"edition 2026; module generated {}\n").unwrap();
+
+    let rejected = orangec()
+        .current_dir(&directory)
+        .args(["check", "--generated.or"])
+        .output()
+        .unwrap();
+    let accepted = orangec()
+        .current_dir(&directory)
+        .args(["check", "--", "--generated.or"])
+        .output()
+        .unwrap();
+    fs::remove_dir_all(&directory).unwrap();
+
+    assert_eq!(rejected.status.code(), Some(2));
+    assert_eq!(rejected.stdout, b"");
+    assert!(
+        String::from_utf8(rejected.stderr)
+            .unwrap()
+            .contains("unknown option `--generated.or`")
+    );
+    assert_eq!(accepted.status.code(), Some(0));
+    assert_eq!(accepted.stdout, b"");
+    assert_eq!(accepted.stderr, b"");
+}
+
+#[test]
 fn accepts_the_minimal_program_from_standard_input_repeatably() {
     let source = concat!(
         "edition 2026;\n",
