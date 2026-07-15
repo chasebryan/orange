@@ -2351,6 +2351,21 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-repro-home.XXXXXXXX"',
+                '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'trap \'/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b"\' EXIT;',
+                'trap \'/usr/bin/rm -rf -- "$$cargo_home"\' EXIT;',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'repro_home_b="$$(CDPATH= cd -- "$$repro_home_b" && pwd -P)"',
+                'repro_home_b="$$cargo_home"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 "RUSTUP_TOOLCHAIN=1.96.1",
                 "RUSTUP_TOOLCHAIN=stable",
                 "make.compiler_environment_contract",
@@ -2366,18 +2381,33 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                'CARGO_TARGET_DIR="$$cargo_home/deep/target"',
+                'CARGO_TARGET_DIR="$$repro_home_b/deep/target"',
                 'CARGO_TARGET_DIR="$$cargo_home/target-a"',
                 "make.compiler_environment_contract",
             ),
             (
-                'copy_compiler_source "$$cargo_home/deep/src"',
+                'CARGO_HOME="$$repro_home_b/cargo"',
+                'CARGO_HOME="$$cargo_home"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'copy_compiler_source "$$repro_home_b/deep/src"',
                 'copy_compiler_source "$$cargo_home/repro-a"',
                 "make.compiler_environment_contract",
             ),
             (
-                '/usr/bin/mkdir -- "$$cargo_home/deep"; \\\n',
+                '/usr/bin/mkdir -- "$$repro_home_b/deep"; \\\n',
                 "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '"$$cargo_home/target-a/release/orangec" "$$repro_home_b/deep/target/release/orangec"',
+                '"$$cargo_home/target-a/release/orangec" "$$cargo_home/target-a/release/orangec"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a" "$$repro_home_b/deep/src")',
+                'tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a")',
                 "make.compiler_environment_contract",
             ),
             (

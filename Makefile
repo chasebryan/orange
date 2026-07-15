@@ -12,8 +12,11 @@ check-compiler:
 	@set -euo pipefail; \
 	umask 077; \
 	cargo_home="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX")"; \
-	cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"; \
 	trap '/usr/bin/rm -rf -- "$$cargo_home"' EXIT; \
+	cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"; \
+	repro_home_b="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-repro-home.XXXXXXXX")"; \
+	trap '/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b"' EXIT; \
+	repro_home_b="$$(CDPATH= cd -- "$$repro_home_b" && pwd -P)"; \
 	run_cargo() { \
 		( \
 			cd -- /; \
@@ -73,29 +76,32 @@ check-compiler:
 	run_cargo cargo doc --manifest-path "$$manifest" --workspace --no-deps --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --release --locked --offline; \
-	/usr/bin/mkdir -- "$$cargo_home/deep"; \
+	/usr/bin/mkdir -- "$$repro_home_b/deep"; \
 	copy_compiler_source "$$cargo_home/repro-a"; \
-	copy_compiler_source "$$cargo_home/deep/src"; \
+	copy_compiler_source "$$repro_home_b/deep/src"; \
 	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/target-a" cargo build --manifest-path "$$cargo_home/repro-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
-	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/deep/target" cargo build --manifest-path "$$cargo_home/deep/src/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
-	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/target-a/release/orangec" "$$cargo_home/deep/target/release/orangec"; \
+	run_cargo /usr/bin/env CARGO_HOME="$$repro_home_b/cargo" CARGO_TARGET_DIR="$$repro_home_b/deep/target" cargo build --manifest-path "$$repro_home_b/deep/src/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$cargo_home/target-a/release/orangec" "$$repro_home_b/deep/target/release/orangec"; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	verify_capture_identity; \
 	copy_compiler_source "$$cargo_home/check-reference"; \
 	/usr/bin/find "$$cargo_home/check-reference" -mindepth 1 ! -type d -printf '%P\0' | /usr/bin/sort --zero-terminated > "$$cargo_home/check-reference.paths"; \
-	for tested_root in check-src repro-a deep/src; do \
-		/usr/bin/find "$$cargo_home/$$tested_root" -mindepth 1 ! -type d -printf '%P\0' | /usr/bin/sort --zero-terminated > "$$cargo_home/$$tested_root.paths"; \
-		/usr/bin/cmp --silent -- "$$cargo_home/$$tested_root.paths" "$$cargo_home/check-reference.paths" || { printf 'tested source membership changed during checks: %s\n' "$$tested_root" >&2; exit 1; }; \
+	tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a" "$$repro_home_b/deep/src"); \
+	tested_root_index=0; \
+	for tested_root in "$${tested_roots[@]}"; do \
+		tested_root_index="$$((tested_root_index + 1))"; \
+		/usr/bin/find "$$tested_root" -mindepth 1 ! -type d -printf '%P\0' | /usr/bin/sort --zero-terminated > "$$cargo_home/tested-$$tested_root_index.paths"; \
+		/usr/bin/cmp --silent -- "$$cargo_home/tested-$$tested_root_index.paths" "$$cargo_home/check-reference.paths" || { printf 'tested source membership changed during checks: %s\n' "$$tested_root" >&2; exit 1; }; \
 	done; \
 	while IFS= read -r -d '' relative_path; do \
 		[[ -f "$$cargo_home/check-reference/$$relative_path" && ! -L "$$cargo_home/check-reference/$$relative_path" ]] || { printf 'captured source type is invalid during final comparison: %s\n' "$$relative_path" >&2; exit 1; }; \
 		reference_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/check-reference/$$relative_path")"; \
-		for tested_root in check-src repro-a deep/src; do \
-			[[ -f "$$cargo_home/$$tested_root/$$relative_path" && ! -L "$$cargo_home/$$tested_root/$$relative_path" ]] || { printf 'tested source type changed during checks: %s/%s\n' "$$tested_root" "$$relative_path" >&2; exit 1; }; \
-			tested_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/$$tested_root/$$relative_path")"; \
+		for tested_root in "$${tested_roots[@]}"; do \
+			[[ -f "$$tested_root/$$relative_path" && ! -L "$$tested_root/$$relative_path" ]] || { printf 'tested source type changed during checks: %s/%s\n' "$$tested_root" "$$relative_path" >&2; exit 1; }; \
+			tested_mode="$$(/usr/bin/stat --format=%a -- "$$tested_root/$$relative_path")"; \
 			[[ "$$tested_mode" == "$$reference_mode" ]] || { printf 'tested source mode changed during checks: %s/%s (%s -> %s)\n' "$$tested_root" "$$relative_path" "$$reference_mode" "$$tested_mode" >&2; exit 1; }; \
-			/usr/bin/cmp --silent -- "$$cargo_home/$$tested_root/$$relative_path" "$$cargo_home/check-reference/$$relative_path" || { printf 'tested source bytes changed during checks: %s/%s\n' "$$tested_root" "$$relative_path" >&2; exit 1; }; \
+			/usr/bin/cmp --silent -- "$$tested_root/$$relative_path" "$$cargo_home/check-reference/$$relative_path" || { printf 'tested source bytes changed during checks: %s/%s\n' "$$tested_root" "$$relative_path" >&2; exit 1; }; \
 		done; \
 	done < "$$repro_source_paths"; \
 	verify_capture_identity

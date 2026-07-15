@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.47",
+  "policy_version": "0.2.48",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -250,7 +250,7 @@
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
-    "Makefile": "21969929c83fd339f76c1432b96964260d8bb89142197513fe2e7e82de1d0655",
+    "Makefile": "9978006760754e3a9b018fbd8f813820776cf7bfa228868829caac15989056dd",
     "README.md": "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
@@ -305,7 +305,7 @@
     "scripts/ci/install-actionlint": "61d83dbca3977255ed5457ed0f6fa6b943b0e268df0b5a0271e2ef3c080c7bf3",
     "scripts/ci/install-lychee": "36999c6fe2b7e46b2c60f931bc3293ceb8706f5851cdf2d144e0c35bcc7489cd",
     "tools/tests/test_validate_foundation.py": "dfb804ab61cc813dd009c7210e966b28d6bf47c8bf10436a03a6627762682608",
-    "tools/tests/test_validate_foundation_hardening.py": "f530b95f055fecfb42f1279bd5c493f3e65b77d5afa0cbf78838312d7246e83b"
+    "tools/tests/test_validate_foundation_hardening.py": "fcbbe1f0b73909c48031ac69aa1fb939c3fde66b7a41c068f2199137ec3c503a"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

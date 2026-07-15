@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "1f1bba11b12f0edb8c6aa3ba558e6ebe38aa076c6d373ad7f42bff57c0ea0664"
+_PHD = "60cf3b548e6e86fe4fee89642b28d3c0b15ce5f799989d8c37bd5a80dc5fe0ed"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2379,72 +2379,63 @@ class FoundationValidator:
         source = self._rt(path)
         if source is None:
             return
-        required_lines = {
-            ".DEFAULT_GOAL := check": "default",
-            "override SHELL := /bin/bash": "Bash path fixed",
-            "override .SHELLFLAGS := -p -c": "startup state suppressed",
-            "unexport BASH_ENV ENV": "hooks unexported",
-            ".NOTPARALLEL: check": "check serialized",
-            "check: check-policy check-compiler": (
-                "policy before snapshot tests and Cargo"
-            ),
-        }
+        required_lines = (
+            ".DEFAULT_GOAL := check",
+            "override SHELL := /bin/bash",
+            "override .SHELLFLAGS := -p -c",
+            "unexport BASH_ENV ENV",
+            ".NOTPARALLEL: check",
+            "check: check-policy check-compiler",
+        )
         lines = source.splitlines()
-        for required, meaning in required_lines.items():
+        for required in required_lines:
             if lines.count(required) != 1:
-                self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
-        required_compiler_fragments = {
-            "umask 077;": "mask",
-            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "fresh state",
-            'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "absolute home",
-            "cd -- /;": "root cwd",
-            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': "empty env",
-            'CARGO_HOME="$$cargo_home"': "fresh home",
-            "CARGO_NET_OFFLINE=true": "offline",
-            'CARGO_TARGET_DIR="$$cargo_home/target"': "target",
-            "RUSTUP_TOOLCHAIN=1.96.1": "toolchain",
-            "--workspace --all-targets --release --locked --offline": "release",
-            (
-                "--workspace --lib --bins --locked --offline -- -D warnings "
-                "-D clippy::arithmetic_side_effects -D clippy::as_conversions "
-                "-D clippy::string_slice "
-                "-D clippy::indexing_slicing -D clippy::unwrap_used "
-                "-D clippy::expect_used -D clippy::panic"
-            ): "lints",
-            (
-                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/target-a" '
-                'cargo build --manifest-path "$$cargo_home/repro-a/compiler/Cargo.toml" '
-                "-p orangec --bin orangec "
-                "--release --locked --offline"
-            ): "root A",
-            (
-                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/deep/target" '
-                'cargo build --manifest-path "$$cargo_home/deep/src/compiler/Cargo.toml" '
-                "-p orangec --bin orangec "
-                "--release --locked --offline"
-            ): "root B",
-            '/usr/bin/mkdir -- "$$cargo_home/deep"': "depth",
-            'copy_compiler_source "$$cargo_home/repro-a"': "copy A",
-            'copy_compiler_source "$$cargo_home/deep/src"': "copy B",
-            'copy_compiler_source "$$cargo_home/check-src"': "copy C",
-            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "manifest",
-            '--create --file="$$repro_source_archive"': "archive",
-            "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'": "metadata",
-            '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"': "tracked list",
-            'ls-files --cached -z > "$$repro_source_paths_after"': "final list",
-            '--hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"': "safe list",
-            '--extract --file="$$repro_source_archive"': "extraction",
-            '! -L "$$cargo_home/check-src/$$relative_path" ]]': "type",
-            'live_executable="$$(( (8#$$live_mode & 0111) != 0 ))"': "mode class",
-            '[[ "$$live_executable" == "$$snapshot_executable" ]]': "mode compare",
-            '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"': "content",
-            '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"': "membership",
-            "optimized orangec builds differ across source roots": "artifacts match",
-            'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': "anchor",
-        }
-        for required, meaning in required_compiler_fragments.items():
+                self.add("make.entrypoint_contract", path, f"expected exactly one {required!r}")
+        required_compiler_fragments = (
+            "umask 077;",
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"',
+            'trap \'/usr/bin/rm -rf -- "$$cargo_home"\' EXIT;',
+            'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"',
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-repro-home.XXXXXXXX"',
+            'trap \'/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b"\' EXIT;',
+            'repro_home_b="$$(CDPATH= cd -- "$$repro_home_b" && pwd -P)"',
+            "cd -- /;",
+            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"',
+            'CARGO_HOME="$$cargo_home"',
+            "CARGO_NET_OFFLINE=true",
+            'CARGO_TARGET_DIR="$$cargo_home/target"',
+            "RUSTUP_TOOLCHAIN=1.96.1",
+            "--workspace --all-targets --release --locked --offline",
+            "--workspace --lib --bins --locked --offline -- -D warnings -D clippy::arithmetic_side_effects -D clippy::as_conversions -D clippy::string_slice -D clippy::indexing_slicing -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic",
+            'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/target-a" cargo build --manifest-path "$$cargo_home/repro-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline',
+            'run_cargo /usr/bin/env CARGO_HOME="$$repro_home_b/cargo" CARGO_TARGET_DIR="$$repro_home_b/deep/target" cargo build --manifest-path "$$repro_home_b/deep/src/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline',
+            '/usr/bin/mkdir -- "$$repro_home_b/deep"',
+            'copy_compiler_source "$$cargo_home/repro-a"',
+            'copy_compiler_source "$$repro_home_b/deep/src"',
+            'copy_compiler_source "$$cargo_home/check-src"',
+            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"',
+            '--create --file="$$repro_source_archive"',
+            "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'",
+            '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"',
+            'ls-files --cached -z > "$$repro_source_paths_after"',
+            '--hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"',
+            '--extract --file="$$repro_source_archive"',
+            '! -L "$$cargo_home/check-src/$$relative_path" ]]',
+            'live_executable="$$(( (8#$$live_mode & 0111) != 0 ))"',
+            '[[ "$$live_executable" == "$$snapshot_executable" ]]',
+            '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"',
+            '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"',
+            '"$$cargo_home/target-a/release/orangec" "$$repro_home_b/deep/target/release/orangec"',
+            "optimized orangec builds differ across source roots",
+            'tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a" "$$repro_home_b/deep/src")',
+            'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"',
+        )
+        for required in required_compiler_fragments:
             if source.count(required) != 1:
-                self.add("make.compiler_environment_contract", path, f"{meaning}: expected exactly {required!r}")
+                self.add("make.compiler_environment_contract", path, f"expected exactly one {required!r}")
+        tested_root_loop = 'for tested_root in "$${tested_roots[@]}"; do'
+        if source.count(tested_root_loop) != 2:
+            self.add("make.compiler_environment_contract", path, f"expected exactly two {tested_root_loop!r}")
         required_python_fragments = {
             "PYTHONHASHSEED=0": (7, "fixed Python hash seed"),
             "/usr/bin/python3 -S -P -B -X utf8": (
