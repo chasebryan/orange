@@ -324,6 +324,36 @@ class RepositoryResourceBoundTests(unittest.TestCase):
             self.assertEqual(validator._repository_read_bytes, len(b"first"))
             self.assertEqual(validator.findings, [])
 
+    def test_rejected_post_read_snapshot_retains_its_aggregate_charge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "record.txt"
+            payload = b"read before rejection"
+            path.write_bytes(payload)
+            validator = FoundationValidator(root)
+            original_fstat = os.fstat
+            calls = 0
+
+            def changed_after_read(descriptor: int) -> os.stat_result:
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    return root.stat()
+                return original_fstat(descriptor)
+
+            with mock.patch(
+                "tools.validate_foundation.os.fstat",
+                side_effect=changed_after_read,
+            ):
+                self.assertIsNone(validator._read_repository_bytes(path))
+
+            self.assertEqual(calls, 2)
+            self.assertEqual(validator._repository_read_bytes, len(payload))
+            self.assertIn(
+                "resource.concurrent_change",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_first_read_rejects_a_post_preflight_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
