@@ -697,20 +697,7 @@ fn read_source_with_post_read(
 }
 
 fn opened_file_matches_path_metadata(path_metadata: &Metadata, opened_metadata: &Metadata) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-
-        path_metadata.dev() == opened_metadata.dev() && path_metadata.ino() == opened_metadata.ino()
-    }
-    #[cfg(not(unix))]
-    {
-        path_metadata.len() == opened_metadata.len()
-            && path_metadata
-                .modified()
-                .ok()
-                .is_some_and(|modified| opened_metadata.modified().ok() == Some(modified))
-    }
+    opened_file_metadata_unchanged(path_metadata, opened_metadata)
 }
 
 fn opened_file_metadata_unchanged(opened_metadata: &Metadata, closed_metadata: &Metadata) -> bool {
@@ -2944,6 +2931,10 @@ mod tests {
             &opened_metadata,
             &closed_metadata
         ));
+        assert!(!opened_file_matches_path_metadata(
+            &opened_metadata,
+            &closed_metadata
+        ));
 
         drop(file);
         std::fs::remove_file(path).unwrap();
@@ -3043,6 +3034,10 @@ mod tests {
 
             assert_eq!(initial_metadata.ino(), final_metadata.ino());
             assert_eq!(initial_metadata.len(), final_metadata.len());
+            assert!(!opened_file_matches_path_metadata(
+                &initial_metadata,
+                &final_metadata
+            ));
             if mutation == "mode" {
                 assert_eq!(initial_metadata.mtime(), final_metadata.mtime());
                 assert_eq!(initial_metadata.mtime_nsec(), final_metadata.mtime_nsec());

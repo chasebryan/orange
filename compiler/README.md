@@ -63,9 +63,9 @@ source read. `--` ends option parsing so dash-prefixed source paths remain
 addressable.
 The portable regular-file boundary checks path metadata before opening and
 descriptor metadata after opening and again after reading. It also rechecks the
-path after reading. On Unix, the opened descriptor must have the same device and
-inode as both path snapshots, and its device, inode, length, modification time,
-and change time must remain stable through the read. The completed byte snapshot
+path after reading. On Unix, the opened descriptor's device, inode, length,
+modification time, and change time must match both path snapshots and remain
+stable through the read. The completed byte snapshot
 must also have exactly the descriptor's reported length. Other hosts compare
 length and modification time at each boundary. This remains short of race-free
 path confinement: replacing the entry with a special file can make `open` block
