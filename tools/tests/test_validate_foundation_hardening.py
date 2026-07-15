@@ -1905,8 +1905,8 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         for old, new in (
             ("up to 256 source inputs", "up to 255 source inputs"),
             (
-                "reads at most\n64 MiB (`64 * 1024 * 1024` bytes)",
-                "reads at most\n63 MiB (`63 * 1024 * 1024` bytes)",
+                "buffers at most\n64 MiB (`64 * 1024 * 1024` bytes)",
+                "buffers at most\n63 MiB (`63 * 1024 * 1024` bytes)",
             ),
             (
                 "caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)",

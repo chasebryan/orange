@@ -97,11 +97,13 @@ or evaluation bytes have been queued; untouched output and diagnostic streams
 are not flushed for a silent `check` or empty `eval`. A source with lexical
 errors is not parsed, and a source with syntax errors is not analyzed. File and
 standard-input reads stop at a deterministic 16 MiB per-source limit. Larger
-individual inputs fail with `ORC1003` before lexing. `orangec` reads at most
+individual inputs fail with `ORC1003` before lexing. `orangec` buffers at most
 64 MiB (`64 * 1024 * 1024` bytes) across all source operands per invocation;
 the first operand that would exceed the remaining total budget fails with
-`ORC1008`. Source bytes are never buffered without a bound. CLI-derived rendered
-source names reserve their complete escaped representation before encoding.
+`ORC1008`. Bytes consume that shared budget as soon as they are read into the
+bounded input buffer, even when the operand is later rejected. Source bytes are
+never buffered without a bound. CLI-derived rendered source names reserve their
+complete escaped representation before encoding.
 Source-map slots, borrowed
 source-name and source-text copies, and derived line/column indexes also use
 checked reservations; an allocation failure rejects the source through
