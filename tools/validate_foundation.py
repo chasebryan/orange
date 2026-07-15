@@ -24,6 +24,7 @@ from urllib.parse import unquote, urlsplit
 
 
 POLICY_PATH = Path("policy/gate0-repository-policy.json")
+MAKEFILE_CONTRACT_PATH = Path("policy/makefile-entrypoint-contract-v0.1.json")
 VALIDATOR_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
 ORANGE_BOOK_VERSION = "0.2"
@@ -239,6 +240,7 @@ docs/security/SECRETS_AND_INCIDENTS.md
 docs/security/THREAT_MODEL.md
 policy/README.md
 policy/gate0-repository-policy.json
+policy/makefile-entrypoint-contract-v0.1.json
 schemas/README.md
 schemas/gate0/claim-record-v0.1.schema.json
 schemas/gate0/evidence-manifest-v0.1.schema.json
@@ -324,7 +326,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "d556c87a9b8cedc6bc0f58defe1960ded70df68cb3c64d162efe653716ddfb3d"
+_PHD = "a21fda2585b86a97c13605a91c1c3efef328a7e008a5329aa7133ce6f4f76473"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2379,91 +2381,63 @@ class FoundationValidator:
         source = self._rt(path)
         if source is None:
             return
-        required_lines = (
-            ".DEFAULT_GOAL := check",
-            "override SHELL := /bin/bash",
-            "override .SHELLFLAGS := -p -c",
-            "unexport BASH_ENV ENV",
-            ".NOTPARALLEL: check",
-            "check: check-policy check-compiler",
-        )
+        contract_path = self.root / MAKEFILE_CONTRACT_PATH
+        try:
+            contract = self._load_repository_json(contract_path)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            self.add("make.contract", contract_path, f"invalid Makefile contract: {exc}")
+            return
+        if (
+            not isinstance(contract, dict)
+            or set(contract) != {"schema_version", "checks"}
+            or contract.get("schema_version") != "0.1.0"
+            or not isinstance(contract.get("checks"), list)
+            or not contract["checks"]
+        ):
+            self.add("make.contract", contract_path, "Makefile contract root is invalid")
+            return
+        allowed_codes = {
+            "make.entrypoint_contract",
+            "make.compiler_environment_contract",
+            "make.python_environment_contract",
+            "make.python_cache_contract",
+        }
+        seen: set[tuple[str, str]] = set()
+        parsed_checks: list[tuple[str, str, int, list[str]]] = []
+        for check in contract["checks"]:
+            if not isinstance(check, dict) or set(check) != {
+                "finding_code",
+                "match",
+                "expected_count",
+                "fragments",
+            }:
+                self.add("make.contract", contract_path, "Makefile contract check shape is invalid")
+                return
+            code = check["finding_code"]
+            match = check["match"]
+            count = check["expected_count"]
+            fragments = check["fragments"]
+            if (
+                code not in allowed_codes
+                or match not in {"line", "source"}
+                or type(count) is not int
+                or not 1 <= count <= 8
+                or not isinstance(fragments, list)
+                or not fragments
+                or any(type(fragment) is not str or not fragment for fragment in fragments)
+                or len(set(fragments)) != len(fragments)
+                or any((match, fragment) in seen for fragment in fragments)
+            ):
+                self.add("make.contract", contract_path, "Makefile contract check value is invalid")
+                return
+            seen.update((match, fragment) for fragment in fragments)
+            parsed_checks.append((code, match, count, fragments))
         lines = source.splitlines()
-        for required in required_lines:
-            if lines.count(required) != 1:
-                self.add("make.entrypoint_contract", path, f"expected exactly one {required!r}")
-        required_compiler_fragments = (
-            "umask 077;",
-            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"',
-            'trap \'/usr/bin/rm -rf -- "$$cargo_home"\' EXIT;',
-            'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"',
-            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-repro-home.XXXXXXXX"',
-            'trap \'/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b"\' EXIT;',
-            'repro_home_b="$$(CDPATH= cd -- "$$repro_home_b" && pwd -P)"',
-            "cd -- /;",
-            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"',
-            'CARGO_HOME="$$cargo_home"',
-            "CARGO_NET_OFFLINE=true",
-            'CARGO_TARGET_DIR="$$cargo_home/target"',
-            "RUSTUP_TOOLCHAIN=1.96.1",
-            "--workspace --all-targets --release --locked --offline",
-            "--workspace --lib --bins --locked --offline -- -D warnings -D clippy::arithmetic_side_effects -D clippy::as_conversions -D clippy::string_slice -D clippy::indexing_slicing -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic",
-            'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/target-a" cargo build --manifest-path "$$cargo_home/repro-a/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline',
-            'run_cargo /usr/bin/env CARGO_HOME="$$repro_home_b/cargo" CARGO_TARGET_DIR="$$repro_home_b/deep/target" cargo build --manifest-path "$$repro_home_b/deep/src/compiler/Cargo.toml" -p orangec --bin orangec --release --locked --offline',
-            '/usr/bin/mkdir -- "$$repro_home_b/deep"',
-            'copy_compiler_source "$$cargo_home/repro-a"',
-            'copy_compiler_source "$$repro_home_b/deep/src"',
-            'copy_compiler_source "$$cargo_home/check-src"',
-            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"',
-            '--create --file="$$repro_source_archive"',
-            "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'",
-            '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"',
-            'ls-files --cached -z > "$$repro_source_paths_after"',
-            '--hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"',
-            '--extract --file="$$repro_source_archive"',
-            '! -L "$$cargo_home/check-src/$$relative_path" ]]',
-            'live_executable="$$(( (8#$$live_mode & 0111) != 0 ))"',
-            '[[ "$$live_executable" == "$$snapshot_executable" ]]',
-            '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"',
-            '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"',
-            'artifact_a="$$cargo_home/target-a/release/orangec"',
-            'artifact_b="$$repro_home_b/deep/target/release/orangec"',
-            'for artifact in "$$artifact_a" "$$artifact_b"; do',
-            '[[ -f "$$artifact" && ! -L "$$artifact" ]]',
-            'artifact_a_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_a")"',
-            'artifact_b_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_b")"',
-            '[[ "$$artifact_a_mode" == "$$artifact_b_mode" ]]',
-            'filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False)',
-            'else "optimized orangec builds differ across source roots")\' "$$artifact_a" "$$artifact_b"',
-            "optimized orangec builds differ across source roots",
-            'tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a" "$$repro_home_b/deep/src")',
-            'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"',
-        )
-        for required in required_compiler_fragments:
-            if source.count(required) != 1:
-                self.add("make.compiler_environment_contract", path, f"expected exactly one {required!r}")
-        tested_root_loop = 'for tested_root in "$${tested_roots[@]}"; do'
-        if source.count(tested_root_loop) != 2:
-            self.add("make.compiler_environment_contract", path, f"expected exactly two {tested_root_loop!r}")
-        required_python_fragments = (
-            ("PYTHONHASHSEED=0", 7),
-            ("/usr/bin/python3 -S -P -B -X utf8", 7),
-            ("-W error::ResourceWarning", 7),
-        )
-        for required, expected_count in required_python_fragments:
-            if source.count(required) != expected_count:
-                self.add(
-                    "make.python_environment_contract",
-                    path,
-                    f"expected {expected_count} {required!r} fragments",
-                )
-        required_test_fragments = (
-            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"',
-            'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"',
-            'PYTHONPYCACHEPREFIX="$$pycache"',
-        )
-        for required in required_test_fragments:
-            if source.count(required) != 1:
-                self.add("make.python_cache_contract", path, f"expected exactly one {required!r}")
+        for code, match, count, fragments in parsed_checks:
+            haystack = lines if match == "line" else source
+            for fragment in fragments:
+                if haystack.count(fragment) != count:
+                    self.add(code, path, f"expected {count} {fragment!r} fragments")
 
     def _validate_compiler_dependency_boundary(self) -> None:
         toolchain_path = self.root / "rust-toolchain.toml"

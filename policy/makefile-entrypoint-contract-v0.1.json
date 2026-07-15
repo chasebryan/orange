@@ -1,0 +1,98 @@
+{
+  "schema_version": "0.1.0",
+  "checks": [
+    {
+      "finding_code": "make.entrypoint_contract",
+      "match": "line",
+      "expected_count": 1,
+      "fragments": [
+        ".DEFAULT_GOAL := check",
+        "override SHELL := /bin/bash",
+        "override .SHELLFLAGS := -p -c",
+        "unexport BASH_ENV ENV",
+        ".NOTPARALLEL: check",
+        "check: check-policy check-compiler"
+      ]
+    },
+    {
+      "finding_code": "make.compiler_environment_contract",
+      "match": "source",
+      "expected_count": 1,
+      "fragments": [
+        "umask 077;",
+        "/usr/bin/mktemp -d -- \"$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX\"",
+        "trap '/usr/bin/rm -rf -- \"$$cargo_home\"' EXIT;",
+        "cargo_home=\"$$(CDPATH= cd -- \"$$cargo_home\" && pwd -P)\"",
+        "/usr/bin/mktemp -d -- \"$${TMPDIR:-/tmp}/orange-repro-home.XXXXXXXX\"",
+        "trap '/usr/bin/rm -rf -- \"$$cargo_home\" \"$$repro_home_b\"' EXIT;",
+        "repro_home_b=\"$$(CDPATH= cd -- \"$$repro_home_b\" && pwd -P)\"",
+        "cd -- /;",
+        "env -i \\\n\t\t\t\tCARGO_HOME=\"$$cargo_home\"",
+        "CARGO_HOME=\"$$cargo_home\"",
+        "CARGO_NET_OFFLINE=true",
+        "CARGO_TARGET_DIR=\"$$cargo_home/target\"",
+        "RUSTUP_TOOLCHAIN=1.96.1",
+        "--workspace --all-targets --release --locked --offline",
+        "--workspace --lib --bins --locked --offline -- -D warnings -D clippy::arithmetic_side_effects -D clippy::as_conversions -D clippy::string_slice -D clippy::indexing_slicing -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic",
+        "run_cargo /usr/bin/env CARGO_TARGET_DIR=\"$$cargo_home/target-a\" cargo build --manifest-path \"$$cargo_home/repro-a/compiler/Cargo.toml\" -p orangec --bin orangec --release --locked --offline",
+        "run_cargo /usr/bin/env CARGO_HOME=\"$$repro_home_b/cargo\" CARGO_TARGET_DIR=\"$$repro_home_b/deep/target\" cargo build --manifest-path \"$$repro_home_b/deep/src/compiler/Cargo.toml\" -p orangec --bin orangec --release --locked --offline",
+        "/usr/bin/mkdir -- \"$$repro_home_b/deep\"",
+        "copy_compiler_source \"$$cargo_home/repro-a\"",
+        "copy_compiler_source \"$$repro_home_b/deep/src\"",
+        "copy_compiler_source \"$$cargo_home/check-src\"",
+        "manifest=\"$$cargo_home/check-src/compiler/Cargo.toml\"",
+        "--create --file=\"$$repro_source_archive\"",
+        "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'",
+        "/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C \"$$repository_root\" ls-files --cached -z > \"$$repro_source_paths\"",
+        "ls-files --cached -z > \"$$repro_source_paths_after\"",
+        "--hard-dereference --null --verbatim-files-from --no-recursion --directory=\"$$repository_root\" --files-from=\"$$repro_source_paths\"",
+        "--extract --file=\"$$repro_source_archive\"",
+        "! -L \"$$cargo_home/check-src/$$relative_path\" ]]",
+        "live_executable=\"$$(( (8#$$live_mode & 0111) != 0 ))\"",
+        "[[ \"$$live_executable\" == \"$$snapshot_executable\" ]]",
+        "/usr/bin/cmp --silent -- \"$$repository_root/$$relative_path\" \"$$cargo_home/check-src/$$relative_path\"",
+        "/usr/bin/cmp --silent -- \"$$repro_source_paths\" \"$$repro_source_paths_after\"",
+        "artifact_a=\"$$cargo_home/target-a/release/orangec\"",
+        "artifact_b=\"$$repro_home_b/deep/target/release/orangec\"",
+        "for artifact in \"$$artifact_a\" \"$$artifact_b\"; do",
+        "[[ -f \"$$artifact\" && ! -L \"$$artifact\" ]]",
+        "artifact_a_mode=\"$$(/usr/bin/stat --format=%a -- \"$$artifact_a\")\"",
+        "artifact_b_mode=\"$$(/usr/bin/stat --format=%a -- \"$$artifact_b\")\"",
+        "[[ \"$$artifact_a_mode\" == \"$$artifact_b_mode\" ]]",
+        "filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False)",
+        "else \"optimized orangec builds differ across source roots\")' \"$$artifact_a\" \"$$artifact_b\"",
+        "optimized orangec builds differ across source roots",
+        "tested_roots=(\"$$cargo_home/check-src\" \"$$cargo_home/repro-a\" \"$$repro_home_b/deep/src\")",
+        "repository_manifest=\"$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml\""
+      ]
+    },
+    {
+      "finding_code": "make.compiler_environment_contract",
+      "match": "source",
+      "expected_count": 2,
+      "fragments": [
+        "for tested_root in \"$${tested_roots[@]}\"; do"
+      ]
+    },
+    {
+      "finding_code": "make.python_environment_contract",
+      "match": "source",
+      "expected_count": 7,
+      "fragments": [
+        "PYTHONHASHSEED=0",
+        "/usr/bin/python3 -S -P -B -X utf8",
+        "-W error::ResourceWarning"
+      ]
+    },
+    {
+      "finding_code": "make.python_cache_contract",
+      "match": "source",
+      "expected_count": 1,
+      "fragments": [
+        "/usr/bin/mktemp -d -- \"$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX\"",
+        "pycache=\"$$(CDPATH= cd -- \"$$pycache\" && pwd -P)\"",
+        "PYTHONPYCACHEPREFIX=\"$$pycache\""
+      ]
+    }
+  ]
+}
