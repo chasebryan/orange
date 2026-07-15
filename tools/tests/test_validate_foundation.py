@@ -720,6 +720,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_DIR": str(root / ".git"),
                 "GIT_NO_LAZY_FETCH": "1",
+                "GIT_NO_REPLACE_OBJECTS": "1",
                 "GIT_OPTIONAL_LOCKS": "0",
                 "GIT_TERMINAL_PROMPT": "0",
                 "GIT_WORK_TREE": str(root),
@@ -1139,7 +1140,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(entries, [])
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
 
-    def test_stage_inventory_rejects_an_object_with_the_wrong_type(self) -> None:
+    def test_stage_inventory_rejects_a_replaced_object_with_the_wrong_type(self) -> None:
         clean_environment = {
             key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
         }
@@ -1160,6 +1161,14 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            blob = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", ":tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).stdout.strip()
             tree = subprocess.run(
                 ["git", "-C", str(root), "write-tree"],
                 check=True,
@@ -1170,6 +1179,13 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             ).stdout.strip()
             subprocess.run(
                 ["git", "-C", str(root), "update-index", "--cacheinfo", f"100644,{tree},tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "update-ref", f"refs/replace/{tree}", blob],
                 check=True,
                 env=clean_environment,
                 stdout=subprocess.DEVNULL,
