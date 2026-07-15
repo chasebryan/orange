@@ -2334,6 +2334,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
     def test_make_check_must_be_policy_first_serialized_and_environment_isolated(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         canonical = (source_root / "Makefile").read_text(encoding="utf-8")
+        contract = (source_root / "policy/makefile-entrypoint-contract-v0.1.json").read_bytes()
         mutations = (
             (".NOTPARALLEL: check\n", "", "make.entrypoint_contract"),
             ("override .SHELLFLAGS := -p -c\n", "", "make.entrypoint_contract"),
@@ -2561,12 +2562,26 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             with self.subTest(mutation=old), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / "Makefile").write_text(canonical.replace(old, new), encoding="utf-8")
+                contract_path = root / "policy/makefile-entrypoint-contract-v0.1.json"
+                contract_path.parent.mkdir()
+                contract_path.write_bytes(contract)
                 validator = FoundationValidator(root)
                 validator._validate_makefile_entrypoint()
-                self.assertIn(
-                    expected_code,
-                    {finding.code for finding in validator.findings},
-                )
+                codes = {finding.code for finding in validator.findings}
+                self.assertIn(expected_code, codes)
+                self.assertNotIn("make.contract", codes)
+
+    def test_make_contract_rejects_an_invalid_root(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_bytes((source_root / "Makefile").read_bytes())
+            contract_path = root / "policy/makefile-entrypoint-contract-v0.1.json"
+            contract_path.parent.mkdir()
+            contract_path.write_text("{}\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_makefile_entrypoint()
+            self.assertIn("make.contract", {finding.code for finding in validator.findings})
 
     def test_codeowners_and_fixture_mutations_are_digest_protected(self) -> None:
         paths = (
@@ -2574,6 +2589,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             "compiler/crates/orangec/tests/s3a_conformance.rs",
             "compiler/fixtures/s3a/invalid-word-range.or",
             "conformance/foundation/valid/claim-record.json",
+            "policy/makefile-entrypoint-contract-v0.1.json",
         )
         for value in paths:
             with self.subTest(path=value), tempfile.TemporaryDirectory() as directory:
