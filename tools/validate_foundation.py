@@ -328,6 +328,26 @@ _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
 _WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_MLC = '''{
+  "ignores": [
+    "compiler/target/**"
+  ],
+  "config": {
+    "MD013": false,
+    "MD024": {
+      "siblings_only": true
+    },
+    "MD025": {
+      "front_matter_title": ""
+    },
+    "MD033": {
+      "allowed_elements": [
+        "img"
+      ]
+    }
+  }
+}
+'''
 _DBC = """version: 2
 
 updates:
@@ -354,7 +374,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "4e35cc8b65d047e0730469df41c43617f0098e73bc72f957f09300b8ab044bfe"
+_PHD = "5185e74c1698ee6c03543e3e4ec1def984868e9fb7aa630dbfbe3c18bceb8f29"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -644,6 +664,15 @@ _DBM = {
             "weekly interval, applies a seven-day default cooldown, and permits at most five open\n"
             "update pull requests."
         ): (2, "github-actions", "/", "weekly", 7, 5),
+    },
+}
+_MLM = {
+    "docs/operations/CI_DEPENDENCIES.md": {
+        (
+            "Markdown lint ignores only `compiler/target/**`; disables line-length rule MD013;\n"
+            "applies duplicate-heading rule MD024 only to siblings; disables front-matter title\n"
+            "matching for MD025; and permits only the `img` HTML element under MD033."
+        ): ("compiler/target/**", "MD013", "MD024", "MD025", "MD033", "img"),
     },
 }
 _PM = {
@@ -2855,6 +2884,7 @@ class FoundationValidator:
             (_WM, "ci.workflow_timeout_spec", "workflow timeout contract"),
             (_DM, "ci.dependency_review_spec", "dependency-review contract"),
             (_DBM, "ci.dependabot_spec", "Dependabot contract"),
+            (_MLM, "ci.markdownlint_spec", "Markdown lint contract"),
             (_PM, "policy.resource_budget", "repository policy"),
         )
         for markers, finding_code, description in marker_groups:
@@ -3472,6 +3502,15 @@ class FoundationValidator:
                 )
 
     def _validate_workflows(self) -> None:
+        markdownlint_path = self.root / ".markdownlint-cli2.jsonc"
+        if self._hf(markdownlint_path):
+            markdownlint_source = self._rt(markdownlint_path)
+            if markdownlint_source is not None and markdownlint_source != _MLC:
+                self.add(
+                    "markdownlint.configuration",
+                    markdownlint_path,
+                    "Markdown lint configuration must match the exact reviewed contract",
+                )
         workflow_dir = self.root / ".github/workflows"
         required = set(self.policy[_RW])
         workflow_paths = [

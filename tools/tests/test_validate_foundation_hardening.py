@@ -130,6 +130,25 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_markdownlint_configuration_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = (source_root / ".markdownlint-cli2.jsonc").read_text(encoding="utf-8")
+            old = '    "compiler/target/**"'
+            self.assertIn(old, source)
+            (root / ".markdownlint-cli2.jsonc").write_text(
+                source.replace(old, '    "**"', 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator.policy = load_json(source_root / "policy/gate0-repository-policy.json")
+            validator._validate_workflows()
+            self.assertIn(
+                "markdownlint.configuration",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_codeowners_coverage_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
@@ -2278,6 +2297,20 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertIn("ci.dependabot_spec", self._codes(root))
+
+    def test_markdownlint_documentation_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "docs/operations/CI_DEPENDENCIES.md"
+            source = path.read_text(encoding="utf-8")
+            old = "Markdown lint ignores only `compiler/target/**`"
+            self.assertIn(old, source)
+            path.write_text(
+                source.replace(old, "Markdown lint ignores only `**`", 1),
+                encoding="utf-8",
+            )
+            self.assertIn("ci.markdownlint_spec", self._codes(root))
 
     def test_rust_source_stripping_never_copies_remaining_suffixes(self) -> None:
         class SliceRejectingString(str):
