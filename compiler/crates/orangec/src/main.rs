@@ -280,6 +280,7 @@ fn compile_with_limits(
     let mut compilation_failed = false;
     let mut output_failed = false;
     let mut standard_error_available = true;
+    let mut standard_error_flushed = false;
     let mut error_group_written = false;
     let mut standard_output_available = true;
     let mut standard_output_written = false;
@@ -583,6 +584,22 @@ fn compile_with_limits(
         }
     }
 
+    // When diagnostics and buffered token output are both pending, commit the
+    // diagnostic stream first. A diagnostic flush failure can then discard
+    // token bytes that have not yet escaped the process.
+    if standard_error_available
+        && error_group_written
+        && standard_output_available
+        && standard_output_written
+    {
+        if flush_retry_interrupted(standard_error).is_err() {
+            standard_error_available = false;
+            output_failed = true;
+        } else {
+            standard_error_flushed = true;
+        }
+    }
+
     if !output_failed
         && standard_output_available
         && standard_output_written
@@ -590,6 +607,7 @@ fn compile_with_limits(
     {
         output_failed = true;
         if let Some(group) = output_failure_group(options.command, &error) {
+            standard_error_flushed = false;
             emit_error_group(
                 standard_error,
                 &mut standard_error_available,
@@ -606,6 +624,7 @@ fn compile_with_limits(
 
     if standard_error_available
         && error_group_written
+        && !standard_error_flushed
         && flush_retry_interrupted(standard_error).is_err()
     {
         output_failed = true;
@@ -3416,6 +3435,47 @@ mod tests {
 
         assert_eq!(status, COMPILATION_ERROR);
         assert_eq!(output, b"");
+    }
+
+    #[test]
+    fn diagnostic_flush_failure_discards_buffered_token_output() {
+        let mut input = b"@".as_slice();
+        let mut output = Vec::new();
+        let mut error = FailFlush::default();
+
+        let status = run(
+            os_arguments(&["lex", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(output, b"");
+        assert_eq!(error.flush_attempts, 1);
+        assert!(error.bytes.starts_with(b"error[ORC0001]:"));
+    }
+
+    #[test]
+    fn token_flush_failure_reflushes_its_diagnostic_after_prior_diagnostics() {
+        let mut input = b"@".as_slice();
+        let mut output = FailFlush::default();
+        let mut error = InterruptFirstFlush::default();
+
+        let status = run(
+            os_arguments(&["lex", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(output.flush_attempts, 1);
+        assert!(!output.bytes.is_empty());
+        assert_eq!(error.flush_attempts, 3);
+        let error = String::from_utf8(error.bytes).unwrap();
+        assert!(error.starts_with("error[ORC0001]:"));
+        assert!(error.ends_with("\n\norangec: could not write token output\n"));
     }
 
     #[test]
