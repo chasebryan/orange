@@ -840,6 +840,14 @@ jobs:
                 self.assertIn('[[ $# -ne 1 || -z "${1-}" ]]', script)
                 if name == "check-external-links":
                     self.assertIn(
+                        '[[ ! -f "$1" || ! -s "$1" || ! -x "$1" || -L "$1" ]]',
+                        script,
+                    )
+                    self.assertIn(
+                        '$(/usr/bin/stat --format=%h -- "$1")',
+                        script,
+                    )
+                    self.assertIn(
                         "exec -- /usr/bin/env \\\n"
                         "  --ignore-environment \\\n"
                         "  -- \\\n"
@@ -1022,6 +1030,46 @@ jobs:
             self.assertEqual(rejected.stdout, "")
             self.assertIn("PATH_TO_LYCHEE must be absolute", rejected.stderr)
             self.assertFalse(observed.exists())
+
+            empty = temporary_root / "empty"
+            empty.touch(mode=0o755)
+            nonexecutable = temporary_root / "nonexecutable"
+            nonexecutable.write_text("probe\n", encoding="utf-8")
+            redirected = temporary_root / "redirected"
+            redirected.symlink_to(probe)
+            for invalid_path in (temporary_root / "missing", empty, nonexecutable, redirected):
+                invalid = subprocess.run(
+                    [helper, invalid_path],
+                    cwd=source_root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(invalid.returncode, 2)
+                self.assertEqual(invalid.stdout, "")
+                self.assertEqual(
+                    invalid.stderr,
+                    "PATH_TO_LYCHEE must be a nonempty executable regular file\n",
+                )
+
+            linked_source = temporary_root / "linked-source"
+            linked_source.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            linked_source.chmod(0o755)
+            linked_alias = temporary_root / "linked-alias"
+            linked_alias.hardlink_to(linked_source)
+            linked = subprocess.run(
+                [helper, linked_alias],
+                cwd=source_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(linked.returncode, 2)
+            self.assertEqual(linked.stdout, "")
+            self.assertEqual(
+                linked.stderr,
+                "PATH_TO_LYCHEE must not be hard linked\n",
+            )
 
             result = subprocess.run(
                 [helper, probe],
