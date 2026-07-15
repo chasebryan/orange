@@ -77,6 +77,24 @@ GATE0_GITIGNORE_ACTIVE_RULES = {
     ".gitignore": GATE0_IGNORE_PATTERNS[:-1],
     "compiler/.gitignore": ("/target/",),
 }
+GATE0_EDITORCONFIG_CONTRACT = """root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[Makefile]
+indent_style = tab
+
+[*.{json,jsonc,md,py,sh,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+"""
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _JM = "9007199254740991"
@@ -414,7 +432,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "d92acb0fa8051f0e536edb4146d3b6bd0e6ff8482656e736fa473efa2b1e6636"
+_PHD = "69dfc09e7f5371db5c5707c71602ef592a2fc5ca457688172bcdffbcb596e921"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2118,6 +2136,7 @@ class FoundationValidator:
         if not self.policy:
             return sorted(set(self.findings))
         self._validate_required_and_forbidden_paths()
+        self._validate_editorconfig_contract()
         self._validate_gitignore_contracts()
         self._validate_makefile_entrypoint()
         self._validate_compiler_dependency_boundary()
@@ -2635,6 +2654,18 @@ class FoundationValidator:
                     path,
                     "active ignore rules must match the exact reviewed repository-output contract",
                 )
+
+    def _validate_editorconfig_contract(self) -> None:
+        path = self.root / ".editorconfig"
+        if not self._hf(path):
+            return
+        source = self._rt(path)
+        if source is not None and source != GATE0_EDITORCONFIG_CONTRACT:
+            self.add(
+                "editorconfig.contract",
+                path,
+                "editor defaults must match the exact reviewed source-format contract",
+            )
 
     def _validate_makefile_entrypoint(self) -> None:
         path = self.root / "Makefile"
