@@ -714,15 +714,37 @@ fn rejects_more_than_256_source_inputs_before_reading() {
 #[cfg(unix)]
 #[test]
 fn rejects_non_regular_unix_source_paths() {
-    let output = orangec().arg("check").arg("/dev/null").output().unwrap();
+    use std::os::unix::fs::symlink;
 
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(output.stdout, b"");
+    let non_regular = orangec().arg("check").arg("/dev/null").output().unwrap();
+
+    assert_eq!(non_regular.status.code(), Some(1));
+    assert_eq!(non_regular.stdout, b"");
     assert_eq!(
-        String::from_utf8(output.stderr).unwrap(),
+        String::from_utf8(non_regular.stderr).unwrap(),
         concat!(
             "error[ORC1001]: could not read source file `/dev/null`\n",
             "  = note: path does not name a regular file\n",
+        )
+    );
+
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("orangec-source-symlink-{}.or", std::process::id()));
+    let _ = fs::remove_file(&path);
+    symlink(fixture(), &path).unwrap();
+    let symlink = orangec().arg("check").arg(&path).output().unwrap();
+    fs::remove_file(&path).unwrap();
+
+    assert_eq!(symlink.status.code(), Some(1));
+    assert_eq!(symlink.stdout, b"");
+    assert_eq!(
+        String::from_utf8(symlink.stderr).unwrap(),
+        format!(
+            concat!(
+                "error[ORC1001]: could not read source file `{}`\n",
+                "  = note: path does not name a regular file\n",
+            ),
+            path.display()
         )
     );
 }
