@@ -339,6 +339,48 @@ fn option_marker_addresses_a_dash_prefixed_source_path() {
     assert_eq!(accepted.stderr, b"");
 }
 
+#[cfg(unix)]
+#[test]
+fn option_marker_preserves_a_non_utf8_dash_prefixed_path() {
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let process_id = std::process::id();
+    let directory = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("orangec-raw-option-marker-{process_id}"));
+    let file_name = std::ffi::OsString::from_vec(b"-\x80.or".to_vec());
+    let path = directory.join(&file_name);
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    fs::write(&path, b"edition 2026; module raw_path {}\n").unwrap();
+
+    let rejected = orangec()
+        .current_dir(&directory)
+        .args([std::ffi::OsString::from("check"), file_name.clone()])
+        .output()
+        .unwrap();
+    let accepted = orangec()
+        .current_dir(&directory)
+        .args([
+            std::ffi::OsString::from("check"),
+            std::ffi::OsString::from("--"),
+            file_name,
+        ])
+        .output()
+        .unwrap();
+    fs::remove_dir_all(&directory).unwrap();
+
+    assert_eq!(rejected.status.code(), Some(2));
+    assert_eq!(rejected.stdout, b"");
+    assert!(
+        String::from_utf8(rejected.stderr)
+            .unwrap()
+            .contains("unknown option `-\\x80.or`")
+    );
+    assert_eq!(accepted.status.code(), Some(0));
+    assert_eq!(accepted.stdout, b"");
+    assert_eq!(accepted.stderr, b"");
+}
+
 #[test]
 fn accepts_the_minimal_program_from_standard_input_repeatably() {
     let source = concat!(
