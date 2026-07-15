@@ -2233,13 +2233,8 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                "--exclude=./compiler/target",
-                "--exclude=./missing",
-                "make.compiler_environment_contract",
-            ),
-            (
-                "--exclude=./.git",
-                "--exclude=./missing-git",
+                'ls-files --cached -z > "$$repro_source_paths"',
+                'ls-files --others -z > "$$repro_source_paths"',
                 "make.compiler_environment_contract",
             ),
             (
@@ -2253,8 +2248,8 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                "--exclude='*/__pycache__'",
-                "--exclude='*/missing-cache'",
+                "--null --verbatim-files-from --no-recursion",
+                "--null --files-from",
                 "make.compiler_environment_contract",
             ),
             (

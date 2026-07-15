@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "38c4fca95990b24edecd83ac11f697338ed01b58b9fc96e23bee83471360d2df"
+_PHD = "4089d2349810ef88dd9f51c9e9a120b93da8cf25fc0d5462305023625ddd8200"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2394,46 +2394,43 @@ class FoundationValidator:
             if lines.count(required) != 1:
                 self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
         required_compiler_fragments = {
-            "umask 077;": "private mask required",
+            "umask 077;": "mask required",
             '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "fresh state required",
             'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "absolute home required",
             "cd -- /;": "discovery starts at /",
-            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': "empty environment required",
+            'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': "empty env required",
             'CARGO_HOME="$$cargo_home"': "fresh home required",
             "CARGO_NET_OFFLINE=true": "offline required",
-            'CARGO_TARGET_DIR="$$cargo_home/target"': "fresh target required",
+            'CARGO_TARGET_DIR="$$cargo_home/target"': "target required",
             "RUSTUP_TOOLCHAIN=1.96.1": "toolchain required",
-            "--workspace --all-targets --release --locked --offline": "release tests required",
+            "--workspace --all-targets --release --locked --offline": "release required",
             (
                 "--workspace --lib --bins --locked --offline -- -D warnings "
                 "-D clippy::arithmetic_side_effects -D clippy::as_conversions "
                 "-D clippy::string_slice "
                 "-D clippy::indexing_slicing -D clippy::unwrap_used "
                 "-D clippy::expect_used -D clippy::panic"
-            ): "production lints required",
+            ): "lints required",
             (
                 'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" '
                 'cargo build --manifest-path "$$cargo_home/repro-src-a/compiler/Cargo.toml" '
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
-            ): "first roots differ",
+            ): "first roots",
             (
                 'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" '
                 'cargo build --manifest-path "$$cargo_home/repro-src-b/compiler/Cargo.toml" '
                 "-p orangec --bin orangec "
                 "--release --locked --offline"
-            ): "second roots differ",
-            'copy_compiler_source "$$cargo_home/repro-src-a"': "first copy required",
-            'copy_compiler_source "$$cargo_home/repro-src-b"': "second copy required",
-            'copy_compiler_source "$$cargo_home/check-src"': "check copy required",
+            ): "second roots",
+            'copy_compiler_source "$$cargo_home/repro-src-a"': "first copy",
+            'copy_compiler_source "$$cargo_home/repro-src-b"': "second copy",
+            'copy_compiler_source "$$cargo_home/check-src"': "check copy",
             'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "manifest required",
             '--create --file="$$repro_source_archive"': "archive required",
             "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'": "metadata fixed",
-            "--exclude=./.git": "Git metadata excluded",
-            "--exclude=./.agents": "agent state excluded",
-            "--exclude=./.codex": "Codex state excluded",
-            "--exclude='*/__pycache__'": "Python caches excluded",
-            "--exclude=./compiler/target": "target output excluded",
+            '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"': "tracked list required",
+            '--null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"': "safe list required",
             '--extract --file="$$repro_source_archive"': "extraction required",
             "optimized orangec builds differ across source roots": "artifacts must match",
             'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': "anchor required",
