@@ -328,6 +328,13 @@ _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
 _WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_IFD = {
+    "conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
+    "oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
+    "planning-defect.yml": "b190eccb90a1097bd18b53e114429a08c26c6a84bd9bc606789c5a38fe6952ec",
+    "planning-question.yml": "a2936886eb6f13e234eda5cf49923565fcd107539015df93c1245038534b9c2b",
+    "research-evidence.yml": "60fb04d67cb5acbc822fb9ea613ab0d3b8caebb35544daefe91cf0f59a408f7a",
+}
 _IRC = '''blank_issues_enabled: false
 contact_links:
   - name: Report a vulnerability privately
@@ -403,7 +410,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "12011d0a1906ea892842b57d911db558dabdb7642c792a751bde5973eb90abb8"
+_PHD = "467e4281bb2033c95697b75cd9bee662119944d736f44f9e4d50f6d756492d2e"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4738,6 +4745,21 @@ class FoundationValidator:
                             self.add("record.independence", path, "ADR owners and reviewers must be distinct")
 
     def _validate_repository_templates(self) -> None:
+        issue_template_dir = self.root / ".github/ISSUE_TEMPLATE"
+        for name, expected_digest in _IFD.items():
+            issue_form = issue_template_dir / name
+            if self._hf(issue_form):
+                issue_source = self._rt(issue_form)
+                if (
+                    issue_source is not None
+                    and hashlib.sha256(issue_source.encode("utf-8")).hexdigest()
+                    != expected_digest
+                ):
+                    self.add(
+                        "template.issue_form_contract",
+                        issue_form,
+                        "public issue-form guidance and safeguards must match the exact reviewed contract",
+                    )
         issue_config = self.root / ".github/ISSUE_TEMPLATE/config.yml"
         if self._hf(issue_config):
             issue_source = self._rt(issue_config)
