@@ -2278,6 +2278,16 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                'live_executable="$$(( (8#$$live_mode & 0111) != 0 ))"',
+                'live_executable="$$((8#$$live_mode & 0111))"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$live_executable" == "$$snapshot_executable" ]]',
+                "[[ 0 == 0 ]]",
+                "make.compiler_environment_contract",
+            ),
+            (
                 '/usr/bin/cmp --silent -- "$$repro_source_paths"',
                 '/usr/bin/true -- "$$repro_source_paths"',
                 "make.compiler_environment_contract",

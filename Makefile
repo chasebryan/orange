@@ -48,6 +48,11 @@ check-compiler:
 	copy_compiler_source "$$cargo_home/check-src"; \
 	while IFS= read -r -d '' relative_path; do \
 		[[ -f "$$repository_root/$$relative_path" && ! -L "$$repository_root/$$relative_path" && -f "$$cargo_home/check-src/$$relative_path" && ! -L "$$cargo_home/check-src/$$relative_path" ]] || { printf '%s\n' 'tracked source type changed during archive capture' >&2; exit 1; }; \
+		live_mode="$$(/usr/bin/stat --format=%a -- "$$repository_root/$$relative_path")"; \
+		snapshot_mode="$$(/usr/bin/stat --format=%a -- "$$cargo_home/check-src/$$relative_path")"; \
+		live_executable="$$(( (8#$$live_mode & 0111) != 0 ))"; \
+		snapshot_executable="$$(( (8#$$snapshot_mode & 0111) != 0 ))"; \
+		[[ "$$live_executable" == "$$snapshot_executable" ]] || { printf 'tracked source executable mode changed during archive capture: %s (%s -> %s)\n' "$$relative_path" "$$live_mode" "$$snapshot_mode" >&2; exit 1; }; \
 		/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path" || { printf '%s\n' 'tracked source changed during archive capture' >&2; exit 1; }; \
 	done < "$$repro_source_paths"; \
 	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths_after"; \
