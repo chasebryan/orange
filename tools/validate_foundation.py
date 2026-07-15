@@ -327,7 +327,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "6c50f0b2207a44bd0fccc248a069662ec80beb3c25ef7d924107ab2ac7e8801f"
+_PHD = "c38d950c436abae509e75435498f42dbd2c3d336ed60256a2f4bdb1d17963a48"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -535,13 +535,16 @@ _IB = {
         "MAXIMUM_EXTRACTED_FILE_KIB": 128 * 1024,
     },
 }
-_IU = (
-    'ulimit -f "$MAXIMUM_ARCHIVE_KIB"',
-    '--connect-timeout "$MAXIMUM_CONNECTION_SECONDS"',
-    '--max-filesize "$MAXIMUM_ARCHIVE_BYTES"',
-    '--max-time "$MAXIMUM_DOWNLOAD_SECONDS"',
-    'ulimit -f "$MAXIMUM_EXTRACTED_FILE_KIB"',
-)
+_IU = {
+    value: (
+        'ulimit -f "$MAXIMUM_ARCHIVE_KIB"',
+        '--connect-timeout "$MAXIMUM_CONNECTION_SECONDS"',
+        '--max-filesize "$MAXIMUM_ARCHIVE_BYTES"',
+        '--max-time "$MAXIMUM_DOWNLOAD_SECONDS"',
+        'ulimit -f "$MAXIMUM_EXTRACTED_FILE_KIB"',
+    )
+    for value in _IB
+}
 _IM = {
     "docs/operations/CI_DEPENDENCIES.md": {
         (
@@ -554,6 +557,37 @@ _IM = {
             "to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 64 MiB archive "
             "cap in both curl and the operating system, caps the extracted member at 128 MiB"
         ): (20, 300, 64 * 1024 * 1024, 128 * 1024),
+    },
+}
+_LB = {
+    "scripts/ci/check-external-links": {
+        "MAXIMUM_HOST_CONCURRENCY": 2,
+        "MAXIMUM_RETRIES": 3,
+        "MAXIMUM_TOTAL_CONCURRENCY": 16,
+        "REQUEST_TIMEOUT_SECONDS": 20,
+    },
+}
+_LU = {
+    "scripts/ci/check-external-links": (
+        "--exclude '^https://eprint\\.iacr\\.org/'",
+        "--exclude-all-private",
+        "--extensions md,yml",
+        '--host-concurrency "$MAXIMUM_HOST_CONCURRENCY"',
+        "--include-fragments",
+        '--max-concurrency "$MAXIMUM_TOTAL_CONCURRENCY"',
+        '--max-retries "$MAXIMUM_RETRIES"',
+        "--no-progress",
+        "--require-https",
+        '--timeout "$REQUEST_TIMEOUT_SECONDS"',
+        ". '.github/**/*.md' '.github/**/*.yml'",
+    ),
+}
+_LM = {
+    "docs/operations/CI_DEPENDENCIES.md": {
+        (
+            "The live invocation caps\n  per-host concurrency at 2, total concurrency at 16, "
+            "retries at 3, and each\n  request at 20 seconds."
+        ): (2, 16, 3, 20),
     },
 }
 _PM = {
@@ -2696,44 +2730,50 @@ class FoundationValidator:
                             f"{name} must equal {expected}; observed={observed!r}",
                         )
 
-        for value, expected_constants in _IB.items():
-            path = self.root / value
-            text = self._rt(path)
-            if text is None:
-                self.add("ci.installer_budget", path, "cannot read installer through bounded reader")
-                continue
-            declarations: dict[str, list[str]] = {}
-            for match in re.finditer(
-                r'(?m)^readonly ([A-Z][A-Z0-9_]*)="([0-9]+)"$',
-                text,
-            ):
-                declarations.setdefault(match.group(1), []).append(match.group(2))
-            for name, expected in expected_constants.items():
-                values = declarations.get(name, [])
-                if len(values) != 1:
-                    self.add(
-                        "ci.installer_budget",
-                        path,
-                        f"{name} must have exactly one decimal readonly declaration; observed={len(values)}",
-                    )
-                elif int(values[0]) != expected:
-                    self.add(
-                        "ci.installer_budget",
-                        path,
-                        f"{name} must equal {expected}; observed={values[0]}",
-                    )
-            for marker in _IU:
-                if text.count(marker) != 1:
-                    self.add(
-                        "ci.installer_budget",
-                        path,
-                        f"installer must use the exact resource-limit marker once: {marker!r}",
-                    )
+        shell_budget_groups = (
+            (_IB, _IU, "ci.installer_budget"),
+            (_LB, _LU, "ci.external_link_budget"),
+        )
+        for budgets, uses, finding_code in shell_budget_groups:
+            for value, expected_constants in budgets.items():
+                path = self.root / value
+                text = self._rt(path)
+                if text is None:
+                    self.add(finding_code, path, "cannot read CI helper through bounded reader")
+                    continue
+                declarations: dict[str, list[str]] = {}
+                for match in re.finditer(
+                    r'(?m)^readonly ([A-Z][A-Z0-9_]*)="([0-9]+)"$',
+                    text,
+                ):
+                    declarations.setdefault(match.group(1), []).append(match.group(2))
+                for name, expected in expected_constants.items():
+                    values = declarations.get(name, [])
+                    if len(values) != 1:
+                        self.add(
+                            finding_code,
+                            path,
+                            f"{name} must have exactly one decimal readonly declaration; observed={len(values)}",
+                        )
+                    elif int(values[0]) != expected:
+                        self.add(
+                            finding_code,
+                            path,
+                            f"{name} must equal {expected}; observed={values[0]}",
+                        )
+                for marker in uses[value]:
+                    if text.count(marker) != 1:
+                        self.add(
+                            finding_code,
+                            path,
+                            f"CI helper must use the exact resource-contract marker once: {marker!r}",
+                        )
 
         marker_groups = (
             (_RM, "compiler.language_spec_budget", "normative specification"),
             (_OM, "compiler.cli_spec_budget", "compiler contract"),
             (_IM, "ci.installer_spec_budget", "installer contract"),
+            (_LM, "ci.external_link_spec_budget", "external-link contract"),
             (_PM, "policy.resource_budget", "repository policy"),
         )
         for markers, finding_code, description in marker_groups:
