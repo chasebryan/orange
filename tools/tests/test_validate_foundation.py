@@ -387,8 +387,8 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 {finding.code for finding in validator.findings},
             )
 
-    def test_final_snapshot_rejects_late_additions_and_replacements(self) -> None:
-        for mutation in ("addition", "replacement"):
+    def test_final_snapshot_rejects_late_tree_drift(self) -> None:
+        for mutation in ("addition", "deletion", "replacement", "mode"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 path = root / "record.txt"
@@ -398,10 +398,14 @@ class RepositoryResourceBoundTests(unittest.TestCase):
 
                 if mutation == "addition":
                     (root / "added.txt").write_bytes(b"added")
-                else:
+                elif mutation == "deletion":
+                    path.unlink()
+                elif mutation == "replacement":
                     replacement = root / "replacement.txt"
                     replacement.write_bytes(b"replaced")
                     os.replace(replacement, path)
+                else:
+                    path.chmod(0o755)
                 validator._end()
 
                 self.assertIn(
