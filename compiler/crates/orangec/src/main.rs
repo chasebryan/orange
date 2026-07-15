@@ -643,6 +643,15 @@ fn read_source(
     standard_input: &mut impl Read,
     remaining_source_bytes: &mut usize,
 ) -> Result<Vec<u8>, ReadSourceError> {
+    read_source_with_post_read(path, standard_input, remaining_source_bytes, || {})
+}
+
+fn read_source_with_post_read(
+    path: &Path,
+    standard_input: &mut impl Read,
+    remaining_source_bytes: &mut usize,
+    post_read: impl FnOnce(),
+) -> Result<Vec<u8>, ReadSourceError> {
     if path == Path::new("-") {
         read_bounded_for_invocation(standard_input, remaining_source_bytes)
     } else {
@@ -672,8 +681,14 @@ fn read_source(
             return Err(ReadSourceError::InvocationTooLarge);
         }
         let bytes = read_bounded_for_invocation(&mut file, remaining_source_bytes)?;
+        post_read();
         let closed_metadata = file.metadata().map_err(ReadSourceError::Io)?;
-        if !opened_file_metadata_unchanged(&opened_metadata, &closed_metadata) {
+        let final_path_metadata = path
+            .metadata()
+            .map_err(|_| ReadSourceError::ChangedDuringRead)?;
+        if !opened_file_metadata_unchanged(&opened_metadata, &closed_metadata)
+            || !opened_file_matches_path_metadata(&final_path_metadata, &closed_metadata)
+        {
             return Err(ReadSourceError::ChangedDuringRead);
         }
         Ok(bytes)
@@ -689,8 +704,11 @@ fn opened_file_matches_path_metadata(path_metadata: &Metadata, opened_metadata: 
     }
     #[cfg(not(unix))]
     {
-        let _ = (path_metadata, opened_metadata);
-        true
+        path_metadata.len() == opened_metadata.len()
+            && path_metadata
+                .modified()
+                .ok()
+                .is_some_and(|modified| opened_metadata.modified().ok() == Some(modified))
     }
 }
 
@@ -2889,6 +2907,41 @@ mod tests {
 
         drop(file);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unix_source_path_replacement_after_read_is_rejected() {
+        let mut temporary = None;
+        for suffix in 0..1_024 {
+            let path = std::env::temp_dir().join(format!(
+                "orangec-source-path-{}-{suffix}",
+                std::process::id()
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => {
+                    temporary = Some(path);
+                    break;
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => panic!("could not create source path test directory: {error}"),
+            }
+        }
+        let directory = temporary.expect("could not allocate a source path test directory");
+        let source = directory.join("source.or");
+        let replacement = directory.join("replacement.or");
+        std::fs::write(&source, b"edition 2026; module original {}").unwrap();
+        std::fs::write(&replacement, b"edition 2026; module replaced {}").unwrap();
+        let mut input = &b""[..];
+        let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
+
+        let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
+            std::fs::rename(&replacement, &source).unwrap();
+        });
+
+        assert!(matches!(result, Err(ReadSourceError::ChangedDuringRead)));
+        std::fs::remove_file(source).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]
