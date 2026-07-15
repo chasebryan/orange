@@ -1879,7 +1879,16 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("compiler/crates/orange-compiler/src/semantics.rs", "16_384", "16_383"),
             ("compiler/crates/orange-compiler/src/eval.rs", "1_048_576", "1_048_575"),
             ("compiler/crates/orangec/src/main.rs", "usize = 256;", "usize = 255;"),
-            ("compiler/crates/orangec/src/main.rs", "64 * 1024 * 1024", "63 * 1024 * 1024"),
+            (
+                "compiler/crates/orangec/src/main.rs",
+                "MAX_SOURCE_BYTES_PER_INVOCATION: usize = 64 * 1024 * 1024",
+                "MAX_SOURCE_BYTES_PER_INVOCATION: usize = 63 * 1024 * 1024",
+            ),
+            (
+                "compiler/crates/orangec/src/main.rs",
+                "MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024",
+                "MAX_STANDARD_OUTPUT_BYTES: usize = 63 * 1024 * 1024",
+            ),
         )
         for value, old, new in mutations:
             with self.subTest(path=value, old=old), tempfile.TemporaryDirectory() as directory:
@@ -1895,7 +1904,14 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
     def test_cli_operational_limit_documentation_drift_is_rejected(self) -> None:
         for old, new in (
             ("up to 256 source inputs", "up to 255 source inputs"),
-            ("64 * 1024 * 1024", "63 * 1024 * 1024"),
+            (
+                "reads at most\n64 MiB (`64 * 1024 * 1024` bytes)",
+                "reads at most\n63 MiB (`63 * 1024 * 1024` bytes)",
+            ),
+            (
+                "caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)",
+                "caps standard output at 63 MiB (`63 * 1024 * 1024` bytes)",
+            ),
         ):
             with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)

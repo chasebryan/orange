@@ -320,22 +320,22 @@ GATE0_SCHEMA_PATHS = set(
 schemas/gate0/repository-control-snapshot-v0.1.schema.json
 schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventory-v0.1.schema.json""".split()
 )
-GATE0_WORKFLOW_INVENTORY = set(
+_WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "c9db870f3d19e0bf70cb25773ba0edb5148371ed1d7ebea97c52730e45078fb8"
-GATE0_CI_COMPILER_RUN = (
+GATE0_PROTECTED_FILE_DIGEST = "80137d6efe3a7e7aeb8fe257bec1a9b1057b29e5ebcb71a7e85c11d8fd1e6bd1"
+_CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
 )
-GATE0_CI_POLICY_TEST_RUN = (
+_PTR = (
     "run: pycache=\"$(/usr/bin/mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
     "pycache=\"$(CDPATH= cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; "
     "/usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
     "PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; "
     "sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'"
 )
-GATE0_CI_POLICY_RUN = (
+_PR = (
     "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
     "TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py"
 )
@@ -457,7 +457,7 @@ GATE0_RUST_LOCK = {
         },
     ],
 }
-ORANGE_2026_RUST_BUDGETS = {
+_RB = {
     "compiler/crates/orange-compiler/src/source.rs": {"MAX_SOURCE_BYTES": 16 * 1024 * 1024},
     "compiler/crates/orange-compiler/src/lexer.rs": {
         "MAX_TOKENS_PER_SOURCE": 262_144,
@@ -477,7 +477,7 @@ ORANGE_2026_RUST_BUDGETS = {
     },
     "compiler/crates/orange-compiler/src/eval.rs": {"MAX_EVALUATION_STEPS_PER_SOURCE": 1_048_576},
 }
-ORANGE_2026_SPEC_BUDGET_MARKERS = {
+_RM = {
     "docs/LANGUAGE_2026.md": {
         "at most 16 MiB\n(`16 * 1024 * 1024` bytes)": 16 * 1024 * 1024,
         "At most 262,144 non-trivia tokens": 262_144,
@@ -498,12 +498,14 @@ ORANGE_2026_SPEC_BUDGET_MARKERS = {
 _OB = {
     "compiler/crates/orangec/src/main.rs": {
         "MAX_SOURCES_PER_INVOCATION": 256,
+        "MAX_SOURCE_BYTES_PER_INVOCATION": 64 * 1024 * 1024,
         "MAX_STANDARD_OUTPUT_BYTES": 64 * 1024 * 1024,
     },
 }
 _OM = {
     "compiler/README.md": {
         "`orangec` accepts up to 256 source inputs in argument order": 256,
+        "`orangec` reads at most\n64 MiB (`64 * 1024 * 1024` bytes) across all source operands per invocation": 64 * 1024 * 1024,
         "`orangec` caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
     },
 }
@@ -2122,7 +2124,7 @@ class FoundationValidator:
             )
         if set(policy["executable_paths"]) != GATE0_EXECUTABLE_PATHS:
             self.add("policy.executables", self.policy_path, "solo-bootstrap executable allowlist must remain exact")
-        if set(policy["workflow_inventory"]) != GATE0_WORKFLOW_INVENTORY:
+        if set(policy["workflow_inventory"]) != _WI:
             self.add("policy.workflow_inventory", self.policy_path, "solo-bootstrap workflow inventory must remain exact")
         protected_digest = hashlib.sha256(
             json.dumps(
@@ -2590,7 +2592,7 @@ class FoundationValidator:
 
     def _validate_compiler_language_boundary(self) -> None:
         budget_groups = (
-            (ORANGE_2026_RUST_BUDGETS, True, "compiler.language_budget"),
+            (_RB, True, "compiler.language_budget"),
             (_OB, False, "compiler.cli_budget"),
         )
         for budgets, require_public, finding_code in budget_groups:
@@ -2626,7 +2628,7 @@ class FoundationValidator:
                         )
 
         marker_groups = (
-            (ORANGE_2026_SPEC_BUDGET_MARKERS, "compiler.language_spec_budget", "normative specification"),
+            (_RM, "compiler.language_spec_budget", "normative specification"),
             (_OM, "compiler.cli_spec_budget", "compiler contract"),
         )
         for markers, finding_code, description in marker_groups:
@@ -3252,11 +3254,11 @@ class FoundationValidator:
             if PurePosixPath(path.name).match("*.y*ml")
         ]
         actual = {path.name for path in workflow_paths}
-        if actual != GATE0_WORKFLOW_INVENTORY:
+        if actual != _WI:
             self.add(
                 "workflow.inventory",
                 workflow_dir,
-                f"workflow inventory must be exact; missing={sorted(GATE0_WORKFLOW_INVENTORY - actual)}, extra={sorted(actual - GATE0_WORKFLOW_INVENTORY)}",
+                f"workflow inventory must be exact; missing={sorted(_WI - actual)}, extra={sorted(actual - _WI)}",
             )
         for name in sorted(required - actual):
             self.add("workflow.required", f".github/workflows/{name}", "required workflow is missing")
@@ -3499,10 +3501,10 @@ class FoundationValidator:
             if boundary != expected_boundary:
                 self.add("workflow.solo_boundary_contract", path, "the solo contribution guard must match its reviewed fail-closed contract")
             ci_runs = {
-                "Validate solo-bootstrap repository policy": GATE0_CI_POLICY_RUN,
-                "Run foundation validator unit tests": GATE0_CI_POLICY_TEST_RUN,
+                "Validate solo-bootstrap repository policy": _PR,
+                "Run foundation validator unit tests": _PTR,
                 "Install selected Rust components": 'run: /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt --no-self-update',
-                "Validate Rust compiler": GATE0_CI_COMPILER_RUN,
+                "Validate Rust compiler": _CR,
             }
             for step_name, expected_run in ci_runs.items():
                 block = yaml_without_comments("\n".join(steps.get(step_name, [])))
