@@ -220,22 +220,23 @@ MINIMUM_ACTION_REPOSITORIES = set(
 actions/upload-artifact github/codeql-action/upload-sarif zizmorcore/zizmor-action""".split()
 )
 _BRAND_IMPORT = "Byte-for-byte import from the steward-supplied Orange-Assets collection on "
+_BRAND_ROLE = "Official working Orange "
 GATE0_ALLOWED_CONTAINER_IMAGES = {
     "ghcr.io/ossf/scorecard-action@sha256:"
     "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
 }
 GATE0_ALLOWED_BINARY_ARTIFACTS = [
-    {"path": path, "sha256": digest, "role": role, "provenance": _BRAND_IMPORT + date}
+    {"path": path, "sha256": digest, "role": _BRAND_ROLE + role, "provenance": _BRAND_IMPORT + date}
     for path, digest, role, date in (
-        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "Official working Orange wordmark on a light background", "2026-07-11"),
-        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "Official working Orange emblem source variant on a light background", "2026-07-11"),
-        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "Official working Orange horizontal lockup JPEG", "2026-07-11"),
-        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "Official working Orange transparent wordmark", "2026-07-11"),
-        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "Official working Orange transparent emblem", "2026-07-11"),
-        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "Official working Orange primary horizontal lockup with embedded C2PA claim", "2026-07-11"),
-        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "Official working Orange emblem JPEG on a light background", "2026-07-11"),
-        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "Official working Orange primary emblem with embedded C2PA claim", "2026-07-11"),
-        ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "Official working Orange hand-drawn README and Orange Book horizontal lockup on a light background", "2026-07-14"),
+        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "wordmark on a light background", "2026-07-11"),
+        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "emblem source variant on a light background", "2026-07-11"),
+        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "horizontal lockup JPEG", "2026-07-11"),
+        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "transparent wordmark", "2026-07-11"),
+        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "transparent emblem", "2026-07-11"),
+        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "primary horizontal lockup with embedded C2PA claim", "2026-07-11"),
+        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "emblem JPEG on a light background", "2026-07-11"),
+        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "primary emblem with embedded C2PA claim", "2026-07-11"),
+        ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "hand-drawn README and Orange Book horizontal lockup on a light background", "2026-07-14"),
     )
 ]
 GATE0_BRAND_ASSET_METADATA = {
@@ -282,7 +283,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "71054553b9a82174e998688bcb960c2b11d5dc049543372f44fae8fae15bc18d"
+GATE0_PROTECTED_FILE_DIGEST = "fc4e1dc9316a7927a1a2580093dfec87dc23f2124728c5a38f73677b00472d38"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1107,20 +1108,25 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
                 )
             )
             return [], False
-    if git_metadata_present:
-        shared_index = _read_git_records(
+    for arguments, terminator, expected in (
+        ("rev-parse --shared-index-path".split(), b"\n", ()),
+        (r"config -z --local --no-includes --get-regexp ^include(\.|if\.)".split(), b"\0", None),
+    ):
+        if not git_metadata_present:
+            break
+        indirect = _read_git_records(
             root,
-            ["rev-parse", "--shared-index-path"],
+            arguments,
             maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
-            terminator=b"\n",
+            terminator=terminator,
             flag=None,
         )
-        if shared_index.finding is not None:
-            findings.append(shared_index.finding)
+        if indirect.finding is not None:
+            findings.append(indirect.finding)
             return [], False
-        if shared_index.records is None or shared_index.records:
+        if indirect.records != expected:
             findings.append(
-                Finding("resource.inventory_git", ".git/index", "Git split indexes are not admitted")
+                Finding("resource.inventory_git", ".git", "Git metadata indirection is not admitted")
             )
             return [], False
     result = _read_git_records(

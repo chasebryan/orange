@@ -859,6 +859,26 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(paths, [])
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
 
+    def test_git_inventory_rejects_external_config_includes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            external = parent / "external.config"
+            external.write_text("[core]\n\tignoreCase = true\n", encoding="utf-8")
+            with (root / ".git" / "config").open("a", encoding="utf-8") as config:
+                config.write(f"[include]\n\tpath = {external}\n")
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
+
     def test_git_wait_failure_stops_and_reaps_the_producer(self) -> None:
         process = _FailingFirstWaitPopen(b"file.txt\0")
         findings = []
