@@ -3085,6 +3085,16 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "exec 8<&- 9<&-;",
+                "/usr/bin/true;",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "run_cargo /bin/bash -p -c '[[ ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 ]]'",
+                "/usr/bin/true",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "RUSTUP_TOOLCHAIN=1.96.1",
                 "RUSTUP_TOOLCHAIN=stable",
                 "make.compiler_environment_contract",
@@ -3170,8 +3180,8 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.python_environment_contract",
             ),
             (
-                'ls-files --cached -z > "$$repro_source_paths"',
-                'ls-files --others -z > "$$repro_source_paths"',
+                'ls-files --cached -z > "$$capture_paths_path"',
+                'ls-files --others -z > "$$capture_paths_path"',
                 "make.compiler_environment_contract",
             ),
             (
@@ -3197,6 +3207,21 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             (
                 "--null --verbatim-files-from --no-recursion",
                 "--null --files-from",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'exec 8<"$$capture_paths_path"; \\\n',
+                "exec 8</dev/null; \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'exec 9<"$$capture_archive_path"; \\\n',
+                "exec 9</dev/null; \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '/usr/bin/rm -- "$$capture_paths_path" "$$capture_archive_path"',
+                "/usr/bin/true --",
                 "make.compiler_environment_contract",
             ),
             (

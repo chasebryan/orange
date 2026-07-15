@@ -53,9 +53,12 @@ lookup root. A second policy check rejects test-side drift before Cargo runs fro
 the filesystem root with the exact selected toolchain, preventing caller wrapper
 variables, flags, target runners, home or ancestor Cargo configuration, and
 ignored prior build artifacts from steering the build after policy validation.
-A third policy check runs after all Rust commands. The gate also retains
-unexported SHA-256 identities for the original archive and NUL-delimited tracked
-path inventory, verifies those identities before and after its final comparison,
+A third policy check runs after all Rust commands. After initial capture
+consistency checks, the gate opens the original archive and NUL-delimited tracked
+path inventory through read-only descriptors, unlinks their filesystem names,
+and closes both descriptors before copied Python or Rust code executes. Trusted
+gate operations retain the descriptors for extraction and SHA-256 identity
+checks. The gate verifies those identities before and after its final comparison,
 extracts a fresh reference, compares NUL-safe sorted non-directory membership
 across the tested check root and both relocated reproducibility roots, and
 compares every tracked file's type, complete mode, and bytes with the reference.

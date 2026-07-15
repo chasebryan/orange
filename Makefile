@@ -19,6 +19,7 @@ check-compiler:
 	repro_home_b="$$(CDPATH= cd -- "$$repro_home_b" && pwd -P)"; \
 	run_cargo() { \
 		( \
+			exec 8<&- 9<&-; \
 			cd -- /; \
 			/usr/bin/env -i \
 				CARGO_HOME="$$cargo_home" \
@@ -38,16 +39,27 @@ check-compiler:
 	}; \
 	repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"; \
 	repository_root="$${repository_manifest%/compiler/Cargo.toml}"; \
-	repro_source_archive="$$cargo_home/repro-source.tar"; \
-	repro_source_paths="$$cargo_home/repro-source.paths"; \
+	capture_archive_path="$$cargo_home/repro-source.tar"; \
+	capture_paths_path="$$cargo_home/repro-source.paths"; \
+	repro_source_archive=/proc/self/fd/9; \
+	repro_source_paths=/proc/self/fd/8; \
 	repro_source_paths_after="$$cargo_home/repro-source-after.paths"; \
 	copy_compiler_source() { \
 		local destination="$$1"; \
 		/usr/bin/mkdir -- "$$destination"; \
 		/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --extract --file="$$repro_source_archive" --directory="$$destination"; \
 	}; \
-	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"; \
-	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$repro_source_archive" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t' --hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"; \
+	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$capture_paths_path"; \
+	/usr/bin/env -u TAR_OPTIONS /usr/bin/tar --create --file="$$capture_archive_path" --format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t' --hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$capture_paths_path"; \
+	exec 8<"$$capture_paths_path"; \
+	exec 9<"$$capture_archive_path"; \
+	/usr/bin/rm -- "$$capture_paths_path" "$$capture_archive_path"; \
+	repro_source_archive_identity="$$(/usr/bin/sha256sum --binary -- "$$repro_source_archive")"; \
+	repro_source_paths_identity="$$(/usr/bin/sha256sum --binary -- "$$repro_source_paths")"; \
+	verify_capture_identity() { \
+		[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_archive")" == "$$repro_source_archive_identity" ]] || { printf '%s\n' 'captured source archive changed during checks' >&2; exit 1; }; \
+		[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_paths")" == "$$repro_source_paths_identity" ]] || { printf '%s\n' 'captured source path inventory changed during checks' >&2; exit 1; }; \
+	}; \
 	copy_compiler_source "$$cargo_home/check-src"; \
 	while IFS= read -r -d '' relative_path; do \
 		[[ -f "$$repository_root/$$relative_path" && ! -L "$$repository_root/$$relative_path" && -f "$$cargo_home/check-src/$$relative_path" && ! -L "$$cargo_home/check-src/$$relative_path" ]] || { printf '%s\n' 'tracked source type changed during archive capture' >&2; exit 1; }; \
@@ -60,13 +72,10 @@ check-compiler:
 	done < "$$repro_source_paths"; \
 	/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths_after"; \
 	/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after" || { printf '%s\n' 'tracked source membership changed during archive capture' >&2; exit 1; }; \
-	repro_source_archive_identity="$$(/usr/bin/sha256sum --binary -- "$$repro_source_archive")"; \
-	repro_source_paths_identity="$$(/usr/bin/sha256sum --binary -- "$$repro_source_paths")"; \
-	verify_capture_identity() { \
-		[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_archive")" == "$$repro_source_archive_identity" ]] || { printf '%s\n' 'captured source archive changed during checks' >&2; exit 1; }; \
-		[[ "$$(/usr/bin/sha256sum --binary -- "$$repro_source_paths")" == "$$repro_source_paths_identity" ]] || { printf '%s\n' 'captured source path inventory changed during checks' >&2; exit 1; }; \
-	}; \
+	/usr/bin/rm -- "$$repro_source_paths_after"; \
+	verify_capture_identity; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
+	run_cargo /bin/bash -p -c '[[ ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 ]]'; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$cargo_home/snapshot-python-cache" /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); unittest.main(module=None)' "$$cargo_home/check-src" discover -s "$$cargo_home/check-src/tools/tests" -p 'test_*.py'; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \

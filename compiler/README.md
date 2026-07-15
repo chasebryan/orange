@@ -53,16 +53,20 @@ tracked path in the working tree and first extraction must be a regular,
 non-symlinked file, their executable classifications and bytes must match, and a
 fresh Git inventory must match the original path list, rejecting observed type,
 executable-mode, content, or membership edits during capture. The copied
-validator first policy-checks that exact exported tree before its foundation
-test modules import. After those tests, it policy-checks the tree again before
-Cargo, so Python-test drift cannot reach Rust execution. Formatting, linting,
-documentation, and Rust tests use the same extracted check root. A third policy
-check runs after all Rust commands. The gate then verifies that the original
-archive and path inventory retained their captured identities, extracts a fresh
-reference, compares the NUL-safe sorted non-directory membership of all three
-compiler input roots, and compares every tracked file's type, complete mode, and
-bytes with the reference. These exact comparisons reject added source entries
-and policy-valid tracked-source drift before the gate can pass. Optimized
+validator opens the archive and inventory through read-only descriptors, unlinks
+their filesystem names, and closes those descriptors before any copied Python
+or Rust code executes. Trusted gate operations alone inherit the descriptors
+used for later extraction and identity checks. The copied validator first
+policy-checks that exact exported tree before its foundation test modules import.
+After those tests, it policy-checks the tree again before Cargo, so Python-test
+drift cannot reach Rust execution. Formatting, linting, documentation, and Rust
+tests use the same extracted check root. A third policy check runs after all Rust
+commands. The gate then verifies that the original archive and path inventory
+retained their captured identities, extracts a fresh reference, compares the
+NUL-safe sorted non-directory membership of all three compiler input roots, and
+compares every tracked file's type, complete mode, and bytes with the reference.
+These exact comparisons reject added source entries and policy-valid
+tracked-source drift before the gate can pass. Optimized
 `orangec` builds use independently created temporary ancestors, relocated
 source roots, separate Cargo homes, and separate target trees whose names differ
 in bytes, length, and directory depth. Both artifacts must be regular
