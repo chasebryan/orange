@@ -88,6 +88,12 @@ GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS = 4096
 GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
 _GATE0_GIT_READ_CHUNK_BYTES = 4096
 _GATE0_GIT_TIMEOUT_SECONDS = 30.0
+_RI_PROTOCOL = "resource.inventory_protocol"
+_RI_READ = "resource.inventory_read"
+_RI_GIT = "resource.inventory_git"
+_RI_ENCODING = "resource.inventory_encoding"
+_R_UNSUPPORTED = "resource.unsupported_host"
+_R_CONCURRENT = "resource.concurrent_change"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -833,13 +839,13 @@ def _read_git_records(
             _stop_git_process(process, cleanup_deadline - time.monotonic())
             return _GitRecordRead(
                 None,
-                Finding("resource.inventory_read", ".", f"cannot close Git input: {exc}"),
+                Finding(_RI_READ, ".", f"cannot close Git input: {exc}"),
             )
     if process.stdout is None:
         _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
-            Finding("resource.inventory_protocol", ".", "Git inventory did not expose a stdout stream"),
+            Finding(_RI_PROTOCOL, ".", "Git inventory did not expose a stdout stream"),
         )
 
     records: list[bytes] = []
@@ -853,7 +859,7 @@ def _read_git_records(
     try:
         output_descriptor = process.stdout.fileno()
     except (AttributeError, OSError, ValueError):
-        return reject("resource.inventory_protocol", "Git inventory stdout has no usable descriptor")
+        return reject(_RI_PROTOCOL, "Git inventory stdout has no usable descriptor")
 
     try:
         while True:
@@ -890,7 +896,7 @@ def _read_git_records(
                 pending.extend(segment)
                 if not pending:
                     return reject(
-                        "resource.inventory_protocol",
+                        _RI_PROTOCOL,
                         "Git inventory contains an empty NUL-delimited record",
                     )
                 records.append(bytes(pending))
@@ -902,7 +908,7 @@ def _read_git_records(
                     )
                 offset = end + len(terminator)
     except (OSError, ValueError) as exc:
-        return reject("resource.inventory_read", f"cannot read bounded Git inventory: {exc}")
+        return reject(_RI_READ, f"cannot read bounded Git inventory: {exc}")
 
     try:
         process.stdout.close()
@@ -910,7 +916,7 @@ def _read_git_records(
         _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
-            Finding("resource.inventory_read", ".", f"cannot close bounded Git inventory: {exc}"),
+            Finding(_RI_READ, ".", f"cannot close bounded Git inventory: {exc}"),
         )
     try:
         return_code = process.wait(timeout=max(0.0, deadline - time.monotonic()))
@@ -920,7 +926,7 @@ def _read_git_records(
         _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
-            Finding("resource.inventory_read", ".", f"cannot wait for bounded Git inventory: {exc}"),
+            Finding(_RI_READ, ".", f"cannot wait for bounded Git inventory: {exc}"),
         )
     if return_code != 0:
         return _GitRecordRead(None)
@@ -928,7 +934,7 @@ def _read_git_records(
         return _GitRecordRead(
             None,
             Finding(
-                "resource.inventory_protocol",
+                _RI_PROTOCOL,
                 ".",
                 "Git inventory ended with an unterminated record",
             ),
@@ -940,7 +946,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
     if not _secure_repository_discovery_supported():
         findings.append(
             Finding(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 ".",
                 "host cannot provide component-relative no-follow repository discovery",
             )
@@ -966,7 +972,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                 except OSError:
                     pass
             findings.append(
-                Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
+                Finding(_RI_READ, ".", f"cannot scan repository inventory: {exc}")
             )
             return []
         try:
@@ -1012,7 +1018,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                     except OSError as exc:
                         findings.append(
                             Finding(
-                                "resource.inventory_read",
+                                _RI_READ,
                                 ".",
                                 f"cannot inspect filesystem inventory entry: {exc}",
                             )
@@ -1033,7 +1039,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                             return []
         except OSError as exc:
             findings.append(
-                Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
+                Finding(_RI_READ, ".", f"cannot scan repository inventory: {exc}")
             )
             return []
         finally:
@@ -1047,7 +1053,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
     except UnicodeDecodeError:
         findings.append(
             Finding(
-                "resource.inventory_encoding",
+                _RI_ENCODING,
                 ".",
                 "filesystem inventory contains a path that is not valid UTF-8",
             )
@@ -1073,7 +1079,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     ):
         findings.append(
             Finding(
-                "resource.inventory_git",
+                _RI_GIT,
                 ".git",
                 "repository Git metadata must be a local directory",
             )
@@ -1092,7 +1098,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         ):
             findings.append(
                 Finding(
-                    "resource.inventory_git",
+                    _RI_GIT,
                     os.fsdecode(raw_path),
                     "repository Git configuration and index must be local, singly linked regular files",
                 )
@@ -1102,7 +1108,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         if git_metadata_present and _repository_entry_presence(root, raw_path) is not False:
             findings.append(
                 Finding(
-                    "resource.inventory_git",
+                    _RI_GIT,
                     os.fsdecode(raw_path),
                     "repository Git metadata must not redirect shared state or objects",
                 )
@@ -1126,7 +1132,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             return [], False
         if indirect.records != expected:
             findings.append(
-                Finding("resource.inventory_git", ".git", "Git metadata indirection is not admitted")
+                Finding(_RI_GIT, ".git", "Git metadata indirection is not admitted")
             )
             return [], False
     result = _read_git_records(
@@ -1148,7 +1154,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         if git_metadata_present is None:
             findings.append(
                 Finding(
-                    "resource.inventory_git",
+                    _RI_GIT,
                     ".",
                     "cannot securely inspect repository Git metadata after inventory failure",
                 )
@@ -1157,7 +1163,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         if git_metadata_present:
             findings.append(
                 Finding(
-                    "resource.inventory_git",
+                    _RI_GIT,
                     ".",
                     "Git inventory failed even though repository metadata is present",
                 )
@@ -1165,7 +1171,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             return [], False
         return _fallback_repository_files(root, findings), False
     if any(len(value) < 3 or value[1:2] != b" " for value in result.records):
-        findings.append(Finding("resource.inventory_protocol", ".", "Git file inventory tag is malformed"))
+        findings.append(Finding(_RI_PROTOCOL, ".", "Git file inventory tag is malformed"))
         return [], False
     if any(value[:1] not in {b"H", b"?"} for value in result.records):
         findings.append(Finding("git.index_flags", ".", "Git index contains hidden worktree state"))
@@ -1174,7 +1180,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     if any(not _git_path_is_relative(value) for value in records):
         findings.append(
             Finding(
-                "resource.inventory_protocol",
+                _RI_PROTOCOL,
                 ".",
                 "Git inventory contains a non-relative repository path",
             )
@@ -1183,7 +1189,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     if len(set(records)) != len(records):
         findings.append(
             Finding(
-                "resource.inventory_protocol",
+                _RI_PROTOCOL,
                 ".",
                 "Git inventory contains a duplicate repository path",
             )
@@ -1194,7 +1200,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     except UnicodeDecodeError:
         findings.append(
             Finding(
-                "resource.inventory_encoding",
+                _RI_ENCODING,
                 ".",
                 "Git inventory contains a repository path that is not valid UTF-8",
             )
@@ -1274,7 +1280,7 @@ def git_index_entries(
         ):
             inventory_findings.append(
                 Finding(
-                    "resource.inventory_protocol",
+                    _RI_PROTOCOL,
                     ".",
                     "Git stage inventory contains a malformed metadata record",
                 )
@@ -1292,7 +1298,7 @@ def git_index_entries(
     except UnicodeDecodeError:
         inventory_findings.append(
             Finding(
-                "resource.inventory_encoding",
+                _RI_ENCODING,
                 ".",
                 "Git stage inventory contains a repository path that is not valid UTF-8",
             )
@@ -1324,13 +1330,13 @@ def git_index_entries(
             or object_type not in {b"blob", b"commit", b"tree", b"tag"}
         ):
             inventory_findings.append(
-                Finding("resource.inventory_protocol", ".", "Git object-type inventory is malformed")
+                Finding(_RI_PROTOCOL, ".", "Git object-type inventory is malformed")
             )
             return []
         actual_types[object_id] = object_type
     if len(types.records) != len(object_ids):
         inventory_findings.append(
-            Finding("resource.inventory_protocol", ".", "Git object-type inventory count is incorrect")
+            Finding(_RI_PROTOCOL, ".", "Git object-type inventory count is incorrect")
         )
         return []
     expected_types = {
@@ -1372,7 +1378,7 @@ class FoundationValidator:
             if unexpected_stage_paths:
                 self.findings.append(
                     Finding(
-                        "resource.inventory_protocol",
+                        _RI_PROTOCOL,
                         unexpected_stage_paths[0],
                         "Git stage inventory path is absent from the file inventory",
                     )
@@ -1410,7 +1416,7 @@ class FoundationValidator:
                 ) != len(intent.records):
                     self.findings.append(
                         Finding(
-                            "resource.inventory_protocol",
+                            _RI_PROTOCOL,
                             ".",
                             "Git intent inventory has malformed paths",
                         )
@@ -1421,7 +1427,7 @@ class FoundationValidator:
                     except UnicodeDecodeError:
                         self.findings.append(
                             Finding(
-                                "resource.inventory_encoding",
+                                _RI_ENCODING,
                                 ".",
                                 "Git intent path is not valid UTF-8",
                             )
@@ -1523,7 +1529,7 @@ class FoundationValidator:
         value, candidate = lexical_path
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 candidate,
                 "host cannot provide component-relative no-follow repository inspection",
             )
@@ -1590,7 +1596,7 @@ class FoundationValidator:
         self._resource_preflight_complete = True
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 ".",
                 "host cannot provide component-relative no-follow repository reads",
             )
@@ -1628,7 +1634,7 @@ class FoundationValidator:
                         metadata
                     ):
                         self._resource_issue(
-                            "resource.concurrent_change",
+                            _R_CONCURRENT,
                             candidate,
                             "repository file changed during resource preflight",
                         )
@@ -1642,7 +1648,7 @@ class FoundationValidator:
                         )
                 except OSError as exc:
                     self._resource_issue(
-                        "resource.unsupported_host",
+                        _R_UNSUPPORTED,
                         candidate,
                         f"cannot inspect repository file allocation: {exc}",
                     )
@@ -1717,7 +1723,7 @@ class FoundationValidator:
                 opened_metadata = os.fstat(source.fileno())
                 if not stat.S_ISREG(opened_metadata.st_mode) or self._metadata_signature(opened_metadata) != signature:
                     self._resource_issue(
-                        "resource.concurrent_change",
+                        _R_CONCURRENT,
                         candidate,
                         "repository file changed while it was being opened",
                     )
@@ -1729,7 +1735,7 @@ class FoundationValidator:
             return None
         if self._metadata_signature(closed_metadata) != signature:
             self._resource_issue(
-                "resource.concurrent_change",
+                _R_CONCURRENT,
                 candidate,
                 "repository file changed while it was being read",
             )
@@ -1740,7 +1746,7 @@ class FoundationValidator:
             return None
         if len(data) != opened_metadata.st_size:
             self._resource_issue(
-                "resource.concurrent_change",
+                _R_CONCURRENT,
                 candidate,
                 "repository file produced a short or inconsistent snapshot read",
             )
@@ -1752,7 +1758,7 @@ class FoundationValidator:
     def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 candidate,
                 "host cannot provide component-relative no-follow repository reads",
             )
