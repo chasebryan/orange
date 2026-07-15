@@ -289,7 +289,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "fc4e1dc9316a7927a1a2580093dfec87dc23f2124728c5a38f73677b00472d38"
+GATE0_PROTECTED_FILE_DIGEST = "8018dec52e6e6ad87bddf840c51963f527547b8a4679cd65f7db5de3d4579d02"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1104,7 +1104,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
                 )
             )
             return [], False
-    for raw_path in (b".git/commondir", b".git/objects/info/alternates"):
+    for raw_path in (b".git/commondir", b".git/config.worktree", b".git/objects/info/alternates"):
         if git_metadata_present and _repository_entry_presence(root, raw_path) is not False:
             findings.append(
                 Finding(

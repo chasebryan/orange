@@ -755,7 +755,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         )
 
     def test_git_inventory_rejects_local_metadata_redirects(self) -> None:
-        for relative_path in ("commondir", "objects/info/alternates"):
+        for relative_path in ("commondir", "config.worktree", "objects/info/alternates"):
             with self.subTest(path=relative_path), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory) / "worktree"
                 subprocess.run(
