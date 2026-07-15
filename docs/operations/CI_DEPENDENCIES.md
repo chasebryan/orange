@@ -35,7 +35,7 @@ redistribution or grant a license for this repository.
 | Component | Identity and role | Current closure | Known gap |
 | --- | --- | --- | --- |
 | Rust toolchain | `rustc`/Cargo 1.96.1 selected by `rust-toolchain.toml`; compiles and tests the Rust 2024 workspace | Exact release version and required `rustfmt`/`clippy` components are selected; initial Cargo graph has no third-party crates | Platform archives, installer, standard-library bytes, signatures, licenses, and transitive host inputs are not vendored or digest-bound here |
-| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages; the protected gate builds optimized `orangec` twice in distinct fresh target trees and requires byte equality | Cargo and rustc remain toolchain trust; a lock file cannot archive the toolchain; same-host repeatability is not an independent or cross-platform rebuild |
+| Cargo workspace | `compiler/Cargo.toml` and `compiler/Cargo.lock`; dependency resolution and build orchestration | `--locked --offline` is required; lock graph contains only workspace packages; the protected gate copies the compiler into two distinct fresh source roots, builds optimized `orangec` in separate target trees, and requires byte equality | Cargo, rustc, and the source-copy tools remain trusted; a lock file cannot archive the toolchain; source-relocated same-host repeatability is not an independent or cross-platform rebuild |
 | Rust standard library | Runtime/build interface used by `orange-compiler` and `orangec` | Supplied by the selected toolchain; no additional crate registry input | Target-specific standard-library and OS behavior are trusted; redistribution review remains open |
 
 These records authorize local owner development only. They do not establish a
@@ -43,11 +43,12 @@ hermetic build, toolchain redistribution right, compiler correctness, or release
 provenance.
 
 The byte-comparison check fixes the process environment, toolchain selection,
-locale, timezone, and source-date epoch, then rebuilds the same checkout twice
-with separate target trees. Both builds still share one host, source path,
-toolchain installation, Cargo home, owner, and trust domain. The result is a
-regression check for same-host nondeterminism, not independently reproduced
-release evidence.
+locale, timezone, and source-date epoch, copies the compiler into two different
+absolute source roots without local target state, then rebuilds it with separate
+target trees. Both builds still share one host, toolchain installation, Cargo
+home, owner, and trust domain. The result detects source-path-sensitive and
+other same-host nondeterminism; it is not independently reproduced release
+evidence.
 
 ## 3. Workflow map
 

@@ -74,7 +74,7 @@ compiler/target/""".splitlines()
 )
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
-_I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
+_JM = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
@@ -86,14 +86,14 @@ GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES = 4096
 GATE0_MAXIMUM_FINDINGS = 4096
 GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS = 4096
 GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
-_GATE0_GIT_READ_CHUNK_BYTES = 4096
-_GATE0_GIT_TIMEOUT_SECONDS = 30.0
+_GC = 4096
+_GT = 30.0
 _IP = "resource.inventory_protocol"
 _RI_READ = "resource.inventory_read"
 _RI_GIT = "resource.inventory_git"
-_RI_ENCODING = "resource.inventory_encoding"
-_R_UNSUPPORTED = "resource.unsupported_host"
-_R_CONCURRENT = "resource.concurrent_change"
+_IE = "resource.inventory_encoding"
+_RU = "resource.unsupported_host"
+_RC = "resource.concurrent_change"
 _ABA = "allowed_binary_artifacts["
 _X = "cross_invariant"
 _G = "github_actions"
@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "4810f093d432acd1a13745cc08c915e5706cea558c01d4761640948ccc0490f9"
+GATE0_PROTECTED_FILE_DIGEST = "9ac3e0f5c3a6c639747cb902f38e1dab5c7a1b206cd1420b310f583ce16c274c"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -605,9 +605,9 @@ def _reject_floating_point(value: str) -> Any:
 
 def _parse_i_json_integer(value: str) -> int:
     magnitude = value[1:] if value.startswith("-") else value
-    if len(magnitude) > len(_I_JSON_MAXIMUM_INTEGER_MAGNITUDE) or (
-        len(magnitude) == len(_I_JSON_MAXIMUM_INTEGER_MAGNITUDE)
-        and magnitude > _I_JSON_MAXIMUM_INTEGER_MAGNITUDE
+    if len(magnitude) > len(_JM) or (
+        len(magnitude) == len(_JM)
+        and magnitude > _JM
     ):
         raise json.JSONDecodeError(
             "integer exceeds the I-JSON interoperable range",
@@ -864,8 +864,8 @@ def _read_git_records(
             except OSError:
                 pass
         return _GitRecordRead(None)
-    cleanup_deadline = time.monotonic() + _GATE0_GIT_TIMEOUT_SECONDS
-    deadline = cleanup_deadline - min(1.0, _GATE0_GIT_TIMEOUT_SECONDS / 2.0)
+    cleanup_deadline = time.monotonic() + _GT
+    deadline = cleanup_deadline - min(1.0, _GT / 2.0)
     if input_file is not None:
         try:
             input_file.close()
@@ -900,7 +900,7 @@ def _read_git_records(
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not select.select((process.stdout,), (), (), remaining)[0]:
                 return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
-            chunk = os.read(output_descriptor, _GATE0_GIT_READ_CHUNK_BYTES)
+            chunk = os.read(output_descriptor, _GC)
             if not chunk:
                 break
             if raw_bytes + len(chunk) > GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES:
@@ -980,7 +980,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
     if not _secure_repository_discovery_supported():
         findings.append(
             Finding(
-                _R_UNSUPPORTED,
+                _RU,
                 ".",
                 "host cannot provide component-relative no-follow repository discovery",
             )
@@ -1087,7 +1087,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
     except UnicodeDecodeError:
         findings.append(
             Finding(
-                _RI_ENCODING,
+                _IE,
                 ".",
                 "filesystem inventory contains a path that is not valid UTF-8",
             )
@@ -1108,7 +1108,7 @@ def _git_object_id_is_valid(value: bytes) -> bool:
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
     if not _secure_repository_reads_supported():
         findings.append(
-            Finding(_R_UNSUPPORTED, ".", "host cannot securely inspect repository metadata")
+            Finding(_RU, ".", "host cannot securely inspect repository metadata")
         )
         return [], False
     git_metadata = _repository_entry_metadata(root, b".git")
@@ -1244,7 +1244,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     except UnicodeDecodeError:
         findings.append(
             Finding(
-                _RI_ENCODING,
+                _IE,
                 ".",
                 "Git inventory contains a repository path that is not valid UTF-8",
             )
@@ -1342,7 +1342,7 @@ def git_index_entries(
     except UnicodeDecodeError:
         inventory_findings.append(
             Finding(
-                _RI_ENCODING,
+                _IE,
                 ".",
                 "Git stage inventory contains a repository path that is not valid UTF-8",
             )
@@ -1471,7 +1471,7 @@ class FoundationValidator:
                     except UnicodeDecodeError:
                         self.findings.append(
                             Finding(
-                                _RI_ENCODING,
+                                _IE,
                                 ".",
                                 "Git intent path is not valid UTF-8",
                             )
@@ -1573,7 +1573,7 @@ class FoundationValidator:
         value, candidate = lexical_path
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                _R_UNSUPPORTED,
+                _RU,
                 candidate,
                 "host cannot provide component-relative no-follow repository inspection",
             )
@@ -1640,7 +1640,7 @@ class FoundationValidator:
         self._resource_preflight_complete = True
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                _R_UNSUPPORTED,
+                _RU,
                 ".",
                 "host cannot provide component-relative no-follow repository reads",
             )
@@ -1678,7 +1678,7 @@ class FoundationValidator:
                         metadata
                     ):
                         self._resource_issue(
-                            _R_CONCURRENT,
+                            _RC,
                             candidate,
                             "repository file changed during resource preflight",
                         )
@@ -1692,7 +1692,7 @@ class FoundationValidator:
                         )
                 except OSError as exc:
                     self._resource_issue(
-                        _R_UNSUPPORTED,
+                        _RU,
                         candidate,
                         f"cannot inspect repository file allocation: {exc}",
                     )
@@ -1767,7 +1767,7 @@ class FoundationValidator:
                 opened_metadata = os.fstat(source.fileno())
                 if not stat.S_ISREG(opened_metadata.st_mode) or self._metadata_signature(opened_metadata) != signature:
                     self._resource_issue(
-                        _R_CONCURRENT,
+                        _RC,
                         candidate,
                         "repository file changed while it was being opened",
                     )
@@ -1779,7 +1779,7 @@ class FoundationValidator:
             return None
         if self._metadata_signature(closed_metadata) != signature:
             self._resource_issue(
-                _R_CONCURRENT,
+                _RC,
                 candidate,
                 "repository file changed while it was being read",
             )
@@ -1790,7 +1790,7 @@ class FoundationValidator:
             return None
         if len(data) != opened_metadata.st_size:
             self._resource_issue(
-                _R_CONCURRENT,
+                _RC,
                 candidate,
                 "repository file produced a short or inconsistent snapshot read",
             )
@@ -1802,7 +1802,7 @@ class FoundationValidator:
     def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                _R_UNSUPPORTED,
+                _RU,
                 candidate,
                 "host cannot provide component-relative no-follow repository reads",
             )
@@ -2380,17 +2380,22 @@ class FoundationValidator:
                 "-D clippy::expect_used -D clippy::panic"
             ): "production targets must retain the strict arithmetic, slicing, and panic lint boundary",
             (
-                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-a" '
-                "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
+                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-a" '
+                'cargo build --manifest-path "$$cargo_home/repro-src-a/Cargo.toml" '
+                "-p orangec --bin orangec "
                 "--release --locked --offline"
-            ): "the first optimized reproducibility build needs an independent target tree",
+            ): "the first optimized reproducibility build needs independent source and target trees",
             (
-                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-b" '
-                "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
+                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-target-b" '
+                'cargo build --manifest-path "$$cargo_home/repro-src-b/Cargo.toml" '
+                "-p orangec --bin orangec "
                 "--release --locked --offline"
-            ): "the second optimized reproducibility build needs an independent target tree",
-            "optimized orangec builds differ": (
-                "the two independent optimized orangec artifacts must be compared byte for byte"
+            ): "the second optimized reproducibility build needs independent source and target trees",
+            'copy_compiler_source "$$cargo_home/repro-src-a"': "the first build needs a relocated source copy",
+            'copy_compiler_source "$$cargo_home/repro-src-b"': "the second build needs a relocated source copy",
+            "--exclude=./target": "source copies must exclude ambient local build output",
+            "optimized orangec builds differ across source roots": (
+                "the source-relocated optimized artifacts must be compared byte for byte"
             ),
             'manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': (
                 "the compiler manifest must be anchored to the protected Makefile"

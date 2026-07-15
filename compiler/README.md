@@ -42,8 +42,9 @@ the individual commands are useful for focused development. A separate
 production-only Clippy pass denies unchecked arithmetic, silent `as`
 conversions, UTF-8 string slicing, indexing, unwrap/expect, and explicit panic
 sites while leaving test assertions available to state fixture invariants.
-The same isolated gate builds the optimized `orangec` binary in two independent
-fresh target trees and requires the artifact bytes to match. This is same-host
+The same isolated gate copies the compiler into two different fresh source
+roots, builds the optimized `orangec` binary into separate target trees, and
+requires the artifact bytes to match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
 
 `orangec` accepts up to 256 source inputs in argument order. Regular files are
