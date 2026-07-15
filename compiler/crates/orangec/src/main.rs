@@ -947,7 +947,7 @@ fn render_read_source_error(display_name: &RenderedSourceName, error: ReadSource
         ReadSourceError::InvocationTooLarge => render_cli_error(
             CliDiagnosticCode::InvocationSourceTooLarge,
             format_args!("source input `{display_name}` exceeds the remaining invocation budget"),
-            "orangec reads at most 64 MiB of source bytes per invocation",
+            "orangec buffers at most 64 MiB of source bytes per invocation",
         ),
         ReadSourceError::TooLarge => render_cli_error(
             CliDiagnosticCode::SourceTooLarge,
@@ -1384,7 +1384,7 @@ mod tests {
             diagnostic,
             concat!(
                 "error[ORC1008]: source input `<stdin>` exceeds the remaining invocation budget\n",
-                "  = note: orangec reads at most 64 MiB of source bytes per invocation\n",
+                "  = note: orangec buffers at most 64 MiB of source bytes per invocation\n",
             )
             .as_bytes()
         );
@@ -1420,11 +1420,9 @@ mod tests {
         assert_eq!(status, COMPILATION_ERROR);
         assert_eq!(output, b"");
         assert!(diagnostic.contains("error[ORC1008]: source input `"));
-        assert!(
-            diagnostic.ends_with(
-                "  = note: orangec reads at most 64 MiB of source bytes per invocation\n"
-            )
-        );
+        assert!(diagnostic.ends_with(
+            "  = note: orangec buffers at most 64 MiB of source bytes per invocation\n"
+        ));
     }
 
     #[test]
