@@ -130,6 +130,49 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_codeowners_coverage_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            github = root / ".github"
+            github.mkdir()
+            source = (source_root / ".github/CODEOWNERS").read_text(encoding="utf-8")
+            rule = "/RELEASE_POLICY.md @chasebryan\n"
+            self.assertIn(rule, source)
+            (github / "CODEOWNERS").write_text(
+                source.replace(rule, "", 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator.policy = load_json(source_root / "policy/gate0-repository-policy.json")
+            validator._validate_codeowners()
+            self.assertIn(
+                "codeowners.contract",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_codeowners_order_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            github = root / ".github"
+            github.mkdir()
+            source = (source_root / ".github/CODEOWNERS").read_text(encoding="utf-8")
+            first = "/SECURITY.md @chasebryan\n/GOVERNANCE.md @chasebryan\n"
+            second = "/GOVERNANCE.md @chasebryan\n/SECURITY.md @chasebryan\n"
+            self.assertIn(first, source)
+            (github / "CODEOWNERS").write_text(
+                source.replace(first, second, 1),
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator.policy = load_json(source_root / "policy/gate0-repository-policy.json")
+            validator._validate_codeowners()
+            self.assertIn(
+                "codeowners.contract",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_dependabot_configuration_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
@@ -2949,6 +2992,20 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             validator._load_and_validate_policy()
             codes = {finding.code for finding in validator.findings}
             self.assertTrue({"policy.minimum", "policy.required_inventory"} & codes)
+
+    def test_policy_cannot_change_the_ordered_codeowners_contract(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        policy = load_json(source_root / "policy/gate0-repository-policy.json")
+        policy["required_codeowners"].remove("/RELEASE_POLICY.md @chasebryan")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "policy/gate0-repository-policy.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(policy), encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._load_and_validate_policy()
+            codes = {finding.code for finding in validator.findings}
+            self.assertIn("policy.codeowners_contract", codes)
 
     def test_policy_cannot_change_the_protected_digest_mapping(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

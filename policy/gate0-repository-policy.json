@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.66",
+  "policy_version": "0.2.67",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -307,7 +307,7 @@
     "scripts/ci/install-actionlint": "ac2e08280a32b7d213fb3993f43e5f9d9431dc3f960a41dedea551be2d9433b5",
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/tests/test_validate_foundation.py": "428996f350509478ba525b5c63b55fa1a1a52c6d9d65f4cba4d354ad76bfacb0",
-    "tools/tests/test_validate_foundation_hardening.py": "4933b1fedabc2b1f35bc7fbfc03648e3c4293458b36a5f8b8b1ad30b67d1d161"
+    "tools/tests/test_validate_foundation_hardening.py": "164c103215272ac9d49458e9626191b6c412e2ee5d4c880aa03f806f69e31380"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
@@ -360,14 +360,26 @@
     "/assets/brand/ @chasebryan",
     "/SECURITY.md @chasebryan",
     "/GOVERNANCE.md @chasebryan",
+    "/CONTRIBUTING.md @chasebryan",
+    "/CODE_OF_CONDUCT.md @chasebryan",
+    "/SUPPORT.md @chasebryan",
+    "/DEPENDENCY_POLICY.md @chasebryan",
+    "/RELEASE_POLICY.md @chasebryan",
     "/docs/ASSURANCE.md @chasebryan",
     "/docs/DECISIONS.md @chasebryan",
+    "/docs/GATE0_TRACEABILITY.md @chasebryan",
+    "/docs/PROOF_FOUNDATION_DECISION_SUITE.md @chasebryan",
+    "/docs/USER_JOURNEYS.md @chasebryan",
+    "/docs/governance/ @chasebryan",
     "/docs/security/ @chasebryan",
+    "/docs/operations/CI_DEPENDENCIES.md @chasebryan",
+    "/docs/REPRODUCIBILITY.md @chasebryan",
     "/schemas/ @chasebryan",
     "/conformance/foundation/ @chasebryan",
     "/policy/ @chasebryan",
     "/scripts/ci/ @chasebryan",
-    "/tools/validate_foundation.py @chasebryan"
+    "/tools/validate_foundation.py @chasebryan",
+    "/research/decisions/ @chasebryan"
   ],
   "decision_gates": {
     "implementation_language": {
