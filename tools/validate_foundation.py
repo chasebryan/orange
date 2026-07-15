@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "9668a9a6724f05cd432ad10bdc2cc3c2751d4332bafc93e254d549fa3634e2aa"
+GATE0_PROTECTED_FILE_DIGEST = "8725d147faa98dc96245d1db5d29d2e4e1797595326bde8b2a452fe2dd425d8d"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3299,8 +3299,6 @@ class FoundationValidator:
                         self.add("workflow.ci_event", path, f"required CI event is missing: {event}")
             if re.search(r"\bpaths(?:-ignore)?\s*:", active_text):
                 self.add("workflow.path_filter", path, "protected workflows must not use path filters")
-            if re.search(r"(?m)^    branches(?!:\n      - main$(?!\n      -))", active_text):
-                self.add("workflow.branch_contract", path, "branch drift")
             for line_number, line in enumerate(lines, start=1):
                 container_match = CONTAINER_ACTION_RE.search(line)
                 match = None if container_match else ACTION_RE.search(line)
@@ -3395,20 +3393,19 @@ class FoundationValidator:
                     self.add("dependency_review.configuration", review_path, f"missing {meaning}: {setting}")
 
     def _validate_required_workflow_content(self, path: Path, text: str) -> None:
+        push = "  push:\n    branches:\n      - main"
+        pull = push.replace("push", "pull_request")
+        merge = "  merge_group:\n    types:\n      - checks_requested"
+        dispatch = "\n  workflow_dispatch:"
         event_contracts = {
-            "ci.yml": "merge_group pull_request push",
-            _DR: "merge_group pull_request",
-            _SC: "push schedule",
-            _EL: "push schedule workflow_dispatch",
-            _WOA: "push schedule workflow_dispatch",
+            "ci.yml": f"{pull}\n{push}\n{merge}",
+            _DR: f"{pull}\n{merge}",
+            _SC: f'{push}\n  schedule:\n    - cron: "41 5 * * 6"',
+            _EL: f'{push}\n  schedule:\n    - cron: "23 4 * * 1"{dispatch}',
+            _WOA: f'{push}\n  schedule:\n    - cron: "17 6 * * 3"{dispatch}',
         }
-        events = {
-            match.group(1)
-            for line in top_level_block(text.splitlines(), "on")
-            if (match := re.fullmatch(r"  ([a-z_]+):", line))
-        }
-        if events != set(event_contracts[path.name].split()):
-            self.add("workflow.event_contract", path, "workflow event set must match its reviewed contract")
+        if "\n".join(top_level_block(text.splitlines(), "on")) != event_contracts.get(path.name):
+            self.add("workflow.event_contract", path, "workflow triggers must match their reviewed contract")
         defaults = tuple(top_level_block(text.splitlines(), "defaults"))
         reviewed_defaults = (
             ("  run:", "    shell: /bin/bash -p -e -o pipefail {0}")

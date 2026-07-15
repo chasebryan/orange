@@ -128,6 +128,23 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_unreviewed_workflow_is_reported_without_crashing(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow_dir = root / ".github/workflows"
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "unreviewed.yml").write_text(
+                "name: Unreviewed\non:\n  workflow_dispatch:\npermissions: {}\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator.policy = load_json(source_root / "policy/gate0-repository-policy.json")
+
+            validator._validate_workflows()
+
+            self.assertIn("workflow.inventory", {finding.code for finding in validator.findings})
+
     def test_critical_workflow_step_contracts_are_exact(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         mutations = (
@@ -186,22 +203,46 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.event_contract",
             ),
             (
+                "ci.yml",
+                "  pull_request:\n    branches:\n      - main\n",
+                "  pull_request:\n    branches:\n      - main\n    types:\n      - closed\n",
+                "workflow.event_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "      - checks_requested\n",
+                "      - destroyed\n",
+                "workflow.event_contract",
+            ),
+            (
+                "external-links.yml",
+                "    - cron: \"23 4 * * 1\"\n",
+                "    - cron: \"23 4 * * 0\"\n",
+                "workflow.event_contract",
+            ),
+            (
+                "workflow-online-audit.yml",
+                "  workflow_dispatch:\n",
+                "  workflow_dispatch:\n    inputs:\n      ref:\n        required: false\n",
+                "workflow.event_contract",
+            ),
+            (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - release\n",
-                "workflow.branch_contract",
+                "workflow.event_contract",
             ),
             (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - main\n      - release\n",
-                "workflow.branch_contract",
+                "workflow.event_contract",
             ),
             (
                 "dependency-review.yml",
                 "    branches:\n",
                 "    branches-ignore:\n",
-                "workflow.branch_contract",
+                "workflow.event_contract",
             ),
             (
                 "dependency-review.yml",
