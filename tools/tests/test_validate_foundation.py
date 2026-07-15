@@ -22,7 +22,6 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     _fallback_repository_files,
     audit_schema_vocabulary,
-    checkout_disables_credentials,
     load_json,
     markdown_anchors,
     markdown_fence_error,
@@ -2222,18 +2221,6 @@ GPT-5, under Chase Bryan's direction on 2026-07-14.
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_checkout_credentials_must_be_explicitly_disabled(self) -> None:
-        safe = [
-            "      - name: Checkout",
-            "        uses: actions/checkout@" + "a" * 40 + " # v1.0.0",
-            "        with:",
-            "          persist-credentials: false",
-            "      - name: Next",
-        ]
-        unsafe = safe[:2] + safe[4:]
-        self.assertTrue(checkout_disables_credentials(safe, 1))
-        self.assertFalse(checkout_disables_credentials(unsafe, 1))
-
     def test_job_blocks_are_found_without_parsing_untrusted_yaml(self) -> None:
         jobs = workflow_jobs(
             [

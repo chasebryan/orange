@@ -23,7 +23,6 @@ from tools.validate_foundation import (
     SCHEMA_DIALECT,
     audit_schema_vocabulary,
     canonical_json_bytes,
-    checkout_disables_credentials,
     duplicate_yaml_mapping_key,
     load_json,
     main,
@@ -129,6 +128,40 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_checkout_and_dependency_review_inputs_are_exact(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (
+                "ci.yml",
+                "          persist-credentials: false\n",
+                "          persist-credentials: false\n          ref: main\n",
+                "workflow.checkout_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "          config-file: ./.github/dependency-review-config.yml\n",
+                "          config-file: ./.github/dependency-review-config.yml\n          warn-only: true\n",
+                "workflow.dependency_review_contract",
+            ),
+        )
+        for name, original, replacement, expected_code in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workflow_dir = root / ".github/workflows"
+                workflow_dir.mkdir(parents=True)
+                source = (source_root / ".github/workflows" / name).read_text(encoding="utf-8")
+                self.assertEqual(source.count(original), 1)
+                (workflow_dir / name).write_text(
+                    source.replace(original, replacement),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator.policy = load_json(source_root / "policy/gate0-repository-policy.json")
+
+                validator._validate_workflows()
+
+                self.assertIn(expected_code, {finding.code for finding in validator.findings})
+
     def test_duplicate_yaml_mapping_keys_are_rejected_outside_scripts(self) -> None:
         self.assertIsNone(
             duplicate_yaml_mapping_key("run: |2-\n  label: script text\n  label: still script text\n")
@@ -271,16 +304,6 @@ jobs:
             codes = {finding.code for finding in validator.findings}
             self.assertIn("workflow.action_allowlist", codes)
             self.assertIn("workflow.mutable_action", codes)
-
-    def test_checkout_credentials_must_be_under_with(self) -> None:
-        lines = [
-            "      - name: Checkout",
-            "        uses: actions/checkout@" + "a" * 40 + " # v1.0.0",
-            "        env:",
-            "          persist-credentials: false",
-            "      - name: Next",
-        ]
-        self.assertFalse(checkout_disables_credentials(lines, 1))
 
     def test_direct_container_action_syntax_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

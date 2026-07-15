@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "a415777ef4a8e10a4a2cd253f424b28defd20d57abc62de435c25f06c495c43b"
+GATE0_PROTECTED_FILE_DIGEST = "b0714875f788dbe811bf1f9bc48212c1fa284addbe66417558651bd6d19143db"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3254,8 +3254,6 @@ class FoundationValidator:
                         self.add("workflow.version_comment", path, f"line {line_number}: pinned action needs a version comment")
                     elif version and not re.fullmatch(r"v[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?", version):
                         self.add("workflow.version_comment", path, f"line {line_number}: invalid action version comment {version!r}")
-                    if action == "actions/checkout" and not checkout_disables_credentials(lines, line_number - 1):
-                        self.add("workflow.checkout_credentials", path, f"line {line_number}: checkout must set persist-credentials: false")
                 write_match = re.match(r"^\s+([a-z][a-z0-9-]*)\s*:\s*[\"']?write[\"']?(?:\s+#.*)?\s*$", line)
                 if write_match and write_match.group(1) not in allowed_writes.get(path.name, set()):
                     self.add(
@@ -3326,8 +3324,6 @@ class FoundationValidator:
             ),
             "dependency-review.yml": (
                 "name: Dependency Review / policy",
-                "base-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}",
-                "head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}",
             ),
         }
         for required in requirements.get(path.name, ()):
@@ -3410,8 +3406,16 @@ class FoundationValidator:
                 if bypass in block:
                     self.add("workflow.fail_open", path, f"{job_name}/{step_name} contains fail-open construct {bypass!r}")
 
+        checkout = yaml_without_comments("\n".join(steps.get("Checkout", [])))
+        expected_checkout = '''      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 1
+          persist-credentials: false'''
+        if checkout != expected_checkout:
+            self.add("workflow.checkout_contract", path, f"{job_name}/Checkout must match the reviewed revision-bound contract")
+
         if path.name == "ci.yml":
-            require("Checkout", ("uses: actions/checkout@", "persist-credentials: false"))
             require(
                 "Enforce solo contribution boundary",
                 (
@@ -3437,7 +3441,15 @@ class FoundationValidator:
             require("Validate GitHub Actions workflows", ('"$RUNNER_TEMP/actionlint/actionlint" -color',))
             require("Audit GitHub Actions security", ("uses: zizmorcore/zizmor-action@", "online-audits: false", "persona: pedantic"))
         elif path.name == "dependency-review.yml":
-            require("Review dependency changes", ("uses: actions/dependency-review-action@", "base-ref:", "head-ref:", "config-file:"))
+            review = yaml_without_comments("\n".join(steps.get("Review dependency changes", [])))
+            expected_review = '''      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
+        with:
+          base-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          config-file: ./.github/dependency-review-config.yml
+          head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}'''
+            if review != expected_review:
+                self.add("workflow.dependency_review_contract", path, "dependency review must use only the reviewed configuration file and revision inputs")
         elif path.name == "scorecard.yml":
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
             expected_scorecard_block = '''      - name: Run OpenSSF Scorecard
@@ -4416,31 +4428,6 @@ def markdown_fence_error(text: str) -> str | None:
     if active_char:
         return f"unclosed {active_char * active_length} fence opened on line {active_line}"
     return None
-
-
-def checkout_disables_credentials(lines: Sequence[str], index: int) -> bool:
-    uses_column = lines[index].find("uses:")
-    if uses_column < 0:
-        return False
-    with_indent: int | None = None
-    for line in lines[index + 1 :]:
-        current_indent = len(line) - len(line.lstrip())
-        stripped = line.strip()
-        if stripped.startswith("-") and current_indent < uses_column:
-            break
-        if not stripped or stripped.startswith("#"):
-            continue
-        if current_indent == uses_column and re.fullmatch(r"with:\s*(?:#.*)?", stripped):
-            with_indent = current_indent
-            continue
-        if with_indent is not None and current_indent <= with_indent:
-            with_indent = None
-        if with_indent is not None and re.fullmatch(
-            r"persist-credentials:\s*(?:false|\"false\"|'false')(?:\s+#.*)?",
-            stripped,
-        ):
-            return True
-    return False
 
 
 def workflow_jobs(lines: Sequence[str]) -> list[tuple[str, list[str]]]:
