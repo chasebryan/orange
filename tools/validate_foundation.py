@@ -328,7 +328,22 @@ _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
 _WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
-_PHD = "0459b4f27a7a488b672e2fcfa5508f9331aac264a7ce9921c1af13ad528a956d"
+_DRC = """fail_on_severity: moderate
+fail_on_scopes:
+  - runtime
+  - development
+  - unknown
+license_check: true
+vulnerability_check: true
+retry_on_snapshot_warnings: true
+retry_on_snapshot_warnings_timeout: 120
+show_openssf_scorecard: true
+warn_on_openssf_scorecard_level: 5
+show_patched_versions: true
+comment_summary_in_pr: never
+warn_only: false
+"""
+_PHD = "d6cf3d83a0abe6ac2abeb77afb748b6e123e54a362e673e6df20efbd96505e55"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -598,6 +613,17 @@ _WM = {
             "`workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits\n"
             "10 minutes; and `scorecard.yml` permits 20 minutes."
         ): tuple(_WT[value] for value in sorted(_WT)),
+    },
+}
+_DM = {
+    "docs/operations/CI_DEPENDENCIES.md": {
+        (
+            "Dependency Review examines runtime, development, and unknown scopes; fails on\n"
+            "moderate-or-higher vulnerabilities; checks licenses and vulnerabilities; retries\n"
+            "snapshot warnings for at most 120 seconds; warns below OpenSSF Scorecard level 5;\n"
+            "shows patched versions; never comments on the pull request; and does not use\n"
+            "warn-only mode."
+        ): ("runtime", "development", "unknown", "moderate", 120, 5, False),
     },
 }
 _PM = {
@@ -2785,6 +2811,7 @@ class FoundationValidator:
             (_IM, "ci.installer_spec_budget", "installer contract"),
             (_LM, "ci.external_link_spec_budget", "external-link contract"),
             (_WM, "ci.workflow_timeout_spec", "workflow timeout contract"),
+            (_DM, "ci.dependency_review_spec", "dependency-review contract"),
             (_PM, "policy.resource_budget", "repository policy"),
         )
         for markers, finding_code, description in marker_groups:
@@ -3550,17 +3577,12 @@ class FoundationValidator:
             review_source = self._rt(review_path)
             if review_source is None:
                 return
-            review = yaml_without_comments(review_source)
-            required_review_settings = {
-                "fail_on_severity: moderate": "moderate vulnerability threshold",
-                "comment_summary_in_pr: never": "no write-permission PR comment",
-                "warn_only: false": "fail-closed dependency result",
-                "license_check: true": "license observation without an unratified allowlist",
-                "vulnerability_check: true": "vulnerability evaluation",
-            }
-            for setting, meaning in required_review_settings.items():
-                if setting not in review:
-                    self.add("dependency_review.configuration", review_path, f"missing {meaning}: {setting}")
+            if review_source != _DRC:
+                self.add(
+                    "dependency_review.configuration",
+                    review_path,
+                    "dependency review configuration must match the exact fail-closed contract",
+                )
 
     def _validate_required_workflow_content(self, path: Path, text: str) -> None:
         n = path.name
