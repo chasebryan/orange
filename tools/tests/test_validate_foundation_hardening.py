@@ -2022,6 +2022,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "compiler/README.md",
         "docs/LANGUAGE_2026.md",
         "docs/SEMANTICS_2026.md",
+        "policy/README.md",
     )
 
     def _copy_boundary(self, root: Path) -> None:
@@ -2133,6 +2134,22 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
                 source = path.read_text(encoding="utf-8")
                 path.write_text(source.replace(old, new, 1), encoding="utf-8")
                 self.assertIn("compiler.cli_spec_budget", self._codes(root))
+
+    def test_repository_resource_documentation_drift_is_rejected(self) -> None:
+        for old, new in (
+            ("256 KiB (`256 * 1024` bytes)", "255 KiB (`255 * 1024` bytes)"),
+            ("384 KiB\n(`384 * 1024` bytes)", "383 KiB\n(`383 * 1024` bytes)"),
+            ("2 MiB (`2 * 1024 * 1024` bytes)", "1 MiB (`1 * 1024 * 1024` bytes)"),
+            ("12 MiB (`12 * 1024 * 1024` bytes)", "11 MiB (`11 * 1024 * 1024` bytes)"),
+        ):
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "policy/README.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("policy.resource_budget", self._codes(root))
 
     def test_oversized_compiled_budget_is_rejected_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
