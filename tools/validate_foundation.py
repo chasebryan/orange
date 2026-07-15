@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "ba2e70179eb8f40fb93f07b9cb58e0e17503e27629d15c196a2bbcc9710e380d"
+GATE0_PROTECTED_FILE_DIGEST = "3ce311e0a32688d0246ea38d128078f4285c1cc1f8fd01de77fa0e9138222549"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -337,7 +337,7 @@ GATE0_CI_POLICY_TEST_RUN = (
 )
 GATE0_CI_POLICY_RUN = (
     "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
-    "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py"
+    "TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py"
 )
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
@@ -2411,6 +2411,7 @@ class FoundationValidator:
                 "Python policy and artifact checks must skip site initialization, exclude unsafe paths, "
                 "avoid bytecode, and force UTF-8",
             ),
+            "-W error::ResourceWarning": (2, "Python policy checks must fail on leaked resources"),
         }
         for required, (expected_count, meaning) in required_python_fragments.items():
             if source.count(required) != expected_count:
@@ -2429,7 +2430,6 @@ class FoundationValidator:
             'PYTHONPYCACHEPREFIX="$$pycache"': (
                 "foundation tests must not load ignored checkout bytecode"
             ),
-            "-W error::ResourceWarning": "foundation tests must fail on leaked resources",
         }
         for required, meaning in required_test_fragments.items():
             if source.count(required) != 1:
