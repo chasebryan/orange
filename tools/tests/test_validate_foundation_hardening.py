@@ -1107,10 +1107,16 @@ class PolicyShapeHardeningTests(unittest.TestCase):
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
-    def test_report_pipe_closure_fails_quietly_in_every_format(self) -> None:
+    def test_cli_pipe_closure_fails_quietly_for_reports_help_and_errors(self) -> None:
         repository_root = Path(__file__).resolve().parents[2]
-        for arguments in ((), ("--format", "json")):
-            with self.subTest(arguments=arguments):
+        cases = (
+            ((), "stdout"),
+            (("--format", "json"), "stdout"),
+            (("--help",), "stdout"),
+            (("--invalid",), "stderr"),
+        )
+        for arguments, closed_name in cases:
+            with self.subTest(arguments=arguments, closed_name=closed_name):
                 process = subprocess.Popen(
                     [
                         sys.executable,
@@ -1126,14 +1132,16 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
-                self.assertIsNotNone(process.stdout)
-                process.stdout.close()
-                self.assertIsNotNone(process.stderr)
-                error = process.stderr.read()
-                process.stderr.close()
+                closed = getattr(process, closed_name)
+                captured = process.stderr if closed_name == "stdout" else process.stdout
+                self.assertIsNotNone(closed)
+                self.assertIsNotNone(captured)
+                closed.close()
+                output = captured.read()
+                captured.close()
 
                 self.assertEqual(process.wait(timeout=10), 1)
-                self.assertEqual(error, b"")
+                self.assertEqual(output, b"")
 
     def test_json_report_streams_without_materializing_the_serialization(self) -> None:
         validator = mock.Mock()

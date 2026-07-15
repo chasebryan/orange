@@ -83,7 +83,8 @@ GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
 GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
 GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES = 4096
-GATE0_MAXIMUM_FINDINGS = 4096
+_MF = 4096
+GATE0_MAXIMUM_FINDINGS = _MF
 GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS = 4096
 GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
 _GC = 4096
@@ -323,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "ea26928a50876e6c40fb275e9a7ce2d9a42e57c6df1c36a0278b2e028d36863c"
+_PHD = "87734986d80b9a00c3cb8b4f83c77bf713fa0c1311a2db43f630abeb7e519272"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -584,13 +585,13 @@ class SchemaIssue:
 
 class _BoundedSchemaIssues(list[SchemaIssue]):
     def append(self, issue: SchemaIssue) -> None:
-        if len(self) < GATE0_MAXIMUM_FINDINGS:
+        if len(self) < _MF:
             super().append(issue)
 
     def extend(self, issues: Iterable[SchemaIssue]) -> None:
         for issue in issues:
             self.append(issue)
-            if len(self) == GATE0_MAXIMUM_FINDINGS:
+            if len(self) == _MF:
                 break
 
 
@@ -1501,14 +1502,14 @@ class FoundationValidator:
         truncation = "... [truncated]"
         if len(message) > GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS:
             message = message[: GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS - len(truncation)] + truncation
-        if len(self.findings) < GATE0_MAXIMUM_FINDINGS:
+        if len(self.findings) < _MF:
             self.findings.append(Finding(code, path_text, message))
-        elif len(self.findings) == GATE0_MAXIMUM_FINDINGS:
+        elif len(self.findings) == _MF:
             self.findings.append(
                 Finding(
                     "resource.finding_count",
                     ".",
-                    f"validation retained {GATE0_MAXIMUM_FINDINGS} detailed findings; further findings are suppressed",
+                    f"validation retained {_MF} detailed findings; further findings are suppressed",
                 )
             )
 
@@ -4900,7 +4901,7 @@ def parse_front_matter(text: str) -> tuple[dict[str, Any], list[str]] | None:
         match = FRONT_MATTER_KEY_RE.match(line)
         if match:
             key, raw = match.group(1), (match.group(2) or "").strip()
-            if key in result and len(errors) < GATE0_MAXIMUM_FINDINGS:
+            if key in result and len(errors) < _MF:
                 errors.append(f"duplicate metadata key {key!r} on line {line_number}")
             result[key] = parse_front_matter_value(raw) if raw else []
             current_list = key if not raw else None
@@ -4911,10 +4912,10 @@ def parse_front_matter(text: str) -> tuple[dict[str, Any], list[str]] | None:
             if isinstance(result.get(current_list), list):
                 result[current_list].append(value)
             continue
-        if line.strip() and len(errors) < GATE0_MAXIMUM_FINDINGS:
+        if line.strip() and len(errors) < _MF:
             errors.append(f"unsupported metadata syntax on line {line_number}")
         current_list = None
-    if len(errors) < GATE0_MAXIMUM_FINDINGS:
+    if len(errors) < _MF:
         errors.append("front matter is not closed")
     return result, errors
 def nonempty_scalar(value: Any) -> bool:
@@ -5752,11 +5753,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _cli() -> int:
     try:
-        status = main()
+        try:
+            status = main()
+        except SystemExit as error:
+            status = error.code
         sys.stdout.flush()
+        sys.stderr.flush()
     except OSError:
         fd = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(fd, sys.stdout.fileno())
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                os.dup2(fd, stream.fileno())
+            except OSError:
+                pass
         os.close(fd)
         return 1
     return status
