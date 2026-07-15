@@ -3016,9 +3016,12 @@ mod tests {
         use std::time::SystemTime;
 
         for mutation in ["hardlink", "mode", "rewrite"] {
+            let test_root =
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/orangec-tests");
+            std::fs::create_dir_all(&test_root).unwrap();
             let mut temporary = None;
             for suffix in 0..1_024 {
-                let path = std::env::temp_dir().join(format!(
+                let path = test_root.join(format!(
                     "orangec-source-metadata-{}-{suffix}",
                     std::process::id()
                 ));
@@ -3035,6 +3038,7 @@ mod tests {
             }
             let directory = temporary.expect("could not allocate a source metadata test directory");
             let source = directory.join("source.or");
+            let alias = directory.join("alias.or");
             std::fs::write(&source, b"before").unwrap();
             File::open(&source)
                 .unwrap()
@@ -3046,7 +3050,7 @@ mod tests {
 
             let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
                 if mutation == "hardlink" {
-                    std::fs::hard_link(&source, directory.join("alias.or")).unwrap();
+                    std::fs::hard_link(&source, &alias).unwrap();
                 } else if mutation == "mode" {
                     let mut permissions = source.metadata().unwrap().permissions();
                     permissions.set_mode(permissions.mode() ^ 0o100);
@@ -3067,7 +3071,7 @@ mod tests {
                 assert_eq!(initial_metadata.mtime(), final_metadata.mtime());
                 assert_eq!(initial_metadata.mtime_nsec(), final_metadata.mtime_nsec());
                 assert_ne!(initial_metadata.nlink(), final_metadata.nlink());
-                std::fs::remove_file(directory.join("alias.or")).unwrap();
+                std::fs::remove_file(alias).unwrap();
             } else if mutation == "mode" {
                 assert_eq!(initial_metadata.mtime(), final_metadata.mtime());
                 assert_eq!(initial_metadata.mtime_nsec(), final_metadata.mtime_nsec());
