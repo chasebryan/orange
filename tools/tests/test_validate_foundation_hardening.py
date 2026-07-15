@@ -130,6 +130,34 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_conduct_reporting_boundary_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "CODE_OF_CONDUCT.md").read_text(encoding="utf-8")
+        mutations = (
+            (
+                "The\nrequest itself is public: do not describe the incident or identify affected\npeople there.",
+                "The request itself is private: describe the incident and identify affected people there.",
+            ),
+            (
+                "There is no independent private\nintake or appeal yet",
+                "There is an independent private intake and appeal",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertIn(old, source)
+                (root / "CODE_OF_CONDUCT.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "conduct.reporting_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_solo_governance_boundary_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         source = (source_root / "GOVERNANCE.md").read_text(encoding="utf-8")
