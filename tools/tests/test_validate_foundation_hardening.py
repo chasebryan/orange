@@ -2583,6 +2583,22 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             validator._validate_makefile_entrypoint()
             self.assertIn("make.contract", {finding.code for finding in validator.findings})
 
+    def test_make_contract_rejects_unhashable_check_fields(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        canonical = load_json(source_root / "policy/makefile-entrypoint-contract-v0.1.json")
+        for field, value in (("finding_code", []), ("match", {})):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "Makefile").write_bytes((source_root / "Makefile").read_bytes())
+                contract = json.loads(json.dumps(canonical))
+                contract["checks"][0][field] = value
+                contract_path = root / "policy/makefile-entrypoint-contract-v0.1.json"
+                contract_path.parent.mkdir()
+                contract_path.write_text(json.dumps(contract), encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_makefile_entrypoint()
+                self.assertIn("make.contract", {finding.code for finding in validator.findings})
+
     def test_codeowners_and_fixture_mutations_are_digest_protected(self) -> None:
         paths = (
             ".github/CODEOWNERS",
