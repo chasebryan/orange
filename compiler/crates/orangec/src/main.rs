@@ -18,6 +18,7 @@ const SUCCESS: u8 = 0;
 const COMPILATION_ERROR: u8 = 1;
 const USAGE_ERROR: u8 = 2;
 const MAX_SOURCES_PER_INVOCATION: usize = 256;
+const MAX_SOURCE_BYTES_PER_INVOCATION: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
@@ -66,6 +67,7 @@ define_cli_diagnostic_codes! {
     SourceRepresentation => "ORC1005",
     MissingPhaseArtifact => "ORC1006",
     OutputTooLarge => "ORC1007",
+    InvocationSourceTooLarge => "ORC1008",
 }
 
 fn main() -> ExitCode {
@@ -234,20 +236,22 @@ fn compile(
     standard_output: &mut impl Write,
     standard_error: &mut impl Write,
 ) -> u8 {
-    compile_with_output_limit(
+    compile_with_limits(
         options,
         standard_input,
         standard_output,
         standard_error,
+        MAX_SOURCE_BYTES_PER_INVOCATION,
         MAX_STANDARD_OUTPUT_BYTES,
     )
 }
 
-fn compile_with_output_limit(
+fn compile_with_limits(
     options: &Options,
     standard_input: &mut impl Read,
     standard_output: &mut impl Write,
     standard_error: &mut impl Write,
+    source_limit: usize,
     output_limit: usize,
 ) -> u8 {
     let mut standard_input_seen = false;
@@ -258,6 +262,7 @@ fn compile_with_output_limit(
     let mut standard_output_available = true;
     let mut standard_output_written = false;
     let mut token_source_written = false;
+    let mut remaining_source_bytes = source_limit;
     let show_headers = options.paths.len() > 1;
     let buffered_output = io::BufWriter::new(standard_output);
     let mut buffered_output = OutputLimitedWriter::new(buffered_output, output_limit);
@@ -304,7 +309,7 @@ fn compile_with_output_limit(
                 continue;
             }
         };
-        let bytes = match read_source(path, standard_input) {
+        let bytes = match read_source(path, standard_input, remaining_source_bytes) {
             Ok(bytes) => bytes,
             Err(error) => {
                 compilation_failed = true;
@@ -318,6 +323,18 @@ fn compile_with_output_limit(
                 continue;
             }
         };
+        let Some(remaining) = remaining_source_bytes.checked_sub(bytes.len()) else {
+            compilation_failed = true;
+            emit_error_group(
+                standard_error,
+                &mut standard_error_available,
+                &mut error_group_written,
+                &mut output_failed,
+                &render_read_source_error(&display_name, ReadSourceError::InvocationTooLarge),
+            );
+            continue;
+        };
+        remaining_source_bytes = remaining;
         let text = match String::from_utf8(bytes) {
             Ok(text) => text,
             Err(error) => {
@@ -614,9 +631,13 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
     }
 }
 
-fn read_source(path: &Path, standard_input: &mut impl Read) -> Result<Vec<u8>, ReadSourceError> {
+fn read_source(
+    path: &Path,
+    standard_input: &mut impl Read,
+    remaining_source_bytes: usize,
+) -> Result<Vec<u8>, ReadSourceError> {
     if path == Path::new("-") {
-        read_bounded(standard_input)
+        read_bounded_for_invocation(standard_input, remaining_source_bytes)
     } else {
         let path_metadata = path.metadata().map_err(ReadSourceError::Io)?;
         if !path_metadata.is_file() {
@@ -624,6 +645,9 @@ fn read_source(path: &Path, standard_input: &mut impl Read) -> Result<Vec<u8>, R
         }
         if path_metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::TooLarge);
+        }
+        if path_metadata.len() > u64::try_from(remaining_source_bytes).unwrap_or(u64::MAX) {
+            return Err(ReadSourceError::InvocationTooLarge);
         }
 
         let mut file = File::open(path).map_err(ReadSourceError::Io)?;
@@ -637,7 +661,10 @@ fn read_source(path: &Path, standard_input: &mut impl Read) -> Result<Vec<u8>, R
         if opened_metadata.len() > u64::try_from(MAX_SOURCE_BYTES).unwrap_or(u64::MAX) {
             return Err(ReadSourceError::TooLarge);
         }
-        let bytes = read_bounded(&mut file)?;
+        if opened_metadata.len() > u64::try_from(remaining_source_bytes).unwrap_or(u64::MAX) {
+            return Err(ReadSourceError::InvocationTooLarge);
+        }
+        let bytes = read_bounded_for_invocation(&mut file, remaining_source_bytes)?;
         let closed_metadata = file.metadata().map_err(ReadSourceError::Io)?;
         if !opened_file_metadata_unchanged(&opened_metadata, &closed_metadata) {
             return Err(ReadSourceError::ChangedDuringRead);
@@ -683,19 +710,58 @@ fn opened_file_metadata_unchanged(opened_metadata: &Metadata, closed_metadata: &
     }
 }
 
+#[cfg(test)]
 fn read_bounded(reader: impl Read) -> Result<Vec<u8>, ReadSourceError> {
-    read_bounded_with_reservation(reader, reserve_bounded_source_capacity)
+    read_bounded_with_limit_and_reservation(
+        reader,
+        MAX_SOURCE_BYTES,
+        ReadSourceError::TooLarge,
+        reserve_bounded_source_capacity,
+    )
 }
 
+fn read_bounded_for_invocation(
+    reader: impl Read,
+    remaining_source_bytes: usize,
+) -> Result<Vec<u8>, ReadSourceError> {
+    let limit = MAX_SOURCE_BYTES.min(remaining_source_bytes);
+    let exceeded = if remaining_source_bytes < MAX_SOURCE_BYTES {
+        ReadSourceError::InvocationTooLarge
+    } else {
+        ReadSourceError::TooLarge
+    };
+    read_bounded_with_limit_and_reservation(
+        reader,
+        limit,
+        exceeded,
+        reserve_bounded_source_capacity,
+    )
+}
+
+#[cfg(test)]
 fn read_bounded_with_reservation(
     mut reader: impl Read,
+    mut reserve: impl FnMut(&mut Vec<u8>, usize) -> Result<(), ReadSourceError>,
+) -> Result<Vec<u8>, ReadSourceError> {
+    read_bounded_with_limit_and_reservation(
+        &mut reader,
+        MAX_SOURCE_BYTES,
+        ReadSourceError::TooLarge,
+        &mut reserve,
+    )
+}
+
+fn read_bounded_with_limit_and_reservation(
+    mut reader: impl Read,
+    limit: usize,
+    exceeded: ReadSourceError,
     mut reserve: impl FnMut(&mut Vec<u8>, usize) -> Result<(), ReadSourceError>,
 ) -> Result<Vec<u8>, ReadSourceError> {
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; SOURCE_READ_BUFFER_BYTES];
 
-    while bytes.len() < MAX_SOURCE_BYTES {
-        let remaining = MAX_SOURCE_BYTES
+    while bytes.len() < limit {
+        let remaining = limit
             .checked_sub(bytes.len())
             .ok_or(ReadSourceError::TooLarge)?;
         let buffer_length = remaining.min(buffer.len());
@@ -723,7 +789,7 @@ fn read_bounded_with_reservation(
     loop {
         match reader.read(&mut probe) {
             Ok(0) => return Ok(bytes),
-            Ok(1) => return Err(ReadSourceError::TooLarge),
+            Ok(1) => return Err(exceeded),
             Ok(_) => return Err(ReadSourceError::Io(invalid_data_error())),
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(ReadSourceError::Io(error)),
@@ -839,6 +905,11 @@ fn render_read_source_error(display_name: &RenderedSourceName, error: ReadSource
             format_args!("could not read source file `{display_name}`"),
             "source file changed while it was being read",
         ),
+        ReadSourceError::InvocationTooLarge => render_cli_error(
+            CliDiagnosticCode::InvocationSourceTooLarge,
+            format_args!("source input `{display_name}` exceeds the remaining invocation budget"),
+            "orangec reads at most 64 MiB of source bytes per invocation",
+        ),
         ReadSourceError::TooLarge => render_cli_error(
             CliDiagnosticCode::SourceTooLarge,
             format_args!(
@@ -894,6 +965,7 @@ enum ReadSourceError {
     NotRegular,
     ChangedDuringOpen,
     ChangedDuringRead,
+    InvocationTooLarge,
     TooLarge,
 }
 
@@ -1140,7 +1212,7 @@ mod tests {
             .map(|code| code.as_str())
             .collect::<Vec<_>>();
         let expected = [
-            "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007",
+            "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007", "ORC1008",
         ];
 
         assert_eq!(actual, expected);
@@ -1189,8 +1261,14 @@ mod tests {
         let mut input = b"edition 2026; module m {}".as_slice();
         let mut output = Vec::new();
         let mut diagnostic = Vec::new();
-        let status =
-            compile_with_output_limit(&options, &mut input, &mut output, &mut diagnostic, 3);
+        let status = compile_with_limits(
+            &options,
+            &mut input,
+            &mut output,
+            &mut diagnostic,
+            MAX_SOURCE_BYTES_PER_INVOCATION,
+            3,
+        );
 
         assert_eq!(status, COMPILATION_ERROR);
         assert_eq!(output, b"");
@@ -1201,6 +1279,76 @@ mod tests {
                 "  = note: orangec writes at most 64 MiB to standard output per invocation\n",
             )
             .as_bytes()
+        );
+    }
+
+    #[test]
+    fn invocation_source_limit_rejects_the_probe_byte_with_orc1008() {
+        let options = Options {
+            command: CompilerCommand::Check,
+            edition: Edition::CURRENT,
+            paths: vec![PathBuf::from("-")],
+        };
+        let mut input = b"abcd".as_slice();
+        let mut output = Vec::new();
+        let mut diagnostic = Vec::new();
+
+        let status = compile_with_limits(
+            &options,
+            &mut input,
+            &mut output,
+            &mut diagnostic,
+            3,
+            MAX_STANDARD_OUTPUT_BYTES,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(input, b"");
+        assert_eq!(output, b"");
+        assert_eq!(
+            diagnostic,
+            concat!(
+                "error[ORC1008]: source input `<stdin>` exceeds the remaining invocation budget\n",
+                "  = note: orangec reads at most 64 MiB of source bytes per invocation\n",
+            )
+            .as_bytes()
+        );
+    }
+
+    #[test]
+    fn invocation_source_limit_is_consumed_across_operands() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let source_bytes = usize::try_from(path.metadata().unwrap().len()).unwrap();
+        let source_limit = source_bytes
+            .checked_mul(2)
+            .and_then(|total| total.checked_sub(1))
+            .unwrap();
+        let options = Options {
+            command: CompilerCommand::Check,
+            edition: Edition::CURRENT,
+            paths: vec![path.clone(), path],
+        };
+        let mut input = b"".as_slice();
+        let mut output = Vec::new();
+        let mut diagnostic = Vec::new();
+
+        let status = compile_with_limits(
+            &options,
+            &mut input,
+            &mut output,
+            &mut diagnostic,
+            source_limit,
+            MAX_STANDARD_OUTPUT_BYTES,
+        );
+        let diagnostic = String::from_utf8(diagnostic).unwrap();
+
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(output, b"");
+        assert!(diagnostic.contains("error[ORC1008]: source input `"));
+        assert!(
+            diagnostic.ends_with(
+                "  = note: orangec reads at most 64 MiB of source bytes per invocation\n"
+            )
         );
     }
 
