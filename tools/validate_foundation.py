@@ -326,7 +326,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "a21fda2585b86a97c13605a91c1c3efef328a7e008a5329aa7133ce6f4f76473"
+_PHD = "4824f078c2c38df50187727151120784d9545f5e407e0b3fe4b96f37edd4949c"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2418,7 +2418,9 @@ class FoundationValidator:
             count = check["expected_count"]
             fragments = check["fragments"]
             if (
-                code not in allowed_codes
+                type(code) is not str
+                or code not in allowed_codes
+                or type(match) is not str
                 or match not in {"line", "source"}
                 or type(count) is not int
                 or not 1 <= count <= 8
