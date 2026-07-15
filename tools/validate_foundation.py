@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "0ba8e7d27a6a3a088ed75002132817fdd3306f008c82828b931c1348fa9bf4d3"
+GATE0_PROTECTED_FILE_DIGEST = "cc31fe0d7cefa0720b9207cf748086a94263cea794742b0c55dcf0a703ccccd4"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -715,15 +715,15 @@ def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes])
         raise
 
 
-def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
+def _repository_entry_mode(root: Path, raw_path: bytes) -> int | bool | None:
     if not _secure_repository_reads_supported():
         return None
     descriptor: int | None = None
     try:
         parts = raw_path.split(b"/")
         descriptor = _open_directory_descriptor(root, parts[:-1])
-        os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
-        return True
+        metadata = os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
+        return metadata.st_mode
     except FileNotFoundError:
         return False
     except (NotImplementedError, OSError):
@@ -736,23 +736,9 @@ def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
                 pass
 
 
-def _repository_entry_is_directory(root: Path, raw_path: bytes) -> bool | None:
-    if not _secure_repository_reads_supported():
-        return None
-    descriptor: int | None = None
-    try:
-        parts = raw_path.split(b"/")
-        descriptor = _open_directory_descriptor(root, parts[:-1])
-        metadata = os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
-        return stat.S_ISDIR(metadata.st_mode)
-    except (NotImplementedError, OSError):
-        return False
-    finally:
-        if descriptor is not None:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
+    mode = _repository_entry_mode(root, raw_path)
+    return mode if mode is False or mode is None else True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1085,7 +1071,10 @@ def _git_object_id_is_valid(value: bytes) -> bool:
 
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
     git_metadata_present = _repository_entry_presence(root, b".git")
-    if git_metadata_present and _repository_entry_is_directory(root, b".git") is not True:
+    git_metadata_mode = _repository_entry_mode(root, b".git")
+    if git_metadata_present and (
+        git_metadata_mode is None or not stat.S_ISDIR(git_metadata_mode)
+    ):
         findings.append(
             Finding(
                 "resource.inventory_git",
@@ -1094,6 +1083,22 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             )
         )
         return [], False
+    for raw_path, required in ((b".git/config", True), (b".git/index", False)):
+        present = _repository_entry_presence(root, raw_path)
+        mode = _repository_entry_mode(root, raw_path)
+        if git_metadata_present and (
+            (required and present is not True)
+            or (not required and present is None)
+            or (present is True and (mode is None or not stat.S_ISREG(mode)))
+        ):
+            findings.append(
+                Finding(
+                    "resource.inventory_git",
+                    os.fsdecode(raw_path),
+                    "repository Git configuration and index must be local regular files",
+                )
+            )
+            return [], False
     for raw_path in (b".git/commondir", b".git/objects/info/alternates"):
         if git_metadata_present and _repository_entry_presence(root, raw_path) is not False:
             findings.append(
