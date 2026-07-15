@@ -14,16 +14,19 @@ from unittest import mock
 from tools.validate_foundation import (
     DuplicateKeyError,
     FoundationValidator,
+    GATE0_GIT_EXECUTABLE,
     GATE0_MAXIMUM_BINARY_FILE_BYTES,
     GATE0_MAXIMUM_JSON_NESTING_DEPTH,
     GATE0_MAXIMUM_REPOSITORY_BYTES,
+    GATE0_IGNORE_PATTERNS,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     _fallback_repository_files,
     audit_schema_vocabulary,
-    checkout_disables_credentials,
     load_json,
     markdown_anchors,
     markdown_fence_error,
+    markdown_html_comment_error,
+    markdown_inline_link_targets,
     git_index_entries,
     iter_repository_files,
     unsafe_run_interpolations,
@@ -33,19 +36,32 @@ from tools.validate_foundation import (
 )
 
 
+def protected_file_policy() -> dict[str, object]:
+    source = Path(__file__).resolve().parents[2] / "policy/gate0-repository-policy.json"
+    return {"protected_file_digests": load_json(source)["protected_file_digests"]}
+
+
 class _FakePipe:
     def __init__(self, data: bytes) -> None:
-        self.data = data
-        self.offset = 0
-        self.closed = False
+        self.file = tempfile.TemporaryFile()
+        self.file.write(data)
+        self.file.seek(0)
 
     def read(self, size: int) -> bytes:
-        chunk = self.data[self.offset : self.offset + size]
-        self.offset += len(chunk)
-        return chunk
+        return self.file.read(size)
+
+    def fileno(self) -> int:
+        return self.file.fileno()
 
     def close(self) -> None:
-        self.closed = True
+        self.file.close()
+
+    def __del__(self) -> None:
+        self.file.close()
+
+    @property
+    def closed(self) -> bool:
+        return self.file.closed
 
 
 class _FakePopen:
@@ -71,6 +87,17 @@ class _FailingFirstWaitPopen(_FakePopen):
         if self.wait_count == 1:
             raise OSError("wait failed")
         return self.return_code
+
+
+class _TimeoutWaitPopen(_FakePopen):
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.wait_timeouts: list[float | None] = []
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.wait_count += 1
+        self.wait_timeouts.append(timeout)
+        raise subprocess.TimeoutExpired("git", timeout)
 
 
 class JsonParsingTests(unittest.TestCase):
@@ -524,13 +551,41 @@ class RepositoryResourceBoundTests(unittest.TestCase):
 
 
 class RepositoryInventoryBoundTests(unittest.TestCase):
+    def test_inventory_rejects_an_unsupported_host_before_spawning_git(self) -> None:
+        findings = []
+        with tempfile.TemporaryDirectory() as directory, mock.patch(
+            "tools.validate_foundation._secure_repository_reads_supported",
+            return_value=False,
+        ), mock.patch(
+            "tools.validate_foundation.subprocess.Popen",
+            side_effect=AssertionError("Git was spawned on an unsupported host"),
+        ):
+            paths = list(iter_repository_files(Path(directory), findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.unsupported_host"})
+
+    def test_static_git_excludes_match_the_protected_gitignores(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        root_patterns = tuple(
+            line
+            for line in (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        )
+        compiler_patterns = tuple(
+            "compiler/" + line.removeprefix("/")
+            for line in (root / "compiler/.gitignore").read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        )
+        self.assertEqual(GATE0_IGNORE_PATTERNS, root_patterns + compiler_patterns)
+
     def test_git_inventory_has_one_deadline_for_output_and_exit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
             root = parent / "repository"
             root.mkdir()
             fake_git = parent / "git"
-            fake_git.write_text("#!/bin/sh\n/bin/sleep 60\n", encoding="utf-8")
+            fake_git.write_text("#!/bin/sh\nprintf x\n/bin/sleep 1\n", encoding="utf-8")
             fake_git.chmod(0o700)
             findings = []
             with (
@@ -538,6 +593,10 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                     "tools.validate_foundation.os.environ",
                     {"PATH": str(parent)},
                     clear=True,
+                ),
+                mock.patch(
+                    "tools.validate_foundation.GATE0_GIT_EXECUTABLE",
+                    str(fake_git),
                 ),
                 mock.patch(
                     "tools.validate_foundation._GATE0_GIT_TIMEOUT_SECONDS",
@@ -552,11 +611,54 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             {"resource.inventory_timeout"},
         )
 
+    def test_git_selector_range_failure_is_fail_closed_and_reaps_producer(self) -> None:
+        process = _FakePopen(b"file.txt\0")
+        process.stdout.fileno = lambda: 1025
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch(
+                    "tools.validate_foundation.subprocess.Popen",
+                    return_value=process,
+                ),
+                mock.patch(
+                    "tools.validate_foundation.select.select",
+                    side_effect=ValueError("filedescriptor out of range"),
+                ),
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_read"},
+        )
+        self.assertEqual((process.kill_count, process.wait_count), (1, 1))
+
+    def test_git_inventory_without_a_descriptor_fails_before_reading(self) -> None:
+        process = _FakePopen(b"file.txt\0")
+        process.stdout.fileno = mock.Mock(side_effect=OSError("no descriptor"))
+        process.stdout.read = mock.Mock(side_effect=AssertionError("blocking read attempted"))
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                return_value=process,
+            ):
+                paths = list(iter_repository_files(Path(directory), findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
+        process.stdout.read.assert_not_called()
+        self.assertEqual((process.kill_count, process.wait_count), (1, 1))
+
+
     def test_git_path_limit_is_inclusive_and_one_extra_byte_kills_the_producer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "abc").write_bytes(b"")
-            accepted = _FakePopen(b"abc\0")
+            accepted = _FakePopen(b"H abc\0")
             findings = []
             with (
                 mock.patch("tools.validate_foundation.GATE0_MAXIMUM_REPOSITORY_PATH_BYTES", 3),
@@ -570,7 +672,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertIs(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
             self.assertIs(popen.call_args.kwargs["stderr"], subprocess.DEVNULL)
 
-            rejected = _FakePopen(b"abcd\0")
+            rejected = _FakePopen(b"H abcd\0")
             findings = []
             with (
                 mock.patch("tools.validate_foundation.GATE0_MAXIMUM_REPOSITORY_PATH_BYTES", 3),
@@ -583,7 +685,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertEqual((rejected.kill_count, rejected.wait_count), (1, 1))
 
     def test_git_process_environment_replaces_inherited_git_controls(self) -> None:
-        process = _FakePopen(b"file.txt\0")
+        process = _FakePopen(b"H file.txt\0")
         findings = []
         environment = {
             "GIT_DIR": "/redirected/git-dir",
@@ -611,8 +713,18 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 paths = list(iter_repository_files(root, findings))
         self.assertEqual([path.name for path in paths], ["file.txt"])
         self.assertEqual(
-            popen.call_args.args[0][:5],
-            ["git", "-c", "core.fsmonitor=false", "-C", str(root)],
+            popen.call_args.args[0][:9],
+            [
+                GATE0_GIT_EXECUTABLE,
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.ignoreCase=false",
+                "-c",
+                "core.precomposeUnicode=false",
+                "-C",
+                str(root),
+            ],
         )
         child_environment = popen.call_args.kwargs["env"]
         self.assertEqual(
@@ -620,13 +732,259 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             {
                 "GIT_CONFIG_GLOBAL": os.devnull,
                 "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CEILING_DIRECTORIES": str(root.parent),
+                "GIT_DIR": str(root / ".git"),
+                "GIT_NO_LAZY_FETCH": "1",
+                "GIT_NO_REPLACE_OBJECTS": "1",
                 "GIT_OPTIONAL_LOCKS": "0",
                 "GIT_TERMINAL_PROMPT": "0",
+                "GIT_WORK_TREE": str(root),
                 "LC_ALL": "C",
-                "PATH": "/test/bin",
+                "PATH": "/usr/bin:/bin",
             },
         )
+
+    def test_git_inventory_rejects_external_gitdir_indirection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "worktree"
+            root.mkdir()
+            external_git = parent / "external.git"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--bare", "--quiet", external_git],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            (root / ".git").write_text(
+                f"gitdir: {external_git}\n",
+                encoding="utf-8",
+            )
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(
+            {finding.code for finding in findings},
+            {"resource.inventory_git"},
+        )
+
+    def test_git_inventory_rejects_local_metadata_redirects(self) -> None:
+        for relative_path in ("commondir", "config.worktree", "objects/info/alternates"):
+            with self.subTest(path=relative_path), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / "worktree"
+                subprocess.run(
+                    [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                    check=True,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+                redirect = root / ".git" / relative_path
+                redirect.parent.mkdir(parents=True, exist_ok=True)
+                redirect.write_text("../../external\n", encoding="utf-8")
+                findings = []
+
+                paths = list(iter_repository_files(root, findings))
+
+            self.assertEqual(paths, [])
+            self.assertEqual(
+                {finding.code for finding in findings},
+                {"resource.inventory_git"},
+            )
+
+    def test_git_inventory_accepts_empty_checkout_worktree_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            (root / ".git/config.worktree").touch()
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(findings, [])
+
+    def test_git_inventory_accepts_checkout_worktree_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "sparse-checkout", "disable"],
+                cwd=root,
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "config", "--local", "--unset-all", "extensions.worktreeConfig"],
+                cwd=root,
+                check=False,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(findings, [])
+
+    def test_git_inventory_rejects_linked_empty_worktree_config(self) -> None:
+        for link_kind in ("hardlink", "symlink"):
+            if link_kind == "symlink" and not hasattr(os, "symlink"):
+                continue
+            with self.subTest(link_kind=link_kind), tempfile.TemporaryDirectory() as directory:
+                parent = Path(directory)
+                root = parent / "worktree"
+                subprocess.run(
+                    [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                    check=True,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+                target = parent / "empty-config"
+                target.touch()
+                worktree_config = root / ".git/config.worktree"
+                if link_kind == "hardlink":
+                    worktree_config.hardlink_to(target)
+                else:
+                    worktree_config.symlink_to(target)
+                findings = []
+
+                paths = list(iter_repository_files(root, findings))
+
+            self.assertEqual(paths, [])
+            self.assertEqual(
+                {finding.code for finding in findings},
+                {"resource.inventory_git"},
+            )
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
+    def test_git_inventory_rejects_a_symlinked_object_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            objects = root / ".git" / "objects"
+            external = parent / "external-objects"
+            objects.replace(external)
+            objects.symlink_to(external, target_is_directory=True)
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
+
+    def test_git_inventory_rejects_symlinked_config_and_index(self) -> None:
+        for relative_path in ("config", "index"):
+            with self.subTest(path=relative_path), tempfile.TemporaryDirectory() as directory:
+                parent = Path(directory)
+                root = parent / "worktree"
+                subprocess.run(
+                    [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                    check=True,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+                external = parent / "external-metadata"
+                external.write_text("external\n", encoding="utf-8")
+                redirected = root / ".git" / relative_path
+                if redirected.exists():
+                    redirected.unlink()
+                redirected.symlink_to(external)
+                findings = []
+
+                paths = list(iter_repository_files(root, findings))
+
+            self.assertEqual(paths, [])
+            self.assertEqual(
+                {finding.code for finding in findings},
+                {"resource.inventory_git"},
+            )
+
+    def test_git_inventory_rejects_hardlinked_config_and_index(self) -> None:
+        for relative_path in ("config", "index"):
+            with self.subTest(path=relative_path), tempfile.TemporaryDirectory() as directory:
+                parent = Path(directory)
+                root = parent / "worktree"
+                subprocess.run(
+                    [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                    check=True,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+                (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+                subprocess.run(
+                    [GATE0_GIT_EXECUTABLE, "-C", root, "add", "tracked.txt"],
+                    check=True,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+                redirected = root / ".git" / relative_path
+                external = parent / f"external-{relative_path}"
+                redirected.replace(external)
+                redirected.hardlink_to(external)
+                self.assertEqual(redirected.stat().st_nlink, 2)
+                findings = []
+
+                paths = list(iter_repository_files(root, findings))
+
+            self.assertEqual(paths, [])
+            self.assertEqual(
+                {finding.code for finding in findings},
+                {"resource.inventory_git"},
+            )
+
+    def test_git_inventory_rejects_split_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "-C", root, "add", "tracked.txt"],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "-C", root, "update-index", "--split-index"],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
+
+    def test_git_inventory_rejects_external_config_includes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            external = parent / "external.config"
+            external.write_text("[core]\n\tignoreCase = true\n", encoding="utf-8")
+            with (root / ".git" / "config").open("a", encoding="utf-8") as config:
+                config.write(f"[include]\n\tpath = {external}\n")
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
 
     def test_git_wait_failure_stops_and_reaps_the_producer(self) -> None:
         process = _FailingFirstWaitPopen(b"file.txt\0")
@@ -647,6 +1005,23 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         )
         self.assertTrue(process.stdout.closed)
         self.assertEqual((process.kill_count, process.wait_count), (1, 2))
+
+    def test_git_timeout_cleanup_never_uses_an_unbounded_wait(self) -> None:
+        process = _TimeoutWaitPopen(b"file.txt\0")
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "file.txt").write_bytes(b"")
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                return_value=process,
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_timeout"})
+        self.assertEqual((process.kill_count, process.wait_count), (1, 2))
+        self.assertTrue(all(timeout is not None for timeout in process.wait_timeouts))
 
     def test_global_git_excludes_cannot_hide_repository_files(self) -> None:
         clean_environment = {
@@ -683,16 +1058,128 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
         self.assertEqual(
             [path.name for path in paths],
-            [".gitignore", "globally-hidden.txt"],
+            [".gitignore", "globally-hidden.txt", "locally-hidden.txt"],
         )
+        self.assertEqual(findings, [])
+
+    def test_untracked_nested_gitignore_cannot_hide_repository_files(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            hidden = root / "hidden"
+            hidden.mkdir()
+            (hidden / ".gitignore").write_text("*\n", encoding="utf-8")
+            (hidden / "payload").write_text("must remain visible\n", encoding="utf-8")
+            findings: list = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(
+            [path.relative_to(root).as_posix() for path in paths],
+            ["hidden/.gitignore", "hidden/payload", "tracked.txt"],
+        )
+        self.assertEqual(findings, [])
+
+    def test_local_core_worktree_cannot_hide_checkout_files(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "repository"
+            external = parent / "redirected-worktree"
+            external.mkdir()
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "config", "core.worktree", str(external)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "untracked.txt").write_text("must remain visible\n", encoding="utf-8")
+            findings: list = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual([path.name for path in paths], ["tracked.txt", "untracked.txt"])
+        self.assertEqual(findings, [])
+
+    def test_local_ignore_case_cannot_hide_case_collisions(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "name.txt").write_text("tracked\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "name.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "config", "core.ignoreCase", "true"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "NAME.txt").write_text("must remain visible\n", encoding="utf-8")
+            if (root / "NAME.txt").samefile(root / "name.txt"):
+                self.skipTest("case-collision inventory requires a case-sensitive filesystem")
+            findings: list = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual([path.name for path in paths], ["NAME.txt", "name.txt"])
         self.assertEqual(findings, [])
 
     def test_git_file_count_and_raw_metadata_limits_are_inclusive(self) -> None:
         cases = (
-            ("file count", b"a\0b\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, True),
-            ("file count plus one", b"a\0b\0c\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, False),
-            ("metadata bytes", b"a\0b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 4}, True),
-            ("metadata bytes plus one", b"a\0b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 3}, False),
+            ("file count", b"H a\0H b\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, True),
+            ("file count plus one", b"H a\0H b\0H c\0", {"GATE0_MAXIMUM_REPOSITORY_FILES": 2}, False),
+            ("metadata bytes", b"H a\0H b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 8}, True),
+            ("metadata bytes plus one", b"H a\0H b\0", {"GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES": 7}, False),
         )
         for name, output, limits, accepted in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
@@ -770,8 +1257,101 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(entries, [("100644", "tracked.txt")])
         self.assertEqual(findings, [])
 
+    def test_stage_inventory_rejects_a_missing_index_object(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "missing-object.txt").write_bytes(b"worktree content\n")
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(root),
+                    "update-index",
+                    "--add",
+                    "--info-only",
+                    "--cacheinfo",
+                    "100644,1111111111111111111111111111111111111111,missing-object.txt",
+                ],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            findings = []
+            entries = git_index_entries(root, findings, required=True)
+
+        self.assertEqual(entries, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
+
+    def test_stage_inventory_rejects_a_replaced_object_with_the_wrong_type(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "tracked.txt").write_bytes(b"tracked\n")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            blob = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", ":tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).stdout.strip()
+            tree = subprocess.run(
+                ["git", "-C", str(root), "write-tree"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "-C", str(root), "update-index", "--cacheinfo", f"100644,{tree},tracked.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "update-ref", f"refs/replace/{tree}", blob],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            findings = []
+            entries = git_index_entries(root, findings, required=True)
+
+        self.assertEqual(entries, [])
+        self.assertEqual({finding.code for finding in findings}, {"git.index_object_type"})
+
     def test_stage_inventory_failure_after_git_file_inventory_is_fatal(self) -> None:
-        file_process = _FakePopen(b"file.txt\0")
+        file_process = _FakePopen(b"H file.txt\0")
         stage_process = _FakePopen(b"", return_code=1)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -787,15 +1367,16 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
 
     def test_stage_inventory_must_be_a_subset_of_the_file_inventory(self) -> None:
-        file_process = _FakePopen(b"file.txt\0")
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        file_process = _FakePopen(b"H file.txt\0")
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         stage_process = _FakePopen(metadata + b"\tother.txt\0")
+        type_process = _FakePopen((b"a" * 40) + b" blob\0")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "file.txt").write_bytes(b"")
             with mock.patch(
                 "tools.validate_foundation.subprocess.Popen",
-                side_effect=(file_process, stage_process),
+                side_effect=(file_process, stage_process, type_process),
             ):
                 validator = FoundationValidator(root)
 
@@ -806,7 +1387,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         )
 
     def test_git_file_inventory_rejects_untracked_admitted_paths(self) -> None:
-        file_process = _FakePopen(b"untracked.txt\0")
+        file_process = _FakePopen(b"? untracked.txt\0")
         stage_process = _FakePopen(b"")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -820,6 +1401,129 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(
             [(finding.code, finding.path) for finding in validator.findings],
             [("git.untracked", "untracked.txt")],
+        )
+
+    def test_git_inventory_rejects_hidden_index_state(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "assumed.txt").write_bytes(b"tracked\n")
+            (root / "skipped-intent.txt").write_bytes(b"intent\n")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "assumed.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "add", "-N", "skipped-intent.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "update-index", "--assume-unchanged", "assumed.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                ["git", "-C", str(root), "update-index", "--skip-worktree", "skipped-intent.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            validator = FoundationValidator(root)
+
+        self.assertEqual({finding.code for finding in validator.findings}, {"git.index_flags"})
+
+    def test_intent_to_add_entries_are_rejected_including_empty_files(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "empty-intent.txt").write_bytes(b"")
+            (root / "nonempty-intent.txt").write_bytes(b"content\n")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "-N", "empty-intent.txt", "nonempty-intent.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            validator = FoundationValidator(root)
+
+        self.assertEqual(
+            [(finding.code, finding.path) for finding in validator.findings],
+            [("git.intent_to_add", "empty-intent.txt")],
+        )
+
+    def test_modified_staged_empty_file_is_not_intent_to_add(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                ["git", "init", "--quiet", str(root)],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            for name in ("staged-empty.txt", "modified-empty.txt"):
+                (root / name).write_bytes(b"")
+            subprocess.run(
+                ["git", "-C", str(root), "add", "staged-empty.txt", "modified-empty.txt"],
+                check=True,
+                env=clean_environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            (root / "modified-empty.txt").write_bytes(b"worktree change\n")
+            validator = FoundationValidator(root)
+
+        self.assertEqual(validator.findings, [])
+
+    def test_intent_to_add_inventory_failure_is_fatal(self) -> None:
+        file_process = _FakePopen(b"H file.txt\0")
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
+        stage_process = _FakePopen(metadata + b"\tfile.txt\0")
+        type_process = _FakePopen((b"a" * 40) + b" blob\0")
+        intent_process = _FakePopen(b"", return_code=1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "file.txt").write_bytes(b"")
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                side_effect=(file_process, stage_process, type_process, intent_process),
+            ):
+                validator = FoundationValidator(root)
+
+        self.assertEqual(
+            {finding.code for finding in validator.findings},
+            {"resource.inventory_intent"},
         )
 
     def test_fallback_counts_ignored_entry_but_prunes_its_contents(self) -> None:
@@ -847,6 +1551,23 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 paths = list(iter_repository_files(root, findings))
             self.assertEqual(paths, [])
             self.assertEqual({finding.code for finding in findings}, {"resource.inventory_entries"})
+
+    def test_fallback_only_prunes_service_directories_at_the_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / "nested" / ".agents"
+            nested.mkdir(parents=True)
+            hidden = nested / "repository-content.txt"
+            hidden.write_text("content\n", encoding="utf-8")
+            findings = []
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                side_effect=OSError("no git"),
+            ):
+                paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [hidden])
+        self.assertEqual(findings, [])
 
     def test_fallback_rejects_a_host_without_descriptor_scandir(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -964,7 +1685,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
     def test_stage_prefix_limit_is_inclusive_and_path_tabs_are_preserved(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         raw_path = b"tab\tname.txt"
         output = metadata + b"\t" + raw_path + b"\0"
         for adjustment, accepted in ((0, True), (-1, False)):
@@ -976,7 +1697,12 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                         "tools.validate_foundation.GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES",
                         len(metadata) + adjustment,
                     ),
-                    mock.patch("tools.validate_foundation.subprocess.Popen", return_value=process),
+                    mock.patch(
+                        "tools.validate_foundation.subprocess.Popen",
+                        side_effect=(process, _FakePopen((b"a" * 40) + b" blob\0"))
+                        if accepted
+                        else (process,),
+                    ),
                 ):
                     entries = git_index_entries(Path(directory), findings)
                 if accepted:
@@ -990,7 +1716,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                     )
 
     def test_stage_inventory_rejects_a_path_escape_before_decoding(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         process = _FakePopen(metadata + b"\t../outside\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
@@ -1000,7 +1726,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
     def test_stage_inventory_rejects_unmerged_index_entries(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 2"
+        metadata = b"100644 " + (b"a" * 40) + b" 2 0"
         process = _FakePopen(metadata + b"\tconflicted.txt\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
@@ -1011,10 +1737,11 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
 
     def test_stage_inventory_rejects_malformed_object_ids_and_duplicate_paths(self) -> None:
-        valid_metadata = b"100644 " + (b"a" * 40) + b" 0"
+        valid_metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         cases = (
             b"100644 not-an-object-id 0\ttracked.txt\0",
-            b"\xff00644 " + (b"a" * 40) + b" 0\ttracked.txt\0",
+            b"\xff00644 " + (b"a" * 40) + b" 0 0\ttracked.txt\0",
+            b"100644 " + (b"a" * 40) + b" 0 -1\ttracked.txt\0",
             valid_metadata
             + b"\ttracked.txt\0"
             + valid_metadata
@@ -1036,7 +1763,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 )
 
     def test_stage_inventory_rejects_non_utf8_paths_after_bounding(self) -> None:
-        metadata = b"100644 " + (b"a" * 40) + b" 0"
+        metadata = b"100644 " + (b"a" * 40) + b" 0 0"
         process = _FakePopen(metadata + b"\tinvalid-\xff\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
@@ -1052,7 +1779,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "non-UTF-8 paths require POSIX")
     def test_git_file_inventory_rejects_non_utf8_paths_after_bounding(self) -> None:
         raw_paths = (b"z\xff", b"a\xfe")
-        process = _FakePopen(b"\0".join(reversed(raw_paths)) + b"\0")
+        process = _FakePopen(b"\0".join(b"H " + path for path in reversed(raw_paths)) + b"\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
             raw_root = os.fsencode(directory)
@@ -1088,7 +1815,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFOs are unavailable")
     def test_git_inventory_retains_nonregular_entries_for_preflight_rejection(self) -> None:
-        process = _FakePopen(b"input.pipe\0")
+        process = _FakePopen(b"H input.pipe\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1101,7 +1828,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_successful_git_inventory_rejects_tracked_deletions_after_bounding(self) -> None:
-        process = _FakePopen(b"deleted.txt\0present.txt\0")
+        process = _FakePopen(b"H deleted.txt\0H present.txt\0")
         findings = []
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1132,9 +1859,105 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
 
 class MarkdownTests(unittest.TestCase):
+    def test_inline_links_reuse_their_physical_line_boundary(self) -> None:
+        class CountingText(str):
+            line_break_searches = 0
+
+            def find(
+                self,
+                substring: str,
+                start: int | None = None,
+                end: int | None = None,
+            ) -> int:
+                if substring in {"\r", "\n"}:
+                    self.line_break_searches += 1
+                begin = 0 if start is None else start
+                if end is None:
+                    return super().find(substring, begin)
+                return super().find(substring, begin, end)
+
+        text = CountingText(" ".join("[label](target.md)" for _ in range(64)))
+
+        self.assertEqual(list(markdown_inline_link_targets(text)), ["target.md"] * 64)
+        self.assertEqual(text.line_break_searches, 2)
+
+    def test_inline_links_reuse_their_physical_line_delimiter_lookahead(self) -> None:
+        class CountingText(str):
+            delimiter_searches = 0
+
+            def find(
+                self,
+                substring: str,
+                start: int | None = None,
+                end: int | None = None,
+            ) -> int:
+                if substring in {">", '"', "'"}:
+                    self.delimiter_searches += 1
+                begin = 0 if start is None else start
+                if end is None:
+                    return super().find(substring, begin)
+                return super().find(substring, begin, end)
+
+            def rfind(
+                self,
+                substring: str,
+                start: int | None = None,
+                end: int | None = None,
+            ) -> int:
+                if substring in {">", '"', "'"}:
+                    self.delimiter_searches += 1
+                begin = 0 if start is None else start
+                if end is None:
+                    return super().rfind(substring, begin)
+                return super().rfind(substring, begin, end)
+
+        text = CountingText(" ".join("[label](<target.md)" for _ in range(64)))
+
+        self.assertEqual(list(markdown_inline_link_targets(text)), ["<target.md"] * 64)
+        self.assertEqual(text.delimiter_searches, 3)
+
+    def test_html_comment_scan_is_fence_aware_and_sentinel_free(self) -> None:
+        self.assertIsNone(
+            markdown_html_comment_error("OPEN_COMMENT_SENTINEL CLOSE_COMMENT_SENTINEL\n")
+        )
+        self.assertIsNone(markdown_html_comment_error("<!-- balanced -->\n"))
+        self.assertIsNone(markdown_html_comment_error("```text\n<!-- fenced\n```\n"))
+        self.assertIsNone(markdown_html_comment_error("`<!--` and ``-->``\n"))
+        self.assertEqual(
+            markdown_html_comment_error("`<!--` -->\n"),
+            "HTML comment closer without opener",
+        )
+        self.assertEqual(
+            markdown_html_comment_error("<!-- outer <!-- nested -->\n"),
+            "nested HTML comment opener",
+        )
+        self.assertEqual(
+            markdown_html_comment_error("stray -->\n"),
+            "HTML comment closer without opener",
+        )
+
     def test_heading_anchors_match_github_style_duplicates(self) -> None:
-        anchors = markdown_anchors("# One heading\n\n## Repeated\n\n## Repeated\n")
-        self.assertEqual(anchors, {"one-heading", "repeated", "repeated-1"})
+        anchors = markdown_anchors("# One heading\n\n## Repeated\n\n## Repeated\n\n## Use `orange`\n")
+        self.assertEqual(anchors, {"one-heading", "repeated", "repeated-1", "use-orange"})
+
+    def test_repeated_fragment_links_scan_their_target_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "[one](target.md#heading)\n[two](target.md#heading)\n",
+                encoding="utf-8",
+            )
+            (root / "target.md").write_text("# Heading\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+
+            with mock.patch(
+                "tools.validate_foundation.markdown_anchors",
+                wraps=markdown_anchors,
+            ) as anchors:
+                validator._validate_markdown_links()
+
+            self.assertEqual(validator.findings, [])
+            self.assertEqual(anchors.call_count, 1)
 
     def test_missing_relative_link_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1143,6 +1966,185 @@ class MarkdownTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_markdown_links()
             self.assertIn("markdown.link_missing", {finding.code for finding in validator.findings})
+
+    def test_balanced_inline_link_destinations_are_scanned_completely(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "(guide).md").write_text("# Guide\n", encoding="utf-8")
+            (root / "image.png").write_bytes(b"image")
+            (root / "target.md").write_text("# Target\n", encoding="utf-8")
+            (root / "source.md").write_text(
+                "[balanced]((guide).md)\n"
+                "[outer [inner]]((guide).md)\n"
+                "[escaped \\] label]((guide).md)\n"
+                "[multiline\nlabel]((guide).md)\n"
+                "[blank\n\nlabel](blank-ignored.md)\n"
+                "[![image](image.png)](outer-missing.md)\n"
+                "[continued destination](\n  continued-inline-missing.md)\n"
+                "[continued title](continued-title-missing.md\n  \"title\")\n"
+                "[continued close](continued-close-missing.md\n)\n"
+                "[split destination](split-ignored.md\npath)\n"
+                "[angle](<(guide).md>)\n"
+                "[escaped](\\(guide\\).md)\n"
+                "[query](target.md?value=(nested))\n"
+                "[quoted title](target.md \"see (this)\")\n"
+                "[parenthesized title](target.md (see this))\n"
+                "[missing](missing(part).md)\n"
+                "[missing [nested]](nested-missing.md)\n"
+                "[missing \\] label](escaped-missing.md)\n"
+                "[missing\nmultiline](multiline-missing.md)\n"
+                "[unterminated title](missing-title.md \"unterminated)\n"
+                "[unterminated](ignored.md\r[after cr](cr-missing.md)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+
+            validator._validate_markdown_links()
+
+        self.assertEqual(
+            [(finding.code, finding.message) for finding in validator.findings],
+            [
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: outer-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: continued-inline-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: missing(part).md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: nested-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: escaped-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: multiline-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    'local link target does not exist: missing-title.md "unterminated',
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: cr-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: continued-title-missing.md",
+                ),
+                (
+                    "markdown.link_missing",
+                    "local link target does not exist: continued-close-missing.md",
+                ),
+            ],
+        )
+
+    def test_links_in_comments_and_fences_are_not_live_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "<!-- [commented](commented.md) -->\n\n"
+                "```markdown\n[fenced](fenced.md)\n```\n\n"
+                "[visible](visible.md)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+
+            validator._validate_markdown_links()
+
+            self.assertEqual(
+                [(finding.code, finding.message) for finding in validator.findings],
+                [("markdown.link_missing", "local link target does not exist: visible.md")],
+            )
+
+    def test_links_in_inline_code_are_not_live_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "`[single](single.md)` and ``code ` [double](double.md) ` code``\n"
+                "unmatched ` [visible](visible.md)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
+            self.assertEqual(
+                [(finding.code, finding.message) for finding in validator.findings],
+                [("markdown.link_missing", "local link target does not exist: visible.md")],
+            )
+
+    def test_reference_style_link_destinations_are_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "[guide][docs]\n\n"
+                "[docs]: missing.md\n"
+                "[escaped\\]]: escaped-missing.md\n"
+                "[\nmultiline\n]: multiline-missing.md\n"
+                "[continued]:\n  continued-missing.md\n\n"
+                "[invalid[label]: unescaped-ignored.md\n"
+                "[   ]: whitespace-ignored.md\n"
+                f"[{'x' * 999}]: maximum-missing.md\n"
+                f"[{'x' * 1_000}]: oversized-ignored.md\n"
+                "`[ignored]: ignored.md`\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
+            self.assertEqual(
+                [(finding.code, finding.message) for finding in validator.findings],
+                [
+                    ("markdown.link_missing", "local link target does not exist: missing.md"),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: escaped-missing.md",
+                    ),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: multiline-missing.md",
+                    ),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: continued-missing.md",
+                    ),
+                    (
+                        "markdown.link_missing",
+                        "local link target does not exist: maximum-missing.md",
+                    ),
+                ],
+            )
+
+    def test_malformed_link_destinations_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "target.md").write_text("# Target\n", encoding="utf-8")
+            (root / "with space.md").write_text("# Space\n", encoding="utf-8")
+            (root / "source.md").write_text(
+                "[percent](https://example.com/%GG)\n"
+                "[port](https://example.com:port/source)\n"
+                "[fragment](https://example.com/#first#second)\n"
+                "[local query](target.md?value=%GG)\n"
+                "[local fragment](target.md#first#second)\n"
+                "[local brackets](target[1].md)\n"
+                "[valid](https://example.com/a%20path)\n"
+                "[valid local](target.md?value=%20)\n"
+                "[valid angle](<with space.md>)\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
+
+        self.assertEqual(
+            [finding.code for finding in validator.findings],
+            ["markdown.link_invalid"] * 6,
+        )
 
     def test_existing_cross_file_anchor_passes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1199,7 +2201,7 @@ class MarkdownTests(unittest.TestCase):
             self.assertEqual(validator.findings, [])
 
     def test_malformed_uri_targets_are_reported_without_a_parser_crash(self) -> None:
-        for target in ("https://[", "//["):
+        for target in ("https://[", "//[", "<missing"):
             with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / "source.md").write_text(
@@ -1214,6 +2216,38 @@ class MarkdownTests(unittest.TestCase):
                     [(finding.code, finding.message) for finding in validator.findings],
                     [("markdown.link_invalid", "link target is not a valid URI reference")],
                 )
+
+    def test_local_links_reject_malformed_or_non_utf8_percent_encoding(self) -> None:
+        for target in ("percent%.md", "percent%GG.md", "%FF.md"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "source.md").write_text(f"[target]({target})\n", encoding="utf-8")
+                validator = FoundationValidator(root)
+
+                validator._validate_markdown_links()
+
+                self.assertEqual(
+                    [(finding.code, finding.message) for finding in validator.findings],
+                    [
+                        (
+                            "markdown.link_invalid",
+                            "link target has invalid percent encoding"
+                            if target == "%FF.md"
+                            else "link target is not a valid URI reference",
+                        )
+                    ],
+                )
+
+    def test_local_links_accept_strict_utf8_percent_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text("[target](%C3%A9.md)\n", encoding="utf-8")
+            (root / "é.md").write_text("# Target\n", encoding="utf-8")
+            validator = FoundationValidator(root)
+
+            validator._validate_markdown_links()
+
+            self.assertEqual(validator.findings, [])
 
     def test_valid_network_uri_targets_still_pass(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1234,6 +2268,18 @@ class MarkdownTests(unittest.TestCase):
             markdown_fence_error("# Document\n\n```text\nnot closed\n"),
             "unclosed ``` fence opened on line 3",
         )
+        self.assertIsNone(markdown_fence_error("```invalid`info\n"))
+
+    def test_invalid_backtick_fence_cannot_hide_a_link(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "source.md").write_text(
+                "```invalid`info\n[visible](visible.md)\n```\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_markdown_links()
+            self.assertIn("markdown.link_missing", {finding.code for finding in validator.findings})
 
     def test_longer_closing_fence_is_valid(self) -> None:
         self.assertIsNone(markdown_fence_error("~~~text\ncontent\n~~~~\n"))
@@ -1428,18 +2474,6 @@ GPT-5, under Chase Bryan's direction on 2026-07-14.
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_checkout_credentials_must_be_explicitly_disabled(self) -> None:
-        safe = [
-            "      - name: Checkout",
-            "        uses: actions/checkout@" + "a" * 40 + " # v1.0.0",
-            "        with:",
-            "          persist-credentials: false",
-            "      - name: Next",
-        ]
-        unsafe = safe[:2] + safe[4:]
-        self.assertTrue(checkout_disables_credentials(safe, 1))
-        self.assertFalse(checkout_disables_credentials(unsafe, 1))
-
     def test_job_blocks_are_found_without_parsing_untrusted_yaml(self) -> None:
         jobs = workflow_jobs(
             [
@@ -1453,13 +2487,26 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual([name for name, _ in jobs], ["first", "second"])
 
-    def test_untrusted_event_interpolation_in_run_is_rejected(self) -> None:
-        lines = [
-            "      - name: Unsafe",
-            "        run: |",
-            "          printf '%s' '${{ github.event.issue.title }}'",
-        ]
-        self.assertEqual(unsafe_run_interpolations(lines), [2])
+    def test_untrusted_context_interpolation_in_run_is_rejected(self) -> None:
+        for field in (
+            "github.event.inputs.command",
+            "github.event.issue.title",
+            "github.base_ref",
+            "github.head_ref",
+            "github.ref",
+            "github.ref_name",
+            "inputs.command",
+        ):
+            lines = [
+                "      - name: Unsafe",
+                "        run: |",
+                f"          printf '%s' '${{{{ {field} }}}}'",
+            ]
+            with self.subTest(field=field):
+                self.assertEqual(unsafe_run_interpolations(lines), [2])
+
+        safe = ["        run: printf '%s' '${{ github.sha }}'"]
+        self.assertEqual(unsafe_run_interpolations(safe), [])
 
     def test_mutable_action_ref_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1584,6 +2631,26 @@ class ProvisionalSchemaTests(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
+        absolute = {"$ref": referenced_path.as_posix()}
+        issues = validate_schema_instance(
+            "value",
+            absolute,
+            schema_path,
+            {schema_path: absolute, referenced_path: referenced},
+            {},
+        )
+        self.assertEqual([issue.keyword for issue in issues], ["$ref"])
+
+    def test_schema_reference_fragments_decode_strict_json_pointers(self) -> None:
+        schema_path = Path("/virtual/root.schema.json")
+        valid = {"$defs": {"a/b": {"const": 1}}, "$ref": "#/$defs/a%7E1b"}
+        self.assertEqual(validate_schema_instance(1, valid, schema_path, {schema_path: valid}, {}), [])
+
+        for fragment in ("%GG", "~2"):
+            schema = {"$defs": {fragment: True}, "$ref": f"#/$defs/{fragment}"}
+            issues = validate_schema_instance(1, schema, schema_path, {schema_path: schema}, {})
+            self.assertEqual([issue.keyword for issue in issues], ["$ref"])
+
     def test_fixture_validation_never_executes_unreviewed_schema_patterns(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         dangerous_pattern = "^(a+)+$"
@@ -1624,6 +2691,7 @@ class ProvisionalSchemaTests(unittest.TestCase):
                 schema_path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
 
                 validator = FoundationValidator(root)
+                validator.policy = protected_file_policy()
                 with mock.patch(
                     "tools.validate_foundation.re.compile",
                     side_effect=guarded_compile,
@@ -1652,6 +2720,7 @@ class ProvisionalSchemaTests(unittest.TestCase):
                 root / "conformance/foundation",
             )
             validator = FoundationValidator(root)
+            validator.policy = protected_file_policy()
             validator._validate_protected_file_digests()
 
             schema_path = root / "schemas/gate0/claim-record-v0.1.schema.json"
@@ -1694,6 +2763,37 @@ class ProvisionalSchemaTests(unittest.TestCase):
 
         self.assertFalse(valid_format("relative/path", "uri"))
         self.assertTrue(valid_format("relative/path", "uri-reference"))
+        self.assertTrue(valid_format("https://[2001:db8::1]/source", "uri"))
+        self.assertTrue(valid_format("https://user:pass@example.com:443/source", "uri"))
+        self.assertTrue(valid_format("https://example.com:/source", "uri"))
+        for value in (
+            "https://example.com/a[b]",
+            "https://example.com/?q=[x]",
+            "https://example.com/#a#b",
+            "https://example.com:port/source",
+            "https://[2001:db8::1]:port/source",
+            "https://unbracketed:host:443/source",
+            "https://first@second@example.com/source",
+            "urn:orange:a[b]",
+        ):
+            self.assertFalse(valid_format(value, "uri"), value)
+
+    def test_date_time_format_enforces_rfc3339_lexical_form(self) -> None:
+        for value in (
+            "2026-07-14T12:34:56Z",
+            "2026-07-14t12:34:56.123z",
+            "2026-07-14T12:34:56-05:30",
+        ):
+            self.assertTrue(valid_format(value, "date-time"), value)
+        for value in (
+            "2026-07-14 12:34:56+00:00",
+            "2026-07-14T12:34:56+00:00:30",
+            "2026-07-14T12:34:56",
+            "2026-07-14T12:34:56+24:00",
+            "2026-07-14T12:34:60Z",
+            "2026-02-30T12:34:56Z",
+        ):
+            self.assertFalse(valid_format(value, "date-time"), value)
 
     def test_invalid_uri_is_reported_as_a_schema_format_issue(self) -> None:
         schema = {"type": "string", "format": "uri"}
@@ -1737,6 +2837,7 @@ class ProvisionalSchemaTests(unittest.TestCase):
                 fixture_path.write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
 
                 validator = FoundationValidator(root)
+                validator.policy = protected_file_policy()
                 validator._validate_schema_fixtures()
 
                 findings = [

@@ -9,17 +9,25 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import ExitStack, redirect_stderr
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
 from tools.validate_foundation import (
+    _read_git_records,
     FoundationValidator,
+    Finding,
+    GATE0_GIT_EXECUTABLE,
+    GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
+    GATE0_MAXIMUM_FINDINGS,
+    SCHEMA_DIALECT,
     audit_schema_vocabulary,
     canonical_json_bytes,
-    checkout_disables_credentials,
+    duplicate_yaml_mapping_key,
     load_json,
+    main,
     parse_arguments,
+    parse_front_matter,
     parse_rust_usize_product,
     relative,
     rust_code_without_comments_and_literals,
@@ -45,6 +53,11 @@ def workflow_policy() -> dict[str, object]:
             "require_version_comment": True,
         },
     }
+
+
+def protected_file_policy() -> dict[str, object]:
+    source = Path(__file__).resolve().parents[2] / "policy/gate0-repository-policy.json"
+    return {"protected_file_digests": load_json(source)["protected_file_digests"]}
 
 
 class JsonHardeningTests(unittest.TestCase):
@@ -82,6 +95,30 @@ class JsonHardeningTests(unittest.TestCase):
             '{"a":[true,null,"x"],"😀":2,"":1}'.encode("utf-8"),
         )
 
+    def test_git_inventory_ignores_a_hostile_path(self) -> None:
+        self.assertEqual(GATE0_GIT_EXECUTABLE, "/usr/bin/git")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "hostile-git-ran"
+            hostile_bin = root / "bin"
+            hostile_bin.mkdir()
+            fake_git = hostile_bin / "git"
+            fake_git.write_text(
+                "#!/bin/sh\n"
+                f"/usr/bin/touch -- {marker}\n",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+
+            with mock.patch.dict("os.environ", {"PATH": str(hostile_bin)}):
+                _read_git_records(
+                    root,
+                    ["ls-files"],
+                    maximum_record_bytes=128,
+                )
+
+            self.assertFalse(marker.exists())
+
     def test_schema_equality_distinguishes_booleans_from_integers(self) -> None:
         schema_path = Path("/virtual/equality.schema.json")
         for keyword, schema in (("const", {"const": True}), ("enum", {"enum": [True]})):
@@ -91,6 +128,379 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_unreviewed_workflow_is_reported_without_crashing(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow_dir = root / ".github/workflows"
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "unreviewed.yml").write_text(
+                "name: Unreviewed\non:\n  workflow_dispatch:\npermissions: {}\n",
+                encoding="utf-8",
+            )
+            validator = FoundationValidator(root)
+            validator.policy = load_json(source_root / "policy/gate0-repository-policy.json")
+
+            validator._validate_workflows()
+
+            self.assertIn("workflow.inventory", {finding.code for finding in validator.findings})
+
+    def test_critical_workflow_step_contracts_are_exact(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (
+                "ci.yml",
+                "          persist-credentials: false\n",
+                "          persist-credentials: false\n          ref: main\n",
+                "workflow.checkout_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "          config-file: ./.github/dependency-review-config.yml\n",
+                "          config-file: ./.github/dependency-review-config.yml\n          warn-only: true\n",
+                "workflow.dependency_review_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    if: false\n    runs-on: ubuntu-24.04\n",
+                "workflow.job_condition_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    env:\n      NODE_OPTIONS: --require=./bootstrap.js\n    runs-on: ubuntu-24.04\n",
+                "workflow.ambient_env",
+            ),
+            (
+                "dependency-review.yml",
+                "permissions: {}\n",
+                "permissions: {}\nenv:\n  NODE_OPTIONS: --require=./bootstrap.js\n",
+                "workflow.ambient_env",
+            ),
+            (
+                "ci.yml",
+                "    shell: /bin/bash -p -e -o pipefail {0}\n",
+                "    shell: bash {0}\n",
+                "workflow.defaults_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "permissions: {}\n",
+                "permissions: {}\ndefaults:\n  run:\n    shell: /bin/bash -p -e -o pipefail {0}\n",
+                "workflow.defaults_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    branches:\n      - main\n",
+                "    branches:\n      - main\n    paths-ignore:\n      - compiler/**\n",
+                "workflow.path_filter",
+            ),
+            (
+                "dependency-review.yml",
+                "  merge_group:\n",
+                "  push:\n    branches:\n      - main\n  merge_group:\n",
+                "workflow.event_contract",
+            ),
+            (
+                "ci.yml",
+                "  pull_request:\n    branches:\n      - main\n",
+                "  pull_request:\n    branches:\n      - main\n    types:\n      - closed\n",
+                "workflow.event_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "      - checks_requested\n",
+                "      - destroyed\n",
+                "workflow.event_contract",
+            ),
+            (
+                "external-links.yml",
+                "    - cron: \"23 4 * * 1\"\n",
+                "    - cron: \"23 4 * * 0\"\n",
+                "workflow.event_contract",
+            ),
+            (
+                "workflow-online-audit.yml",
+                "  workflow_dispatch:\n",
+                "  workflow_dispatch:\n    inputs:\n      ref:\n        required: false\n",
+                "workflow.event_contract",
+            ),
+            (
+                "ci.yml",
+                "  group: required-ci-${{ github.event.pull_request.number || github.ref }}\n",
+                "  group: required-ci\n",
+                "workflow.concurrency",
+            ),
+            (
+                "scorecard.yml",
+                "  group: openssf-scorecard-${{ github.ref }}\n",
+                "  group: required-ci-${{ github.ref }}\n",
+                "workflow.concurrency",
+            ),
+            (
+                "dependency-review.yml",
+                "  cancel-in-progress: true\n",
+                "  cancel-in-progress: false\n",
+                "workflow.concurrency",
+            ),
+            (
+                "ci.yml",
+                "    timeout-minutes: 15\n",
+                "    timeout-minutes: 1\n",
+                "workflow.timeout",
+            ),
+            (
+                "scorecard.yml",
+                "    timeout-minutes: 20\n",
+                "    timeout-minutes: 200\n",
+                "workflow.timeout",
+            ),
+            (
+                "ci.yml",
+                "      contents: read\n",
+                "      contents: none\n",
+                "workflow.job_permissions",
+            ),
+            (
+                "dependency-review.yml",
+                "      contents: read\n",
+                "      contents: read\n      issues: read\n",
+                "workflow.job_permissions",
+            ),
+            (
+                "scorecard.yml",
+                "      security-events: write # Required to upload SARIF to code scanning.\n",
+                "      security-events: read # Cannot upload SARIF.\n",
+                "workflow.job_permissions",
+            ),
+            (
+                "ci.yml",
+                "permissions: {}\n",
+                "permissions:\n",
+                "workflow.permissions",
+            ),
+            (
+                "ci.yml",
+                "    name: Required CI / docs-policy-workflows\n",
+                "    name: Alternate check\n    # name: Required CI / docs-policy-workflows\n",
+                "workflow.required_content",
+            ),
+            (
+                "workflow-online-audit.yml",
+                "    name: Workflow Online Audit / upstream metadata\n",
+                "    name: Unreviewed metadata job\n",
+                "workflow.required_content",
+            ),
+            (
+                "scorecard.yml",
+                "name: OpenSSF Scorecard\n",
+                "name: Scorecard fork\n# name: OpenSSF Scorecard\n",
+                "workflow.name_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "      - main\n",
+                "      - release\n",
+                "workflow.event_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "      - main\n",
+                "      - main\n      - release\n",
+                "workflow.event_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    branches:\n",
+                "    branches-ignore:\n",
+                "workflow.event_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    defaults:\n      run:\n        shell: bash {0}\n    runs-on: ubuntu-24.04\n",
+                "workflow.defaults_contract",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    strategy:\n      matrix:\n        mode: [review, bypass]\n    runs-on: ubuntu-24.04\n",
+                "workflow.job_extension",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    needs: missing-gate\n    runs-on: ubuntu-24.04\n",
+                "workflow.job_extension",
+            ),
+            (
+                "dependency-review.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "    runs-on: ubuntu-22.04\n",
+                "workflow.runner",
+            ),
+            (
+                "external-links.yml",
+                "    runs-on: ubuntu-24.04\n",
+                "",
+                "workflow.runner",
+            ),
+            (
+                "scorecard.yml",
+                "    if: ${{ github.ref == 'refs/heads/main' }}\n",
+                "    if: false\n",
+                "workflow.job_condition_contract",
+            ),
+            (
+                "ci.yml",
+                '          echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2\n          exit 1\n',
+                '          if false; then\n            echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2\n            exit 1\n          fi\n',
+                "workflow.solo_boundary_contract",
+            ),
+            (
+                "ci.yml",
+                "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py\n",
+                "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py || :\n",
+                "workflow.ci_gate_contract",
+            ),
+            (
+                "ci.yml",
+                "        run: ./scripts/ci/install-actionlint \"$RUNNER_TEMP/actionlint\"\n",
+                "        run: ./scripts/ci/install-actionlint \"$RUNNER_TEMP/actionlint\" || :\n",
+                "workflow.ci_tool_contract",
+            ),
+            (
+                "ci.yml",
+                "            **/*.md\n            .github/**/*.md\n",
+                "            **/*.md\n",
+                "workflow.ci_tool_contract",
+            ),
+            (
+                "external-links.yml",
+                '        run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee"\n',
+                '        run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee" || :\n',
+                "workflow.external_links_contract",
+            ),
+            (
+                "workflow-online-audit.yml",
+                "          online-audits: true\n",
+                "          online-audits: false\n",
+                "workflow.online_audit_contract",
+            ),
+        )
+        for name, original, replacement, expected_code in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workflow_dir = root / ".github/workflows"
+                workflow_dir.mkdir(parents=True)
+                source = (source_root / ".github/workflows" / name).read_text(encoding="utf-8")
+                self.assertEqual(source.count(original), 1)
+                (workflow_dir / name).write_text(
+                    source.replace(original, replacement),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator.policy = load_json(source_root / "policy/gate0-repository-policy.json")
+
+                validator._validate_workflows()
+
+                self.assertIn(expected_code, {finding.code for finding in validator.findings})
+
+    def test_duplicate_yaml_mapping_keys_are_rejected_outside_scripts(self) -> None:
+        self.assertIsNone(
+            duplicate_yaml_mapping_key("run: |2-\n  label: script text\n  label: still script text\n")
+        )
+        self.assertEqual(
+            duplicate_yaml_mapping_key(
+                "steps:\n  - name: Checkout\n    with:\n      persist-credentials: false\n      persist-credentials: true\n"
+            ),
+            "persist-credentials",
+        )
+        self.assertIsNone(
+            duplicate_yaml_mapping_key(
+                "steps:\n  - name: First\n    env:\n      VALUE: one\n  - name: Second\n    env:\n      VALUE: two\n"
+            )
+        )
+        source = """name: CI
+on:
+  pull_request:
+  push:
+  merge_group:
+permissions: {}
+concurrency:
+  group: ci
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Script
+        run: |
+          label: allowed inside the script
+          label: still script text
+jobs:
+  replacement:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps: []
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow_dir = root / ".github/workflows"
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "ci.yml").write_text(source, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator.policy = workflow_policy()
+
+            validator._validate_workflows()
+
+            self.assertIn(
+                "workflow.duplicate_key",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_yaml_indirection_syntax_is_rejected(self) -> None:
+        base = """name: CI
+on:
+  pull_request:
+  push:
+  merge_group:
+permissions: {}
+concurrency:
+  group: ci
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps: []
+"""
+        for syntax in (
+            "anchor: &shared value\n",
+            "alias: *shared\n",
+            "merge: {<<: *shared}\n",
+            "tagged: !custom value\n",
+        ):
+            with self.subTest(syntax=syntax), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workflow_dir = root / ".github/workflows"
+                workflow_dir.mkdir(parents=True)
+                (workflow_dir / "ci.yml").write_text(base + syntax, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator.policy = workflow_policy()
+
+                validator._validate_workflows()
+
+                self.assertIn(
+                    "workflow.indirection",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_legacy_container_action_policy_field_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         policy = load_json(source_root / "policy/gate0-repository-policy.json")
@@ -140,16 +550,6 @@ jobs:
             self.assertIn("workflow.action_allowlist", codes)
             self.assertIn("workflow.mutable_action", codes)
 
-    def test_checkout_credentials_must_be_under_with(self) -> None:
-        lines = [
-            "      - name: Checkout",
-            "        uses: actions/checkout@" + "a" * 40 + " # v1.0.0",
-            "        env:",
-            "          persist-credentials: false",
-            "      - name: Next",
-        ]
-        self.assertFalse(checkout_disables_credentials(lines, 1))
-
     def test_direct_container_action_syntax_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -193,7 +593,11 @@ jobs:
         for required in (
             "set -euo pipefail",
             "printf '::add-mask::%s\\n'",
-            "docker run --rm",
+            '/usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
+            "/usr/bin/env -i",
+            "DOCKER_HOST=unix:///var/run/docker.sock",
+            'HOME="$RUNNER_TEMP"',
+            "/usr/bin/docker run --rm",
             "--read-only",
             "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
             "--cap-drop=ALL",
@@ -214,12 +618,20 @@ jobs:
         jobs = dict(workflow_jobs(workflow.splitlines()))
         source_steps = dict(workflow_steps(jobs["analysis"]))
         mutations = (
-            ("--cap-add=DAC_OVERRIDE", "--cap-add=ALL", "workflow.scorecard_runtime"),
-            (",readonly\"", "\"", "workflow.scorecard_contract"),
-            ("--env INPUT_PUBLISH_RESULTS=false", "--env INPUT_PUBLISH_RESULTS=true", "workflow.scorecard_publication"),
-            ("--pids-limit=256", "--privileged", "workflow.scorecard_runtime"),
+            (
+                "DOCKER_HOST=unix:///var/run/docker.sock",
+                "DOCKER_HOST=tcp://hostile.invalid:2375",
+            ),
+            ("--cap-add=DAC_OVERRIDE", "--cap-add=ALL"),
+            (",readonly\"", "\""),
+            ("--env INPUT_PUBLISH_RESULTS=false", "--env INPUT_PUBLISH_RESULTS=true"),
+            ("--pids-limit=256", "--privileged"),
+            (
+                "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
+                "0" * 64,
+            ),
         )
-        for old, new, expected_code in mutations:
+        for old, new in mutations:
             with self.subTest(mutation=old):
                 steps = {name: list(lines) for name, lines in source_steps.items()}
                 steps["Run OpenSSF Scorecard"] = [line.replace(old, new) for line in steps["Run OpenSSF Scorecard"]]
@@ -227,30 +639,18 @@ jobs:
                 validator._validate_step_details(Path("scorecard.yml"), "analysis", steps)
                 codes = {finding.code for finding in validator.findings}
                 self.assertIn("workflow.scorecard_contract", codes)
-                self.assertIn(expected_code, codes)
 
-    def test_unadmitted_scorecard_digest_is_rejected(self) -> None:
-        digest = "0" * 64
+        steps = {name: list(lines) for name, lines in source_steps.items()}
+        steps["Upload result to code scanning"] = [
+            "        if: false" if "        if:" in line else line
+            for line in steps["Upload result to code scanning"]
+        ]
         validator = FoundationValidator(Path("/virtual"))
-        validator._validate_step_details(
-            Path("scorecard.yml"),
-            "analysis",
-            {
-                "Run OpenSSF Scorecard": [
-                    "      - name: Run OpenSSF Scorecard",
-                    "        env:",
-                    "          INPUT_REPO_TOKEN: ${{ github.token }}",
-                    "        run: |",
-                    "          docker run --rm \\",
-                    f"            ghcr.io/ossf/scorecard-action@sha256:{digest}",
-                ],
-                "Upload result to code scanning": [
-                    "      - name: Upload result to code scanning",
-                    "        uses: github/codeql-action/upload-sarif@" + "a" * 40 + " # v4.37.0",
-                ],
-            },
+        validator._validate_step_details(Path("scorecard.yml"), "analysis", steps)
+        self.assertIn(
+            "workflow.scorecard_upload_contract",
+            {finding.code for finding in validator.findings},
         )
-        self.assertIn("workflow.scorecard_image", {finding.code for finding in validator.findings})
 
     def test_digest_pinned_scorecard_does_not_request_publication_identity(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -261,44 +661,163 @@ jobs:
         self.assertNotIn("INPUT_INTERNAL_PUBLISH_BASE_URL", workflow)
         self.assertNotIn("INPUT_INTERNAL_DEFAULT_TOKEN", workflow)
 
-    def test_scorecard_publication_settings_are_rejected(self) -> None:
-        digest = "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
-        base_step = [
-            "      - name: Run OpenSSF Scorecard",
-            "        env:",
-            "          INPUT_REPO_TOKEN: ${{ github.token }}",
-            "        run: |",
-            "          docker run --rm \\",
-            "            --env INPUT_PUBLISH_RESULTS=false \\",
-            f"            ghcr.io/ossf/scorecard-action@sha256:{digest} # v2.4.3",
-        ]
-        upload_step = [
-            "      - name: Upload result to code scanning",
-            "        uses: github/codeql-action/upload-sarif@" + "a" * 40 + " # v4.37.0",
-        ]
-        mutations = (
-            ("            --env INPUT_PUBLISH_RESULTS=true \\", True),
-            ("            --env INPUT_INTERNAL_PUBLISH_BASE_URL=https://api.scorecard.dev \\", False),
-            ("            --env INPUT_INTERNAL_DEFAULT_TOKEN \\", False),
+    def test_repository_launcher_canonicalizes_scope_and_fixes_the_build_epoch(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        launcher = (source_root / "scripts/ci/check-repository").read_text(
+            encoding="utf-8"
         )
-        for forbidden, replaces_false in mutations:
-            with self.subTest(forbidden=forbidden):
-                run_step = [
-                    forbidden if replaces_false and line == "            --env INPUT_PUBLISH_RESULTS=false \\" else line
-                    for line in base_step
-                ]
-                if not replaces_false:
-                    run_step.append(forbidden)
-                validator = FoundationValidator(Path("/virtual"))
-                validator._validate_step_details(
-                    Path("scorecard.yml"),
-                    "analysis",
-                    {
-                        "Run OpenSSF Scorecard": run_step,
-                        "Upload result to code scanning": upload_step,
-                    },
+        self.assertIn('if [ -L "$SCRIPT_PATH" ]; then', launcher)
+        self.assertIn('find "$SCRIPT_PATH" -prune -links 1 -print', launcher)
+        self.assertIn(
+            'readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "${SCRIPT_PATH%/*}" && pwd -P)"',
+            launcher,
+        )
+        self.assertIn(
+            'readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd -P)"',
+            launcher,
+        )
+        self.assertIn("export SOURCE_DATE_EPOCH=0\n", launcher)
+        self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
+        self.assertIn('if [ "$#" -ne 0 ]; then\n', launcher)
+        self.assertIn('/usr/bin/find "$SCRIPT_PATH" -prune -links 1 -print', launcher)
+        self.assertIn("exec /usr/bin/env \\\n", launcher)
+        self.assertIn(
+            "/usr/bin/make --no-builtin-rules --no-builtin-variables check\n",
+            launcher,
+        )
+
+    def test_repository_launcher_uses_absolute_control_commands(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        launcher = source_root / "scripts/ci/check-repository"
+        with tempfile.TemporaryDirectory() as directory:
+            test_root = Path(directory)
+            script_directory = test_root / "scripts/ci"
+            script_directory.mkdir(parents=True)
+            copied_launcher = script_directory / "check-repository"
+            shutil.copy2(launcher, copied_launcher)
+
+            hostile_path = test_root / "hostile-path"
+            hostile_path.mkdir()
+            marker = test_root / "hostile-command-ran"
+            for command in ("env", "find", "make"):
+                replacement = hostile_path / command
+                replacement.write_text(
+                    "#!/bin/sh\n"
+                    f"/usr/bin/touch -- {marker}\n"
+                    "exit 97\n",
+                    encoding="utf-8",
                 )
-                self.assertIn("workflow.scorecard_publication", {finding.code for finding in validator.findings})
+                replacement.chmod(0o755)
+
+            observed = test_root / "environment.txt"
+            (test_root / "Makefile").write_text(
+                "check:\n"
+                f"\t@/usr/bin/env > {observed}\n",
+                encoding="utf-8",
+            )
+            rejected = subprocess.run(
+                [copied_launcher, "--unexpected"],
+                cwd=test_root,
+                env={"PATH": str(hostile_path)},
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertEqual(rejected.stdout, "")
+            self.assertEqual(rejected.stderr, "usage: check-repository\n")
+            self.assertFalse(marker.exists())
+            self.assertFalse(observed.exists())
+
+            result = subprocess.run(
+                [copied_launcher],
+                cwd=test_root,
+                env={
+                    "BASH_ENV": str(test_root / "hostile-bash-startup"),
+                    "ENV": str(test_root / "hostile-shell-startup"),
+                    "MAKEFLAGS": "--invalid-hostile-flag",
+                    "PATH": str(hostile_path),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(marker.exists())
+            environment = dict(
+                line.split("=", 1)
+                for line in observed.read_text(encoding="utf-8").splitlines()
+                if "=" in line
+            )
+            self.assertEqual(environment["PATH"], str(hostile_path))
+            self.assertEqual(environment["SOURCE_DATE_EPOCH"], "0")
+            self.assertNotEqual(environment.get("MAKEFLAGS"), "--invalid-hostile-flag")
+            self.assertNotIn("BASH_ENV", environment)
+            self.assertNotIn("ENV", environment)
+
+    def test_repository_launcher_rejects_a_direct_script_symlink(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        launcher = source_root / "scripts/ci/check-repository"
+        with tempfile.TemporaryDirectory() as directory:
+            alias_root = Path(directory)
+            alias_directory = alias_root / "scripts/ci"
+            alias_directory.mkdir(parents=True)
+            alias = alias_directory / "check-repository"
+            alias.symlink_to(launcher)
+            marker = alias_root / "wrong-root-make-ran"
+            (alias_root / "Makefile").write_text(
+                f"check:\n\t@touch -- {marker}\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(alias)],
+                cwd=alias_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            marker_exists = marker.exists()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must not be invoked through a symbolic link", result.stderr)
+        self.assertFalse(marker_exists)
+
+    def test_repository_launcher_rejects_a_direct_script_hardlink(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        launcher = source_root / "scripts/ci/check-repository"
+        with tempfile.TemporaryDirectory(
+            prefix=".launcher-hardlink-",
+            dir=source_root,
+        ) as directory:
+            alias_root = Path(directory)
+            alias_directory = alias_root / "scripts/ci"
+            alias_directory.mkdir(parents=True)
+            alias = alias_directory / "check-repository"
+            alias.hardlink_to(launcher)
+            marker = alias_root / "wrong-root-make-ran"
+            (alias_root / "Makefile").write_text(
+                f"check:\n\t@touch -- {marker}\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(alias)],
+                cwd=alias_root,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            marker_exists = marker.exists()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("must not be invoked through a hard link", result.stderr)
+        self.assertFalse(marker_exists)
 
     def test_ci_bash_helpers_use_hardened_startup_and_bounded_installers(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -322,6 +841,7 @@ jobs:
         contracts = (
             (
                 "install-actionlint",
+                '"${TMPDIR:-/tmp}/orange-actionlint.XXXXXXXX"',
                 'readonly MAXIMUM_ARCHIVE_BYTES="33554432"',
                 'readonly MAXIMUM_ARCHIVE_KIB="32768"',
                 'readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"',
@@ -330,6 +850,7 @@ jobs:
             ),
             (
                 "install-lychee",
+                '"${TMPDIR:-/tmp}/orange-lychee.XXXXXXXX"',
                 'readonly MAXIMUM_ARCHIVE_BYTES="67108864"',
                 'readonly MAXIMUM_ARCHIVE_KIB="65536"',
                 'readonly MAXIMUM_EXTRACTED_FILE_KIB="131072"',
@@ -339,6 +860,7 @@ jobs:
         )
         for (
             name,
+            temporary_template,
             maximum_archive_size,
             maximum_archive_kib,
             maximum_file_size,
@@ -350,6 +872,9 @@ jobs:
                 for required in (
                     'readonly PATH="/usr/bin:/bin"\nexport PATH\n',
                     "unset GZIP TAR_OPTIONS",
+                    f"/usr/bin/mktemp -d -- {temporary_template}",
+                    'TEMPORARY_DIRECTORY="$(CDPATH= cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"',
+                    "trap '/usr/bin/rm -rf -- \"$TEMPORARY_DIRECTORY\"' EXIT",
                     maximum_archive_size,
                     maximum_archive_kib,
                     'readonly MAXIMUM_DOWNLOAD_SECONDS="300"',
@@ -367,9 +892,34 @@ jobs:
                     '[[ ! -f "$EXTRACTED_FILE" || ! -s "$EXTRACTED_FILE" || '
                     '-L "$EXTRACTED_FILE" ]]',
                     "stat --format='%h' --",
-                    "install \\\n  -D \\\n  -m 0755 \\\n  -- \\\n",
+                    "install \\\n  -D \\\n  --no-target-directory \\\n  -m 0755 \\\n  -- \\\n",
                 ):
                     self.assertIn(required, script)
+                missing = subprocess.run(
+                    [source_root / "scripts/ci" / name],
+                    cwd=source_root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(missing.returncode, 2)
+                self.assertEqual(missing.stdout, "")
+                self.assertEqual(
+                    missing.stderr,
+                    f"usage: {name} DESTINATION_DIRECTORY\n",
+                )
+                rejected = subprocess.run(
+                    [source_root / "scripts/ci" / name, "relative-destination"],
+                    cwd=source_root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(rejected.returncode, 2)
+                self.assertEqual(rejected.stdout, "")
+                self.assertIn("DESTINATION_DIRECTORY must be absolute", rejected.stderr)
 
     def test_external_link_helper_clears_ambient_environment(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -382,13 +932,43 @@ jobs:
                 "#!/usr/bin/python3\n"
                 "import json\n"
                 "import os\n"
+                "import sys\n"
                 "from pathlib import Path\n"
                 "Path(__file__).with_name('environment.json').write_text(\n"
-                "    json.dumps(dict(os.environ)), encoding='utf-8'\n"
+                "    json.dumps({\n"
+                "        'arguments': sys.argv[1:],\n"
+                "        'environment': dict(os.environ),\n"
+                "    }),\n"
+                "    encoding='utf-8',\n"
                 ")\n",
                 encoding="utf-8",
             )
             probe.chmod(0o755)
+            missing = subprocess.run(
+                [helper],
+                cwd=source_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(missing.returncode, 2)
+            self.assertEqual(missing.stdout, "")
+            self.assertEqual(
+                missing.stderr,
+                "usage: check-external-links PATH_TO_LYCHEE\n",
+            )
+            rejected = subprocess.run(
+                [helper, f"PATH={temporary_root}"],
+                cwd=source_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertEqual(rejected.stdout, "")
+            self.assertIn("PATH_TO_LYCHEE must be absolute", rejected.stderr)
+            self.assertFalse(observed.exists())
+
             result = subprocess.run(
                 [helper, probe],
                 cwd=source_root,
@@ -405,8 +985,9 @@ jobs:
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            observation = json.loads(observed.read_text(encoding="utf-8"))
             self.assertEqual(
-                json.loads(observed.read_text(encoding="utf-8")),
+                observation["environment"],
                 {
                     "LANG": "C",
                     "LC_ALL": "C",
@@ -414,6 +995,11 @@ jobs:
                     "TZ": "UTC",
                 },
             )
+            self.assertEqual(
+                observation["arguments"][-4:],
+                ["--", ".", ".github/**/*.md", ".github/**/*.yml"],
+            )
+            self.assertNotIn("docs/**/*.md", observation["arguments"])
 
     def test_hosted_run_steps_use_fixed_privileged_bash(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -425,6 +1011,20 @@ jobs:
                 )
                 self.assertEqual(workflow.count(shell), 1)
                 self.assertNotIn("shell: bash\n", workflow)
+        ci = (source_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            'run: /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC '
+            "rustup toolchain install 1.96.1 --profile minimal "
+            "--component clippy,rustfmt --no-self-update",
+            ci,
+        )
+        self.assertIn('pycache="$(/usr/bin/mktemp -d -- ', ci)
+        self.assertIn('pycache="$(CDPATH= cd -- "$pycache" && pwd -P)"', ci)
+        self.assertIn("trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT", ci)
+        self.assertIn(
+            "-u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables",
+            ci,
+        )
 
 
 class PolicyShapeHardeningTests(unittest.TestCase):
@@ -495,6 +1095,57 @@ class PolicyShapeHardeningTests(unittest.TestCase):
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
+    def test_text_report_escapes_untrusted_fields_injectively_on_one_line(self) -> None:
+        validator = mock.Mock()
+        validator.policy = {}
+        validator.run.return_value = [
+            Finding("path.test", "safe:path\\name\nforged\x1bé", "message\rsecond\\line")
+        ]
+        output = io.StringIO()
+        with (
+            mock.patch(
+                "tools.validate_foundation.FoundationValidator",
+                return_value=validator,
+            ),
+            redirect_stdout(output),
+        ):
+            status = main(())
+
+        self.assertEqual(status, 1)
+        self.assertEqual(
+            output.getvalue().splitlines(),
+            [
+                "safe\\U0000003apath\\U0000005cname\\U0000000aforged"
+                "\\U0000001b\\U000000e9: "
+                "path.test: message\\U0000000dsecond\\U0000005cline",
+                "Solo-bootstrap repository policy failed with 1 finding(s).",
+            ],
+        )
+
+    def test_finding_messages_are_bounded_with_a_truncation_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            validator = FoundationValidator(Path(directory))
+            validator.add(
+                "synthetic.finding",
+                ".",
+                "x" * (GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS + 100),
+            )
+
+        message = validator.findings[0].message
+        self.assertEqual(len(message), GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS)
+        self.assertTrue(message.endswith("... [truncated]"))
+
+    def test_finding_retention_is_bounded_with_one_suppression_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            validator = FoundationValidator(Path(directory))
+            for index in range(GATE0_MAXIMUM_FINDINGS + 100):
+                validator.add("synthetic.finding", f"path-{index}", "synthetic")
+
+        self.assertEqual(len(validator.findings), GATE0_MAXIMUM_FINDINGS + 1)
+        self.assertEqual(validator.findings[0].path, "path-0")
+        self.assertEqual(validator.findings[-1].code, "resource.finding_count")
+        self.assertIn(str(GATE0_MAXIMUM_FINDINGS), validator.findings[-1].message)
+
     def test_cli_root_assertion_cannot_redirect_repository_scope(self) -> None:
         repository_root = Path(__file__).resolve().parents[2]
         self.assertEqual(parse_arguments(()).root, repository_root)
@@ -590,6 +1241,17 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             )
             self.assertIsNone(safe_manifest_path(root, "../outside/record.json"))
             self.assertIsNone(safe_manifest_path(root, str(outside / "record.json")))
+            for value in (
+                ".",
+                "record.json/",
+                "nested//record.json",
+                "nested/./record.json",
+                "C:record.json",
+                "nested\\record.json",
+                "nested/record\n.json",
+            ):
+                with self.subTest(value=value):
+                    self.assertIsNone(safe_manifest_path(root, value))
 
     def test_validator_directory_queries_reuse_the_bounded_inventory(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -1266,6 +1928,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             path.write_text(source.replace("262,144 syntax nodes", "262,143 syntax nodes", 1), encoding="utf-8")
             self.assertIn("compiler.language_spec_budget", self._codes(root))
             validator = FoundationValidator(root)
+            validator.policy = protected_file_policy()
             validator._validate_protected_file_digests()
             self.assertIn("protected_file.digest", {finding.code for finding in validator.findings})
 
@@ -1422,6 +2085,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             ),
             ("env -i", "env", "make.compiler_environment_contract"),
             (
+                'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"',
+                'cargo_home="$$cargo_home"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 "RUSTUP_TOOLCHAIN=1.96.1",
                 "RUSTUP_TOOLCHAIN=stable",
                 "make.compiler_environment_contract",
@@ -1457,6 +2125,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "",
                 "make.python_cache_contract",
             ),
+            (
+                'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"',
+                'pycache="$$pycache"',
+                "make.python_cache_contract",
+            ),
         )
         for old, new, expected_code in mutations:
             with self.subTest(mutation=old), tempfile.TemporaryDirectory() as directory:
@@ -1483,6 +2156,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 path.write_text("tampered\n", encoding="utf-8")
                 validator = FoundationValidator(root)
+                validator.policy = protected_file_policy()
                 validator._validate_protected_file_digests()
                 self.assertIn("protected_file.digest", {finding.code for finding in validator.findings})
 
@@ -1499,6 +2173,22 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             validator._load_and_validate_policy()
             codes = {finding.code for finding in validator.findings}
             self.assertTrue({"policy.minimum", "policy.required_inventory"} & codes)
+
+    def test_policy_cannot_change_the_protected_digest_mapping(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        policy = load_json(source_root / "policy/gate0-repository-policy.json")
+        policy["protected_file_digests"]["SECURITY.md"] = "0" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "policy/gate0-repository-policy.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(policy), encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._load_and_validate_policy()
+
+        self.assertIn(
+            "policy.protected_file_digests", {finding.code for finding in validator.findings}
+        )
 
 
 class HostedControlEvidenceHardeningTests(unittest.TestCase):
@@ -1728,6 +2418,16 @@ Status: accepted
 
 class ChangeRecordHardeningTests(unittest.TestCase):
     _ACCEPTED_REVISION = "0123456789abcdef0123456789abcdef01234567"
+
+    def test_front_matter_error_retention_is_bounded(self) -> None:
+        parsed = parse_front_matter("---\n" + "invalid syntax\n" * (GATE0_MAXIMUM_FINDINGS + 100))
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        _, errors = parsed
+        self.assertEqual(len(errors), GATE0_MAXIMUM_FINDINGS)
+        self.assertIn("line 2", errors[0])
+        self.assertIn(f"line {GATE0_MAXIMUM_FINDINGS + 1}", errors[-1])
 
     def _write_accepted_oep(
         self,
@@ -2243,6 +2943,18 @@ class PlanningTraceHardeningTests(unittest.TestCase):
 
 
 class SchemaDeterminismTests(unittest.TestCase):
+    def test_schema_issue_retention_is_bounded(self) -> None:
+        schema_path = Path("/virtual/record.schema.json")
+        schema = {
+            "type": "object",
+            "required": [f"missing-{index}" for index in range(GATE0_MAXIMUM_FINDINGS + 100)],
+        }
+        issues = validate_schema_instance({}, schema, schema_path, {schema_path: schema}, {})
+
+        self.assertEqual(len(issues), GATE0_MAXIMUM_FINDINGS)
+        self.assertIn("missing-0", issues[0].message)
+        self.assertIn(f"missing-{GATE0_MAXIMUM_FINDINGS - 1}", issues[-1].message)
+
     def test_additional_property_issues_are_sorted(self) -> None:
         schema_path = Path("/virtual/record.schema.json")
         schema = {
@@ -2267,11 +2979,18 @@ class SchemaDeterminismTests(unittest.TestCase):
                 "enum": ["same", "same"],
                 "minLength": -1,
                 "uniqueItems": "yes",
+                "format": "hostname",
+                "$id": "urn:orange:gate0:test#fragment",
                 "properties": [],
             }
         )
-        for fragment in ("type", "required", "enum", "minLength", "uniqueItems", "properties"):
+        for fragment in ("type", "required", "enum", "minLength", "uniqueItems", "format", "$id", "properties"):
             self.assertTrue(any(fragment in finding for finding in findings), fragment)
+
+        nested_id = audit_schema_vocabulary({"properties": {"x": {"$id": "urn:orange:gate0:x"}}})
+        self.assertTrue(any("$id" in finding for finding in nested_id))
+        nested_dialect = audit_schema_vocabulary({"properties": {"x": {"$schema": SCHEMA_DIALECT}}})
+        self.assertTrue(any("$schema" in finding for finding in nested_dialect))
 
     def test_schema_profile_rejects_invalid_regular_expression(self) -> None:
         findings = audit_schema_vocabulary({"patternProperties": {"[": {"type": "string"}}})

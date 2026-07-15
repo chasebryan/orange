@@ -53,7 +53,7 @@ release evidence.
 
 | Workflow | Trigger and role | Direct external execution dependencies | Network or hosted-state boundary |
 | --- | --- | --- | --- |
-| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | rustup explicitly installs the pinned minimal toolchain with Clippy and rustfmt; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
+| `ci.yml` | Required pull-request, merge-queue, and `main` repository and compiler checks | Rust toolchain, Checkout, markdownlint, actionlint, and zizmor | An allowlisted environment runs rustup to install the pinned minimal toolchain with Clippy and rustfmt; GitHub resolves Actions; actionlint is downloaded; the digest-pinned zizmor image is pulled from GHCR |
 | `dependency-review.yml` | Pull-request and merge-queue dependency-policy signal | Checkout and Dependency Review | Depends on GitHub's dependency graph, API, and event comparison state |
 | `external-links.yml` | `main`, scheduled, and manual link observation | Checkout and lychee | Downloads lychee and queries every non-excluded external endpoint at run time |
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
@@ -132,8 +132,8 @@ part of the upstream descriptor and therefore part of the source-review surface.
 
 | Tool | Selected artifact identity | Verification performed by current automation | Upstream license and provenance | Remaining limitation |
 | --- | --- | --- | --- | --- |
-| actionlint 1.7.12 | Linux AMD64 `sha256:8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8`; Linux ARM64 `sha256:325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6` | [`scripts/ci/install-actionlint`](../../scripts/ci/install-actionlint) limits connection setup to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 32 MiB archive cap in both curl and the operating system, caps the extracted member at 64 MiB, checks the architecture-specific SHA-256, extracts only `actionlint` without archive ownership or permissions, and requires one nonempty, regular, non-symlinked, single-link result | [MIT at release `v1.7.12`](https://github.com/rhysd/actionlint/blob/v1.7.12/LICENSE.txt); [upstream release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12) is the provenance locator | Archive bytes and upstream release metadata are not mirrored or signed into this repository; installer trust still includes DNS, TLS, GitHub availability, and ambient `curl`, `sha256sum`, `tar`, `stat`, and `install` |
-| lychee 0.24.2 | Linux x86-64 GNU archive `sha256:1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a` | [`scripts/ci/install-lychee`](../../scripts/ci/install-lychee) limits connection setup to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 64 MiB archive cap in both curl and the operating system, caps the extracted member at 128 MiB, checks SHA-256, extracts only the expected `lychee` member without archive ownership or permissions, and requires one nonempty, regular, non-symlinked, single-link result | Dual [Apache-2.0](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-APACHE) or [MIT](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-MIT) at release `lychee-v0.24.2`; [upstream release](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2) is the provenance locator | Only Linux x86-64 is admitted by the installer; archive and release metadata are not mirrored, and link results depend on live remote endpoints |
+| actionlint 1.7.12 | Linux AMD64 `sha256:8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8`; Linux ARM64 `sha256:325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6` | [`scripts/ci/install-actionlint`](../../scripts/ci/install-actionlint) limits connection setup to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 32 MiB archive cap in both curl and the operating system, caps the extracted member at 64 MiB, checks the architecture-specific SHA-256, extracts only `actionlint` without archive ownership or permissions, requires one nonempty, regular, non-symlinked, single-link result, requires an absolute destination directory, and treats its derived `actionlint` path as an exact file path | [MIT at release `v1.7.12`](https://github.com/rhysd/actionlint/blob/v1.7.12/LICENSE.txt); [upstream release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12) is the provenance locator | Archive bytes and upstream release metadata are not mirrored or signed into this repository; installer trust still includes DNS, TLS, GitHub availability, and ambient `curl`, `sha256sum`, `tar`, `stat`, and `install` |
+| lychee 0.24.2 | Linux x86-64 GNU archive `sha256:1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a` | [`scripts/ci/install-lychee`](../../scripts/ci/install-lychee) limits connection setup to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 64 MiB archive cap in both curl and the operating system, caps the extracted member at 128 MiB, checks SHA-256, extracts only the expected `lychee` member without archive ownership or permissions, requires one nonempty, regular, non-symlinked, single-link result, requires an absolute destination directory, and treats its derived `bin/lychee` path as an exact file path | Dual [Apache-2.0](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-APACHE) or [MIT](https://github.com/lycheeverse/lychee/blob/lychee-v0.24.2/LICENSE-MIT) at release `lychee-v0.24.2`; [upstream release](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2) is the provenance locator | Only Linux x86-64 is admitted by the installer; archive and release metadata are not mirrored, and link results depend on live remote endpoints |
 | zizmor 1.26.1 container | `ghcr.io/zizmorcore/zizmor:1.26.1@sha256:d1117e5dbd9ee4970644067b534ab6ab50371f3c6f7f4d05446eb603a6e78f48` | The exact pinned composite Action rejects an unknown version and constructs the image reference from its committed version-to-digest map | [MIT at release `v1.26.1`](https://github.com/zizmorcore/zizmor/blob/v1.26.1/LICENSE); [upstream release](https://github.com/zizmorcore/zizmor/releases/tag/v1.26.1) and GHCR are the provenance locators | The image is content-selected but not mirrored; execution still depends on the registry, ambient Docker daemon/kernel, runner CPU, and network. Online-audit output additionally depends on current GitHub state |
 | Scorecard 2.4.3 container | `ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941` | [`scorecard.yml`](../../.github/workflows/scorecard.yml) invokes `docker run` with the exact digest; repository validation admits that image and enforces the command, read-only event mount, workspace mount, environment forwarding, dropped capabilities, and no-new-privileges | [Apache-2.0](https://github.com/ossf/scorecard-action/blob/4eaacf0543bb3f2c246792bd56e8cdeffafb205a/LICENSE); the image's upstream OCI revision label is [`4eaacf0543bb3f2c246792bd56e8cdeffafb205a`](https://github.com/ossf/scorecard-action/tree/4eaacf0543bb3f2c246792bd56e8cdeffafb205a), and GHCR is the runtime provenance locator | The runtime is content-selected but not mirrored; execution still depends on GHCR availability and integrity, correct publisher provenance and digest admission, and the ambient Docker daemon, kernel, runner CPU, and network. The container root filesystem is read-only, while the workspace remains writable for `results.sarif`. The hosted result is not hermetic or independently reproducible evidence |
 
@@ -154,12 +154,22 @@ enforcement mechanism.
 
 The required invariant check invokes repository-owned Bash and Python files:
 
-- [`scripts/ci/check-repository`](../../scripts/ci/check-repository) sets
-  locale, timezone, and source-date variables, then runs the closed-tree
+- [`scripts/ci/check-repository`](../../scripts/ci/check-repository) sets the
+  locale and timezone, resolves and enters the physical repository root, fixes
+  the source-date epoch to zero, then runs the closed-tree
   [`tools/validate_foundation.py`](../../tools/validate_foundation.py) gate,
   the standard-library `unittest` suite, and the Rust compiler checks in that
   serialized order; before Make starts, it removes inherited Make control and
-  shell-startup variables and disables built-in rules and variables;
+  shell-startup variables, selects its link-count inspection, environment
+  filter, and GNU Make control commands by absolute path, and disables built-in
+  rules and variables; Make recipes retain the caller's path so the selected
+  Rust toolchain remains reachable, and unexpected launcher arguments fail
+  before repository inspection or Make execution;
+- the protected Make recipes select environment filtering, temporary-directory
+  creation, and cleanup utilities by absolute system paths while continuing to
+  discover the selected Rust and Python toolchains through the caller's path;
+  both temporary cleanup roots are canonicalized with `CDPATH` disabled before
+  their traps are armed;
 - each Python recipe starts from an allowlisted environment with a fixed hash
   seed, skips `site` initialization, excludes unsafe path injection, suppresses
   bytecode writes, and forces UTF-8 mode; foundation tests also redirect
@@ -174,16 +184,28 @@ The required invariant check invokes repository-owned Bash and Python files:
 - every hosted `run` step likewise selects `/bin/bash -p` by absolute path and
   retains immediate-exit and pipeline-failure handling through the supported
   custom-shell command template;
+- hosted required-CI policy and compiler steps select `env`, `mktemp`, `rm`,
+  and Make by absolute system paths while leaving Rust and Python discovery on
+  the explicit inherited toolchain path; the hosted Python cache is
+  canonicalized with `CDPATH` disabled before its cleanup trap is armed;
+- the hosted Scorecard runtime selects its cleanup and Docker client by
+  absolute system paths, gives that client a minimal environment and an
+  explicit local daemon endpoint, then invokes the exact reviewed container
+  contract;
 - the actionlint and lychee installers use only `/usr/bin` and `/bin` for
-  ambient command lookup, reject empty destination arguments, terminate
+  ambient command lookup, require one absolute destination directory, terminate
   options before caller-selected install destinations, disable curl's default
-  configuration, clear inherited tar/gzip option variables, and enforce the
-  archive identities recorded above; and
+  configuration, clear inherited tar/gzip option variables, canonicalize their
+  temporary cleanup roots with `CDPATH` disabled before arming recursive
+  cleanup traps, and enforce the archive identities recorded above; and
 - [`scripts/ci/check-external-links`](../../scripts/ci/check-external-links)
   defines the live link-check method and its documented IACR exclusion, with
-  a nonempty caller-selected executable path, prior option termination, and
+  an absolute caller-selected executable path, prior option termination, and
   an allowlisted process environment that excludes ambient checker, proxy,
-  logging, locale, and home-directory configuration.
+  logging, locale, and home-directory configuration. Requiring an absolute
+  path prevents an assignment-shaped checker argument from changing that
+  environment. The helper recursively scans every nonignored repository
+  Markdown file and explicitly includes hidden GitHub Markdown and YAML inputs.
 
 These are first-party repository methods, not third-party dependencies. The
 repository has no selected license while D-018 is blocked. This inventory does
@@ -200,7 +222,7 @@ tools and services are ambient rather than admitted, fixed inputs:
 | GitHub Actions resolver and GitHub API | Action retrieval, event data, dependency review, online audits, and repository reads | Hosted control plane; no client-visible immutable service version or content digest is recorded |
 | Node 24 | Checkout, markdownlint, dependency review, artifact upload, and SARIF upload | GitHub-provided runtime; exact patch, binary digest, build provenance, and effective license bundle are not captured |
 | Bash and Python 3 standard library | First-party checks and composite Actions | Runner-provided executables; exact versions and binary/package digests are not captured. No PyPI packages are installed by first-party checks |
-| Git | Checkout implementation | Runner-provided executable; exact version, configuration closure, and binary digest are not captured |
+| Git | Checkout implementation and validator repository inventory | The first-party validator selects `/usr/bin/git`, fixes child-command lookup to `/usr/bin:/bin`, requires a literal local `.git` directory with regular config/index files and no common-directory or object alternates, clears inherited/system/global Git controls, and overrides the local settings relevant to its commands; other local config remains an ambient input, and the runner executable's exact version, package provenance, license, and binary digest are not captured |
 | Docker daemon, kernel, and CPU | zizmor and Scorecard containers | Runner-provided execution boundary; versions, configuration, and host identity are not captured |
 | `curl`, `sha256sum`, `tar`, `stat`, `install`, `mktemp`, `rm`, and `uname` | Download, verify, extract, inspect, install, and clean temporary tools | Runner-provided system tools; exact versions, provenance, package licenses, and binary digests are not captured |
 | GNU Make | Protected compiler recipe and optional local `make check` entry point | Required hosted CI invokes the compiler target with built-in rules and variables disabled; exact binary version, provenance, and package license are unrecorded |

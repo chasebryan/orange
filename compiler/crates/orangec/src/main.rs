@@ -28,7 +28,8 @@ const USAGE: &str = concat!(
     "  lex      Print the deterministic token stream\n",
     "\n",
     "Options:\n",
-    "      --edition <YEAR>  Select the Orange edition [default: 2026]\n",
+    "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+    "      --                End option parsing\n",
     "  -h, --help            Print help\n",
     "  -V, --version         Print version\n",
     "\n",
@@ -515,7 +516,8 @@ fn compile(
         }
     }
 
-    if standard_output_available
+    if !output_failed
+        && standard_output_available
         && standard_output_written
         && let Err(error) = flush_retry_interrupted(&mut buffered_output)
     {
@@ -882,6 +884,7 @@ fn parse_arguments_with_path_reservation(
     let mut arguments = arguments.into_iter();
     let mut command = None;
     let mut edition = Edition::default();
+    let mut edition_seen = false;
     let mut paths = Vec::new();
     let mut options_enabled = true;
 
@@ -896,6 +899,7 @@ fn parse_arguments_with_path_reservation(
                     continue;
                 }
                 Some("--edition") => {
+                    mark_edition_option(&mut edition_seen)?;
                     let value = arguments
                         .next()
                         .ok_or_else(|| String::from("option `--edition` requires a value"))?;
@@ -904,6 +908,7 @@ fn parse_arguments_with_path_reservation(
                 }
                 Some(value) => {
                     if let Some(value) = value.strip_prefix("--edition=") {
+                        mark_edition_option(&mut edition_seen)?;
                         edition = value.parse().map_err(
                             |error: orange_compiler::ParseEditionError| error.to_string(),
                         )?;
@@ -914,6 +919,7 @@ fn parse_arguments_with_path_reservation(
                     }
                 }
                 None if argument.as_encoded_bytes().starts_with(b"--edition=") => {
+                    mark_edition_option(&mut edition_seen)?;
                     return Err(String::from("edition name is not valid UTF-8"));
                 }
                 None if argument.as_encoded_bytes().first() == Some(&b'-') => {
@@ -965,6 +971,17 @@ fn parse_arguments_with_path_reservation(
     }))
 }
 
+fn mark_edition_option(seen: &mut bool) -> Result<(), String> {
+    if *seen {
+        Err(String::from(
+            "option `--edition` may be specified at most once",
+        ))
+    } else {
+        *seen = true;
+        Ok(())
+    }
+}
+
 fn parse_edition(value: &OsStr) -> Result<Edition, String> {
     value
         .to_str()
@@ -1005,7 +1022,7 @@ mod tests {
             edition_line,
             Some(
                 format!(
-                    "      --edition <YEAR>  Select the Orange edition [default: {}]",
+                    "      --edition <YEAR>  Select the Orange edition [default: {}; at most once]",
                     Edition::CURRENT
                 )
                 .as_str()
@@ -1745,6 +1762,39 @@ mod tests {
     }
 
     #[test]
+    fn rejects_repeated_edition_options_before_reading_input() {
+        let expected = Err(String::from(
+            "option `--edition` may be specified at most once",
+        ));
+        for arguments in [
+            ["--edition", "2026", "--edition", "2026", "check", "-"].as_slice(),
+            ["--edition=2026", "check", "--edition=2026", "-"].as_slice(),
+            ["check", "--edition", "2026", "--edition=2026", "-"].as_slice(),
+        ] {
+            assert_eq!(parse_arguments(os_arguments(arguments)), expected);
+        }
+
+        let mut input = RejectReads::default();
+        let mut output = Vec::new();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["--edition=2026", "check", "--edition", "2026", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, USAGE_ERROR);
+        assert_eq!(input.attempts, 0);
+        assert_eq!(output, b"");
+        assert_eq!(
+            error,
+            format!("orangec: option `--edition` may be specified at most once\n\n{USAGE}")
+                .as_bytes()
+        );
+    }
+
+    #[test]
     fn option_marker_allows_dash_prefixed_file_names() {
         assert_eq!(
             parse_arguments(os_arguments(&["check", "--", "--generated.or"]))
@@ -1812,6 +1862,17 @@ mod tests {
                 OsString::from("-"),
             ]),
             expected
+        );
+        assert_eq!(
+            parse_arguments([
+                OsString::from("--edition=2026"),
+                inline_edition.clone(),
+                OsString::from("check"),
+                OsString::from("-"),
+            ]),
+            Err(String::from(
+                "option `--edition` may be specified at most once"
+            ))
         );
 
         let mut input = RejectReads::default();
@@ -2547,6 +2608,23 @@ mod tests {
 
         assert_eq!(status, COMPILATION_ERROR);
         assert_eq!(input.attempts, 0);
+        assert_eq!(output, b"");
+    }
+
+    #[test]
+    fn diagnostic_output_failure_discards_buffered_token_output() {
+        let mut input = b"@".as_slice();
+        let mut output = Vec::new();
+        let mut error = RejectWrites(io::ErrorKind::Other);
+
+        let status = run(
+            os_arguments(&["lex", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+
+        assert_eq!(status, COMPILATION_ERROR);
         assert_eq!(output, b"");
     }
 

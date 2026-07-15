@@ -306,6 +306,115 @@ fn evaluation_of_an_empty_core_succeeds_without_output() {
 }
 
 #[test]
+fn option_marker_addresses_a_dash_prefixed_source_path() {
+    let process_id = std::process::id();
+    let directory = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("orangec-option-marker-{process_id}"));
+    let path = directory.join("--generated.or");
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    fs::write(&path, b"edition 2026; module generated {}\n").unwrap();
+
+    let rejected = orangec()
+        .current_dir(&directory)
+        .args(["check", "--generated.or"])
+        .output()
+        .unwrap();
+    let accepted = orangec()
+        .current_dir(&directory)
+        .args(["check", "--", "--generated.or"])
+        .output()
+        .unwrap();
+    fs::remove_dir_all(&directory).unwrap();
+
+    assert_eq!(rejected.status.code(), Some(2));
+    assert_eq!(rejected.stdout, b"");
+    assert!(
+        String::from_utf8(rejected.stderr)
+            .unwrap()
+            .contains("unknown option `--generated.or`")
+    );
+    assert_eq!(accepted.status.code(), Some(0));
+    assert_eq!(accepted.stdout, b"");
+    assert_eq!(accepted.stderr, b"");
+}
+
+#[cfg(unix)]
+#[test]
+fn option_marker_preserves_a_non_utf8_dash_prefixed_path() {
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let process_id = std::process::id();
+    let directory = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("orangec-raw-option-marker-{process_id}"));
+    let file_name = std::ffi::OsString::from_vec(b"-\x80.or".to_vec());
+    let path = directory.join(&file_name);
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    fs::write(&path, b"edition 2026; module raw_path {}\n").unwrap();
+
+    let rejected = orangec()
+        .current_dir(&directory)
+        .args([std::ffi::OsString::from("check"), file_name.clone()])
+        .output()
+        .unwrap();
+    let accepted = orangec()
+        .current_dir(&directory)
+        .args([
+            std::ffi::OsString::from("check"),
+            std::ffi::OsString::from("--"),
+            file_name,
+        ])
+        .output()
+        .unwrap();
+    fs::remove_dir_all(&directory).unwrap();
+
+    assert_eq!(rejected.status.code(), Some(2));
+    assert_eq!(rejected.stdout, b"");
+    assert!(
+        String::from_utf8(rejected.stderr)
+            .unwrap()
+            .contains("unknown option `-\\x80.or`")
+    );
+    assert_eq!(accepted.status.code(), Some(0));
+    assert_eq!(accepted.stdout, b"");
+    assert_eq!(accepted.stderr, b"");
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_non_utf8_editions_before_source_access() {
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let split = orangec()
+        .args([
+            std::ffi::OsString::from("--edition"),
+            std::ffi::OsString::from_vec(vec![0x80]),
+            std::ffi::OsString::from("check"),
+            std::ffi::OsString::from("missing-source.or"),
+        ])
+        .output()
+        .unwrap();
+    let inline = orangec()
+        .args([
+            std::ffi::OsString::from_vec(b"--edition=\x80".to_vec()),
+            std::ffi::OsString::from("check"),
+            std::ffi::OsString::from("missing-source.or"),
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(split.status.code(), Some(2));
+    assert_eq!(split.status.code(), inline.status.code());
+    assert_eq!(split.stdout, b"");
+    assert_eq!(split.stdout, inline.stdout);
+    assert_eq!(split.stderr, inline.stderr);
+    let stderr = String::from_utf8(split.stderr).unwrap();
+    assert!(stderr.starts_with("orangec: edition name is not valid UTF-8\n\nUsage:"));
+    assert!(!stderr.contains("ORC1001"));
+}
+
+#[test]
 fn accepts_the_minimal_program_from_standard_input_repeatably() {
     let source = concat!(
         "edition 2026;\n",
@@ -937,7 +1046,8 @@ fn usage_errors_have_a_distinct_exit_status() {
             "  lex      Print the deterministic token stream\n",
             "\n",
             "Options:\n",
-            "      --edition <YEAR>  Select the Orange edition [default: 2026]\n",
+            "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+            "      --                End option parsing\n",
             "  -h, --help            Print help\n",
             "  -V, --version         Print version\n",
             "\n",
@@ -972,5 +1082,16 @@ fn usage_errors_have_a_distinct_exit_status() {
     assert_eq!(
         String::from_utf8(first.stderr).unwrap(),
         format!("orangec: unknown command `compile`\n\n{help}")
+    );
+
+    let repeated_edition = orangec()
+        .args(["--edition=2026", "check", "--edition", "2026", "missing.or"])
+        .output()
+        .unwrap();
+    assert_eq!(repeated_edition.status.code(), Some(2));
+    assert_eq!(repeated_edition.stdout, b"");
+    assert_eq!(
+        String::from_utf8(repeated_edition.stderr).unwrap(),
+        format!("orangec: option `--edition` may be specified at most once\n\n{help}")
     );
 }

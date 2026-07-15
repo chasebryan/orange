@@ -39,9 +39,17 @@ jobs:
           test -r "$GITHUB_EVENT_PATH"
           test -d "$GITHUB_WORKSPACE"
           printf '::add-mask::%s\n' "$INPUT_REPO_TOKEN"
-          rm -f -- "$GITHUB_WORKSPACE/results.sarif"
+          /usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"
 
-          docker run --rm \
+          /usr/bin/env -i \
+            DOCKER_HOST=unix:///var/run/docker.sock \
+            GITHUB_API_URL="$GITHUB_API_URL" \
+            GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
+            GITHUB_REF="$GITHUB_REF" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            HOME="$RUNNER_TEMP" \
+            INPUT_REPO_TOKEN="$INPUT_REPO_TOKEN" \
+            /usr/bin/docker run --rm \
             --read-only \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777 \
             --cap-drop=ALL \

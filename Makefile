@@ -10,12 +10,13 @@ check: check-policy test-policy check-compiler
 
 check-compiler:
 	@set -euo pipefail; \
-	cargo_home="$$(mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX")"; \
-	trap 'rm -rf -- "$$cargo_home"' EXIT; \
+	cargo_home="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX")"; \
+	cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"; \
+	trap '/usr/bin/rm -rf -- "$$cargo_home"' EXIT; \
 	run_cargo() { \
 		( \
 			cd -- /; \
-			env -i \
+			/usr/bin/env -i \
 				CARGO_HOME="$$cargo_home" \
 				CARGO_NET_OFFLINE=true \
 				CARGO_TARGET_DIR="$$cargo_home/target" \
@@ -38,16 +39,17 @@ check-compiler:
 	run_cargo cargo doc --manifest-path "$$manifest" --workspace --no-deps --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --locked --offline; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --all-targets --release --locked --offline; \
-	run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-a" cargo build --manifest-path "$$manifest" -p orangec --bin orangec --release --locked --offline; \
-	run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-b" cargo build --manifest-path "$$manifest" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-a" cargo build --manifest-path "$$manifest" -p orangec --bin orangec --release --locked --offline; \
+	run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-b" cargo build --manifest-path "$$manifest" -p orangec --bin orangec --release --locked --offline; \
 	run_cargo python3 -S -P -B -X utf8 -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ")' "$$cargo_home/repro-a/release/orangec" "$$cargo_home/repro-b/release/orangec"; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline
 
 check-policy:
-	env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py
+	/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py
 
 test-policy:
 	@set -euo pipefail; \
-	pycache="$$(mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX")"; \
-	trap 'rm -rf -- "$$pycache"' EXIT; \
-	env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$pycache" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'
+	pycache="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX")"; \
+	pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"; \
+	trap '/usr/bin/rm -rf -- "$$pycache"' EXIT; \
+	/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$pycache" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'

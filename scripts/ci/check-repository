@@ -2,17 +2,36 @@
 
 set -eu
 
-readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd)"
+if [ "$#" -ne 0 ]; then
+  echo "usage: check-repository" >&2
+  exit 2
+fi
+
+SCRIPT_PATH="$0"
+case "$SCRIPT_PATH" in
+  /*) ;;
+  *) SCRIPT_PATH="./$SCRIPT_PATH" ;;
+esac
+readonly SCRIPT_PATH
+if [ -L "$SCRIPT_PATH" ]; then
+  echo "check-repository must not be invoked through a symbolic link" >&2
+  exit 1
+fi
+if [ "$(/usr/bin/find "$SCRIPT_PATH" -prune -links 1 -print)" != "$SCRIPT_PATH" ]; then
+  echo "check-repository must not be invoked through a hard link" >&2
+  exit 1
+fi
+readonly SCRIPT_DIRECTORY="$(CDPATH= cd -- "${SCRIPT_PATH%/*}" && pwd -P)"
+readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd -P)"
 
 cd -- "$REPOSITORY_ROOT"
 
 export LANG=C
 export LC_ALL=C
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
+export SOURCE_DATE_EPOCH=0
 export TZ=UTC
 
-exec env \
+exec /usr/bin/env \
   -u BASH_ENV \
   -u ENV \
   -u GNUMAKEFLAGS \
@@ -20,4 +39,4 @@ exec env \
   -u MAKEFILES \
   -u MAKEOVERRIDES \
   -u MFLAGS \
-  make --no-builtin-rules --no-builtin-variables check
+  /usr/bin/make --no-builtin-rules --no-builtin-variables check

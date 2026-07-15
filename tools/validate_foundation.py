@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministically validate Orange's solo-bootstrap repository foundation.
-
-This is repository-policy tooling, not the Orange product checker and not a
-general JSON Schema implementation. It deliberately supports and audits the
-small JSON Schema vocabulary used by the provisional Gate 0 evidence fixtures.
-"""
+"""Validate Orange's solo-bootstrap foundation deterministically."""
 
 from __future__ import annotations
 
@@ -19,6 +14,7 @@ import select
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import unicodedata
@@ -50,215 +46,238 @@ ORANGE_BOOK_CONTENTS = (
     "- [Manuscript map](#manuscript-map)",
     "- [Sources and drafting disclosure](#sources-and-drafting-disclosure)",
 )
-IGNORED_PARTS = {".git", ".agents", ".codex", "__pycache__"}
-BINARY_SUFFIXES = {".gif", ".jpeg", ".jpg", ".png", ".wasm"}
-TEXT_TAB_FREE_SUFFIXES = {".json", ".jsonc", ".or", ".py", ".rs", ".sh", ".toml", ".yaml", ".yml"}
+IGNORED_PARTS = set(".git .agents .codex __pycache__".split())
+BINARY_SUFFIXES = set(".gif .jpeg .jpg .png .wasm".split())
+TEXT_TAB_FREE_SUFFIXES = set(".json .jsonc .or .py .rs .sh .toml .yaml .yml".split())
+GATE0_IGNORE_PATTERNS = tuple(
+    """.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+.cache/
+.tools/
+__pycache__/
+*.py[cod]
+coverage/
+dist/
+out/
+tmp/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+compiler/target/""".splitlines()
+)
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _I_JSON_MAXIMUM_INTEGER_MAGNITUDE = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_REPOSITORY_BYTES = 8 * 1024 * 1024
-# Repository discovery is bounded independently from content reads. Git paths
-# are byte strings until every limit and record boundary has been checked, so
-# hostile metadata cannot force an unbounded buffer or premature decoding.
+GATE0_GIT_EXECUTABLE = "/usr/bin/git"
 GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
 GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES = 1024 * 1024
 GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES = 4096
+GATE0_MAXIMUM_FINDINGS = 4096
+GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS = 4096
 GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES = 128
 _GATE0_GIT_READ_CHUNK_BYTES = 4096
 _GATE0_GIT_TIMEOUT_SECONDS = 30.0
+_RI_PROTOCOL = "resource.inventory_protocol"
+_RI_READ = "resource.inventory_read"
+_RI_GIT = "resource.inventory_git"
+_RI_ENCODING = "resource.inventory_encoding"
+_R_UNSUPPORTED = "resource.unsupported_host"
+_R_CONCURRENT = "resource.concurrent_change"
+_ABA = "allowed_binary_artifacts["
+_CROSS = "cross_invariant"
+_G = "github_actions"
+_AR = "allowed_action_repositories"
+_WP = "allowed_write_permissions"
+_PD = "protected_file_digests"
+_RS = "required_status"
+_CDT = "compiler.dependency_table"
+_RA = "record.acceptance"
+_DATE = "2026-07-11"
+_WS = "workspace"
+_AB = "allowed_binary_artifacts"
+_CT = "compiler/Cargo.toml"
+_AI = "allowed_container_images"
+_OCM = "compiler/crates/orange-compiler/Cargo.toml"
+_CCM = "compiler/crates/orangec/Cargo.toml"
+_OC = "orange-compiler"
+_DEPS = "dependencies"
+_RP = "required_paths"
+_TP = "allowed_top_level_paths"
+_FS = "require_full_commit_sha"
+_PB = "policy.binary"
+_VC = "require_version_comment"
+_SC = "scorecard.yml"
+_DR = "dependency-review.yml"
+_EL = "external-links.yml"
+_O = "workflow-online-audit.yml"
+_BF = "bounded repository read failed"
+_E = "evidence_refs"
+_FE = "forbidden_events"
+_CO = "required_codeowners"
+_FP = "forbidden_paths"
+_PV = "policy_version"
+_RW = "required_workflows"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_NO_LAZY_FETCH": "1",
+    "GIT_NO_REPLACE_OBJECTS": "1",
     "GIT_OPTIONAL_LOCKS": "0",
     "GIT_TERMINAL_PROMPT": "0",
     "LC_ALL": "C",
 }
-MINIMUM_REQUIRED_PATHS = {
-    ".editorconfig",
-    ".gitattributes",
-    ".github/CODEOWNERS",
-    ".github/ISSUE_TEMPLATE/conduct-contact.yml",
-    ".github/ISSUE_TEMPLATE/config.yml",
-    ".github/ISSUE_TEMPLATE/oep-proposal.yml",
-    ".github/ISSUE_TEMPLATE/planning-defect.yml",
-    ".github/ISSUE_TEMPLATE/planning-question.yml",
-    ".github/ISSUE_TEMPLATE/research-evidence.yml",
-    ".github/dependabot.yml",
-    ".github/dependency-review-config.yml",
-    ".github/pull_request_template.md",
-    ".github/workflows/ci.yml",
-    ".github/workflows/dependency-review.yml",
-    ".github/workflows/external-links.yml",
-    ".github/workflows/scorecard.yml",
-    ".github/workflows/workflow-online-audit.yml",
-    ".gitignore",
-    ".markdownlint-cli2.jsonc",
-    "CODE_OF_CONDUCT.md",
-    "CONTRIBUTING.md",
-    "compiler/.gitignore",
-    "compiler/Cargo.lock",
-    "compiler/Cargo.toml",
-    "compiler/README.md",
-    "compiler/crates/orange-compiler/Cargo.toml",
-    "compiler/crates/orange-compiler/src/core.rs",
-    "compiler/crates/orange-compiler/src/diagnostic.rs",
-    "compiler/crates/orange-compiler/src/edition.rs",
-    "compiler/crates/orange-compiler/src/eval.rs",
-    "compiler/crates/orange-compiler/src/lexer.rs",
-    "compiler/crates/orange-compiler/src/lib.rs",
-    "compiler/crates/orange-compiler/src/parser.rs",
-    "compiler/crates/orange-compiler/src/semantics.rs",
-    "compiler/crates/orange-compiler/src/source.rs",
-    "compiler/crates/orangec/Cargo.toml",
-    "compiler/crates/orangec/src/main.rs",
-    "compiler/crates/orangec/tests/cli.rs",
-    "compiler/crates/orangec/tests/s3a_conformance.rs",
-    "compiler/fixtures/hello.or",
-    "compiler/fixtures/s3a/invalid-duplicate-spec.or",
-    "compiler/fixtures/s3a/invalid-int-magnitude.or",
-    "compiler/fixtures/s3a/invalid-negative-word.or",
-    "compiler/fixtures/s3a/invalid-typed-impl.or",
-    "compiler/fixtures/s3a/invalid-unsupported-type.or",
-    "compiler/fixtures/s3a/invalid-word-range.or",
-    "compiler/fixtures/s3a/invalid-word-width.or",
-    "compiler/fixtures/s3a/valid-empty-mixed.or",
-    "compiler/fixtures/s3a/valid-int-radices.or",
-    "compiler/fixtures/s3a/valid-word8-boundaries.or",
-    "compiler/fixtures/typed-answer.or",
-    "DEPENDENCY_POLICY.md",
-    "GOVERNANCE.md",
-    "Makefile",
-    "README.md",
-    "RELEASE_POLICY.md",
-    "rust-toolchain.toml",
-    "SECURITY.md",
-    "SUPPORT.md",
-    "assets/brand/README.md",
-    "assets/brand/manifest.json",
-    "assets/brand/orange-banner-jpeg.JPEG",
-    "assets/brand/orange-banner.png",
-    "assets/brand/orange-banner2-erased.PNG",
-    "assets/brand/orange-banner2.PNG",
-    "assets/brand/orange-erased.PNG",
-    "assets/brand/orange-handdrawn-marker-banner.png",
-    "assets/brand/orange.jpg",
-    "assets/brand/orange.png",
-    "assets/brand/orangePNG.PNG",
-    "conformance/foundation/manifest.json",
-    "conformance/foundation/README.md",
-    "docs/DECISIONS.md",
-    "docs/GATE0_TRACEABILITY.md",
-    "docs/GATE0_SUPPORT_ENVELOPES.md",
-    "docs/LANGUAGE_2026.md",
-    "docs/PRODUCT_FORM_DECISION_PACKET.md",
-    "docs/PROOF_FOUNDATION_DECISION_SUITE.md",
-    "docs/REPRODUCIBILITY.md",
-    "docs/USER_JOURNEYS.md",
-    "docs/ARCHITECTURE.md",
-    "docs/ASSURANCE.md",
-    "docs/PROJECT_CHARTER.md",
-    "docs/RESEARCH.md",
-    "docs/ROADMAP.md",
-    "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-    "docs/SEMANTICS_2026.md",
-    "docs/THE_ORANGE_BOOK.md",
-    "docs/governance/adrs/ADR-0000-template.md",
-    "docs/governance/adrs/README.md",
-    "docs/governance/oeps/OEP-0000-template.md",
-    "docs/governance/oeps/README.md",
-    "docs/operations/CI_DEPENDENCIES.md",
-    "docs/operations/GITHUB_CONTROLS.md",
-    "docs/security/OSPS_BASELINE.md",
-    "docs/security/SECRETS_AND_INCIDENTS.md",
-    "docs/security/THREAT_MODEL.md",
-    "policy/README.md",
-    "policy/gate0-repository-policy.json",
-    "schemas/README.md",
-    "schemas/gate0/claim-record-v0.1.schema.json",
-    "schemas/gate0/evidence-manifest-v0.1.schema.json",
-    "schemas/gate0/repository-control-snapshot-v0.1.schema.json",
-    "schemas/gate0/standards-provenance-v0.1.schema.json",
-    "schemas/gate0/trust-inventory-v0.1.schema.json",
-    "scripts/ci/check-repository",
-    "scripts/ci/check-external-links",
-    "scripts/ci/install-actionlint",
-    "scripts/ci/install-lychee",
-    "tools/validate_foundation.py",
-    "tools/tests/test_validate_foundation.py",
-    "tools/tests/test_validate_foundation_hardening.py",
-}
-MINIMUM_FORBIDDEN_PATHS = {"COPYING", "LICENSE", "crates", "crypto", "formal", "release", "spec", "stdlib", "targets"}
-MINIMUM_REQUIRED_WORKFLOWS = {"ci.yml", "dependency-review.yml", "scorecard.yml"}
-MINIMUM_ACTION_REPOSITORIES = {
-    "DavidAnson/markdownlint-cli2-action",
-    "actions/checkout",
-    "actions/dependency-review-action",
-    "actions/upload-artifact",
-    "github/codeql-action/upload-sarif",
-    "zizmorcore/zizmor-action",
-}
+MINIMUM_REQUIRED_PATHS = set(
+    """
+.editorconfig
+.gitattributes
+.github/CODEOWNERS
+.github/ISSUE_TEMPLATE/conduct-contact.yml
+.github/ISSUE_TEMPLATE/config.yml
+.github/ISSUE_TEMPLATE/oep-proposal.yml
+.github/ISSUE_TEMPLATE/planning-defect.yml
+.github/ISSUE_TEMPLATE/planning-question.yml
+.github/ISSUE_TEMPLATE/research-evidence.yml
+.github/dependabot.yml
+.github/dependency-review-config.yml
+.github/pull_request_template.md
+.github/workflows/ci.yml
+.github/workflows/dependency-review.yml
+.github/workflows/external-links.yml
+.github/workflows/scorecard.yml
+.github/workflows/workflow-online-audit.yml
+.gitignore
+.markdownlint-cli2.jsonc
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+compiler/.gitignore
+compiler/Cargo.lock
+compiler/Cargo.toml
+compiler/README.md
+compiler/crates/orange-compiler/Cargo.toml
+compiler/crates/orange-compiler/src/core.rs
+compiler/crates/orange-compiler/src/diagnostic.rs
+compiler/crates/orange-compiler/src/edition.rs
+compiler/crates/orange-compiler/src/eval.rs
+compiler/crates/orange-compiler/src/lexer.rs
+compiler/crates/orange-compiler/src/lib.rs
+compiler/crates/orange-compiler/src/parser.rs
+compiler/crates/orange-compiler/src/semantics.rs
+compiler/crates/orange-compiler/src/source.rs
+compiler/crates/orangec/Cargo.toml
+compiler/crates/orangec/src/main.rs
+compiler/crates/orangec/tests/cli.rs
+compiler/crates/orangec/tests/s3a_conformance.rs
+compiler/fixtures/hello.or
+compiler/fixtures/s3a/invalid-duplicate-spec.or
+compiler/fixtures/s3a/invalid-int-magnitude.or
+compiler/fixtures/s3a/invalid-negative-word.or
+compiler/fixtures/s3a/invalid-typed-impl.or
+compiler/fixtures/s3a/invalid-unsupported-type.or
+compiler/fixtures/s3a/invalid-word-range.or
+compiler/fixtures/s3a/invalid-word-width.or
+compiler/fixtures/s3a/valid-empty-mixed.or
+compiler/fixtures/s3a/valid-int-radices.or
+compiler/fixtures/s3a/valid-word8-boundaries.or
+compiler/fixtures/typed-answer.or
+DEPENDENCY_POLICY.md
+GOVERNANCE.md
+Makefile
+README.md
+RELEASE_POLICY.md
+rust-toolchain.toml
+SECURITY.md
+SUPPORT.md
+assets/brand/README.md
+assets/brand/manifest.json
+assets/brand/orange-banner-jpeg.JPEG
+assets/brand/orange-banner.png
+assets/brand/orange-banner2-erased.PNG
+assets/brand/orange-banner2.PNG
+assets/brand/orange-erased.PNG
+assets/brand/orange-handdrawn-marker-banner.png
+assets/brand/orange.jpg
+assets/brand/orange.png
+assets/brand/orangePNG.PNG
+conformance/foundation/manifest.json
+conformance/foundation/README.md
+docs/DECISIONS.md
+docs/GATE0_TRACEABILITY.md
+docs/GATE0_SUPPORT_ENVELOPES.md
+docs/LANGUAGE_2026.md
+docs/PRODUCT_FORM_DECISION_PACKET.md
+docs/PROOF_FOUNDATION_DECISION_SUITE.md
+docs/REPRODUCIBILITY.md
+docs/USER_JOURNEYS.md
+docs/ARCHITECTURE.md
+docs/ASSURANCE.md
+docs/PROJECT_CHARTER.md
+docs/RESEARCH.md
+docs/ROADMAP.md
+docs/SEMANTIC_STRATA_DECISION_SUITE.md
+docs/SEMANTICS_2026.md
+docs/THE_ORANGE_BOOK.md
+docs/governance/adrs/ADR-0000-template.md
+docs/governance/adrs/README.md
+docs/governance/oeps/OEP-0000-template.md
+docs/governance/oeps/README.md
+docs/operations/CI_DEPENDENCIES.md
+docs/operations/GITHUB_CONTROLS.md
+docs/security/OSPS_BASELINE.md
+docs/security/SECRETS_AND_INCIDENTS.md
+docs/security/THREAT_MODEL.md
+policy/README.md
+policy/gate0-repository-policy.json
+schemas/README.md
+schemas/gate0/claim-record-v0.1.schema.json
+schemas/gate0/evidence-manifest-v0.1.schema.json
+schemas/gate0/repository-control-snapshot-v0.1.schema.json
+schemas/gate0/standards-provenance-v0.1.schema.json
+schemas/gate0/trust-inventory-v0.1.schema.json
+scripts/ci/check-repository
+scripts/ci/check-external-links
+scripts/ci/install-actionlint
+scripts/ci/install-lychee
+tools/validate_foundation.py
+tools/tests/test_validate_foundation.py
+tools/tests/test_validate_foundation_hardening.py
+""".strip().splitlines()
+)
+MINIMUM_FORBIDDEN_PATHS = set("COPYING LICENSE crates crypto formal release spec stdlib targets".split())
+MINIMUM_REQUIRED_WORKFLOWS = set("ci.yml dependency-review.yml scorecard.yml".split())
+MINIMUM_ACTION_REPOSITORIES = set(
+    """DavidAnson/markdownlint-cli2-action actions/checkout actions/dependency-review-action
+actions/upload-artifact github/codeql-action/upload-sarif zizmorcore/zizmor-action""".split()
+)
+_BRAND_IMPORT = "Byte-for-byte import from the steward-supplied Orange-Assets collection on "
+_BRAND_ROLE = "Official working Orange "
 GATE0_ALLOWED_CONTAINER_IMAGES = {
     "ghcr.io/ossf/scorecard-action@sha256:"
     "2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941"
 }
 GATE0_ALLOWED_BINARY_ARTIFACTS = [
-    {
-        "path": "assets/brand/orange-banner2.PNG",
-        "sha256": "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b",
-        "role": "Official working Orange wordmark on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orangePNG.PNG",
-        "sha256": "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02",
-        "role": "Official working Orange emblem source variant on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-banner-jpeg.JPEG",
-        "sha256": "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a",
-        "role": "Official working Orange horizontal lockup JPEG",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-banner2-erased.PNG",
-        "sha256": "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c",
-        "role": "Official working Orange transparent wordmark",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-erased.PNG",
-        "sha256": "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2",
-        "role": "Official working Orange transparent emblem",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-banner.png",
-        "sha256": "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266",
-        "role": "Official working Orange primary horizontal lockup with embedded C2PA claim",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange.jpg",
-        "sha256": "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888",
-        "role": "Official working Orange emblem JPEG on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange.png",
-        "sha256": "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463",
-        "role": "Official working Orange primary emblem with embedded C2PA claim",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-11",
-    },
-    {
-        "path": "assets/brand/orange-handdrawn-marker-banner.png",
-        "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735",
-        "role": "Official working Orange hand-drawn README and Orange Book horizontal lockup on a light background",
-        "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-14",
-    },
+    {"path": path, "sha256": digest, "role": _BRAND_ROLE + role, "provenance": _BRAND_IMPORT + date}
+    for path, digest, role, date in (
+        ("assets/brand/orange-banner2.PNG", "3136916eab9747871324cf146158e8f3a16197dbf32e8a6ef995056705dd6e5b", "wordmark on a light background", _DATE),
+        ("assets/brand/orangePNG.PNG", "64d2e78436586466f9c24fb844922e1d7b474e98a6023b44a5a481533300ec02", "emblem source variant on a light background", _DATE),
+        ("assets/brand/orange-banner-jpeg.JPEG", "288070ed86afd83a2e41e25fb664ac3ef44029521055a6ca3f6b6223cc48d41a", "horizontal lockup JPEG", _DATE),
+        ("assets/brand/orange-banner2-erased.PNG", "5941784f123c7a3fb7922d859098d43d5aee10dbd8db4c9283a32b5f93e8611c", "transparent wordmark", _DATE),
+        ("assets/brand/orange-erased.PNG", "9f256a98c1cbe7345ab29372fdc15eb9475ce3b89c4278af503d167d4a91f2f2", "transparent emblem", _DATE),
+        ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "primary horizontal lockup with embedded C2PA claim", _DATE),
+        ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "emblem JPEG on a light background", _DATE),
+        ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "primary emblem with embedded C2PA claim", _DATE),
+        ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "hand-drawn README and Orange Book horizontal lockup on a light background", "2026-07-14"),
+    )
 ]
 GATE0_BRAND_ASSET_METADATA = {
     "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
@@ -282,16 +301,13 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange.png": "orange.png",
     "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
 }
-GATE0_EXECUTABLE_PATHS = {
-    "scripts/ci/check-external-links",
-    "scripts/ci/check-repository",
-    "scripts/ci/install-actionlint",
-    "scripts/ci/install-lychee",
-    "tools/validate_foundation.py",
-}
-GATE0_ALLOWED_WRITE_PERMISSIONS = {"scorecard.yml": {"security-events"}}
+GATE0_EXECUTABLE_PATHS = set(
+    """scripts/ci/check-external-links scripts/ci/check-repository
+scripts/ci/install-actionlint scripts/ci/install-lychee tools/validate_foundation.py""".split()
+)
+GATE0_ALLOWED_WRITE_PERMISSIONS = {_SC: {"security-events"}}
 GATE0_HOSTED_REPOSITORY_CONTROLS = {
-    "snapshot_date": "2026-07-11",
+    "snapshot_date": _DATE,
     "review_due_date": "2026-10-11",
     "main_ruleset_id": 18810248,
     "required_checks": [
@@ -299,149 +315,60 @@ GATE0_HOSTED_REPOSITORY_CONTROLS = {
         {"context": "Dependency Review / policy", "integration_id": 15368},
     ],
 }
-GATE0_SCHEMA_PATHS = {
-    "schemas/gate0/claim-record-v0.1.schema.json",
-    "schemas/gate0/evidence-manifest-v0.1.schema.json",
-    "schemas/gate0/repository-control-snapshot-v0.1.schema.json",
-    "schemas/gate0/standards-provenance-v0.1.schema.json",
-    "schemas/gate0/trust-inventory-v0.1.schema.json",
-}
-GATE0_WORKFLOW_INVENTORY = {
-    "ci.yml",
-    "dependency-review.yml",
-    "external-links.yml",
-    "scorecard.yml",
-    "workflow-online-audit.yml",
-}
-GATE0_PROTECTED_FILE_DIGESTS = {
-    ".editorconfig": "a3766d51a21a904a405f808017eeb34d5426558ad487803a5d4f39a854379ca9",
-    ".gitattributes": "a5f4501e4eeea215d890813156f46edf1cd9dee83be968e5ff5edc6c136f111d",
-    ".github/CODEOWNERS": "8038a3a61117a29c26bfdd7b66a9a5675cb779736bad2c8c1797e680d7484663",
-    ".github/ISSUE_TEMPLATE/conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
-    ".github/ISSUE_TEMPLATE/config.yml": "ff5a8f986c0a9902d402ac17eecd3fbea8783ad396ba0b33133650826054ffe3",
-    ".github/ISSUE_TEMPLATE/oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
-    ".github/ISSUE_TEMPLATE/planning-defect.yml": "b190eccb90a1097bd18b53e114429a08c26c6a84bd9bc606789c5a38fe6952ec",
-    ".github/ISSUE_TEMPLATE/planning-question.yml": "a2936886eb6f13e234eda5cf49923565fcd107539015df93c1245038534b9c2b",
-    ".github/ISSUE_TEMPLATE/research-evidence.yml": "60fb04d67cb5acbc822fb9ea613ab0d3b8caebb35544daefe91cf0f59a408f7a",
-    ".github/dependabot.yml": "7ff6d88203254cab787bde78ac277edcf21fd159a1f3e547102af7e2f163e268",
-    ".github/dependency-review-config.yml": "66279d4dec898deb6e178692a949c0e48cd0daef7d5928ab415549518d6c8b09",
-    ".github/pull_request_template.md": "52b5a877ad9360f8b6c6a8429e77f1c98cd48c54c093f312fb7fbb08fad4f82f",
-    ".github/workflows/ci.yml": "c17e8d7dc0cb27fdc321569c2a25f899d66ab670bf1a94a4792c398eb666b81e",
-    ".github/workflows/dependency-review.yml": "5a6c0bf9f9bcc41b2e92fb01ac1972ea068406b1c49465290637a06574673e0a",
-    ".github/workflows/external-links.yml": "322aadcba06668a6f50ba4036ce9f4ed98dac630bb1b9d761693f2ce248e1c16",
-    ".github/workflows/scorecard.yml": "4514289283bbb7f38fc2dd861b8f998a24b9d75218d982a98bfb6b0d866fa22d",
-    ".github/workflows/workflow-online-audit.yml": "c4ff593389d834d380dff4118afc7aca19dcd685faa4210cde30384c93845da0",
-    ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
-    ".markdownlint-cli2.jsonc": "abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5",
-    "CODE_OF_CONDUCT.md": "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a",
-    "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
-    "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
-    "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
-    "Makefile": "0ecb71250b439a687c95b978194bdb2b15556acb4176e1f95159bd8fc60bf7a1",
-    "README.md": "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182",
-    "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
-    "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
-    "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "7d71da4d28befb1b5735244c1ee51ee761e07a923b67b85d2bba9380da602874",
-    "assets/brand/manifest.json": "0ae668ae0fb52e04518681afddb2af5c11487bf5c3cda24be0d7f1ecb31c1391",
-    "compiler/crates/orangec/tests/s3a_conformance.rs": "653008bb27cc5dc474eec5ba8d819bbcc5967468e9c0e1d837d4ca25875c788c",
-    "compiler/fixtures/s3a/invalid-duplicate-spec.or": "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6",
-    "compiler/fixtures/s3a/invalid-int-magnitude.or": "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542",
-    "compiler/fixtures/s3a/invalid-negative-word.or": "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b",
-    "compiler/fixtures/s3a/invalid-typed-impl.or": "4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07",
-    "compiler/fixtures/s3a/invalid-unsupported-type.or": "14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc",
-    "compiler/fixtures/s3a/invalid-word-range.or": "4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf",
-    "compiler/fixtures/s3a/invalid-word-width.or": "d92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2",
-    "compiler/fixtures/s3a/valid-empty-mixed.or": "c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96",
-    "compiler/fixtures/s3a/valid-int-radices.or": "937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4",
-    "compiler/fixtures/s3a/valid-word8-boundaries.or": "db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee",
-    "compiler/fixtures/typed-answer.or": "22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e",
-    "conformance/foundation/README.md": "18dfeb0a2156e571df6e592b8b38a908661bb4f61da3a84ac4de8a3039b19294",
-    "conformance/foundation/invalid/claim-record-assumption-only.json": "2e8fa46cda4b814f8d2096d19c4e7fec83ae9f28cd355c5012948ce5980ca210",
-    "conformance/foundation/invalid/evidence-manifest-independent-without-review.json": "b92882efaf1f36a5988a8c4c484e4d7e659219248a6ee287f5928bf2b853f16b",
-    "conformance/foundation/invalid/evidence-manifest-network-enabled.json": "955f58b255f4776d1cf1cac730c1fa7f1ab32a9fc5c35919bd74b3d007fe7b85",
-    "conformance/foundation/invalid/evidence-manifest-path-escape.json": "b376f5435b54c5578ddcdd56acc4f61883625638130d34ee1ab33530c19f6ae0",
-    "conformance/foundation/invalid/repository-control-missing-explanation.json": "a8bc273991680f616ddf78756cf3a8ad4568e733fefa12dbd3637ece40c8b8c8",
-    "conformance/foundation/invalid/repository-control-selected-actions-empty.json": "f84cfeefe8cfa73f466a973a54c87b6e207cca9f970bcec6c19b8ed2d10674e4",
-    "conformance/foundation/invalid/standards-provenance-bad-digest.json": "1142e67079f9778ccabe497dfae8ca80a72f870f5f3712b0569bc904d449b0cb",
-    "conformance/foundation/invalid/standards-provenance-reviewed-without-reference.json": "4d7c311caff8a0d3c68b102f0690e61cc4da8112dff9762f3e03d22be41c2514",
-    "conformance/foundation/invalid/trust-inventory-missing-identity.json": "ea616685e11fa714b7e99b45dddc4773310d6f4644b9a42fea700fe4ae0cb5e5",
-    "conformance/foundation/manifest.json": "07f1ef6e49d2c094793b46a9db5fc56f834f6ad6410caded43fd13ce1957595f",
-    "conformance/foundation/valid/claim-record.json": "985c2d0fe14a2961618182e3dd341d1715a3eb0a130ba03c36bfb27fcbb35249",
-    "conformance/foundation/valid/evidence-manifest.json": "2e3cde3d86f770894356d90bdaed088ae65162f6590dac46ccdc750d2c34c0a4",
-    "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
-    "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
-    "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
-    "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
-    "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
-    "docs/operations/CI_DEPENDENCIES.md": "fd20cd5912d366de56bb919a0456ec3fffccb8672030146698536423cfed5077",
-    "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
-    "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
-    "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "bb81b2f73602abfb2f3bb76b64eca0d8a631c578d7b3d7e041cb69f47a6f992f",
-    "policy/README.md": "2ee99ee3acc4f9bdda711854e1f047942132a55475feb4ad1f84d6afcbd6bd3a",
-    "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
-    "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
-    "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
-    "schemas/gate0/repository-control-snapshot-v0.1.schema.json": "f4cfcab41639fac0a5c3f75a99cfd3bef0a30b57fc950109058f5006f40ed8b4",
-    "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
-    "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
-    "scripts/ci/check-external-links": "cb6e2c637e813b5e7a997b795ebb3b0f5c40a6e4c0b53875042a4ead79f79602",
-    "scripts/ci/check-repository": "6dd7f8381904385e5e51116a6dcca690c4392f0db6011f0f68af36b3d4873fc4",
-    "scripts/ci/install-actionlint": "c9b2782b8f08decf4c17e2ee9971a5bf55ac260b3f8a8042ed644685ecd1b636",
-    "scripts/ci/install-lychee": "e539b3d3862ad665136c00876e1b27fbb6444c5992dbdad96bb39d3397373ced",
-    "tools/tests/test_validate_foundation.py": "663287593ddea30dee2ced2b41c1554a619dda3ae7f70676db173396f7466f55",
-    "tools/tests/test_validate_foundation_hardening.py": "f617d0a05740fe8fd1c935f80fec2e34dec7f0a69ce57d9c74bd50da00a05273",
-}
+GATE0_SCHEMA_PATHS = set(
+    """schemas/gate0/claim-record-v0.1.schema.json schemas/gate0/evidence-manifest-v0.1.schema.json
+schemas/gate0/repository-control-snapshot-v0.1.schema.json
+schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventory-v0.1.schema.json""".split()
+)
+GATE0_WORKFLOW_INVENTORY = set(
+    "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
+)
+GATE0_PROTECTED_FILE_DIGEST = "6294ce6f58f26bd3b333c3f3f39ad0f682765bc693f4e9b0f5b951f856a24f9e"
+GATE0_CI_COMPILER_RUN = (
+    "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
+    "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
+)
+GATE0_CI_POLICY_TEST_RUN = (
+    "run: pycache=\"$(/usr/bin/mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
+    "pycache=\"$(CDPATH= cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; "
+    "/usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
+    "PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; "
+    "sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'"
+)
+GATE0_CI_POLICY_RUN = (
+    "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
+    "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py"
+)
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
 GATE0_JOURNEY_IDS = tuple(f"J-{index:02d}" for index in range(1, 9))
-GATE0_OPERATION_IDS = (
-    "install",
-    "specify",
-    "implement",
-    "prove",
-    "build",
-    "inspect",
-    "integrate",
-    "update",
-    "revoke",
-    "offline-replay",
+GATE0_OPERATION_IDS = tuple("install specify implement prove build inspect integrate update revoke offline-replay".split())
+GATE0_CONFORMANCE_CASE_IDS = tuple(
+    """claim-record-valid claim-record-assumption-only-satisfied evidence-manifest-valid
+evidence-manifest-network-enabled evidence-manifest-path-escape
+evidence-manifest-independent-without-review repository-control-snapshot-valid
+repository-control-disabled-without-explanation repository-control-selected-actions-empty
+standards-provenance-valid standards-provenance-malformed-digest
+standards-provenance-reviewed-without-reference trust-inventory-valid
+trust-inventory-authority-without-identity""".split()
 )
-GATE0_CONFORMANCE_CASE_IDS = (
-    "claim-record-valid",
-    "claim-record-assumption-only-satisfied",
-    "evidence-manifest-valid",
-    "evidence-manifest-network-enabled",
-    "evidence-manifest-path-escape",
-    "evidence-manifest-independent-without-review",
-    "repository-control-snapshot-valid",
-    "repository-control-disabled-without-explanation",
-    "repository-control-selected-actions-empty",
-    "standards-provenance-valid",
-    "standards-provenance-malformed-digest",
-    "standards-provenance-reviewed-without-reference",
-    "trust-inventory-valid",
-    "trust-inventory-authority-without-identity",
+GATE0_CONFORMANCE_INSTANCE_PATHS = set(
+    """conformance/foundation/invalid/claim-record-assumption-only.json
+conformance/foundation/invalid/evidence-manifest-independent-without-review.json
+conformance/foundation/invalid/evidence-manifest-network-enabled.json
+conformance/foundation/invalid/evidence-manifest-path-escape.json
+conformance/foundation/invalid/repository-control-missing-explanation.json
+conformance/foundation/invalid/repository-control-selected-actions-empty.json
+conformance/foundation/invalid/standards-provenance-bad-digest.json
+conformance/foundation/invalid/standards-provenance-reviewed-without-reference.json
+conformance/foundation/invalid/trust-inventory-missing-identity.json
+conformance/foundation/valid/claim-record.json
+conformance/foundation/valid/evidence-manifest.json
+conformance/foundation/valid/repository-control-snapshot.json
+conformance/foundation/valid/standards-provenance.json
+conformance/foundation/valid/trust-inventory.json""".split()
 )
-GATE0_CONFORMANCE_INSTANCE_PATHS = {
-    "conformance/foundation/invalid/claim-record-assumption-only.json",
-    "conformance/foundation/invalid/evidence-manifest-independent-without-review.json",
-    "conformance/foundation/invalid/evidence-manifest-network-enabled.json",
-    "conformance/foundation/invalid/evidence-manifest-path-escape.json",
-    "conformance/foundation/invalid/repository-control-missing-explanation.json",
-    "conformance/foundation/invalid/repository-control-selected-actions-empty.json",
-    "conformance/foundation/invalid/standards-provenance-bad-digest.json",
-    "conformance/foundation/invalid/standards-provenance-reviewed-without-reference.json",
-    "conformance/foundation/invalid/trust-inventory-missing-identity.json",
-    "conformance/foundation/valid/claim-record.json",
-    "conformance/foundation/valid/evidence-manifest.json",
-    "conformance/foundation/valid/repository-control-snapshot.json",
-    "conformance/foundation/valid/standards-provenance.json",
-    "conformance/foundation/valid/trust-inventory.json",
-}
 GATE0_RUST_TOOLCHAIN = {
     "toolchain": {
         "channel": "1.96.1",
@@ -450,8 +377,8 @@ GATE0_RUST_TOOLCHAIN = {
     },
 }
 GATE0_RUST_MANIFESTS = {
-    "compiler/Cargo.toml": {
-        "workspace": {
+    _CT: {
+        _WS: {
             "members": [
                 "crates/orange-compiler",
                 "crates/orangec",
@@ -475,65 +402,63 @@ GATE0_RUST_MANIFESTS = {
             },
         },
     },
-    "compiler/crates/orange-compiler/Cargo.toml": {
+    _OCM: {
         "package": {
-            "name": "orange-compiler",
+            "name": _OC,
             "description": "Permanent compiler foundations for the Orange language",
-            "version": {"workspace": True},
-            "edition": {"workspace": True},
-            "rust-version": {"workspace": True},
-            "publish": {"workspace": True},
+            "version": {_WS: True},
+            "edition": {_WS: True},
+            "rust-version": {_WS: True},
+            "publish": {_WS: True},
         },
-        "lints": {"workspace": True},
+        "lints": {_WS: True},
     },
-    "compiler/crates/orangec/Cargo.toml": {
+    _CCM: {
         "package": {
             "name": "orangec",
             "description": "Command-line frontend for the Orange compiler",
-            "version": {"workspace": True},
-            "edition": {"workspace": True},
-            "rust-version": {"workspace": True},
-            "publish": {"workspace": True},
+            "version": {_WS: True},
+            "edition": {_WS: True},
+            "rust-version": {_WS: True},
+            "publish": {_WS: True},
         },
-        "dependencies": {
-            "orange-compiler": {"path": "../orange-compiler"},
+        _DEPS: {
+            _OC: {"path": "../orange-compiler"},
         },
-        "lints": {"workspace": True},
+        "lints": {_WS: True},
     },
 }
 GATE0_RUST_MANIFEST_PACKAGES = {
-    "compiler/Cargo.toml": None,
-    "compiler/crates/orange-compiler/Cargo.toml": "orange-compiler",
-    "compiler/crates/orangec/Cargo.toml": "orangec",
+    _CT: None,
+    _OCM: _OC,
+    _CCM: "orangec",
 }
 GATE0_RUST_WORKSPACE_MEMBERS = [
     "crates/orange-compiler",
     "crates/orangec",
 ]
 GATE0_RUST_DEPENDENCY_TABLES = {
-    "compiler/Cargo.toml": {},
-    "compiler/crates/orange-compiler/Cargo.toml": {},
-    "compiler/crates/orangec/Cargo.toml": {
-        "dependencies": {
-            "orange-compiler": {"path": "../orange-compiler"},
+    _CT: {},
+    _OCM: {},
+    _CCM: {
+        _DEPS: {
+            _OC: {"path": "../orange-compiler"},
         },
     },
 }
 GATE0_RUST_LOCK = {
     "version": 4,
     "package": [
-        {"name": "orange-compiler", "version": "0.0.1"},
+        {"name": _OC, "version": "0.0.1"},
         {
             "name": "orangec",
             "version": "0.0.1",
-            "dependencies": ["orange-compiler"],
+            _DEPS: [_OC],
         },
     ],
 }
 ORANGE_2026_RUST_BUDGETS = {
-    "compiler/crates/orange-compiler/src/source.rs": {
-        "MAX_SOURCE_BYTES": 16 * 1024 * 1024,
-    },
+    "compiler/crates/orange-compiler/src/source.rs": {"MAX_SOURCE_BYTES": 16 * 1024 * 1024},
     "compiler/crates/orange-compiler/src/lexer.rs": {
         "MAX_TOKENS_PER_SOURCE": 262_144,
         "MAX_DIAGNOSTICS_PER_SOURCE": 100,
@@ -550,9 +475,7 @@ ORANGE_2026_RUST_BUDGETS = {
         "MAX_SEMANTIC_EVENTS_PER_SOURCE": 1_048_576,
         "MAX_INTEGER_BITS": 16_384,
     },
-    "compiler/crates/orange-compiler/src/eval.rs": {
-        "MAX_EVALUATION_STEPS_PER_SOURCE": 1_048_576,
-    },
+    "compiler/crates/orange-compiler/src/eval.rs": {"MAX_EVALUATION_STEPS_PER_SOURCE": 1_048_576},
 }
 ORANGE_2026_SPEC_BUDGET_MARKERS = {
     "docs/LANGUAGE_2026.md": {
@@ -582,43 +505,24 @@ ORANGEC_OPERATIONAL_BUDGET_MARKERS = {
         "`orangec` accepts up to 256 source inputs in argument order": 256,
     },
 }
-MINIMUM_CODEOWNERS = {
-    "* @chasebryan",
-    "/.github/ @chasebryan",
-    "/assets/brand/ @chasebryan",
-    "/SECURITY.md @chasebryan",
-    "/GOVERNANCE.md @chasebryan",
-    "/docs/ASSURANCE.md @chasebryan",
-    "/docs/security/ @chasebryan",
-    "/policy/ @chasebryan",
-    "/scripts/ci/ @chasebryan",
-    "/tools/validate_foundation.py @chasebryan",
-}
-GATE0_ALLOWED_TOP_LEVEL = {
-    ".editorconfig",
-    ".gitattributes",
-    ".github",
-    ".gitignore",
-    ".markdownlint-cli2.jsonc",
-    "CODE_OF_CONDUCT.md",
-    "CONTRIBUTING.md",
-    "compiler",
-    "DEPENDENCY_POLICY.md",
-    "GOVERNANCE.md",
-    "Makefile",
-    "README.md",
-    "RELEASE_POLICY.md",
-    "rust-toolchain.toml",
-    "SECURITY.md",
-    "SUPPORT.md",
-    "assets",
-    "conformance",
-    "docs",
-    "policy",
-    "schemas",
-    "scripts",
-    "tools",
-}
+MINIMUM_CODEOWNERS = set(
+    """* @chasebryan
+/.github/ @chasebryan
+/assets/brand/ @chasebryan
+/SECURITY.md @chasebryan
+/GOVERNANCE.md @chasebryan
+/docs/ASSURANCE.md @chasebryan
+/docs/security/ @chasebryan
+/policy/ @chasebryan
+/scripts/ci/ @chasebryan
+/tools/validate_foundation.py @chasebryan""".splitlines()
+)
+GATE0_ALLOWED_TOP_LEVEL = set(
+    """.editorconfig .gitattributes .github .gitignore .markdownlint-cli2.jsonc
+CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md Makefile
+README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
+docs policy schemas scripts tools""".split()
+)
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
@@ -627,14 +531,24 @@ CONTAINER_ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*(docker://[^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
 )
-MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]\n]*\]\(([^)\n]+)\)")
+MARKDOWN_REFERENCE_RE = re.compile(
+    r"(?m)^ {0,3}\[("
+    r"(?:\\[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]|"
+    r"\\(?=[^\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])|[^\[\]\\])+"
+    r")\]:[ \t]*(?:(?:\r\n?|\n)[ \t]*)?"
+    r"(<(?:\\[^\r\n]|[^\\<>\r\n])*>|[^\s]+)"
+)
+MARKDOWN_CONTINUED_TITLE_RE = re.compile(
+    r"\]\([ \t]*(<(?:\\[^\r\n]|[^\\<>\r\n])*>|[^()\s]+)"
+    r"[ \t]*(?:\r\n?|\n)[ \t]*(?=[\"'()])"
+)
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FRONT_MATTER_KEY_RE = re.compile(r"^([a-z][a-z0-9-]*):(?:\s*(.*))?$")
 RECORD_FILENAME_RE = re.compile(r"^(?P<prefix>OEP|ADR)-(?P<number>[0-9]{4})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.md$")
 
 
 class DuplicateKeyError(ValueError):
-    """Raised when JSON contains an ambiguous duplicate object key."""
+    pass
 
 
 @dataclasses.dataclass(frozen=True, order=True)
@@ -647,11 +561,29 @@ class Finding:
         return dataclasses.asdict(self)
 
 
+def _text_report_field(value: str) -> str:
+    return "".join(
+        c if " " <= c <= "~" and c not in "\\:" else f"\\U{ord(c):08x}" for c in value
+    )
+
+
 @dataclasses.dataclass(frozen=True)
 class SchemaIssue:
     keyword: str
     instance_path: str
     message: str
+
+
+class _BoundedSchemaIssues(list[SchemaIssue]):
+    def append(self, issue: SchemaIssue) -> None:
+        if len(self) < GATE0_MAXIMUM_FINDINGS:
+            super().append(issue)
+
+    def extend(self, issues: Iterable[SchemaIssue]) -> None:
+        for issue in issues:
+            self.append(issue)
+            if len(self) == GATE0_MAXIMUM_FINDINGS:
+                break
 
 
 def _object_without_duplicates(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
@@ -677,9 +609,6 @@ def _parse_i_json_integer(value: str) -> int:
         len(magnitude) == len(_I_JSON_MAXIMUM_INTEGER_MAGNITUDE)
         and magnitude > _I_JSON_MAXIMUM_INTEGER_MAGNITUDE
     ):
-        # Reject lexically before int() so Python's configurable conversion
-        # limit cannot surface as ValueError for an attacker-sized literal.
-        # Keep the diagnostic independent of the literal's size as well.
         raise json.JSONDecodeError(
             "integer exceeds the I-JSON interoperable range",
             value,
@@ -704,7 +633,6 @@ def _require_unicode_scalars(value: Any, source: str) -> None:
 
 
 def _require_bounded_json_nesting(source: str) -> None:
-    """Reject JSON deeper than Gate 0 permits without recursively parsing it."""
     depth = 0
     in_string = False
     escaped = False
@@ -733,7 +661,6 @@ def _require_bounded_json_nesting(source: str) -> None:
 
 
 def _load_json_bytes(data: bytes) -> Any:
-    """Parse already-read Gate 0 JSON bytes without reopening their path."""
     source = data.decode("utf-8")
     _require_bounded_json_nesting(source)
     try:
@@ -746,9 +673,6 @@ def _load_json_bytes(data: bytes) -> Any:
         )
         _require_unicode_scalars(result, source)
     except RecursionError as exc:
-        # The iterative preflight should make this unreachable for ordinary
-        # inputs. Normalize any implementation-specific fallback so every
-        # load_json caller can keep handling malformed JSON uniformly.
         raise json.JSONDecodeError(
             "JSON structural nesting exceeds the Gate 0 limit "
             f"of {GATE0_MAXIMUM_JSON_NESTING_DEPTH}",
@@ -763,13 +687,6 @@ def load_json(path: Path) -> Any:
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    """Serialize the integer-only Gate 0 JSON profile using RFC 8785 rules.
-
-    Gate 0 rejects floating-point values, unsafe integers, duplicate names, and
-    lone surrogates before this function is called. That narrower domain avoids
-    the ECMAScript floating-point formatting edge cases in full RFC 8785.
-    """
-
     _require_unicode_scalars(value, "")
 
     def serialize(item: Any) -> str:
@@ -800,8 +717,6 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 
 def relative(path: Path, root: Path) -> str:
-    """Format a lexical repository-relative path without following symlinks."""
-
     try:
         return path.relative_to(root).as_posix()
     except ValueError:
@@ -809,8 +724,6 @@ def relative(path: Path, root: Path) -> str:
 
 
 def _secure_repository_reads_supported() -> bool:
-    """Return whether the host can open a no-follow path one component at a time."""
-
     return (
         os.name == "posix"
         and all(
@@ -824,14 +737,10 @@ def _secure_repository_reads_supported() -> bool:
 
 
 def _secure_repository_discovery_supported() -> bool:
-    """Return whether fallback can scan an opened directory."""
-
     return _secure_repository_reads_supported() and os.scandir in os.supports_fd
 
 
 def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes]) -> int:
-    """Open a directory below ``root`` without following components."""
-
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_DIRECTORY | os.O_NOFOLLOW
     descriptor = os.open(root, flags)
     try:
@@ -848,21 +757,17 @@ def _open_directory_descriptor(root: Path | bytes, parts: Sequence[str | bytes])
         raise
 
 
-def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
-    """Inspect inventory entry presence without following any path component."""
-
+def _repository_entry_metadata(root: Path, raw_path: bytes) -> os.stat_result | bool | None:
     if not _secure_repository_reads_supported():
         return None
     descriptor: int | None = None
     try:
         parts = raw_path.split(b"/")
         descriptor = _open_directory_descriptor(root, parts[:-1])
-        os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
-        return True
+        return os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
     except FileNotFoundError:
         return False
     except (NotImplementedError, OSError):
-        # Let resource preflight classify an indeterminate entry.
         return None
     finally:
         if descriptor is not None:
@@ -872,6 +777,11 @@ def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
                 pass
 
 
+def _repository_entry_presence(root: Path, raw_path: bytes) -> bool | None:
+    metadata = _repository_entry_metadata(root, raw_path)
+    return metadata if metadata is False or metadata is None else True
+
+
 @dataclasses.dataclass(frozen=True)
 class _GitRecordRead:
     records: tuple[bytes, ...] | None
@@ -879,17 +789,14 @@ class _GitRecordRead:
 
 
 def _sanitized_git_environment(root: Path) -> dict[str, str]:
-    """Build the minimal environment needed to launch the ambient Git."""
-
-    environment = {"PATH": os.environ.get("PATH", os.defpath)}
+    environment = {"PATH": "/usr/bin:/bin"}
     environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
-    environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
+    environment["GIT_DIR"] = str(root / ".git")
+    environment["GIT_WORK_TREE"] = str(root)
     return environment
 
 
-def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
-    """Release a bounded Git producer without retaining any more output."""
-
+def _stop_git_process(process: subprocess.Popen[bytes], timeout: float = 0.0) -> None:
     try:
         process.kill()
     except OSError:
@@ -900,60 +807,100 @@ def _stop_git_process(process: subprocess.Popen[bytes]) -> None:
         except OSError:
             pass
     try:
-        process.wait()
-    except OSError:
+        process.wait(timeout=max(0.0, timeout))
+    except (OSError, subprocess.TimeoutExpired):
         pass
 
 
-def _read_git_nul_records(
+def _read_git_records(
     root: Path,
     arguments: Sequence[str],
     *,
     maximum_record_bytes: int,
+    input_records: Sequence[bytes] = (),
+    terminator: bytes = b"\0",
+    flag: str | None = "-z",
 ) -> _GitRecordRead:
-    """Read one Git metadata stream without buffering attacker-sized output.
-
-    ``records is None`` without a finding means Git could not provide the
-    inventory and the caller may use its filesystem fallback. A protocol or
-    resource finding is fail-closed and must never trigger that fallback.
-    """
-
-    command = ["git", "-c", "core.fsmonitor=false", "-C", str(root), *arguments, "-z"]
+    command = [
+        GATE0_GIT_EXECUTABLE,
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.ignoreCase=false",
+        "-c",
+        "core.precomposeUnicode=false",
+        "-C",
+        str(root),
+        *arguments,
+        *((flag,) if flag else ()),
+    ]
+    input_file = None
+    if input_records:
+        try:
+            input_file = tempfile.TemporaryFile()
+            input_bytes = b"\0".join(input_records) + b"\0"
+            if input_file.write(input_bytes) != len(input_bytes):
+                raise OSError("short Git input write")
+            input_file.seek(0)
+        except OSError:
+            if input_file is not None:
+                try:
+                    input_file.close()
+                except OSError:
+                    pass
+            return _GitRecordRead(None)
     try:
         process = subprocess.Popen(
             command,
             env=_sanitized_git_environment(root),
-            stdin=subprocess.DEVNULL,
+            stdin=input_file or subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
     except OSError:
+        if input_file is not None:
+            try:
+                input_file.close()
+            except OSError:
+                pass
         return _GitRecordRead(None)
+    cleanup_deadline = time.monotonic() + _GATE0_GIT_TIMEOUT_SECONDS
+    deadline = cleanup_deadline - min(1.0, _GATE0_GIT_TIMEOUT_SECONDS / 2.0)
+    if input_file is not None:
+        try:
+            input_file.close()
+        except OSError as exc:
+            _stop_git_process(process, cleanup_deadline - time.monotonic())
+            return _GitRecordRead(
+                None,
+                Finding(_RI_READ, ".", f"cannot close Git input: {exc}"),
+            )
     if process.stdout is None:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
-            Finding("resource.inventory_protocol", ".", "Git inventory did not expose a stdout stream"),
+            Finding(_RI_PROTOCOL, ".", "Git inventory did not expose a stdout stream"),
         )
 
     records: list[bytes] = []
     pending = bytearray()
     raw_bytes = 0
-    deadline = time.monotonic() + _GATE0_GIT_TIMEOUT_SECONDS
 
     def reject(code: str, message: str) -> _GitRecordRead:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(None, Finding(code, ".", message))
+
+    try:
+        output_descriptor = process.stdout.fileno()
+    except (AttributeError, OSError, ValueError):
+        return reject(_RI_PROTOCOL, "Git inventory stdout has no usable descriptor")
 
     try:
         while True:
             remaining = deadline - time.monotonic()
-            if remaining <= 0 or (
-                hasattr(process.stdout, "fileno")
-                and not select.select((process.stdout,), (), (), remaining)[0]
-            ):
+            if remaining <= 0 or not select.select((process.stdout,), (), (), remaining)[0]:
                 return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
-            chunk = process.stdout.read(_GATE0_GIT_READ_CHUNK_BYTES)
+            chunk = os.read(output_descriptor, _GATE0_GIT_READ_CHUNK_BYTES)
             if not chunk:
                 break
             if raw_bytes + len(chunk) > GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES:
@@ -964,8 +911,8 @@ def _read_git_nul_records(
             raw_bytes += len(chunk)
             offset = 0
             while True:
-                terminator = chunk.find(b"\0", offset)
-                if terminator < 0:
+                end = chunk.find(terminator, offset)
+                if end < 0:
                     tail = chunk[offset:]
                     if len(pending) + len(tail) > maximum_record_bytes:
                         return reject(
@@ -974,7 +921,7 @@ def _read_git_nul_records(
                         )
                     pending.extend(tail)
                     break
-                segment = chunk[offset:terminator]
+                segment = chunk[offset:end]
                 if len(pending) + len(segment) > maximum_record_bytes:
                     return reject(
                         "resource.inventory_path",
@@ -983,7 +930,7 @@ def _read_git_nul_records(
                 pending.extend(segment)
                 if not pending:
                     return reject(
-                        "resource.inventory_protocol",
+                        _RI_PROTOCOL,
                         "Git inventory contains an empty NUL-delimited record",
                     )
                 records.append(bytes(pending))
@@ -993,27 +940,27 @@ def _read_git_nul_records(
                         "resource.inventory_count",
                         "Git inventory exceeds the Gate 0 repository-file limit",
                     )
-                offset = terminator + 1
-    except OSError as exc:
-        return reject("resource.inventory_read", f"cannot read bounded Git inventory: {exc}")
+                offset = end + len(terminator)
+    except (OSError, ValueError) as exc:
+        return reject(_RI_READ, f"cannot read bounded Git inventory: {exc}")
 
     try:
         process.stdout.close()
     except OSError as exc:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
-            Finding("resource.inventory_read", ".", f"cannot close bounded Git inventory: {exc}"),
+            Finding(_RI_READ, ".", f"cannot close bounded Git inventory: {exc}"),
         )
     try:
         return_code = process.wait(timeout=max(0.0, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
         return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
     except OSError as exc:
-        _stop_git_process(process)
+        _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(
             None,
-            Finding("resource.inventory_read", ".", f"cannot wait for bounded Git inventory: {exc}"),
+            Finding(_RI_READ, ".", f"cannot wait for bounded Git inventory: {exc}"),
         )
     if return_code != 0:
         return _GitRecordRead(None)
@@ -1021,21 +968,19 @@ def _read_git_nul_records(
         return _GitRecordRead(
             None,
             Finding(
-                "resource.inventory_protocol",
+                _RI_PROTOCOL,
                 ".",
-                "Git inventory ended with an unterminated NUL-delimited record",
+                "Git inventory ended with an unterminated record",
             ),
         )
     return _GitRecordRead(tuple(records))
 
 
 def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path]:
-    """Collect a bounded, pruned filesystem inventory without following dirs."""
-
     if not _secure_repository_discovery_supported():
         findings.append(
             Finding(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 ".",
                 "host cannot provide component-relative no-follow repository discovery",
             )
@@ -1061,7 +1006,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                 except OSError:
                     pass
             findings.append(
-                Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
+                Finding(_RI_READ, ".", f"cannot scan repository inventory: {exc}")
             )
             return []
         try:
@@ -1098,7 +1043,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                         )
                         return []
                     raw_metadata_bytes += len(raw_path) + 1
-                    if name in ignored:
+                    if name == b"__pycache__" or (not relative_directory and name in ignored):
                         continue
                     try:
                         is_directory = entry.is_dir(follow_symlinks=False)
@@ -1107,7 +1052,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                     except OSError as exc:
                         findings.append(
                             Finding(
-                                "resource.inventory_read",
+                                _RI_READ,
                                 ".",
                                 f"cannot inspect filesystem inventory entry: {exc}",
                             )
@@ -1128,7 +1073,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
                             return []
         except OSError as exc:
             findings.append(
-                Finding("resource.inventory_read", ".", f"cannot scan repository inventory: {exc}")
+                Finding(_RI_READ, ".", f"cannot scan repository inventory: {exc}")
             )
             return []
         finally:
@@ -1142,7 +1087,7 @@ def _fallback_repository_files(root: Path, findings: list[Finding]) -> list[Path
     except UnicodeDecodeError:
         findings.append(
             Finding(
-                "resource.inventory_encoding",
+                _RI_ENCODING,
                 ".",
                 "filesystem inventory contains a path that is not valid UTF-8",
             )
@@ -1161,10 +1106,89 @@ def _git_object_id_is_valid(value: bytes) -> bool:
 
 
 def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[list[Path], bool]:
-    result = _read_git_nul_records(
+    if not _secure_repository_reads_supported():
+        findings.append(
+            Finding(_R_UNSUPPORTED, ".", "host cannot securely inspect repository metadata")
+        )
+        return [], False
+    git_metadata = _repository_entry_metadata(root, b".git")
+    git_metadata_present = git_metadata if git_metadata is False or git_metadata is None else True
+    if git_metadata_present and (
+        git_metadata is None or not stat.S_ISDIR(git_metadata.st_mode)
+    ):
+        findings.append(
+            Finding(
+                _RI_GIT,
+                ".git",
+                "repository Git metadata must be a local directory",
+            )
+        )
+        return [], False
+    for raw_path, required in ((b".git/config", True), (b".git/index", False)):
+        metadata = _repository_entry_metadata(root, raw_path)
+        present = metadata if metadata is False or metadata is None else True
+        if git_metadata_present and (
+            (required and present is not True)
+            or (not required and present is None)
+            or (
+                present is True
+                and (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1)
+            )
+        ):
+            findings.append(
+                Finding(
+                    _RI_GIT,
+                    os.fsdecode(raw_path),
+                    "repository Git configuration and index must be local, singly linked regular files",
+                )
+            )
+            return [], False
+    worktree_config_present = False
+    for raw_path in (b".git/commondir", b".git/config.worktree", b".git/objects/info/alternates"):
+        metadata = _repository_entry_metadata(root, raw_path)
+        local_config = raw_path == b".git/config.worktree" and isinstance(metadata, os.stat_result) and stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+        worktree_config_present |= local_config
+        if git_metadata_present and metadata is not False and not local_config:
+            findings.append(
+                Finding(
+                    _RI_GIT,
+                    os.fsdecode(raw_path),
+                    "repository Git metadata must not redirect shared state or objects",
+                )
+            )
+            return [], False
+    for arguments, terminator, expected in (
+        ("rev-parse --shared-index-path".split(), b"\n", ((),)),
+        (r"config -z --local --no-includes --get-regexp ^include(\.|if\.)".split(), b"\0", (None,)),
+        ("config -z --file .git/config.worktree --list".split(), b"\0", (((), (b"core.sparsecheckout\nfalse", b"core.sparsecheckoutcone\nfalse", b"index.sparse\nfalse")) if worktree_config_present else (None,))),
+    ):
+        if not git_metadata_present:
+            break
+        indirect = _read_git_records(
+            root,
+            arguments,
+            maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+            terminator=terminator,
+            flag=None,
+        )
+        if indirect.finding is not None:
+            findings.append(indirect.finding)
+            return [], False
+        if indirect.records not in expected:
+            findings.append(
+                Finding(_RI_GIT, ".git", "Git metadata indirection is not admitted")
+            )
+            return [], False
+    result = _read_git_records(
         root,
-        ["ls-files", "--cached", "--others", "--exclude-per-directory=.gitignore"],
-        maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+        [
+            "ls-files",
+            "--cached",
+            "--others",
+            "-v",
+            *(f"--exclude={pattern}" for pattern in GATE0_IGNORE_PATTERNS),
+        ],
+        maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES + 2,
     )
     if result.finding is not None:
         findings.append(result.finding)
@@ -1174,7 +1198,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         if git_metadata_present is None:
             findings.append(
                 Finding(
-                    "resource.inventory_git",
+                    _RI_GIT,
                     ".",
                     "cannot securely inspect repository Git metadata after inventory failure",
                 )
@@ -1183,37 +1207,44 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
         if git_metadata_present:
             findings.append(
                 Finding(
-                    "resource.inventory_git",
+                    _RI_GIT,
                     ".",
                     "Git inventory failed even though repository metadata is present",
                 )
             )
             return [], False
         return _fallback_repository_files(root, findings), False
-    if any(not _git_path_is_relative(value) for value in result.records):
+    if any(len(value) < 3 or value[1:2] != b" " for value in result.records):
+        findings.append(Finding(_RI_PROTOCOL, ".", "Git file inventory tag is malformed"))
+        return [], False
+    if any(value[:1] not in {b"H", b"?"} for value in result.records):
+        findings.append(Finding("git.index_flags", ".", "Git index contains hidden worktree state"))
+        return [], False
+    records = tuple(value[2:] for value in result.records)
+    if any(not _git_path_is_relative(value) for value in records):
         findings.append(
             Finding(
-                "resource.inventory_protocol",
+                _RI_PROTOCOL,
                 ".",
                 "Git inventory contains a non-relative repository path",
             )
         )
         return [], False
-    if len(set(result.records)) != len(result.records):
+    if len(set(records)) != len(records):
         findings.append(
             Finding(
-                "resource.inventory_protocol",
+                _RI_PROTOCOL,
                 ".",
                 "Git inventory contains a duplicate repository path",
             )
         )
         return [], False
     try:
-        paths = [root / value.decode("utf-8") for value in sorted(result.records)]
+        paths = [root / value.decode("utf-8") for value in sorted(records)]
     except UnicodeDecodeError:
         findings.append(
             Finding(
-                "resource.inventory_encoding",
+                _RI_ENCODING,
                 ".",
                 "Git inventory contains a repository path that is not valid UTF-8",
             )
@@ -1222,7 +1253,7 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
     missing = next(
         (
             path
-            for raw_path, path in zip(sorted(result.records), paths, strict=True)
+            for raw_path, path in zip(sorted(records), paths, strict=True)
             if _repository_entry_presence(root, raw_path) is False
         ),
         None,
@@ -1252,9 +1283,9 @@ def git_index_entries(
     required: bool = False,
 ) -> list[tuple[str, str]]:
     inventory_findings = findings if findings is not None else []
-    result = _read_git_nul_records(
+    result = _read_git_records(
         root,
-        ["ls-files", "--stage"],
+        ["ls-files", "--format=%(objectmode) %(objectname) %(stage) %(objectsize)%x09%(path)"],
         maximum_record_bytes=(
             GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES + 1 + GATE0_MAXIMUM_REPOSITORY_PATH_BYTES
         ),
@@ -1273,7 +1304,7 @@ def git_index_entries(
             )
         return []
 
-    raw_entries: list[tuple[bytes, bytes]] = []
+    raw_entries: list[tuple[bytes, bytes, bytes]] = []
     seen_paths: set[bytes] = set()
     for record in result.records:
         metadata, separator, raw_path = record.partition(b"\t")
@@ -1283,37 +1314,91 @@ def git_index_entries(
             or not _git_path_is_relative(raw_path)
             or len(metadata) > GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES
             or len(raw_path) > GATE0_MAXIMUM_REPOSITORY_PATH_BYTES
-            or len(fields) != 3
+            or len(fields) != 4
             or len(fields[0]) != 6
             or any(byte not in b"01234567" for byte in fields[0])
             or fields[2] != b"0"
+            or not fields[3].isdigit()
             or not _git_object_id_is_valid(fields[1])
             or raw_path in seen_paths
         ):
             inventory_findings.append(
                 Finding(
-                    "resource.inventory_protocol",
+                    _RI_PROTOCOL,
                     ".",
                     "Git stage inventory contains a malformed metadata record",
                 )
             )
             return []
         seen_paths.add(raw_path)
-        raw_entries.append((fields[0], raw_path))
+        raw_entries.append((fields[0], fields[1], raw_path))
+    if not raw_entries:
+        return []
     try:
-        return [
-            (mode.decode("ascii"), raw_path.decode("utf-8"))
-            for mode, raw_path in sorted(raw_entries, key=lambda entry: (entry[1], entry[0]))
+        entries = [
+            (mode.decode("ascii"), object_id, raw_path.decode("utf-8"))
+            for mode, object_id, raw_path in sorted(raw_entries, key=lambda entry: (entry[2], entry[0]))
         ]
     except UnicodeDecodeError:
         inventory_findings.append(
             Finding(
-                "resource.inventory_encoding",
+                _RI_ENCODING,
                 ".",
                 "Git stage inventory contains a repository path that is not valid UTF-8",
             )
         )
         return []
+    object_ids = tuple(dict.fromkeys(object_id for _, object_id, _ in raw_entries))
+    types = _read_git_records(
+        root,
+        ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
+        maximum_record_bytes=GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES,
+        input_records=object_ids,
+        flag="-Z",
+    )
+    if types.finding is not None:
+        inventory_findings.append(types.finding)
+        return []
+    if types.records is None:
+        if required:
+            inventory_findings.append(
+                Finding("resource.inventory_stage", ".", "Git object-type inventory is unavailable")
+            )
+        return []
+    actual_types: dict[bytes, bytes] = {}
+    for object_id, record in zip(object_ids, types.records, strict=False):
+        reported_id, separator, object_type = record.partition(b" ")
+        if (
+            not separator
+            or reported_id != object_id
+            or object_type not in {b"blob", b"commit", b"tree", b"tag"}
+        ):
+            inventory_findings.append(
+                Finding(_RI_PROTOCOL, ".", "Git object-type inventory is malformed")
+            )
+            return []
+        actual_types[object_id] = object_type
+    if len(types.records) != len(object_ids):
+        inventory_findings.append(
+            Finding(_RI_PROTOCOL, ".", "Git object-type inventory count is incorrect")
+        )
+        return []
+    expected_types = {
+        b"100644": b"blob",
+        b"100755": b"blob",
+        b"120000": b"blob",
+        b"160000": b"commit",
+    }
+    for mode, object_id, path in entries:
+        mode = mode.encode("ascii")
+        if (expected := expected_types.get(mode)) is not None and actual_types[object_id] != expected:
+            inventory_findings.append(
+                Finding(
+                    "git.index_object_type", path, "Git index mode and object type disagree"
+                )
+            )
+            return []
+    return [(mode, path) for mode, _, path in entries]
 
 
 class FoundationValidator:
@@ -1337,7 +1422,7 @@ class FoundationValidator:
             if unexpected_stage_paths:
                 self.findings.append(
                     Finding(
-                        "resource.inventory_protocol",
+                        _RI_PROTOCOL,
                         unexpected_stage_paths[0],
                         "Git stage inventory path is absent from the file inventory",
                     )
@@ -1351,6 +1436,50 @@ class FoundationValidator:
                         "Git file inventory path has no stage-zero index entry",
                     )
                 )
+        if not self.findings and git_inventory_succeeded:
+            intent = _read_git_records(
+                self.root,
+                [
+                    "diff-files",
+                    *(
+                        "--ita-invisible-in-index --no-ext-diff --no-textconv "
+                        "--ignore-submodules=none --no-renames --name-only --diff-filter=A"
+                    ).split(),
+                ],
+                maximum_record_bytes=GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+            )
+            if intent.finding is not None:
+                self.findings.append(intent.finding)
+            elif intent.records is None:
+                self.findings.append(
+                    Finding("resource.inventory_intent", ".", "Git intent inventory is unavailable")
+                )
+            elif intent.records:
+                if any(not _git_path_is_relative(value) for value in intent.records) or len(
+                    set(intent.records)
+                ) != len(intent.records):
+                    self.findings.append(
+                        Finding(
+                            _RI_PROTOCOL,
+                            ".",
+                            "Git intent inventory has malformed paths",
+                        )
+                    )
+                else:
+                    try:
+                        intent_path = min(intent.records).decode("utf-8")
+                    except UnicodeDecodeError:
+                        self.findings.append(
+                            Finding(
+                                _RI_ENCODING,
+                                ".",
+                                "Git intent path is not valid UTF-8",
+                            )
+                        )
+                    else:
+                        self.findings.append(
+                            Finding("git.intent_to_add", intent_path, "Git index entry is intent-to-add")
+                        )
         self._inventory_has_findings = bool(self.findings)
         self._authenticated_protected_bytes: dict[str, bytes | None] = {}
         self._repository_byte_cache: dict[str, bytes | None] = {}
@@ -1361,7 +1490,19 @@ class FoundationValidator:
 
     def add(self, code: str, path: str | Path, message: str) -> None:
         path_text = relative(path, self.root) if isinstance(path, Path) else path
-        self.findings.append(Finding(code, path_text, message))
+        truncation = "... [truncated]"
+        if len(message) > GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS:
+            message = message[: GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS - len(truncation)] + truncation
+        if len(self.findings) < GATE0_MAXIMUM_FINDINGS:
+            self.findings.append(Finding(code, path_text, message))
+        elif len(self.findings) == GATE0_MAXIMUM_FINDINGS:
+            self.findings.append(
+                Finding(
+                    "resource.finding_count",
+                    ".",
+                    f"validation retained {GATE0_MAXIMUM_FINDINGS} detailed findings; further findings are suppressed",
+                )
+            )
 
     def _resource_issue(self, code: str, path: str | Path, message: str) -> None:
         path_text = relative(path, self.root) if isinstance(path, Path) else path
@@ -1371,8 +1512,6 @@ class FoundationValidator:
             self.add(code, path_text, message)
 
     def _inventory_files_in(self, directory: str, *, recursive: bool = False) -> list[Path]:
-        """Select files lexically from the already bounded repository inventory."""
-
         prefix = PurePosixPath(directory).as_posix().rstrip("/") + "/"
         selected: list[tuple[str, Path]] = []
         for path in self.repository_files:
@@ -1385,14 +1524,10 @@ class FoundationValidator:
         return [path for _, path in sorted(selected)]
 
     def _inventory_has_file(self, path: Path) -> bool:
-        """Check file presence without resolving any worktree path component."""
-
         value = relative(path, self.root)
         return any(relative(candidate, self.root) == value for candidate in self.repository_files)
 
     def _inventory_has_path(self, path: Path) -> bool:
-        """Check file-or-directory presence using only the bounded inventory."""
-
         value = relative(path, self.root).rstrip("/")
         prefix = value + "/"
         return any(
@@ -1438,7 +1573,7 @@ class FoundationValidator:
         value, candidate = lexical_path
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 candidate,
                 "host cannot provide component-relative no-follow repository inspection",
             )
@@ -1500,14 +1635,12 @@ class FoundationValidator:
         return None
 
     def _preflight_repository_resources(self) -> bool:
-        """Reject unsafe repository metadata before parsing the policy itself."""
-
         if self._resource_preflight_complete:
             return not self._resource_issue_keys
         self._resource_preflight_complete = True
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 ".",
                 "host cannot provide component-relative no-follow repository reads",
             )
@@ -1545,7 +1678,7 @@ class FoundationValidator:
                         metadata
                     ):
                         self._resource_issue(
-                            "resource.concurrent_change",
+                            _R_CONCURRENT,
                             candidate,
                             "repository file changed during resource preflight",
                         )
@@ -1559,7 +1692,7 @@ class FoundationValidator:
                         )
                 except OSError as exc:
                     self._resource_issue(
-                        "resource.unsupported_host",
+                        _R_UNSUPPORTED,
                         candidate,
                         f"cannot inspect repository file allocation: {exc}",
                     )
@@ -1578,8 +1711,6 @@ class FoundationValidator:
         return not self._resource_issue_keys
 
     def _read_repository_bytes(self, path: Path) -> bytes | None:
-        """Read one bounded repository snapshot and reuse it for every consumer."""
-
         lexical_path = self._lexical_repository_path(path)
         if lexical_path is None:
             return None
@@ -1636,7 +1767,7 @@ class FoundationValidator:
                 opened_metadata = os.fstat(source.fileno())
                 if not stat.S_ISREG(opened_metadata.st_mode) or self._metadata_signature(opened_metadata) != signature:
                     self._resource_issue(
-                        "resource.concurrent_change",
+                        _R_CONCURRENT,
                         candidate,
                         "repository file changed while it was being opened",
                     )
@@ -1648,7 +1779,7 @@ class FoundationValidator:
             return None
         if self._metadata_signature(closed_metadata) != signature:
             self._resource_issue(
-                "resource.concurrent_change",
+                _R_CONCURRENT,
                 candidate,
                 "repository file changed while it was being read",
             )
@@ -1659,7 +1790,7 @@ class FoundationValidator:
             return None
         if len(data) != opened_metadata.st_size:
             self._resource_issue(
-                "resource.concurrent_change",
+                _R_CONCURRENT,
                 candidate,
                 "repository file produced a short or inconsistent snapshot read",
             )
@@ -1669,11 +1800,9 @@ class FoundationValidator:
         return data
 
     def _open_repository_descriptor(self, value: str, candidate: Path) -> int | None:
-        """Open a regular-file candidate without following any mutable path component."""
-
         if not _secure_repository_reads_supported():
             self._resource_issue(
-                "resource.unsupported_host",
+                _R_UNSUPPORTED,
                 candidate,
                 "host cannot provide component-relative no-follow repository reads",
             )
@@ -1728,9 +1857,6 @@ class FoundationValidator:
         try:
             return tomllib.loads(text)
         except RecursionError as exc:
-            # CPython's TOML parser recursively descends through arrays and
-            # inline structures. Normalize its implementation-specific limit
-            # into the parse error already handled by every TOML caller.
             raise tomllib.TOMLDecodeError(
                 "TOML structural nesting exceeds parser capacity"
             ) from exc
@@ -1779,23 +1905,23 @@ class FoundationValidator:
             self.add("policy.invalid_json", self.policy_path, str(exc))
             return
         required = {
-            "policy_version": str,
+            _PV: str,
             "repository": str,
             "stage": str,
             "status": str,
             "default_branch": str,
             "bootstrap_steward": str,
-            "allowed_top_level_paths": list,
-            "allowed_binary_artifacts": list,
-            "required_paths": list,
-            "forbidden_paths": list,
-            "required_workflows": list,
+            _TP: list,
+            _AB: list,
+            _RP: list,
+            _FP: list,
+            _RW: list,
             "workflow_inventory": list,
-            "protected_file_digests": dict,
+            _PD: dict,
             "executable_paths": list,
-            "github_actions": dict,
+            _G: dict,
             "hosted_repository_controls": dict,
-            "required_codeowners": list,
+            _CO: list,
             "decision_gates": dict,
             "temporary_constraints": dict,
         }
@@ -1814,40 +1940,40 @@ class FoundationValidator:
         if len(self.findings) != finding_count:
             return
         string_list_keys = (
-            "allowed_top_level_paths",
-            "required_paths",
-            "forbidden_paths",
-            "required_workflows",
+            _TP,
+            _RP,
+            _FP,
+            _RW,
             "workflow_inventory",
             "executable_paths",
-            "required_codeowners",
+            _CO,
         )
         for key in string_list_keys:
             if not all(isinstance(value, str) and value for value in policy[key]):
                 self.add("policy.value", self.policy_path, f"{key} must contain non-empty strings")
-        for key in ("required_paths", "forbidden_paths"):
+        for key in (_RP, _FP):
             if any(isinstance(value, str) and "\0" in value for value in policy[key]):
                 self.add("policy.value", self.policy_path, f"{key} contains an invalid path string")
 
         expected_binary_fields = {"path", "sha256", "role", "provenance"}
-        for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
+        for index, artifact in enumerate(policy[_AB]):
             if not isinstance(artifact, dict):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] must be an object")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
             if set(artifact) != expected_binary_fields:
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has invalid fields")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has invalid fields")
                 continue
             if not all(isinstance(artifact[field], str) for field in expected_binary_fields):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] fields must be strings")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] fields must be strings")
 
-        action_policy = policy["github_actions"]
+        action_policy = policy[_G]
         action_field_types = {
-            "allowed_action_repositories": list,
-            "allowed_container_images": list,
-            "allowed_write_permissions": dict,
-            "forbidden_events": list,
-            "require_full_commit_sha": bool,
-            "require_version_comment": bool,
+            _AR: list,
+            _AI: list,
+            _WP: dict,
+            _FE: list,
+            _FS: bool,
+            _VC: bool,
         }
         for key, expected_type in action_field_types.items():
             if not isinstance(action_policy.get(key), expected_type):
@@ -1856,7 +1982,7 @@ class FoundationValidator:
                     self.policy_path,
                     f"github_actions.{key} must be {expected_type.__name__}",
                 )
-        for key in ("allowed_action_repositories", "allowed_container_images", "forbidden_events"):
+        for key in (_AR, _AI, _FE):
             values = action_policy.get(key)
             if isinstance(values, list) and not all(isinstance(value, str) and value for value in values):
                 self.add(
@@ -1870,7 +1996,7 @@ class FoundationValidator:
                     self.policy_path,
                     f"github_actions.{key} contains duplicate values",
                 )
-        write_permissions = action_policy.get("allowed_write_permissions")
+        write_permissions = action_policy.get(_WP)
         if isinstance(write_permissions, dict) and not all(
             isinstance(name, str)
             and name
@@ -1891,7 +2017,7 @@ class FoundationValidator:
                         self.policy_path,
                         "github_actions.allowed_write_permissions contains duplicate values",
                     )
-        protected_digests = policy["protected_file_digests"]
+        protected_digests = policy[_PD]
         if not all(
             isinstance(path, str)
             and path
@@ -1914,25 +2040,25 @@ class FoundationValidator:
             self.add("policy.default_branch", self.policy_path, "solo-bootstrap default branch must remain main")
         if policy["bootstrap_steward"] != "chasebryan":
             self.add("policy.steward", self.policy_path, "bootstrap steward must remain chasebryan")
-        if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", policy["policy_version"]):
+        if not re.fullmatch(r"0\.[0-9]+\.[0-9]+", policy[_PV]):
             self.add("policy.version", self.policy_path, "solo-bootstrap policy version must be a 0.x semantic version")
         for key in string_list_keys:
             values = policy[key]
             if len(values) != len(set(values)):
                 self.add("policy.duplicate", self.policy_path, f"{key} contains duplicate values")
         minimum_sets = {
-            "required_paths": MINIMUM_REQUIRED_PATHS,
-            "forbidden_paths": MINIMUM_FORBIDDEN_PATHS,
-            "required_workflows": MINIMUM_REQUIRED_WORKFLOWS,
-            "required_codeowners": MINIMUM_CODEOWNERS,
+            _RP: MINIMUM_REQUIRED_PATHS,
+            _FP: MINIMUM_FORBIDDEN_PATHS,
+            _RW: MINIMUM_REQUIRED_WORKFLOWS,
+            _CO: MINIMUM_CODEOWNERS,
         }
         for key, minimum in minimum_sets.items():
             missing = sorted(minimum - set(policy[key]))
             if missing:
                 self.add("policy.minimum", self.policy_path, f"{key} omits protected values: {', '.join(missing)}")
-        if set(policy["required_paths"]) != MINIMUM_REQUIRED_PATHS:
+        if set(policy[_RP]) != MINIMUM_REQUIRED_PATHS:
             self.add("policy.required_inventory", self.policy_path, "solo-bootstrap required-path inventory must remain exact")
-        top_level = set(policy["allowed_top_level_paths"])
+        top_level = set(policy[_TP])
         if top_level != GATE0_ALLOWED_TOP_LEVEL:
             missing = sorted(GATE0_ALLOWED_TOP_LEVEL - top_level)
             extra = sorted(top_level - GATE0_ALLOWED_TOP_LEVEL)
@@ -1941,35 +2067,35 @@ class FoundationValidator:
                 self.policy_path,
                 f"solo-bootstrap top-level allowlist drifted; missing={missing}, extra={extra}",
             )
-        for index, artifact in enumerate(policy["allowed_binary_artifacts"]):
+        for index, artifact in enumerate(policy[_AB]):
             if not isinstance(artifact, dict):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] must be an object")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] must be an object")
                 continue
             if set(artifact) != {"path", "sha256", "role", "provenance"}:
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has invalid fields")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has invalid fields")
                 continue
             if not isinstance(artifact["path"], str) or safe_manifest_path(self.root, artifact["path"]) is None:
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has unsafe path")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has unsafe path")
             if not isinstance(artifact["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"]):
-                self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] has invalid SHA-256")
+                self.add(_PB, self.policy_path, f"{_ABA}{index}] has invalid SHA-256")
             for field in ("role", "provenance"):
                 if not isinstance(artifact[field], str) or not artifact[field].strip():
-                    self.add("policy.binary", self.policy_path, f"allowed_binary_artifacts[{index}] needs {field}")
-        if policy["allowed_binary_artifacts"] != GATE0_ALLOWED_BINARY_ARTIFACTS:
+                    self.add(_PB, self.policy_path, f"{_ABA}{index}] needs {field}")
+        if policy[_AB] != GATE0_ALLOWED_BINARY_ARTIFACTS:
             self.add(
                 "policy.binary_inventory",
                 self.policy_path,
                 "official binary artifact paths, digests, roles, and provenance must remain exact",
             )
         expected_action_policy_keys = {
-            "allowed_action_repositories",
-            "allowed_container_images",
-            "allowed_write_permissions",
-            "forbidden_events",
-            "require_full_commit_sha",
-            "require_version_comment",
+            _AR,
+            _AI,
+            _WP,
+            _FE,
+            _FS,
+            _VC,
         }
-        observed_action_policy_keys = set(policy["github_actions"])
+        observed_action_policy_keys = set(policy[_G])
         if observed_action_policy_keys != expected_action_policy_keys:
             self.add(
                 "policy.action_fields",
@@ -1978,14 +2104,14 @@ class FoundationValidator:
                 f"missing={sorted(expected_action_policy_keys - observed_action_policy_keys)}, "
                 f"extra={sorted(observed_action_policy_keys - expected_action_policy_keys)}",
             )
-        action_repositories = set(policy["github_actions"].get("allowed_action_repositories", []))
+        action_repositories = set(policy[_G].get(_AR, []))
         if action_repositories != MINIMUM_ACTION_REPOSITORIES:
             self.add(
                 "policy.action_allowlist",
                 self.policy_path,
                 f"Action identities must be exact; missing={sorted(MINIMUM_ACTION_REPOSITORIES - action_repositories)}, extra={sorted(action_repositories - MINIMUM_ACTION_REPOSITORIES)}",
             )
-        container_images = set(policy["github_actions"].get("allowed_container_images", []))
+        container_images = set(policy[_G].get(_AI, []))
         if container_images != GATE0_ALLOWED_CONTAINER_IMAGES:
             self.add(
                 "policy.container_allowlist",
@@ -1996,7 +2122,12 @@ class FoundationValidator:
             self.add("policy.executables", self.policy_path, "solo-bootstrap executable allowlist must remain exact")
         if set(policy["workflow_inventory"]) != GATE0_WORKFLOW_INVENTORY:
             self.add("policy.workflow_inventory", self.policy_path, "solo-bootstrap workflow inventory must remain exact")
-        if policy["protected_file_digests"] != GATE0_PROTECTED_FILE_DIGESTS:
+        protected_digest = hashlib.sha256(
+            json.dumps(
+                policy[_PD], sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        if protected_digest != GATE0_PROTECTED_FILE_DIGEST:
             self.add(
                 "policy.protected_file_digests",
                 self.policy_path,
@@ -2004,16 +2135,16 @@ class FoundationValidator:
             )
         actual_writes = {
             name: set(values)
-            for name, values in policy["github_actions"].get("allowed_write_permissions", {}).items()
+            for name, values in policy[_G].get(_WP, {}).items()
             if isinstance(values, list)
         }
         if actual_writes != GATE0_ALLOWED_WRITE_PERMISSIONS:
             self.add("policy.write_permissions", self.policy_path, "workflow write-permission exceptions must remain exact")
-        if policy["github_actions"].get("require_full_commit_sha") is not True:
+        if policy[_G].get(_FS) is not True:
             self.add("policy.action_sha", self.policy_path, "full Action commit SHA enforcement cannot be disabled")
-        if policy["github_actions"].get("require_version_comment") is not True:
+        if policy[_G].get(_VC) is not True:
             self.add("policy.action_comment", self.policy_path, "Action version comments cannot be disabled")
-        if "pull_request_target" not in policy["github_actions"].get("forbidden_events", []):
+        if "pull_request_target" not in policy[_G].get(_FE, []):
             self.add("policy.forbidden_event", self.policy_path, "pull_request_target must remain forbidden")
         if policy["hosted_repository_controls"] != GATE0_HOSTED_REPOSITORY_CONTROLS:
             self.add(
@@ -2035,14 +2166,14 @@ class FoundationValidator:
                 f"solo-bootstrap constraints must remain exact: {expected_constraints}",
             )
         expected_decisions = {
-            "implementation_language": {"decision": "D-008", "required_status": "directed"},
-            "project_name": {"decision": "D-017", "required_status": "directed"},
-            "licenses": {"decision": "D-018", "required_status": "directed"},
-            "governance": {"decision": "D-019", "required_status": "directed"},
-            "solo_project": {"decision": "D-023", "required_status": "directed"},
-            "compiler_foundation": {"decision": "D-024", "required_status": "directed"},
-            "edition_2026_parser": {"decision": "D-025", "required_status": "directed"},
-            "typed_literal_semantics": {"decision": "D-026", "required_status": "directed"},
+            "implementation_language": {"decision": "D-008", _RS: "directed"},
+            "project_name": {"decision": "D-017", _RS: "directed"},
+            "licenses": {"decision": "D-018", _RS: "directed"},
+            "governance": {"decision": "D-019", _RS: "directed"},
+            "solo_project": {"decision": "D-023", _RS: "directed"},
+            "compiler_foundation": {"decision": "D-024", _RS: "directed"},
+            "edition_2026_parser": {"decision": "D-025", _RS: "directed"},
+            "typed_literal_semantics": {"decision": "D-026", _RS: "directed"},
         }
         if policy["decision_gates"] != expected_decisions:
             self.add("policy.decision_gates", self.policy_path, "solo-bootstrap decision gates must remain exact")
@@ -2050,18 +2181,14 @@ class FoundationValidator:
             self.policy = policy
 
     def _validate_protected_file_digests(self) -> None:
-        """Fail closed if a security-critical Gate 0 file differs from reviewed bytes."""
-
-        for value in sorted(GATE0_PROTECTED_FILE_DIGESTS):
+        for value in sorted(self.policy[_PD]):
             self._read_authenticated_protected_file(value)
 
     def _read_authenticated_protected_file(self, value: str) -> bytes | None:
-        """Read a protected file once and retain only reviewed bytes."""
-
         if value in self._authenticated_protected_bytes:
             return self._authenticated_protected_bytes[value]
         self._authenticated_protected_bytes[value] = None
-        expected = GATE0_PROTECTED_FILE_DIGESTS.get(value)
+        expected = self.policy[_PD].get(value)
         if expected is None:
             return None
         path = self.root / value
@@ -2069,7 +2196,7 @@ class FoundationValidator:
             return None
         data = self._read_repository_bytes(path)
         if data is None:
-            self.add("protected_file.unreadable", path, "bounded repository read failed")
+            self.add("protected_file.unreadable", path, _BF)
             return None
         observed = hashlib.sha256(data).hexdigest()
         if observed != expected:
@@ -2083,8 +2210,6 @@ class FoundationValidator:
         return data
 
     def _validate_hosted_control_evidence(self, *, today: dt.date | None = None) -> None:
-        """Keep the current hosted-control snapshot internally coherent."""
-
         snapshot_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["snapshot_date"])
         review_due_value = str(GATE0_HOSTED_REPOSITORY_CONTROLS["review_due_date"])
         ruleset_id = str(GATE0_HOSTED_REPOSITORY_CONTROLS["main_ruleset_id"])
@@ -2160,7 +2285,7 @@ class FoundationValidator:
                 continue
             text = self._read_repository_text(path)
             if text is None:
-                self.add("hosted_control.unreadable", path, "bounded repository read failed")
+                self.add("hosted_control.unreadable", path, _BF)
                 continue
             marker_prefixes = ("Hosted-control snapshot:", "Required-check binding:")
             observed_markers = [line for line in text.splitlines() if line.startswith(marker_prefixes)]
@@ -2193,7 +2318,7 @@ class FoundationValidator:
     def _validate_required_and_forbidden_paths(self) -> None:
         actual_paths = {relative(path, self.root) for path in self.repository_files}
         actual_top_level = {PurePosixPath(value).parts[0] for value in actual_paths}
-        for value in sorted(actual_top_level - set(self.policy["allowed_top_level_paths"])):
+        for value in sorted(actual_top_level - set(self.policy[_TP])):
             self.add("path.top_level", value, "top-level path is not admitted during Gate 0")
         static_paths = MINIMUM_REQUIRED_PATHS | GATE0_CONFORMANCE_INSTANCE_PATHS
         for value in sorted(actual_paths - static_paths):
@@ -2203,18 +2328,16 @@ class FoundationValidator:
             ):
                 continue
             self.add("path.inventory", value, "path is not admitted by the exact solo-bootstrap inventory")
-        for value in self.policy["required_paths"]:
+        for value in self.policy[_RP]:
             path = self._policy_path(value)
             if path is not None and not self._inventory_has_file(path):
                 self.add("path.required", value, "required permanent artifact is missing")
-        for value in self.policy["forbidden_paths"]:
+        for value in self.policy[_FP]:
             path = self._policy_path(value)
             if path is not None and self._inventory_has_path(path):
                 self.add("path.forbidden", value, "path is forbidden until its dependent capability decision closes")
 
     def _validate_makefile_entrypoint(self) -> None:
-        """Keep the standard local gate policy-first, exact, and serialized."""
-
         path = self.root / "Makefile"
         source = self._read_repository_text(path)
         if source is None:
@@ -2234,7 +2357,8 @@ class FoundationValidator:
             if lines.count(required) != 1:
                 self.add("make.entrypoint_contract", path, f"{meaning}: expected exactly {required!r}")
         required_compiler_fragments = {
-            'mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-cargo-home.XXXXXXXX"': "compiler checks need a fresh Cargo home",
+            'cargo_home="$$(CDPATH= cd -- "$$cargo_home" && pwd -P)"': "Cargo home must be absolute",
             "cd -- /;": "Cargo configuration discovery must start at the filesystem root",
             'env -i \\\n\t\t\t\tCARGO_HOME="$$cargo_home"': (
                 "compiler checks must start from an empty process environment"
@@ -2256,12 +2380,12 @@ class FoundationValidator:
                 "-D clippy::expect_used -D clippy::panic"
             ): "production targets must retain the strict arithmetic, slicing, and panic lint boundary",
             (
-                'run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-a" '
+                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-a" '
                 "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
                 "--release --locked --offline"
             ): "the first optimized reproducibility build needs an independent target tree",
             (
-                'run_cargo env CARGO_TARGET_DIR="$$cargo_home/repro-b" '
+                'run_cargo /usr/bin/env CARGO_TARGET_DIR="$$cargo_home/repro-b" '
                 "cargo build --manifest-path \"$$manifest\" -p orangec --bin orangec "
                 "--release --locked --offline"
             ): "the second optimized reproducibility build needs an independent target tree",
@@ -2291,8 +2415,11 @@ class FoundationValidator:
                     f"{meaning}: expected exactly {expected_count} {required!r} fragments",
                 )
         required_test_fragments = {
-            'mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"': (
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"': (
                 "foundation tests need a fresh bytecode lookup root"
+            ),
+            'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"': (
+                "the foundation-test bytecode root must be canonical before cleanup"
             ),
             'PYTHONPYCACHEPREFIX="$$pycache"': (
                 "foundation tests must not load ignored checkout bytecode"
@@ -2303,8 +2430,6 @@ class FoundationValidator:
                 self.add("make.python_cache_contract", path, f"{meaning}: expected exactly {required!r}")
 
     def _validate_compiler_dependency_boundary(self) -> None:
-        """Require the exact pinned, safe, first-party-only Rust foundation."""
-
         toolchain_path = self.root / "rust-toolchain.toml"
         try:
             toolchain = self._load_repository_toml(toolchain_path)
@@ -2358,7 +2483,7 @@ class FoundationValidator:
                 if expected_package is None
                 else isinstance(package, dict)
                 and observed_package == expected_package
-                and "workspace" not in package
+                and _WS not in package
             )
             if not package_is_exact:
                 self.add(
@@ -2373,7 +2498,7 @@ class FoundationValidator:
             def record_table(label: str, table: Any) -> None:
                 if not isinstance(table, dict):
                     self.add(
-                        "compiler.dependency_table",
+                        _CDT,
                         path,
                         f"Cargo dependency table {label!r} must be a table",
                     )
@@ -2381,40 +2506,40 @@ class FoundationValidator:
                 if table:
                     observed_tables[label] = table
 
-            for kind in ("dependencies", "dev-dependencies", "build-dependencies"):
+            for kind in (_DEPS, "dev-dependencies", "build-dependencies"):
                 if kind in manifest:
                     record_table(kind, manifest[kind])
 
-            workspace = manifest.get("workspace")
+            workspace = manifest.get(_WS)
             if workspace is not None:
                 if not isinstance(workspace, dict):
                     self.add("compiler.workspace", path, "Cargo workspace declaration must be a table")
-                elif value != "compiler/Cargo.toml":
+                elif value != _CT:
                     self.add("compiler.workspace", path, "only the root manifest may declare a workspace")
-                elif "dependencies" in workspace:
-                    record_table("workspace.dependencies", workspace["dependencies"])
+                elif _DEPS in workspace:
+                    record_table("workspace.dependencies", workspace[_DEPS])
 
             targets = manifest.get("target")
             if targets is not None:
                 if not isinstance(targets, dict):
-                    self.add("compiler.dependency_table", path, "Cargo target declaration must be a table")
+                    self.add(_CDT, path, "Cargo target declaration must be a table")
                 else:
                     for target_name, target in sorted(targets.items()):
                         if not isinstance(target, dict):
                             self.add(
-                                "compiler.dependency_table",
+                                _CDT,
                                 path,
                                 f"Cargo target {target_name!r} must be a table",
                             )
                             continue
-                        for kind in ("dependencies", "dev-dependencies", "build-dependencies"):
+                        for kind in (_DEPS, "dev-dependencies", "build-dependencies"):
                             if kind in target:
                                 record_table(f"target.{target_name}.{kind}", target[kind])
 
             patches = manifest.get("patch")
             if patches is not None:
                 if not isinstance(patches, dict):
-                    self.add("compiler.dependency_table", path, "Cargo patch declaration must be a table")
+                    self.add(_CDT, path, "Cargo patch declaration must be a table")
                 else:
                     for source_name, table in sorted(patches.items()):
                         record_table(f"patch.{source_name}", table)
@@ -2430,15 +2555,15 @@ class FoundationValidator:
                     f"expected={expected_tables!r}, observed={observed_tables!r}",
                 )
 
-        root_manifest = manifests.get("compiler/Cargo.toml")
+        root_manifest = manifests.get(_CT)
         if root_manifest is not None:
-            workspace = root_manifest.get("workspace")
+            workspace = root_manifest.get(_WS)
             observed_members = workspace.get("members") if isinstance(workspace, dict) else None
             observed_excludes = workspace.get("exclude", []) if isinstance(workspace, dict) else None
             if observed_members != GATE0_RUST_WORKSPACE_MEMBERS or observed_excludes != []:
                 self.add(
                     "compiler.workspace_members",
-                    self.root / "compiler/Cargo.toml",
+                    self.root / _CT,
                     "workspace members must remain the exact admitted package directories with no exclusions",
                 )
 
@@ -2456,8 +2581,6 @@ class FoundationValidator:
             )
 
     def _validate_compiler_language_boundary(self) -> None:
-        """Bind normative and CLI resource budgets to compiled constants."""
-
         budget_groups = (
             (ORANGE_2026_RUST_BUDGETS, True, "compiler.language_budget"),
             (ORANGEC_OPERATIONAL_BUDGETS, False, "compiler.cli_budget"),
@@ -2526,7 +2649,7 @@ class FoundationValidator:
         executable_paths = set(self.policy["executable_paths"])
         binary_artifacts = {
             artifact["path"]: artifact
-            for artifact in self.policy["allowed_binary_artifacts"]
+            for artifact in self.policy[_AB]
             if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
         }
         for mode, value in self.index_entries:
@@ -2615,7 +2738,7 @@ class FoundationValidator:
             "schema_version": "orange-brand-assets/v1",
             "status": "official",
             "authority": "chasebryan",
-            "designated_on": "2026-07-11",
+            "designated_on": _DATE,
             "source_collection": "Orange-Assets",
             "import_mode": "byte-for-byte",
         }
@@ -2686,7 +2809,7 @@ class FoundationValidator:
             asset_path = manifest_path.parent / name
             data = self._read_repository_bytes(asset_path)
             if data is None:
-                self.add("brand.asset", asset_path, "bounded repository read failed")
+                self.add("brand.asset", asset_path, _BF)
                 continue
             if media_type == "image/png":
                 if len(data) < 29 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
@@ -2710,14 +2833,34 @@ class FoundationValidator:
             for depth in range(1, len(parts)):
                 inventory_directories.add("/".join(parts[:depth]))
 
+        anchor_cache: dict[str, set[str]] = {}
         for path in (path for path in self.repository_files if path.suffix.lower() == ".md"):
             text = self._read_repository_text(path)
             if text is None:
                 continue
-            for match in MARKDOWN_LINK_RE.finditer(text):
-                raw_target = match.group(1).strip()
+            text = markdown_without_fenced_blocks_and_comments(text)
+            text = markdown_with_masked_inline_syntax(text, "[]()")
+            targets = (
+                target
+                for candidates in (
+                    markdown_inline_link_targets(text),
+                    (match.group(1) for match in MARKDOWN_CONTINUED_TITLE_RE.finditer(text)),
+                    (
+                        match.group(2)
+                        for match in MARKDOWN_REFERENCE_RE.finditer(text)
+                        if len(match.group(1)) <= 999 and match.group(1).strip()
+                    ),
+                )
+                for target in candidates
+            )
+            for value in targets:
+                raw_target = value.strip()
                 target = self._markdown_destination(raw_target)
                 if not target:
+                    continue
+                uri_target = target.replace(" ", "%20") if raw_target.startswith("<") else target
+                if not valid_format(uri_target, "uri-reference"):
+                    self.add("markdown.link_invalid", path, "link target is not a valid URI reference")
                     continue
                 try:
                     parsed = urlsplit(target)
@@ -2730,8 +2873,11 @@ class FoundationValidator:
                     continue
                 if parsed.scheme or target.startswith("//"):
                     continue
-                file_part = unquote(parsed.path)
-                fragment = unquote(parsed.fragment)
+                file_part = decode_uri_component(parsed.path)
+                fragment = decode_uri_component(parsed.fragment)
+                if file_part is None or fragment is None:
+                    self.add("markdown.link_invalid", path, "link target has invalid percent encoding")
+                    continue
                 target_path = path if not file_part else (path.parent / file_part)
                 lexical_target = self._lexical_repository_path(target_path)
                 if lexical_target is None:
@@ -2742,23 +2888,23 @@ class FoundationValidator:
                     self.add("markdown.link_missing", path, f"local link target does not exist: {raw_target}")
                     continue
                 if fragment and target_value in inventory_files and resolved.suffix.lower() == ".md":
-                    target_text = self._read_repository_text(resolved)
-                    if target_text is None:
-                        continue
-                    anchors = markdown_anchors(target_text)
+                    if target_value not in anchor_cache:
+                        target_text = self._read_repository_text(resolved)
+                        if target_text is None:
+                            continue
+                        anchor_cache[target_value] = markdown_anchors(target_text)
+                    anchors = anchor_cache[target_value]
                     if fragment not in anchors:
                         self.add("markdown.anchor_missing", path, f"anchor not found: {raw_target}")
 
     def _validate_orange_book(self) -> None:
-        """Keep the living reader guide identifiable, navigable, and substantive."""
-
         path = self.root / ORANGE_BOOK_PATH
         if not self._inventory_has_file(path):
             self.add("book.missing", path, "the canonical Orange Book manuscript is missing")
             return
         text = self._read_repository_text(path)
         if text is None:
-            self.add("book.unreadable", path, "bounded repository read failed")
+            self.add("book.unreadable", path, _BF)
             return
 
         visible_text = markdown_without_fenced_blocks_and_comments(text)
@@ -2825,13 +2971,13 @@ class FoundationValidator:
             except ValueError:
                 continue
             chapter_text = "\n".join(lines[chapter_start:chapter_end])
-            chapter_words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’-]*", chapter_text)
-            if len(chapter_words) < ORANGE_BOOK_MINIMUM_CHAPTER_WORDS:
+            chapter_word_count = sum(1 for _ in re.finditer(r"[A-Za-z0-9][A-Za-z0-9'’-]*", chapter_text))
+            if chapter_word_count < ORANGE_BOOK_MINIMUM_CHAPTER_WORDS:
                 self.add(
                     "book.chapter_length",
                     path,
                     f"{heading.removeprefix('## ')} must contain at least "
-                    f"{ORANGE_BOOK_MINIMUM_CHAPTER_WORDS} words; observed {len(chapter_words)}",
+                    f"{ORANGE_BOOK_MINIMUM_CHAPTER_WORDS} words; observed {chapter_word_count}",
                 )
 
         boundary_text = re.sub(r"(?m)^>\s?", "", visible_text)
@@ -2860,12 +3006,12 @@ class FoundationValidator:
     @staticmethod
     def _markdown_destination(raw_target: str) -> str:
         if raw_target.startswith("<") and ">" in raw_target:
-            return raw_target[1 : raw_target.index(">")]
-        if raw_target.startswith("#"):
-            return raw_target
-        # Markdown titles follow the destination after whitespace. Local spaces
-        # must be percent-encoded or enclosed in angle brackets.
-        return raw_target.split(maxsplit=1)[0]
+            target = raw_target[1 : raw_target.index(">")]
+        elif raw_target.startswith("#"):
+            target = raw_target
+        else:
+            target = raw_target.split(maxsplit=1)[0]
+        return re.sub(r"\\([\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e])", r"\1", target)
 
     def _validate_json_documents(self) -> None:
         for path in (path for path in self.repository_files if path.suffix.lower() == ".json"):
@@ -2891,9 +3037,6 @@ class FoundationValidator:
                 f"Gate 0 schema inventory must be exact; missing={sorted(GATE0_SCHEMA_PATHS - observed_schema_paths)}, extra={sorted(observed_schema_paths - GATE0_SCHEMA_PATHS)}",
             )
         for path in schema_paths:
-            # Gate 0 schemas are a closed, reviewed set. Authenticate the bytes
-            # before compiling any pattern, then parse this same buffered copy
-            # so a concurrent path replacement cannot introduce regex code.
             schema_bytes = self._read_authenticated_protected_file(relative(path, self.root))
             if schema_bytes is None:
                 continue
@@ -3009,8 +3152,6 @@ class FoundationValidator:
             if schema_path not in schemas:
                 self.add("fixture.schema_missing", manifest_path, f"schema is not registered: {schema_value}")
                 continue
-            # Schema-audit failures are authoritative. In particular, never
-            # execute an invalid regular expression while validating fixtures.
             if schema_path in schemas_with_audit_errors:
                 continue
             try:
@@ -3024,9 +3165,6 @@ class FoundationValidator:
                 schemas,
                 id_registry,
             )
-            # Cross-record checks rely on the shapes and scalar types guaranteed
-            # by the schema. Preserve the schema findings, and do not pass a
-            # structurally invalid instance into those invariant checks.
             if not issues:
                 issues.extend(validate_cross_record_invariants(instance, schema_path.name))
             if expected_valid and issues:
@@ -3099,7 +3237,7 @@ class FoundationValidator:
 
     def _validate_workflows(self) -> None:
         workflow_dir = self.root / ".github/workflows"
-        required = set(self.policy["required_workflows"])
+        required = set(self.policy[_RW])
         workflow_paths = [
             path
             for path in self._inventory_files_in(".github/workflows")
@@ -3114,14 +3252,15 @@ class FoundationValidator:
             )
         for name in sorted(required - actual):
             self.add("workflow.required", f".github/workflows/{name}", "required workflow is missing")
-        actions_policy = self.policy["github_actions"]
-        allowed = set(actions_policy.get("allowed_action_repositories", []))
-        forbidden_events = set(actions_policy.get("forbidden_events", []))
+        actions_policy = self.policy[_G]
+        allowed = set(actions_policy.get(_AR, []))
+        forbidden_events = set(actions_policy.get(_FE, []))
         allowed_writes = {
             name: set(values)
-            for name, values in actions_policy.get("allowed_write_permissions", {}).items()
+            for name, values in actions_policy.get(_WP, {}).items()
         }
         for path in workflow_paths:
+            n = path.name
             text = self._read_repository_text(path)
             if text is None:
                 continue
@@ -3134,29 +3273,33 @@ class FoundationValidator:
                 self.add("workflow.quoted_key", path, "quoted workflow keys are forbidden by the canonical source dialect")
             if re.search(r"(?m)^\s*[A-Za-z_][A-Za-z0-9_-]*\s+:", active_text):
                 self.add("workflow.key_spacing", path, "whitespace before a YAML mapping colon is forbidden")
+            if re.search(r"(?m)^(?:env| {4}env):", active_text):
+                self.add("workflow.ambient_env", path, "workflow and job env are forbidden")
+            if re.search(r"(?m)^ {4}(?:concurrency|environment|needs|outputs|strategy|uses):", active_text):
+                self.add("workflow.job_extension", path, "job extension is not reviewed")
+            if re.search(r"(?m)(?:^|[\s:{}\[\],-])(?:[&*][A-Za-z0-9_-]+|![A-Za-z0-9_!-]+|!<[^>\n]+>|<<\s*:)", active_text):
+                self.add("workflow.indirection", path, "YAML anchors, aliases, merge keys, and tags are forbidden")
+            if duplicate_yaml_mapping_key(active_text):
+                self.add("workflow.duplicate_key", path, "duplicate YAML mapping keys are forbidden")
             if re.search(r"(?m)^\s*on:\s*[\[{]", active_text) or re.search(r"(?m)^\s*jobs:\s*[\[{]", active_text):
                 self.add("workflow.flow_style", path, "on and jobs must use block-style YAML")
             if re.search(r"(?m)^\s{2}(?:pull_request|push|merge_group|schedule|workflow_dispatch):\s*[\[{]", active_text):
                 self.add("workflow.event_flow_style", path, "workflow events must use block-style YAML")
             if re.search(r"(?m)^\s+(?:container|services)\s*:", active_text):
                 self.add("workflow.container", path, "job containers and services are not admitted in Gate 0")
-            if not re.search(r"(?m)^permissions:\s*(?:\{\})?\s*$", text):
+            if "permissions: {}" not in active_lines:
                 self.add("workflow.permissions", path, "workflow must declare top-level permissions")
             if re.search(r"(?m)^\s*permissions:\s*write-all\s*$", text):
                 self.add("workflow.write_all", path, "write-all permissions are forbidden")
-            if not re.search(r"(?m)^concurrency:\s*$", text) or not re.search(
-                r"(?m)^\s+cancel-in-progress:\s*true\s*$", text
-            ):
-                self.add("workflow.concurrency", path, "workflow must cancel superseded concurrent runs")
             for event in forbidden_events:
                 if re.search(rf"(?m)^[^#\n]*\b{re.escape(event)}\b", text):
                     self.add("workflow.forbidden_event", path, f"forbidden event {event}")
-            if path.name == "ci.yml":
+            if n == "ci.yml":
                 for event in ("pull_request", "push", "merge_group"):
                     if not re.search(rf"(?m)^\s{{2}}{event}\s*:", text):
                         self.add("workflow.ci_event", path, f"required CI event is missing: {event}")
-                if re.search(r"\bpaths(?:-ignore)?\s*:", active_text):
-                    self.add("workflow.path_filter", path, "required CI must not use path filters")
+            if re.search(r"\bpaths(?:-ignore)?\s*:", active_text):
+                self.add("workflow.path_filter", path, "protected workflows must not use path filters")
             for line_number, line in enumerate(lines, start=1):
                 container_match = CONTAINER_ACTION_RE.search(line)
                 match = None if container_match else ACTION_RE.search(line)
@@ -3181,42 +3324,40 @@ class FoundationValidator:
                         continue
                     if action not in allowed:
                         self.add("workflow.action_allowlist", path, f"line {line_number}: action not allowed: {action}")
-                    if actions_policy.get("require_full_commit_sha") and not re.fullmatch(r"[0-9a-f]{40}", ref):
+                    if actions_policy.get(_FS) and not re.fullmatch(r"[0-9a-f]{40}", ref):
                         self.add("workflow.mutable_action", path, f"line {line_number}: action ref must be a full commit SHA")
-                    if actions_policy.get("require_version_comment") and not version:
+                    if actions_policy.get(_VC) and not version:
                         self.add("workflow.version_comment", path, f"line {line_number}: pinned action needs a version comment")
                     elif version and not re.fullmatch(r"v[0-9]+(?:\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?", version):
                         self.add("workflow.version_comment", path, f"line {line_number}: invalid action version comment {version!r}")
-                    if action == "actions/checkout" and not checkout_disables_credentials(lines, line_number - 1):
-                        self.add("workflow.checkout_credentials", path, f"line {line_number}: checkout must set persist-credentials: false")
                 write_match = re.match(r"^\s+([a-z][a-z0-9-]*)\s*:\s*[\"']?write[\"']?(?:\s+#.*)?\s*$", line)
-                if write_match and write_match.group(1) not in allowed_writes.get(path.name, set()):
+                if write_match and write_match.group(1) not in allowed_writes.get(n, set()):
                     self.add(
                         "workflow.write_permission",
                         path,
                         f"line {line_number}: {write_match.group(1)}: write is not allowed in this workflow",
                     )
-                runner_match = re.match(r"^\s+runs-on:\s*(.+?)\s*$", line)
-                if runner_match:
-                    runner = runner_match.group(1).strip().strip("\"'")
-                    if "${{" in runner or "self-hosted" in runner or "latest" in runner:
-                        self.add("workflow.runner", path, f"line {line_number}: runner must be a fixed GitHub-hosted image")
-            for job_name, block in workflow_jobs(lines):
+            minutes = {_DR: 10, _SC: 20}.get(n, 15)
+            for job_name, block in workflow_jobs(active_lines):
                 block_text = "\n".join(block)
-                if not re.search(r"(?m)^\s{4}timeout-minutes:\s*[1-9][0-9]*\s*$", block_text):
-                    self.add("workflow.timeout", path, f"job {job_name} needs timeout-minutes")
-                if not re.search(r"(?m)^\s{4}permissions:\s*(?:\{\})?\s*$", block_text):
-                    self.add("workflow.job_permissions", path, f"job {job_name} needs explicit permissions")
+                if block.count("    runs-on: ubuntu-24.04") != 1:
+                    self.add("workflow.runner", path, f"job {job_name} runner drift")
+                if not re.search(rf"(?m)^\s{{4}}timeout-minutes:\s*{minutes}\s*$", block_text):
+                    self.add("workflow.timeout", path, f"job {job_name} timeout drift")
+                q = "    permissions:\n      contents: read" + ("\n      security-events: write" if n == _SC else "")
+                if f"{q}\n    steps:" not in block_text:
+                    self.add("workflow.job_permissions", path, f"job {job_name} permission drift")
             jobs = workflow_jobs(lines)
             if not jobs:
                 self.add("workflow.jobs", path, "workflow must contain canonical two-space-indented jobs")
             for line_number in unsafe_run_interpolations(lines):
                 self.add("workflow.untrusted_interpolation", path, f"untrusted event data is interpolated into run near line {line_number}")
             concurrency = top_level_block(active_lines, "concurrency")
-            if not any(re.fullmatch(r"\s{2}cancel-in-progress:\s*true\s*", line) for line in concurrency):
-                self.add("workflow.concurrency", path, "top-level concurrency must set cancel-in-progress: true")
-            if any(re.search(r"cancel-in-progress:\s*false", line) for line in active_lines):
-                self.add("workflow.concurrency_false", path, "cancel-in-progress: false is forbidden")
+            p = {"ci.yml": "required-ci", _SC: "openssf-scorecard"}.get(n, path.stem)
+            c = "github.event.pull_request.number || github.ref" if n in {"ci.yml", _DR} else "github.ref"
+            reviewed = (f"  group: {p}-${{{{ {c} }}}}", "  cancel-in-progress: true")
+            if tuple(concurrency) != reviewed:
+                self.add("workflow.concurrency", path, "concurrency contract drift")
             self._validate_required_workflow_content(path, active_text)
 
     def _validate_dependabot(self) -> None:
@@ -3253,47 +3394,36 @@ class FoundationValidator:
                     self.add("dependency_review.configuration", review_path, f"missing {meaning}: {setting}")
 
     def _validate_required_workflow_content(self, path: Path, text: str) -> None:
-        requirements: dict[str, tuple[str, ...]] = {
-            "ci.yml": (
-                "name: Required CI / docs-policy-workflows",
-                "name: Enforce solo contribution boundary",
-                "github.event.pull_request.user.login != 'chasebryan'",
-                "Solo mode does not accept third-party pull requests until D-018 selects contribution terms.",
-                "run: env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES -u MAKEOVERRIDES -u MFLAGS make --no-builtin-rules --no-builtin-variables check-compiler",
-                "run: pycache=\"$(mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; trap 'rm -rf -- \"$pycache\"' EXIT; env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'",
-                "run: env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py",
-                "DavidAnson/markdownlint-cli2-action@",
-                "run: ./scripts/ci/install-actionlint",
-                '"$RUNNER_TEMP/actionlint/actionlint" -color',
-                "zizmorcore/zizmor-action@",
-                "online-audits: false",
-            ),
-            "dependency-review.yml": (
-                "name: Dependency Review / policy",
-                "actions/dependency-review-action@",
-                "base-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}",
-                "config-file: ./.github/dependency-review-config.yml",
-                "head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}",
-            ),
-            "scorecard.yml": (
-                "name: OpenSSF Scorecard / analysis",
-                "if: ${{ github.ref == 'refs/heads/main' }}",
-                "docker run --rm",
-                "ghcr.io/ossf/scorecard-action@sha256:",
-                "github/codeql-action/upload-sarif@",
-            ),
+        n = path.name
+        push = "  push:\n    branches:\n      - main"
+        pull = push.replace("push", "pull_request")
+        merge = "  merge_group:\n    types:\n      - checks_requested"
+        dispatch = "\n  workflow_dispatch:"
+        event_contracts = {
+            "ci.yml": f"{pull}\n{push}\n{merge}",
+            _DR: f"{pull}\n{merge}",
+            _SC: f'{push}\n  schedule:\n    - cron: "41 5 * * 6"',
+            _EL: f'{push}\n  schedule:\n    - cron: "23 4 * * 1"{dispatch}',
+            _O: f'{push}\n  schedule:\n    - cron: "17 6 * * 3"{dispatch}',
         }
-        for required in requirements.get(path.name, ()):
-            if required not in text:
-                self.add("workflow.required_content", path, f"missing protected workflow content: {required}")
-        if path.name == "scorecard.yml" and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
+        if "\n".join(top_level_block(text.splitlines(), "on")) != event_contracts.get(n):
+            self.add("workflow.event_contract", path, "workflow triggers must match their reviewed contract")
+        defaults = tuple(top_level_block(text.splitlines(), "defaults"))
+        reviewed_defaults = (
+            ("  run:", "    shell: /bin/bash -p -e -o pipefail {0}")
+            if n in {"ci.yml", _EL} else ()
+        )
+        if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
+            self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
+        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy", _SC: "OpenSSF Scorecard / analysis", _EL: "External Links / scheduled audit", _O: "Workflow Online Audit / upstream metadata"}.get(n)
+        if required_name and f"name: {required_name.split(' /')[0]}" not in text.splitlines()[:1]:
+            self.add("workflow.name_contract", path, "workflow name drift")
+        if required_name and f"    name: {required_name}" not in text.splitlines():
+            self.add("workflow.required_content", path, f"missing protected job name: {required_name}")
+        if n == _SC and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
             self.add("workflow.privileged_dispatch", path, "Scorecard must not allow manual ref selection")
         if "continue-on-error:" in text:
             self.add("workflow.continue_on_error", path, "continue-on-error is forbidden in Gate 0 workflows")
-        if path.name == "ci.yml":
-            for job_name, block in workflow_jobs(text.splitlines()):
-                if job_name == "required" and any(re.match(r"^\s{4}if:\s*", line) for line in block):
-                    self.add("workflow.required_job_condition", path, "required CI job must not have a job-level condition")
         expected_steps: dict[str, tuple[str, tuple[str, ...]]] = {
             "ci.yml": (
                 "required",
@@ -3310,22 +3440,30 @@ class FoundationValidator:
                     "Audit GitHub Actions security",
                 ),
             ),
-            "dependency-review.yml": ("review", ("Checkout", "Review dependency changes")),
-            "scorecard.yml": (
+            _DR: ("review", ("Checkout", "Review dependency changes")),
+            _SC: (
                 "analysis",
                 ("Checkout", "Run OpenSSF Scorecard", "Preserve SARIF result", "Upload result to code scanning"),
             ),
-            "external-links.yml": ("links", ("Checkout", "Install checksum-verified lychee", "Check external links")),
-            "workflow-online-audit.yml": ("metadata", ("Checkout", "Audit workflow source and upstream metadata")),
+            _EL: ("links", ("Checkout", "Install checksum-verified lychee", "Check external links")),
+            _O: ("metadata", ("Checkout", "Audit workflow source and upstream metadata")),
         }
-        if path.name in expected_steps:
-            job_name, names = expected_steps[path.name]
+        if n in expected_steps:
+            job_name, names = expected_steps[n]
             jobs = dict(workflow_jobs(text.splitlines()))
             if set(jobs) != {job_name}:
                 self.add("workflow.job_contract", path, f"workflow job set must be exactly {{{job_name}}}")
             if job_name not in jobs:
                 self.add("workflow.step_contract", path, f"missing protected job {job_name}")
             else:
+                conditions = tuple(
+                    line.strip() for line in jobs[job_name] if line.startswith("    if:")
+                )
+                expected_conditions = (
+                    ("if: ${{ github.ref == 'refs/heads/main' }}",) if n == _SC else ()
+                )
+                if conditions != expected_conditions:
+                    self.add("workflow.job_condition_contract", path, "job condition must match its reviewed contract")
                 steps = workflow_steps(jobs[job_name])
                 observed_names = tuple(name for name, _ in steps)
                 if observed_names != names:
@@ -3333,115 +3471,70 @@ class FoundationValidator:
                 self._validate_step_details(path, job_name, dict(steps))
 
     def _validate_step_details(self, path: Path, job_name: str, steps: Mapping[str, list[str]]) -> None:
-        def require(step_name: str, values: Sequence[str]) -> None:
-            block = yaml_without_comments("\n".join(steps.get(step_name, [])))
-            for value in values:
-                if value not in block:
-                    self.add("workflow.step_contract", path, f"{job_name}/{step_name} is missing {value!r}")
+        n = path.name
+        checkout = yaml_without_comments("\n".join(steps.get("Checkout", [])))
+        expected_checkout = '''      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 1
+          persist-credentials: false'''
+        if checkout != expected_checkout:
+            self.add("workflow.checkout_contract", path, f"{job_name}/Checkout must match the reviewed revision-bound contract")
 
-        allowed_step_conditions: dict[str, set[str]] = {
-            "ci.yml": {"Enforce solo contribution boundary"},
-            "scorecard.yml": {"Preserve SARIF result", "Upload result to code scanning"},
-        }
-        for step_name, lines in steps.items():
-            active_lines = yaml_without_comments("\n".join(lines)).splitlines()
-            keys = [
-                match.group(1)
-                for line in active_lines
-                if (match := re.match(r"^\s{8}([a-z][a-z0-9-]*):", line))
-            ]
-            for key in set(keys):
-                if keys.count(key) > 1:
-                    self.add("workflow.step_duplicate_key", path, f"{job_name}/{step_name} repeats {key}")
-            execution_keys = keys.count("run") + keys.count("uses")
-            if execution_keys != 1:
-                self.add("workflow.step_execution", path, f"{job_name}/{step_name} needs exactly one run or uses key")
-            if "if" in keys and step_name not in allowed_step_conditions.get(path.name, set()):
-                self.add("workflow.step_condition", path, f"{job_name}/{step_name} must not be conditional")
-            block = "\n".join(active_lines)
-            for bypass in ("|| true", "set +e", "continue-on-error:"):
-                if bypass in block:
-                    self.add("workflow.fail_open", path, f"{job_name}/{step_name} contains fail-open construct {bypass!r}")
-
-        if path.name == "ci.yml":
-            require("Checkout", ("uses: actions/checkout@", "persist-credentials: false"))
-            require(
-                "Enforce solo contribution boundary",
-                (
-                    "if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}",
-                    'echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2',
-                    "exit 1",
-                ),
-            )
-            require(
-                "Validate Rust compiler",
-                (
-                    "run: env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
-                    "-u MAKEOVERRIDES -u MFLAGS make --no-builtin-rules --no-builtin-variables check-compiler",
-                ),
-            )
-            require(
-                "Run foundation validator unit tests",
-                (
-                    "run: pycache=\"$(mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
-                    "trap 'rm -rf -- \"$pycache\"' EXIT; env -i HOME=\"$HOME\" LANG=C LC_ALL=C "
-                    "PATH=\"$PATH\" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC "
-                    "python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, \".\"); "
-                    "unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'",
-                ),
-            )
-            require(
-                "Validate solo-bootstrap repository policy",
-                (
-                    "run: env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
-                    "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py",
-                ),
-            )
-            require("Lint Markdown", ("uses: DavidAnson/markdownlint-cli2-action@",))
-            require("Install actionlint", ("run: ./scripts/ci/install-actionlint",))
-            require("Validate GitHub Actions workflows", ('"$RUNNER_TEMP/actionlint/actionlint" -color',))
-            require("Audit GitHub Actions security", ("uses: zizmorcore/zizmor-action@", "online-audits: false", "persona: pedantic"))
-        elif path.name == "dependency-review.yml":
-            require("Review dependency changes", ("uses: actions/dependency-review-action@", "base-ref:", "head-ref:", "config-file:"))
-        elif path.name == "scorecard.yml":
-            require(
-                "Run OpenSSF Scorecard",
-                (
-                    "shell: /bin/bash -p -e -o pipefail {0}",
-                    "run: |",
-                    "set -euo pipefail",
-                    'test -n "${INPUT_REPO_TOKEN:-}"',
-                    'test -r "$GITHUB_EVENT_PATH"',
-                    'test -d "$GITHUB_WORKSPACE"',
-                    "printf '::add-mask::%s\\n' \"$INPUT_REPO_TOKEN\"",
-                    'rm -f -- "$GITHUB_WORKSPACE/results.sarif"',
-                    "docker run --rm",
-                    "--read-only",
-                    "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777",
-                    "--cap-drop=ALL",
-                    "--cap-add=DAC_OVERRIDE",
-                    "--security-opt=no-new-privileges=true",
-                    "--pids-limit=256",
-                    '--mount "type=bind,source=${GITHUB_EVENT_PATH},target=/github/workflow/event.json,readonly"',
-                    '--mount "type=bind,source=${GITHUB_WORKSPACE},target=/github/workspace"',
-                    "--workdir /github/workspace",
-                    "--env GITHUB_ACTIONS=true",
-                    "--env GITHUB_API_URL",
-                    "--env GITHUB_EVENT_NAME",
-                    "--env GITHUB_EVENT_PATH=/github/workflow/event.json",
-                    "--env GITHUB_REF",
-                    "--env GITHUB_REPOSITORY",
-                    "--env GITHUB_WORKSPACE=/github/workspace",
-                    "--env INPUT_FILE_MODE=archive",
-                    "--env INPUT_PUBLISH_RESULTS=false",
-                    "--env INPUT_REPO_TOKEN",
-                    "--env INPUT_RESULTS_FILE=results.sarif",
-                    "--env INPUT_RESULTS_FORMAT=sarif",
-                    "ghcr.io/ossf/scorecard-action@sha256:2dd6a6d60100f78ef24e14a47941d0087a524b4d3642041558239b1c6097c941",
-                    "INPUT_REPO_TOKEN: ${{ github.token }}",
-                    'test -s "$GITHUB_WORKSPACE/results.sarif"',
-                ),
-            )
+        if n == "ci.yml":
+            boundary = yaml_without_comments("\n".join(steps.get("Enforce solo contribution boundary", [])))
+            expected_boundary = '''      - name: Enforce solo contribution boundary
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'chasebryan' }}
+        run: |
+          echo "Solo mode does not accept third-party pull requests until D-018 selects contribution terms." >&2
+          exit 1'''
+            if boundary != expected_boundary:
+                self.add("workflow.solo_boundary_contract", path, "the solo contribution guard must match its reviewed fail-closed contract")
+            ci_runs = {
+                "Validate solo-bootstrap repository policy": GATE0_CI_POLICY_RUN,
+                "Run foundation validator unit tests": GATE0_CI_POLICY_TEST_RUN,
+                "Install selected Rust components": 'run: /usr/bin/env -i HOME="$HOME" LANG=C LC_ALL=C PATH="$PATH" TZ=UTC rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt --no-self-update',
+                "Validate Rust compiler": GATE0_CI_COMPILER_RUN,
+            }
+            for step_name, expected_run in ci_runs.items():
+                block = yaml_without_comments("\n".join(steps.get(step_name, [])))
+                if block != f"      - name: {step_name}\n        {expected_run}":
+                    self.add("workflow.ci_gate_contract", path, f"{job_name}/{step_name} must match its reviewed fail-closed command")
+            ci_tools = {
+                "Lint Markdown": '''      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@8de2aa07cae85fd17c0b35642db70cf5495f1d25
+        with:
+          globs: |
+            **/*.md
+            .github/**/*.md''',
+                "Install actionlint": '''      - name: Install actionlint
+        run: ./scripts/ci/install-actionlint "$RUNNER_TEMP/actionlint"''',
+                "Validate GitHub Actions workflows": '''      - name: Validate GitHub Actions workflows
+        run: |
+          "$RUNNER_TEMP/actionlint/actionlint" -color''',
+                "Audit GitHub Actions security": '''      - name: Audit GitHub Actions security
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa
+        with:
+          advanced-security: false
+          annotations: false
+          online-audits: false
+          persona: pedantic
+          version: "1.26.1"''',
+            }
+            for step_name, expected in ci_tools.items():
+                if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
+                    self.add("workflow.ci_tool_contract", path, f"{job_name}/{step_name} must match its reviewed tool contract")
+        elif n == _DR:
+            review = yaml_without_comments("\n".join(steps.get("Review dependency changes", [])))
+            expected_review = '''      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
+        with:
+          base-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          config-file: ./.github/dependency-review-config.yml
+          head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}'''
+            if review != expected_review:
+                self.add("workflow.dependency_review_contract", path, "dependency review must use only the reviewed configuration file and revision inputs")
+        elif n == _SC:
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
             expected_scorecard_block = '''      - name: Run OpenSSF Scorecard
         shell: /bin/bash -p -e -o pipefail {0}
@@ -3453,8 +3546,16 @@ class FoundationValidator:
           test -r "$GITHUB_EVENT_PATH"
           test -d "$GITHUB_WORKSPACE"
           printf '::add-mask::%s\\n' "$INPUT_REPO_TOKEN"
-          rm -f -- "$GITHUB_WORKSPACE/results.sarif"
-          docker run --rm \\
+          /usr/bin/rm -f -- "$GITHUB_WORKSPACE/results.sarif"
+          /usr/bin/env -i \\
+            DOCKER_HOST=unix:///var/run/docker.sock \\
+            GITHUB_API_URL="$GITHUB_API_URL" \\
+            GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \\
+            GITHUB_REF="$GITHUB_REF" \\
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \\
+            HOME="$RUNNER_TEMP" \\
+            INPUT_REPO_TOKEN="$INPUT_REPO_TOKEN" \\
+            /usr/bin/docker run --rm \\
             --read-only \\
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=1g,mode=1777 \\
             --cap-drop=ALL \\
@@ -3484,47 +3585,45 @@ class FoundationValidator:
                     path,
                     f"{job_name}/Run OpenSSF Scorecard must match the reviewed Docker runtime contract exactly",
                 )
-            image = next(iter(GATE0_ALLOWED_CONTAINER_IMAGES))
-            if scorecard_block.count(image) != 1:
-                self.add(
-                    "workflow.scorecard_image",
-                    path,
-                    f"{job_name}/Run OpenSSF Scorecard must invoke the one admitted image exactly once",
-                )
-            if "docker://" in scorecard_block:
-                self.add(
-                    "workflow.scorecard_runtime",
-                    path,
-                    f"{job_name}/Run OpenSSF Scorecard must use the hosted runner Docker CLI",
-                )
-            for forbidden in (
-                'INPUT_PUBLISH_RESULTS: "true"',
-                "INPUT_PUBLISH_RESULTS=true",
-                "INPUT_INTERNAL_PUBLISH_BASE_URL",
-                "INPUT_INTERNAL_DEFAULT_TOKEN",
-            ):
-                if forbidden in scorecard_block:
-                    self.add(
-                        "workflow.scorecard_publication",
-                        path,
-                        f"{job_name}/Run OpenSSF Scorecard contains forbidden public publication setting {forbidden!r}",
-                    )
-            for forbidden in (
-                "--privileged",
-                "--cap-add=ALL",
-                "--cap-add=SYS_ADMIN",
-                "--device",
-                "--entrypoint",
-                "--network=host",
-                "/var/run/docker.sock",
-            ):
-                if forbidden in scorecard_block:
-                    self.add(
-                        "workflow.scorecard_runtime",
-                        path,
-                        f"{job_name}/Run OpenSSF Scorecard contains forbidden Docker option {forbidden!r}",
-                    )
-            require("Upload result to code scanning", ("uses: github/codeql-action/upload-sarif@",))
+            uploads = {
+                "Preserve SARIF result": '''      - name: Preserve SARIF result
+        if: ${{ always() && hashFiles('results.sarif') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          if-no-files-found: error
+          name: openssf-scorecard-sarif
+          path: results.sarif
+          retention-days: 14''',
+                "Upload result to code scanning": '''      - name: Upload result to code scanning
+        if: ${{ always() && hashFiles('results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9
+        with:
+          sarif_file: results.sarif''',
+            }
+            for step_name, expected in uploads.items():
+                if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
+                    self.add("workflow.scorecard_upload_contract", path, f"{job_name}/{step_name} must match its reviewed SARIF upload contract")
+        elif n == _EL:
+            commands = {
+                "Install checksum-verified lychee": 'run: ./scripts/ci/install-lychee "$RUNNER_TEMP/lychee"',
+                "Check external links": 'run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee"',
+            }
+            for step_name, command in commands.items():
+                expected = f"      - name: {step_name}\n        {command}"
+                if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
+                    self.add("workflow.external_links_contract", path, f"{job_name}/{step_name} must match its reviewed link-audit command")
+        elif n == _O:
+            block = yaml_without_comments("\n".join(steps.get("Audit workflow source and upstream metadata", [])))
+            expected = '''      - name: Audit workflow source and upstream metadata
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa
+        with:
+          advanced-security: false
+          annotations: false
+          online-audits: true
+          persona: pedantic
+          version: "1.26.1"'''
+            if block != expected:
+                self.add("workflow.online_audit_contract", path, f"{job_name}/Audit workflow source and upstream metadata must match its reviewed online-audit contract")
 
     def _validate_codeowners(self) -> None:
         path = self.root / ".github/CODEOWNERS"
@@ -3538,7 +3637,7 @@ class FoundationValidator:
             for line in text.splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         }
-        for required in self.policy["required_codeowners"]:
+        for required in self.policy[_CO]:
             if required not in active_lines:
                 self.add("codeowners.required", path, f"missing critical ownership rule: {required}")
         for line in active_lines:
@@ -3556,7 +3655,7 @@ class FoundationValidator:
         text = markdown_without_fenced_blocks_and_comments(source)
         for gate, rule in self.policy["decision_gates"].items():
             decision = re.escape(rule.get("decision", ""))
-            expected = rule.get("required_status")
+            expected = rule.get(_RS)
             sections = list(re.finditer(
                 rf"(?ms)^##\s+{decision}\b[^\n]*\n(?P<body>.*?)(?=^##\s+|\Z)",
                 text,
@@ -3607,8 +3706,11 @@ class FoundationValidator:
                     charter_path,
                     f"section 5 changed: expected {GATE0_CHARTER_SECTION_SHA256}, observed {observed}",
                 )
-        recorded_digests = re.findall(r"\b[0-9a-f]{64}\b", text)
-        if recorded_digests.count(GATE0_CHARTER_SECTION_SHA256) != 1:
+        recorded_digest_count = sum(
+            match.group() == GATE0_CHARTER_SECTION_SHA256
+            for match in re.finditer(r"\b[0-9a-f]{64}\b", text)
+        )
+        if recorded_digest_count != 1:
             self.add(
                 "traceability.recorded_digest",
                 path,
@@ -3620,12 +3722,13 @@ class FoundationValidator:
         feature_ids = tuple(row[0] for row in feature_rows)
         if feature_ids != GATE0_FEATURE_IDS:
             self.add("traceability.feature_ids", path, f"feature rows must be exact and ordered: {GATE0_FEATURE_IDS}")
-        known_decisions = set(
-            re.findall(
+        known_decisions = {
+            match.group(1)
+            for match in re.finditer(
                 r"(?m)^##\s+(D-[0-9]{3})\b",
                 markdown_without_fenced_blocks_and_comments(decisions_source),
             )
-        )
+        }
         trace_states: dict[str, str] = {}
         allowed_decision_states = {"accepted", "directed", "proposed", "investigate", "blocked", "superseded"}
         for row in feature_rows:
@@ -4266,11 +4369,11 @@ class FoundationValidator:
                     decision_revision = metadata.get("decision-revision")
                     approval_records = metadata.get("approval-records")
                     if not isinstance(decision_revision, str) or not re.fullmatch(r"[0-9a-f]{40}", decision_revision):
-                        self.add("record.acceptance", path, "Accepted record needs a full reviewed commit in decision-revision")
+                        self.add(_RA, path, "Accepted record needs a full reviewed commit in decision-revision")
                     if not isinstance(approval_records, list) or not approval_records or not all(
                         nonempty_scalar(item) for item in approval_records
                     ):
-                        self.add("record.acceptance", path, "Accepted record needs immutable approval-record references")
+                        self.add(_RA, path, "Accepted record needs immutable approval-record references")
                     if prefix == "OEP":
                         if isinstance(decision_revision, str) and re.fullmatch(r"[0-9a-f]{40}", decision_revision):
                             bound_revision = re.compile(
@@ -4281,15 +4384,15 @@ class FoundationValidator:
                                 for item in approval_records
                             ):
                                 self.add(
-                                    "record.acceptance",
+                                    _RA,
                                     path,
                                     "Accepted OEP approval-records must bind the exact decision-revision",
                                 )
                         if parse_iso_date(metadata.get("decision-date")) is None:
-                            self.add("record.acceptance", path, "Accepted OEP needs an exact decision-date")
+                            self.add(_RA, path, "Accepted OEP needs an exact decision-date")
                         related = metadata.get("related-decisions")
                         if not isinstance(related, list) or not related:
-                            self.add("record.acceptance", path, "Accepted OEP needs at least one related decision")
+                            self.add(_RA, path, "Accepted OEP needs at least one related decision")
                         authorities = metadata.get("review-authorities")
                         if authorities != ["Orange Project Owner"]:
                             self.add(
@@ -4302,7 +4405,7 @@ class FoundationValidator:
                             for item in approval_records
                         ):
                             self.add(
-                                "record.acceptance",
+                                _RA,
                                 path,
                                 "Accepted solo-mode OEP needs a literal solo-reviewed approval record",
                             )
@@ -4380,48 +4483,34 @@ def markdown_anchors(text: str) -> set[str]:
     return anchors
 
 
+def decode_uri_component(value: str) -> str | None:
+    if re.search(r"%(?![0-9A-Fa-f]{2})", value):
+        return None
+    try:
+        return unquote(value, errors="strict")
+    except UnicodeDecodeError:
+        return None
+
+
 def markdown_fence_error(text: str) -> str | None:
     active_char = ""
     active_length = 0
     active_line = 0
     for line_number, line in enumerate(text.splitlines(), start=1):
-        match = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if not match:
             continue
         marker, remainder = match.groups()
         char = marker[0]
         if not active_char:
+            if char == "`" and "`" in remainder:
+                continue
             active_char, active_length, active_line = char, len(marker), line_number
         elif char == active_char and len(marker) >= active_length and not remainder.strip():
             active_char, active_length, active_line = "", 0, 0
     if active_char:
         return f"unclosed {active_char * active_length} fence opened on line {active_line}"
     return None
-
-
-def checkout_disables_credentials(lines: Sequence[str], index: int) -> bool:
-    uses_column = lines[index].find("uses:")
-    if uses_column < 0:
-        return False
-    with_indent: int | None = None
-    for line in lines[index + 1 :]:
-        current_indent = len(line) - len(line.lstrip())
-        stripped = line.strip()
-        if stripped.startswith("-") and current_indent < uses_column:
-            break
-        if not stripped or stripped.startswith("#"):
-            continue
-        if current_indent == uses_column and re.fullmatch(r"with:\s*(?:#.*)?", stripped):
-            with_indent = current_indent
-            continue
-        if with_indent is not None and current_indent <= with_indent:
-            with_indent = None
-        if with_indent is not None and re.fullmatch(
-            r"persist-credentials:\s*(?:false|\"false\"|'false')(?:\s+#.*)?",
-            stripped,
-        ):
-            return True
-    return False
 
 
 def workflow_jobs(lines: Sequence[str]) -> list[tuple[str, list[str]]]:
@@ -4482,6 +4571,35 @@ def yaml_without_comments(text: str) -> str:
     return "\n".join(strip_yaml_comment(line).rstrip() for line in text.splitlines() if strip_yaml_comment(line).strip())
 
 
+def duplicate_yaml_mapping_key(text: str) -> str | None:
+    seen: dict[int, set[str]] = {}
+    block_indent = -1
+    for line in text.splitlines():
+        indent = len(line) - len(line.lstrip())
+        if indent > block_indent >= 0:
+            continue
+        block_indent = -1
+        source = line.lstrip()
+        sequence = source.startswith("- ")
+        if sequence:
+            source = source[2:].lstrip()
+        depth = indent + 2 if sequence else indent
+        for prior_depth in tuple(seen):
+            if prior_depth > (indent if sequence else depth):
+                del seen[prior_depth]
+        match = re.match(r"([A-Za-z_][A-Za-z0-9_-]*):", source)
+        if not match:
+            continue
+        key = match.group(1)
+        keys = seen.setdefault(depth, set())
+        if key in keys:
+            return key
+        keys.add(key)
+        if re.search(r":\s*[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*$", source):
+            block_indent = depth
+    return None
+
+
 def strip_yaml_comment(line: str) -> str:
     single = False
     double = False
@@ -4507,9 +4625,17 @@ def strip_yaml_comment(line: str) -> str:
 def safe_manifest_path(root: Path, value: str) -> Path | None:
     if not isinstance(value, str) or not value:
         return None
+    parts = value.split("/")
+    if (
+        re.match(r"^[A-Za-z]:", value)
+        or "\\" in value
+        or any(part in {"", ".", ".."} for part in parts)
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
+        return None
     try:
         pure = PurePosixPath(value)
-        if pure.is_absolute() or ".." in pure.parts:
+        if pure.is_absolute():
             return None
         lexical_root = Path(os.path.normpath(os.fspath(root)))
         candidate = Path(os.path.normpath(os.fspath(lexical_root / pure)))
@@ -4521,7 +4647,7 @@ def safe_manifest_path(root: Path, value: str) -> Path | None:
 
 def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
     unsafe_fields = re.compile(
-        r"\$\{\{\s*github\.event\.(?:comment|discussion|head_commit|issue|pull_request|review|workflow_run)\b"
+        r"\$\{\{\s*(?:github\.(?:event\.|(?:base_ref|head_ref|ref|ref_name)\b)|inputs\.)"
     )
     result: list[int] = []
     run_indent: int | None = None
@@ -4539,32 +4665,148 @@ def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
     return sorted(set(result))
 
 
-def markdown_without_fenced_blocks_and_comments(text: str) -> str:
-    """Return Markdown prose with code fences and HTML comments removed."""
+def markdown_inline_link_targets(text: str) -> Iterable[str]:
+    text_length = len(text)
+    offset = 0
+    line_end = -1
+    last_delimiter: dict[str, int] = {}
+    label_depth = 0
+    escaped = False
+    while offset < text_length:
+        start = None
+        for index in range(offset, text_length):
+            character = text[index]
+            if character in "\r\n":
+                next_line = index + 1
+                if character == "\r" and text.startswith("\n", next_line):
+                    next_line += 1
+                while next_line < text_length and text[next_line] in " \t":
+                    next_line += 1
+                if next_line >= text_length or text[next_line] in "\r\n":
+                    label_depth = 0
+                escaped = False
+            elif escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == "[":
+                label_depth += 1
+            elif character == "]":
+                if label_depth and text.startswith("(", index + 1):
+                    label_depth -= 1
+                    start = index + 2
+                    break
+                label_depth = max(0, label_depth - 1)
+        if start is None:
+            return
+        for continuation in range(2):
+            if start > line_end:
+                line_end = text_length
+                for marker in "\r\n":
+                    position = text.find(marker, start)
+                    if position >= 0:
+                        line_end = min(line_end, position)
+                last_delimiter = {
+                    marker: text.rfind(marker, start, line_end) for marker in ">\"'"
+                }
+            if continuation or line_end == text_length or text[start:line_end].strip(" \t"):
+                break
+            start = line_end + 1
+            if text[line_end] == "\r" and text.startswith("\n", start):
+                start += 1
+            while start < text_length and text[start] in " \t":
+                start += 1
+        depth = 0
+        quote: str | None = None
+        angle = text.startswith("<", start) and start < last_delimiter[">"]
+        escaped = False
+        for index in range(start, line_end):
+            character = text[index]
+            if escaped:
+                escaped = False
+                continue
+            if character == "\\":
+                escaped = True
+                continue
+            if quote is not None:
+                if character == quote:
+                    quote = None
+                continue
+            if angle:
+                if character == ">":
+                    angle = False
+                continue
+            if (
+                character in "\"'"
+                and (index == start or text[index - 1].isspace())
+                and index < last_delimiter[character]
+            ):
+                quote = character
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                if depth:
+                    depth -= 1
+                else:
+                    yield text[start:index]
+                    offset = index + 1
+                    break
+        else:
+            offset = line_end + 1
+            label_depth = 0
+            escaped = False
+            continue
 
+
+def markdown_without_fenced_blocks(text: str) -> str:
     result: list[str] = []
     fence_char: str | None = None
     fence_length = 0
     for line in text.splitlines():
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})(?:[^`~].*)?$", line)
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
         if match:
-            marker = match.group(1)
+            marker, remainder = match.groups()
             if fence_char is None:
+                if marker[0] == "`" and "`" in remainder:
+                    result.append(line)
+                    continue
                 fence_char, fence_length = marker[0], len(marker)
-            elif marker[0] == fence_char and len(marker) >= fence_length:
+            elif marker[0] == fence_char and len(marker) >= fence_length and not remainder.strip():
                 fence_char, fence_length = None, 0
             continue
         if fence_char is None:
             result.append(line)
-    prose = "\n".join(result)
+    return "\n".join(result)
+
+
+def markdown_with_masked_inline_syntax(text: str, syntax: str) -> str:
+    result = list(text)
+    runs = list(re.finditer(r"`+", text))
+    opening_index = 0
+    while opening_index < len(runs):
+        opening = runs[opening_index]
+        closing_index = opening_index + 1
+        while closing_index < len(runs) and len(runs[closing_index].group()) != len(opening.group()):
+            closing_index += 1
+        if closing_index >= len(runs):
+            opening_index += 1
+            continue
+        closing = runs[closing_index]
+        for index in range(opening.start(), closing.end()):
+            if result[index] in syntax:
+                result[index] = " "
+        opening_index = closing_index + 1
+    return "".join(result)
+
+
+def markdown_without_fenced_blocks_and_comments(text: str) -> str:
+    prose = markdown_with_masked_inline_syntax(markdown_without_fenced_blocks(text), "<>")
     uncommented: list[str] = []
     offset = 0
     while offset < len(prose):
         opening = prose.find("<!--", offset)
         closing = prose.find("-->", offset)
         if closing >= 0 and (opening < 0 or closing < opening):
-            # A stray closer is invalid source, but it is not an opening that
-            # can make later headings semantic; omit it from semantic parsing.
             uncommented.append(prose[offset:closing])
             offset = closing + 3
             continue
@@ -4580,24 +4822,18 @@ def markdown_without_fenced_blocks_and_comments(text: str) -> str:
 
 
 def markdown_html_comment_error(text: str) -> str | None:
-    """Detect unbalanced HTML comments outside fenced code blocks."""
-
-    # Reuse semantic preprocessing's fence recognition while retaining comment
-    # markers by temporarily replacing them with inert sentinels.
-    protected = text.replace("<!--", "OPEN_COMMENT_SENTINEL").replace("-->", "CLOSE_COMMENT_SENTINEL")
-    unfenced = markdown_without_fenced_blocks_and_comments(protected)
-    tokens = re.findall(r"OPEN_COMMENT_SENTINEL|CLOSE_COMMENT_SENTINEL", unfenced)
-    open_comment = False
-    for token in tokens:
-        if token == "OPEN_COMMENT_SENTINEL":
-            if open_comment:
+    opened = False
+    prose = markdown_with_masked_inline_syntax(markdown_without_fenced_blocks(text), "<>")
+    for token in re.finditer(r"<!--|-->", prose):
+        if token.group() == "<!--":
+            if opened:
                 return "nested HTML comment opener"
-            open_comment = True
-        elif not open_comment:
+            opened = True
+        elif not opened:
             return "HTML comment closer without opener"
         else:
-            open_comment = False
-    return "unclosed HTML comment" if open_comment else None
+            opened = False
+    return "unclosed HTML comment" if opened else None
 
 
 def markdown_section(
@@ -4650,7 +4886,7 @@ def parse_front_matter(text: str) -> tuple[dict[str, Any], list[str]] | None:
         match = FRONT_MATTER_KEY_RE.match(line)
         if match:
             key, raw = match.group(1), (match.group(2) or "").strip()
-            if key in result:
+            if key in result and len(errors) < GATE0_MAXIMUM_FINDINGS:
                 errors.append(f"duplicate metadata key {key!r} on line {line_number}")
             result[key] = parse_front_matter_value(raw) if raw else []
             current_list = key if not raw else None
@@ -4661,10 +4897,11 @@ def parse_front_matter(text: str) -> tuple[dict[str, Any], list[str]] | None:
             if isinstance(result.get(current_list), list):
                 result[current_list].append(value)
             continue
-        if line.strip():
+        if line.strip() and len(errors) < GATE0_MAXIMUM_FINDINGS:
             errors.append(f"unsupported metadata syntax on line {line_number}")
         current_list = None
-    errors.append("front matter is not closed")
+    if len(errors) < GATE0_MAXIMUM_FINDINGS:
+        errors.append("front matter is not closed")
     return result, errors
 def nonempty_scalar(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
@@ -4676,8 +4913,6 @@ RUST_RAW_STRING_PREFIX_RE = re.compile(r'r(#{0,255})"')
 
 
 def parse_rust_usize_product(value: str) -> int | None:
-    """Parse a tiny integer product within Orange's admitted 64-bit usize range."""
-
     if re.fullmatch(r"\s*[0-9][0-9_]*(?:\s*\*\s*[0-9][0-9_]*)*\s*", value) is None:
         return None
     result = 1
@@ -4696,8 +4931,6 @@ def parse_rust_usize_product(value: str) -> int | None:
 
 
 def rust_code_without_comments_and_literals(value: str) -> str:
-    """Blank Rust comments and strings while preserving lines and offsets."""
-
     result = list(value)
     index = 0
     state = "code"
@@ -4776,8 +5009,6 @@ def rust_code_without_comments_and_literals(value: str) -> str:
 
 
 def approval_record_claims_independence(value: str) -> bool:
-    """Return whether an approval record positively claims a second reviewer."""
-
     normalized = re.sub(r"[_-]+", " ", value.casefold())
     for claim in re.finditer(r"\bindependen(?:t|ce|tly)\b", normalized):
         prefix = normalized[max(0, claim.start() - 32) : claim.start()]
@@ -4804,47 +5035,13 @@ def parse_iso_date(value: Any) -> dt.date | None:
         return None
 
 
-SUPPORTED_SCHEMA_KEYWORDS = {
-    "$comment",
-    "$defs",
-    "$id",
-    "$ref",
-    "$schema",
-    "additionalProperties",
-    "allOf",
-    "anyOf",
-    "const",
-    "default",
-    "deprecated",
-    "description",
-    "enum",
-    "examples",
-    "exclusiveMaximum",
-    "exclusiveMinimum",
-    "format",
-    "items",
-    "maxItems",
-    "maxLength",
-    "maxProperties",
-    "maximum",
-    "minItems",
-    "minLength",
-    "minProperties",
-    "minimum",
-    "multipleOf",
-    "not",
-    "oneOf",
-    "pattern",
-    "patternProperties",
-    "prefixItems",
-    "properties",
-    "readOnly",
-    "required",
-    "title",
-    "type",
-    "uniqueItems",
-    "writeOnly",
-}
+SUPPORTED_SCHEMA_KEYWORDS = set(
+    """$comment $defs $id $ref $schema additionalProperties allOf anyOf const
+default deprecated description enum examples exclusiveMaximum exclusiveMinimum format
+items maxItems maxLength maxProperties maximum minItems minLength minProperties minimum
+multipleOf not oneOf pattern patternProperties prefixItems properties readOnly required title
+type uniqueItems writeOnly""".split()
+)
 
 
 def audit_schema_vocabulary(schema: Any, location: str = "$") -> list[str]:
@@ -4866,6 +5063,14 @@ def audit_schema_vocabulary(schema: Any, location: str = "$") -> list[str]:
             re.compile(pattern)
         except re.error:
             issues.append(f"invalid pattern expression {pattern!r} at {location}")
+    value = schema.get("format")
+    if isinstance(value, str) and value not in ("date", "date-time", "uri", "uri-reference"):
+        issues.append(f"unsupported format {value!r} at {location}")
+    value = schema.get("$id")
+    if isinstance(value, str) and (location != "$" or "#" in value or not valid_format(value, "uri")):
+        issues.append(f"unsupported $id at {location}")
+    if "$schema" in schema and location != "$":
+        issues.append(f"unsupported nested $schema at {location}")
     type_value = schema.get("type")
     allowed_types = {"array", "boolean", "integer", "null", "number", "object", "string"}
     if type_value is not None:
@@ -4973,7 +5178,7 @@ def validate_schema_instance(
         return []
     if root_schema is None:
         root_schema = schema
-    issues: list[SchemaIssue] = []
+    issues: list[SchemaIssue] = _BoundedSchemaIssues()
     if "$ref" in schema:
         resolved = resolve_schema_ref(str(schema["$ref"]), schema_path, root_schema, schemas, id_registry)
         if resolved is None:
@@ -5180,7 +5385,11 @@ def resolve_schema_ref(
     schemas: Mapping[Path, Mapping[str, Any]],
     id_registry: Mapping[str, tuple[Path, Mapping[str, Any]]],
 ) -> tuple[Path, Mapping[str, Any] | bool, Mapping[str, Any]] | None:
+    if not has_valid_rfc3986_lexical_form(reference):
+        return None
     document_ref, marker, fragment = reference.partition("#")
+    if document_ref.startswith("/"):
+        return None
     target_path = schema_path
     target_root = root_schema
     if document_ref:
@@ -5195,9 +5404,15 @@ def resolve_schema_ref(
             target_path, target_root = candidate, schemas[candidate]
     target: Any = target_root
     if marker and fragment:
+        try:
+            fragment = unquote(fragment, errors="strict")
+        except UnicodeDecodeError:
+            return None
         if not fragment.startswith("/"):
             return None
         for token in fragment[1:].split("/"):
+            if re.search(r"~(?:[^01]|$)", token):
+                return None
             token = token.replace("~1", "/").replace("~0", "~")
             if not isinstance(target, dict) or token not in target:
                 return None
@@ -5227,7 +5442,6 @@ RFC3986_HEX_DIGITS = frozenset("0123456789ABCDEFabcdef")
 
 
 def has_valid_rfc3986_lexical_form(value: str) -> bool:
-    """Reject octets and malformed percent escapes outside RFC 3986 syntax."""
     if not value.isascii():
         return False
     for index, character in enumerate(value):
@@ -5249,22 +5463,30 @@ def valid_format(value: str, format_name: str) -> bool:
             dt.date.fromisoformat(value)
             return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value))
         if format_name == "date-time":
-            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})",
+                value,
+            ) is None:
+                return False
+            parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00" if value[-1] in "Zz" else value)
             return parsed.tzinfo is not None
-        if format_name == "uri":
+        if format_name in ("uri", "uri-reference"):
             if not has_valid_rfc3986_lexical_form(value):
                 return False
             parsed = urlsplit(value)
-            return bool(parsed.scheme)
-        if format_name == "uri-reference":
-            if not has_valid_rfc3986_lexical_form(value):
+            if "#" in parsed.fragment or any(
+                "[" in component or "]" in component
+                for component in (parsed.path, parsed.query, parsed.fragment)
+            ):
                 return False
-            urlsplit(value)
-            return True
+            if re.fullmatch(
+                r"(?:[^@\[\]]*@)?(?:\[[^\[\]]+\]|[^:@\[\]]*)(?::[0-9]*)?",
+                parsed.netloc,
+            ) is None:
+                return False
+            return format_name == "uri-reference" or bool(parsed.scheme)
     except (TypeError, ValueError):
         return False
-    # The Gate 0 schemas may annotate unfamiliar formats, but cannot use them as
-    # validation assertions without adding deterministic support here.
     return False
 
 
@@ -5302,7 +5524,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
             if not has_checked_basis:
                 issues.append(
                     SchemaIssue(
-                        "cross_invariant",
+                        _CROSS,
                         "$/basis",
                         "a satisfied claim requires a checked non-assumption basis",
                     )
@@ -5315,7 +5537,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if reference not in assumptions:
                     issues.append(
                         SchemaIssue(
-                            "cross_invariant",
+                            _CROSS,
                             f"$/basis/{index}/assumption_ref",
                             "assumption basis reference does not resolve",
                         )
@@ -5324,7 +5546,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
         files = instance.get("files", [])
         file_paths = identifiers(files, "path", "$/files", issues)
         if isinstance(files, list) and [item.get("path") for item in files if isinstance(item, dict)] != sorted(file_paths):
-            issues.append(SchemaIssue("cross_invariant", "$/files", "file records must be ordered by path"))
+            issues.append(SchemaIssue(_CROSS, "$/files", "file records must be ordered by path"))
         external = instance.get("external_sources", [])
         if isinstance(external, list):
             identifiers(external, "source_id", "$/external_sources", issues, optional=True)
@@ -5333,7 +5555,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
             toolchains = replay.get("toolchains", [])
             names = identifiers(toolchains, "name", "$/replay/toolchains", issues)
             if isinstance(toolchains, list) and [item.get("name") for item in toolchains if isinstance(item, dict)] != sorted(names):
-                issues.append(SchemaIssue("cross_invariant", "$/replay/toolchains", "toolchains must be ordered by name"))
+                issues.append(SchemaIssue(_CROSS, "$/replay/toolchains", "toolchains must be ordered by name"))
     elif schema_name == "repository-control-snapshot-v0.1.schema.json":
         sources = identifiers(instance.get("evidence_sources"), "evidence_id", "$/evidence_sources", issues)
         for path, references in repository_control_evidence_refs(instance):
@@ -5341,7 +5563,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if reference not in sources:
                     issues.append(
                         SchemaIssue(
-                            "cross_invariant",
+                            _CROSS,
                             path,
                             f"repository-control evidence reference does not resolve: {reference}",
                         )
@@ -5350,7 +5572,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
         standards = instance.get("standards", [])
         standard_ids = identifiers(standards, "standard_id", "$/standards", issues)
         if isinstance(standards, list) and [item.get("standard_id") for item in standards if isinstance(item, dict)] != sorted(standard_ids):
-            issues.append(SchemaIssue("cross_invariant", "$/standards", "standards must be ordered by standard_id"))
+            issues.append(SchemaIssue(_CROSS, "$/standards", "standards must be ordered by standard_id"))
         for index, standard in enumerate(standards if isinstance(standards, list) else []):
             if not isinstance(standard, dict):
                 continue
@@ -5367,7 +5589,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                 if component.get("assumption_ref") not in axioms:
                     issues.append(
                         SchemaIssue(
-                            "cross_invariant",
+                            _CROSS,
                             f"$/components/{index}/assumption_ref",
                             "assumed component reference does not resolve to an axiom",
                         )
@@ -5386,7 +5608,7 @@ def validate_cross_record_invariants(instance: Any, schema_name: str) -> list[Sc
                     if reference not in valid_ids:
                         issues.append(
                             SchemaIssue(
-                                "cross_invariant",
+                                _CROSS,
                                 f"$/claim_closures/{index}/{field}",
                                 f"trust-closure reference does not resolve: {reference}",
                             )
@@ -5415,7 +5637,7 @@ def identifiers(
         if identifier in result:
             issues.append(
                 SchemaIssue(
-                    "cross_invariant",
+                    _CROSS,
                     f"{instance_path}/{index}/{field}",
                     f"duplicate identifier {identifier}",
                 )
@@ -5429,22 +5651,22 @@ def repository_control_evidence_refs(instance: Mapping[str, Any]) -> list[tuple[
     security = instance.get("security_features")
     if isinstance(security, dict):
         for name, control in security.items():
-            if isinstance(control, dict) and isinstance(control.get("evidence_refs"), list):
-                result.append((f"$/security_features/{pointer_escape(name)}/evidence_refs", control["evidence_refs"]))
+            if isinstance(control, dict) and isinstance(control.get(_E), list):
+                result.append((f"$/security_features/{pointer_escape(name)}/evidence_refs", control[_E]))
     actions = instance.get("actions")
     if isinstance(actions, dict):
         enabled = actions.get("enabled")
-        if isinstance(enabled, dict) and isinstance(enabled.get("evidence_refs"), list):
-            result.append(("$/actions/enabled/evidence_refs", enabled["evidence_refs"]))
+        if isinstance(enabled, dict) and isinstance(enabled.get(_E), list):
+            result.append(("$/actions/enabled/evidence_refs", enabled[_E]))
     for field in ("default_branch_policy", "merge_policy"):
         value = instance.get(field)
-        if isinstance(value, dict) and isinstance(value.get("evidence_refs"), list):
-            result.append((f"$/{field}/evidence_refs", value["evidence_refs"]))
+        if isinstance(value, dict) and isinstance(value.get(_E), list):
+            result.append((f"$/{field}/evidence_refs", value[_E]))
     return result
 
 
 def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
-    if issue.keyword == "cross_invariant" and schema_name.startswith("claim-record-"):
+    if issue.keyword == _CROSS and schema_name.startswith("claim-record-"):
         return "CLAIM_SATISFIED_WITHOUT_CHECKED_BASIS"
     if issue.keyword == "const":
         return "SCHEMA_CONST"
@@ -5458,8 +5680,6 @@ def expected_code_for_issue(schema_name: str, issue: SchemaIssue) -> str:
 
 
 def asserted_repository_root(value: str) -> Path:
-    """Accept only a path resolving to the checkout that owns this validator."""
-
     try:
         candidate = Path(value).resolve(strict=True)
     except (OSError, RuntimeError):
@@ -5488,8 +5708,6 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
-    # Parsing returns the script-owned checkout constant even when --root is
-    # supplied. The flag asserts identity and never selects caller-owned scope.
     repository_root = arguments.root
     validator = FoundationValidator(repository_root)
     findings = validator.run()
@@ -5497,14 +5715,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = {
             "schema_version": "0.1.0",
             "repository": validator.policy.get("repository", "unknown"),
-            "policy_version": validator.policy.get("policy_version", "unknown"),
+            _PV: validator.policy.get(_PV, "unknown"),
             "valid": not findings,
             "findings": [finding.as_dict() for finding in findings],
         }
         print(json.dumps(output, sort_keys=True, separators=(",", ":")))
     elif findings:
         for finding in findings:
-            print(f"{finding.path}: {finding.code}: {finding.message}")
+            print(
+                f"{_text_report_field(finding.path)}: {finding.code}: "
+                f"{_text_report_field(finding.message)}"
+            )
         print(f"Solo-bootstrap repository policy failed with {len(findings)} finding(s).")
     else:
         print(

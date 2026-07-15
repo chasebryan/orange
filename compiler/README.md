@@ -52,7 +52,10 @@ at most once. Integration coverage requires exactly 256 valid inputs to succeed
 silently and 257 operands to fail as a usage error before any source read. It
 also interleaves file, standard-input, and file failures in exact operand order;
 a repeated `-` emits exactly one `ORC1004` group and still processes a later
-operand.
+operand. The global `--edition` option may appear before or after the command
+but at most once; a repeated split or inline form is a usage error before any
+source read. `--` ends option parsing so dash-prefixed source paths remain
+addressable.
 The portable regular-file boundary checks path metadata before opening and
 descriptor metadata afterward. This rejects an observed non-regular path or
 opened descriptor, but it is not race-free path confinement: an actor that can
@@ -82,11 +85,13 @@ trailing newline, while help and version output failures follow the same status
 failure as status 1. Transient `Interrupted` results from stream reads, output
 writes, and explicit output flushes are retried without duplicating accepted
 bytes. Compilation diagnostics are also explicitly flushed after their final
-error group. Compilation standard output is explicitly flushed only after
-successful token or evaluation bytes have been queued; untouched output and
-diagnostic streams are not flushed for a silent `check` or empty `eval`. A
-source with lexical errors is not parsed, and a source with syntax errors is
-not analyzed. File and standard-input reads stop at a deterministic 16 MiB
+error group. After any detected stream failure, retained buffered standard
+output is discarded instead of being flushed as later command output.
+Compilation standard output is explicitly flushed only after successful token
+or evaluation bytes have been queued; untouched output and diagnostic streams
+are not flushed for a silent `check` or empty `eval`. A source with lexical
+errors is not parsed, and a source with syntax errors is not analyzed. File and
+standard-input reads stop at a deterministic 16 MiB
 per-source limit. Larger inputs fail with `ORC1003` before lexing and are never
 buffered without a bound. CLI-derived rendered source names reserve their
 complete escaped representation before encoding. Source-map slots, borrowed

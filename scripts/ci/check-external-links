@@ -3,7 +3,11 @@
 set -euo pipefail
 
 if [[ $# -ne 1 || -z "${1-}" ]]; then
-  echo "usage: $0 PATH_TO_LYCHEE" >&2
+  echo "usage: check-external-links PATH_TO_LYCHEE" >&2
+  exit 2
+fi
+if [[ "$1" != /* ]]; then
+  echo "PATH_TO_LYCHEE must be absolute" >&2
   exit 2
 fi
 
@@ -30,4 +34,5 @@ exec -- /usr/bin/env \
   --no-progress \
   --require-https \
   --timeout 20 \
-  '*.md' 'docs/**/*.md' '.github/**/*.md' '.github/**/*.yml'
+  -- \
+  . '.github/**/*.md' '.github/**/*.yml'

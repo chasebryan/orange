@@ -14,7 +14,11 @@ allowed; product releases and third-party pull requests are not.
 
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX
 privileged shell mode suppresses inherited interpreter startup files before the
-script executes. It then removes inherited Make control and shell-startup
+script executes. It rejects a symbolic link in the script's final path
+component and any multiply-linked launcher inode, then resolves its parent
+directory and repository root to physical paths before entering the checkout,
+so a file or directory alias cannot change the policy scope. It then removes
+inherited Make control and shell-startup
 variables before Make parses any file and validates the closed repository tree
 before foundation unit/adversarial tests and Rust formatting, linting, and
 tests. The Make entrypoint serializes that order even under parallel execution,
@@ -33,9 +37,10 @@ interpreter's standard library before it accepts the closed tree; foundation
 tests add the already validated checkout to `sys.path` only after that startup
 and redirect bytecode lookup to a fresh temporary root.
 
-Compiler checks likewise run through a protected Make recipe with a fresh Cargo
-home, fresh target tree, and allowlisted environment. It invokes Cargo from the
-filesystem root with the exact selected toolchain, preventing caller wrapper
+Compiler checks likewise run through a protected Make recipe with a fresh,
+canonical absolute Cargo home, fresh target tree, and allowlisted environment.
+It invokes Cargo from the filesystem root with the exact selected toolchain,
+preventing caller wrapper
 variables, flags, target runners, home or ancestor Cargo configuration, and
 ignored prior build artifacts from steering the build after policy validation.
 
@@ -49,14 +54,22 @@ caller-selected policy paths remain unsupported.
 Repository discovery is likewise host-configuration independent. The bounded
 Git inventory passes only the caller's tool-search path plus fixed Git and
 locale controls, disables system and user configuration, disables
-repository-configured filesystem monitors, and applies only checkout
-`.gitignore` files when excluding untracked content. One
-30-second deadline covers the complete inventory stream and process exit. If
+repository-configured filesystem monitors, and applies an exact static mirror
+of the protected root and compiler `.gitignore` files when excluding untracked
+content. It never trusts untracked ignore files. The child environment also binds Git's
+work tree to the validator-owned root, so local
+`core.worktree` configuration cannot hide actual checkout files. Git case
+folding and Unicode precomposition are pinned off so distinct worktree names
+remain visible to the validator's own collision and NFC checks. One
+30-second deadline covers the complete inventory stream and process exit;
+selector descriptor-range failures become fail-closed findings. If
 Git is unavailable for an exported tree with no `.git` entry, the bounded
 filesystem fallback preserves the same fail-closed resource checks. Each queued
 fallback directory is reopened from the trusted root one component at a time
 with no-follow flags, so a concurrent directory-to-symlink replacement cannot
-redirect discovery. Git failure is fatal when repository metadata is present,
+redirect discovery. Platform service directories are pruned only at the
+exported tree root; matching nested names remain repository content. Git
+failure is fatal when repository metadata is present,
 and a discovery ceiling prevents an exported tree from inheriting a parent
 repository's index. Inventory paths remain raw bytes through record and
 resource-limit checks, then must decode as UTF-8 before any path is admitted;
@@ -70,7 +83,19 @@ Schema, fixture, workflow, OEP, and ADR directory queries, plus every required,
 forbidden, and optional artifact-presence query, are selected lexically from
 that same bounded inventory. Validation does not launch a second filesystem
 glob or ordinary path-status probe that could traverse ignored or concurrently
-replaced directories.
+replaced directories. Markdown fragment validation computes each target's
+anchor set once per run, so repeated links cannot multiply target scans. Links
+inside HTML comments or fenced examples are not treated as live navigation.
+Inline navigation scanning preserves balanced and escaped destinations, nested
+image/link depth, multiline link text, and CommonMark line continuations.
+Reference definitions admit escaped or multiline labels through the normative
+999-character boundary. Every discovered target must be a valid URI reference;
+local targets and Markdown fragments must resolve inside the admitted tree.
+Local link percent escapes must be complete and decode as strict UTF-8, preventing
+lossy filename aliases. HTML comment balance is scanned directly outside code
+fences, without collision-prone replacement sentinels or whole-file match lists.
+Manifest paths independently reject drive prefixes, backslashes, controls,
+empty segments, and dot segments before any normalization.
 
 Content reads require POSIX component-relative open support. Every directory
 and final file component is opened with no-follow flags; the final open is also
@@ -78,7 +103,13 @@ nonblocking before its descriptor metadata is compared with the preflight
 snapshot. Preflight rejects hardlinked files and uses `SEEK_HOLE` to reject
 sparse files before parsing policy content. A host or filesystem without these
 primitives receives `resource.unsupported_host` instead of a weaker validation
-result.
+result. The validator and its intermediate schema and record-metadata checkers
+each retain at most 4,096 detailed findings. Final finding messages retain at
+most 4,096 characters, and the report adds one deterministic suppression
+record, preventing bounded repository bytes from amplifying into an unbounded
+diagnostic object or output stream. Text reports encode backslashes, colons,
+and every non-ASCII or non-printable code point with a fixed-width escape, so untrusted
+paths and messages cannot forge report lines or emit terminal controls.
 
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added

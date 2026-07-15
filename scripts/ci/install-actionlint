@@ -14,7 +14,11 @@ readonly MAXIMUM_DOWNLOAD_SECONDS="300"
 readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"
 
 if [[ $# -ne 1 || -z "${1-}" ]]; then
-  echo "usage: $0 DESTINATION_DIRECTORY" >&2
+  echo "usage: install-actionlint DESTINATION_DIRECTORY" >&2
+  exit 2
+fi
+if [[ "$1" != /* ]]; then
+  echo "DESTINATION_DIRECTORY must be absolute" >&2
   exit 2
 fi
 
@@ -39,9 +43,10 @@ case "$(uname -m)" in
 esac
 
 readonly DESTINATION_DIRECTORY="$1"
-TEMPORARY_DIRECTORY="$(mktemp -d)"
+TEMPORARY_DIRECTORY="$(/usr/bin/mktemp -d -- "${TMPDIR:-/tmp}/orange-actionlint.XXXXXXXX")"
+TEMPORARY_DIRECTORY="$(CDPATH= cd -- "$TEMPORARY_DIRECTORY" && pwd -P)"
 readonly TEMPORARY_DIRECTORY
-trap 'rm -rf -- "$TEMPORARY_DIRECTORY"' EXIT
+trap '/usr/bin/rm -rf -- "$TEMPORARY_DIRECTORY"' EXIT
 
 (
   ulimit -c 0
@@ -91,6 +96,7 @@ fi
 
 install \
   -D \
+  --no-target-directory \
   -m 0755 \
   -- \
   "$EXTRACTED_FILE" \
