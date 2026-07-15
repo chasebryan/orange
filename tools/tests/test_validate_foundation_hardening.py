@@ -2141,6 +2141,16 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("384 KiB\n(`384 * 1024` bytes)", "383 KiB\n(`383 * 1024` bytes)"),
             ("2 MiB (`2 * 1024 * 1024` bytes)", "1 MiB (`1 * 1024 * 1024` bytes)"),
             ("12 MiB (`12 * 1024 * 1024` bytes)", "11 MiB (`11 * 1024 * 1024` bytes)"),
+            ("at most 512 files", "at most 511 files"),
+            ("at most 1,024 bytes per raw path", "at most 1,023 bytes per raw path"),
+            (
+                "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata",
+                "at most 2 MiB\n(`2048 * 1024` bytes) of raw path metadata",
+            ),
+            (
+                "at most 4,096 entries in one\nfallback directory",
+                "at most 4,095 entries in one\nfallback directory",
+            ),
         ):
             with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
