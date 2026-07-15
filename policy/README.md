@@ -116,7 +116,8 @@ and every non-ASCII or non-printable code point with a fixed-width escape, so un
 paths and messages cannot forge report lines or emit terminal controls. JSON
 reports stream encoder chunks directly to standard output without materializing
 the complete serialization. The compact, sorted-key, ASCII-only encoding and
-final newline remain stable.
+final newline remain stable. Every report is explicitly flushed before success;
+a failed standard-output write returns failure quietly without a shutdown retry.
 
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added

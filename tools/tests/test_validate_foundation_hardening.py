@@ -1107,6 +1107,34 @@ class PolicyShapeHardeningTests(unittest.TestCase):
 
 
 class RepositoryInventoryHardeningTests(unittest.TestCase):
+    def test_report_pipe_closure_fails_quietly_in_every_format(self) -> None:
+        repository_root = Path(__file__).resolve().parents[2]
+        for arguments in ((), ("--format", "json")):
+            with self.subTest(arguments=arguments):
+                process = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-S",
+                        "-B",
+                        "-X",
+                        "utf8",
+                        str(repository_root / "tools/validate_foundation.py"),
+                        *arguments,
+                    ],
+                    cwd=repository_root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                self.assertIsNotNone(process.stdout)
+                process.stdout.close()
+                self.assertIsNotNone(process.stderr)
+                error = process.stderr.read()
+                process.stderr.close()
+
+                self.assertEqual(process.wait(timeout=10), 1)
+                self.assertEqual(error, b"")
+
     def test_json_report_streams_without_materializing_the_serialization(self) -> None:
         validator = mock.Mock()
         validator.policy = {"repository": "owner/repository", "policy_version": "test"}
