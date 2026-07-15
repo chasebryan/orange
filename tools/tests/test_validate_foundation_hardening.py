@@ -2366,13 +2366,18 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                'CARGO_TARGET_DIR="$$cargo_home/repro-target-b"',
+                'CARGO_TARGET_DIR="$$cargo_home/deep/target"',
                 'CARGO_TARGET_DIR="$$cargo_home/target-a"',
                 "make.compiler_environment_contract",
             ),
             (
-                'copy_compiler_source "$$cargo_home/repro-src-b"',
+                'copy_compiler_source "$$cargo_home/deep/src"',
                 'copy_compiler_source "$$cargo_home/repro-a"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '/usr/bin/mkdir -- "$$cargo_home/deep"; \\\n',
+                "",
                 "make.compiler_environment_contract",
             ),
             (
