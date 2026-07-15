@@ -138,6 +138,9 @@ struct OutputLimitedWriter<W> {
 #[derive(Debug)]
 struct OutputLimitExceeded;
 
+#[derive(Debug)]
+struct InterruptedIoLimitExceeded;
+
 impl fmt::Display for OutputLimitExceeded {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("standard output limit exceeded")
@@ -145,6 +148,14 @@ impl fmt::Display for OutputLimitExceeded {
 }
 
 impl std::error::Error for OutputLimitExceeded {}
+
+impl fmt::Display for InterruptedIoLimitExceeded {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("consecutive interrupted I/O attempt limit exceeded")
+    }
+}
+
+impl std::error::Error for InterruptedIoLimitExceeded {}
 
 fn output_limit_error() -> io::Error {
     io::Error::new(io::ErrorKind::FileTooLarge, OutputLimitExceeded)
@@ -194,7 +205,7 @@ fn invalid_data_error() -> io::Error {
 }
 
 fn interrupted_io_limit_error() -> io::Error {
-    io::Error::other("consecutive interrupted I/O attempt limit exceeded")
+    io::Error::other(InterruptedIoLimitExceeded)
 }
 
 fn record_interrupted_attempt(attempts: &mut usize) -> bool {
@@ -1013,7 +1024,7 @@ fn render_read_source_error(display_name: &RenderedSourceName, error: ReadSource
         ReadSourceError::Io(error) => render_cli_error(
             CliDiagnosticCode::ReadSource,
             format_args!("could not read source file `{display_name}`"),
-            io_error_reason(error.kind()),
+            io_error_reason(&error),
         ),
         ReadSourceError::NotRegular => render_cli_error(
             CliDiagnosticCode::ReadSource,
@@ -1094,8 +1105,14 @@ enum ReadSourceError {
     TooLarge,
 }
 
-const fn io_error_reason(kind: io::ErrorKind) -> &'static str {
-    match kind {
+fn io_error_reason(error: &io::Error) -> &'static str {
+    if error
+        .get_ref()
+        .is_some_and(|cause| cause.is::<InterruptedIoLimitExceeded>())
+    {
+        return "source stream remained interrupted for 1,024 consecutive attempts";
+    }
+    match error.kind() {
         io::ErrorKind::NotFound => "file was not found",
         io::ErrorKind::PermissionDenied => "permission was denied",
         io::ErrorKind::IsADirectory => "path names a directory",
@@ -2318,7 +2335,7 @@ mod tests {
             error,
             concat!(
                 "error[ORC1001]: could not read source file `<stdin>`\n",
-                "  = note: the operating system reported an I/O error\n",
+                "  = note: source stream remained interrupted for 1,024 consecutive attempts\n",
             )
             .as_bytes()
         );
