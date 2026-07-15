@@ -381,6 +381,39 @@ fn option_marker_preserves_a_non_utf8_dash_prefixed_path() {
     assert_eq!(accepted.stderr, b"");
 }
 
+#[cfg(unix)]
+#[test]
+fn rejects_non_utf8_editions_before_source_access() {
+    use std::os::unix::ffi::OsStringExt as _;
+
+    let split = orangec()
+        .args([
+            std::ffi::OsString::from("--edition"),
+            std::ffi::OsString::from_vec(vec![0x80]),
+            std::ffi::OsString::from("check"),
+            std::ffi::OsString::from("missing-source.or"),
+        ])
+        .output()
+        .unwrap();
+    let inline = orangec()
+        .args([
+            std::ffi::OsString::from_vec(b"--edition=\x80".to_vec()),
+            std::ffi::OsString::from("check"),
+            std::ffi::OsString::from("missing-source.or"),
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(split.status.code(), Some(2));
+    assert_eq!(split.status.code(), inline.status.code());
+    assert_eq!(split.stdout, b"");
+    assert_eq!(split.stdout, inline.stdout);
+    assert_eq!(split.stderr, inline.stderr);
+    let stderr = String::from_utf8(split.stderr).unwrap();
+    assert!(stderr.starts_with("orangec: edition name is not valid UTF-8\n\nUsage:"));
+    assert!(!stderr.contains("ORC1001"));
+}
+
 #[test]
 fn accepts_the_minimal_program_from_standard_input_repeatably() {
     let source = concat!(
