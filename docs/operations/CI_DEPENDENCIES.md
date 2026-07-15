@@ -219,7 +219,9 @@ The required invariant check invokes repository-owned Bash and Python files:
   and home-directory configuration. Requiring an absolute path prevents an
   assignment-shaped checker argument from changing that environment. The helper
   recursively scans every nonignored repository Markdown file and explicitly
-  includes hidden GitHub Markdown and YAML inputs.
+  includes hidden GitHub Markdown and YAML inputs. The live invocation caps
+  per-host concurrency at 2, total concurrency at 16, retries at 3, and each
+  request at 20 seconds.
 
 These are first-party repository methods, not third-party dependencies. The
 repository has no selected license while D-018 is blocked. This inventory does

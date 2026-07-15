@@ -1142,10 +1142,30 @@ jobs:
                 },
             )
             self.assertEqual(
-                observation["arguments"][-4:],
-                ["--", ".", ".github/**/*.md", ".github/**/*.yml"],
+                observation["arguments"],
+                [
+                    "--exclude",
+                    r"^https://eprint\.iacr\.org/",
+                    "--exclude-all-private",
+                    "--extensions",
+                    "md,yml",
+                    "--host-concurrency",
+                    "2",
+                    "--include-fragments",
+                    "--max-concurrency",
+                    "16",
+                    "--max-retries",
+                    "3",
+                    "--no-progress",
+                    "--require-https",
+                    "--timeout",
+                    "20",
+                    "--",
+                    ".",
+                    ".github/**/*.md",
+                    ".github/**/*.yml",
+                ],
             )
-            self.assertNotIn("docs/**/*.md", observation["arguments"])
 
     def test_hosted_run_steps_use_fixed_privileged_bash(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -2025,6 +2045,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "docs/SEMANTICS_2026.md",
         "docs/operations/CI_DEPENDENCIES.md",
         "policy/README.md",
+        "scripts/ci/check-external-links",
         "scripts/ci/install-actionlint",
         "scripts/ci/install-lychee",
     )
@@ -2095,6 +2116,42 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             self.assertIn(old, source)
             path.write_text(source.replace(old, "--max-time 300", 1), encoding="utf-8")
             self.assertIn("ci.installer_budget", self._codes(root))
+
+    def test_external_link_runner_budget_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "scripts/ci/check-external-links"
+            source = path.read_text(encoding="utf-8")
+            old = 'readonly MAXIMUM_RETRIES="3"'
+            self.assertIn(old, source)
+            path.write_text(
+                source.replace(old, 'readonly MAXIMUM_RETRIES="4"', 1),
+                encoding="utf-8",
+            )
+            self.assertIn("ci.external_link_budget", self._codes(root))
+
+    def test_external_link_runner_use_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "scripts/ci/check-external-links"
+            source = path.read_text(encoding="utf-8")
+            old = '--timeout "$REQUEST_TIMEOUT_SECONDS"'
+            self.assertIn(old, source)
+            path.write_text(source.replace(old, "--timeout 20", 1), encoding="utf-8")
+            self.assertIn("ci.external_link_budget", self._codes(root))
+
+    def test_external_link_runner_documentation_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "docs/operations/CI_DEPENDENCIES.md"
+            source = path.read_text(encoding="utf-8")
+            old = "per-host concurrency at 2"
+            self.assertIn(old, source)
+            path.write_text(source.replace(old, "per-host concurrency at 3", 1), encoding="utf-8")
+            self.assertIn("ci.external_link_spec_budget", self._codes(root))
 
     def test_rust_source_stripping_never_copies_remaining_suffixes(self) -> None:
         class SliceRejectingString(str):

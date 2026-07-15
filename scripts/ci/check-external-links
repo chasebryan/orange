@@ -20,6 +20,10 @@ if [[ "$(/usr/bin/stat --format='%a:%h' -- "$1")" != "755:1" ]]; then
 fi
 
 readonly LYCHEE="$1"
+readonly MAXIMUM_HOST_CONCURRENCY="2"
+readonly MAXIMUM_RETRIES="3"
+readonly MAXIMUM_TOTAL_CONCURRENCY="16"
+readonly REQUEST_TIMEOUT_SECONDS="20"
 
 # IACR ePrint currently rejects automated clients with HTTP 403. Keep its
 # primary-source citations, exclude only that exact HTTPS host from automation,
@@ -35,12 +39,12 @@ exec -- /usr/bin/env \
   --exclude '^https://eprint\.iacr\.org/' \
   --exclude-all-private \
   --extensions md,yml \
-  --host-concurrency 2 \
+  --host-concurrency "$MAXIMUM_HOST_CONCURRENCY" \
   --include-fragments \
-  --max-concurrency 16 \
-  --max-retries 3 \
+  --max-concurrency "$MAXIMUM_TOTAL_CONCURRENCY" \
+  --max-retries "$MAXIMUM_RETRIES" \
   --no-progress \
   --require-https \
-  --timeout 20 \
+  --timeout "$REQUEST_TIMEOUT_SECONDS" \
   -- \
   . '.github/**/*.md' '.github/**/*.yml'
