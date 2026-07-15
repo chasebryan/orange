@@ -227,6 +227,20 @@ fn flush_retry_interrupted(output: &mut impl Write) -> io::Result<()> {
     }
 }
 
+fn seek_start_retry_interrupted(stream: &mut impl Seek) -> io::Result<u64> {
+    let mut interrupted_attempts = 0;
+    loop {
+        match stream.seek(SeekFrom::Start(0)) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                if record_interrupted_attempt(&mut interrupted_attempts) {
+                    return Err(interrupted_io_limit_error());
+                }
+            }
+            result => return result,
+        }
+    }
+}
+
 fn run(
     arguments: impl IntoIterator<Item = OsString>,
     standard_input: &mut impl Read,
@@ -833,7 +847,7 @@ fn source_descriptor_matches_snapshot(
     reader: &mut (impl Read + Seek),
     expected: &[u8],
 ) -> io::Result<bool> {
-    if reader.seek(SeekFrom::Start(0))? != 0 {
+    if seek_start_retry_interrupted(reader)? != 0 {
         return Err(invalid_data_error());
     }
 
@@ -1775,6 +1789,40 @@ mod tests {
         overreport_probe_once: bool,
         probe_error: Option<io::ErrorKind>,
         requested_buffer_lengths: Vec<usize>,
+    }
+
+    struct InterruptingSeekReader {
+        inner: io::Cursor<Vec<u8>>,
+        interruptions_remaining: usize,
+        seek_attempts: usize,
+    }
+
+    impl InterruptingSeekReader {
+        fn new(bytes: &[u8], interruptions: usize) -> Self {
+            Self {
+                inner: io::Cursor::new(bytes.to_vec()),
+                interruptions_remaining: interruptions,
+                seek_attempts: 0,
+            }
+        }
+    }
+
+    impl Read for InterruptingSeekReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.inner.read(buffer)
+        }
+    }
+
+    impl Seek for InterruptingSeekReader {
+        fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+            self.seek_attempts += 1;
+            if self.interruptions_remaining != 0 {
+                self.interruptions_remaining -= 1;
+                Err(io::Error::from(io::ErrorKind::Interrupted))
+            } else {
+                self.inner.seek(position)
+            }
+        }
     }
 
     impl InstrumentedSourceReader {
@@ -3166,6 +3214,29 @@ mod tests {
                 "descriptor={descriptor:?}, expected={expected:?}",
             );
         }
+    }
+
+    #[test]
+    fn source_snapshot_seek_retries_are_transient_and_bounded() {
+        let mut transient = InterruptingSeekReader::new(b"abc", 1);
+        transient.inner.set_position(3);
+        assert!(source_descriptor_matches_snapshot(&mut transient, b"abc").unwrap());
+        assert_eq!(transient.seek_attempts, 2);
+
+        let mut persistent =
+            InterruptingSeekReader::new(b"abc", MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS);
+        persistent.inner.set_position(3);
+        let error = source_descriptor_matches_snapshot(&mut persistent, b"abc").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert!(
+            error
+                .get_ref()
+                .is_some_and(|cause| cause.is::<InterruptedIoLimitExceeded>())
+        );
+        assert_eq!(
+            persistent.seek_attempts,
+            MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS
+        );
     }
 
     #[test]

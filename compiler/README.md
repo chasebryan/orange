@@ -125,9 +125,10 @@ detected usage-output failure uses status 1 without reading source input. A
 usage diagnostic has one blank separator before the exact help text and one
 trailing newline, while help and version output failures follow the same status
 1 transport rule. All three paths flush explicitly and treat a detected flush
-failure as status 1. Transient `Interrupted` results from stream reads, output
-writes, and explicit output flushes are retried without duplicating accepted
-bytes, but fail closed after 1,024 consecutive attempts for one operation.
+failure as status 1. Transient `Interrupted` results from source reads,
+verification seeks, output writes, and explicit output flushes are retried
+without duplicating accepted bytes. They fail closed
+after 1,024 consecutive attempts for one operation.
 Source reads that reach this boundary retain `ORC1001` and identify the exact
 retry limit instead of attributing the local limit to the operating system.
 Every output adapter rejects an impossible write count larger than the
