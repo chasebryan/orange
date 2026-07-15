@@ -275,6 +275,12 @@ class WorkflowHardeningTests(unittest.TestCase):
                 "workflow.job_permissions",
             ),
             (
+                "ci.yml",
+                "    name: Required CI / docs-policy-workflows\n",
+                "    name: Alternate check\n    # name: Required CI / docs-policy-workflows\n",
+                "workflow.required_content",
+            ),
+            (
                 "dependency-review.yml",
                 "      - main\n",
                 "      - release\n",

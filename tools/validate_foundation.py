@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "8b6da41ee37f92a16aedc86e47cce84dbcb47a6ef2a80603a009528771194a45"
+GATE0_PROTECTED_FILE_DIGEST = "cdd6d818f52c753d2ae9d65a148bb6a7ae8bef501929b93924dd748537be15da"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3418,17 +3418,9 @@ class FoundationValidator:
         )
         if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
             self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
-        requirements: dict[str, tuple[str, ...]] = {
-            "ci.yml": (
-                "name: Required CI / docs-policy-workflows",
-            ),
-            _DR: (
-                "name: Dependency Review / policy",
-            ),
-        }
-        for required in requirements.get(n, ()):
-            if required not in text:
-                self.add("workflow.required_content", path, f"missing protected workflow content: {required}")
+        required_name = {"ci.yml": "Required CI / docs-policy-workflows", _DR: "Dependency Review / policy"}.get(n)
+        if required_name and f"    name: {required_name}" not in text.splitlines():
+            self.add("workflow.required_content", path, f"missing protected job name: {required_name}")
         if n == _SC and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
             self.add("workflow.privileged_dispatch", path, "Scorecard must not allow manual ref selection")
         if "continue-on-error:" in text:
