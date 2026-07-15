@@ -281,6 +281,21 @@ GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
 GATE0_PROTECTED_FILE_DIGEST = "61bd9f27e6a8fa359ff23b2b3f9abe6077b8a401983c360c4bf8c480056d9dab"
+GATE0_CI_COMPILER_RUN = (
+    "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
+    "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
+)
+GATE0_CI_POLICY_TEST_RUN = (
+    "run: pycache=\"$(/usr/bin/mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
+    "pycache=\"$(cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; "
+    "/usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
+    "PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; "
+    "sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'"
+)
+GATE0_CI_POLICY_RUN = (
+    "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
+    "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py"
+)
 GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
 GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
 GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
@@ -3266,9 +3281,9 @@ class FoundationValidator:
                 "name: Enforce solo contribution boundary",
                 "github.event.pull_request.user.login != 'chasebryan'",
                 "Solo mode does not accept third-party pull requests until D-018 selects contribution terms.",
-                "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES -u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler",
-                "run: pycache=\"$(/usr/bin/mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; pycache=\"$(cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'",
-                "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py",
+                GATE0_CI_COMPILER_RUN,
+                GATE0_CI_POLICY_TEST_RUN,
+                GATE0_CI_POLICY_RUN,
                 "DavidAnson/markdownlint-cli2-action@",
                 "run: ./scripts/ci/install-actionlint",
                 '"$RUNNER_TEMP/actionlint/actionlint" -color',
@@ -3382,28 +3397,15 @@ class FoundationValidator:
             )
             require(
                 "Validate Rust compiler",
-                (
-                    "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
-                    "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler",
-                ),
+                (GATE0_CI_COMPILER_RUN,),
             )
             require(
                 "Run foundation validator unit tests",
-                (
-                    "run: pycache=\"$(/usr/bin/mktemp -d -- \"$RUNNER_TEMP/orange-python-cache.XXXXXXXX\")\"; "
-                    "pycache=\"$(cd -- \"$pycache\" && pwd -P)\"; trap '/usr/bin/rm -rf -- \"$pycache\"' EXIT; "
-                    "/usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C "
-                    "PATH=\"$PATH\" PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX=\"$pycache\" TZ=UTC "
-                    "python3 -S -P -B -X utf8 -c 'import sys, unittest; sys.path.insert(0, \".\"); "
-                    "unittest.main(module=None)' discover -s tools/tests -p 'test_*.py'",
-                ),
+                (GATE0_CI_POLICY_TEST_RUN,),
             )
             require(
                 "Validate solo-bootstrap repository policy",
-                (
-                    "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
-                    "TZ=UTC python3 -S -P -B -X utf8 tools/validate_foundation.py",
-                ),
+                (GATE0_CI_POLICY_RUN,),
             )
             require("Lint Markdown", ("uses: DavidAnson/markdownlint-cli2-action@",))
             require("Install actionlint", ("run: ./scripts/ci/install-actionlint",))
