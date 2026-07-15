@@ -2162,6 +2162,16 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.python_environment_contract",
             ),
             (
+                "-W error::ResourceWarning -c 'import filecmp, sys",
+                "-c 'import filecmp, sys",
+                "make.python_environment_contract",
+            ),
+            (
+                "/usr/bin/env PYTHONHASHSEED=0 python3 -S",
+                "python3 -S",
+                "make.python_environment_contract",
+            ),
+            (
                 'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"',
                 'pycache="$$pycache"',
                 "make.python_cache_contract",
