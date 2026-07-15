@@ -130,6 +130,34 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_contribution_legal_boundary_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = (source_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        mutations = (
+            (
+                "does **not** accept third-party pull requests for merge",
+                "accepts third-party pull requests for merge",
+            ),
+            (
+                "Do not contribute original code or prose in an issue.",
+                "Original code and prose may be contributed in an issue.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(safeguard=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.assertIn(old, source)
+                (root / "CONTRIBUTING.md").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "contribution.legal_boundary_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_security_reporting_contract_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         source = (source_root / "SECURITY.md").read_text(encoding="utf-8")
