@@ -55,9 +55,10 @@ fresh Git inventory must match the original path list, rejecting observed type,
 executable-mode, content, or membership edits during capture. The copied
 validator first policy-checks that exact exported tree before its foundation
 test modules import. After those tests, it policy-checks the tree again before
-Cargo, so test-side drift cannot reach Rust execution. Formatting, linting,
-documentation, and Rust tests use the same extracted check root;
-optimized `orangec` builds use two more extractions and separate target trees,
+Cargo, so Python-test drift cannot reach Rust execution. Formatting, linting,
+documentation, and Rust tests use the same extracted check root. A third policy
+check after all Rust commands rejects Rust-side snapshot drift before the gate
+can pass. Optimized `orangec` builds use two more extractions and separate target trees,
 and their artifact bytes must match. This is source-relocated same-host
 reproducibility evidence, not a cross-platform or independently rebuilt claim.
 

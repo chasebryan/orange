@@ -53,6 +53,8 @@ lookup root. A second policy check rejects test-side drift before Cargo runs fro
 the filesystem root with the exact selected toolchain, preventing caller wrapper
 variables, flags, target runners, home or ancestor Cargo configuration, and
 ignored prior build artifacts from steering the build after policy validation.
+A third policy check runs after all Rust commands, so drift in the tested check
+root cannot produce a passing gate.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an
