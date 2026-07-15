@@ -289,7 +289,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "baacc0dd0b75ae9890f07431551cb6e1b1cc535911dfa441b3ceba942a0087df"
+GATE0_PROTECTED_FILE_DIGEST = "c63a2845e183b160a7aa6fac09d6f3df18fc8e7092f169a3443607f1154419fc"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"

@@ -790,6 +790,27 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 {"resource.inventory_git"},
             )
 
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
+    def test_git_inventory_rejects_a_symlinked_object_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            objects = root / ".git" / "objects"
+            external = parent / "external-objects"
+            objects.replace(external)
+            objects.symlink_to(external, target_is_directory=True)
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
+
     def test_git_inventory_rejects_symlinked_config_and_index(self) -> None:
         for relative_path in ("config", "index"):
             with self.subTest(path=relative_path), tempfile.TemporaryDirectory() as directory:
