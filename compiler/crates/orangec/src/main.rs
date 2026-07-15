@@ -153,6 +153,9 @@ impl<W: Write> Write for OutputLimitedWriter<W> {
         }
         let buffer = buffer.get(..allowed).ok_or_else(invalid_data_error)?;
         let written = self.inner.write(buffer)?;
+        if written > buffer.len() {
+            return Err(invalid_data_error());
+        }
         self.remaining = self
             .remaining
             .checked_sub(written)
@@ -1913,6 +1916,17 @@ mod tests {
         assert_eq!(input.attempts, 0);
         assert_eq!(output, b"");
         assert_eq!(error.attempts, 1);
+    }
+
+    #[test]
+    fn output_limit_rejects_an_inner_writer_count_overreport() {
+        let mut output = OutputLimitedWriter::new(OverReportingWriter::default(), 8);
+
+        let error = output.write(b"abc").unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(output.remaining, 8);
+        assert_eq!(output.into_inner().attempts, 1);
     }
 
     #[test]
