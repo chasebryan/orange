@@ -328,6 +328,18 @@ _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
 _WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_IRC = '''blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/chasebryan/orange/security/advisories/new
+    about: Never disclose a suspected vulnerability in a public issue.
+  - name: Read the support policy
+    url: https://github.com/chasebryan/orange
+    about: Open SUPPORT.md at the repository root and check the current research-stage boundary before filing.
+  - name: Report abuse to GitHub
+    url: https://support.github.com/request/landing?tags=report-abuse
+    about: Use GitHub's private platform channel for abuse, harassment, or content-policy violations.
+'''
 _GAC = '''* text=auto eol=lf
 
 *.json text eol=lf
@@ -390,7 +402,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "88794c2fbc8539e69250a3c3576f9124a4f943d47bbede71ca95c03dc8e8e050"
+_PHD = "24ad8488922ab629e1d81219488038da415ab443f5191935d7f9a6b444184430"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4725,6 +4737,15 @@ class FoundationValidator:
                             self.add("record.independence", path, "ADR owners and reviewers must be distinct")
 
     def _validate_repository_templates(self) -> None:
+        issue_config = self.root / ".github/ISSUE_TEMPLATE/config.yml"
+        if self._hf(issue_config):
+            issue_source = self._rt(issue_config)
+            if issue_source is not None and issue_source != _IRC:
+                self.add(
+                    "template.issue_routing_contract",
+                    issue_config,
+                    "issue routing must match the exact reviewed private-reporting contract",
+                )
         security = self.root / "SECURITY.md"
         if self._hf(security):
             security_text = self._rt(security)
