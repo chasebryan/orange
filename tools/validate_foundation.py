@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "60cf3b548e6e86fe4fee89642b28d3c0b15ce5f799989d8c37bd5a80dc5fe0ed"
+_PHD = "d556c87a9b8cedc6bc0f58defe1960ded70df68cb3c64d162efe653716ddfb3d"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2425,7 +2425,15 @@ class FoundationValidator:
             '[[ "$$live_executable" == "$$snapshot_executable" ]]',
             '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"',
             '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"',
-            '"$$cargo_home/target-a/release/orangec" "$$repro_home_b/deep/target/release/orangec"',
+            'artifact_a="$$cargo_home/target-a/release/orangec"',
+            'artifact_b="$$repro_home_b/deep/target/release/orangec"',
+            'for artifact in "$$artifact_a" "$$artifact_b"; do',
+            '[[ -f "$$artifact" && ! -L "$$artifact" ]]',
+            'artifact_a_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_a")"',
+            'artifact_b_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_b")"',
+            '[[ "$$artifact_a_mode" == "$$artifact_b_mode" ]]',
+            'filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False)',
+            'else "optimized orangec builds differ across source roots")\' "$$artifact_a" "$$artifact_b"',
             "optimized orangec builds differ across source roots",
             'tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a" "$$repro_home_b/deep/src")',
             'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"',
@@ -2436,35 +2444,26 @@ class FoundationValidator:
         tested_root_loop = 'for tested_root in "$${tested_roots[@]}"; do'
         if source.count(tested_root_loop) != 2:
             self.add("make.compiler_environment_contract", path, f"expected exactly two {tested_root_loop!r}")
-        required_python_fragments = {
-            "PYTHONHASHSEED=0": (7, "fixed Python hash seed"),
-            "/usr/bin/python3 -S -P -B -X utf8": (
-                7,
-                "isolated Python startup/path/bytecode/encoding",
-            ),
-            "-W error::ResourceWarning": (7, "leaks fail"),
-        }
-        for required, (expected_count, meaning) in required_python_fragments.items():
+        required_python_fragments = (
+            ("PYTHONHASHSEED=0", 7),
+            ("/usr/bin/python3 -S -P -B -X utf8", 7),
+            ("-W error::ResourceWarning", 7),
+        )
+        for required, expected_count in required_python_fragments:
             if source.count(required) != expected_count:
                 self.add(
                     "make.python_environment_contract",
                     path,
-                    f"{meaning}: expected exactly {expected_count} {required!r} fragments",
+                    f"expected {expected_count} {required!r} fragments",
                 )
-        required_test_fragments = {
-            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"': (
-                "foundation tests need a fresh bytecode lookup root"
-            ),
-            'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"': (
-                "the foundation-test bytecode root must be canonical before cleanup"
-            ),
-            'PYTHONPYCACHEPREFIX="$$pycache"': (
-                "foundation tests must not load ignored checkout bytecode"
-            ),
-        }
-        for required, meaning in required_test_fragments.items():
+        required_test_fragments = (
+            '/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-python-cache.XXXXXXXX"',
+            'pycache="$$(CDPATH= cd -- "$$pycache" && pwd -P)"',
+            'PYTHONPYCACHEPREFIX="$$pycache"',
+        )
+        for required in required_test_fragments:
             if source.count(required) != 1:
-                self.add("make.python_cache_contract", path, f"{meaning}: expected exactly {required!r}")
+                self.add("make.python_cache_contract", path, f"expected exactly one {required!r}")
 
     def _validate_compiler_dependency_boundary(self) -> None:
         toolchain_path = self.root / "rust-toolchain.toml"

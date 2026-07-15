@@ -2401,8 +2401,28 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                '"$$cargo_home/target-a/release/orangec" "$$repro_home_b/deep/target/release/orangec"',
-                '"$$cargo_home/target-a/release/orangec" "$$cargo_home/target-a/release/orangec"',
+                'artifact_b="$$repro_home_b/deep/target/release/orangec"',
+                'artifact_b="$$cargo_home/target-a/release/orangec"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ -f "$$artifact" && ! -L "$$artifact" ]]',
+                '[[ -e "$$artifact" ]]',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'artifact_b_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_b")"',
+                'artifact_b_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_a")"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$artifact_a_mode" == "$$artifact_b_mode" ]]',
+                "[[ 0 == 0 ]]",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False)",
+                "filecmp.cmp(sys.argv[1], sys.argv[2], shallow=True)",
                 "make.compiler_environment_contract",
             ),
             (
