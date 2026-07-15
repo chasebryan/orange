@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "1a32ccf60a4833ead3483d808bed17c387f9cd98404ece8ff1b4d2d150567ca1"
+GATE0_PROTECTED_FILE_DIGEST = "af25441a13acb65b95322c8f86aa541dc8e9cd34e786abe1655dae3fe273f71b"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3287,7 +3287,7 @@ class FoundationValidator:
                 self.add("workflow.event_flow_style", path, "workflow events must use block-style YAML")
             if re.search(r"(?m)^\s+(?:container|services)\s*:", active_text):
                 self.add("workflow.container", path, "job containers and services are not admitted in Gate 0")
-            if not re.search(r"(?m)^permissions:\s*(?:\{\})?\s*$", text):
+            if "permissions: {}" not in active_lines:
                 self.add("workflow.permissions", path, "workflow must declare top-level permissions")
             if re.search(r"(?m)^\s*permissions:\s*write-all\s*$", text):
                 self.add("workflow.write_all", path, "write-all permissions are forbidden")
