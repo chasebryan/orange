@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "589b64ec48a9bac71f1eb37164d12fb8cb5bccd6368b0f6ec3a187afbcb7f9c0"
+GATE0_PROTECTED_FILE_DIGEST = "7bd7d31d50ce73a93ed08de2d07c37150051cad79bcd0a132158c9e610ee1075"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -743,7 +743,7 @@ class _GitRecordRead:
 
 
 def _sanitized_git_environment(root: Path) -> dict[str, str]:
-    environment = {"PATH": os.environ.get("PATH", os.defpath)}
+    environment = {"PATH": "/usr/bin:/bin"}
     environment.update(_GATE0_GIT_FIXED_ENVIRONMENT)
     environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
     environment["GIT_WORK_TREE"] = str(root)

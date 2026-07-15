@@ -689,7 +689,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 "GIT_TERMINAL_PROMPT": "0",
                 "GIT_WORK_TREE": str(root),
                 "LC_ALL": "C",
-                "PATH": "/test/bin",
+                "PATH": "/usr/bin:/bin",
             },
         )
 

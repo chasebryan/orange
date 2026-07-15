@@ -288,7 +288,7 @@
     "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
     "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
-    "docs/operations/CI_DEPENDENCIES.md": "aca7ce9436393867301148da7522b62e8bf2a09550053f4422c4fb9841734efc",
+    "docs/operations/CI_DEPENDENCIES.md": "7819a21579e8bce063a3468bf25b3cda733be5aa508d25c340f5aed44670c2dd",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
@@ -304,7 +304,7 @@
     "scripts/ci/check-repository": "1e793a816bceac77e4ded0a12d4061e85eb7089c0b9801a712cc70d6f5400aee",
     "scripts/ci/install-actionlint": "0088f1ebc40cc27d96a2869171c10628fd75b7452feea081467a9892c8b014cd",
     "scripts/ci/install-lychee": "1c329cd592c5a575c3bc4ff95adb8607a45fd11528680ef4a489a73c416ddb18",
-    "tools/tests/test_validate_foundation.py": "3a7dd658a07797ef1fbba8e8c08ab2438d1d3d1cb3478490f1fe4d43fdd3a5b5",
+    "tools/tests/test_validate_foundation.py": "512aa0599c476e904a9358cd8b3195d8b3a7381ffd1eef611202e69f5275e779",
     "tools/tests/test_validate_foundation_hardening.py": "e5904a4d00da89b082bcff7a024af3b9e86615859ac33f32506e6ff9b9f6df80"
   },
   "executable_paths": [
