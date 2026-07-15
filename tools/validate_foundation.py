@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "3ce311e0a32688d0246ea38d128078f4285c1cc1f8fd01de77fa0e9138222549"
+GATE0_PROTECTED_FILE_DIGEST = "28b5a8a669a408c2daccdc4027ec140f3b402b52ec5429050b1f4ee964765ef2"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -495,14 +495,16 @@ ORANGE_2026_SPEC_BUDGET_MARKERS = {
         "1,048,576 reference-evaluation steps": 1_048_576,
     },
 }
-ORANGEC_OPERATIONAL_BUDGETS = {
+_OB = {
     "compiler/crates/orangec/src/main.rs": {
         "MAX_SOURCES_PER_INVOCATION": 256,
+        "MAX_STANDARD_OUTPUT_BYTES": 64 * 1024 * 1024,
     },
 }
-ORANGEC_OPERATIONAL_BUDGET_MARKERS = {
+_OM = {
     "compiler/README.md": {
         "`orangec` accepts up to 256 source inputs in argument order": 256,
+        "`orangec` caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
     },
 }
 MINIMUM_CODEOWNERS = set(
@@ -2589,7 +2591,7 @@ class FoundationValidator:
     def _validate_compiler_language_boundary(self) -> None:
         budget_groups = (
             (ORANGE_2026_RUST_BUDGETS, True, "compiler.language_budget"),
-            (ORANGEC_OPERATIONAL_BUDGETS, False, "compiler.cli_budget"),
+            (_OB, False, "compiler.cli_budget"),
         )
         for budgets, require_public, finding_code in budget_groups:
             visibility = r"pub\s+" if require_public else r"(?:pub\s+)?"
@@ -2625,7 +2627,7 @@ class FoundationValidator:
 
         marker_groups = (
             (ORANGE_2026_SPEC_BUDGET_MARKERS, "compiler.language_spec_budget", "normative specification"),
-            (ORANGEC_OPERATIONAL_BUDGET_MARKERS, "compiler.cli_spec_budget", "compiler contract"),
+            (_OM, "compiler.cli_spec_budget", "compiler contract"),
         )
         for markers, finding_code, description in marker_groups:
             for value, expected_markers in markers.items():
