@@ -327,7 +327,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "af953b578c2504de1fc5a54c7975aaf1c0be12d502631ce84a7e87e652d7fe2f"
+_PHD = "6c22a1111552b926fa28f9958cab03919374654a247cac250095c44460627a48"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -517,6 +517,14 @@ _OM = {
         "`orangec` caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
         "`orangec` caps standard error at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
         "after 1,024 consecutive attempts for one operation": 1_024,
+    },
+}
+_PM = {
+    "policy/README.md": {
+        "ordinary text files at\n256 KiB (`256 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
+        "validator itself at 384 KiB\n(`384 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
+        "binary files at 2 MiB (`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_BINARY_FILE_BYTES,
+        "repository at 12 MiB (`12 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
     },
 }
 MINIMUM_CODEOWNERS = set(
@@ -2645,6 +2653,7 @@ class FoundationValidator:
         marker_groups = (
             (_RM, "compiler.language_spec_budget", "normative specification"),
             (_OM, "compiler.cli_spec_budget", "compiler contract"),
+            (_PM, "policy.resource_budget", "repository policy"),
         )
         for markers, finding_code, description in marker_groups:
             for value, expected_markers in markers.items():
