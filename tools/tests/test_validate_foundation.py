@@ -489,6 +489,59 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                     ),
                 )
 
+    def test_final_snapshot_rejects_actual_staged_content_drift(self) -> None:
+        clean_environment = {
+            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env=clean_environment,
+            )
+            path = root / "record.txt"
+            path.write_bytes(b"worktree bytes\n")
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "-C", root, "add", "record.txt"],
+                check=True,
+                env=clean_environment,
+            )
+            validator = FoundationValidator(root)
+            self.assertTrue(validator._preflight_repository_resources())
+            object_id = subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "-C", root, "hash-object", "-w", "--stdin"],
+                check=True,
+                env=clean_environment,
+                input=b"different staged bytes\n",
+                stdout=subprocess.PIPE,
+            ).stdout.strip()
+            subprocess.run(
+                [
+                    GATE0_GIT_EXECUTABLE,
+                    "-C",
+                    root,
+                    "update-index",
+                    "--cacheinfo",
+                    "100644",
+                    object_id,
+                    "record.txt",
+                ],
+                check=True,
+                env=clean_environment,
+            )
+
+            validator._end()
+
+            self.assertEqual(
+                [
+                    (finding.code, finding.path)
+                    for finding in validator.findings
+                    if finding.code == "resource.concurrent_change"
+                ],
+                [("resource.concurrent_change", ".git")],
+            )
+
     def test_first_read_rejects_a_post_preflight_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
