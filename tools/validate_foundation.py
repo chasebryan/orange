@@ -117,6 +117,11 @@ _ATP = "allowed_top_level_paths"
 _RFS = "require_full_commit_sha"
 _PB = "policy.binary"
 _RVC = "require_version_comment"
+_SC = "scorecard.yml"
+_DR = "dependency-review.yml"
+_EL = "external-links.yml"
+_WOA = "workflow-online-audit.yml"
+_BRF = "bounded repository read failed"
 _GATE0_GIT_FIXED_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -294,7 +299,7 @@ GATE0_EXECUTABLE_PATHS = set(
     """scripts/ci/check-external-links scripts/ci/check-repository
 scripts/ci/install-actionlint scripts/ci/install-lychee tools/validate_foundation.py""".split()
 )
-GATE0_ALLOWED_WRITE_PERMISSIONS = {"scorecard.yml": {"security-events"}}
+GATE0_ALLOWED_WRITE_PERMISSIONS = {_SC: {"security-events"}}
 GATE0_HOSTED_REPOSITORY_CONTROLS = {
     "snapshot_date": _DATE,
     "review_due_date": "2026-10-11",
@@ -312,7 +317,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "8eb548d7a48db2ef5ae36c6ab334b4bfb97c109a51025038502791115d87a0ee"
+GATE0_PROTECTED_FILE_DIGEST = "bef2affafb79adf9ed14f75cf453c3454add2e6076475c0c5772f0404d39f4e7"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1133,7 +1138,9 @@ def _repository_file_inventory(root: Path, findings: list[Finding]) -> tuple[lis
             )
             return [], False
     for raw_path in (b".git/commondir", b".git/config.worktree", b".git/objects/info/alternates"):
-        if git_metadata_present and _repository_entry_presence(root, raw_path) is not False:
+        metadata = _repository_entry_metadata(root, raw_path)
+        safe_empty = raw_path == b".git/config.worktree" and isinstance(metadata, os.stat_result) and stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1 and metadata.st_size == 0
+        if git_metadata_present and metadata is not False and not safe_empty:
             findings.append(
                 Finding(
                     _RI_GIT,
@@ -2180,7 +2187,7 @@ class FoundationValidator:
             return None
         data = self._read_repository_bytes(path)
         if data is None:
-            self.add("protected_file.unreadable", path, "bounded repository read failed")
+            self.add("protected_file.unreadable", path, _BRF)
             return None
         observed = hashlib.sha256(data).hexdigest()
         if observed != expected:
@@ -2269,7 +2276,7 @@ class FoundationValidator:
                 continue
             text = self._read_repository_text(path)
             if text is None:
-                self.add("hosted_control.unreadable", path, "bounded repository read failed")
+                self.add("hosted_control.unreadable", path, _BRF)
                 continue
             marker_prefixes = ("Hosted-control snapshot:", "Required-check binding:")
             observed_markers = [line for line in text.splitlines() if line.startswith(marker_prefixes)]
@@ -2793,7 +2800,7 @@ class FoundationValidator:
             asset_path = manifest_path.parent / name
             data = self._read_repository_bytes(asset_path)
             if data is None:
-                self.add("brand.asset", asset_path, "bounded repository read failed")
+                self.add("brand.asset", asset_path, _BRF)
                 continue
             if media_type == "image/png":
                 if len(data) < 29 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
@@ -2888,7 +2895,7 @@ class FoundationValidator:
             return
         text = self._read_repository_text(path)
         if text is None:
-            self.add("book.unreadable", path, "bounded repository read failed")
+            self.add("book.unreadable", path, _BRF)
             return
 
         visible_text = markdown_without_fenced_blocks_and_comments(text)
@@ -3381,10 +3388,10 @@ class FoundationValidator:
     def _validate_required_workflow_content(self, path: Path, text: str) -> None:
         event_contracts = {
             "ci.yml": "merge_group pull_request push",
-            "dependency-review.yml": "merge_group pull_request",
-            "scorecard.yml": "push schedule",
-            "external-links.yml": "push schedule workflow_dispatch",
-            "workflow-online-audit.yml": "push schedule workflow_dispatch",
+            _DR: "merge_group pull_request",
+            _SC: "push schedule",
+            _EL: "push schedule workflow_dispatch",
+            _WOA: "push schedule workflow_dispatch",
         }
         events = {
             match.group(1)
@@ -3396,7 +3403,7 @@ class FoundationValidator:
         defaults = tuple(top_level_block(text.splitlines(), "defaults"))
         reviewed_defaults = (
             ("  run:", "    shell: /bin/bash -p -e -o pipefail {0}")
-            if path.name in {"ci.yml", "external-links.yml"} else ()
+            if path.name in {"ci.yml", _EL} else ()
         )
         if defaults != reviewed_defaults or re.search(r"(?m)^ {4}defaults:", text):
             self.add("workflow.defaults_contract", path, "run defaults must match the reviewed workflow contract")
@@ -3404,14 +3411,14 @@ class FoundationValidator:
             "ci.yml": (
                 "name: Required CI / docs-policy-workflows",
             ),
-            "dependency-review.yml": (
+            _DR: (
                 "name: Dependency Review / policy",
             ),
         }
         for required in requirements.get(path.name, ()):
             if required not in text:
                 self.add("workflow.required_content", path, f"missing protected workflow content: {required}")
-        if path.name == "scorecard.yml" and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
+        if path.name == _SC and re.search(r"(?m)^\s{2}workflow_dispatch\s*:", text):
             self.add("workflow.privileged_dispatch", path, "Scorecard must not allow manual ref selection")
         if "continue-on-error:" in text:
             self.add("workflow.continue_on_error", path, "continue-on-error is forbidden in Gate 0 workflows")
@@ -3431,13 +3438,13 @@ class FoundationValidator:
                     "Audit GitHub Actions security",
                 ),
             ),
-            "dependency-review.yml": ("review", ("Checkout", "Review dependency changes")),
-            "scorecard.yml": (
+            _DR: ("review", ("Checkout", "Review dependency changes")),
+            _SC: (
                 "analysis",
                 ("Checkout", "Run OpenSSF Scorecard", "Preserve SARIF result", "Upload result to code scanning"),
             ),
-            "external-links.yml": ("links", ("Checkout", "Install checksum-verified lychee", "Check external links")),
-            "workflow-online-audit.yml": ("metadata", ("Checkout", "Audit workflow source and upstream metadata")),
+            _EL: ("links", ("Checkout", "Install checksum-verified lychee", "Check external links")),
+            _WOA: ("metadata", ("Checkout", "Audit workflow source and upstream metadata")),
         }
         if path.name in expected_steps:
             job_name, names = expected_steps[path.name]
@@ -3451,7 +3458,7 @@ class FoundationValidator:
                     line.strip() for line in jobs[job_name] if line.startswith("    if:")
                 )
                 expected_conditions = (
-                    ("if: ${{ github.ref == 'refs/heads/main' }}",) if path.name == "scorecard.yml" else ()
+                    ("if: ${{ github.ref == 'refs/heads/main' }}",) if path.name == _SC else ()
                 )
                 if conditions != expected_conditions:
                     self.add("workflow.job_condition_contract", path, "job condition must match its reviewed contract")
@@ -3514,7 +3521,7 @@ class FoundationValidator:
             for step_name, expected in ci_tools.items():
                 if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
                     self.add("workflow.ci_tool_contract", path, f"{job_name}/{step_name} must match its reviewed tool contract")
-        elif path.name == "dependency-review.yml":
+        elif path.name == _DR:
             review = yaml_without_comments("\n".join(steps.get("Review dependency changes", [])))
             expected_review = '''      - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
@@ -3524,7 +3531,7 @@ class FoundationValidator:
           head-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}'''
             if review != expected_review:
                 self.add("workflow.dependency_review_contract", path, "dependency review must use only the reviewed configuration file and revision inputs")
-        elif path.name == "scorecard.yml":
+        elif path.name == _SC:
             scorecard_block = yaml_without_comments("\n".join(steps.get("Run OpenSSF Scorecard", [])))
             expected_scorecard_block = '''      - name: Run OpenSSF Scorecard
         shell: /bin/bash -p -e -o pipefail {0}
@@ -3593,7 +3600,7 @@ class FoundationValidator:
             for step_name, expected in uploads.items():
                 if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
                     self.add("workflow.scorecard_upload_contract", path, f"{job_name}/{step_name} must match its reviewed SARIF upload contract")
-        elif path.name == "external-links.yml":
+        elif path.name == _EL:
             commands = {
                 "Install checksum-verified lychee": 'run: ./scripts/ci/install-lychee "$RUNNER_TEMP/lychee"',
                 "Check external links": 'run: ./scripts/ci/check-external-links "$RUNNER_TEMP/lychee/bin/lychee"',
@@ -3602,7 +3609,7 @@ class FoundationValidator:
                 expected = f"      - name: {step_name}\n        {command}"
                 if yaml_without_comments("\n".join(steps.get(step_name, []))) != expected:
                     self.add("workflow.external_links_contract", path, f"{job_name}/{step_name} must match its reviewed link-audit command")
-        elif path.name == "workflow-online-audit.yml":
+        elif path.name == _WOA:
             block = yaml_without_comments("\n".join(steps.get("Audit workflow source and upstream metadata", [])))
             expected = '''      - name: Audit workflow source and upstream metadata
         uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa

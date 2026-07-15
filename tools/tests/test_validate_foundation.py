@@ -790,6 +790,51 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 {"resource.inventory_git"},
             )
 
+    def test_git_inventory_accepts_empty_checkout_worktree_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "worktree"
+            subprocess.run(
+                [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                check=True,
+                env={"PATH": "/usr/bin:/bin"},
+            )
+            (root / ".git/config.worktree").touch()
+            findings = []
+
+            paths = list(iter_repository_files(root, findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual(findings, [])
+
+    def test_git_inventory_rejects_linked_empty_worktree_config(self) -> None:
+        for link_kind in ("hardlink", "symlink"):
+            if link_kind == "symlink" and not hasattr(os, "symlink"):
+                continue
+            with self.subTest(link_kind=link_kind), tempfile.TemporaryDirectory() as directory:
+                parent = Path(directory)
+                root = parent / "worktree"
+                subprocess.run(
+                    [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
+                    check=True,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+                target = parent / "empty-config"
+                target.touch()
+                worktree_config = root / ".git/config.worktree"
+                if link_kind == "hardlink":
+                    worktree_config.hardlink_to(target)
+                else:
+                    worktree_config.symlink_to(target)
+                findings = []
+
+                paths = list(iter_repository_files(root, findings))
+
+            self.assertEqual(paths, [])
+            self.assertEqual(
+                {finding.code for finding in findings},
+                {"resource.inventory_git"},
+            )
+
     @unittest.skipUnless(hasattr(os, "symlink"), "symlinks are unavailable")
     def test_git_inventory_rejects_a_symlinked_object_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
