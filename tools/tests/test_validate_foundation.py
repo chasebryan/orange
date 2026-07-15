@@ -22,13 +22,14 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     _fallback_repository_files,
     audit_schema_vocabulary,
+    git_index_entries,
+    iter_repository_files,
     load_json,
     markdown_anchors,
     markdown_fence_error,
     markdown_html_comment_error,
     markdown_inline_link_targets,
-    git_index_entries,
-    iter_repository_files,
+    markdown_without_fenced_blocks_and_comments,
     unsafe_run_interpolations,
     valid_format,
     validate_schema_instance,
@@ -39,6 +40,47 @@ from tools.validate_foundation import (
 def protected_file_policy() -> dict[str, object]:
     source = Path(__file__).resolve().parents[2] / "policy/gate0-repository-policy.json"
     return {"protected_file_digests": load_json(source)["protected_file_digests"]}
+
+
+def _markdown_table_fields(line: str) -> list[str]:
+    source = line.strip()
+    separators: list[int] = []
+    escaped = False
+    for index, character in enumerate(source):
+        if character == "\\":
+            escaped = not escaped
+        else:
+            if character == "|" and not escaped:
+                separators.append(index)
+            escaped = False
+    bounds = [-1, *separators, len(source)]
+    fields = [source[start + 1 : end].strip() for start, end in zip(bounds, bounds[1:])]
+    if separators and separators[0] == 0:
+        fields.pop(0)
+    if separators and separators[-1] == len(source) - 1:
+        fields.pop()
+    return fields
+
+
+def _markdown_table_error(text: str) -> str | None:
+    lines = markdown_without_fenced_blocks_and_comments(text).splitlines()
+    for index, line in enumerate(lines):
+        delimiter = _markdown_table_fields(line)
+        if "|" not in line or not delimiter or not all(
+            re.fullmatch(r":?-+:?", field) for field in delimiter
+        ):
+            continue
+        header = _markdown_table_fields(lines[index - 1]) if index else []
+        expected = len(delimiter)
+        if len(header) != expected:
+            return f"table delimiter has {expected} columns but its header has {len(header)}"
+        for row in lines[index + 1 :]:
+            if not row.strip() or "|" not in row:
+                break
+            actual = len(_markdown_table_fields(row))
+            if actual != expected:
+                return f"table expects {expected} columns but a body row has {actual}"
+    return None
 
 
 class _FakePipe:
@@ -2119,6 +2161,42 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
 
 
 class MarkdownTests(unittest.TestCase):
+    def test_markdown_table_shapes_match_hosted_lint(self) -> None:
+        valid = (
+            "| First | Second |\n"
+            "| :--- | ---: |\n"
+            "| escaped \\| pipe | `code` |\n"
+        )
+        self.assertIsNone(_markdown_table_error(valid))
+        self.assertIsNone(
+            _markdown_table_error("```text\n| a | b | c |\n| --- | --- |\n```\n")
+        )
+        self.assertIsNone(
+            _markdown_table_error("<!--\n| a | b | c |\n| --- | --- |\n-->\n")
+        )
+        self.assertEqual(
+            _markdown_table_error("| a | b |\n| --- |\n"),
+            "table delimiter has 1 columns but its header has 2",
+        )
+        self.assertEqual(
+            _markdown_table_error("| a | b |\n| --- | --- |\n| `x | y` | z |\n"),
+            "table expects 2 columns but a body row has 3",
+        )
+
+    def test_repository_markdown_tables_have_consistent_columns(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        inventory_findings = []
+        errors = []
+        for path in iter_repository_files(root, inventory_findings):
+            if path.suffix.lower() != ".md":
+                continue
+            error = _markdown_table_error(path.read_text(encoding="utf-8"))
+            if error:
+                errors.append(f"{path.relative_to(root).as_posix()}: {error}")
+
+        self.assertEqual(inventory_findings, [])
+        self.assertEqual(errors, [])
+
     def test_inline_links_reuse_their_physical_line_boundary(self) -> None:
         class CountingText(str):
             line_break_searches = 0
