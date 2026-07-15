@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "2cbe606e3e18e3d8954661df7bb1a5a53fece0289e9bf794d3967a51ea36e428"
+_PHD = "2e71fff24b300f901417fddda7667280006a249acf067e45aa8299aa895cd63b"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
