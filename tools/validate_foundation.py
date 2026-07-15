@@ -323,7 +323,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "16d616c36de8b140ce3605468142e1684914f5c5e4722a2f5ae07e7b5e031878"
+_PHD = "b5c8f939ebd13d78daa22c9f2d7f70abd55ead1280ec27ab3c4a88927b014bb8"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -339,12 +339,12 @@ _PR = (
     "run: /usr/bin/env -i HOME=\"$HOME\" LANG=C LC_ALL=C PATH=\"$PATH\" PYTHONHASHSEED=0 "
     "TZ=UTC python3 -S -P -B -X utf8 -W error::ResourceWarning tools/validate_foundation.py"
 )
-GATE0_CHARTER_SECTION_SHA256 = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
-GATE0_FEATURE_IDS = tuple(f"F-{index:02d}" for index in range(1, 15))
-GATE0_PERSONA_IDS = tuple(f"P-{index:02d}" for index in range(1, 6))
-GATE0_JOURNEY_IDS = tuple(f"J-{index:02d}" for index in range(1, 9))
-GATE0_OPERATION_IDS = tuple("install specify implement prove build inspect integrate update revoke offline-replay".split())
-GATE0_CONFORMANCE_CASE_IDS = tuple(
+_CSH = "4537523a0e41cc55912ad1013e6a74777ffad8def7015c4ffd51cfc3aeae3c9f"
+_FI = tuple(f"F-{index:02d}" for index in range(1, 15))
+_PI = tuple(f"P-{index:02d}" for index in range(1, 6))
+_JI = tuple(f"J-{index:02d}" for index in range(1, 9))
+_OI = tuple("install specify implement prove build inspect integrate update revoke offline-replay".split())
+_CCI = tuple(
     """claim-record-valid claim-record-assumption-only-satisfied evidence-manifest-valid
 evidence-manifest-network-enabled evidence-manifest-path-escape
 evidence-manifest-independent-without-review repository-control-snapshot-valid
@@ -353,7 +353,7 @@ standards-provenance-valid standards-provenance-malformed-digest
 standards-provenance-reviewed-without-reference trust-inventory-valid
 trust-inventory-authority-without-identity""".split()
 )
-GATE0_CONFORMANCE_INSTANCE_PATHS = set(
+_CIP = set(
     """conformance/foundation/invalid/claim-record-assumption-only.json
 conformance/foundation/invalid/evidence-manifest-independent-without-review.json
 conformance/foundation/invalid/evidence-manifest-network-enabled.json
@@ -498,6 +498,7 @@ _RM = {
 _OB = {
     "compiler/crates/orangec/src/main.rs": {
         "MAX_SOURCES_PER_INVOCATION": 256,
+        "MAX_ARGUMENT_BYTES_PER_INVOCATION": 4 * 1024 * 1024,
         "MAX_SOURCE_BYTES_PER_INVOCATION": 64 * 1024 * 1024,
         "MAX_STANDARD_OUTPUT_BYTES": 64 * 1024 * 1024,
         "MAX_STANDARD_ERROR_BYTES": 64 * 1024 * 1024,
@@ -506,6 +507,7 @@ _OB = {
 _OM = {
     "compiler/README.md": {
         "`orangec` accepts up to 256 source inputs in argument order": 256,
+        "Argument parsing\ninspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line\narguments per invocation": 4 * 1024 * 1024,
         "`orangec` buffers at most\n64 MiB (`64 * 1024 * 1024` bytes) across all source operands per invocation": 64 * 1024 * 1024,
         "`orangec` caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
         "`orangec` caps standard error at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
@@ -2326,7 +2328,7 @@ class FoundationValidator:
         actual_top_level = {PurePosixPath(value).parts[0] for value in actual_paths}
         for value in sorted(actual_top_level - set(self.policy[_TP])):
             self.add("path.top_level", value, "top-level path is not admitted during Gate 0")
-        static_paths = MINIMUM_REQUIRED_PATHS | GATE0_CONFORMANCE_INSTANCE_PATHS
+        static_paths = MINIMUM_REQUIRED_PATHS | _CIP
         for value in sorted(actual_paths - static_paths):
             if re.fullmatch(
                 r"docs/governance/(?:oeps/OEP|adrs/ADR)-[0-9]{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md",
@@ -3111,7 +3113,7 @@ class FoundationValidator:
             entry.get("case_id") if isinstance(entry, dict) else None
             for entry in entries
         )
-        if observed_case_ids != GATE0_CONFORMANCE_CASE_IDS:
+        if observed_case_ids != _CCI:
             self.add("fixture.case_inventory", manifest_path, "conformance case IDs and ordering must remain exact")
         seen_paths: set[str] = set()
         seen_case_ids: set[str] = set()
@@ -3712,14 +3714,14 @@ class FoundationValidator:
             self.add("traceability.charter_section", charter_path, "cannot isolate the section 5 feature source")
         else:
             observed = hashlib.sha256(charter[start:end]).hexdigest()
-            if observed != GATE0_CHARTER_SECTION_SHA256:
+            if observed != _CSH:
                 self.add(
                     "traceability.charter_digest",
                     charter_path,
-                    f"section 5 changed: expected {GATE0_CHARTER_SECTION_SHA256}, observed {observed}",
+                    f"section 5 changed: expected {_CSH}, observed {observed}",
                 )
         recorded_digest_count = sum(
-            match.group() == GATE0_CHARTER_SECTION_SHA256
+            match.group() == _CSH
             for match in re.finditer(r"\b[0-9a-f]{64}\b", text)
         )
         if recorded_digest_count != 1:
@@ -3732,8 +3734,8 @@ class FoundationValidator:
         feature_section = markdown_section(text, "## 4. Feature matrix")
         feature_rows = table_rows(feature_section, r"F-[0-9]{2}")
         feature_ids = tuple(row[0] for row in feature_rows)
-        if feature_ids != GATE0_FEATURE_IDS:
-            self.add("traceability.feature_ids", path, f"feature rows must be exact and ordered: {GATE0_FEATURE_IDS}")
+        if feature_ids != _FI:
+            self.add("traceability.feature_ids", path, f"feature rows must be exact and ordered: {_FI}")
         known_decisions = {
             match.group(1)
             for match in re.finditer(
@@ -3777,7 +3779,7 @@ class FoundationValidator:
 
         attestation_section = markdown_section(text, "## 5. Review attestations")
         attestation_rows = table_rows(attestation_section, r"F-[0-9]{2}")
-        if tuple(row[0] for row in attestation_rows) != GATE0_FEATURE_IDS:
+        if tuple(row[0] for row in attestation_rows) != _FI:
             self.add("traceability.attestation_ids", path, "review attestations must cover F-01 through F-14 exactly once in order")
         for row in attestation_rows:
             if len(row) != 6:
@@ -3812,16 +3814,16 @@ class FoundationValidator:
         text = markdown_without_fenced_blocks_and_comments(source)
         persona_intro = markdown_section(text, "## 1. Purpose and limits")
         persona_rows = table_rows(persona_intro, r"P-[0-9]{2}")
-        if tuple(row[0] for row in persona_rows) != GATE0_PERSONA_IDS:
+        if tuple(row[0] for row in persona_rows) != _PI:
             self.add("journey.persona_ids", path, "persona definitions must cover P-01 through P-05 exactly once in order")
 
         index_section = markdown_section(text, "## 2. Journey index")
         journey_rows = table_rows(index_section, r"J-[0-9]{2}")
-        if tuple(row[0] for row in journey_rows) != GATE0_JOURNEY_IDS:
+        if tuple(row[0] for row in journey_rows) != _JI:
             self.add("journey.index_ids", path, "journey index must cover J-01 through J-08 exactly once in order")
-        operation_owners: dict[str, set[str]] = {value: set() for value in GATE0_OPERATION_IDS}
-        feature_owners: dict[str, set[str]] = {value: set() for value in GATE0_FEATURE_IDS}
-        primary_owners: dict[str, set[str]] = {value: set() for value in GATE0_PERSONA_IDS}
+        operation_owners: dict[str, set[str]] = {value: set() for value in _OI}
+        feature_owners: dict[str, set[str]] = {value: set() for value in _FI}
+        primary_owners: dict[str, set[str]] = {value: set() for value in _PI}
         for row in journey_rows:
             if len(row) != 7:
                 self.add("journey.index_shape", path, f"{row[0]} must contain exactly seven table fields")
@@ -3831,24 +3833,24 @@ class FoundationValidator:
                 self.add("journey.index_value", path, f"{journey_id} has an empty title or target gate")
             primary_ids = set(re.findall(r"\bP-[0-9]{2}\b", primary))
             supporting_ids = set(re.findall(r"\bP-[0-9]{2}\b", supporting))
-            if not primary_ids or not primary_ids <= set(GATE0_PERSONA_IDS) or not supporting_ids <= set(GATE0_PERSONA_IDS):
+            if not primary_ids or not primary_ids <= set(_PI) or not supporting_ids <= set(_PI):
                 self.add("journey.persona_ref", path, f"{journey_id} has an invalid persona reference")
-            for persona in primary_ids & set(GATE0_PERSONA_IDS):
+            for persona in primary_ids & set(_PI):
                 primary_owners[persona].add(journey_id)
             operation_ids = set(re.findall(r"`([a-z]+(?:-[a-z]+)*)`", operations))
-            if not operation_ids or not operation_ids <= set(GATE0_OPERATION_IDS):
+            if not operation_ids or not operation_ids <= set(_OI):
                 self.add("journey.operation_ref", path, f"{journey_id} has an invalid operation reference")
-            for operation in operation_ids & set(GATE0_OPERATION_IDS):
+            for operation in operation_ids & set(_OI):
                 operation_owners[operation].add(journey_id)
             feature_ids = set(re.findall(r"\bF-[0-9]{2}\b", features))
-            if not feature_ids or not feature_ids <= set(GATE0_FEATURE_IDS):
+            if not feature_ids or not feature_ids <= set(_FI):
                 self.add("journey.feature_ref", path, f"{journey_id} has an invalid feature reference")
-            for feature_id in feature_ids & set(GATE0_FEATURE_IDS):
+            for feature_id in feature_ids & set(_FI):
                 feature_owners[feature_id].add(journey_id)
 
         specs = markdown_section(text, "## 3. Journey specifications")
         headings = tuple(re.findall(r"(?m)^###\s+(J-[0-9]{2})\b", specs))
-        if headings != GATE0_JOURNEY_IDS:
+        if headings != _JI:
             self.add("journey.spec_ids", path, "journey specifications must cover J-01 through J-08 exactly once in order")
         required_labels = (
             "Actors and intent",
@@ -3859,7 +3861,7 @@ class FoundationValidator:
             "Non-goals",
             "Completion test",
         )
-        for journey_id in GATE0_JOURNEY_IDS:
+        for journey_id in _JI:
             body = markdown_section(specs, f"### {journey_id}", heading_level=3, prefix=True)
             for label in required_labels:
                 if f"**{label}:**" not in body:
@@ -3876,9 +3878,9 @@ class FoundationValidator:
             self.add("journey.operation_coverage", path, "all ten operations require an owning journey")
         if any(not owners for owners in feature_owners.values()):
             self.add("journey.feature_coverage", path, "all fourteen features require journey coverage")
-        self._validate_coverage_table(path, text, "Persona coverage", GATE0_PERSONA_IDS, primary_owners, "journey.persona_matrix")
-        self._validate_coverage_table(path, text, "Operation coverage", GATE0_OPERATION_IDS, operation_owners, "journey.operation_matrix")
-        self._validate_coverage_table(path, text, "Feature coverage", GATE0_FEATURE_IDS, feature_owners, "journey.feature_matrix")
+        self._validate_coverage_table(path, text, "Persona coverage", _PI, primary_owners, "journey.persona_matrix")
+        self._validate_coverage_table(path, text, "Operation coverage", _OI, operation_owners, "journey.operation_matrix")
+        self._validate_coverage_table(path, text, "Feature coverage", _FI, feature_owners, "journey.feature_matrix")
         normalized_text = re.sub(r"\s+", " ", text)
         for assertion in (
             "Persona coverage is 5/5.",
@@ -3916,7 +3918,7 @@ class FoundationValidator:
                 self.add(code, path, f"{identity} owning journeys disagree with the journey index")
             if heading == "Persona coverage":
                 supporting = set(re.findall(r"\bJ-[0-9]{2}\b", row[2]))
-                if not supporting <= set(GATE0_JOURNEY_IDS) or supporting & observed:
+                if not supporting <= set(_JI) or supporting & observed:
                     self.add(code, path, f"{identity} has invalid or overlapping supporting journeys")
 
     def _validate_proof_foundation_suite(self) -> None:

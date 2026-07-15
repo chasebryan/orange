@@ -18,6 +18,7 @@ const SUCCESS: u8 = 0;
 const COMPILATION_ERROR: u8 = 1;
 const USAGE_ERROR: u8 = 2;
 const MAX_SOURCES_PER_INVOCATION: usize = 256;
+const MAX_ARGUMENT_BYTES_PER_INVOCATION: usize = 4 * 1024 * 1024;
 const MAX_SOURCE_BYTES_PER_INVOCATION: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_ERROR_BYTES: usize = 64 * 1024 * 1024;
@@ -1100,11 +1101,14 @@ enum Action {
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Action, String> {
     // Usage errors intentionally cross the same documented final-String
     // allocation boundary as compilation diagnostics.
-    parse_arguments_with_path_reservation(arguments, |paths| paths.try_reserve(1).is_ok())
+    parse_arguments_with_path_reservation(arguments, MAX_ARGUMENT_BYTES_PER_INVOCATION, |paths| {
+        paths.try_reserve(1).is_ok()
+    })
 }
 
 fn parse_arguments_with_path_reservation(
     arguments: impl IntoIterator<Item = OsString>,
+    argument_limit: usize,
     mut reserve_path: impl FnMut(&mut Vec<PathBuf>) -> bool,
 ) -> Result<Action, String> {
     let mut arguments = arguments.into_iter();
@@ -1113,8 +1117,10 @@ fn parse_arguments_with_path_reservation(
     let mut edition_seen = false;
     let mut paths = Vec::new();
     let mut options_enabled = true;
+    let mut remaining_argument_bytes = argument_limit;
 
     while let Some(argument) = arguments.next() {
+        charge_argument_bytes(&mut remaining_argument_bytes, &argument)?;
         let utf8 = argument.to_str();
         if options_enabled {
             match utf8 {
@@ -1129,6 +1135,7 @@ fn parse_arguments_with_path_reservation(
                     let value = arguments
                         .next()
                         .ok_or_else(|| String::from("option `--edition` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
                     edition = parse_edition(&value)?;
                     continue;
                 }
@@ -1195,6 +1202,16 @@ fn parse_arguments_with_path_reservation(
         edition,
         paths,
     }))
+}
+
+fn charge_argument_bytes(remaining: &mut usize, argument: &OsStr) -> Result<(), String> {
+    let Some(next) = remaining.checked_sub(argument.as_encoded_bytes().len()) else {
+        return Err(format!(
+            "command-line arguments exceed the {MAX_ARGUMENT_BYTES_PER_INVOCATION}-byte invocation limit"
+        ));
+    };
+    *remaining = next;
+    Ok(())
 }
 
 fn mark_edition_option(seen: &mut bool) -> Result<(), String> {
@@ -2527,9 +2544,30 @@ mod tests {
     }
 
     #[test]
+    fn bounds_aggregate_argument_bytes_before_interpretation() {
+        let arguments = os_arguments(&["--edition", "2026", "check", "source.or"]);
+        let exact_bytes = arguments
+            .iter()
+            .map(|argument| argument.as_encoded_bytes().len())
+            .sum();
+        assert!(
+            parse_arguments_with_path_reservation(arguments.clone(), exact_bytes, |_| true).is_ok()
+        );
+        assert_eq!(
+            parse_arguments_with_path_reservation(arguments, exact_bytes - 1, |_| true),
+            Err(format!(
+                "command-line arguments exceed the {MAX_ARGUMENT_BYTES_PER_INVOCATION}-byte invocation limit"
+            ))
+        );
+    }
+
+    #[test]
     fn source_input_list_reservation_failure_is_a_usage_error() {
-        let result =
-            parse_arguments_with_path_reservation(os_arguments(&["check", "source.or"]), |_| false);
+        let result = parse_arguments_with_path_reservation(
+            os_arguments(&["check", "source.or"]),
+            MAX_ARGUMENT_BYTES_PER_INVOCATION,
+            |_| false,
+        );
 
         assert_eq!(
             result,
