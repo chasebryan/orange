@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "7858362e713d3f6f02a3532456d46442c4bbbb912d75fbde85d7c8e2b696c14d"
+GATE0_PROTECTED_FILE_DIGEST = "a415777ef4a8e10a4a2cd253f424b28defd20d57abc62de435c25f06c495c43b"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4577,7 +4577,7 @@ def safe_manifest_path(root: Path, value: str) -> Path | None:
 
 def unsafe_run_interpolations(lines: Sequence[str]) -> list[int]:
     unsafe_fields = re.compile(
-        r"\$\{\{\s*github\.event\.(?:comment|discussion|head_commit|issue|pull_request|review|workflow_run)\b"
+        r"\$\{\{\s*(?:github\.(?:event\.|(?:base_ref|head_ref|ref|ref_name)\b)|inputs\.)"
     )
     result: list[int] = []
     run_indent: int | None = None

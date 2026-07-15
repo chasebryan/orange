@@ -2247,13 +2247,26 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual([name for name, _ in jobs], ["first", "second"])
 
-    def test_untrusted_event_interpolation_in_run_is_rejected(self) -> None:
-        lines = [
-            "      - name: Unsafe",
-            "        run: |",
-            "          printf '%s' '${{ github.event.issue.title }}'",
-        ]
-        self.assertEqual(unsafe_run_interpolations(lines), [2])
+    def test_untrusted_context_interpolation_in_run_is_rejected(self) -> None:
+        for field in (
+            "github.event.inputs.command",
+            "github.event.issue.title",
+            "github.base_ref",
+            "github.head_ref",
+            "github.ref",
+            "github.ref_name",
+            "inputs.command",
+        ):
+            lines = [
+                "      - name: Unsafe",
+                "        run: |",
+                f"          printf '%s' '${{{{ {field} }}}}'",
+            ]
+            with self.subTest(field=field):
+                self.assertEqual(unsafe_run_interpolations(lines), [2])
+
+        safe = ["        run: printf '%s' '${{ github.sha }}'"]
+        self.assertEqual(unsafe_run_interpolations(safe), [])
 
     def test_mutable_action_ref_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
