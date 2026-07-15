@@ -327,7 +327,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "6c22a1111552b926fa28f9958cab03919374654a247cac250095c44460627a48"
+_PHD = "0f62ea7b40fa54965573227dfef7b6162eba43cf154fa67cebe05a67db03583e"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -525,6 +525,10 @@ _PM = {
         "validator itself at 384 KiB\n(`384 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
         "binary files at 2 MiB (`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_BINARY_FILE_BYTES,
         "repository at 12 MiB (`12 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
+        "at most 512 files": GATE0_MAXIMUM_REPOSITORY_FILES,
+        "at most 1,024 bytes per raw path": GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+        "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata": GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES,
+        "at most 4,096 entries in one\nfallback directory": GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES,
     },
 }
 MINIMUM_CODEOWNERS = set(
