@@ -354,7 +354,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "335c9c8779374f2f93aedbe2f9b7f6ee4432154649dfc79f126d74bcdd13ff0f"
+_PHD = "4e35cc8b65d047e0730469df41c43617f0098e73bc72f957f09300b8ab044bfe"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -663,18 +663,34 @@ _PM = {
         "Final finding messages retain at\nmost 4,096 characters": GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
     },
 }
-MINIMUM_CODEOWNERS = set(
+GATE0_CODEOWNERS = tuple(
     """* @chasebryan
 /.github/ @chasebryan
 /assets/brand/ @chasebryan
 /SECURITY.md @chasebryan
 /GOVERNANCE.md @chasebryan
+/CONTRIBUTING.md @chasebryan
+/CODE_OF_CONDUCT.md @chasebryan
+/SUPPORT.md @chasebryan
+/DEPENDENCY_POLICY.md @chasebryan
+/RELEASE_POLICY.md @chasebryan
 /docs/ASSURANCE.md @chasebryan
+/docs/DECISIONS.md @chasebryan
+/docs/GATE0_TRACEABILITY.md @chasebryan
+/docs/PROOF_FOUNDATION_DECISION_SUITE.md @chasebryan
+/docs/USER_JOURNEYS.md @chasebryan
+/docs/governance/ @chasebryan
 /docs/security/ @chasebryan
+/docs/operations/CI_DEPENDENCIES.md @chasebryan
+/docs/REPRODUCIBILITY.md @chasebryan
+/schemas/ @chasebryan
+/conformance/foundation/ @chasebryan
 /policy/ @chasebryan
 /scripts/ci/ @chasebryan
-/tools/validate_foundation.py @chasebryan""".splitlines()
+/tools/validate_foundation.py @chasebryan
+/research/decisions/ @chasebryan""".splitlines()
 )
+MINIMUM_CODEOWNERS = set(GATE0_CODEOWNERS)
 GATE0_ALLOWED_TOP_LEVEL = set(
     """.editorconfig .gitattributes .github .gitignore .markdownlint-cli2.jsonc
 CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md Makefile
@@ -2245,6 +2261,12 @@ class FoundationValidator:
                 self.add("policy.minimum", self.policy_path, f"{key} omits protected values: {', '.join(missing)}")
         if set(policy[_RP]) != MINIMUM_REQUIRED_PATHS:
             self.add("policy.required_inventory", self.policy_path, "solo-bootstrap required-path inventory must remain exact")
+        if tuple(policy[_CO]) != GATE0_CODEOWNERS:
+            self.add(
+                "policy.codeowners_contract",
+                self.policy_path,
+                "required_codeowners must match the exact ordered solo-bootstrap ownership contract",
+            )
         top_level = set(policy[_TP])
         if top_level != GATE0_ALLOWED_TOP_LEVEL:
             missing = sorted(GATE0_ALLOWED_TOP_LEVEL - top_level)
@@ -3841,11 +3863,17 @@ class FoundationValidator:
         text = self._rt(path)
         if text is None:
             return
-        active_lines = {
+        active_lines = tuple(
             line.strip()
             for line in text.splitlines()
             if line.strip() and not line.lstrip().startswith("#")
-        }
+        )
+        if active_lines != GATE0_CODEOWNERS:
+            self.add(
+                "codeowners.contract",
+                path,
+                "active CODEOWNERS rules must match the exact ordered solo-bootstrap contract",
+            )
         for required in self.policy[_CO]:
             if required not in active_lines:
                 self.add("codeowners.required", path, f"missing critical ownership rule: {required}")
