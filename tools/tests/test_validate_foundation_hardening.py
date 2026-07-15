@@ -2248,6 +2248,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "--mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'",
+                "--mode='a+rwx'",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "--exclude='*/__pycache__'",
                 "--exclude='*/missing-cache'",
                 "make.compiler_environment_contract",
