@@ -130,6 +130,40 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_issue_form_safety_contract_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (
+                "conduct-contact.yml",
+                "This issue is public. Do not describe the incident",
+                "This issue is public. Describe the incident",
+            ),
+            (
+                "oep-proposal.yml",
+                "Acceptance occurs through a maintainer-authored, reviewed, numbered OEP",
+                "Acceptance occurs when this intake issue is submitted",
+            ),
+        )
+        for name, old, new in mutations:
+            with self.subTest(template=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                template_dir = root / ".github/ISSUE_TEMPLATE"
+                template_dir.mkdir(parents=True)
+                source = (source_root / ".github/ISSUE_TEMPLATE" / name).read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn(old, source)
+                (template_dir / name).write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_repository_templates()
+                self.assertIn(
+                    "template.issue_form_contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_pull_request_safety_contract_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         mutations = (
