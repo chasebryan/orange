@@ -101,7 +101,8 @@ record is checked for worktree presence one component at a time without
 following symlinks, so a stale tracked deletion cannot disappear from the exact
 path inventory. When Git metadata is present, the bounded file and stage-zero
 path sets must be exactly equal; nonignored untracked content is rejected even
-if its name would otherwise be admitted. The stage-zero snapshot retains blob
+if its name would otherwise be admitted. Each stage-zero metadata prefix is
+capped at 128 bytes before its raw path. The stage-zero snapshot retains blob
 IDs only to detect index drift during validation; it does not compare them with
 worktree bytes or require a clean worktree. Validation targets the bounded
 worktree bytes so local pre-commit changes remain admissible. Hosted evidence
@@ -123,6 +124,9 @@ lossy filename aliases. HTML comment balance is scanned directly outside code
 fences, without collision-prone replacement sentinels or whole-file match lists.
 Manifest paths independently reject drive prefixes, backslashes, controls,
 empty segments, and dot segments before any normalization.
+JSON inputs reject duplicate object keys, floating-point and non-finite
+numbers, lone Unicode surrogates, and integers outside the I-JSON interoperable
+range. Structural JSON nesting is capped at 64 levels before decoding.
 
 Content reads require POSIX component-relative open support. Every directory
 and final file component is opened with no-follow flags; the final open is also

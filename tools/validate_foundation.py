@@ -327,7 +327,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "0f62ea7b40fa54965573227dfef7b6162eba43cf154fa67cebe05a67db03583e"
+_PHD = "612c1bcd52183fba7c5d7be662aed35d0c7bd830bb949280c6ba52d8059ce80c"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -529,6 +529,11 @@ _PM = {
         "at most 1,024 bytes per raw path": GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
         "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata": GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES,
         "at most 4,096 entries in one\nfallback directory": GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES,
+        "One\n30-second deadline": _GT,
+        "Each stage-zero metadata prefix is\ncapped at 128 bytes": GATE0_MAXIMUM_GIT_STAGE_PREFIX_BYTES,
+        "Structural JSON nesting is capped at 64 levels": GATE0_MAXIMUM_JSON_NESTING_DEPTH,
+        "each retain at most 4,096 detailed findings": GATE0_MAXIMUM_FINDINGS,
+        "Final finding messages retain at\nmost 4,096 characters": GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
     },
 }
 MINIMUM_CODEOWNERS = set(
