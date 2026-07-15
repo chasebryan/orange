@@ -121,7 +121,9 @@ failure as status 1. Transient `Interrupted` results from stream reads, output
 writes, and explicit output flushes are retried without duplicating accepted
 bytes. Every output adapter rejects an impossible write count larger than the
 offered byte slice. Compilation diagnostics are also explicitly flushed after
-their final error group. `orangec` caps standard error at 64 MiB (`64 * 1024 * 1024` bytes)
+their final error group. When diagnostics and buffered token output are both
+pending, the diagnostic stream is flushed first so a detected diagnostic-flush
+failure discards token bytes that have not escaped the process. `orangec` caps standard error at 64 MiB (`64 * 1024 * 1024` bytes)
 per invocation. Reaching the cap returns status 1 and stops before later source
 operands; because the diagnostic channel itself is exhausted, an already
 accepted prefix can end without a final limit notice. After any detected stream
