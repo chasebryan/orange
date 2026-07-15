@@ -281,7 +281,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 GATE0_WORKFLOW_INVENTORY = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-GATE0_PROTECTED_FILE_DIGEST = "8dca4059c4d4d96d9cf32422843bd13e046a46ecd4afbe6d35091d0e7d5d36ab"
+GATE0_PROTECTED_FILE_DIGEST = "4189a48a2209f856f2d42275cfaed9761007f99b55471139c981a976f06438f4"
 GATE0_CI_COMPILER_RUN = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -843,28 +843,22 @@ def _read_git_nul_records(
     records: list[bytes] = []
     pending = bytearray()
     raw_bytes = 0
-    try:
-        output_descriptor = process.stdout.fileno()
-    except (AttributeError, OSError, ValueError):
-        output_descriptor = None
 
     def reject(code: str, message: str) -> _GitRecordRead:
         _stop_git_process(process, cleanup_deadline - time.monotonic())
         return _GitRecordRead(None, Finding(code, ".", message))
 
     try:
+        output_descriptor = process.stdout.fileno()
+    except (AttributeError, OSError, ValueError):
+        return reject("resource.inventory_protocol", "Git inventory stdout has no usable descriptor")
+
+    try:
         while True:
             remaining = deadline - time.monotonic()
-            if remaining <= 0 or (
-                output_descriptor is not None
-                and not select.select((process.stdout,), (), (), remaining)[0]
-            ):
+            if remaining <= 0 or not select.select((process.stdout,), (), (), remaining)[0]:
                 return reject("resource.inventory_timeout", "Git inventory exceeded its deadline")
-            chunk = (
-                os.read(output_descriptor, _GATE0_GIT_READ_CHUNK_BYTES)
-                if output_descriptor is not None
-                else process.stdout.read(_GATE0_GIT_READ_CHUNK_BYTES)
-            )
+            chunk = os.read(output_descriptor, _GATE0_GIT_READ_CHUNK_BYTES)
             if not chunk:
                 break
             if raw_bytes + len(chunk) > GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES:

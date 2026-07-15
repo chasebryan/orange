@@ -43,17 +43,25 @@ def protected_file_policy() -> dict[str, object]:
 
 class _FakePipe:
     def __init__(self, data: bytes) -> None:
-        self.data = data
-        self.offset = 0
-        self.closed = False
+        self.file = tempfile.TemporaryFile()
+        self.file.write(data)
+        self.file.seek(0)
 
     def read(self, size: int) -> bytes:
-        chunk = self.data[self.offset : self.offset + size]
-        self.offset += len(chunk)
-        return chunk
+        return self.file.read(size)
+
+    def fileno(self) -> int:
+        return self.file.fileno()
 
     def close(self) -> None:
-        self.closed = True
+        self.file.close()
+
+    def __del__(self) -> None:
+        self.file.close()
+
+    @property
+    def closed(self) -> bool:
+        return self.file.closed
 
 
 class _FakePopen:
@@ -612,6 +620,23 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             {finding.code for finding in findings},
             {"resource.inventory_read"},
         )
+        self.assertEqual((process.kill_count, process.wait_count), (1, 1))
+
+    def test_git_inventory_without_a_descriptor_fails_before_reading(self) -> None:
+        process = _FakePopen(b"file.txt\0")
+        process.stdout.fileno = mock.Mock(side_effect=OSError("no descriptor"))
+        process.stdout.read = mock.Mock(side_effect=AssertionError("blocking read attempted"))
+        findings = []
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch(
+                "tools.validate_foundation.subprocess.Popen",
+                return_value=process,
+            ):
+                paths = list(iter_repository_files(Path(directory), findings))
+
+        self.assertEqual(paths, [])
+        self.assertEqual({finding.code for finding in findings}, {"resource.inventory_protocol"})
+        process.stdout.read.assert_not_called()
         self.assertEqual((process.kill_count, process.wait_count), (1, 1))
 
 
