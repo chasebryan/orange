@@ -130,6 +130,36 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_gitignore_contract_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (".gitignore", b"*.pem", b"*.crt"),
+            ("compiler/.gitignore", b"/target/", b"/build/"),
+        )
+        for value, old, new in mutations:
+            with self.subTest(path=value):
+                target = source_root / value
+                source = target.read_bytes()
+                self.assertIn(old, source)
+                validator = FoundationValidator(source_root)
+                read_repository_bytes = validator._read_repository_bytes
+
+                def substituted_read(path: Path) -> bytes | None:
+                    if path == target:
+                        return source.replace(old, new, 1)
+                    return read_repository_bytes(path)
+
+                with mock.patch.object(
+                    validator,
+                    "_read_repository_bytes",
+                    side_effect=substituted_read,
+                ):
+                    findings = validator.run()
+                self.assertIn(
+                    "gitignore.contract",
+                    {finding.code for finding in findings},
+                )
+
     def test_issue_form_safety_contract_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         mutations = (

@@ -73,6 +73,10 @@ tmp/
 *.pem
 compiler/target/""".splitlines()
 )
+GATE0_GITIGNORE_ACTIVE_RULES = {
+    ".gitignore": GATE0_IGNORE_PATTERNS[:-1],
+    "compiler/.gitignore": ("/target/",),
+}
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _JM = "9007199254740991"
@@ -410,7 +414,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "467e4281bb2033c95697b75cd9bee662119944d736f44f9e4d50f6d756492d2e"
+_PHD = "d92acb0fa8051f0e536edb4146d3b6bd0e6ff8482656e736fa473efa2b1e6636"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2114,6 +2118,7 @@ class FoundationValidator:
         if not self.policy:
             return sorted(set(self.findings))
         self._validate_required_and_forbidden_paths()
+        self._validate_gitignore_contracts()
         self._validate_makefile_entrypoint()
         self._validate_compiler_dependency_boundary()
         self._validate_compiler_language_boundary()
@@ -2610,6 +2615,26 @@ class FoundationValidator:
             path = self._policy_path(value)
             if path is not None and self._inventory_has_path(path):
                 self.add("path.forbidden", value, "path is forbidden until its dependent capability decision closes")
+
+    def _validate_gitignore_contracts(self) -> None:
+        for value, expected_rules in GATE0_GITIGNORE_ACTIVE_RULES.items():
+            path = self.root / value
+            if not self._hf(path):
+                continue
+            source = self._rt(path)
+            if source is None:
+                continue
+            active_rules = tuple(
+                line.strip()
+                for line in source.splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
+            )
+            if active_rules != expected_rules:
+                self.add(
+                    "gitignore.contract",
+                    path,
+                    "active ignore rules must match the exact reviewed repository-output contract",
+                )
 
     def _validate_makefile_entrypoint(self) -> None:
         path = self.root / "Makefile"
