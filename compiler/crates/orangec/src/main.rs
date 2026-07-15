@@ -686,7 +686,8 @@ fn read_source_with_post_read(
         let final_path_metadata = path
             .metadata()
             .map_err(|_| ReadSourceError::ChangedDuringRead)?;
-        if !source_read_length_matches_metadata(bytes.len(), opened_metadata.len())
+        if !final_path_metadata.is_file()
+            || !source_read_length_matches_metadata(bytes.len(), opened_metadata.len())
             || !opened_file_metadata_unchanged(&opened_metadata, &closed_metadata)
             || !opened_file_matches_path_metadata(&final_path_metadata, &closed_metadata)
         {
@@ -2943,7 +2944,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn unix_source_path_drift_after_read_is_rejected() {
-        for mutation in ["deletion", "replacement"] {
+        for mutation in ["deletion", "non_regular", "replacement"] {
             let mut temporary = None;
             for suffix in 0..1_024 {
                 let path = std::env::temp_dir().join(format!(
@@ -2972,6 +2973,9 @@ mod tests {
             let result = read_source_with_post_read(&source, &mut input, &mut remaining, || {
                 if mutation == "replacement" {
                     std::fs::rename(&replacement, &source).unwrap();
+                } else if mutation == "non_regular" {
+                    std::fs::remove_file(&source).unwrap();
+                    std::fs::create_dir(&source).unwrap();
                 } else {
                     std::fs::remove_file(&source).unwrap();
                 }
@@ -2980,6 +2984,8 @@ mod tests {
             assert!(matches!(result, Err(ReadSourceError::ChangedDuringRead)));
             if mutation == "replacement" {
                 std::fs::remove_file(source).unwrap();
+            } else if mutation == "non_regular" {
+                std::fs::remove_dir(source).unwrap();
             }
             std::fs::remove_dir(directory).unwrap();
         }
