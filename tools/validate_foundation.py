@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "057274c2350d520d2c500a4eae138cc17816bc861dc7f224bfdaa5946edc004d"
+_PHD = "d5febee91f78e44c881477093a9fd1126d2170f6295ef612e1ce9b4461277fdc"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2426,29 +2426,31 @@ class FoundationValidator:
             'copy_compiler_source "$$cargo_home/repro-src-a"': "first copy",
             'copy_compiler_source "$$cargo_home/repro-src-b"': "second copy",
             'copy_compiler_source "$$cargo_home/check-src"': "check copy",
-            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "manifest required",
-            '--create --file="$$repro_source_archive"': "archive required",
-            "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'": "metadata fixed",
-            '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"': "tracked list required",
+            'manifest="$$cargo_home/check-src/compiler/Cargo.toml"': "manifest",
+            '--create --file="$$repro_source_archive"': "archive",
+            "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'": "metadata",
+            '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"': "tracked list",
             'ls-files --cached -z > "$$repro_source_paths_after"': "final list",
             '--hard-dereference --null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"': "safe list",
-            '--extract --file="$$repro_source_archive"': "extraction required",
-            '! -L "$$cargo_home/check-src/$$relative_path" ]]': "regular snapshot",
-            '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"': "capture check",
-            '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"': "membership check",
-            "optimized orangec builds differ across source roots": "artifacts must match",
-            'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': "anchor required",
+            '--extract --file="$$repro_source_archive"': "extraction",
+            '! -L "$$cargo_home/check-src/$$relative_path" ]]': "type",
+            'live_executable="$$(( (8#$$live_mode & 0111) != 0 ))"': "mode class",
+            '[[ "$$live_executable" == "$$snapshot_executable" ]]': "mode compare",
+            '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"': "content",
+            '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"': "membership",
+            "optimized orangec builds differ across source roots": "artifacts match",
+            'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': "anchor",
         }
         for required, meaning in required_compiler_fragments.items():
             if source.count(required) != 1:
                 self.add("make.compiler_environment_contract", path, f"{meaning}: expected exactly {required!r}")
         required_python_fragments = {
-            "PYTHONHASHSEED=0": (3, "Python checks must use a fixed hash seed"),
+            "PYTHONHASHSEED=0": (3, "fixed Python hash seed"),
             "python3 -S -P -B -X utf8": (
                 3,
-                "Python checks must isolate startup, paths, bytecode, and encoding",
+                "isolated Python startup/path/bytecode/encoding",
             ),
-            "-W error::ResourceWarning": (3, "Python must fail on resource leaks"),
+            "-W error::ResourceWarning": (3, "resource leaks fail"),
         }
         for required, (expected_count, meaning) in required_python_fragments.items():
             if source.count(required) != expected_count:
