@@ -327,7 +327,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "612c1bcd52183fba7c5d7be662aed35d0c7bd830bb949280c6ba52d8059ce80c"
+_PHD = "6c50f0b2207a44bd0fccc248a069662ec80beb3c25ef7d924107ab2ac7e8801f"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -517,6 +517,43 @@ _OM = {
         "`orangec` caps standard output at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
         "`orangec` caps standard error at 64 MiB (`64 * 1024 * 1024` bytes)": 64 * 1024 * 1024,
         "after 1,024 consecutive attempts for one operation": 1_024,
+    },
+}
+_IB = {
+    "scripts/ci/install-actionlint": {
+        "MAXIMUM_ARCHIVE_BYTES": 32 * 1024 * 1024,
+        "MAXIMUM_ARCHIVE_KIB": 32 * 1024,
+        "MAXIMUM_CONNECTION_SECONDS": 20,
+        "MAXIMUM_DOWNLOAD_SECONDS": 300,
+        "MAXIMUM_EXTRACTED_FILE_KIB": 64 * 1024,
+    },
+    "scripts/ci/install-lychee": {
+        "MAXIMUM_ARCHIVE_BYTES": 64 * 1024 * 1024,
+        "MAXIMUM_ARCHIVE_KIB": 64 * 1024,
+        "MAXIMUM_CONNECTION_SECONDS": 20,
+        "MAXIMUM_DOWNLOAD_SECONDS": 300,
+        "MAXIMUM_EXTRACTED_FILE_KIB": 128 * 1024,
+    },
+}
+_IU = (
+    'ulimit -f "$MAXIMUM_ARCHIVE_KIB"',
+    '--connect-timeout "$MAXIMUM_CONNECTION_SECONDS"',
+    '--max-filesize "$MAXIMUM_ARCHIVE_BYTES"',
+    '--max-time "$MAXIMUM_DOWNLOAD_SECONDS"',
+    'ulimit -f "$MAXIMUM_EXTRACTED_FILE_KIB"',
+)
+_IM = {
+    "docs/operations/CI_DEPENDENCIES.md": {
+        (
+            "[`scripts/ci/install-actionlint`](../../scripts/ci/install-actionlint) limits connection "
+            "setup to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 32 MiB "
+            "archive cap in both curl and the operating system, caps the extracted member at 64 MiB"
+        ): (20, 300, 32 * 1024 * 1024, 64 * 1024),
+        (
+            "[`scripts/ci/install-lychee`](../../scripts/ci/install-lychee) limits connection setup "
+            "to 20 seconds and the complete HTTPS fetch to five minutes, enforces the 64 MiB archive "
+            "cap in both curl and the operating system, caps the extracted member at 128 MiB"
+        ): (20, 300, 64 * 1024 * 1024, 128 * 1024),
     },
 }
 _PM = {
@@ -2659,9 +2696,44 @@ class FoundationValidator:
                             f"{name} must equal {expected}; observed={observed!r}",
                         )
 
+        for value, expected_constants in _IB.items():
+            path = self.root / value
+            text = self._rt(path)
+            if text is None:
+                self.add("ci.installer_budget", path, "cannot read installer through bounded reader")
+                continue
+            declarations: dict[str, list[str]] = {}
+            for match in re.finditer(
+                r'(?m)^readonly ([A-Z][A-Z0-9_]*)="([0-9]+)"$',
+                text,
+            ):
+                declarations.setdefault(match.group(1), []).append(match.group(2))
+            for name, expected in expected_constants.items():
+                values = declarations.get(name, [])
+                if len(values) != 1:
+                    self.add(
+                        "ci.installer_budget",
+                        path,
+                        f"{name} must have exactly one decimal readonly declaration; observed={len(values)}",
+                    )
+                elif int(values[0]) != expected:
+                    self.add(
+                        "ci.installer_budget",
+                        path,
+                        f"{name} must equal {expected}; observed={values[0]}",
+                    )
+            for marker in _IU:
+                if text.count(marker) != 1:
+                    self.add(
+                        "ci.installer_budget",
+                        path,
+                        f"installer must use the exact resource-limit marker once: {marker!r}",
+                    )
+
         marker_groups = (
             (_RM, "compiler.language_spec_budget", "normative specification"),
             (_OM, "compiler.cli_spec_budget", "compiler contract"),
+            (_IM, "ci.installer_spec_budget", "installer contract"),
             (_PM, "policy.resource_budget", "repository policy"),
         )
         for markers, finding_code, description in marker_groups:

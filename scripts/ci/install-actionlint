@@ -10,6 +10,7 @@ readonly ACTIONLINT_VERSION="1.7.12"
 readonly DOWNLOAD_BASE="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
 readonly MAXIMUM_ARCHIVE_BYTES="33554432"
 readonly MAXIMUM_ARCHIVE_KIB="32768"
+readonly MAXIMUM_CONNECTION_SECONDS="20"
 readonly MAXIMUM_DOWNLOAD_SECONDS="300"
 readonly MAXIMUM_EXTRACTED_FILE_KIB="65536"
 
@@ -57,7 +58,7 @@ trap '/usr/bin/rm -rf -- "$TEMPORARY_DIRECTORY"' EXIT
   ulimit -f "$MAXIMUM_ARCHIVE_KIB"
   curl \
     --disable \
-    --connect-timeout 20 \
+    --connect-timeout "$MAXIMUM_CONNECTION_SECONDS" \
     --fail \
     --location \
     --max-filesize "$MAXIMUM_ARCHIVE_BYTES" \

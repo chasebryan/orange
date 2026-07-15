@@ -920,11 +920,12 @@ jobs:
                     "trap '/usr/bin/rm -rf -- \"$TEMPORARY_DIRECTORY\"' EXIT",
                     maximum_archive_size,
                     maximum_archive_kib,
+                    'readonly MAXIMUM_CONNECTION_SECONDS="20"',
                     'readonly MAXIMUM_DOWNLOAD_SECONDS="300"',
                     maximum_file_size,
                     '(\n  ulimit -c 0\n  ulimit -f "$MAXIMUM_ARCHIVE_KIB"\n  curl \\\n'
                     "    --disable \\\n",
-                    "--connect-timeout 20",
+                    '--connect-timeout "$MAXIMUM_CONNECTION_SECONDS"',
                     '--max-filesize "$MAXIMUM_ARCHIVE_BYTES"',
                     '--max-time "$MAXIMUM_DOWNLOAD_SECONDS"',
                     '(\n  ulimit -c 0\n  ulimit -f "$MAXIMUM_EXTRACTED_FILE_KIB"\n  tar \\\n',
@@ -2022,7 +2023,10 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
         "compiler/README.md",
         "docs/LANGUAGE_2026.md",
         "docs/SEMANTICS_2026.md",
+        "docs/operations/CI_DEPENDENCIES.md",
         "policy/README.md",
+        "scripts/ci/install-actionlint",
+        "scripts/ci/install-lychee",
     )
 
     def _copy_boundary(self, root: Path) -> None:
@@ -2042,6 +2046,55 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             root = Path(directory)
             self._copy_boundary(root)
             self.assertFalse(self._codes(root))
+
+    def test_installer_shell_budget_drift_is_rejected(self) -> None:
+        mutations = (
+            (
+                "scripts/ci/install-actionlint",
+                'readonly MAXIMUM_ARCHIVE_BYTES="33554432"',
+                'readonly MAXIMUM_ARCHIVE_BYTES="33554431"',
+            ),
+            (
+                "scripts/ci/install-lychee",
+                'readonly MAXIMUM_DOWNLOAD_SECONDS="300"',
+                'readonly MAXIMUM_DOWNLOAD_SECONDS="299"',
+            ),
+        )
+        for value, old, new in mutations:
+            with self.subTest(path=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / value
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("ci.installer_budget", self._codes(root))
+
+    def test_installer_budget_documentation_drift_is_rejected(self) -> None:
+        mutations = (
+            ("the 32 MiB archive cap", "the 31 MiB archive cap"),
+            ("caps the extracted member at 128 MiB", "caps the extracted member at 127 MiB"),
+        )
+        for old, new in mutations:
+            with self.subTest(marker=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_boundary(root)
+                path = root / "docs/operations/CI_DEPENDENCIES.md"
+                source = path.read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                path.write_text(source.replace(old, new, 1), encoding="utf-8")
+                self.assertIn("ci.installer_spec_budget", self._codes(root))
+
+    def test_installer_budget_use_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "scripts/ci/install-actionlint"
+            source = path.read_text(encoding="utf-8")
+            old = '--max-time "$MAXIMUM_DOWNLOAD_SECONDS"'
+            self.assertIn(old, source)
+            path.write_text(source.replace(old, "--max-time 300", 1), encoding="utf-8")
+            self.assertIn("ci.installer_budget", self._codes(root))
 
     def test_rust_source_stripping_never_copies_remaining_suffixes(self) -> None:
         class SliceRejectingString(str):
