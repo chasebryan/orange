@@ -4,6 +4,8 @@ import datetime as dt
 import hashlib
 import io
 import json
+import os
+import pwd
 import shutil
 import subprocess
 import sys
@@ -688,7 +690,10 @@ jobs:
             'readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd -P)"',
             launcher,
         )
-        self.assertIn("export SOURCE_DATE_EPOCH=0\n", launcher)
+        self.assertIn("  SOURCE_DATE_EPOCH=0 \\\n", launcher)
+        self.assertIn("  -i \\\n", launcher)
+        self.assertIn('  HOME="$ACCOUNT_HOME" \\\n', launcher)
+        self.assertIn('  PATH="$SAFE_PATH" \\\n', launcher)
         self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
         self.assertIn('if [ "$#" -ne 0 ]; then\n', launcher)
         self.assertIn('/usr/bin/find "$SCRIPT_PATH" -prune -links 1 -print', launcher)
@@ -748,8 +753,11 @@ jobs:
                 env={
                     "BASH_ENV": str(test_root / "hostile-bash-startup"),
                     "ENV": str(test_root / "hostile-shell-startup"),
+                    "GNUMAKEFLAGS": "--eval=hostile",
+                    "HOME": str(hostile_path),
                     "MAKEFLAGS": "--invalid-hostile-flag",
                     "PATH": str(hostile_path),
+                    "TMPDIR": str(hostile_path),
                 },
                 check=False,
                 capture_output=True,
@@ -764,11 +772,21 @@ jobs:
                 for line in observed.read_text(encoding="utf-8").splitlines()
                 if "=" in line
             )
-            self.assertEqual(environment["PATH"], str(hostile_path))
+            account_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+            self.assertEqual(environment["HOME"], str(account_home))
+            self.assertEqual(
+                environment["PATH"],
+                f"{account_home}/.cargo/bin:/usr/local/bin:/usr/bin:/bin",
+            )
+            self.assertEqual(environment["LANG"], "C")
+            self.assertEqual(environment["LC_ALL"], "C")
             self.assertEqual(environment["SOURCE_DATE_EPOCH"], "0")
+            self.assertEqual(environment["TZ"], "UTC")
             self.assertNotEqual(environment.get("MAKEFLAGS"), "--invalid-hostile-flag")
             self.assertNotIn("BASH_ENV", environment)
             self.assertNotIn("ENV", environment)
+            self.assertNotIn("GNUMAKEFLAGS", environment)
+            self.assertNotIn("TMPDIR", environment)
 
     def test_repository_launcher_rejects_a_direct_script_symlink(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
@@ -2419,6 +2437,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.python_environment_contract",
             ),
             (
+                "/usr/bin/python3 -S -P -B -X utf8",
+                "python3 -S -P -B -X utf8",
+                "make.python_environment_contract",
+            ),
+            (
                 'PYTHONPYCACHEPREFIX="$$pycache"',
                 "",
                 "make.python_cache_contract",
@@ -2439,8 +2462,8 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.python_environment_contract",
             ),
             (
-                "/usr/bin/env PYTHONHASHSEED=0 python3 -S",
-                "python3 -S",
+                "/usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S",
+                "/usr/bin/python3 -S",
                 "make.python_environment_contract",
             ),
             (

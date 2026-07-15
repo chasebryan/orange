@@ -26,17 +26,39 @@ readonly REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIRECTORY/../.." && pwd -P)"
 
 cd -- "$REPOSITORY_ROOT"
 
-export LANG=C
-export LC_ALL=C
-export SOURCE_DATE_EPOCH=0
-export TZ=UTC
+ACCOUNT_RECORD="$(/usr/bin/getent passwd "$(/usr/bin/id -u)")" || {
+  echo "cannot resolve the invoking operating-system account" >&2
+  exit 1
+}
+case "$ACCOUNT_RECORD" in
+  *'
+'*)
+    echo "invoking operating-system account is ambiguous" >&2
+    exit 1
+    ;;
+esac
+readonly ACCOUNT_RECORD
+ACCOUNT_HOME="$(printf '%s\n' "$ACCOUNT_RECORD" | /usr/bin/cut -d: -f6)"
+case "$ACCOUNT_HOME" in
+  /*) ;;
+  *)
+    echo "invoking operating-system account has no absolute home directory" >&2
+    exit 1
+    ;;
+esac
+ACCOUNT_HOME="$(CDPATH= cd -- "$ACCOUNT_HOME" && pwd -P)" || {
+  echo "cannot resolve the invoking operating-system account home" >&2
+  exit 1
+}
+readonly ACCOUNT_HOME
+readonly SAFE_PATH="$ACCOUNT_HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
 
 exec /usr/bin/env \
-  -u BASH_ENV \
-  -u ENV \
-  -u GNUMAKEFLAGS \
-  -u MAKEFLAGS \
-  -u MAKEFILES \
-  -u MAKEOVERRIDES \
-  -u MFLAGS \
+  -i \
+  HOME="$ACCOUNT_HOME" \
+  LANG=C \
+  LC_ALL=C \
+  PATH="$SAFE_PATH" \
+  SOURCE_DATE_EPOCH=0 \
+  TZ=UTC \
   /usr/bin/make --no-builtin-rules --no-builtin-variables check

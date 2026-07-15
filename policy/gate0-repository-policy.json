@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.37",
+  "policy_version": "0.2.38",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -250,7 +250,7 @@
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
-    "Makefile": "192bdf4be6efa0a609d8e79514c9e1cf9b8d6c67491d4cf06a0d61bd5266bc07",
+    "Makefile": "5df0049f3fd52463815369e843b7a079b37545a8b84281d7a09367b3b9d5ab85",
     "README.md": "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
@@ -292,8 +292,8 @@
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "f80e43c5c2ff5416952260d6ef1e18e74eb3c40bca0014447e80c6c1f44e7547",
-    "policy/README.md": "8b239b026c6067b629348f78de83d3576a7a9dc92db1b93e66d1456938b2b0a4",
+    "docs/security/THREAT_MODEL.md": "03ddff949e7ebc20776fcea5980cc9c8c9930fbf8cd0fc5f96a8b8fdd28f3fca",
+    "policy/README.md": "eca8ffcdfa32f6e2ffb20455e4b15e7a9fba6eb8cfd92913192b520f5b0fce82",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
@@ -301,11 +301,11 @@
     "schemas/gate0/standards-provenance-v0.1.schema.json": "9d663bce83d7068e1e0b762eb50338a473ff8416062598dcd756d8ebf98f78f2",
     "schemas/gate0/trust-inventory-v0.1.schema.json": "fa673ccd1fbdc85faa92ee02835282e454c076db01b373c781e05ec1bbd1c222",
     "scripts/ci/check-external-links": "18e59d0a957a15e00c92c06cf43addd485f007f8aa5f4704b8af79c81ee4481b",
-    "scripts/ci/check-repository": "1e793a816bceac77e4ded0a12d4061e85eb7089c0b9801a712cc70d6f5400aee",
+    "scripts/ci/check-repository": "7d896bcffff1d737852c2bf740c8262e97b2f2fad6e9a1fdd03283c887d6feff",
     "scripts/ci/install-actionlint": "61d83dbca3977255ed5457ed0f6fa6b943b0e268df0b5a0271e2ef3c080c7bf3",
     "scripts/ci/install-lychee": "36999c6fe2b7e46b2c60f931bc3293ceb8706f5851cdf2d144e0c35bcc7489cd",
     "tools/tests/test_validate_foundation.py": "dfb804ab61cc813dd009c7210e966b28d6bf47c8bf10436a03a6627762682608",
-    "tools/tests/test_validate_foundation_hardening.py": "a0b208e3789fda0ac167d5cd335ff94d75918acb32d973fb5646a3a5cadbe46e"
+    "tools/tests/test_validate_foundation_hardening.py": "7f46881d8b99fa675355107ccd0ff134ae4aa6506757924ede45b6c3a40d84d0"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

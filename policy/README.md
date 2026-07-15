@@ -17,18 +17,25 @@ privileged shell mode suppresses inherited interpreter startup files before the
 script executes. It rejects a symbolic link in the script's final path
 component and any multiply-linked launcher inode, then resolves its parent
 directory and repository root to physical paths before entering the checkout,
-so a file or directory alias cannot change the policy scope. It then removes
-inherited Make control and shell-startup
-variables before Make parses any file and validates the closed repository tree
-before foundation unit/adversarial tests and Rust formatting, linting, and
-tests. The Make entrypoint serializes that order even under parallel execution,
+so a file or directory alias cannot change the policy scope. It then resolves
+the invoking operating-system account rather than trusting inherited `HOME`,
+discards the complete caller environment, and supplies only fixed locale, time,
+account-home, and tool-search values. Its tool search is limited to the
+account's conventional Rust proxy directory and fixed host directories;
+canonical Python invocations use the absolute system interpreter path. The gate
+validates the closed repository tree before foundation unit/adversarial tests
+and Rust formatting, linting, and tests. The Make entrypoint serializes that
+order even under parallel execution,
 and its fixed privileged recipe shell suppresses inherited Bash functions and
 startup settings. The compiler target runs all tests in both debug and
 optimized release profiles. The release profile retains debug assertions and
 integer overflow checks, and a runtime test verifies both settings. GitHub
 required CI uses the same policy-first order before repository-controlled test
 discovery or Cargo execution. Direct `make check` remains a convenience for an
-already trusted caller environment.
+already trusted caller environment. The selected account-owned Rust proxy and
+fixed host tools remain bootstrap trust dependencies; environment isolation
+prevents caller-selected wrappers from silently replacing them but does not
+establish their provenance.
 
 Canonical Python invocations start from an allowlisted environment with a fixed
 hash seed, skip `site` initialization, exclude unsafe path injection, suppress
