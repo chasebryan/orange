@@ -324,7 +324,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_PHD = "375697566825b4442a0c2967dd025017e44e21b309dab6653cef505849b13185"
+_PHD = "e171f8acdfe4c651110e3e2751f5df964bef1a6a26194699543f4ba83ee38cad"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -2380,13 +2380,13 @@ class FoundationValidator:
         if source is None:
             return
         required_lines = {
-            ".DEFAULT_GOAL := check": "check must remain the default target",
-            "override SHELL := /bin/bash": "the protected recipes must use the selected Bash path",
-            "override .SHELLFLAGS := -p -c": "recipe Bash must suppress inherited startup state",
-            "unexport BASH_ENV ENV": "recipe shells must not inherit startup-hook paths",
-            ".NOTPARALLEL: check": "check prerequisites must remain serialized under parallel Make",
+            ".DEFAULT_GOAL := check": "default check required",
+            "override SHELL := /bin/bash": "Bash path fixed",
+            "override .SHELLFLAGS := -p -c": "startup state suppressed",
+            "unexport BASH_ENV ENV": "hooks unexported",
+            ".NOTPARALLEL: check": "check serialized",
             "check: check-policy test-policy check-compiler": (
-                "check must validate the closed tree before test discovery or Cargo execution"
+                "policy/tests precede Cargo"
             ),
         }
         lines = source.splitlines()
@@ -2430,9 +2430,11 @@ class FoundationValidator:
             '--create --file="$$repro_source_archive"': "archive required",
             "--format=gnu --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w,u-s,g-s,o-t'": "metadata fixed",
             '/usr/bin/env -i PATH=/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 /usr/bin/git -C "$$repository_root" ls-files --cached -z > "$$repro_source_paths"': "tracked list required",
+            'ls-files --cached -z > "$$repro_source_paths_after"': "final list",
             '--null --verbatim-files-from --no-recursion --directory="$$repository_root" --files-from="$$repro_source_paths"': "safe list required",
             '--extract --file="$$repro_source_archive"': "extraction required",
             '/usr/bin/cmp --silent -- "$$repository_root/$$relative_path" "$$cargo_home/check-src/$$relative_path"': "capture check",
+            '/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after"': "membership check",
             "optimized orangec builds differ across source roots": "artifacts must match",
             'repository_manifest="$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/compiler/Cargo.toml"': "anchor required",
         }

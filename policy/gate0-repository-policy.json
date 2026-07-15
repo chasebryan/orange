@@ -250,7 +250,7 @@
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
-    "Makefile": "4ee1266f71c032eabf37572e432b7fd5cffe1936d5eec0c818b48c5aa3200d9e",
+    "Makefile": "b317e0ed879285a7b53465a8f5d689486b56174edb641f1288c098ed1038121b",
     "README.md": "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
@@ -288,7 +288,7 @@
     "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
     "docs/LANGUAGE_2026.md": "28bcb8741e67adad12c92fa3e0ad8d4b759cf6625333eea5af6dd5a663c014bd",
     "docs/SEMANTICS_2026.md": "a465aca6c98344fb1271944ce9cdd5af3575afcf295442dfbbd6e05a95182b33",
-    "docs/operations/CI_DEPENDENCIES.md": "a1aa5e71ee0e017e609bb16c1398027fe5e42053c1d0143f100b39a2d4bd3dac",
+    "docs/operations/CI_DEPENDENCIES.md": "f0a058c888e4157d948bb85c2b75ce5883a2fe4cd34b48835c76ac90f38f724b",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
@@ -305,7 +305,7 @@
     "scripts/ci/install-actionlint": "0088f1ebc40cc27d96a2869171c10628fd75b7452feea081467a9892c8b014cd",
     "scripts/ci/install-lychee": "1c329cd592c5a575c3bc4ff95adb8607a45fd11528680ef4a489a73c416ddb18",
     "tools/tests/test_validate_foundation.py": "f9964d6776959e8fab16969a17526eefb85538d79fcf6b4406d68e31bdf17dc6",
-    "tools/tests/test_validate_foundation_hardening.py": "f9d7cc7e4fe2e5bd5692758a4a7a39add28c71734d6000aeb919a244382f880d"
+    "tools/tests/test_validate_foundation_hardening.py": "c759a90f27931bd0fa1da47aef1ae280a078fe7fae644b06ec32a774aa7d32af"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
