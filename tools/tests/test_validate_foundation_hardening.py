@@ -130,6 +130,30 @@ class JsonHardeningTests(unittest.TestCase):
 
 
 class WorkflowHardeningTests(unittest.TestCase):
+    def test_dependabot_configuration_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            github = root / ".github"
+            github.mkdir()
+            source = (source_root / ".github/dependabot.yml").read_text(encoding="utf-8")
+            old = "      default-days: 7"
+            self.assertIn(old, source)
+            (github / "dependabot.yml").write_text(
+                source.replace(old, "      default-days: 8", 1),
+                encoding="utf-8",
+            )
+            shutil.copyfile(
+                source_root / ".github/dependency-review-config.yml",
+                github / "dependency-review-config.yml",
+            )
+            validator = FoundationValidator(root)
+            validator._validate_dependabot()
+            self.assertIn(
+                "dependabot.configuration",
+                {finding.code for finding in validator.findings},
+            )
+
     def test_dependency_review_configuration_drift_is_rejected(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
@@ -2197,6 +2221,20 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             self.assertIn(old, source)
             path.write_text(source.replace(old, "snapshot warnings for at most 121 seconds", 1), encoding="utf-8")
             self.assertIn("ci.dependency_review_spec", self._codes(root))
+
+    def test_dependabot_documentation_drift_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_boundary(root)
+            path = root / "docs/operations/CI_DEPENDENCIES.md"
+            source = path.read_text(encoding="utf-8")
+            old = "permits at most five open\nupdate pull requests"
+            self.assertIn(old, source)
+            path.write_text(
+                source.replace(old, "permits at most six open\nupdate pull requests", 1),
+                encoding="utf-8",
+            )
+            self.assertIn("ci.dependabot_spec", self._codes(root))
 
     def test_rust_source_stripping_never_copies_remaining_suffixes(self) -> None:
         class SliceRejectingString(str):

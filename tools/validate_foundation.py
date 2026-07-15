@@ -328,6 +328,17 @@ _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
 _WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_DBC = """version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+"""
 _DRC = """fail_on_severity: moderate
 fail_on_scopes:
   - runtime
@@ -343,7 +354,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "d6cf3d83a0abe6ac2abeb77afb748b6e123e54a362e673e6df20efbd96505e55"
+_PHD = "335c9c8779374f2f93aedbe2f9b7f6ee4432154649dfc79f126d74bcdd13ff0f"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -624,6 +635,15 @@ _DM = {
             "shows patched versions; never comments on the pull request; and does not use\n"
             "warn-only mode."
         ): ("runtime", "development", "unknown", "moderate", 120, 5, False),
+    },
+}
+_DBM = {
+    "docs/operations/CI_DEPENDENCIES.md": {
+        (
+            "Dependabot configuration version 2 scans GitHub Actions at the repository root on a\n"
+            "weekly interval, applies a seven-day default cooldown, and permits at most five open\n"
+            "update pull requests."
+        ): (2, "github-actions", "/", "weekly", 7, 5),
     },
 }
 _PM = {
@@ -2812,6 +2832,7 @@ class FoundationValidator:
             (_LM, "ci.external_link_spec_budget", "external-link contract"),
             (_WM, "ci.workflow_timeout_spec", "workflow timeout contract"),
             (_DM, "ci.dependency_review_spec", "dependency-review contract"),
+            (_DBM, "ci.dependabot_spec", "Dependabot contract"),
             (_PM, "policy.resource_budget", "repository policy"),
         )
         for markers, finding_code, description in marker_groups:
@@ -3563,15 +3584,12 @@ class FoundationValidator:
         source = self._rt(path)
         if source is None:
             return
-        text = yaml_without_comments(source)
-        required_patterns = (
-            r"package-ecosystem:\s*[\"']?github-actions[\"']?",
-            r"directory:\s*[\"']?/[\"']?",
-            r"interval:\s*[\"']?weekly[\"']?",
-        )
-        for pattern in required_patterns:
-            if not re.search(pattern, text):
-                self.add("dependabot.configuration", path, f"missing required setting matching {pattern}")
+        if source != _DBC:
+            self.add(
+                "dependabot.configuration",
+                path,
+                "Dependabot configuration must match the exact bounded update contract",
+            )
         review_path = self.root / ".github/dependency-review-config.yml"
         if self._hf(review_path):
             review_source = self._rt(review_path)

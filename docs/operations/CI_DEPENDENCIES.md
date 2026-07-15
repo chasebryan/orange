@@ -81,6 +81,10 @@ snapshot warnings for at most 120 seconds; warns below OpenSSF Scorecard level 5
 shows patched versions; never comments on the pull request; and does not use
 warn-only mode.
 
+Dependabot configuration version 2 scans GitHub Actions at the repository root on a
+weekly interval, applies a seven-day default cooldown, and permits at most five open
+update pull requests.
+
 `ci.yml` and `dependency-review.yml` supply the two required merge checks bound
 to GitHub Actions by ruleset `18810248`; effective rules still require separate
 readback during drift review. The other three
