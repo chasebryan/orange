@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.68",
+  "policy_version": "0.2.69",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -307,7 +307,7 @@
     "scripts/ci/install-actionlint": "ac2e08280a32b7d213fb3993f43e5f9d9431dc3f960a41dedea551be2d9433b5",
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/tests/test_validate_foundation.py": "428996f350509478ba525b5c63b55fa1a1a52c6d9d65f4cba4d354ad76bfacb0",
-    "tools/tests/test_validate_foundation_hardening.py": "9b80cb7aba91fa5027813c9b8697f0d60204c4e59d0e75ff6678c728a97e6a0c"
+    "tools/tests/test_validate_foundation_hardening.py": "6955ccd5b7014f30afd9d53156968069e2902f5acbae0783b069ba9196b8a270"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

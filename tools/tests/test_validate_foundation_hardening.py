@@ -2516,6 +2516,28 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
 
 
 class BrandAssetHardeningTests(unittest.TestCase):
+    def test_gitattributes_contract_drift_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            ("*.wasm binary !eol", "*.wasm text eol=lf"),
+            ("* text=auto eol=lf", "* text=auto eol=crlf"),
+        )
+        for old, new in mutations:
+            with self.subTest(rule=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = (source_root / ".gitattributes").read_text(encoding="utf-8")
+                self.assertIn(old, source)
+                (root / ".gitattributes").write_text(
+                    source.replace(old, new, 1),
+                    encoding="utf-8",
+                )
+                validator = FoundationValidator(root)
+                validator._validate_brand_assets()
+                self.assertIn(
+                    "gitattributes.contract",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_official_brand_manifest_matches_admitted_assets(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         validator = FoundationValidator(source_root)
