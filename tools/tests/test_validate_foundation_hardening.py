@@ -3100,6 +3100,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "\t\t--keep-caps \\\n",
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "\t\t--mount-proc \\\n",
                 "\t\t--mount-proc=/host/proc \\\n",
                 "make.compiler_environment_contract",
@@ -3125,12 +3130,27 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "--bounding-set=-all \\\n",
+                "--bounding-set=+all \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "--inh-caps=-all \\\n",
+                "--inh-caps=+all \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "--ambient-caps=-all \\\n",
+                "--ambient-caps=+all \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "\t\t--no-new-privs \\\n",
                 "",
                 "make.compiler_environment_contract",
             ),
             (
-                "run_cargo /bin/bash -p -c '[[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$(/usr/bin/sed -n \"s/^CapEff:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\"",
+                "run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ \"$$(/usr/bin/sed -n \"s/^$${capability_set}:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 ]] || exit 1; done; [[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\"",
                 "/usr/bin/true",
                 "make.compiler_environment_contract",
             ),
