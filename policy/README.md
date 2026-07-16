@@ -105,8 +105,10 @@ channels are intentionally merged. The fixed host C compiler, relay, `mount`,
 `unshare`, `sudo`, and `setpriv` implementations, protected launcher,
 passwordless namespace-setup policy, user-namespace availability, kernel
 namespace/Landlock enforcement, and unrelated same-account processes outside
-the private namespace remain trusted or residual boundaries. The admitted
-private `/proc` still exposes kernel, CPU, and process metadata. Resource ceilings
+the private namespace remain trusted or residual boundaries. Copied commands
+can read only the gate launcher's PID-1 procfs metadata and the private System V
+IPC tables; representative global kernel/CPU and dynamic `/proc/self` content is
+asserted unreadable. Resource ceilings
 are not aggregate cgroup budgets: virtual address space and CPU time are limited
 per process, file size is limited per file, aggregate resident memory is not
 capped, and the process ceiling includes other processes with the same real user
