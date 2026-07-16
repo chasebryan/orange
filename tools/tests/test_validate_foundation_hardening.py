@@ -3491,7 +3491,9 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 self.assertIn(expected_code, codes)
                 self.assertNotIn("make.contract", codes)
 
-    def test_filesystem_sandbox_denies_unadmitted_files_and_closes_descriptors(self) -> None:
+    def test_filesystem_sandbox_denies_unadmitted_files_closes_descriptors_and_caps_resources(
+        self,
+    ) -> None:
         source_root = Path(__file__).resolve().parents[2]
         source = source_root / "tools/fs_sandbox.c"
         with tempfile.TemporaryDirectory() as directory:
@@ -3552,7 +3554,14 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                             "! cat ../denied/secret >/dev/null 2>&1; "
                             "! cat escape >/dev/null 2>&1; "
                             "! printf escaped > ../denied/output 2>/dev/null; "
-                            '[[ ! -e "/proc/self/fd/$1" ]]'
+                            '[[ ! -e "/proc/self/fd/$1" ]]; '
+                            "/usr/bin/python3 -S -P -B -c 'import resource; "
+                            "limits=((resource.RLIMIT_CORE,0),(resource.RLIMIT_CPU,600),"
+                            "(resource.RLIMIT_FSIZE,536870912),(resource.RLIMIT_NOFILE,1024),"
+                            "(resource.RLIMIT_NPROC,256)); "
+                            "assert all(0 <= resource.getrlimit(kind)[0] <= maximum and "
+                            "0 <= resource.getrlimit(kind)[1] <= maximum "
+                            "for kind, maximum in limits)'"
                         ),
                         "sandbox",
                         str(inherited),
