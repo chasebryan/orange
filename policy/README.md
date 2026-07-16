@@ -56,16 +56,28 @@ ignored prior build artifacts from steering the build after policy validation.
 A third policy check runs after all Rust commands. After initial capture
 consistency checks, the gate opens the original archive and NUL-delimited tracked
 path inventory through read-only descriptors, unlinks their filesystem names,
-and closes both descriptors before copied Python or Rust code executes. Trusted
-gate operations retain the descriptors for extraction and SHA-256 identity
-checks. The gate verifies those identities before and after its final comparison,
+and closes both descriptors before copied Python or Rust code executes. Each
+copied command runs as PID 1 in private mount, PID, `/proc`, and network
+namespaces. The preferred path also creates an unprivileged user namespace. If
+the host rejects that mapping, a fixed non-interactive `sudo` supervisor creates
+only the remaining namespaces before `setpriv` restores the invoking numeric
+user and group, clears supplementary groups, and enables `no_new_privs`. Both
+paths assert the expected identity, zero effective capabilities, private process
+view, empty route table, and descriptor closure before copied code runs. The
+namespace supervisor kills its child if supervision is interrupted. Trusted gate
+operations retain the descriptors for extraction and SHA-256 identity checks.
+The gate verifies those identities before and after its final comparison,
 extracts a fresh reference, compares NUL-safe sorted non-directory membership
 across the tested check root and both relocated reproducibility roots, and
 compares every tracked file's type, complete mode, and bytes with the reference.
 Added source entries or policy-valid tracked-source drift in any compiler input
 root therefore cannot produce a passing gate unless a trusted child restores the
 original state before comparison. Empty-directory additions are not source
-membership and remain outside this final comparison.
+membership and remain outside this final comparison. The fixed host `unshare`,
+`sudo`, and `setpriv` implementations, passwordless namespace-setup policy,
+user-namespace availability, kernel namespace enforcement, and unrelated
+same-account processes outside the private namespace remain trusted or residual
+boundaries.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an
