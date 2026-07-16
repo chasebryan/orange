@@ -74,7 +74,8 @@ Before the drop, the namespace supervisor bind-mounts the selected toolchain
 read-only and covers `/home` with a private non-executable `tmpfs`. A protected C
 launcher built from the captured tree requires Landlock ABI 3 or newer, permits
 directory-name traversal but grants file reads and execution only to `/usr`, the
-private `/proc`, the gate tool roots, and the selected toolchain, and grants
+gate launcher's private `/proc/1`, the private `/proc/sysvipc` tables, the gate
+tool roots, and the selected toolchain, and grants
 writes only to the two gate roots and four admitted character devices. Host
 account/configuration files under `/etc` and kernel/device state under `/sys`
 remain unreadable, with representative runtime assertions. The launcher also
@@ -115,8 +116,9 @@ trusted outer `/usr/bin/cat` relays that merged stream to the caller's final
 output sink. The caller can still close or truncate that final sink, and the two
 copied output channels are intentionally indistinguishable. The system C
 compiler, launcher source, relay, kernel, mount implementation, and allowlisted
-system roots remain trusted boundaries. Private `/proc` still exposes kernel,
-CPU, and process metadata. Resource ceilings are not aggregate
+system roots remain trusted boundaries. The gate launcher's PID-1 metadata and
+private System V IPC tables remain readable; representative global kernel/CPU
+and dynamic `/proc/self` content is asserted unreadable. Resource ceilings are not aggregate
 cgroup budgets: virtual address space and CPU time are limited per process,
 file size is limited per file, aggregate resident memory is not capped, and the
 process ceiling includes other processes with the same real user ID.
