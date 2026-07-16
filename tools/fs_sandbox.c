@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -14,6 +15,11 @@
 #ifndef LANDLOCK_ACCESS_FS_IOCTL_DEV
 #define LANDLOCK_ACCESS_FS_IOCTL_DEV (1ULL << 15)
 #endif
+
+#define ORANGE_MAXIMUM_CPU_SECONDS 600U
+#define ORANGE_MAXIMUM_FILE_BYTES (512U * 1024U * 1024U)
+#define ORANGE_MAXIMUM_OPEN_FILES 1024U
+#define ORANGE_MAXIMUM_PROCESSES 256U
 
 static void fail(const char *stage)
 {
@@ -51,6 +57,33 @@ static uint64_t handled_rights(int abi)
         rights |= LANDLOCK_ACCESS_FS_IOCTL_DEV;
     }
     return rights;
+}
+
+static void cap_resource(int resource, rlim_t maximum, const char *stage)
+{
+    struct rlimit limit;
+
+    if (getrlimit(resource, &limit) < 0) {
+        fail(stage);
+    }
+    if (limit.rlim_max == RLIM_INFINITY || limit.rlim_max > maximum) {
+        limit.rlim_cur = maximum;
+        limit.rlim_max = maximum;
+    } else {
+        limit.rlim_cur = limit.rlim_max;
+    }
+    if (setrlimit(resource, &limit) < 0) {
+        fail(stage);
+    }
+}
+
+static void cap_resources(void)
+{
+    cap_resource(RLIMIT_CORE, 0, "limit-core");
+    cap_resource(RLIMIT_CPU, ORANGE_MAXIMUM_CPU_SECONDS, "limit-cpu");
+    cap_resource(RLIMIT_FSIZE, ORANGE_MAXIMUM_FILE_BYTES, "limit-file-size");
+    cap_resource(RLIMIT_NOFILE, ORANGE_MAXIMUM_OPEN_FILES, "limit-open-files");
+    cap_resource(RLIMIT_NPROC, ORANGE_MAXIMUM_PROCESSES, "limit-processes");
 }
 
 static uint64_t allowed_rights(uint64_t handled, mode_t mode, int access_mode)
@@ -175,6 +208,7 @@ int main(int argc, char **argv)
     if (close(ruleset_fd) < 0) {
         fail("close-ruleset");
     }
+    cap_resources();
     if (syscall(SYS_close_range, 3U, ~0U, 0U) < 0) {
         fail("close-descriptors");
     }

@@ -72,13 +72,16 @@ process view, and empty route table. Before dropping privilege, the supervisor
 bind-mounts the selected toolchain read-only and hides `/home` behind a private
 non-executable `tmpfs`. The protected `tools/fs_sandbox.c` launcher is built
 from the checked capture with fixed hardening flags. It requires Landlock ABI 3
-or newer, grants
-file reads and execution only to the admitted system/toolchain roots, grants
-writes only to the two temporary gate roots and admitted character devices, and
-closes every inherited descriptor above standard error. Copied commands receive
-isolated `HOME`, `TMPDIR`, and `PATH` values and must prove the original checkout
-unreadable before tests begin. The namespace supervisor kills its child if
-supervision is interrupted. Trusted gate operations retain the descriptors for
+or newer, grants file reads and execution only to the admitted system/toolchain
+roots, grants writes only to the two temporary gate roots and admitted character
+devices, and
+closes every inherited descriptor above standard error. Before execution it
+also fixes hard ceilings of 600 CPU seconds per process, 512 MiB per file, 1,024
+open files, 256 processes for the real user, and zero core-file bytes, preserving
+any lower inherited hard ceiling. Copied commands receive isolated `HOME`,
+`TMPDIR`, and `PATH` values and must prove the original checkout unreadable
+before tests begin. The namespace supervisor kills its child if supervision is
+interrupted. Trusted gate operations retain the descriptors for
 extraction and SHA-256 identity checks.
 The gate verifies those identities before and after its final comparison,
 extracts a fresh reference, compares NUL-safe sorted non-directory membership
@@ -93,7 +96,10 @@ operation; standard descriptors remain caller-controlled. The fixed host C
 compiler, `mount`, `unshare`, `sudo`, and `setpriv` implementations, protected
 launcher, passwordless namespace-setup policy, user-namespace availability,
 kernel namespace/Landlock enforcement, and unrelated same-account processes
-outside the private namespace remain trusted or residual boundaries.
+outside the private namespace remain trusted or residual boundaries. Resource
+ceilings are not aggregate cgroup budgets: CPU and file size are limited per
+process and per file, and the process ceiling includes other processes with the
+same real user ID.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an
