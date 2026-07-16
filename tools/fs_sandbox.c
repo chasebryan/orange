@@ -17,6 +17,7 @@
 #endif
 
 #define ORANGE_MAXIMUM_CPU_SECONDS 600U
+#define ORANGE_MAXIMUM_ADDRESS_SPACE_BYTES (4ULL * 1024ULL * 1024ULL * 1024ULL)
 #define ORANGE_MAXIMUM_FILE_BYTES (512U * 1024U * 1024U)
 #define ORANGE_MAXIMUM_OPEN_FILES 1024U
 #define ORANGE_MAXIMUM_PROCESSES 256U
@@ -79,6 +80,8 @@ static void cap_resource(int resource, rlim_t maximum, const char *stage)
 
 static void cap_resources(void)
 {
+    cap_resource(RLIMIT_AS, ORANGE_MAXIMUM_ADDRESS_SPACE_BYTES,
+                 "limit-address-space");
     cap_resource(RLIMIT_CORE, 0, "limit-core");
     cap_resource(RLIMIT_CPU, ORANGE_MAXIMUM_CPU_SECONDS, "limit-cpu");
     cap_resource(RLIMIT_FSIZE, ORANGE_MAXIMUM_FILE_BYTES, "limit-file-size");
