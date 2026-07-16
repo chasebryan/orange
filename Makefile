@@ -17,19 +17,46 @@ check-compiler:
 	repro_home_b="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-repro-home.XXXXXXXX")"; \
 	trap '/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b"' EXIT; \
 	repro_home_b="$$(CDPATH= cd -- "$$repro_home_b" && pwd -P)"; \
+	gate_uid="$$(/usr/bin/id -u)"; \
+	gate_gid="$$(/usr/bin/id -g)"; \
+	namespace_runner=( \
+		/usr/bin/unshare \
+		--user \
+		--map-current-user \
+		--mount \
+		--pid \
+		--fork \
+		--kill-child=KILL \
+		--mount-proc \
+		--net \
+		/usr/bin/setpriv \
+		--no-new-privs \
+	); \
+	if ! "$${namespace_runner[@]}" /bin/true >/dev/null 2>&1; then \
+		namespace_runner=( \
+			/usr/bin/sudo \
+			--non-interactive \
+			-- \
+			/usr/bin/unshare \
+			--mount \
+			--pid \
+			--fork \
+			--kill-child=KILL \
+			--mount-proc \
+			--net \
+			/usr/bin/setpriv \
+			--reuid "$$gate_uid" \
+			--regid "$$gate_gid" \
+			--clear-groups \
+			--no-new-privs \
+		); \
+		"$${namespace_runner[@]}" /bin/true; \
+	fi; \
 	run_cargo() { \
 		( \
 			exec 8<&- 9<&-; \
 			cd -- /; \
-			/usr/bin/unshare \
-				--user \
-				--map-current-user \
-				--mount \
-				--pid \
-				--fork \
-				--kill-child=KILL \
-				--mount-proc \
-				--net \
+			"$${namespace_runner[@]}" \
 				/usr/bin/env -i \
 				CARGO_HOME="$$cargo_home" \
 				CARGO_NET_OFFLINE=true \
@@ -84,7 +111,7 @@ check-compiler:
 	/usr/bin/rm -- "$$repro_source_paths_after"; \
 	verify_capture_identity; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
-	run_cargo /bin/bash -p -c '[[ $$$$ == 1 && $$PPID == 0 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z "$$(/usr/bin/sed -n "2p" /proc/net/route)" ]]'; \
+	run_cargo /bin/bash -p -c '[[ $$$$ == 1 && $$PPID == 0 && "$$(/usr/bin/id -u)" == "$$1" && "$$(/usr/bin/id -g)" == "$$2" && "$$(/usr/bin/sed -n "s/^CapEff:[[:space:]]*//p" /proc/self/status)" == 0000000000000000 && "$$(/usr/bin/sed -n "s/^NoNewPrivs:[[:space:]]*//p" /proc/self/status)" == 1 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z "$$(/usr/bin/sed -n "2p" /proc/net/route)" ]]' gate-isolation "$$gate_uid" "$$gate_gid"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$cargo_home/snapshot-python-cache" /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); unittest.main(module=None)' "$$cargo_home/check-src" discover -s "$$cargo_home/check-src/tools/tests" -p 'test_*.py'; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
