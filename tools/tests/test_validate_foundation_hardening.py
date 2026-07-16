@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -3543,23 +3544,26 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 text=True,
             )
             inherited = os.open(denied / "secret", os.O_RDONLY)
+            sandbox_command = [
+                os.fspath(binary),
+                "--dir",
+                "/",
+                "--ro",
+                "/usr",
+                "--ro",
+                "/etc",
+                "--ro",
+                "/proc",
+                "--rw",
+                "/dev/null",
+                "--rw",
+                os.fspath(allowed),
+                "--",
+            ]
             try:
                 result = subprocess.run(
-                    [
-                        os.fspath(binary),
-                        "--dir",
-                        "/",
-                        "--ro",
-                        "/usr",
-                        "--ro",
-                        "/etc",
-                        "--ro",
-                        "/proc",
-                        "--rw",
-                        "/dev/null",
-                        "--rw",
-                        os.fspath(allowed),
-                        "--",
+                    sandbox_command
+                    + [
                         "/bin/bash",
                         "-p",
                         "-c",
@@ -3598,6 +3602,31 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((allowed / "output").read_text(encoding="utf-8"), "sandboxed")
             self.assertFalse((denied / "output").exists())
+
+            def poison_signal_state() -> None:
+                signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+                signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+
+            for signal_name in ("PIPE", "TERM"):
+                with self.subTest(signal=signal_name):
+                    probe = subprocess.run(
+                        sandbox_command
+                        + [
+                            "/bin/bash",
+                            "-p",
+                            "-c",
+                            f"kill -{signal_name} $$; exit 99",
+                        ],
+                        cwd=allowed,
+                        env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                        preexec_fn=poison_signal_state,
+                        restore_signals=False,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    expected_signal = getattr(signal, f"SIG{signal_name}")
+                    self.assertEqual(probe.returncode, -expected_signal, probe.stderr)
 
     def test_make_contract_rejects_an_invalid_root(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

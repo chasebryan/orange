@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/landlock.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -87,6 +88,32 @@ static void cap_resources(void)
     cap_resource(RLIMIT_FSIZE, ORANGE_MAXIMUM_FILE_BYTES, "limit-file-size");
     cap_resource(RLIMIT_NOFILE, ORANGE_MAXIMUM_OPEN_FILES, "limit-open-files");
     cap_resource(RLIMIT_NPROC, ORANGE_MAXIMUM_PROCESSES, "limit-processes");
+}
+
+static void reset_signals(void)
+{
+    struct sigaction action = {0};
+    sigset_t empty_mask;
+    int signal_number;
+
+    action.sa_handler = SIG_DFL;
+    if (sigemptyset(&action.sa_mask) < 0) {
+        fail("empty-signal-action-mask");
+    }
+    for (signal_number = 1; signal_number < NSIG; ++signal_number) {
+        if (signal_number == SIGKILL || signal_number == SIGSTOP) {
+            continue;
+        }
+        if (sigaction(signal_number, &action, NULL) < 0 && errno != EINVAL) {
+            fail("reset-signal-action");
+        }
+    }
+    if (sigemptyset(&empty_mask) < 0) {
+        fail("empty-signal-mask");
+    }
+    if (sigprocmask(SIG_SETMASK, &empty_mask, NULL) < 0) {
+        fail("reset-signal-mask");
+    }
 }
 
 static uint64_t allowed_rights(uint64_t handled, mode_t mode, int access_mode)
@@ -212,6 +239,7 @@ int main(int argc, char **argv)
         fail("close-ruleset");
     }
     cap_resources();
+    reset_signals();
     if (syscall(SYS_close_range, 3U, ~0U, 0U) < 0) {
         fail("close-descriptors");
     }
