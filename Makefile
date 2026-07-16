@@ -17,8 +17,16 @@ check-compiler:
 	repro_home_b="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-repro-home.XXXXXXXX")"; \
 	trap '/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b"' EXIT; \
 	repro_home_b="$$(CDPATH= cd -- "$$repro_home_b" && pwd -P)"; \
+	gate_tools="$$(/usr/bin/mktemp -d -- "$${TMPDIR:-/tmp}/orange-gate-tools.XXXXXXXX")"; \
+	trap '/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b" "$$gate_tools"' EXIT; \
+	gate_tools="$$(CDPATH= cd -- "$$gate_tools" && pwd -P)"; \
+	/usr/bin/mkdir -- "$$cargo_home/home" "$$cargo_home/tmp" "$$gate_tools/toolchain"; \
+	toolchain_root="$$(/usr/bin/env -i HOME="$$HOME" LANG=C LC_ALL=C PATH="$$PATH" RUSTUP_TOOLCHAIN=1.96.1 rustc --print sysroot)"; \
+	toolchain_root="$$(CDPATH= cd -- "$$toolchain_root" && pwd -P)"; \
+	[[ -f "$$toolchain_root/bin/cargo" && ! -L "$$toolchain_root/bin/cargo" && -x "$$toolchain_root/bin/cargo" && -f "$$toolchain_root/bin/rustc" && ! -L "$$toolchain_root/bin/rustc" && -x "$$toolchain_root/bin/rustc" ]] || { printf '%s\n' 'selected Rust toolchain root is invalid' >&2; exit 1; }; \
 	gate_uid="$$(/usr/bin/id -u)"; \
 	gate_gid="$$(/usr/bin/id -g)"; \
+	namespace_setup='set -euo pipefail; toolchain_root="$$1"; gate_tools="$$2"; shift 2; /usr/bin/mount --bind "$$toolchain_root" "$$gate_tools/toolchain"; /usr/bin/mount --options remount,bind,ro,nosuid,nodev "$$gate_tools/toolchain"; /usr/bin/mount --types tmpfs --options mode=755,nosuid,nodev,noexec tmpfs /home; exec "$$@"'; \
 	namespace_runner=( \
 		/usr/bin/unshare \
 		--user \
@@ -30,6 +38,13 @@ check-compiler:
 		--kill-child=KILL \
 		--mount-proc \
 		--net \
+		/bin/bash \
+		-p \
+		-c \
+		"$$namespace_setup" \
+		gate-namespace \
+		"$$toolchain_root" \
+		"$$gate_tools" \
 		/usr/bin/setpriv \
 		--bounding-set=-all \
 		--inh-caps=-all \
@@ -48,6 +63,13 @@ check-compiler:
 			--kill-child=KILL \
 			--mount-proc \
 			--net \
+			/bin/bash \
+			-p \
+			-c \
+			"$$namespace_setup" \
+			gate-namespace \
+			"$$toolchain_root" \
+			"$$gate_tools" \
 			/usr/bin/setpriv \
 			--bounding-set=-all \
 			--inh-caps=-all \
@@ -64,18 +86,34 @@ check-compiler:
 			exec 8<&- 9<&-; \
 			cd -- /; \
 			"$${namespace_runner[@]}" \
+				"$$gate_tools/fs-sandbox" \
+				--dir / \
+				--ro /usr \
+				--ro /etc \
+				--ro /proc \
+				--ro /sys \
+				--ro "$$gate_tools" \
+				--ro "$$gate_tools/toolchain" \
+				--rw /dev/null \
+				--rw /dev/zero \
+				--rw /dev/random \
+				--rw /dev/urandom \
+				--rw "$$cargo_home" \
+				--rw "$$repro_home_b" \
+				-- \
 				/usr/bin/env -i \
 				CARGO_HOME="$$cargo_home" \
 				CARGO_NET_OFFLINE=true \
 				CARGO_TARGET_DIR="$$cargo_home/target" \
 				CARGO_TERM_COLOR=never \
-				HOME="$$HOME" \
+				HOME="$$cargo_home/home" \
 				LANG=C \
 				LC_ALL=C \
-				PATH="$$PATH" \
+				PATH="$$gate_tools/toolchain/bin:/usr/bin:/bin" \
 				RUSTDOCFLAGS="-D warnings" \
 				RUSTUP_TOOLCHAIN=1.96.1 \
 				SOURCE_DATE_EPOCH=0 \
+				TMPDIR="$$cargo_home/tmp" \
 				TZ=UTC \
 				"$$@" \
 		); \
@@ -117,8 +155,10 @@ check-compiler:
 	/usr/bin/cmp --silent -- "$$repro_source_paths" "$$repro_source_paths_after" || { printf '%s\n' 'tracked source membership changed during archive capture' >&2; exit 1; }; \
 	/usr/bin/rm -- "$$repro_source_paths_after"; \
 	verify_capture_identity; \
+	/usr/bin/env -i LANG=C LC_ALL=C PATH=/usr/bin:/bin /usr/bin/cc -std=c17 -O2 -D_FORTIFY_SOURCE=3 -fPIE -pie -Wall -Wextra -Werror -pedantic -Wl,-z,relro,-z,now "$$cargo_home/check-src/tools/fs_sandbox.c" -o "$$gate_tools/fs-sandbox"; \
+	[[ -f "$$gate_tools/fs-sandbox" && ! -L "$$gate_tools/fs-sandbox" && -x "$$gate_tools/fs-sandbox" ]] || { printf '%s\n' 'filesystem sandbox build is invalid' >&2; exit 1; }; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
-	run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ "$$(/usr/bin/sed -n "s/^$${capability_set}:[[:space:]]*//p" /proc/self/status)" == 0000000000000000 ]] || exit 1; done; [[ $$$$ == 1 && $$PPID == 0 && "$$(/usr/bin/id -u)" == "$$1" && "$$(/usr/bin/id -g)" == "$$2" && "$$(/usr/bin/sed -n "s/^NoNewPrivs:[[:space:]]*//p" /proc/self/status)" == 1 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z "$$(/usr/bin/sed -n "2p" /proc/net/route)" ]]' gate-isolation "$$gate_uid" "$$gate_gid"; \
+	run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ "$$(/usr/bin/sed -n "s/^$${capability_set}:[[:space:]]*//p" /proc/self/status)" == 0000000000000000 ]] || exit 1; done; for descriptor in /proc/self/fd/*; do [[ ! -e "$$descriptor" || "$${descriptor##*/}" =~ ^[012]$$ ]] || exit 1; done; ! /usr/bin/head -c 1 -- "$$3/Makefile" >/dev/null 2>&1 || exit 1; [[ $$$$ == 1 && $$PPID == 0 && "$$(/usr/bin/id -u)" == "$$1" && "$$(/usr/bin/id -g)" == "$$2" && "$$HOME" == "$$4" && "$$PATH" == "$$5/toolchain/bin:/usr/bin:/bin" && "$$(/usr/bin/sed -n "s/^NoNewPrivs:[[:space:]]*//p" /proc/self/status)" == 1 && -z "$$(/usr/bin/sed -n "2p" /proc/net/route)" ]]' gate-isolation "$$gate_uid" "$$gate_gid" "$$repository_root" "$$cargo_home/home" "$$gate_tools"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$cargo_home/snapshot-python-cache" /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); unittest.main(module=None)' "$$cargo_home/check-src" discover -s "$$cargo_home/check-src/tools/tests" -p 'test_*.py'; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \

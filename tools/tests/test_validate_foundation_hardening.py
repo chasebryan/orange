@@ -5,7 +5,6 @@ import hashlib
 import io
 import json
 import os
-import pwd
 import shutil
 import subprocess
 import sys
@@ -1186,6 +1185,7 @@ jobs:
         self.assertIn("  -i \\\n", launcher)
         self.assertIn('  HOME="$ACCOUNT_HOME" \\\n', launcher)
         self.assertIn('  PATH="$SAFE_PATH" \\\n', launcher)
+        self.assertIn('/usr/bin/getent passwd "$(/usr/bin/id -u)"', launcher)
         self.assertNotIn("${SOURCE_DATE_EPOCH", launcher)
         self.assertIn('if [ "$#" -ne 0 ]; then\n', launcher)
         self.assertIn('/usr/bin/find "$SCRIPT_PATH" -prune -links 1 -print', launcher)
@@ -1204,6 +1204,19 @@ jobs:
             script_directory.mkdir(parents=True)
             copied_launcher = script_directory / "check-repository"
             shutil.copy2(launcher, copied_launcher)
+            account_home = test_root / "account-home"
+            account_home.mkdir()
+            launcher_source = copied_launcher.read_text(encoding="utf-8")
+            account_lookup = 'ACCOUNT_RECORD="$(/usr/bin/getent passwd "$(/usr/bin/id -u)")" || {'
+            self.assertEqual(launcher_source.count(account_lookup), 1)
+            fixture_record = (
+                f'ACCOUNT_RECORD="sandbox:x:{os.getuid()}:{os.getgid()}:Sandbox:'
+                f'{account_home}:/bin/sh" || {{'
+            )
+            copied_launcher.write_text(
+                launcher_source.replace(account_lookup, fixture_record, 1),
+                encoding="utf-8",
+            )
 
             hostile_path = test_root / "hostile-path"
             hostile_path.mkdir()
@@ -1264,7 +1277,7 @@ jobs:
                 for line in observed.read_text(encoding="utf-8").splitlines()
                 if "=" in line
             )
-            account_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+            account_home = account_home.resolve()
             self.assertEqual(environment["HOME"], str(account_home))
             self.assertEqual(
                 environment["PATH"],
@@ -3085,6 +3098,17 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                'trap \'/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b" '
+                '"$$gate_tools"\' EXIT;',
+                'trap \'/usr/bin/rm -rf -- "$$cargo_home" "$$repro_home_b"\' EXIT;',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'toolchain_root="$$(CDPATH= cd -- "$$toolchain_root" && pwd -P)"',
+                'toolchain_root="$$toolchain_root"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 "exec 8<&- 9<&-;",
                 "/usr/bin/true;",
                 "make.compiler_environment_contract",
@@ -3120,6 +3144,16 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "remount,bind,ro,nosuid,nodev",
+                "remount,bind,rw,nosuid,nodev",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "mode=755,nosuid,nodev,noexec tmpfs /home",
+                "mode=755,nosuid,nodev,noexec tmpfs /mnt",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "\t\t\t/usr/bin/sudo \\\n",
                 "\t\t\t/usr/bin/true \\\n",
                 "make.compiler_environment_contract",
@@ -3150,7 +3184,43 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                "run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ \"$$(/usr/bin/sed -n \"s/^$${capability_set}:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 ]] || exit 1; done; [[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\"",
+                '"$$gate_tools/fs-sandbox" \\\n',
+                '/bin/true \\\n',
+                "make.compiler_environment_contract",
+            ),
+            (
+                "\t\t\t\t--ro /usr \\\n",
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "\t\t\t\t--rw \"$$cargo_home\" \\\n",
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'HOME="$$cargo_home/home"',
+                'HOME="$$HOME"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'PATH="$$gate_tools/toolchain/bin:/usr/bin:/bin"',
+                'PATH="$$PATH"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'TMPDIR="$$cargo_home/tmp"',
+                'TMPDIR="/tmp"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '/usr/bin/cc -std=c17 -O2 -D_FORTIFY_SOURCE=3 -fPIE -pie '
+                '-Wall -Wextra -Werror -pedantic -Wl,-z,relro,-z,now',
+                "/usr/bin/cc -std=c17",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ \"$$(/usr/bin/sed -n \"s/^$${capability_set}:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 ]] || exit 1; done; for descriptor in /proc/self/fd/*; do [[ ! -e \"$$descriptor\" || \"$${descriptor##*/}\" =~ ^[012]$$ ]] || exit 1; done; ! /usr/bin/head -c 1 -- \"$$3/Makefile\" >/dev/null 2>&1 || exit 1; [[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$HOME\" == \"$$4\" && \"$$PATH\" == \"$$5/toolchain/bin:/usr/bin:/bin\" && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\" \"$$repository_root\" \"$$cargo_home/home\" \"$$gate_tools\"",
                 "/usr/bin/true",
                 "make.compiler_environment_contract",
             ),
@@ -3395,6 +3465,85 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 codes = {finding.code for finding in validator.findings}
                 self.assertIn(expected_code, codes)
                 self.assertNotIn("make.contract", codes)
+
+    def test_filesystem_sandbox_denies_unadmitted_files_and_closes_descriptors(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        source = source_root / "tools/fs_sandbox.c"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "fs-sandbox"
+            allowed = root / "allowed"
+            denied = root / "denied"
+            allowed.mkdir()
+            denied.mkdir()
+            (allowed / "input").write_text("allowed\n", encoding="utf-8")
+            (denied / "secret").write_text("denied\n", encoding="utf-8")
+            (allowed / "escape").symlink_to(denied / "secret")
+            subprocess.run(
+                [
+                    "/usr/bin/cc",
+                    "-std=c17",
+                    "-O2",
+                    "-D_FORTIFY_SOURCE=3",
+                    "-fPIE",
+                    "-pie",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-pedantic",
+                    "-Wl,-z,relro,-z,now",
+                    os.fspath(source),
+                    "-o",
+                    os.fspath(binary),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            inherited = os.open(denied / "secret", os.O_RDONLY)
+            try:
+                result = subprocess.run(
+                    [
+                        os.fspath(binary),
+                        "--dir",
+                        "/",
+                        "--ro",
+                        "/usr",
+                        "--ro",
+                        "/etc",
+                        "--ro",
+                        "/proc",
+                        "--rw",
+                        "/dev/null",
+                        "--rw",
+                        os.fspath(allowed),
+                        "--",
+                        "/bin/bash",
+                        "-p",
+                        "-c",
+                        (
+                            'set -euo pipefail; [[ "$(cat input)" == allowed ]]; '
+                            "printf sandboxed > output; "
+                            "! cat ../denied/secret >/dev/null 2>&1; "
+                            "! cat escape >/dev/null 2>&1; "
+                            "! printf escaped > ../denied/output 2>/dev/null; "
+                            '[[ ! -e "/proc/self/fd/$1" ]]'
+                        ),
+                        "sandbox",
+                        str(inherited),
+                    ],
+                    cwd=allowed,
+                    env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+                    pass_fds=(inherited,),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            finally:
+                os.close(inherited)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((allowed / "output").read_text(encoding="utf-8"), "sandboxed")
+            self.assertFalse((denied / "output").exists())
 
     def test_make_contract_rejects_an_invalid_root(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
