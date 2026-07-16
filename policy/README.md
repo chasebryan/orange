@@ -56,16 +56,23 @@ ignored prior build artifacts from steering the build after policy validation.
 A third policy check runs after all Rust commands. After initial capture
 consistency checks, the gate opens the original archive and NUL-delimited tracked
 path inventory through read-only descriptors, unlinks their filesystem names,
-and closes both descriptors before copied Python or Rust code executes. Trusted
-gate operations retain the descriptors for extraction and SHA-256 identity
-checks. The gate verifies those identities before and after its final comparison,
+and closes both descriptors before copied Python or Rust code executes. Each
+copied command runs as PID 1 in a private user, mount, PID, `/proc`, and network
+namespace, so it cannot enumerate the trusted parent through its process view
+or open new external connections, and the namespace supervisor kills its child
+if supervision is interrupted. Trusted gate operations retain the descriptors
+for extraction and SHA-256 identity checks. The gate verifies those identities
+before and after its final comparison,
 extracts a fresh reference, compares NUL-safe sorted non-directory membership
 across the tested check root and both relocated reproducibility roots, and
 compares every tracked file's type, complete mode, and bytes with the reference.
 Added source entries or policy-valid tracked-source drift in any compiler input
 root therefore cannot produce a passing gate unless a trusted child restores the
 original state before comparison. Empty-directory additions are not source
-membership and remain outside this final comparison.
+membership and remain outside this final comparison. The fixed host `unshare`
+implementation, user-namespace support, kernel namespace enforcement, and
+unrelated same-account processes outside the private namespace remain trusted
+or residual boundaries.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an

@@ -3090,7 +3090,32 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                "run_cargo /bin/bash -p -c '[[ ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 ]]'",
+                "/usr/bin/unshare \\\n",
+                "/usr/bin/env \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "\t\t\t\t--map-current-user \\\n",
+                "\t\t\t\t--map-auto \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "\t\t\t\t--mount-proc \\\n",
+                "\t\t\t\t--mount-proc=/host/proc \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "\t\t\t\t--kill-child=KILL \\\n",
+                "\t\t\t\t--kill-child=TERM \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "\t\t\t\t--net \\\n",
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "run_cargo /bin/bash -p -c '[[ $$$$ == 1 && $$PPID == 0 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]'",
                 "/usr/bin/true",
                 "make.compiler_environment_contract",
             ),

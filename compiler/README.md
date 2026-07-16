@@ -55,9 +55,14 @@ fresh Git inventory must match the original path list, rejecting observed type,
 executable-mode, content, or membership edits during capture. The copied
 validator opens the archive and inventory through read-only descriptors, unlinks
 their filesystem names, and closes those descriptors before any copied Python
-or Rust code executes. Trusted gate operations alone inherit the descriptors
-used for later extraction and identity checks. The copied validator first
-policy-checks that exact exported tree before its foundation test modules import.
+or Rust code executes. Every copied command then runs as PID 1 with a private
+user, mount, PID, `/proc`, and network namespace. The private process view keeps
+the trusted parent shell and its descriptors outside copied-code visibility,
+while the empty network namespace prevents new external connections. The
+namespace supervisor kills its child if supervision is interrupted. Trusted gate
+operations alone retain the descriptors used for later extraction and identity
+checks. The copied validator first policy-checks that exact exported tree before
+its foundation test modules import.
 After those tests, it policy-checks the tree again before Cargo, so Python-test
 drift cannot reach Rust execution. Formatting, linting, documentation, and Rust
 tests use the same extracted check root. A third policy check runs after all Rust

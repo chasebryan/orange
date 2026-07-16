@@ -21,7 +21,16 @@ check-compiler:
 		( \
 			exec 8<&- 9<&-; \
 			cd -- /; \
-			/usr/bin/env -i \
+			/usr/bin/unshare \
+				--user \
+				--map-current-user \
+				--mount \
+				--pid \
+				--fork \
+				--kill-child=KILL \
+				--mount-proc \
+				--net \
+				/usr/bin/env -i \
 				CARGO_HOME="$$cargo_home" \
 				CARGO_NET_OFFLINE=true \
 				CARGO_TARGET_DIR="$$cargo_home/target" \
@@ -75,7 +84,7 @@ check-compiler:
 	/usr/bin/rm -- "$$repro_source_paths_after"; \
 	verify_capture_identity; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
-	run_cargo /bin/bash -p -c '[[ ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 ]]'; \
+	run_cargo /bin/bash -p -c '[[ $$$$ == 1 && $$PPID == 0 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z "$$(/usr/bin/sed -n "2p" /proc/net/route)" ]]'; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$cargo_home/snapshot-python-cache" /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); unittest.main(module=None)' "$$cargo_home/check-src" discover -s "$$cargo_home/check-src/tools/tests" -p 'test_*.py'; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
