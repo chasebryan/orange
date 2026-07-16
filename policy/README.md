@@ -62,8 +62,9 @@ namespaces. The preferred path also creates an unprivileged user namespace. If
 the host rejects that mapping, a fixed non-interactive `sudo` supervisor creates
 only the remaining namespaces before `setpriv` restores the invoking numeric
 user and group, clears supplementary groups, and enables `no_new_privs`. Both
-paths assert the expected identity, zero effective capabilities, private process
-view, empty route table, and descriptor closure before copied code runs. The
+paths remove and assert empty inheritable, permitted, effective, bounding, and
+ambient capability sets, then assert the expected identity, private process view,
+empty route table, and descriptor closure before copied code runs. The
 namespace supervisor kills its child if supervision is interrupted. Trusted gate
 operations retain the descriptors for extraction and SHA-256 identity checks.
 The gate verifies those identities before and after its final comparison,

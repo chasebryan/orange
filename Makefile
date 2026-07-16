@@ -23,6 +23,7 @@ check-compiler:
 		/usr/bin/unshare \
 		--user \
 		--map-current-user \
+		--keep-caps \
 		--mount \
 		--pid \
 		--fork \
@@ -30,6 +31,9 @@ check-compiler:
 		--mount-proc \
 		--net \
 		/usr/bin/setpriv \
+		--bounding-set=-all \
+		--inh-caps=-all \
+		--ambient-caps=-all \
 		--no-new-privs \
 	); \
 	if ! "$${namespace_runner[@]}" /bin/true >/dev/null 2>&1; then \
@@ -45,6 +49,9 @@ check-compiler:
 			--mount-proc \
 			--net \
 			/usr/bin/setpriv \
+			--bounding-set=-all \
+			--inh-caps=-all \
+			--ambient-caps=-all \
 			--reuid "$$gate_uid" \
 			--regid "$$gate_gid" \
 			--clear-groups \
@@ -111,7 +118,7 @@ check-compiler:
 	/usr/bin/rm -- "$$repro_source_paths_after"; \
 	verify_capture_identity; \
 	manifest="$$cargo_home/check-src/compiler/Cargo.toml"; \
-	run_cargo /bin/bash -p -c '[[ $$$$ == 1 && $$PPID == 0 && "$$(/usr/bin/id -u)" == "$$1" && "$$(/usr/bin/id -g)" == "$$2" && "$$(/usr/bin/sed -n "s/^CapEff:[[:space:]]*//p" /proc/self/status)" == 0000000000000000 && "$$(/usr/bin/sed -n "s/^NoNewPrivs:[[:space:]]*//p" /proc/self/status)" == 1 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z "$$(/usr/bin/sed -n "2p" /proc/net/route)" ]]' gate-isolation "$$gate_uid" "$$gate_gid"; \
+	run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ "$$(/usr/bin/sed -n "s/^$${capability_set}:[[:space:]]*//p" /proc/self/status)" == 0000000000000000 ]] || exit 1; done; [[ $$$$ == 1 && $$PPID == 0 && "$$(/usr/bin/id -u)" == "$$1" && "$$(/usr/bin/id -g)" == "$$2" && "$$(/usr/bin/sed -n "s/^NoNewPrivs:[[:space:]]*//p" /proc/self/status)" == 1 && ! -e /proc/self/fd/8 && ! -e /proc/self/fd/9 && -z "$$(/usr/bin/sed -n "2p" /proc/net/route)" ]]' gate-isolation "$$gate_uid" "$$gate_gid"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 PYTHONPYCACHEPREFIX="$$cargo_home/snapshot-python-cache" /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); unittest.main(module=None)' "$$cargo_home/check-src" discover -s "$$cargo_home/check-src/tools/tests" -p 'test_*.py'; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \

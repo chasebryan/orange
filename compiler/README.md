@@ -60,8 +60,12 @@ mount, PID, `/proc`, and network namespaces. The gate uses an unprivileged user
 namespace when the host permits it; otherwise a fixed non-interactive `sudo`
 supervisor creates only those namespaces before `setpriv` restores the invoking
 numeric user and group, clears supplementary groups, and enables `no_new_privs`.
-Both paths assert the restored identity, zero effective capabilities, private
-process view, and empty route table before copied code runs. The namespace
+The user-namespace path retains its namespace-granted capabilities only long
+enough for `setpriv` to remove every capability from the inheritable, permitted,
+effective, bounding, and ambient sets. The privileged supervisor removes the
+same sets while restoring the invoking identity. Both paths assert the restored
+identity, five empty capability sets, private process view, and empty route table
+before copied code runs. The namespace
 supervisor kills its child if supervision is interrupted. Trusted gate operations
 alone retain the descriptors used for later extraction and identity checks. The
 copied validator first policy-checks that exact exported tree before its
