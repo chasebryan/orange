@@ -56,15 +56,20 @@ executable-mode, content, or membership edits during capture. The copied
 validator opens the archive and inventory through read-only descriptors, unlinks
 their filesystem names, and closes those descriptors before any copied Python
 or Rust code executes. Every copied command then runs as PID 1 with private
-mount, PID, `/proc`, and network namespaces. The gate uses an unprivileged user
-namespace when the host permits it; otherwise a fixed non-interactive `sudo`
-supervisor creates only those namespaces before `setpriv` restores the invoking
-numeric user and group, clears supplementary groups, and enables `no_new_privs`.
+mount, PID, `/proc`, network, IPC, and UTS namespaces. The UTS namespace uses
+the fixed `orange-gate` hostname, and the fresh IPC namespace starts without
+System V message queues, semaphore sets, or shared-memory segments. The gate
+uses an unprivileged user namespace when the host permits it; otherwise a fixed
+non-interactive `sudo` supervisor creates only those namespaces before
+`setpriv` restores the invoking numeric user and group, clears supplementary
+groups, and enables `no_new_privs`.
 The user-namespace path retains its namespace-granted capabilities only long
 enough for `setpriv` to remove every capability from the inheritable, permitted,
 effective, bounding, and ambient sets. The privileged supervisor removes the
 same sets while restoring the invoking identity. Both paths assert the restored
-identity, five empty capability sets, private process view, and empty route table.
+identity, distinct IPC and UTS namespace identities, fixed hostname, empty
+System V IPC tables, five empty capability sets, private process view, and
+empty route table.
 Before the drop, the namespace supervisor bind-mounts the selected toolchain
 read-only and covers `/home` with a private non-executable `tmpfs`. A protected C
 launcher built from the captured tree requires Landlock ABI 3 or newer, permits

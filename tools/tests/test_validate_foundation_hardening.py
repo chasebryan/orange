@@ -3144,6 +3144,31 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                "\t\t--ipc \\\n",
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "\t\t--uts \\\n",
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "/usr/bin/hostname orange-gate;",
+                "/usr/bin/true;",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'gate_ipc_namespace="$$(/usr/bin/readlink -- /proc/self/ns/ipc)"',
+                'gate_ipc_namespace="ipc:[0]"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'gate_uts_namespace="$$(/usr/bin/readlink -- /proc/self/ns/uts)"',
+                'gate_uts_namespace="uts:[0]"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 "remount,bind,ro,nosuid,nodev",
                 "remount,bind,rw,nosuid,nodev",
                 "make.compiler_environment_contract",
@@ -3220,7 +3245,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                "run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ \"$$(/usr/bin/sed -n \"s/^$${capability_set}:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 ]] || exit 1; done; for descriptor in /proc/self/fd/*; do [[ ! -e \"$$descriptor\" || \"$${descriptor##*/}\" =~ ^[012]$$ ]] || exit 1; done; ! /usr/bin/head -c 1 -- \"$$3/Makefile\" >/dev/null 2>&1 || exit 1; [[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$HOME\" == \"$$4\" && \"$$PATH\" == \"$$5/toolchain/bin:/usr/bin:/bin\" && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\" \"$$repository_root\" \"$$cargo_home/home\" \"$$gate_tools\"",
+                "run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ \"$$(/usr/bin/sed -n \"s/^$${capability_set}:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 ]] || exit 1; done; for descriptor in /proc/self/fd/*; do [[ ! -e \"$$descriptor\" || \"$${descriptor##*/}\" =~ ^[012]$$ ]] || exit 1; done; for ipc_table in msg sem shm; do [[ -z \"$$(/usr/bin/sed -n \"2p\" \"/proc/sysvipc/$$ipc_table\")\" ]] || exit 1; done; ! /usr/bin/head -c 1 -- \"$$3/Makefile\" >/dev/null 2>&1 || exit 1; [[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$(/usr/bin/hostname)\" == orange-gate && \"$$(/usr/bin/readlink -- /proc/self/ns/ipc)\" != \"$$6\" && \"$$(/usr/bin/readlink -- /proc/self/ns/uts)\" != \"$$7\" && \"$$HOME\" == \"$$4\" && \"$$PATH\" == \"$$5/toolchain/bin:/usr/bin:/bin\" && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\" \"$$repository_root\" \"$$cargo_home/home\" \"$$gate_tools\" \"$$gate_ipc_namespace\" \"$$gate_uts_namespace\"",
                 "/usr/bin/true",
                 "make.compiler_environment_contract",
             ),

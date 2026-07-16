@@ -57,17 +57,22 @@ A third policy check runs after all Rust commands. After initial capture
 consistency checks, the gate opens the original archive and NUL-delimited tracked
 path inventory through read-only descriptors, unlinks their filesystem names,
 and closes both descriptors before copied Python or Rust code executes. Each
-copied command runs as PID 1 in private mount, PID, `/proc`, and network
-namespaces. The preferred path also creates an unprivileged user namespace. If
-the host rejects that mapping, a fixed non-interactive `sudo` supervisor creates
-only the remaining namespaces before `setpriv` restores the invoking numeric
-user and group, clears supplementary groups, and enables `no_new_privs`. Both
+copied command runs as PID 1 in private mount, PID, `/proc`, network, IPC, and
+UTS namespaces. The UTS namespace uses the fixed `orange-gate` hostname, and
+the fresh IPC namespace starts without System V message queues, semaphore sets,
+or shared-memory segments. The preferred path also creates an unprivileged user
+namespace. If the host rejects that mapping, a fixed non-interactive `sudo`
+supervisor creates only the remaining namespaces before `setpriv` restores the
+invoking numeric user and group, clears supplementary groups, and enables
+`no_new_privs`. Both
 paths remove and assert empty inheritable, permitted, effective, bounding, and
-ambient capability sets, then assert the expected identity, private process view,
-and empty route table. Before dropping privilege, the supervisor bind-mounts the
-selected toolchain read-only and hides `/home` behind a private non-executable
-`tmpfs`. The protected `tools/fs_sandbox.c` launcher is built from the checked
-capture with fixed hardening flags. It requires Landlock ABI 3 or newer, grants
+ambient capability sets, then assert the expected identity, distinct IPC and
+UTS namespace identities, fixed hostname, empty System V IPC tables, private
+process view, and empty route table. Before dropping privilege, the supervisor
+bind-mounts the selected toolchain read-only and hides `/home` behind a private
+non-executable `tmpfs`. The protected `tools/fs_sandbox.c` launcher is built
+from the checked capture with fixed hardening flags. It requires Landlock ABI 3
+or newer, grants
 file reads and execution only to the admitted system/toolchain roots, grants
 writes only to the two temporary gate roots and admitted character devices, and
 closes every inherited descriptor above standard error. Copied commands receive
