@@ -74,15 +74,20 @@ non-executable `tmpfs`. The protected `tools/fs_sandbox.c` launcher is built
 from the checked capture with fixed hardening flags. It requires Landlock ABI 3
 or newer, grants file reads and execution only to the admitted system/toolchain
 roots, grants writes only to the two temporary gate roots and admitted character
-devices, closes every inherited descriptor above standard error, resets ordinary
-catchable signal dispositions to default, and empties the ordinary signal mask.
+devices, and does not admit host files under `/etc` or `/sys`. Representative
+runtime assertions require `/etc/passwd` and `/sys` CPU state to remain
+unreadable. The launcher closes every inherited descriptor above standard error,
+resets ordinary catchable signal dispositions to default, and empties the
+ordinary signal mask.
 Before execution it also fixes hard ceilings of 4 GiB of virtual address space
 and 600 CPU seconds per process, 512 MiB per file, 1,024 open files, 256 processes
 for the real user, and zero core-file bytes, preserving any lower inherited hard
 ceiling. Copied commands receive isolated `HOME`, `TMPDIR`, and `PATH` values and
-must prove the original checkout unreadable before tests begin. The namespace
-supervisor kills its child if supervision is interrupted. Trusted gate operations
-retain the descriptors for extraction and SHA-256 identity checks.
+disable system Git configuration while binding global Git configuration to
+`/dev/null`; they must prove the original checkout unreadable before tests begin.
+The namespace supervisor kills its child if supervision is interrupted. Trusted
+gate operations retain the descriptors for extraction and SHA-256 identity
+checks.
 The gate verifies those identities before and after its final comparison,
 extracts a fresh reference, compares NUL-safe sorted non-directory membership
 across the tested check root and both relocated reproducibility roots, and
@@ -100,7 +105,8 @@ channels are intentionally merged. The fixed host C compiler, relay, `mount`,
 `unshare`, `sudo`, and `setpriv` implementations, protected launcher,
 passwordless namespace-setup policy, user-namespace availability, kernel
 namespace/Landlock enforcement, and unrelated same-account processes outside
-the private namespace remain trusted or residual boundaries. Resource ceilings
+the private namespace remain trusted or residual boundaries. The admitted
+private `/proc` still exposes kernel, CPU, and process metadata. Resource ceilings
 are not aggregate cgroup budgets: virtual address space and CPU time are limited
 per process, file size is limited per file, aggregate resident memory is not
 capped, and the process ceiling includes other processes with the same real user

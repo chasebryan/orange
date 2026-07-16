@@ -3230,6 +3230,16 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                'GIT_CONFIG_GLOBAL="/dev/null"',
+                "GIT_CONFIG_GLOBAL=$$HOME/.gitconfig",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'GIT_CONFIG_NOSYSTEM="1"',
+                "GIT_CONFIG_NOSYSTEM=0",
+                "make.compiler_environment_contract",
+            ),
+            (
                 'PATH="$$gate_tools/toolchain/bin:/usr/bin:/bin"',
                 'PATH="$$PATH"',
                 "make.compiler_environment_contract",
@@ -3261,7 +3271,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
-                "run_cargo /bin/bash -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ \"$$(/usr/bin/sed -n \"s/^$${capability_set}:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 ]] || exit 1; done; for descriptor in /proc/self/fd/*; do [[ ! -e \"$$descriptor\" || \"$${descriptor##*/}\" =~ ^[012]$$ ]] || exit 1; done; standard_output=\"$$(/usr/bin/readlink -- /proc/$$$$/fd/1)\"; [[ \"$$(/usr/bin/readlink -- /proc/$$$$/fd/0)\" == /dev/null && \"$$standard_output\" =~ ^pipe:\\[[0-9]+\\]$$ && \"$$(/usr/bin/readlink -- /proc/$$$$/fd/2)\" == \"$$standard_output\" ]] || exit 1; for descriptor in 0 1 2; do descriptor_flags=\"$$(/usr/bin/sed -n \"s/^flags:[[:space:]]*//p\" \"/proc/$$$$/fdinfo/$$descriptor\")\"; expected_access=\"$$((descriptor == 0 ? 0 : 1))\"; [[ \"$$((8#$$descriptor_flags & 3))\" == \"$$expected_access\" ]] || exit 1; done; for ipc_table in msg sem shm; do [[ -z \"$$(/usr/bin/sed -n \"2p\" \"/proc/sysvipc/$$ipc_table\")\" ]] || exit 1; done; ! /usr/bin/head -c 1 -- \"$$3/Makefile\" >/dev/null 2>&1 || exit 1; [[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$(/usr/bin/hostname)\" == orange-gate && \"$$(/usr/bin/readlink -- /proc/self/ns/ipc)\" != \"$$6\" && \"$$(/usr/bin/readlink -- /proc/self/ns/uts)\" != \"$$7\" && \"$$HOME\" == \"$$4\" && \"$$PATH\" == \"$$5/toolchain/bin:/usr/bin:/bin\" && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\" \"$$repository_root\" \"$$cargo_home/home\" \"$$gate_tools\" \"$$gate_ipc_namespace\" \"$$gate_uts_namespace\"",
+                "run_cargo /bin/bash --norc -p -c 'for capability_set in CapInh CapPrm CapEff CapBnd CapAmb; do [[ \"$$(/usr/bin/sed -n \"s/^$${capability_set}:[[:space:]]*//p\" /proc/self/status)\" == 0000000000000000 ]] || exit 1; done; for descriptor in /proc/self/fd/*; do [[ ! -e \"$$descriptor\" || \"$${descriptor##*/}\" =~ ^[012]$$ ]] || exit 1; done; standard_output=\"$$(/usr/bin/readlink -- /proc/$$$$/fd/1)\"; [[ \"$$(/usr/bin/readlink -- /proc/$$$$/fd/0)\" == /dev/null && \"$$standard_output\" =~ ^pipe:\\[[0-9]+\\]$$ && \"$$(/usr/bin/readlink -- /proc/$$$$/fd/2)\" == \"$$standard_output\" ]] || exit 1; for descriptor in 0 1 2; do descriptor_flags=\"$$(/usr/bin/sed -n \"s/^flags:[[:space:]]*//p\" \"/proc/$$$$/fdinfo/$$descriptor\")\"; expected_access=\"$$((descriptor == 0 ? 0 : 1))\"; [[ \"$$((8#$$descriptor_flags & 3))\" == \"$$expected_access\" ]] || exit 1; done; for ipc_table in msg sem shm; do [[ -z \"$$(/usr/bin/sed -n \"2p\" \"/proc/sysvipc/$$ipc_table\")\" ]] || exit 1; done; ! /usr/bin/head -c 1 -- \"$$3/Makefile\" >/dev/null 2>&1 || exit 1; ! /usr/bin/head -c 1 -- /etc/passwd >/dev/null 2>&1 || exit 1; ! /usr/bin/head -c 1 -- /sys/devices/system/cpu/online >/dev/null 2>&1 || exit 1; [[ $$$$ == 1 && $$PPID == 0 && \"$$(/usr/bin/id -u)\" == \"$$1\" && \"$$(/usr/bin/id -g)\" == \"$$2\" && \"$$(/usr/bin/hostname)\" == orange-gate && \"$$(/usr/bin/readlink -- /proc/self/ns/ipc)\" != \"$$6\" && \"$$(/usr/bin/readlink -- /proc/self/ns/uts)\" != \"$$7\" && \"$$HOME\" == \"$$4\" && \"$$PATH\" == \"$$5/toolchain/bin:/usr/bin:/bin\" && \"$$(/usr/bin/sed -n \"s/^NoNewPrivs:[[:space:]]*//p\" /proc/self/status)\" == 1 && -z \"$$(/usr/bin/sed -n \"2p\" /proc/net/route)\" ]]' gate-isolation \"$$gate_uid\" \"$$gate_gid\" \"$$repository_root\" \"$$cargo_home/home\" \"$$gate_tools\" \"$$gate_ipc_namespace\" \"$$gate_uts_namespace\"",
                 "/usr/bin/true",
                 "make.compiler_environment_contract",
             ),
@@ -3551,8 +3561,6 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "--ro",
                 "/usr",
                 "--ro",
-                "/etc",
-                "--ro",
                 "/proc",
                 "--rw",
                 "/dev/null",
@@ -3565,6 +3573,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                     sandbox_command
                     + [
                         "/bin/bash",
+                        "--norc",
                         "-p",
                         "-c",
                         (
@@ -3572,6 +3581,8 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                             "printf sandboxed > output; "
                             "! cat ../denied/secret >/dev/null 2>&1; "
                             "! cat escape >/dev/null 2>&1; "
+                            "! cat /etc/passwd >/dev/null 2>&1; "
+                            "! cat /sys/devices/system/cpu/online >/dev/null 2>&1; "
                             "! printf escaped > ../denied/output 2>/dev/null; "
                             '[[ ! -e "/proc/self/fd/$1" ]]; '
                             "/usr/bin/python3 -S -P -B -c 'import mmap, resource; "
@@ -3613,6 +3624,7 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                         sandbox_command
                         + [
                             "/bin/bash",
+                            "--norc",
                             "-p",
                             "-c",
                             f"kill -{signal_name} $$; exit 99",

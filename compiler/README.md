@@ -73,19 +73,23 @@ empty route table.
 Before the drop, the namespace supervisor bind-mounts the selected toolchain
 read-only and covers `/home` with a private non-executable `tmpfs`. A protected C
 launcher built from the captured tree requires Landlock ABI 3 or newer, permits
-directory-name traversal but grants file reads and execution only to the system
-roots and selected toolchain, and grants writes only to the two gate roots and
-four admitted character devices. It also closes every inherited descriptor above
-standard error, resets ordinary catchable signal dispositions to default, and
-empties the ordinary signal mask before execution. The launcher also fixes hard
+directory-name traversal but grants file reads and execution only to `/usr`, the
+private `/proc`, the gate tool roots, and the selected toolchain, and grants
+writes only to the two gate roots and four admitted character devices. Host
+account/configuration files under `/etc` and kernel/device state under `/sys`
+remain unreadable, with representative runtime assertions. The launcher also
+closes every inherited descriptor above standard error, resets ordinary
+catchable signal dispositions to default, and empties the ordinary signal mask
+before execution. The launcher also fixes hard
 ceilings of 4 GiB of virtual address space and 600 CPU seconds per process,
 512 MiB per file, 1,024 open files, 256 processes for the real user, and zero
 core-file bytes, preserving any lower inherited hard ceiling. Copied commands
-receive isolated `HOME`, `TMPDIR`, and `PATH` values; a runtime assertion
-confirms that the original checkout is unreadable. The namespace supervisor
-kills its child if supervision is interrupted. Trusted gate operations alone
-retain the descriptors used for later extraction and identity checks. The copied
-validator first policy-checks
+receive isolated `HOME`, `TMPDIR`, and `PATH` values, disable system Git
+configuration, and bind global Git configuration to `/dev/null`; a runtime
+assertion confirms that the original checkout is unreadable. The namespace
+supervisor kills its child if supervision is interrupted. Trusted gate operations
+alone retain the descriptors used for later extraction and identity checks. The
+copied validator first policy-checks
 that exact exported tree before its foundation test modules import.
 After those tests, it policy-checks the tree again before Cargo, so Python-test
 drift cannot reach Rust execution. Formatting, linting, documentation, and Rust
@@ -111,7 +115,8 @@ trusted outer `/usr/bin/cat` relays that merged stream to the caller's final
 output sink. The caller can still close or truncate that final sink, and the two
 copied output channels are intentionally indistinguishable. The system C
 compiler, launcher source, relay, kernel, mount implementation, and allowlisted
-system trees remain trusted boundaries. Resource ceilings are not aggregate
+system roots remain trusted boundaries. Private `/proc` still exposes kernel,
+CPU, and process metadata. Resource ceilings are not aggregate
 cgroup budgets: virtual address space and CPU time are limited per process,
 file size is limited per file, aggregate resident memory is not capped, and the
 process ceiling includes other processes with the same real user ID.

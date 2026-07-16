@@ -50,6 +50,21 @@ def protected_file_policy() -> dict[str, object]:
     return {"protected_file_digests": load_json(source)["protected_file_digests"]}
 
 
+GIT_FIXTURE_ENVIRONMENT = {
+    "GIT_CONFIG_GLOBAL": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "PATH": "/usr/bin:/bin",
+}
+
+
+def git_fixture_environment() -> dict[str, str]:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
+    }
+    environment.update(GIT_FIXTURE_ENVIRONMENT)
+    return environment
+
+
 def _markdown_table_fields(line: str) -> list[str]:
     source = line.strip()
     separators: list[int] = []
@@ -576,9 +591,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
                 )
 
     def test_final_snapshot_rejects_actual_staged_content_drift(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1056,7 +1069,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "init", "--bare", "--quiet", external_git],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             (root / ".git").write_text(
                 f"gitdir: {external_git}\n",
@@ -1079,7 +1092,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 subprocess.run(
                     [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                     check=True,
-                    env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
                 )
                 redirect = root / ".git" / relative_path
                 redirect.parent.mkdir(parents=True, exist_ok=True)
@@ -1100,7 +1113,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             (root / ".git/config.worktree").touch()
             findings = []
@@ -1116,19 +1129,19 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "sparse-checkout", "disable"],
                 cwd=root,
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "config", "--local", "--unset-all", "extensions.worktreeConfig"],
                 cwd=root,
                 check=False,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             findings = []
 
@@ -1147,7 +1160,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 subprocess.run(
                     [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                     check=True,
-                    env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
                 )
                 target = parent / "empty-config"
                 target.touch()
@@ -1174,7 +1187,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             objects = root / ".git" / "objects"
             external = parent / "external-objects"
@@ -1195,7 +1208,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 subprocess.run(
                     [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                     check=True,
-                    env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
                 )
                 external = parent / "external-metadata"
                 external.write_text("external\n", encoding="utf-8")
@@ -1221,13 +1234,13 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
                 subprocess.run(
                     [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                     check=True,
-                    env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
                 )
                 (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
                 subprocess.run(
                     [GATE0_GIT_EXECUTABLE, "-C", root, "add", "tracked.txt"],
                     check=True,
-                    env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
                 )
                 redirected = root / ".git" / relative_path
                 external = parent / f"external-{relative_path}"
@@ -1250,18 +1263,18 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             (root / "tracked.txt").write_text("tracked\n", encoding="utf-8")
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "-C", root, "add", "tracked.txt"],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "-C", root, "update-index", "--split-index"],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             findings = []
 
@@ -1277,7 +1290,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             subprocess.run(
                 [GATE0_GIT_EXECUTABLE, "init", "--quiet", root],
                 check=True,
-                env={"PATH": "/usr/bin:/bin"},
+                env=GIT_FIXTURE_ENVIRONMENT,
             )
             external = parent / "external.config"
             external.write_text("[core]\n\tignoreCase = true\n", encoding="utf-8")
@@ -1328,9 +1341,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertTrue(all(timeout is not None for timeout in process.wait_timeouts))
 
     def test_global_git_excludes_cannot_hide_repository_files(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
             root = parent / "repository"
@@ -1367,9 +1378,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_untracked_nested_gitignore_cannot_hide_repository_files(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1402,9 +1411,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_local_core_worktree_cannot_hide_checkout_files(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
             root = parent / "repository"
@@ -1441,9 +1448,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_local_ignore_case_cannot_hide_case_collisions(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1528,9 +1533,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_git"})
 
     def test_alternate_index_environment_cannot_redirect_either_git_inventory(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             parent = Path(directory)
             root = parent / "repository"
@@ -1565,9 +1568,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_stage_inventory_allows_modified_worktree_bytes(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1601,9 +1602,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             self.assertEqual(validator.findings, [])
 
     def test_stage_inventory_rejects_a_missing_index_object(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1637,9 +1636,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in findings}, {"resource.inventory_stage"})
 
     def test_stage_inventory_rejects_a_replaced_object_with_the_wrong_type(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1747,9 +1744,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         )
 
     def test_git_inventory_rejects_hidden_index_state(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1794,9 +1789,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         self.assertEqual({finding.code for finding in validator.findings}, {"git.index_flags"})
 
     def test_intent_to_add_entries_are_rejected_including_empty_files(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
@@ -1823,9 +1816,7 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
         )
 
     def test_modified_staged_empty_file_is_not_intent_to_add(self) -> None:
-        clean_environment = {
-            key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")
-        }
+        clean_environment = git_fixture_environment()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             subprocess.run(
