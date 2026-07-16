@@ -92,14 +92,18 @@ root therefore cannot produce a passing gate unless a trusted child restores the
 original state before comparison. Empty-directory additions are not source
 membership and remain outside this final comparison. Landlock permits global
 directory listing for toolchain discovery and does not mediate every metadata
-operation; standard descriptors remain caller-controlled. The fixed host C
-compiler, `mount`, `unshare`, `sudo`, and `setpriv` implementations, protected
-launcher, passwordless namespace-setup policy, user-namespace availability,
-kernel namespace/Landlock enforcement, and unrelated same-account processes
-outside the private namespace remain trusted or residual boundaries. Resource
-ceilings are not aggregate cgroup budgets: CPU and file size are limited per
-process and per file, and the process ceiling includes other processes with the
-same real user ID.
+operation. Copied commands receive read-only `/dev/null` as standard input and
+share one write-only anonymous pipe for standard output and error; a trusted
+outer `/usr/bin/cat` relays that merged stream to the caller's final output sink.
+The caller can still close or truncate the final sink, and the copied output
+channels are intentionally merged. The fixed host C compiler, relay, `mount`,
+`unshare`, `sudo`, and `setpriv` implementations, protected launcher,
+passwordless namespace-setup policy, user-namespace availability, kernel
+namespace/Landlock enforcement, and unrelated same-account processes outside
+the private namespace remain trusted or residual boundaries. Resource ceilings
+are not aggregate cgroup budgets: CPU and file size are limited per process and
+per file, and the process ceiling includes other processes with the same real
+user ID.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an

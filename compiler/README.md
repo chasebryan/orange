@@ -103,12 +103,15 @@ independently rebuilt claim.
 
 Landlock does not mediate every metadata operation, and the gate intentionally
 allows directory listing without file contents so the selected Rust toolchain can
-discover its sysroot. Standard input, output, and error remain caller-provided;
-the system C compiler, launcher source, kernel, mount implementation, and
-allowlisted system trees remain trusted boundaries. Resource ceilings are not
-aggregate cgroup budgets: CPU and file size are limited per process and per
-file, and the process ceiling includes other processes with the same real user
-ID.
+discover its sysroot. Copied commands receive read-only `/dev/null` as standard
+input and share one write-only anonymous pipe for standard output and error; a
+trusted outer `/usr/bin/cat` relays that merged stream to the caller's final
+output sink. The caller can still close or truncate that final sink, and the two
+copied output channels are intentionally indistinguishable. The system C
+compiler, launcher source, relay, kernel, mount implementation, and allowlisted
+system trees remain trusted boundaries. Resource ceilings are not aggregate
+cgroup budgets: CPU and file size are limited per process and per file, and the
+process ceiling includes other processes with the same real user ID.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing
 inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line
