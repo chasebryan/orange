@@ -3570,13 +3570,18 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                             "! cat escape >/dev/null 2>&1; "
                             "! printf escaped > ../denied/output 2>/dev/null; "
                             '[[ ! -e "/proc/self/fd/$1" ]]; '
-                            "/usr/bin/python3 -S -P -B -c 'import resource; "
-                            "limits=((resource.RLIMIT_CORE,0),(resource.RLIMIT_CPU,600),"
+                            "/usr/bin/python3 -S -P -B -c 'import mmap, resource; "
+                            "limits=((resource.RLIMIT_AS,4294967296),"
+                            "(resource.RLIMIT_CORE,0),(resource.RLIMIT_CPU,600),"
                             "(resource.RLIMIT_FSIZE,536870912),(resource.RLIMIT_NOFILE,1024),"
                             "(resource.RLIMIT_NPROC,256)); "
                             "assert all(0 <= resource.getrlimit(kind)[0] <= maximum and "
                             "0 <= resource.getrlimit(kind)[1] <= maximum "
-                            "for kind, maximum in limits)'"
+                            "for kind, maximum in limits)\n"
+                            "failed=False\n"
+                            "try:\n mmap.mmap(-1,4294967296)\n"
+                            "except (MemoryError, OSError, OverflowError):\n failed=True\n"
+                            "assert failed'"
                         ),
                         "sandbox",
                         str(inherited),

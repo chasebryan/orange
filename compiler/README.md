@@ -76,11 +76,12 @@ launcher built from the captured tree requires Landlock ABI 3 or newer, permits
 directory-name traversal but grants file reads and execution only to the system
 roots and selected toolchain, and grants writes only to the two gate roots and
 four admitted character devices. It also closes every inherited descriptor above
-standard error before execution. The launcher also fixes hard ceilings of 600
-CPU seconds per process, 512 MiB per file, 1,024 open files, 256 processes for
-the real user, and zero core-file bytes, preserving any lower inherited hard
-ceiling. Copied commands receive isolated `HOME`, `TMPDIR`, and `PATH` values; a
-runtime assertion confirms that the original checkout is unreadable. The
+standard error before execution. The launcher also fixes hard ceilings of 4 GiB
+of virtual address space and 600 CPU seconds per process, 512 MiB per file,
+1,024 open files, 256 processes for the real user, and zero core-file bytes,
+preserving any lower inherited hard ceiling. Copied commands receive isolated
+`HOME`, `TMPDIR`, and `PATH` values; a runtime assertion confirms that the
+original checkout is unreadable. The
 namespace supervisor kills its child if supervision is interrupted. Trusted
 gate operations alone retain the descriptors used for later extraction and
 identity checks. The copied validator first policy-checks
@@ -110,7 +111,8 @@ output sink. The caller can still close or truncate that final sink, and the two
 copied output channels are intentionally indistinguishable. The system C
 compiler, launcher source, relay, kernel, mount implementation, and allowlisted
 system trees remain trusted boundaries. Resource ceilings are not aggregate
-cgroup budgets: CPU and file size are limited per process and per file, and the
+cgroup budgets: virtual address space and CPU time are limited per process,
+file size is limited per file, aggregate resident memory is not capped, and the
 process ceiling includes other processes with the same real user ID.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing
