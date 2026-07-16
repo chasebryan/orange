@@ -64,12 +64,19 @@ The user-namespace path retains its namespace-granted capabilities only long
 enough for `setpriv` to remove every capability from the inheritable, permitted,
 effective, bounding, and ambient sets. The privileged supervisor removes the
 same sets while restoring the invoking identity. Both paths assert the restored
-identity, five empty capability sets, private process view, and empty route table
-before copied code runs. The namespace
-supervisor kills its child if supervision is interrupted. Trusted gate operations
-alone retain the descriptors used for later extraction and identity checks. The
-copied validator first policy-checks that exact exported tree before its
-foundation test modules import.
+identity, five empty capability sets, private process view, and empty route table.
+Before the drop, the namespace supervisor bind-mounts the selected toolchain
+read-only and covers `/home` with a private non-executable `tmpfs`. A protected C
+launcher built from the captured tree requires Landlock ABI 3 or newer, permits
+directory-name traversal but grants file reads and execution only to the system
+roots and selected toolchain, and grants writes only to the two gate roots and
+four admitted character devices. It also closes every inherited descriptor above
+standard error before execution. Copied commands receive isolated `HOME`,
+`TMPDIR`, and `PATH` values; a runtime assertion confirms that the original
+checkout is unreadable. The namespace supervisor kills its child if supervision
+is interrupted. Trusted gate operations alone retain the descriptors used for
+later extraction and identity checks. The copied validator first policy-checks
+that exact exported tree before its foundation test modules import.
 After those tests, it policy-checks the tree again before Cargo, so Python-test
 drift cannot reach Rust execution. Formatting, linting, documentation, and Rust
 tests use the same extracted check root. A third policy check runs after all Rust
@@ -85,6 +92,12 @@ in bytes, length, and directory depth. Both artifacts must be regular
 non-symlink files with identical complete modes and bytes. This is
 source-relocated same-host reproducibility evidence, not a cross-platform or
 independently rebuilt claim.
+
+Landlock does not mediate every metadata operation, and the gate intentionally
+allows directory listing without file contents so the selected Rust toolchain can
+discover its sysroot. Standard input, output, and error remain caller-provided;
+the system C compiler, launcher source, kernel, mount implementation, and
+allowlisted system trees remain trusted boundaries.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing
 inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line

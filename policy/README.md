@@ -64,9 +64,17 @@ only the remaining namespaces before `setpriv` restores the invoking numeric
 user and group, clears supplementary groups, and enables `no_new_privs`. Both
 paths remove and assert empty inheritable, permitted, effective, bounding, and
 ambient capability sets, then assert the expected identity, private process view,
-empty route table, and descriptor closure before copied code runs. The
-namespace supervisor kills its child if supervision is interrupted. Trusted gate
-operations retain the descriptors for extraction and SHA-256 identity checks.
+and empty route table. Before dropping privilege, the supervisor bind-mounts the
+selected toolchain read-only and hides `/home` behind a private non-executable
+`tmpfs`. The protected `tools/fs_sandbox.c` launcher is built from the checked
+capture with fixed hardening flags. It requires Landlock ABI 3 or newer, grants
+file reads and execution only to the admitted system/toolchain roots, grants
+writes only to the two temporary gate roots and admitted character devices, and
+closes every inherited descriptor above standard error. Copied commands receive
+isolated `HOME`, `TMPDIR`, and `PATH` values and must prove the original checkout
+unreadable before tests begin. The namespace supervisor kills its child if
+supervision is interrupted. Trusted gate operations retain the descriptors for
+extraction and SHA-256 identity checks.
 The gate verifies those identities before and after its final comparison,
 extracts a fresh reference, compares NUL-safe sorted non-directory membership
 across the tested check root and both relocated reproducibility roots, and
@@ -74,11 +82,13 @@ compares every tracked file's type, complete mode, and bytes with the reference.
 Added source entries or policy-valid tracked-source drift in any compiler input
 root therefore cannot produce a passing gate unless a trusted child restores the
 original state before comparison. Empty-directory additions are not source
-membership and remain outside this final comparison. The fixed host `unshare`,
-`sudo`, and `setpriv` implementations, passwordless namespace-setup policy,
-user-namespace availability, kernel namespace enforcement, and unrelated
-same-account processes outside the private namespace remain trusted or residual
-boundaries.
+membership and remain outside this final comparison. Landlock permits global
+directory listing for toolchain discovery and does not mediate every metadata
+operation; standard descriptors remain caller-controlled. The fixed host C
+compiler, `mount`, `unshare`, `sudo`, and `setpriv` implementations, protected
+launcher, passwordless namespace-setup policy, user-namespace availability,
+kernel namespace/Landlock enforcement, and unrelated same-account processes
+outside the private namespace remain trusted or residual boundaries.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an

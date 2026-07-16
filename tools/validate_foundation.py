@@ -274,6 +274,7 @@ scripts/ci/check-repository
 scripts/ci/check-external-links
 scripts/ci/install-actionlint
 scripts/ci/install-lychee
+tools/fs_sandbox.c
 tools/validate_foundation.py
 tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
@@ -440,7 +441,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "f7b7e1f9f463dd0a01b63c57146ba1685bd47c2c5b68e37e30f234e604d80faa"
+_PHD = "8f6eaadda6d185d88698e498eeced235049d11ec8f92bd2ad1bd8389963ff9a4"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
