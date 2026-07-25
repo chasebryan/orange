@@ -3865,9 +3865,11 @@ class ProtectedControlHardeningTests(unittest.TestCase):
     def test_codeowners_and_fixture_mutations_are_digest_protected(self) -> None:
         paths = (
             ".github/CODEOWNERS",
+            "compiler/crates/orangec/tests/s2_conformance.rs",
             "compiler/crates/orangec/tests/s3a_conformance.rs",
             "compiler/fixtures/s3a/invalid-word-range.or",
             "conformance/foundation/valid/claim-record.json",
+            "docs/LANGUAGE_2026.md",
             "policy/makefile-entrypoint-contract-v0.1.json",
         )
         for value in paths:
@@ -3881,19 +3883,21 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 validator._validate_protected_file_digests()
                 self.assertIn("protected_file.digest", {finding.code for finding in validator.findings})
 
-    def test_policy_cannot_remove_a_required_security_file(self) -> None:
+    def test_policy_cannot_remove_required_files(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
-        policy = json.loads((source_root / "policy/gate0-repository-policy.json").read_text(encoding="utf-8"))
-        policy["required_paths"].remove("SECURITY.md")
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            path = root / "policy/gate0-repository-policy.json"
-            path.parent.mkdir(parents=True)
-            path.write_text(json.dumps(policy), encoding="utf-8")
-            validator = FoundationValidator(root)
-            validator._load_and_validate_policy()
-            codes = {finding.code for finding in validator.findings}
-            self.assertTrue({"policy.minimum", "policy.required_inventory"} & codes)
+        canonical = load_json(source_root / "policy/gate0-repository-policy.json")
+        for value in ("SECURITY.md", "compiler/crates/orangec/tests/s2_conformance.rs"):
+            with self.subTest(path=value), tempfile.TemporaryDirectory() as directory:
+                policy = json.loads(json.dumps(canonical))
+                policy["required_paths"].remove(value)
+                root = Path(directory)
+                path = root / "policy/gate0-repository-policy.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(policy), encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._load_and_validate_policy()
+                codes = {finding.code for finding in validator.findings}
+                self.assertTrue({"policy.minimum", "policy.required_inventory"} & codes)
 
     def test_policy_cannot_change_the_ordered_codeowners_contract(self) -> None:
         source_root = Path(__file__).resolve().parents[2]

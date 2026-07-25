@@ -202,6 +202,7 @@ compiler/crates/orange-compiler/src/source.rs
 compiler/crates/orangec/Cargo.toml
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
+compiler/crates/orangec/tests/s2_conformance.rs
 compiler/crates/orangec/tests/s3a_conformance.rs
 compiler/fixtures/hello.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
@@ -441,7 +442,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "284349cd6b2069b9817731eac9f53dbf77aafe9ffb1d7161e935e0cf214abc38"
+_PHD = "62182e87f92ab77fd35e27a34022fa36611f000765c0f2ef3870b04749048f20"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
