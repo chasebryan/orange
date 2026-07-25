@@ -4434,6 +4434,230 @@ class PlanningTraceHardeningTests(unittest.TestCase):
         shutil.copyfile(source, target)
         return target
 
+    def test_proof_suite_solo_protocol_baseline_is_valid(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        validator = FoundationValidator(root)
+        validator._validate_proof_foundation_suite()
+        self.assertEqual(
+            [
+                finding
+                for finding in validator.findings
+                if finding.code.startswith("proof_suite.")
+            ],
+            [],
+        )
+
+    def test_proof_suite_identity_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "Status: owner-executable draft under D-023; no proof foundation selected",
+                "Status: accepted; Rocq selected",
+                "proof_suite.header",
+            ),
+            (
+                "Suite version: `d006-v0.2-draft`",
+                "Suite version: `d006-v0.1-draft`",
+                "proof_suite.header",
+            ),
+            (
+                "Snapshot: 2026-07-25",
+                "Snapshot: 2026-07-11",
+                "proof_suite.header",
+            ),
+            (
+                "### DS-07 — Exercise solo auditability and maintenance",
+                "### DS-07 — Require an external cohort",
+                "proof_suite.solo_case",
+            ),
+            ("| R-09 |", "| R-08 |", "proof_suite.review_scopes"),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = self._copy_proof_suite(root)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_proof_foundation_suite()
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_proof_suite_execution_matrix_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "exactly 14 candidate-case runs per evidence epoch",
+                "exactly 2 candidate-case runs per evidence epoch",
+            ),
+            (
+                "Execution evidence is currently 0/14 candidate-case runs",
+                "Execution evidence is currently 14/14 candidate-case runs",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = self._copy_proof_suite(root)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_proof_foundation_suite()
+                self.assertIn(
+                    "proof_suite.execution_matrix",
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_proof_suite_cannot_add_conflicting_execution_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = self._copy_proof_suite(root)
+            with target.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "\nExecution evidence is currently 14/14 candidate-case runs "
+                    "(7/7 Rocq and 7/7 Lean 4).\n"
+                )
+            validator = FoundationValidator(root)
+            validator._validate_proof_foundation_suite()
+            self.assertIn(
+                "proof_suite.execution_matrix",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_proof_suite_rejects_legacy_independent_human_blockers(self) -> None:
+        blockers = (
+            "one non-author witness",
+            "distinct human principal",
+            "At least one independent logic/kernel reviewer",
+            "two non-author practitioners",
+            "Required independent technical reviews",
+            "candidate authors cannot approve their own work",
+            "obtain independent reproductions and required reviews",
+            "authorized Gate 0 decision body",
+        )
+        for blocker in blockers:
+            with self.subTest(blocker=blocker), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = self._copy_proof_suite(root)
+                with target.open("a", encoding="utf-8") as stream:
+                    stream.write(f"\nHard acceptance requires {blocker}.\n")
+                validator = FoundationValidator(root)
+                validator._validate_proof_foundation_suite()
+                self.assertIn(
+                    "proof_suite.solo_blocker",
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_proof_suite_rejects_level_three_and_independence_overclaims(self) -> None:
+        mutations = (
+            (
+                "Level 3 is neither required nor\n   claimed;",
+                "Level 3 is required and\n   claimed;",
+                "proof_suite.solo_mode",
+            ),
+            (
+                "This document defines the experiment;",
+                "This suite has been independently reviewed. This document defines the experiment;",
+                "proof_suite.independence_claim",
+            ),
+            (
+                "This draft selects no\ncandidate,",
+                "Rocq is the selected foundation. This draft selects a\ncandidate,",
+                "proof_suite.preselection",
+            ),
+            (
+                "Disclosure only: `unavailable`; never a selection score or implied claim",
+                "Hard gate: independent approval complete",
+                "proof_suite.solo_metrics",
+            ),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = self._copy_proof_suite(root)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_proof_foundation_suite()
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_proof_suite_acceptance_and_dependency_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "D-006 acceptance requires D-004 and D-005 to be Accepted",
+                "D-006 acceptance may precede D-004 and D-005",
+            ),
+            (
+                "exactly 40 lowercase hexadecimal characters",
+                "an abbreviated hexadecimal prefix",
+            ),
+            (
+                "contain an `approval-records` entry with the\nliteral `solo-reviewed`",
+                "contain an `approval-records` entry with an owner approval",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = self._copy_proof_suite(root)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_proof_foundation_suite()
+                self.assertIn(
+                    "proof_suite.acceptance",
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_proof_suite_register_cannot_preselect_or_skip_dependencies(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (
+                "Neither candidate is selected, preferred, or\nauthorized for product use by this register.",
+                "Rocq is selected and authorized for product use by this register.",
+            ),
+            (
+                "D-004 and D-005 must each be Accepted before D-006 can be\nAccepted.",
+                "D-006 may be Accepted before D-004 and D-005.",
+            ),
+            (
+                "Current execution evidence is 0/14 candidate-case runs.",
+                "Current execution evidence is 14/14 candidate-case runs.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / "docs"
+                docs.mkdir()
+                shutil.copyfile(
+                    source_root / "docs/PROOF_FOUNDATION_DECISION_SUITE.md",
+                    docs / "PROOF_FOUNDATION_DECISION_SUITE.md",
+                )
+                decisions = docs / "DECISIONS.md"
+                shutil.copyfile(source_root / "docs/DECISIONS.md", decisions)
+                text = decisions.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                decisions.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_proof_foundation_suite()
+                self.assertIn(
+                    "proof_suite.register_consistency",
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_duplicate_feature_identifier_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

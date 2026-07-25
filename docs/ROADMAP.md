@@ -230,11 +230,14 @@ the S3a acceptance revision, accept either draft decision, or authorize S3b.
 
 ### S4 — Proof and claim boundary
 
-Status: pending D-006 and dependent decisions
+Status: pending execution and exact-revision OEP acceptance of D-006 plus its
+dependent decisions
 
 Permanent outcomes:
 
-- a selected proof foundation or an explicitly smaller initial proof scope;
+- a selected proof foundation through the symmetric D-006 suite and an Accepted
+  exact-revision OEP; any explicitly smaller initial proof scope is bounded
+  inside that decision and cannot bypass the comparison;
 - canonical Core and Proof IR identities;
 - authoritative checking rules and an implementation-diverse checker where
   useful;
@@ -242,9 +245,15 @@ Permanent outcomes:
 - axiom, assumption, and trust inventories; and
 - mixed-status claim records.
 
-Exit test: malformed proofs and missing certificates fail closed; solver
-timeouts and unknowns never satisfy a claim; repeated offline replay agrees.
-All evidence is labeled solo-produced unless the operating model changes.
+Exit test: both D-006 candidates have complete 7/7 case records under the same
+frozen epoch; the selected foundation passes every non-compensable gate; the
+owner's comparative record is `solo-reviewed`; and the Accepted OEP binds the
+exact validated revision. Implemented malformed-proof and missing-certificate
+paths fail closed, solver timeouts and unknowns never satisfy a claim, and
+repeated offline replay agrees. Decision-case replay is capped at level 2 and
+independent review remains `unavailable` while the operating model stays solo.
+The decision suite or OEP alone does not close S4 without its implemented and
+tested proof/claim boundary.
 
 ### S5 — Compiler IRs and one output path
 
