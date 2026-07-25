@@ -3,9 +3,9 @@
 Status: draft owner-executable decision protocol; no semantic-strata candidate
 selected
 
-Suite version: `d004-v0.1-draft`
+Suite version: `d004-v0.2-draft`
 
-Snapshot: 2026-07-13
+Snapshot: 2026-07-25
 
 ## 1. Authority and decision boundary
 
@@ -141,6 +141,21 @@ prohibited reverse inferences.
 | SR-13 | Proof evidence to judgment | Checking binds the evidence to exact Core, IR, relation, model, and version identities |
 | SR-14 | Claim record to subject and evidence | Later D-005 binding cannot upgrade a failed, missing, unknown, or unsupported relation |
 
+An equivalent graph is not a waiver from this table. Every candidate supplies a
+total SR conformance map with exactly one entry for each of SR-01 through SR-14.
+Each entry names the candidate-native edge or edges, their direction, domain,
+codomain, definedness conditions, obligations, identity inputs, trust role,
+failure behavior, prohibited reverse inferences, and the observation that
+demonstrates equivalence. A split edge records every constituent; a fused edge
+records how each required crossing remains separately inspectable and
+falsifiable. An omitted crossing, an unnamed extra crossing, or a many-to-one
+mapping that hides a required authority or failure boundary fails the candidate.
+The map and candidate-native graph are content-identified and frozen before
+each recorded case run. A candidate-specific correction creates a linked new
+run, retains the failed prior record, and consumes the common correction window.
+Changing an SR requirement or the shared equivalence rule creates a new evidence
+epoch for all candidates.
+
 These invariants apply to every graph:
 
 - a shared source name never creates a refinement relation;
@@ -160,6 +175,11 @@ Each candidate must run all five cases from the same frozen packet. Each case
 records inputs, expected observations, positive and negative outcomes, exact
 dependencies, resource use, and a falsification condition. A prose-only claim
 that a case is representable is not execution evidence.
+
+The frozen matrix therefore contains exactly 25 required candidate-case
+executions per evidence epoch: each of the 5 candidates runs each of the 5
+cases. A case has complete cross-candidate execution only when all five of its
+candidate-specific records exist in the same epoch.
 
 ### SC-01 — SHA-like word code
 
@@ -345,8 +365,14 @@ unchecked symbolic bound is described as proved.
 
 ## 6. Hard gates and anti-gaming rules
 
-The gates are non-compensable. `Unproven`, missing, timeout, unsupported, and
-resource exhaustion are failures for candidate selection, not partial credit.
+The gates are non-compensable. Only an overall case verdict of `pass` satisfies
+SS-G05. Missing required execution, an unproven required positive capability,
+an unexpected `unknown` or `unsupported` domain observation, or a replay-level
+timeout or resource exhaustion forces the overall verdict to `fail` and makes
+the candidate ineligible. As defined in section 7, a preregistered negative or
+resource fixture may still pass when its domain observation is the expected
+`unknown`, `unsupported`, or `exhausted`; that match demonstrates fail-closed
+handling only and grants neither capability nor partial credit.
 
 1. **SS-G01 — Product meaning:** all five source roles and the semantic needs of
    J-01 through J-08 remain expressible without changing journey identities or
@@ -409,9 +435,21 @@ Each case record contains:
 - exact arguments, resource ceilings, measured resource use, and exit state;
 - normalized observations plus raw bounded logs;
 - every premise, assumption, trusted component, and unsupported feature;
-- pass, fail, unknown, timeout, unsupported, or exhausted state;
+- the candidate-native relationship graph and total SR-01-through-SR-14
+  conformance map used by the run;
+- each normalized domain observation's separate expected state, observed state,
+  and `matched` or `mismatched` comparison;
+- one overall case verdict, exactly `pass` or `fail`;
 - a byte manifest and replay instructions; and
 - owner-produced and owner-reviewed labels, never an independent-review label.
+
+Domain-observation states are `succeeded`, `rejected`, `unknown`, `timeout`,
+`unsupported`, or `exhausted`. An expected `unknown`, `unsupported`, or
+`exhausted` observation can match and contribute to a `pass`; it is never used
+as the overall case verdict. Missing execution, an observation mismatch, an
+unexpected non-success, or a replay-level timeout or exhaustion forces the
+overall verdict to `fail`. A candidate adapter's inability to execute therefore
+cannot masquerade as a correctly observed domain-level `unsupported` state.
 
 A candidate adapter may use research-only models, but it cannot enter the
 product lineage by accident. After selection, the five accepted cases must be
@@ -449,7 +487,9 @@ currently absent. That absence limits any independent or external feasibility
 claim, but under D-023 it is not replaced with a fictional reviewer and does
 not prevent the owner from executing the comparison.
 
-Execution evidence is currently 0/5 candidates and 0/5 cases.
+Execution evidence is currently 0/25 required candidate-case executions: 0/5
+candidates have complete five-case packets, and 0/5 cases have complete
+cross-candidate execution.
 
 ## 9. Current handoff
 

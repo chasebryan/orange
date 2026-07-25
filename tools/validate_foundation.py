@@ -230,6 +230,7 @@ assets/brand/orange-banner-jpeg.JPEG
 assets/brand/orange-banner.png
 assets/brand/orange-banner2-erased.PNG
 assets/brand/orange-banner2.PNG
+assets/brand/orange-cryptography-handdrawn-banner.png
 assets/brand/orange-erased.PNG
 assets/brand/orange-handdrawn-marker-banner.png
 assets/brand/orange.jpg
@@ -304,7 +305,8 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
         ("assets/brand/orange-banner.png", "41cffe77744da07b9fbf9bc46c009755522468bbbc53a3f3f9b1a867ae05e266", "primary horizontal lockup with embedded C2PA claim", _D),
         ("assets/brand/orange.jpg", "170c48ab4a32bea289099b9505569ada5b99cc6deae93ece8f59d5c2102f4888", "emblem JPEG on a light background", _D),
         ("assets/brand/orange.png", "c10ed0b2d79a1e9447e842fcb9eaa7ec8eeb850dd2873e87eefd54d7cdc14463", "primary emblem with embedded C2PA claim", _D),
-        ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "hand-drawn README and Orange Book horizontal lockup on a light background", "2026-07-14"),
+        ("assets/brand/orange-handdrawn-marker-banner.png", "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735", "hand-drawn Orange Book horizontal lockup on a light background", "2026-07-14"),
+        ("assets/brand/orange-cryptography-handdrawn-banner.png", "143f44c591001f9aec2b94723520a49dd484f2ae26208885e4e849b9db6ef1ff", "hand-drawn cryptography README horizontal lockup on a light background", "2026-07-25"),
     )
 ]
 GATE0_BRAND_ASSET_METADATA = {
@@ -317,6 +319,7 @@ GATE0_BRAND_ASSET_METADATA = {
     "orange.jpg": ("image/jpeg", 1254, 1254, False, False),
     "orange.png": ("image/png", 1254, 1254, False, True),
     "orange-handdrawn-marker-banner.png": ("image/png", 2048, 682, False, False),
+    "orange-cryptography-handdrawn-banner.png": ("image/png", 2172, 724, False, False),
 }
 GATE0_BRAND_SOURCE_FILENAMES = {
     "orange-banner2.PNG": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
@@ -328,6 +331,7 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange.jpg": "orange.jpg",
     "orange.png": "orange.png",
     "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
+    "orange-cryptography-handdrawn-banner.png": "exec-b489e83f-e13c-467d-85b5-c6f62fe265b7.png",
 }
 GATE0_EXECUTABLE_PATHS = set(
     """scripts/ci/check-external-links scripts/ci/check-repository
@@ -378,7 +382,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182"
+_RDC = "e983a431bcfa653efd40a1c342807ed839f76206722169fd1f9e78e42216d10f"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -442,7 +446,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "ee28195069bc1d3c0b07426044d98b7fd83640c13358f5211eafeb0646361435"
+_PHD = "0061d073e70d74f610783cd2638fd34e57a31883bcda19a1d257b0c0d30ac6db"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4496,6 +4500,22 @@ class FoundationValidator:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
 
+        header = text.partition("## 1. Authority and decision boundary")[0]
+        status = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
+        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
+        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
+        if (
+            tuple(re.sub(r"\s+", " ", value) for value in status)
+            != ("draft owner-executable decision protocol; no semantic-strata candidate selected",)
+            or versions != ("d004-v0.2-draft",)
+            or snapshots != ("2026-07-25",)
+        ):
+            self.add(
+                "semantic_strata.header",
+                path,
+                "suite status, version, and snapshot must retain the exact candidate-neutral v0.2 protocol identity",
+            )
+
         candidate_rows = table_rows(
             markdown_section(text, "## 2. Candidate architectures"),
             r"ST-[A-Z]+",
@@ -4550,6 +4570,7 @@ class FoundationValidator:
             )
 
         case_ids = tuple(f"SC-{index:02d}" for index in range(1, 6))
+        required_candidate_case_executions = len(candidate_ids) * len(case_ids)
         cases = markdown_section(text, "## 5. Required decision cases")
         case_headings = tuple(re.findall(r"(?m)^###\s+(SC-[0-9A-Z]+)\b", cases))
         if case_headings != case_ids:
@@ -4595,7 +4616,6 @@ class FoundationValidator:
         normalized_text = re.sub(r"\s+", " ", text)
         for assertion in (
             "There is no weighted aggregate score.",
-            "Execution evidence is currently 0/5 candidates and 0/5 cases.",
             "Independent review is currently absent.",
             "No semantic stratum is selected by this draft suite.",
             "This suite does not accept D-003 or authorize S3b implementation.",
@@ -4606,6 +4626,93 @@ class FoundationValidator:
                     path,
                     f"missing decision-protocol invariant: {assertion}",
                 )
+
+        execution_matrix_assertions = (
+            (
+                "The frozen matrix therefore contains exactly "
+                f"{required_candidate_case_executions} required candidate-case executions per evidence epoch: "
+                f"each of the {len(candidate_ids)} candidates runs each of the {len(case_ids)} cases."
+            ),
+            (
+                "Execution evidence is currently "
+                f"0/{required_candidate_case_executions} required candidate-case executions: "
+                f"0/{len(candidate_ids)} candidates have complete five-case packets, and "
+                f"0/{len(case_ids)} cases have complete cross-candidate execution."
+            ),
+        )
+        for assertion in execution_matrix_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "semantic_strata.execution_matrix",
+                    path,
+                    f"missing candidate-case cardinality invariant: {assertion}",
+                )
+        if normalized_text.count("Execution evidence is currently ") != 1:
+            self.add(
+                "semantic_strata.execution_matrix",
+                path,
+                "suite must contain exactly one canonical current-execution baseline",
+            )
+
+        for assertion in (
+            "each normalized domain observation's separate expected state, observed state, and `matched` or `mismatched` comparison;",
+            "one overall case verdict, exactly `pass` or `fail`;",
+            "Only an overall case verdict of `pass` satisfies SS-G05.",
+            "a preregistered negative or resource fixture may still pass when its domain observation is the expected `unknown`, `unsupported`, or `exhausted`; that match demonstrates fail-closed handling only and grants neither capability nor partial credit.",
+            "An expected `unknown`, `unsupported`, or `exhausted` observation can match and contribute to a `pass`; it is never used as the overall case verdict.",
+            "A candidate adapter's inability to execute therefore cannot masquerade as a correctly observed domain-level `unsupported` state.",
+        ):
+            if assertion not in normalized_text:
+                self.add(
+                    "semantic_strata.evidence_state",
+                    path,
+                    f"missing case-verdict or observation-state invariant: {assertion}",
+                )
+
+        for assertion in (
+            "An equivalent graph is not a waiver from this table.",
+            "Every candidate supplies a total SR conformance map with exactly one entry for each of SR-01 through SR-14.",
+            "A candidate-specific correction creates a linked new run, retains the failed prior record, and consumes the common correction window.",
+            "Changing an SR requirement or the shared equivalence rule creates a new evidence epoch for all candidates.",
+        ):
+            if assertion not in normalized_text:
+                self.add(
+                    "semantic_strata.equivalence_map",
+                    path,
+                    f"missing equivalent-graph mapping invariant: {assertion}",
+                )
+
+        decisions_path = self.root / "docs/DECISIONS.md"
+        if self._hf(decisions_path):
+            decisions_source = self._rt(decisions_path)
+            if decisions_source is not None:
+                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
+                d004 = markdown_section(
+                    decisions_text,
+                    "## D-004",
+                    heading_level=2,
+                    prefix=True,
+                )
+                normalized_d004 = re.sub(r"\s+", " ", d004)
+                register_baseline = (
+                    "That Draft protocol records "
+                    f"0/{required_candidate_case_executions} required candidate-case executions: "
+                    f"0/{len(candidate_ids)} candidates have complete five-case packets, and "
+                    f"0/{len(case_ids)} cases have complete cross-candidate execution."
+                )
+                if (
+                    "Alternative under comparison: one universal IR." not in normalized_d004
+                    or "The alternative is not rejected by this proposed register entry; it must run the same symmetric suite as every other candidate."
+                    not in normalized_d004
+                    or "Rejected default:" in normalized_d004
+                    or register_baseline not in normalized_d004
+                    or normalized_d004.count("That Draft protocol records ") != 1
+                ):
+                    self.add(
+                        "semantic_strata.register_consistency",
+                        decisions_path,
+                        "proposed D-004 must remain candidate-neutral and agree with the suite's execution baseline",
+                    )
 
     def _validate_change_records(self) -> None:
         specifications = (

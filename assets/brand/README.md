@@ -1,17 +1,19 @@
 # Official Orange brand assets
 
 Status: official project emblem, wordmark, and lockup assets initially
-designated by the Bootstrap Steward on 2026-07-11 and expanded on 2026-07-14
+designated by the Bootstrap Steward on 2026-07-11 and expanded through
+2026-07-25
 
-These nine images were imported byte-for-byte from the steward-supplied
-`Orange-Assets` collection. Eight were admitted on 2026-07-11; the hand-drawn
-marker banner was added on 2026-07-14 without replacing the existing horizontal
-lockups. The machine-readable [`manifest.json`](manifest.json) records each
-repository path, original source filename, dimensions, transparency, role, and
-SHA-256 digest. The Gate 0 repository policy independently admits the same exact
-paths and digests. Five clearer repository filenames replace the supplied
-camera and UUID names without changing any image bytes; the manifest preserves
-those original names as provenance.
+These ten images were imported byte-for-byte from the steward-supplied
+`Orange-Assets` collection. Eight were admitted on 2026-07-11; the marker banner
+was added on 2026-07-14; and the cryptography banner was added on 2026-07-25 as
+the repository README hero without replacing the existing horizontal lockups.
+The machine-readable [`manifest.json`](manifest.json) records each repository
+path, original source filename, dimensions, transparency, role, and SHA-256
+digest. The Gate 0 repository policy independently admits the same exact paths
+and digests. Six clearer repository filenames replace supplied camera or UUID
+names without changing any image bytes; the manifest preserves those original
+names as provenance.
 
 `orange.png` and `orange-banner.png` retain embedded C2PA Content Credentials
 that identify OpenAI Media Service API generation using `gpt-image 2.0` and the
@@ -26,9 +28,10 @@ cryptographic validity has not yet been independently verified.
 
 - [`orange.png`](orange.png) is the primary emblem for a light background.
 - [`orange-erased.PNG`](orange-erased.PNG) is the primary transparent emblem.
+- [`orange-cryptography-handdrawn-banner.png`](orange-cryptography-handdrawn-banner.png)
+  is the primary repository README banner on a light background.
 - [`orange-handdrawn-marker-banner.png`](orange-handdrawn-marker-banner.png) is
-  the primary hand-drawn banner for the repository README and The Orange Book
-  on a light background.
+  the primary hand-drawn banner for The Orange Book on a light background.
 - [`orange-banner.png`](orange-banner.png) is the provenance-bearing horizontal
   emblem and wordmark lockup for a light background.
 - [`orange-banner2-erased.PNG`](orange-banner2-erased.PNG) is the transparent

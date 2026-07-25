@@ -97,9 +97,12 @@ Recommendation: one module system with separate Specification, Implementation,
 Machine Implementation, Game, and Proof strata, lowering to several formally
 related IRs.
 
-Rejected default: one universal IR. Mathematical totality, probabilistic games,
-stateful memory, target leakage, and concrete instructions have conflicting
-requirements; hiding them in annotations would make the semantics less honest.
+Alternative under comparison: one universal IR. The research concern is that
+mathematical totality, probabilistic games, stateful memory, target leakage, and
+concrete instructions have conflicting requirements and that hiding them in
+annotations could make the semantics less honest. The alternative is not
+rejected by this proposed register entry; it must run the same symmetric suite
+as every other candidate.
 
 Acceptance evidence: representative permanent decision cases for SHA-like word
 code, mutable buffers, a secret-dependent rejection case, one vector intrinsic,
@@ -109,8 +112,10 @@ The symmetric candidates, typed relationship graph, five cases,
 non-compensable gates, resource contract, and inconclusive procedure are
 specified in the
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md).
-That Draft protocol records 0/5 candidates and 0/5 cases executed. It selects
-no stratum, does not accept D-003, and does not authorize S3b.
+That Draft protocol records 0/25 required candidate-case executions: 0/5
+candidates have complete five-case packets, and 0/5 cases have complete
+cross-candidate execution. It selects no stratum, does not accept D-003, and
+does not authorize S3b.
 
 ## D-005 — Public assurance model
 

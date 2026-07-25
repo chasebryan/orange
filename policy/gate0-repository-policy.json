@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.99",
+  "policy_version": "0.2.100",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -82,8 +82,14 @@
     {
       "path": "assets/brand/orange-handdrawn-marker-banner.png",
       "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735",
-      "role": "Official working Orange hand-drawn README and Orange Book horizontal lockup on a light background",
+      "role": "Official working Orange hand-drawn Orange Book horizontal lockup on a light background",
       "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-14"
+    },
+    {
+      "path": "assets/brand/orange-cryptography-handdrawn-banner.png",
+      "sha256": "143f44c591001f9aec2b94723520a49dd484f2ae26208885e4e849b9db6ef1ff",
+      "role": "Official working Orange hand-drawn cryptography README horizontal lockup on a light background",
+      "provenance": "Byte-for-byte import from the steward-supplied Orange-Assets collection on 2026-07-25"
     }
   ],
   "required_paths": [
@@ -153,6 +159,7 @@
     "assets/brand/orange-banner.png",
     "assets/brand/orange-banner2-erased.PNG",
     "assets/brand/orange-banner2.PNG",
+    "assets/brand/orange-cryptography-handdrawn-banner.png",
     "assets/brand/orange-erased.PNG",
     "assets/brand/orange-handdrawn-marker-banner.png",
     "assets/brand/orange.jpg",
@@ -254,15 +261,15 @@
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "168fdef359964e08fe78fe02a19f182235b75721ff01b4498c7c46cb3273627e",
-    "README.md": "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182",
+    "README.md": "e983a431bcfa653efd40a1c342807ed839f76206722169fd1f9e78e42216d10f",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "7d71da4d28befb1b5735244c1ee51ee761e07a923b67b85d2bba9380da602874",
-    "assets/brand/manifest.json": "0ae668ae0fb52e04518681afddb2af5c11487bf5c3cda24be0d7f1ecb31c1391",
+    "assets/brand/README.md": "546dc8bf2c68eacf452641fb19ef591d41228dcec43d4c028a5758ab9d9a2f82",
+    "assets/brand/manifest.json": "776173a6e2cab2f5840a5f5b882f131ee34ce1ed10a50658717361267e5d93e4",
     "compiler/.gitignore": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368",
     "compiler/crates/orangec/tests/s2_conformance.rs": "61c1f877e91a76706da0ee78e9aa3cb44c519f4d8b5823d1bab998b209981d40",
-    "compiler/crates/orangec/tests/s3a_conformance.rs": "0bb5b8684bf3c8f0871af497f53814f8e193b8d24c1030f7f863992a11373e0e",
+    "compiler/crates/orangec/tests/s3a_conformance.rs": "7d25ea303fcb3c1603d60b6cb32d89ae15173cc043b8b695daedb737162b8116",
     "compiler/fixtures/s3a/invalid-duplicate-spec.or": "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6",
     "compiler/fixtures/s3a/invalid-int-magnitude.or": "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542",
     "compiler/fixtures/s3a/invalid-negative-word.or": "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b",
@@ -290,14 +297,14 @@
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "5ba13656b29a404aa7ffc047fe1a02df9a60bf43d440912557889bffb5493047",
+    "docs/DECISIONS.md": "fc7ad7245909a40a5e592c8460de52e90b328980ce99854c1b71086b3b1e30d8",
     "docs/LANGUAGE_2026.md": "52b6ef45ff5ee5d9f3951b1d6bf0f2e40a1566de623fc01e809a2a6d84d7a082",
     "docs/SEMANTICS_2026.md": "bc429d9f1296aee9376d377f93c013f74ba8b6f7e3cb48eb6410498a0b8a00e7",
     "docs/operations/CI_DEPENDENCIES.md": "4dbcdf456f364a430e2fbc81cc598fdacd4ede315ce7a11c442600ca289d166e",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
-    "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
+    "docs/security/OSPS_BASELINE.md": "5e492541f6d3db51285d2e74eef39a9baf09b019fac415c35f8792bfdb834502",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
-    "docs/security/THREAT_MODEL.md": "0336a69bdfd1e282b3d2ab165de8795415044ca8d7a151a0d682c555ce67c994",
+    "docs/security/THREAT_MODEL.md": "d826456176f91d4b5fee3910a58fc6ada64a3e525fe19152f4e2526423a609c1",
     "policy/README.md": "0ac2737f91257277f9c1cbdca60b7f0c4d229d546acba6b1c8bd57c83f9d4815",
     "policy/makefile-entrypoint-contract-v0.1.json": "370e0954ca798d4ba4eb04d71a223167c530ce5f41c4b5a0ddf7e3a34c0fb19f",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
@@ -312,7 +319,7 @@
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_validate_foundation.py": "7a5d34d64733d76e24dc2f188413e5b24af0fd94ff1a1afeb0e2581656da5e92",
-    "tools/tests/test_validate_foundation_hardening.py": "efe371bd704c74015342f3ac87346df8e0e8a83b9c5e3421eed372d41569185d"
+    "tools/tests/test_validate_foundation_hardening.py": "c4a444418ba29365a0c73d9ed1e7ffe2ed76053d4e54cc2f215cde7009e4868f"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

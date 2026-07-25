@@ -1,6 +1,6 @@
 # Orange
 
-![Hand-drawn Orange carton emblem and wordmark](assets/brand/orange-handdrawn-marker-banner.png)
+![Hand-drawn Orange cryptography wordmark illustrating commitments, key derivation, threshold sharing, permutations, Merkle trees, and checked evidence](assets/brand/orange-cryptography-handdrawn-banner.png)
 
 Orange is a language and toolchain for specifying, implementing, and verifying
 cryptography.

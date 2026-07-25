@@ -3031,13 +3031,14 @@ class BrandAssetHardeningTests(unittest.TestCase):
         }
         self.assertEqual(observed, expected)
 
-    def test_reader_entrypoints_use_only_the_hand_drawn_banner(self) -> None:
+    def test_reader_entrypoints_use_their_designated_hand_drawn_banners(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         readme = (source_root / "README.md").read_text(encoding="utf-8")
         orange_book = (source_root / "docs/THE_ORANGE_BOOK.md").read_text(encoding="utf-8")
         readme_banner = (
-            "![Hand-drawn Orange carton emblem and wordmark]"
-            "(assets/brand/orange-handdrawn-marker-banner.png)"
+            "![Hand-drawn Orange cryptography wordmark illustrating commitments, key "
+            "derivation, threshold sharing, permutations, Merkle trees, and checked evidence]"
+            "(assets/brand/orange-cryptography-handdrawn-banner.png)"
         )
         book_banner = (
             "![Hand-drawn Orange carton emblem and wordmark]"
@@ -4648,14 +4649,54 @@ class PlanningTraceHardeningTests(unittest.TestCase):
     def test_semantic_strata_suite_protocol_mutations_are_rejected(self) -> None:
         mutations = (
             (
+                "Status: draft owner-executable decision protocol; no semantic-strata candidate",
+                "Status: accepted owner decision; ST-REL is the selected candidate",
+                "semantic_strata.header",
+            ),
+            (
+                "Suite version: `d004-v0.2-draft`",
+                "Suite version: `d004-v0.1-draft`",
+                "semantic_strata.header",
+            ),
+            (
+                "Snapshot: 2026-07-25",
+                "Snapshot: 2026-07-13",
+                "semantic_strata.header",
+            ),
+            (
                 "**Falsification:**",
                 "**Unsupported conclusion:**",
                 "semantic_strata.case_field",
             ),
             (
-                "Execution evidence is currently 0/5 candidates and 0/5 cases.",
+                "Execution evidence is currently 0/25 required candidate-case executions:",
                 "Execution evidence is currently complete.",
-                "semantic_strata.assertion",
+                "semantic_strata.execution_matrix",
+            ),
+            (
+                "exactly 25 required candidate-case",
+                "exactly 5 required candidate-case",
+                "semantic_strata.execution_matrix",
+            ),
+            (
+                "one overall case verdict, exactly `pass` or `fail`;",
+                "one overall case verdict: `pass`, `fail`, `unknown`, or `unsupported`;",
+                "semantic_strata.evidence_state",
+            ),
+            (
+                "`exhausted` observation can match and contribute to a `pass`;",
+                "`exhausted` observation cannot match or contribute to a `pass`;",
+                "semantic_strata.evidence_state",
+            ),
+            (
+                "handling only and grants neither capability nor partial credit.",
+                "handling and grants capability credit.",
+                "semantic_strata.evidence_state",
+            ),
+            (
+                "An equivalent graph is not a waiver from this table.",
+                "An equivalent graph may waive this table.",
+                "semantic_strata.equivalence_map",
             ),
         )
         source = (
@@ -4679,6 +4720,116 @@ class PlanningTraceHardeningTests(unittest.TestCase):
                     expected_code,
                     {finding.code for finding in validator.findings},
                 )
+
+    def test_semantic_strata_register_cannot_reject_candidate_before_suite(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / "docs"
+            docs.mkdir()
+            shutil.copyfile(
+                source_root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
+                docs / "SEMANTIC_STRATA_DECISION_SUITE.md",
+            )
+            decisions = docs / "DECISIONS.md"
+            shutil.copyfile(source_root / "docs/DECISIONS.md", decisions)
+            text = decisions.read_text(encoding="utf-8")
+            mutated = text.replace(
+                "Alternative under comparison: one universal IR.",
+                "Rejected default: one universal IR.",
+                1,
+            )
+            self.assertNotEqual(mutated, text)
+            decisions.write_text(mutated, encoding="utf-8")
+
+            validator = FoundationValidator(root)
+            validator._validate_semantic_strata_suite()
+            self.assertIn(
+                "semantic_strata.register_consistency",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_semantic_strata_suite_cannot_add_conflicting_execution_baseline(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / "docs"
+            docs.mkdir()
+            suite = docs / "SEMANTIC_STRATA_DECISION_SUITE.md"
+            shutil.copyfile(
+                source_root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
+                suite,
+            )
+            with suite.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "\nExecution evidence is currently 25/25 required "
+                    "candidate-case executions.\n"
+                )
+
+            validator = FoundationValidator(root)
+            validator._validate_semantic_strata_suite()
+            self.assertIn(
+                "semantic_strata.execution_matrix",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_semantic_strata_register_cannot_understate_execution_matrix(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / "docs"
+            docs.mkdir()
+            shutil.copyfile(
+                source_root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
+                docs / "SEMANTIC_STRATA_DECISION_SUITE.md",
+            )
+            decisions = docs / "DECISIONS.md"
+            shutil.copyfile(source_root / "docs/DECISIONS.md", decisions)
+            text = decisions.read_text(encoding="utf-8")
+            mutated = text.replace(
+                "0/25 required candidate-case executions",
+                "0/5 required candidate-case executions",
+                1,
+            )
+            self.assertNotEqual(mutated, text)
+            decisions.write_text(mutated, encoding="utf-8")
+
+            validator = FoundationValidator(root)
+            validator._validate_semantic_strata_suite()
+            self.assertIn(
+                "semantic_strata.register_consistency",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_semantic_strata_register_cannot_add_conflicting_execution_baseline(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / "docs"
+            docs.mkdir()
+            shutil.copyfile(
+                source_root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
+                docs / "SEMANTIC_STRATA_DECISION_SUITE.md",
+            )
+            decisions = docs / "DECISIONS.md"
+            shutil.copyfile(source_root / "docs/DECISIONS.md", decisions)
+            text = decisions.read_text(encoding="utf-8")
+            mutated = text.replace(
+                "cross-candidate execution. It selects no stratum,",
+                "cross-candidate execution.\n\n"
+                "That Draft protocol records 25/25 required candidate-case "
+                "executions.\n\nIt selects no stratum,",
+                1,
+            )
+            self.assertNotEqual(mutated, text)
+            decisions.write_text(mutated, encoding="utf-8")
+
+            validator = FoundationValidator(root)
+            validator._validate_semantic_strata_suite()
+            self.assertIn(
+                "semantic_strata.register_consistency",
+                {finding.code for finding in validator.findings},
+            )
 
 
 class SchemaDeterminismTests(unittest.TestCase):
