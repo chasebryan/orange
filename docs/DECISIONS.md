@@ -117,6 +117,12 @@ candidates have complete five-case packets, and 0/5 cases have complete
 cross-candidate execution. It selects no stratum, does not accept D-003, and
 does not authorize S3b.
 
+Its input-only pre-epoch laboratory binds the 26
+case mutations named explicitly by the suite and plans all 25 candidate-case
+slots, while retaining the unresolved cross-cutting fixture classes as freeze
+blockers. It executes no candidate and creates no evidence epoch, result,
+review, recommendation, or selection.
+
 ## D-005 — Public assurance model
 
 Status: proposed; decide before S4 stabilizes the claim model and public claim

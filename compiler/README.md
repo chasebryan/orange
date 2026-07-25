@@ -36,6 +36,28 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance 
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 ```
 
+## D-004 pre-epoch decision laboratory
+
+The `orange-compiler` integration tests contain a standard-library-only,
+non-product D-004 laboratory. It strictly parses and canonicalizes an
+input-only `draft_unfrozen` packet, binds the conditional suite and accepted
+S3a baseline by SHA-256, preserves the 5-candidate by 5-case matrix, 14 required
+relationships, 10 hard gates, and 26 mutations named explicitly by the suite,
+and prepares one deterministic balanced 25-slot plan:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
+  --test d004_decision_suite --locked --offline
+```
+
+The suite has not yet assigned a complete common inventory to its cross-cutting
+ambiguity, missing-edge, identity-substitution, unsupported, and resource
+fixtures. The laboratory retains those gaps as freeze blockers. It executes no
+candidate adapter, freezes no evidence epoch, records 0/25 completed slots and
+no evidence, and creates no result, review, recommendation, or selection. It
+does not accept D-003 or D-004, alter compiler behavior, authorize S3b, or
+advance the version 1.0.0 gate count.
+
 ## D-005 decision laboratory
 
 The `orange-compiler` integration tests also contain a standard-library-only,
@@ -573,6 +595,10 @@ authority.
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
   syntax-tree, parser, semantic, Core, and evaluator library;
+- `crates/orange-compiler/tests/d004_decision_suite.rs`: input-only D-004
+  pre-epoch packet and balanced-plan checks;
+- `crates/orange-compiler/tests/d005_decision_suite.rs`: input-only D-005
+  packet and replay-plan checks;
 - `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
   `lex` behavior;
 - `crates/orangec/tests/s2_conformance.rs`: protected indexed S2 lexical and

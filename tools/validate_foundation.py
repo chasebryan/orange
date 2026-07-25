@@ -199,6 +199,11 @@ compiler/crates/orange-compiler/src/lib.rs
 compiler/crates/orange-compiler/src/parser.rs
 compiler/crates/orange-compiler/src/semantics.rs
 compiler/crates/orange-compiler/src/source.rs
+compiler/crates/orange-compiler/tests/d004_decision_suite.rs
+compiler/crates/orange-compiler/tests/d004_support/cases.rs
+compiler/crates/orange-compiler/tests/d004_support/domain.rs
+compiler/crates/orange-compiler/tests/d004_support/packet.rs
+compiler/crates/orange-compiler/tests/d004_support/runner.rs
 compiler/crates/orange-compiler/tests/d005_decision_suite.rs
 compiler/crates/orange-compiler/tests/d005_support/cases.rs
 compiler/crates/orange-compiler/tests/d005_support/domain.rs
@@ -274,6 +279,9 @@ docs/security/THREAT_MODEL.md
 policy/README.md
 policy/gate0-repository-policy.json
 policy/makefile-entrypoint-contract-v0.1.json
+research/decisions/D-004/README.md
+research/decisions/D-004/d004-v0.2-draft-packet.json
+research/decisions/D-004/d004-v0.2-named-mutations.json
 research/decisions/D-005/README.md
 research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json
@@ -294,6 +302,7 @@ scripts/ci/check-external-links
 scripts/ci/install-actionlint
 scripts/ci/install-lychee
 tools/fs_sandbox.c
+tools/tests/test_d004_draft_packet.py
 tools/tests/test_d005_draft_packet.py
 tools/validate_foundation.py
 tools/tests/test_validate_foundation.py
@@ -400,7 +409,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "b4fa92e8e0a24f035a35e2dc282ba52eaeac260d2141f4c76618ba88e7850694"
+_RDC = "b5a54e4b6aeb19a66216482c7b380951b80e935fccd2e80af424633ae1d6aabb"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -464,7 +473,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "efb4551540bf83d4b88a0f9455da9d9cc6625fa418d01e8650493dd190272150"
+_PHD = "0a45ff227aea8c7717c2319dd58ab2af9e3172fa2fc0bc9faf45e6af60db07c6"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -817,6 +826,40 @@ CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md M
 README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
 docs policy research schemas scripts tools""".split()
 )
+D004_DRAFT_RESEARCH_PATHS = frozenset(
+    {
+        "research/decisions/D-004/README.md",
+        "research/decisions/D-004/d004-v0.2-draft-packet.json",
+        "research/decisions/D-004/d004-v0.2-named-mutations.json",
+    }
+)
+D004_DRAFT_PACKET_CANONICAL_SHA256 = (
+    "6ab790957af9ff6b7dc1dc637800542280a229647367c5312d9b5ac4fd38fb87"
+)
+D004_MUTATION_MANIFEST_CANONICAL_SHA256 = (
+    "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
+)
+D004_INPUT_BINDING_PATHS = {
+    "named_mutations_manifest": "research/decisions/D-004/d004-v0.2-named-mutations.json",
+    "decision_suite": "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
+    "product_form_decision_packet": "docs/PRODUCT_FORM_DECISION_PACKET.md",
+    "accepted_s3a_semantics": "docs/SEMANTICS_2026.md",
+    "accepted_s2_language": "docs/LANGUAGE_2026.md",
+    "accepted_s3a_oep": "docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md",
+    "user_journeys": "docs/USER_JOURNEYS.md",
+    "s3a_conformance_runner": "compiler/crates/orangec/tests/s3a_conformance.rs",
+    "permanent_s3a_fixture": "compiler/fixtures/typed-answer.or",
+    "fixture_invalid_duplicate_spec": "compiler/fixtures/s3a/invalid-duplicate-spec.or",
+    "fixture_invalid_int_magnitude": "compiler/fixtures/s3a/invalid-int-magnitude.or",
+    "fixture_invalid_negative_word": "compiler/fixtures/s3a/invalid-negative-word.or",
+    "fixture_invalid_typed_impl": "compiler/fixtures/s3a/invalid-typed-impl.or",
+    "fixture_invalid_unsupported_type": "compiler/fixtures/s3a/invalid-unsupported-type.or",
+    "fixture_invalid_word_range": "compiler/fixtures/s3a/invalid-word-range.or",
+    "fixture_invalid_word_width": "compiler/fixtures/s3a/invalid-word-width.or",
+    "fixture_valid_empty_mixed": "compiler/fixtures/s3a/valid-empty-mixed.or",
+    "fixture_valid_int_radices": "compiler/fixtures/s3a/valid-int-radices.or",
+    "fixture_valid_word8_boundaries": "compiler/fixtures/s3a/valid-word8-boundaries.or",
+}
 D005_DRAFT_PACKET_CANONICAL_SHA256 = (
     "2a56537bfa61fe1e4f015047b7c49b11fa926bd4cb688c6e7d4a0da07e21b633"
 )
@@ -2211,6 +2254,7 @@ class FoundationValidator:
         self._validate_product_form_decision_packet()
         self._validate_semantic_strata_suite()
         self._validate_public_assurance_model_suite()
+        self._validate_d004_draft_packet()
         self._validate_d005_draft_packet()
         self._validate_change_records()
         self._validate_repository_templates()
@@ -5615,6 +5659,392 @@ class FoundationValidator:
                             book_path,
                             f"Orange Book weakens or prematurely ratifies the proposed claim model: {assertion}",
                         )
+
+    def _validate_d004_draft_packet(self) -> None:
+        research_prefix = "research/decisions/D-004/"
+        observed_research_paths = {
+            relative(candidate, self.root)
+            for candidate in self.repository_files
+            if relative(candidate, self.root).startswith(research_prefix)
+        }
+        if observed_research_paths != D004_DRAFT_RESEARCH_PATHS:
+            self.add(
+                "d004_packet.research_inventory",
+                self.root / "research/decisions/D-004",
+                "draft D-004 research paths must retain the exact input-only inventory; "
+                f"missing={sorted(D004_DRAFT_RESEARCH_PATHS - observed_research_paths)}, "
+                f"unexpected={sorted(observed_research_paths - D004_DRAFT_RESEARCH_PATHS)}",
+            )
+        premature_pattern = re.compile(
+            r"(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])"
+        )
+        for candidate in self.repository_files:
+            value = relative(candidate, self.root)
+            if value.startswith(research_prefix) and premature_pattern.search(
+                value[len(research_prefix) :].lower()
+            ):
+                self.add(
+                    "d004_packet.premature_artifact",
+                    candidate,
+                    "draft-unfrozen D-004 research cannot contain an epoch, result, review, or decision artifact",
+                )
+
+        packet_path = self.root / "research/decisions/D-004/d004-v0.2-draft-packet.json"
+        if not self._hf(packet_path):
+            self.add(
+                "d004_packet.missing",
+                packet_path,
+                "draft-unfrozen D-004 pre-epoch packet is missing",
+            )
+            return
+        try:
+            packet = self._load_repository_json(packet_path)
+        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
+            self.add("d004_packet.parse", packet_path, f"cannot parse D-004 packet: {exc}")
+            return
+        if not isinstance(packet, dict):
+            self.add("d004_packet.shape", packet_path, "D-004 packet must be a JSON object")
+            return
+
+        packet_bytes = self._read_repository_bytes(packet_path)
+        try:
+            canonical_packet = canonical_json_bytes(packet)
+        except (TypeError, ValueError) as exc:
+            self.add(
+                "d004_packet.canonical",
+                packet_path,
+                f"D-004 packet is outside the canonical I-JSON profile: {exc}",
+            )
+            canonical_packet = None
+        if canonical_packet is not None:
+            if packet_bytes != canonical_packet + b"\n":
+                self.add(
+                    "d004_packet.canonical",
+                    packet_path,
+                    "D-004 packet bytes must be semantic canonical JSON followed by one LF",
+                )
+            if (
+                hashlib.sha256(canonical_packet).hexdigest()
+                != D004_DRAFT_PACKET_CANONICAL_SHA256
+            ):
+                self.add(
+                    "d004_packet.digest",
+                    packet_path,
+                    "D-004 packet canonical bytes disagree with the reviewed SHA-256 identity",
+                )
+
+        expected_packet_keys = {
+            "schema_version",
+            "suite_version",
+            "status",
+            "epoch",
+            "epoch_status",
+            "d003_disposition",
+            "owner_protocol_review",
+            "candidates",
+            "cases",
+            "source_roles",
+            "relationships",
+            "domain_observation_states",
+            "case_verdicts",
+            "hard_gates",
+            "mutations",
+            "mutation_manifest_sha256",
+            "fixture_inventory_status",
+            "unresolved_cross_cutting_fixture_classes",
+            "protocol_gaps",
+            "input_bindings",
+            "budgets",
+            "execution",
+            "selection",
+            "conclusion",
+            "nonclaims",
+        }
+        if set(packet) != expected_packet_keys:
+            self.add(
+                "d004_packet.shape",
+                packet_path,
+                "D-004 packet fields must retain the exact closed inventory",
+            )
+
+        lifecycle = {
+            "schema_version": "d004-pre-epoch-packet-v0.1",
+            "suite_version": "d004-v0.2-draft",
+            "status": "draft_unfrozen",
+            "epoch": None,
+            "epoch_status": "unfrozen",
+            "d003_disposition": "pending",
+            "owner_protocol_review": "none",
+        }
+        if any(packet.get(field) != expected for field, expected in lifecycle.items()):
+            self.add(
+                "d004_packet.lifecycle",
+                packet_path,
+                "D-004 must remain draft_unfrozen with no epoch, D-003 disposition, or owner protocol review",
+            )
+
+        exact_inventories = {
+            "candidates": ["ST-REL", "ST-UNI", "ST-DUAL", "ST-MIRROR", "ST-HOST"],
+            "cases": [f"SC-{index:02d}" for index in range(1, 6)],
+            "source_roles": [
+                "Specification",
+                "Implementation",
+                "Machine Implementation",
+                "Game",
+                "Proof",
+            ],
+            "relationships": [f"SR-{index:02d}" for index in range(1, 15)],
+            "domain_observation_states": [
+                "succeeded",
+                "rejected",
+                "unknown",
+                "timeout",
+                "unsupported",
+                "exhausted",
+            ],
+            "case_verdicts": ["pass", "fail"],
+            "hard_gates": [f"SS-G{index:02d}" for index in range(1, 11)],
+            "nonclaims": [
+                "no candidate adapter executed",
+                "no D-004 evidence epoch frozen",
+                "no semantic-strata candidate selected",
+                "no D-003 disposition inferred",
+                "no roadmap gate or readiness movement",
+                "no S3b implementation authorized",
+            ],
+        }
+        for field, expected in exact_inventories.items():
+            if packet.get(field) != expected:
+                self.add(
+                    "d004_packet.inventory",
+                    packet_path,
+                    f"{field} must retain its exact ordered D-004 inventory",
+                )
+
+        mutation_counts = (4, 5, 5, 6, 6)
+        expected_mutations = [
+            f"SC-{case_index:02d}-M{mutation_index:02d}"
+            for case_index, count in enumerate(mutation_counts, start=1)
+            for mutation_index in range(1, count + 1)
+        ]
+        if packet.get("mutations") != expected_mutations:
+            self.add(
+                "d004_packet.mutations",
+                packet_path,
+                "D-004 packet must retain all 26 exact ordered named mutation identifiers",
+            )
+
+        expected_fixture_classes = [
+            "ambiguity",
+            "missing-edge",
+            "identity-substitution",
+            "unsupported",
+            "resource-exhaustion",
+        ]
+        expected_protocol_gaps = [
+            f"{fixture_class} fixture coverage unresolved"
+            for fixture_class in expected_fixture_classes
+        ] + ["replay repetition count unresolved"]
+        if (
+            packet.get("fixture_inventory_status") != "incomplete_freeze_blocker"
+            or packet.get("unresolved_cross_cutting_fixture_classes")
+            != expected_fixture_classes
+            or packet.get("protocol_gaps") != expected_protocol_gaps
+        ):
+            self.add(
+                "d004_packet.protocol_gaps",
+                packet_path,
+                "D-004 must retain the incomplete fixture inventory and all six explicit freeze blockers",
+            )
+
+        manifest_digest = packet.get("mutation_manifest_sha256")
+        if manifest_digest != D004_MUTATION_MANIFEST_CANONICAL_SHA256:
+            self.add(
+                "d004_packet.manifest_digest",
+                packet_path,
+                "D-004 packet must bind the reviewed canonical named-mutation manifest",
+            )
+
+        bindings = packet.get("input_bindings")
+        if not isinstance(bindings, dict) or set(bindings) != set(D004_INPUT_BINDING_PATHS):
+            self.add(
+                "d004_packet.input_bindings",
+                packet_path,
+                "D-004 packet must retain the exact closed 19-input binding inventory",
+            )
+            bindings = {}
+        for name, expected_path in D004_INPUT_BINDING_PATHS.items():
+            binding = bindings.get(name)
+            if (
+                not isinstance(binding, dict)
+                or set(binding) != {"path", "sha256"}
+                or binding.get("path") != expected_path
+                or not isinstance(binding.get("sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", binding.get("sha256", "")) is None
+            ):
+                self.add(
+                    "d004_packet.input_bindings",
+                    packet_path,
+                    f"D-004 input binding {name!r} has a missing, unknown, or invalid field",
+                )
+                continue
+            bound_path = self.root / expected_path
+            bound_bytes = self._read_repository_bytes(bound_path)
+            if (
+                bound_bytes is None
+                or hashlib.sha256(bound_bytes).hexdigest() != binding["sha256"]
+            ):
+                self.add(
+                    "d004_packet.input_digest",
+                    bound_path,
+                    f"D-004 input binding {name!r} disagrees with checked-in raw bytes",
+                )
+
+        expected_budgets = {
+            "max_packet_bytes": 262_144,
+            "max_json_depth": 32,
+            "max_json_nodes": 16_384,
+            "max_string_bytes": 16_384,
+            "case_wall_seconds": 900,
+            "case_peak_memory_bytes": 4_294_967_296,
+            "case_temp_storage_bytes": 2_147_483_648,
+            "case_output_bytes": 268_435_456,
+            "candidate_owner_hours": 24,
+            "correction_owner_hours": 4,
+        }
+        if packet.get("budgets") != expected_budgets:
+            self.add(
+                "d004_packet.budgets",
+                packet_path,
+                "D-004 packet budgets must retain their exact fail-closed ceilings without a replay count",
+            )
+
+        expected_execution = {
+            "required_candidate_cases": 25,
+            "completed_candidate_cases": 0,
+            "complete_candidates": 0,
+            "complete_cross_candidate_cases": 0,
+            "evidence_status": "none",
+        }
+        if packet.get("execution") != expected_execution:
+            self.add(
+                "d004_packet.execution",
+                packet_path,
+                "D-004 packet must retain the honest 0/25, 0/5, 0/5 no-evidence baseline",
+            )
+        if packet.get("conclusion") is not None:
+            self.add(
+                "d004_packet.conclusion",
+                packet_path,
+                "draft-unfrozen D-004 cannot record a conclusion or recommendation",
+            )
+        if packet.get("selection") is not None:
+            self.add(
+                "d004_packet.selection",
+                packet_path,
+                "draft-unfrozen D-004 cannot select a semantic-strata candidate",
+            )
+
+        manifest_path = (
+            self.root / "research/decisions/D-004/d004-v0.2-named-mutations.json"
+        )
+        if not self._hf(manifest_path):
+            self.add(
+                "d004_packet.manifest_missing",
+                manifest_path,
+                "D-004 named-mutation manifest is missing",
+            )
+            return
+        try:
+            manifest = self._load_repository_json(manifest_path)
+        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
+            self.add(
+                "d004_packet.manifest_parse",
+                manifest_path,
+                f"cannot parse D-004 named-mutation manifest: {exc}",
+            )
+            return
+        if not isinstance(manifest, list):
+            self.add(
+                "d004_packet.manifest_shape",
+                manifest_path,
+                "D-004 named-mutation manifest must be a JSON array",
+            )
+            return
+        manifest_bytes = self._read_repository_bytes(manifest_path)
+        try:
+            canonical_manifest = canonical_json_bytes(manifest)
+        except (TypeError, ValueError) as exc:
+            self.add(
+                "d004_packet.manifest_canonical",
+                manifest_path,
+                f"D-004 manifest is outside the canonical I-JSON profile: {exc}",
+            )
+            canonical_manifest = None
+        if canonical_manifest is not None:
+            if manifest_bytes != canonical_manifest + b"\n":
+                self.add(
+                    "d004_packet.manifest_canonical",
+                    manifest_path,
+                    "D-004 manifest bytes must be semantic canonical JSON followed by one LF",
+                )
+            observed_manifest_digest = hashlib.sha256(canonical_manifest).hexdigest()
+            if (
+                observed_manifest_digest != D004_MUTATION_MANIFEST_CANONICAL_SHA256
+                or manifest_digest != observed_manifest_digest
+            ):
+                self.add(
+                    "d004_packet.manifest_digest",
+                    manifest_path,
+                    "D-004 named-mutation manifest disagrees with its canonical SHA-256 binding",
+                )
+
+        if len(manifest) != len(expected_mutations):
+            self.add(
+                "d004_packet.manifest_inventory",
+                manifest_path,
+                "D-004 manifest must retain exactly 26 ordered named mutations",
+            )
+        observed_ids: list[object] = []
+        observed_counts = {f"SC-{index:02d}": 0 for index in range(1, 6)}
+        for index, entry in enumerate(manifest[: len(expected_mutations)]):
+            if not isinstance(entry, dict) or set(entry) != {"id", "case", "description"}:
+                self.add(
+                    "d004_packet.manifest_shape",
+                    manifest_path,
+                    f"D-004 named mutation {index + 1} must contain only id, case, and description",
+                )
+                continue
+            observed_ids.append(entry.get("id"))
+            expected_case = expected_mutations[index][:5]
+            case = entry.get("case")
+            description = entry.get("description")
+            if isinstance(case, str) and case in observed_counts:
+                observed_counts[case] += 1
+            if (
+                entry.get("id") != expected_mutations[index]
+                or case != expected_case
+                or not isinstance(description, str)
+                or not description
+                or description != description.strip()
+            ):
+                self.add(
+                    "d004_packet.manifest_inventory",
+                    manifest_path,
+                    f"D-004 named mutation {index + 1} identity, case, or description drifted",
+                )
+        if observed_ids != expected_mutations or observed_counts != {
+            "SC-01": 4,
+            "SC-02": 5,
+            "SC-03": 5,
+            "SC-04": 6,
+            "SC-05": 6,
+        }:
+            self.add(
+                "d004_packet.manifest_inventory",
+                manifest_path,
+                "D-004 named mutations must remain unique, ordered, and partitioned 4/5/5/6/6",
+            )
 
     def _validate_d005_draft_packet(self) -> None:
         research_prefix = "research/decisions/D-005/"

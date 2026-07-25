@@ -415,6 +415,17 @@ an evidence epoch intentionally admits that top-level research inventory. This
 draft creates no empty evidence directory and does not widen repository policy
 for results that do not yet exist.
 
+The repository may carry an exact input-only pre-epoch laboratory before that
+freeze. Its `draft_unfrozen` packet may bind this suite, the accepted S3a
+baseline, the 26 mutations named explicitly by SC-01 through SC-05, and a
+deterministic 25-slot candidate-case plan. The current prose does not yet assign
+complete identifiers and expected observations to every cross-cutting
+ambiguity, missing-edge, identity-substitution, unsupported, and resource
+fixture. Those unresolved fixture classes are freeze blockers, not omissions
+that an adapter may fill privately. The laboratory executes no adapter, creates
+no result or review record, freezes no evidence epoch, and selects no
+candidate.
+
 Each candidate receives at most 24 owner-hours for its first complete case
 packet and one four-owner-hour correction window. Time accounting is elapsed
 focused work recorded by the owner; automation runs are separately bounded by
@@ -494,9 +505,10 @@ cross-candidate execution.
 ## 9. Current handoff
 
 The next authorized actions are to obtain owner intake and disposition for
-D-003, review this conditional D-004 protocol, and resolve any protocol defects
-before freezing an evidence epoch. Running the suite then produces decision
-evidence; it still does not implement S3b.
+D-003, review this conditional D-004 protocol, and resolve the pre-epoch
+laboratory's explicit protocol gaps before freezing an evidence epoch. Running
+the later frozen suite then produces decision evidence; it still does not
+implement S3b.
 
 Until those actions occur, D-004 remains proposed, the architecture role map
 remains a recommendation, the S3a Typed Reference Core remains the only

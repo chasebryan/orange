@@ -223,9 +223,12 @@ a shutdown retry.
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
-likewise exact and begins with the non-product, draft-unfrozen D-005 execution
-packet and historical v0.1 negative corpus. It contains no candidate result,
-owner review, accepted decision, or release evidence. The S2 inventory includes
+likewise exact. It contains the non-product, draft-unfrozen D-004 input packet
+and named-mutation manifest plus the D-005 execution packet and historical v0.1
+negative corpus. The D-004 inventory preserves its unassigned cross-cutting
+fixture classes as freeze blockers and freezes no evidence epoch. Neither
+inventory contains a candidate result, owner review, accepted decision, or
+release evidence. The S2 inventory includes
 the lexer and parser sources, the protected S2 conformance runner, and normative
 [`docs/LANGUAGE_2026.md`](../docs/LANGUAGE_2026.md). That runner requires the
 exact stable 13-rule ID inventory, the exact evidence-layer declarations, and
