@@ -222,9 +222,26 @@ a shutdown retry.
 
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added
-outside it and receive structural validation. The S3a inventory explicitly adds
-the Core, semantics, and evaluator sources; the permanent typed-answer fixture;
-the exact ten-file S3a CLI conformance corpus and runner; and normative
+outside it and receive structural validation. The S2 inventory includes the
+lexer and parser sources, the protected S2 conformance runner, and normative
+[`docs/LANGUAGE_2026.md`](../docs/LANGUAGE_2026.md). That runner requires the
+exact stable 13-rule ID inventory, the exact evidence-layer declarations, and
+named executable evidence at the expected harness depth; it also directly
+exercises string escapes, punctuation longest matching, trivia and uppercase
+radix forms, malformed grammar diagnostics, and lexical phase exclusion. The
+runner independently binds the exact Cargo workspace/package manifests and the
+compiler crate's unconditional mapped-module registrations, while the
+repository validator enforces the same parsed-manifest contract before Cargo
+runs. The index establishes registration; execution of every mapped binary is
+a protected full-gate claim because that gate clears caller Cargo configuration
+and target runners. A standalone S2 target run is not evidence that the other
+mapped binaries executed. The
+S2 rules bind only the D-025/OEP-0002 base accepted at
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4`; typed-`spec`, parsed-type, and
+signed-integer grammar remain under the separate S3a index. The
+S3a inventory explicitly adds the Core, semantics, and evaluator sources; the
+permanent typed-answer fixture; the exact ten-file S3a CLI conformance corpus
+and runner; and normative
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md). The corpus externalizes
 only accepted behavior and is one layer of the indexed S3a evidence set. The
 runner requires an exact stable 30-rule ID inventory and named evidence mapping;
@@ -244,8 +261,8 @@ Orange 2026 syntax and semantic documents are digest protected. Adding another
 compiler source, fixture, test runner, or normative language file requires an
 intentional policy and validator inventory update.
 
-The S3a conformance runner and all ten corpus fixtures also retain reviewed
-SHA-256 identities in both enforcement sources. The runner checks both
+The S2 and S3a conformance runners and all ten S3a corpus fixtures also retain
+reviewed SHA-256 identities in both enforcement sources. The S3a runner checks both
 `orangec check` and `orangec eval`, exact diagnostic-code sequences, no partial
 failure output, exact primary line and column, significant-integer boundaries,
 leading-zero neutrality, semantic-diagnostic suppression, case-sensitive

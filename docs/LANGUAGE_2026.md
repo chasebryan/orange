@@ -5,7 +5,7 @@ additively extended with accepted S3a syntax under D-026 and OEP-0003
 
 Edition: `2026`
 
-Snapshot: 2026-07-12
+Snapshot: 2026-07-25
 
 This document defines the complete lexical and syntactic language accepted by
 the Orange 2026 parser. It is intentionally small. Acceptance establishes only
@@ -281,6 +281,37 @@ reserved-word-as-name cases; syntactic duplicate-name acceptance; generic
 parsed-type spellings without semantic filtering; Unicode whitespace and
 identifier rejection; each logical line-ending form; lexical and parser
 resource-limit cases; trailing-token rejection; and repeated parse equality.
+
+The following stable rule identifiers group executable lexical and parser
+conformance for only the base S2 boundary accepted under D-025 and OEP-0002 at
+revision
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4`. The additive typed-`spec`,
+parsed-type, and signed-integer grammar belongs to S3a under D-026 and OEP-0003
+and is indexed separately by `S3A-GRAMMAR-01` in
+[`SEMANTICS_2026.md`](SEMANTICS_2026.md). These identifiers add an enforced
+traceability contract; they do not add source syntax, semantics, or a
+source-compatibility guarantee. Section 6's change-control boundary and this
+section's evidence caveat remain normative prose rather than separately
+relabeled executable rules. The evidence column is a minimum layer requirement
+enforced by
+`compiler/crates/orangec/tests/s2_conformance.rs`; a named test is evidence for
+the recorded implementation revision, not a proof of the grouped rule.
+
+| Rule | Normative boundary | Required evidence |
+| --- | --- | --- |
+| `S2-SOURCE-01` | Valid UTF-8, pre-lex source-size rejection, same-source half-open byte spans, logical line endings, and scalar columns | Source unit and CLI |
+| `S2-TRIVIA-01` | The exact whitespace set, line comments, nested block comments, and trivia exclusion from the tree | Conformance, lexer, and parser unit |
+| `S2-NAME-01` | ASCII identifiers, exact reserved words, no normalization or case folding, reserved-word rejection in identifier positions, and syntactic duplicate-name acceptance without binding | Lexer and parser unit |
+| `S2-INTEGER-01` | Decimal, binary, and hexadecimal tokens, exact prefix forms, digit sets, and separator placement | Conformance and lexer unit |
+| `S2-STRING-01` | Line-bounded lexical-only string tokens, the exact supported escape set, and no grammar or runtime meaning | Conformance and lexer unit |
+| `S2-PUNCT-01` | The exact punctuation-token inventory and longest-token matching, without assigning parser roles | Conformance and lexer unit |
+| `S2-LEX-RESOURCE-01` | At most 262,144 retained non-trivia tokens excluding exactly one zero-width `EOF`, 100 ordinary diagnostics plus stable suppression, the token-limit resource diagnostic outside the ordinary budget, and lexical resource exhaustion invalidating the source | Lexer and injected-resource unit |
+| `S2-GRAMMAR-01` | The exact source, edition, one-module, and legacy empty-`spec`/empty-`impl` grammar accepted by S2 | Conformance and parser unit |
+| `S2-AST-01` | Deterministic base source, edition, module, and legacy-empty function nodes in source order with exact token spans; duplicate names remain separate nodes and no missing-token or recovery node is accepted | Parser unit |
+| `S2-PARSE-DIAG-01` | Base-grammar missing, unexpected, duplicated, and trailing-token rejection with same-revision deterministic diagnostic order, codes, and responsible spans | Conformance and parser unit |
+| `S2-PARSE-RESOURCE-01` | Node, event-or-equivalent, diagnostic, and recovery-depth bounds; recovery consumes input or stops without unbounded recursion; exhaustion and recovered sources fail closed | Parser and injected-resource unit |
+| `S2-PHASE-01` | Lexical invalidity prevents parser acceptance and parser diagnostics from cascading | Conformance, CLI, and parser unit |
+| `S2-DETERMINISM-01` | Repeatable token, base-tree, parser-diagnostic, ordering, and parse success-or-failure results | Conformance, lexer, and parser unit |
 
 Tests demonstrate the behavior of the recorded implementation revision only.
 They do not prove grammar completeness, parser correctness, semantic soundness,

@@ -32,6 +32,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtu
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/typed-answer.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/typed-answer.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 ```
 
@@ -420,6 +421,35 @@ operators, calls, parameters, bindings, effects, proof meaning, implementation
 refinement, target behavior, ABI, leakage property, output code, package or
 release behavior, or cryptographic construction.
 
+## S2 conformance index
+
+`docs/LANGUAGE_2026.md` groups the base D-025/OEP-0002 lexical and syntactic
+boundary into 13 stable `S2-*` rule identifiers. The protected
+`crates/orangec/tests/s2_conformance.rs` runner requires that exact rule
+inventory and each rule's evidence-layer declaration, rejects missing, unknown,
+duplicate, or uncovered identifiers, and binds every evidence entry to one
+unconditional test at the expected integration- or unit-test harness depth.
+The same check binds the exact Cargo workspace/package manifests and the
+compiler crate's unconditional `source`, `lexer`, and `parser` module
+registrations, so target-discovery, harness, feature-gating, or ancestor
+`cfg` changes cannot silently remove mapped evidence. This is a registration
+contract: the execution claim for every mapped test binary belongs to the
+protected full repository gate, which clears caller Cargo configuration and
+target runners. A standalone S2 target run checks the index and its direct
+cases, but is not independent proof that the other mapped binaries ran.
+
+The runner adds direct same-revision checks for the exact supported string
+escape set, punctuation longest matching across every shared prefix, ASCII
+trivia and uppercase radix prefixes, malformed production diagnostic codes and
+spans, lexical exclusion of parsing, and repeated structural equality. It also
+maps the existing source, lexer, parser, and CLI unit evidence for limits,
+fail-closed phase and resource behavior, syntax-tree shape, diagnostic order,
+and determinism. This
+index adds traceability for the already accepted S2 syntax at revision
+`52a3460853636f7cbaa27f3e27d86e032e3c82d4`; it does not assign the additive
+typed-`spec` grammar to S2 or add a source construct, semantic rule, proof,
+source-compatibility guarantee, or S3 authority.
+
 ## S3a CLI conformance corpus
 
 `fixtures/s3a/` contains an exact ten-file black-box corpus for already accepted
@@ -515,6 +545,8 @@ authority.
   syntax-tree, parser, semantic, Core, and evaluator library;
 - `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
   `lex` behavior;
+- `crates/orangec/tests/s2_conformance.rs`: protected indexed S2 lexical and
+  parser conformance runner;
 - `crates/orangec/tests/s3a_conformance.rs`: exact repeatable black-box S3a
   corpus runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture; and
