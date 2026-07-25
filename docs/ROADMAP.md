@@ -2,7 +2,7 @@
 
 Status: directed active roadmap under D-023 and OEP-0001
 
-Snapshot: 2026-07-13
+Snapshot: 2026-07-25
 
 Orange is developed by one owner. This roadmap assumes no contributors,
 independent reviewers, auditors, laboratories, partner organizations, or
@@ -331,6 +331,28 @@ dependencies.
 Progress means a permanent boundary became more complete, deterministic,
 documented, tested, and honest about its limitations. Lines of code, screenshots,
 syntax breadth, or passing tests outside a stated boundary do not close a gate.
+
+### Orange 1.0.0 completion metric
+
+Orange is **30% complete toward Orange 1.0.0 by gate closure: 3 of 10 binary
+gates are closed**.
+
+The denominator is the nine top-level capability stages S0 through S8 plus one
+final stable-release gate. S0 is closed for its D-023-directed repository
+foundation scope; S1 and S2 are closed. S3 is active; S4 through S8 and the
+stable-release gate remain open. Nested slices receive no separate credit:
+completed S3a evidence advances S3 but does not close it.
+
+The stable-release gate closes only when all ten 1.0 criteria in
+[`PROJECT_CHARTER.md`](PROJECT_CHARTER.md#9-what-end-means), all eight
+owner-executable journeys in [`USER_JOURNEYS.md`](USER_JOURNEYS.md), and all
+applicable release-identity, solo-release-gate, stable-toolchain, and publication
+requirements in [`RELEASE_POLICY.md`](../RELEASE_POLICY.md) are satisfied. The
+score is `100 * closed gates / 10`; active work receives no fractional credit.
+
+This percentage measures scope-gate closure. It is not an estimate of remaining
+effort or time, an assurance-strength score, or a claim that a release is
+currently authorized.
 
 The roadmap changes when evidence or owner direction changes. A future
 collaborative mode may add review and operational capabilities, but the current
