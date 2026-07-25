@@ -95,7 +95,18 @@ compares every tracked file's type, complete mode, and bytes with the reference.
 Added source entries or policy-valid tracked-source drift in any compiler input
 root therefore cannot produce a passing gate unless a trusted child restores the
 original state before comparison. Empty-directory additions are not source
-membership and remain outside this final comparison. Landlock permits global
+membership and remain outside this final comparison. After its two relocated
+optimized builds compare equal, the gate rehearses a normal local
+`cargo install --path` from the captured check root into fresh isolated Cargo,
+target, and install roots with `--locked --offline`. It requires the installed
+`orangec` to be a nonempty executable regular file rather than a symlink, to
+match the reproducible artifact's complete mode and bytes, to produce no output
+on either channel for the typed-fixture `check`, and to produce the exact
+expected stdout bytes with empty stderr for `eval`. This is evidence for the
+current source-install mechanics only: it does not publish a crate, create or
+validate a release artifact or signed distribution, establish host support or
+compatibility, complete `USER_JOURNEYS.md` J-01, or authorize a release.
+Landlock permits global
 directory listing for toolchain discovery and does not mediate every metadata
 operation. Copied commands receive read-only `/dev/null` as standard input and
 share one write-only anonymous pipe for standard output and error; a trusted

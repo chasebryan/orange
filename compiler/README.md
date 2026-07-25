@@ -35,6 +35,19 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixture
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 ```
 
+For a local source-install rehearsal, use a fresh private install root:
+
+```sh
+orange_install_root="$(mktemp -d)"
+cargo install --path compiler/crates/orangec --root "$orange_install_root" \
+  --bin orangec --profile release --locked --offline
+"$orange_install_root/bin/orangec" eval compiler/fixtures/typed-answer.or
+```
+
+This exercises Cargo's local path installation without consulting the network.
+It does not publish a crate, create or validate a release artifact, establish a
+compatibility or support commitment, or complete `USER_JOURNEYS.md` J-01.
+
 The protected repository gate runs all Rust targets in both debug and optimized
 release profiles. The release profile retains debug assertions and integer
 overflow checks, so optimization cannot silently weaken internal invariants;
@@ -106,7 +119,13 @@ source roots, separate Cargo homes, and separate target trees whose names differ
 in bytes, length, and directory depth. Both artifacts must be regular
 non-symlink files with identical complete modes and bytes. This is
 source-relocated same-host reproducibility evidence, not a cross-platform or
-independently rebuilt claim.
+independently rebuilt claim. The gate also installs `orangec` from the captured
+source with fresh isolated Cargo, target, and install roots under
+`--locked --offline`; the installed executable must match the reproducible
+artifact's complete mode and bytes, produce no output for the typed-fixture
+`check` on either output channel, and produce the exact expected three stdout
+lines with empty stderr for `eval`. This remains a non-publishing source-install
+rehearsal with the boundaries stated above.
 
 Landlock does not mediate every metadata operation, and the gate intentionally
 allows directory listing without file contents so the selected Rust toolchain can
