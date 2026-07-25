@@ -75,6 +75,8 @@ ratified incrementally before the component or claim that depends on them.
 - [Dependency-ordered roadmap](docs/ROADMAP.md)
 - [Gate 0 feature traceability](docs/GATE0_TRACEABILITY.md)
 - [Proposed Orange 1.0 user journeys](docs/USER_JOURNEYS.md)
+- [D-003 product-form decision packet](docs/PRODUCT_FORM_DECISION_PACKET.md)
+- [D-004 semantic-strata decision suite](docs/SEMANTIC_STRATA_DECISION_SUITE.md)
 - [D-005 public-assurance-model decision suite](docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md)
 - [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
 - [Decision register](docs/DECISIONS.md)

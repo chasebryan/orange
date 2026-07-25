@@ -322,7 +322,9 @@ The unapproved
 conditional
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md)
 define the owner-executable research that may run ahead. Neither packet decides
-its subject or authorizes S3b; the D-004 suite retains a zero-evidence baseline.
+its subject or authorizes S3b. The D-004 input-only pre-epoch laboratory binds
+the named case mutations and plans the symmetric 25-slot matrix, but freezes no
+epoch and retains the exact zero-evidence baseline.
 
 ## 7. Quality and claim metrics
 
