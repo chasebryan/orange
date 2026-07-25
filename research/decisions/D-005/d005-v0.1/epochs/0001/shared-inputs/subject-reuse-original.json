@@ -1,0 +1,79 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "claim_id": "G0-CLAIM-D005-LEGACY-SUBJECT-BINDING",
+  "claim_kind": "standards_conformance",
+  "wording": "The identified synthetic subject matches the historical conformance fixture.",
+  "subject": {
+    "kind": "artifact",
+    "repository": "chasebryan/orange",
+    "revision": "5555555555555555555555555555555555555555",
+    "path": "research/decisions/D-005/synthetic/subject-a.bin",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "context": {
+    "language_edition": {
+      "state": "identified",
+      "identifier": "synthetic-historical-language-edition",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "5656565656565656565656565656565656565656565656565656565656565656"
+      }
+    },
+    "toolchain": {
+      "state": "identified",
+      "identifier": "synthetic-conformance-runner",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "5757575757575757575757575757575757575757575757575757575757575757"
+      }
+    },
+    "crypto_profile": {
+      "state": "identified",
+      "identifier": "synthetic-conformance-profile",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "5858585858585858585858585858585858585858585858585858585858585858"
+      }
+    },
+    "target_profile": {
+      "state": "not_applicable",
+      "reason": "The synthetic conformance record is not target-specific."
+    },
+    "leakage_model": {
+      "state": "not_applicable",
+      "reason": "The synthetic conformance record makes no leakage assertion."
+    }
+  },
+  "theorem_fingerprints": [],
+  "proof_object_fingerprints": [],
+  "evidence_refs": [
+    "urn:orange:gate0:evidence:d005-legacy-subject-a-conformance"
+  ],
+  "assumptions": [],
+  "exclusions": [
+    "The historical validator does not resolve evidence bytes or bind them to the subject digest."
+  ],
+  "outcome": "satisfied",
+  "basis": [
+    {
+      "basis_id": "G0-BASIS-D005-LEGACY-SUBJECT-CONFORMANCE",
+      "type": "test_run",
+      "verification_state": "checked",
+      "evidence_ref": "urn:orange:gate0:evidence:d005-legacy-subject-a-conformance",
+      "note": "The evidence identity is intentionally reused by the paired mutation."
+    }
+  ],
+  "review_policy": {
+    "mode": "none"
+  },
+  "notes": [
+    "Historical D-005 negative-corpus comparison reference.",
+    "Research lifecycle: draft_unfrozen.",
+    "Non-product shape fixture; the paired mutation tests missing subject-byte binding."
+  ]
+}

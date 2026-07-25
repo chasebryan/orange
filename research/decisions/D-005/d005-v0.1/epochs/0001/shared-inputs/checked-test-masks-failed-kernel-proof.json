@@ -1,0 +1,93 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "claim_id": "G0-CLAIM-D005-LEGACY-FR-MASKED-PROOF",
+  "claim_kind": "functional_refinement",
+  "wording": "The synthetic implementation functionally refines its synthetic specification despite the retained failed proof basis.",
+  "subject": {
+    "kind": "decision_case",
+    "repository": "chasebryan/orange",
+    "revision": "2222222222222222222222222222222222222222",
+    "path": "research/decisions/D-005/synthetic/refinement-masked-proof.case",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  },
+  "context": {
+    "language_edition": {
+      "state": "identified",
+      "identifier": "synthetic-historical-language-edition",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "2323232323232323232323232323232323232323232323232323232323232323"
+      }
+    },
+    "toolchain": {
+      "state": "identified",
+      "identifier": "synthetic-proof-and-test-toolchain",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "2424242424242424242424242424242424242424242424242424242424242424"
+      }
+    },
+    "crypto_profile": {
+      "state": "not_applicable",
+      "reason": "The historical mutation concerns mandatory proof masking."
+    },
+    "target_profile": {
+      "state": "not_applicable",
+      "reason": "The historical mutation does not assert target-specific behavior."
+    },
+    "leakage_model": {
+      "state": "not_applicable",
+      "reason": "The historical mutation does not assert a leakage property."
+    }
+  },
+  "theorem_fingerprints": [
+    {
+      "algorithm": "sha256",
+      "value": "2525252525252525252525252525252525252525252525252525252525252525"
+    }
+  ],
+  "proof_object_fingerprints": [
+    {
+      "algorithm": "sha256",
+      "value": "2626262626262626262626262626262626262626262626262626262626262626"
+    }
+  ],
+  "evidence_refs": [
+    "urn:orange:gate0:evidence:d005-legacy-fr-failed-kernel",
+    "urn:orange:gate0:evidence:d005-legacy-fr-favorable-test"
+  ],
+  "assumptions": [],
+  "exclusions": [
+    "The favorable test cannot repair or supersede the failed mandatory kernel proof."
+  ],
+  "outcome": "satisfied",
+  "basis": [
+    {
+      "basis_id": "G0-BASIS-D005-LEGACY-FR-FAILED-KERNEL",
+      "type": "kernel_proof",
+      "verification_state": "failed",
+      "evidence_ref": "urn:orange:gate0:evidence:d005-legacy-fr-failed-kernel",
+      "note": "This basis is mandatory in the adversarial policy and failed."
+    },
+    {
+      "basis_id": "G0-BASIS-D005-LEGACY-FR-FAVORABLE-TEST",
+      "type": "test_run",
+      "verification_state": "checked",
+      "evidence_ref": "urn:orange:gate0:evidence:d005-legacy-fr-favorable-test",
+      "note": "Dangerous mutation: this optional checked test masks the failed proof."
+    }
+  ],
+  "review_policy": {
+    "mode": "none"
+  },
+  "notes": [
+    "Historical D-005 negative input.",
+    "Research lifecycle: draft_unfrozen.",
+    "Non-product shape fixture; acceptance by the historical validator is the defect under test."
+  ]
+}

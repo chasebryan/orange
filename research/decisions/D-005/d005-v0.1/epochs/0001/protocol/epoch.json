@@ -1,0 +1,172 @@
+{
+  "schema_version": "d005-execution-packet-v0.1",
+  "suite_version": "d005-v0.1-draft",
+  "epoch": "0001",
+  "status": "draft",
+  "candidates": [
+    "AM-01",
+    "AM-02",
+    "AM-03",
+    "AM-04"
+  ],
+  "cases": [
+    "AC-01",
+    "AC-02",
+    "AC-03",
+    "AC-04",
+    "AC-05",
+    "AC-06",
+    "AC-07",
+    "AC-08"
+  ],
+  "claim_families": [
+    "CF-01",
+    "CF-02",
+    "CF-03",
+    "CF-04",
+    "CF-05",
+    "CF-06",
+    "CF-07",
+    "CF-08",
+    "CF-09",
+    "CF-10"
+  ],
+  "metrics": [
+    "M-01",
+    "M-02",
+    "M-03",
+    "M-04",
+    "M-05",
+    "M-06",
+    "M-07",
+    "M-08",
+    "M-09",
+    "M-10",
+    "M-11",
+    "M-12",
+    "M-13",
+    "M-14",
+    "M-15",
+    "M-16",
+    "M-17",
+    "M-18"
+  ],
+  "hard_gates": [
+    "HG-01",
+    "HG-02",
+    "HG-03",
+    "HG-04",
+    "HG-05",
+    "HG-06",
+    "HG-07",
+    "HG-08"
+  ],
+  "owner_scopes": [
+    "AR-01",
+    "AR-02",
+    "AR-03",
+    "AR-04",
+    "AR-05",
+    "AR-06",
+    "AR-07",
+    "AR-08"
+  ],
+  "mutations": [
+    "AC-01-M01",
+    "AC-01-M02",
+    "AC-01-M03",
+    "AC-01-M04",
+    "AC-01-M05",
+    "AC-01-M06",
+    "AC-02-M01",
+    "AC-02-M02",
+    "AC-02-M03",
+    "AC-02-M04",
+    "AC-02-M05",
+    "AC-02-M06",
+    "AC-03-M01",
+    "AC-03-M02",
+    "AC-03-M03",
+    "AC-03-M04",
+    "AC-03-M05",
+    "AC-03-M06",
+    "AC-04-M01",
+    "AC-04-M02",
+    "AC-04-M03",
+    "AC-04-M04",
+    "AC-04-M05",
+    "AC-04-M06",
+    "AC-05-M01",
+    "AC-05-M02",
+    "AC-05-M03",
+    "AC-05-M04",
+    "AC-05-M05",
+    "AC-05-M06",
+    "AC-05-M07",
+    "AC-06-M01",
+    "AC-06-M02",
+    "AC-06-M03",
+    "AC-06-M04",
+    "AC-06-M05",
+    "AC-07-M01",
+    "AC-07-M02",
+    "AC-07-M03",
+    "AC-07-M04",
+    "AC-07-M05",
+    "AC-07-M06",
+    "AC-08-M01",
+    "AC-08-M02",
+    "AC-08-M03",
+    "AC-08-M04",
+    "AC-08-M05",
+    "AC-08-M06",
+    "AC-08-M07",
+    "AC-08-M08"
+  ],
+  "mutation_manifest_sha256": "8d069daf4a9443cf9df2d127f86d834e1aefed149324503f980c43f29c356082",
+  "legacy_v01_mutations": [
+    "LV01-TEST-AS-REFINEMENT",
+    "LV01-OPTIONAL-MASKS-FAILED-KERNEL",
+    "LV01-UNRESOLVED-TARGET-LEAKAGE",
+    "LV01-OWNER-AS-EXTERNAL",
+    "LV01-SUBJECT-SUBSTITUTION"
+  ],
+  "input_bindings": {
+    "decision_suite": {
+      "path": "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
+      "sha256": "e23fc55a1b315f7ed040412ba5361ecba952b083db7983697bfdc2e6030a29c3"
+    },
+    "legacy_v01_manifest": {
+      "path": "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",
+      "sha256": "2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d"
+    },
+    "claim_record_v01_schema": {
+      "path": "schemas/gate0/claim-record-v0.1.schema.json",
+      "sha256": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131"
+    }
+  },
+  "budgets": {
+    "max_packet_bytes": 262144,
+    "max_json_depth": 32,
+    "max_json_nodes": 16384,
+    "max_string_bytes": 16384,
+    "max_diagnostics": 256,
+    "max_claims": 4096,
+    "max_edges": 16384,
+    "max_output_bytes": 4194304,
+    "render_repetitions": 3,
+    "workspace_replays": 2
+  },
+  "execution": {
+    "required_candidate_cases": 32,
+    "completed_candidate_cases": 0,
+    "evidence_status": "none"
+  },
+  "selection": null,
+  "nonclaims": [
+    "no candidate selected",
+    "no D-005 execution evidence",
+    "no public assurance schema ratified",
+    "no milestone or release authorized"
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "claim_id": "G0-CLAIM-D005-LEGACY-TARGET-LEAKAGE",
+  "claim_kind": "target_leakage",
+  "wording": "The synthetic target artifact satisfies its target leakage claim while the target and leakage contexts remain unresolved.",
+  "subject": {
+    "kind": "artifact",
+    "repository": "chasebryan/orange",
+    "revision": "3333333333333333333333333333333333333333",
+    "path": "research/decisions/D-005/synthetic/unresolved-target-artifact.bin",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  "context": {
+    "language_edition": {
+      "state": "identified",
+      "identifier": "synthetic-historical-language-edition",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "3434343434343434343434343434343434343434343434343434343434343434"
+      }
+    },
+    "toolchain": {
+      "state": "identified",
+      "identifier": "synthetic-leakage-test-toolchain",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "3535353535353535353535353535353535353535353535353535353535353535"
+      }
+    },
+    "crypto_profile": {
+      "state": "not_applicable",
+      "reason": "The historical mutation isolates target and leakage context completeness."
+    },
+    "target_profile": {
+      "state": "unresolved",
+      "reason": "No target tuple, ABI, feature set, or final-byte boundary is identified."
+    },
+    "leakage_model": {
+      "state": "unresolved",
+      "reason": "No observation trace, public relation, or declassification rule is identified."
+    }
+  },
+  "theorem_fingerprints": [],
+  "proof_object_fingerprints": [],
+  "evidence_refs": [
+    "urn:orange:gate0:evidence:d005-legacy-target-leakage-test"
+  ],
+  "assumptions": [],
+  "exclusions": [
+    "An unresolved target or leakage context cannot support a satisfied target-leakage proposition."
+  ],
+  "outcome": "satisfied",
+  "basis": [
+    {
+      "basis_id": "G0-BASIS-D005-LEGACY-TARGET-LEAKAGE-TEST",
+      "type": "test_run",
+      "verification_state": "checked",
+      "evidence_ref": "urn:orange:gate0:evidence:d005-legacy-target-leakage-test",
+      "note": "Dangerous mutation: the checked test masks unresolved mandatory contexts."
+    }
+  ],
+  "review_policy": {
+    "mode": "none"
+  },
+  "notes": [
+    "Historical D-005 negative input.",
+    "Research lifecycle: draft_unfrozen.",
+    "Non-product shape fixture; acceptance by the historical validator is the defect under test."
+  ]
+}

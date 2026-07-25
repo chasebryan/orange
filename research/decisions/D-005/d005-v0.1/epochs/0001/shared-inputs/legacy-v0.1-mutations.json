@@ -1,0 +1,68 @@
+{
+  "corpus_version": "d005-legacy-v0.1-mutations",
+  "record_status": "historical_research_input",
+  "lifecycle": "draft_unfrozen",
+  "non_product": true,
+  "decision_id": "D-005",
+  "suite_version": "d005-v0.1-draft",
+  "schema": "schemas/gate0/claim-record-v0.1.schema.json",
+  "epoch_directory_status": "reserved_layout_only_not_frozen",
+  "canonical_execution_baseline": {
+    "completed_candidate_case_executions": 0,
+    "required_candidate_case_executions": 32
+  },
+  "expected_current_validation": {
+    "json_schema": "accepted",
+    "second_pass": "accepted"
+  },
+  "mutation_count": 5,
+  "mutations": [
+    {
+      "mutation_id": "LV01-TEST-AS-REFINEMENT",
+      "danger": "checked_test_as_sufficient_functional_refinement_evidence",
+      "fixture": "checked-test-as-functional-refinement.json",
+      "sha256": "c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e"
+    },
+    {
+      "mutation_id": "LV01-OPTIONAL-MASKS-FAILED-KERNEL",
+      "danger": "checked_test_masks_failed_mandatory_kernel_proof",
+      "fixture": "checked-test-masks-failed-kernel-proof.json",
+      "sha256": "ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad"
+    },
+    {
+      "mutation_id": "LV01-UNRESOLVED-TARGET-LEAKAGE",
+      "danger": "satisfied_target_leakage_with_unresolved_target_and_leakage_contexts",
+      "fixture": "satisfied-target-leakage-with-unresolved-contexts.json",
+      "sha256": "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39"
+    },
+    {
+      "mutation_id": "LV01-OWNER-AS-EXTERNAL",
+      "danger": "owner_produced_checked_test_presented_as_external_validation",
+      "fixture": "owner-test-as-external-validation.json",
+      "sha256": "795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5"
+    },
+    {
+      "mutation_id": "LV01-SUBJECT-SUBSTITUTION",
+      "danger": "substituted_subject_path_and_digest_reuse_other_subject_evidence",
+      "fixture": "substituted-subject-reuses-evidence.json",
+      "sha256": "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900",
+      "comparison_base": "subject-reuse-original.json",
+      "comparison_base_sha256": "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9",
+      "expected_changed_json_pointers": [
+        "/subject/path",
+        "/subject/digest/value"
+      ]
+    }
+  ],
+  "reference_records": [
+    {
+      "reference_id": "D005-LEGACY-SUBJECT-ORIGINAL",
+      "fixture": "subject-reuse-original.json",
+      "sha256": "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9",
+      "role": "non_mutation_comparison_base"
+    }
+  ],
+  "candidate_records": [],
+  "result_records": [],
+  "owner_review_records": []
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "claim_id": "G0-CLAIM-D005-LEGACY-FR-TEST-ONLY",
+  "claim_kind": "functional_refinement",
+  "wording": "The synthetic implementation functionally refines its synthetic specification.",
+  "subject": {
+    "kind": "decision_case",
+    "repository": "chasebryan/orange",
+    "revision": "1111111111111111111111111111111111111111",
+    "path": "research/decisions/D-005/synthetic/refinement-test-only.case",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  },
+  "context": {
+    "language_edition": {
+      "state": "identified",
+      "identifier": "synthetic-historical-language-edition",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "1212121212121212121212121212121212121212121212121212121212121212"
+      }
+    },
+    "toolchain": {
+      "state": "identified",
+      "identifier": "synthetic-owner-test-runner",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "1313131313131313131313131313131313131313131313131313131313131313"
+      }
+    },
+    "crypto_profile": {
+      "state": "not_applicable",
+      "reason": "The historical mutation concerns evidence authority, not a cryptographic profile."
+    },
+    "target_profile": {
+      "state": "not_applicable",
+      "reason": "The historical mutation does not assert target-specific behavior."
+    },
+    "leakage_model": {
+      "state": "not_applicable",
+      "reason": "The historical mutation does not assert a leakage property."
+    }
+  },
+  "theorem_fingerprints": [],
+  "proof_object_fingerprints": [],
+  "evidence_refs": [
+    "urn:orange:gate0:evidence:d005-legacy-fr-test-only"
+  ],
+  "assumptions": [],
+  "exclusions": [
+    "The checked test samples behavior and is not functional-refinement proof."
+  ],
+  "outcome": "satisfied",
+  "basis": [
+    {
+      "basis_id": "G0-BASIS-D005-LEGACY-FR-TEST-ONLY",
+      "type": "test_run",
+      "verification_state": "checked",
+      "evidence_ref": "urn:orange:gate0:evidence:d005-legacy-fr-test-only",
+      "note": "Dangerous mutation: the shape assigns sufficient authority to a checked test run."
+    }
+  ],
+  "review_policy": {
+    "mode": "none"
+  },
+  "notes": [
+    "Historical D-005 negative input.",
+    "Research lifecycle: draft_unfrozen.",
+    "Non-product shape fixture; acceptance by the historical validator is the defect under test."
+  ]
+}
