@@ -129,12 +129,13 @@ The following are independent:
 5. termination and optionally resource bounds;
 6. source-level leakage noninterference;
 7. target-level leakage preservation;
-8. ABI, layout, serialization, and error-contract correctness;
-9. architectural erasure/zeroization;
-10. game-based cryptographic security and concrete advantage bound;
-11. entropy, foreign-code, OS, CPU, and hardware assumptions;
-12. empirical vector, differential, fuzz, timing, and interoperability evidence;
-13. external validation or certification of a concrete module.
+8. compiler preservation across exact passes to final artifact bytes;
+9. ABI, layout, serialization, and error-contract correctness;
+10. architectural erasure/zeroization;
+11. game-based cryptographic security and concrete advantage bound;
+12. entropy, foreign-code, OS, CPU, and hardware assumptions;
+13. empirical vector, differential, fuzz, timing, and interoperability evidence;
+14. external validation or certification of a concrete module.
 
 No dimension has a number that implies the others.
 
@@ -161,10 +162,18 @@ Every record contains:
 
 Outcome, trust basis, and evidence are orthogonal. A satisfied claim may have a
 kernel proof, tests, and an external audit at the same time. An assumption is a
-visible dependency, not a successful proof status. `satisfied` requires at
-least one valid, unexpired basis allowed by that claim kind’s policy; assumptions
-alone cannot satisfy a proof-required claim. Other outcomes may have no basis
-when, for example, the claim is unsupported before evidence can be produced.
+visible dependency, not a successful proof status. `satisfied` requires every
+basis, context, identity binding, trust-closure component, composition edge,
+freshness condition, and review trigger that the exact claim-kind policy marks
+mandatory. Each must be valid, current, permitted, and bound to the same
+subject; one favorable optional basis cannot mask a failed, expired,
+unavailable, missing, or mismatched mandatory element. Assumptions alone cannot
+satisfy a proof-required claim. Owner review may support an explicitly scoped
+owner-audit or governance record when its policy permits that evidence class,
+but it cannot act as a proof, certificate, compiler-preservation edge, external
+validation, certification, or independent review. Other outcomes may have no
+basis when, for example, the claim is unsupported before evidence can be
+produced.
 
 The CLI and generated documentation display the complete matrix for every
 exported symbol and implementation/target variant.

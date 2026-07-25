@@ -4434,6 +4434,473 @@ class PlanningTraceHardeningTests(unittest.TestCase):
         shutil.copyfile(source, target)
         return target
 
+    def _copy_assurance_suite(self, root: Path) -> Path:
+        docs = root / "docs"
+        docs.mkdir(exist_ok=True)
+        source = (
+            Path(__file__).resolve().parents[2]
+            / "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md"
+        )
+        target = docs / source.name
+        shutil.copyfile(source, target)
+        return target
+
+    def _assert_assurance_suite_mutation(
+        self,
+        old: str,
+        new: str,
+        expected_code: str,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = self._copy_assurance_suite(root)
+            text = target.read_text(encoding="utf-8")
+            mutated = text.replace(old, new, 1)
+            self.assertNotEqual(mutated, text)
+            target.write_text(mutated, encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_public_assurance_model_suite()
+            self.assertIn(
+                expected_code,
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_assurance_model_suite_baseline_is_valid(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        validator = FoundationValidator(root)
+        validator._validate_public_assurance_model_suite()
+        self.assertEqual(
+            [
+                finding
+                for finding in validator.findings
+                if finding.code.startswith("assurance_model.")
+            ],
+            [],
+        )
+
+    def test_assurance_model_identity_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "Status: owner-executable draft under D-023; no public assurance model selected",
+                "Status: accepted; AM-01 selected",
+                "assurance_model.header",
+            ),
+            (
+                "Suite version: `d005-v0.1-draft`",
+                "Suite version: `d005-v0.2-draft`",
+                "assurance_model.header",
+            ),
+            (
+                "Snapshot: 2026-07-25",
+                "Snapshot: 2026-07-11",
+                "assurance_model.header",
+            ),
+            ("| AM-04 |", "| AM-03 |", "assurance_model.candidates"),
+            ("| CF-10 |", "| CF-09 |", "assurance_model.claim_families"),
+            (
+                "### AC-08 — Render, inspect, replay, and migrate deterministically",
+                "### AC-08 — Render a summary",
+                "assurance_model.case_ids",
+            ),
+            ("| M-18 |", "| M-17 |", "assurance_model.metrics"),
+            (
+                "8. All owner review scopes",
+                "7. All owner review scopes",
+                "assurance_model.hard_gates",
+            ),
+            ("| AR-08 |", "| AR-07 |", "assurance_model.review_scopes"),
+            (
+                "**Hard acceptance:** Coverage is 10/10;",
+                "**Conclusion:** Coverage is 10/10;",
+                "assurance_model.case_field",
+            ),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(old, new, expected_code)
+
+    def test_assurance_model_matrix_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "exactly 32 candidate-case executions per evidence",
+                "exactly 4 candidate-case executions per evidence",
+            ),
+            (
+                "Execution evidence is currently 0/32 candidate-case executions",
+                "Execution evidence is currently 32/32 candidate-case executions",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(
+                    old,
+                    new,
+                    "assurance_model.execution_matrix",
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = self._copy_assurance_suite(root)
+            with target.open("a", encoding="utf-8") as stream:
+                stream.write(
+                    "\nExecution evidence is currently 32/32 candidate-case "
+                    "executions.\n"
+                )
+            validator = FoundationValidator(root)
+            validator._validate_public_assurance_model_suite()
+            self.assertIn(
+                "assurance_model.execution_matrix",
+                {finding.code for finding in validator.findings},
+            )
+
+    def test_assurance_model_semantic_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "These outcomes are categorical, not ordered\ngrades.",
+                "These outcomes are ordered grades.",
+                "assurance_model.outcomes",
+            ),
+            (
+                "`satisfied` requires all mandatory elements",
+                "`satisfied` requires any favorable element",
+                "assurance_model.basis_policy",
+            ),
+            (
+                "One\nchecked but optional basis cannot mask",
+                "One checked optional basis may mask",
+                "assurance_model.basis_policy",
+            ),
+            (
+                "All substitutions fail closed; unresolved mandatory",
+                "Some substitutions may pass; unresolved mandatory",
+                "assurance_model.closure",
+            ),
+            (
+                "They may never upgrade, average, inherit, or\nhide",
+                "They may upgrade, average, inherit, or hide",
+                "assurance_model.aggregation",
+            ),
+            (
+                "There is no weighted aggregate score.",
+                "There is a weighted aggregate score.",
+                "assurance_model.aggregation",
+            ),
+            (
+                "is historical, provisional,\nnon-product shape material.",
+                "is the ratified public product format.",
+                "assurance_model.historical_schema",
+            ),
+            (
+                "It lacks a first-class compiler-preservation family,",
+                "It completely represents every required family,",
+                "assurance_model.historical_schema",
+            ),
+            (
+                "Disclosure only: `unavailable`; never a score, gate, or implied claim",
+                "Hard gate: independent review complete",
+                "assurance_model.solo_metrics",
+            ),
+            (
+                "records no reproducibility level above 2.",
+                "records reproducibility level 3.",
+                "assurance_model.solo_mode",
+            ),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(old, new, expected_code)
+
+    def test_assurance_model_outcome_meanings_cannot_drift(self) -> None:
+        mutations = (
+            (
+                "The four outcome meanings are frozen across candidates.",
+                "Candidates may define their own outcome meanings.",
+            ),
+            (
+                "`satisfied` means the\nexact proposition has its complete permitted mandatory closure",
+                "`satisfied` means any favorable evidence exists",
+            ),
+            (
+                "absence or incompleteness alone is not `not_satisfied`.",
+                "absence alone is `not_satisfied`.",
+            ),
+            (
+                "`unresolved` means the claim is well-formed and within the declared support\nmodel, but a required decision remains unknown, incomplete, conflicting, or\nexhausted.",
+                "`unresolved` is an unspecified non-success.",
+            ),
+            (
+                "`unsupported` means the declared policy or support envelope offers\nno permitted evaluation or authority path for that exact claim and scope.",
+                "`unsupported` is a lower assurance grade.",
+            ),
+            (
+                "No\ncandidate may reinterpret these categories or map any non-success to success.",
+                "A candidate may map non-success to success.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(
+                    old,
+                    new,
+                    "assurance_model.outcomes",
+                )
+
+    def test_assurance_model_maintenance_contract_mutations_are_rejected(self) -> None:
+        mutations = (
+            ("| MT-02 |", "| MT-01 |", "assurance_model.maintenance_tasks"),
+            (
+                "A checked optional test masks the missing mandatory basis",
+                "No seeded fault is supplied",
+                "assurance_model.maintenance_tasks",
+            ),
+            (
+                "Each task begins from a distinct clean checkout",
+                "Each task begins from the existing workspace",
+                "assurance_model.maintenance_protocol",
+            ),
+            (
+                "The owner receives only the frozen public packet and\npublished task text:",
+                "The owner receives private repair notes and task text:",
+                "assurance_model.maintenance_protocol",
+            ),
+            (
+                "recreates the repaired result from a second clean workspace.",
+                "reuses the first workspace's repaired result.",
+                "assurance_model.maintenance_protocol",
+            ),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(old, new, expected_code)
+
+    def test_assurance_model_workspace_replay_boundaries_are_rejected(self) -> None:
+        mutations = (
+            (
+                "neither replay is\n   relabeled as an audit, validation, independent review, or independent\n   reproduction.",
+                "each replay may be relabeled as an independent audit.",
+                "assurance_model.solo_mode",
+            ),
+            (
+                "no shared mutable cache, output\ndirectory, generated state, or dependency store.",
+                "a shared mutable cache and dependency store are permitted.",
+                "assurance_model.workspace_isolation",
+            ),
+            (
+                "Each has a separate\ndependency-acquisition and environment record.",
+                "Both share one acquisition and environment record.",
+                "assurance_model.workspace_isolation",
+            ),
+            (
+                "Only content-addressed,\nread-only frozen inputs named by both manifests may be shared.",
+                "Mutable generated state may be shared.",
+                "assurance_model.workspace_isolation",
+            ),
+            (
+                "fails closed when shared or undeclared state\ncannot be excluded.",
+                "continues when shared state cannot be excluded.",
+                "assurance_model.workspace_isolation",
+            ),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(old, new, expected_code)
+
+    def test_assurance_model_evaluation_and_acquisition_authority_are_pinned(self) -> None:
+        mutations = (
+            (
+                "It evaluates candidate\nsemantic architectures",
+                "It chooses a candidate semantic architecture",
+            ),
+            (
+                "Only the Accepted exact-revision OEP in\nsection 8 chooses an architecture.",
+                "This draft suite chooses an architecture.",
+            ),
+            (
+                "This draft installs, adopts, or admits no\ntool or dependency and grants no dependency-acquisition authority.",
+                "This draft installs tools and grants dependency acquisition authority.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(
+                    old,
+                    new,
+                    "assurance_model.authority_boundary",
+                )
+
+    def test_assurance_model_rejects_external_human_blockers(self) -> None:
+        blockers = (
+            "at least one independent assurance-model reviewer",
+            "two non-author practitioners",
+            "external cryptographer approval is required",
+            "multidisciplinary external review must approve",
+            "separate Assurance and TCB Board approval",
+            "an independent auditor selects the candidate",
+            "laboratory participation is required for this decision",
+            "downstream integrator approval is required",
+        )
+        for blocker in blockers:
+            with self.subTest(blocker=blocker), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = self._copy_assurance_suite(root)
+                with target.open("a", encoding="utf-8") as stream:
+                    stream.write(f"\nSelection requires {blocker}.\n")
+                validator = FoundationValidator(root)
+                validator._validate_public_assurance_model_suite()
+                self.assertIn(
+                    "assurance_model.solo_blocker",
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_assurance_model_rejects_overclaim_and_preselection(self) -> None:
+        mutations = (
+            (
+                "This document\ndefines the experiment;",
+                "This suite has been independently validated. This document\ndefines the experiment;",
+                "assurance_model.independence_claim",
+            ),
+            (
+                "This draft selects no candidate,",
+                "AM-01 is the selected model. This draft selects a candidate,",
+                "assurance_model.preselection",
+            ),
+            (
+                "M-17 is `unavailable`.",
+                "M-17 is `unavailable`. Reproducibility level 3 is claimed.",
+                "assurance_model.reproducibility_cap",
+            ),
+        )
+        for old, new, expected_code in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(old, new, expected_code)
+
+    def test_assurance_model_acceptance_mutations_are_rejected(self) -> None:
+        mutations = (
+            (
+                "Accepted Orange Enhancement Proposal",
+                "Proposed Orange Enhancement Proposal",
+            ),
+            (
+                "exactly 40\nlowercase hexadecimal characters",
+                "an abbreviated hexadecimal prefix",
+            ),
+            (
+                "`approval-records` entry containing the literal `solo-reviewed`",
+                "approval entry containing owner-reviewed",
+            ),
+            (
+                "This draft allocates no OEP number.",
+                "This draft allocates OEP-0004.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old):
+                self._assert_assurance_suite_mutation(
+                    old,
+                    new,
+                    "assurance_model.acceptance",
+                )
+
+    def test_assurance_model_register_mutations_are_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (
+                "No candidate is selected, preferred, or\nauthorized for product use by this register.",
+                "AM-01 is selected and authorized for product use by this register.",
+            ),
+            (
+                "Current execution evidence is 0/32 candidate-case executions.",
+                "Current execution evidence is 32/32 candidate-case executions.",
+            ),
+            (
+                "historical shape inputs, not a\nselected candidate or public format.",
+                "the selected public format.",
+            ),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / "docs"
+                docs.mkdir()
+                shutil.copyfile(
+                    source_root / "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
+                    docs / "PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
+                )
+                decisions = docs / "DECISIONS.md"
+                shutil.copyfile(source_root / "docs/DECISIONS.md", decisions)
+                text = decisions.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                decisions.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_public_assurance_model_suite()
+                self.assertIn(
+                    "assurance_model.register_consistency",
+                    {finding.code for finding in validator.findings},
+                )
+
+    def test_assurance_model_roadmap_and_explanatory_mutations_are_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        mutations = (
+            (
+                "ROADMAP.md",
+                "both\nD-005 and D-006",
+                "D-006 only",
+                "assurance_model.roadmap_consistency",
+            ),
+            (
+                "ASSURANCE.md",
+                "`satisfied` requires every",
+                "`satisfied` requires any one",
+                "assurance_model.explanatory_consistency",
+            ),
+            (
+                "THE_ORANGE_BOOK.md",
+                "A favorable optional basis cannot mask",
+                "A favorable optional basis may mask",
+                "assurance_model.explanatory_consistency",
+            ),
+            (
+                "ASSURANCE.md",
+                "8. compiler preservation across exact passes to final artifact bytes;",
+                "8. compiler preservation is part of functional refinement;",
+                "assurance_model.explanatory_consistency",
+            ),
+            (
+                "THE_ORANGE_BOOK.md",
+                "| Was sensitive state erased? |",
+                "| Was sensitive state handled? |",
+                "assurance_model.explanatory_consistency",
+            ),
+            (
+                "THE_ORANGE_BOOK.md",
+                "| What did empirical testing observe? |",
+                "| What is the aggregate assurance level? |",
+                "assurance_model.explanatory_consistency",
+            ),
+        )
+        for name, old, new, expected_code in mutations:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                docs = root / "docs"
+                docs.mkdir()
+                shutil.copyfile(
+                    source_root / "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
+                    docs / "PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
+                )
+                target = docs / name
+                shutil.copyfile(source_root / "docs" / name, target)
+                text = target.read_text(encoding="utf-8")
+                mutated = text.replace(old, new, 1)
+                self.assertNotEqual(mutated, text)
+                target.write_text(mutated, encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_public_assurance_model_suite()
+                self.assertIn(
+                    expected_code,
+                    {finding.code for finding in validator.findings},
+                )
+
     def test_proof_suite_solo_protocol_baseline_is_valid(self) -> None:
         root = Path(__file__).resolve().parents[2]
         validator = FoundationValidator(root)

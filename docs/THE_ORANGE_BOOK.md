@@ -191,9 +191,11 @@ In the proposed design, this discipline would change the shape of a build.
 Instead of producing a binary and then attaching a broad adjective, the build
 would produce an artifact together with a graph of narrowly worded claims. Each
 edge would name the authority that justifies it. Some authorities may be
-machine-checked proofs. Some may be checked certificates. Some may be test runs,
-owner review, or identified external records. Their differences would remain
-visible.
+machine-checked proofs. Some may be checked certificates or test runs. An owner
+review may support only an explicitly scoped owner-audit or governance record;
+it cannot impersonate a technical proof, external validation, certification, or
+independent review. Identified external records retain their external scope and
+authority. These differences would remain visible.
 
 ### Trust does not disappear
 
@@ -368,7 +370,9 @@ matrix of questions whose answers may differ:
 | What does it leak? | Named source or target observation model | Noninterference proof, translation evidence, and measurements |
 | Did compilation preserve a property? | Exact passes, toolchain, target, and final bytes | Pass theorem or translation-validation certificate |
 | Does the foreign boundary agree? | Named ABI, layout, alias, length, and error rules | Contract proof and adversarial caller tests |
+| Was sensitive state erased? | Named object, lifecycle point, target, and architectural model | Erasure proof, binary analysis, and scoped measurements |
 | Does it meet a security theorem? | Named game, advantage bound, and assumptions | Checked reduction or recorded external proof |
+| What did empirical testing observe? | Named corpus, method, environment, and implementation/target | Vectors, differential tests, fuzzing, timing, or interoperability records |
 
 The rows are related, but they are not interchangeable. Standard vectors can
 expose a wrong answer without proving all answers. A source refinement theorem
@@ -429,11 +433,13 @@ stable. Each basis retains its type and authority.
 
 Orange's proposed records distinguish kernel proofs, checked certificates,
 external proofs, test runs, audits, external validations, and assumptions. A
-claim policy determines which kinds may close which claim. More than one basis
-can support the same proposition: a refinement claim may have a checked proof,
-tests that catch regressions, and an external review record. Those bases can
-reinforce confidence and diagnose different failures without pretending to be
-the same thing.
+claim policy determines which kinds may close which claim and which complete
+set is mandatory. More than one basis can support the same proposition: a
+refinement claim may have a checked proof, tests that catch regressions, and an
+external review record. A favorable optional basis cannot mask a failed,
+expired, unavailable, missing, or mismatched mandatory basis, context, trust
+component, or composition edge. Those bases can reinforce confidence and
+diagnose different failures without pretending to be the same thing.
 
 This separation is most visible around automation. A solver is excellent at
 searching for proofs or counterexamples. If a proof-required claim depends on a

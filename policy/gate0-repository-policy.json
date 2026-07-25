@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.101",
+  "policy_version": "0.2.102",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -176,6 +176,7 @@
     "docs/PROJECT_CHARTER.md",
     "docs/PRODUCT_FORM_DECISION_PACKET.md",
     "docs/PROOF_FOUNDATION_DECISION_SUITE.md",
+    "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
     "docs/REPRODUCIBILITY.md",
     "docs/RESEARCH.md",
     "docs/ROADMAP.md",
@@ -239,7 +240,7 @@
   "protected_file_digests": {
     ".editorconfig": "a3766d51a21a904a405f808017eeb34d5426558ad487803a5d4f39a854379ca9",
     ".gitattributes": "a5f4501e4eeea215d890813156f46edf1cd9dee83be968e5ff5edc6c136f111d",
-    ".github/CODEOWNERS": "8038a3a61117a29c26bfdd7b66a9a5675cb779736bad2c8c1797e680d7484663",
+    ".github/CODEOWNERS": "19c755a6293272ee8eca8cea60ed964c4362185a05cc3d1f84e12bdbc67aa4ab",
     ".github/ISSUE_TEMPLATE/conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
     ".github/ISSUE_TEMPLATE/config.yml": "ff5a8f986c0a9902d402ac17eecd3fbea8783ad396ba0b33133650826054ffe3",
     ".github/ISSUE_TEMPLATE/oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
@@ -261,7 +262,7 @@
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "168fdef359964e08fe78fe02a19f182235b75721ff01b4498c7c46cb3273627e",
-    "README.md": "e983a431bcfa653efd40a1c342807ed839f76206722169fd1f9e78e42216d10f",
+    "README.md": "b4fa92e8e0a24f035a35e2dc282ba52eaeac260d2141f4c76618ba88e7850694",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
@@ -297,7 +298,7 @@
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "485e866e0d26428e1eca6b2213b14581f6fac590670f191d8ab125b9711813c2",
+    "docs/DECISIONS.md": "4f1fca8b135fd9cf1f968d557ecb5540142aecdf66323269c437423b4da91d69",
     "docs/LANGUAGE_2026.md": "52b6ef45ff5ee5d9f3951b1d6bf0f2e40a1566de623fc01e809a2a6d84d7a082",
     "docs/SEMANTICS_2026.md": "bc429d9f1296aee9376d377f93c013f74ba8b6f7e3cb48eb6410498a0b8a00e7",
     "docs/operations/CI_DEPENDENCIES.md": "4dbcdf456f364a430e2fbc81cc598fdacd4ede315ce7a11c442600ca289d166e",
@@ -319,7 +320,7 @@
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_validate_foundation.py": "7a5d34d64733d76e24dc2f188413e5b24af0fd94ff1a1afeb0e2581656da5e92",
-    "tools/tests/test_validate_foundation_hardening.py": "95ff1936dda85a503b5bb4d4a55bc792b9927013d47e55669544464ad4e2a176"
+    "tools/tests/test_validate_foundation_hardening.py": "250284af9b5651f0727502e397c4ab04ac13190184d6eab7d5e2742570a8235a"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
@@ -380,6 +381,7 @@
     "/docs/ASSURANCE.md @chasebryan",
     "/docs/DECISIONS.md @chasebryan",
     "/docs/GATE0_TRACEABILITY.md @chasebryan",
+    "/docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md @chasebryan",
     "/docs/PROOF_FOUNDATION_DECISION_SUITE.md @chasebryan",
     "/docs/USER_JOURNEYS.md @chasebryan",
     "/docs/governance/ @chasebryan",

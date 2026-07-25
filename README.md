@@ -18,6 +18,11 @@ syntactic, and semantic validation; typed `spec` literals with exact `Int` or
 `Word[8]` types lower to a deterministic, noncanonical Typed Reference Core;
 and `orangec eval FILE` prints those closed values in source order.
 
+Orange is **30% complete toward version 1.0.0 by gate closure: 3 of 10 binary
+gates are closed**. See the [roadmap completion metric](docs/ROADMAP.md#orange-100-completion-metric)
+for the exact denominator and limitations; this is not an effort estimate or a
+release-readiness claim.
+
 The S3a slice has separate `spec` and `impl` name namespaces, but only
 typed specifications acquire values. It defines no parameters, operators,
 calls, typed implementations, refinement, proof system, canonical Core encoding,
@@ -70,6 +75,7 @@ ratified incrementally before the component or claim that depends on them.
 - [Dependency-ordered roadmap](docs/ROADMAP.md)
 - [Gate 0 feature traceability](docs/GATE0_TRACEABILITY.md)
 - [Proposed Orange 1.0 user journeys](docs/USER_JOURNEYS.md)
+- [D-005 public-assurance-model decision suite](docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md)
 - [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
 - [Decision register](docs/DECISIONS.md)
 - [Normative Orange 2026 lexical and grammar specification](docs/LANGUAGE_2026.md)

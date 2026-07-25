@@ -122,18 +122,32 @@ does not authorize S3b.
 Status: proposed; decide before S4 stabilizes the claim model and public claim
 records
 
-Recommendation: separately named claims with statuses and full assumption/TCB
-closure. Never issue one package-wide `verified` Boolean or a numeric ladder
-that implies unrelated properties.
+Candidates: orthogonal typed claim records, named assurance profiles backed by
+atomic claims, evidence-graph-derived claim views, and an aggregate package
+assurance level or `verified` Boolean. No candidate is selected, preferred, or
+authorized for product use by this register.
 
-Minimum claim families: conformance, refinement, safety, termination, leakage,
-compiler preservation, ABI, erasure, game-based security, and empirical tests.
+Every candidate must preserve the same ten separately queryable claim families:
+conformance, functional refinement, safety, termination, leakage, compiler
+preservation, ABI, erasure, game-based security, and empirical tests. Each
+atomic claim has exactly one of `satisfied`, `not_satisfied`, `unresolved`, or
+`unsupported`; no profile, graph view, package level, Boolean, neighboring
+claim, or optional evidence may upgrade an atomic non-success.
 
-Acceptance evidence: owner-executable schema review and a representative
-artifact with unambiguous mixed statuses. Multidisciplinary external review by
-implementers, auditors, cryptographers, and downstream integrators is
-unavailable in solo mode; any claim that depends on it remains unsupported,
-without blocking unrelated S1-S3 development.
+The symmetric candidates, eight adversarial cases, authority and trust rules,
+32-run matrix, historical-schema boundary, hard gates, archive, and
+inconclusive procedure are specified in the
+[D-005 public-assurance-model decision suite](PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md).
+Current execution evidence is 0/32 candidate-case executions. The provisional
+Gate 0 claim schema and synthetic fixtures are historical shape inputs, not a
+selected candidate or public format.
+
+D-005 closes only through an Accepted exact-revision OEP after the complete
+owner-executable suite passes. Multidisciplinary external review remains
+`unavailable` in solo mode; any claim whose policy requires it remains
+unsupported or unresolved as specified, without blocking unrelated work. Owner
+review is labeled `solo-reviewed` and never becomes independent or technical
+evidence merely through repetition.
 
 ## D-006 — Proof foundation
 
