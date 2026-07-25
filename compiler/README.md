@@ -36,6 +36,26 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance 
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 ```
 
+## D-005 decision laboratory
+
+The `orange-compiler` integration tests also contain a standard-library-only,
+non-product D-005 laboratory. It strictly parses and canonicalizes the
+checked-in draft decision packet, binds its SHA-256 identity, verifies the exact
+4-candidate by 8-case inventory and frozen resource ceilings, preserves all 50
+case mutations and five historical v0.1 dangers, verifies the packet's bound
+suite, schema, and legacy-manifest bytes, and prepares one deterministic 32-slot
+replay schedule:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
+  --test d005_decision_suite --locked --offline
+```
+
+The laboratory deliberately executes no candidate adapter and records 0/32
+completed candidate-case runs, no evidence, and no selection. It does not alter
+compiler behavior, ratify a public claim schema, close D-005, or advance the
+version 1.0.0 gate count.
+
 For a local source-install rehearsal, use a fresh private install root:
 
 ```sh

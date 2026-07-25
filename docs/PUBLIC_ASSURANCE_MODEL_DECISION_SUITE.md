@@ -502,8 +502,16 @@ task and therefore M-16 and hard gate 8.
 
 ## 6. Evidence packet and archive layout
 
-The eventual research packet uses this logical layout; this draft creates no
-empty research or product directories:
+The non-product [D-005 research directory](../research/decisions/D-005/README.md)
+contains a machine-checked draft protocol packet and the historical v0.1
+negative corpus. Its epoch remains `draft`, records `0/32` executions, contains
+no candidate result or owner-review directory, and is neither an owner freeze
+nor decision evidence. The
+[Rust decision laboratory](../compiler/crates/orange-compiler/tests/d005_decision_suite.rs)
+strictly parses and digest-binds the checked-in packet, checks its exact
+inventories and resource ceilings, and prepares—but does not execute—the
+symmetric replay schedule. Later admitted evidence uses this logical layout;
+empty result directories are not created in advance:
 
 ```text
 d005-v0.1/
@@ -647,6 +655,8 @@ This protocol is structurally complete only while:
   schema, milestone, or release passed.
 
 Execution evidence is currently 0/32 candidate-case executions (0/8 AM-01,
-0/8 AM-02, 0/8 AM-03, and 0/8 AM-04). M-17 is `unavailable`. This document
+0/8 AM-02, 0/8 AM-03, and 0/8 AM-04). M-17 is `unavailable`. The checked-in
+draft packet and historical negative corpus are harness inputs, not case
+results. This document
 defines the experiment; it does not supply results or select a public assurance
 model.

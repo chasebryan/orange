@@ -1,0 +1,71 @@
+{
+  "schema_version": "0.1",
+  "record_status": "provisional_gate0",
+  "non_product": true,
+  "claim_id": "G0-CLAIM-D005-LEGACY-EXTERNAL-VALIDATION",
+  "claim_kind": "external_validation",
+  "wording": "The synthetic subject has external validation based only on an owner-produced checked test.",
+  "subject": {
+    "kind": "decision_case",
+    "repository": "chasebryan/orange",
+    "revision": "4444444444444444444444444444444444444444",
+    "path": "research/decisions/D-005/synthetic/owner-external-validation.case",
+    "digest": {
+      "algorithm": "sha256",
+      "value": "4444444444444444444444444444444444444444444444444444444444444444"
+    }
+  },
+  "context": {
+    "language_edition": {
+      "state": "not_applicable",
+      "reason": "The historical mutation concerns evidence authority rather than language semantics."
+    },
+    "toolchain": {
+      "state": "identified",
+      "identifier": "synthetic-owner-test-runner",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "4545454545454545454545454545454545454545454545454545454545454545"
+      }
+    },
+    "crypto_profile": {
+      "state": "not_applicable",
+      "reason": "No cryptographic profile is evaluated by the owner-produced test."
+    },
+    "target_profile": {
+      "state": "not_applicable",
+      "reason": "No target profile is evaluated by the owner-produced test."
+    },
+    "leakage_model": {
+      "state": "not_applicable",
+      "reason": "No leakage model is evaluated by the owner-produced test."
+    }
+  },
+  "theorem_fingerprints": [],
+  "proof_object_fingerprints": [],
+  "evidence_refs": [
+    "urn:orange:gate0:evidence:d005-legacy-owner-test"
+  ],
+  "assumptions": [],
+  "exclusions": [
+    "The owner-produced run has no laboratory, certification body, or independent external authority."
+  ],
+  "outcome": "satisfied",
+  "basis": [
+    {
+      "basis_id": "G0-BASIS-D005-LEGACY-OWNER-TEST",
+      "type": "test_run",
+      "verification_state": "checked",
+      "evidence_ref": "urn:orange:gate0:evidence:d005-legacy-owner-test",
+      "note": "Dangerous mutation: owner-produced evidence is presented as external validation."
+    }
+  ],
+  "review_policy": {
+    "mode": "none"
+  },
+  "notes": [
+    "Historical D-005 negative input.",
+    "Research lifecycle: draft_unfrozen.",
+    "Non-product shape fixture; acceptance by the historical validator is the defect under test."
+  ]
+}

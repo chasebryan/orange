@@ -199,6 +199,13 @@ compiler/crates/orange-compiler/src/lib.rs
 compiler/crates/orange-compiler/src/parser.rs
 compiler/crates/orange-compiler/src/semantics.rs
 compiler/crates/orange-compiler/src/source.rs
+compiler/crates/orange-compiler/tests/d005_decision_suite.rs
+compiler/crates/orange-compiler/tests/d005_support/cases.rs
+compiler/crates/orange-compiler/tests/d005_support/domain.rs
+compiler/crates/orange-compiler/tests/d005_support/packet.rs
+compiler/crates/orange-compiler/tests/d005_support/runner.rs
+compiler/crates/orange-compiler/tests/d005_support/sha256.rs
+compiler/crates/orange-compiler/tests/d005_support/strict_json.rs
 compiler/crates/orangec/Cargo.toml
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
@@ -267,6 +274,15 @@ docs/security/THREAT_MODEL.md
 policy/README.md
 policy/gate0-repository-policy.json
 policy/makefile-entrypoint-contract-v0.1.json
+research/decisions/D-005/README.md
+research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json
+research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json
+research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json
+research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json
+research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json
+research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json
+research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json
+research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json
 schemas/README.md
 schemas/gate0/claim-record-v0.1.schema.json
 schemas/gate0/evidence-manifest-v0.1.schema.json
@@ -278,6 +294,7 @@ scripts/ci/check-external-links
 scripts/ci/install-actionlint
 scripts/ci/install-lychee
 tools/fs_sandbox.c
+tools/tests/test_d005_draft_packet.py
 tools/validate_foundation.py
 tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
@@ -447,7 +464,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "147b2d25edc1d2841664fe0bf2f2928d9e3f850638a8bdf515611675cdaf2462"
+_PHD = "efb4551540bf83d4b88a0f9455da9d9cc6625fa418d01e8650493dd190272150"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -798,7 +815,26 @@ GATE0_ALLOWED_TOP_LEVEL = set(
     """.editorconfig .gitattributes .github .gitignore .markdownlint-cli2.jsonc
 CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md Makefile
 README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
-docs policy schemas scripts tools""".split()
+docs policy research schemas scripts tools""".split()
+)
+D005_DRAFT_PACKET_CANONICAL_SHA256 = (
+    "2a56537bfa61fe1e4f015047b7c49b11fa926bd4cb688c6e7d4a0da07e21b633"
+)
+D005_MUTATION_MANIFEST_CANONICAL_SHA256 = (
+    "8d069daf4a9443cf9df2d127f86d834e1aefed149324503f980c43f29c356082"
+)
+D005_DRAFT_RESEARCH_PATHS = frozenset(
+    {
+        "research/decisions/D-005/README.md",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json",
+        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json",
+    }
 )
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
@@ -2175,6 +2211,7 @@ class FoundationValidator:
         self._validate_product_form_decision_packet()
         self._validate_semantic_strata_suite()
         self._validate_public_assurance_model_suite()
+        self._validate_d005_draft_packet()
         self._validate_change_records()
         self._validate_repository_templates()
         self._end()
@@ -5578,6 +5615,487 @@ class FoundationValidator:
                             book_path,
                             f"Orange Book weakens or prematurely ratifies the proposed claim model: {assertion}",
                         )
+
+    def _validate_d005_draft_packet(self) -> None:
+        research_prefix = "research/decisions/D-005/"
+        observed_research_paths = {
+            relative(candidate, self.root)
+            for candidate in self.repository_files
+            if relative(candidate, self.root).startswith(research_prefix)
+        }
+        if observed_research_paths != D005_DRAFT_RESEARCH_PATHS:
+            self.add(
+                "d005_packet.research_inventory",
+                self.root / "research/decisions/D-005",
+                "draft D-005 research paths must retain the exact input-only inventory; "
+                f"missing={sorted(D005_DRAFT_RESEARCH_PATHS - observed_research_paths)}, "
+                f"unexpected={sorted(observed_research_paths - D005_DRAFT_RESEARCH_PATHS)}",
+            )
+        path = (
+            self.root
+            / "research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json"
+        )
+        if not self._hf(path):
+            self.add("d005_packet.missing", path, "draft D-005 protocol packet is missing")
+            return
+        try:
+            packet = self._load_repository_json(path)
+        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
+            self.add("d005_packet.parse", path, f"cannot parse draft packet: {exc}")
+            return
+        if not isinstance(packet, dict):
+            self.add("d005_packet.shape", path, "draft packet must be a JSON object")
+            return
+
+        canonical_packet = canonical_json_bytes(packet)
+        if hashlib.sha256(canonical_packet).hexdigest() != D005_DRAFT_PACKET_CANONICAL_SHA256:
+            self.add(
+                "d005_packet.digest",
+                path,
+                "draft packet canonical bytes disagree with the reviewed SHA-256 identity",
+            )
+
+        expected_keys = {
+            "schema_version",
+            "suite_version",
+            "epoch",
+            "status",
+            "candidates",
+            "cases",
+            "claim_families",
+            "metrics",
+            "hard_gates",
+            "owner_scopes",
+            "mutations",
+            "mutation_manifest_sha256",
+            "legacy_v01_mutations",
+            "input_bindings",
+            "budgets",
+            "execution",
+            "selection",
+            "nonclaims",
+        }
+        if set(packet) != expected_keys:
+            self.add(
+                "d005_packet.shape",
+                path,
+                "draft packet fields must retain the exact closed inventory",
+            )
+
+        exact_scalars = {
+            "schema_version": "d005-execution-packet-v0.1",
+            "suite_version": "d005-v0.1-draft",
+            "epoch": "0001",
+            "status": "draft",
+            "mutation_manifest_sha256": D005_MUTATION_MANIFEST_CANONICAL_SHA256,
+        }
+        for field, expected in exact_scalars.items():
+            if packet.get(field) != expected:
+                self.add(
+                    "d005_packet.identity",
+                    path,
+                    f"{field} must remain {expected!r}",
+                )
+
+        exact_inventories = {
+            "candidates": [f"AM-{index:02d}" for index in range(1, 5)],
+            "cases": [f"AC-{index:02d}" for index in range(1, 9)],
+            "claim_families": [f"CF-{index:02d}" for index in range(1, 11)],
+            "metrics": [f"M-{index:02d}" for index in range(1, 19)],
+            "hard_gates": [f"HG-{index:02d}" for index in range(1, 9)],
+            "owner_scopes": [f"AR-{index:02d}" for index in range(1, 9)],
+            "legacy_v01_mutations": [
+                "LV01-TEST-AS-REFINEMENT",
+                "LV01-OPTIONAL-MASKS-FAILED-KERNEL",
+                "LV01-UNRESOLVED-TARGET-LEAKAGE",
+                "LV01-OWNER-AS-EXTERNAL",
+                "LV01-SUBJECT-SUBSTITUTION",
+            ],
+            "nonclaims": [
+                "no candidate selected",
+                "no D-005 execution evidence",
+                "no public assurance schema ratified",
+                "no milestone or release authorized",
+            ],
+        }
+        for field, expected in exact_inventories.items():
+            if packet.get(field) != expected:
+                self.add(
+                    "d005_packet.inventory",
+                    path,
+                    f"{field} must retain its exact ordered draft inventory",
+                )
+
+        mutation_counts = (6, 6, 6, 6, 7, 5, 6, 8)
+        expected_mutations = [
+            f"AC-{case_index:02d}-M{mutation_index:02d}"
+            for case_index, count in enumerate(mutation_counts, start=1)
+            for mutation_index in range(1, count + 1)
+        ]
+        if packet.get("mutations") != expected_mutations:
+            self.add(
+                "d005_packet.mutations",
+                path,
+                "draft packet must retain all 50 exact ordered AC mutation identifiers",
+            )
+
+        expected_input_bindings = {
+            "decision_suite": {
+                "path": "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
+                "sha256": "e23fc55a1b315f7ed040412ba5361ecba952b083db7983697bfdc2e6030a29c3",
+            },
+            "legacy_v01_manifest": {
+                "path": "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",
+                "sha256": "2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d",
+            },
+            "claim_record_v01_schema": {
+                "path": "schemas/gate0/claim-record-v0.1.schema.json",
+                "sha256": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
+            },
+        }
+        if packet.get("input_bindings") != expected_input_bindings:
+            self.add(
+                "d005_packet.input_bindings",
+                path,
+                "draft packet must retain the exact closed shared-input bindings",
+            )
+        for name, binding in expected_input_bindings.items():
+            bound_path = self.root / binding["path"]
+            bound_bytes = self._read_repository_bytes(bound_path)
+            if (
+                bound_bytes is None
+                or hashlib.sha256(bound_bytes).hexdigest() != binding["sha256"]
+            ):
+                self.add(
+                    "d005_packet.input_digest",
+                    bound_path,
+                    f"D-005 input binding {name!r} disagrees with checked-in bytes",
+                )
+
+        expected_budgets = {
+            "max_packet_bytes": 262_144,
+            "max_json_depth": 32,
+            "max_json_nodes": 16_384,
+            "max_string_bytes": 16_384,
+            "max_diagnostics": 256,
+            "max_claims": 4_096,
+            "max_edges": 16_384,
+            "max_output_bytes": 4_194_304,
+            "render_repetitions": 3,
+            "workspace_replays": 2,
+        }
+        if packet.get("budgets") != expected_budgets:
+            self.add(
+                "d005_packet.budgets",
+                path,
+                "draft packet budgets must retain their exact fail-closed limits",
+            )
+
+        if packet.get("execution") != {
+            "required_candidate_cases": 32,
+            "completed_candidate_cases": 0,
+            "evidence_status": "none",
+        }:
+            self.add(
+                "d005_packet.execution",
+                path,
+                "draft packet must retain the honest 0/32 no-evidence baseline",
+            )
+        if packet.get("selection") is not None:
+            self.add(
+                "d005_packet.selection",
+                path,
+                "draft packet cannot select or recommend a candidate",
+            )
+
+        forbidden_segments = {
+            "candidates",
+            "cross-candidate",
+            "same-owner-replays",
+            "owner-reviews",
+            "decision",
+        }
+        prefix = "research/decisions/D-005/d005-v0.1/epochs/0001/"
+        for candidate in self.repository_files:
+            value = relative(candidate, self.root)
+            if not value.startswith(prefix):
+                continue
+            if forbidden_segments.intersection(value[len(prefix) :].split("/")):
+                self.add(
+                    "d005_packet.premature_results",
+                    candidate,
+                    "draft-unfrozen packet cannot contain candidate results, replay attestations, owner reviews, or a disposition",
+                )
+
+        input_root = (
+            self.root
+            / "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs"
+        )
+        manifest_path = input_root / "legacy-v0.1-mutations.json"
+        if not self._hf(manifest_path):
+            self.add(
+                "d005_packet.legacy_missing",
+                manifest_path,
+                "historical negative-corpus manifest is missing",
+            )
+            return
+        try:
+            manifest = self._load_repository_json(manifest_path)
+        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
+            self.add(
+                "d005_packet.legacy_parse",
+                manifest_path,
+                f"cannot parse historical negative-corpus manifest: {exc}",
+            )
+            return
+
+        if not isinstance(manifest, dict):
+            self.add(
+                "d005_packet.legacy_shape",
+                manifest_path,
+                "historical negative-corpus manifest must be a JSON object",
+            )
+            return
+
+        expected_manifest_keys = {
+            "corpus_version",
+            "record_status",
+            "lifecycle",
+            "non_product",
+            "decision_id",
+            "suite_version",
+            "schema",
+            "epoch_directory_status",
+            "canonical_execution_baseline",
+            "expected_current_validation",
+            "mutation_count",
+            "mutations",
+            "reference_records",
+            "candidate_records",
+            "result_records",
+            "owner_review_records",
+        }
+        if set(manifest) != expected_manifest_keys:
+            self.add(
+                "d005_packet.legacy_shape",
+                manifest_path,
+                "historical negative-corpus manifest fields must retain the exact closed inventory",
+            )
+        expected_manifest_values = {
+            "corpus_version": "d005-legacy-v0.1-mutations",
+            "record_status": "historical_research_input",
+            "lifecycle": "draft_unfrozen",
+            "non_product": True,
+            "decision_id": "D-005",
+            "suite_version": "d005-v0.1-draft",
+            "schema": "schemas/gate0/claim-record-v0.1.schema.json",
+            "epoch_directory_status": "reserved_layout_only_not_frozen",
+            "canonical_execution_baseline": {
+                "completed_candidate_case_executions": 0,
+                "required_candidate_case_executions": 32,
+            },
+            "expected_current_validation": {
+                "json_schema": "accepted",
+                "second_pass": "accepted",
+            },
+            "mutation_count": 5,
+            "candidate_records": [],
+            "result_records": [],
+            "owner_review_records": [],
+        }
+        for field, expected in expected_manifest_values.items():
+            if manifest.get(field) != expected:
+                self.add(
+                    "d005_packet.legacy_boundary",
+                    manifest_path,
+                    f"historical corpus field {field!r} weakens its draft-unfrozen 0/32 boundary",
+                )
+
+        expected_legacy_entries = (
+            (
+                "LV01-TEST-AS-REFINEMENT",
+                "checked_test_as_sufficient_functional_refinement_evidence",
+                "checked-test-as-functional-refinement.json",
+                "c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e",
+            ),
+            (
+                "LV01-OPTIONAL-MASKS-FAILED-KERNEL",
+                "checked_test_masks_failed_mandatory_kernel_proof",
+                "checked-test-masks-failed-kernel-proof.json",
+                "ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad",
+            ),
+            (
+                "LV01-UNRESOLVED-TARGET-LEAKAGE",
+                "satisfied_target_leakage_with_unresolved_target_and_leakage_contexts",
+                "satisfied-target-leakage-with-unresolved-contexts.json",
+                "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39",
+            ),
+            (
+                "LV01-OWNER-AS-EXTERNAL",
+                "owner_produced_checked_test_presented_as_external_validation",
+                "owner-test-as-external-validation.json",
+                "795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5",
+            ),
+            (
+                "LV01-SUBJECT-SUBSTITUTION",
+                "substituted_subject_path_and_digest_reuse_other_subject_evidence",
+                "substituted-subject-reuses-evidence.json",
+                "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900",
+            ),
+        )
+        legacy_schema_path = self.root / "schemas/gate0/claim-record-v0.1.schema.json"
+        legacy_schema: dict[str, Any] | None = None
+        if self._hf(legacy_schema_path):
+            try:
+                loaded_legacy_schema = self._load_repository_json(legacy_schema_path)
+            except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
+                self.add(
+                    "d005_packet.legacy_schema",
+                    legacy_schema_path,
+                    f"cannot parse historical claim-record schema: {exc}",
+                )
+            else:
+                if isinstance(loaded_legacy_schema, dict) and isinstance(
+                    loaded_legacy_schema.get("$id"), str
+                ):
+                    legacy_schema = loaded_legacy_schema
+                else:
+                    self.add(
+                        "d005_packet.legacy_schema",
+                        legacy_schema_path,
+                        "historical claim-record schema must be an identified JSON object",
+                    )
+        mutations = manifest.get("mutations")
+        if not isinstance(mutations, list) or len(mutations) != len(expected_legacy_entries):
+            self.add(
+                "d005_packet.legacy_inventory",
+                manifest_path,
+                "historical corpus must retain exactly five ordered dangerous mutations",
+            )
+            mutations = []
+        for index, expected in enumerate(expected_legacy_entries):
+            if index >= len(mutations) or not isinstance(mutations[index], dict):
+                continue
+            entry = mutations[index]
+            expected_entry_fields = {"mutation_id", "danger", "fixture", "sha256"}
+            if index == len(expected_legacy_entries) - 1:
+                expected_entry_fields.update(
+                    {
+                        "comparison_base",
+                        "comparison_base_sha256",
+                        "expected_changed_json_pointers",
+                    }
+                )
+            if set(entry) != expected_entry_fields:
+                self.add(
+                    "d005_packet.legacy_shape",
+                    manifest_path,
+                    f"historical mutation {index + 1} fields drifted",
+                )
+            observed = (
+                entry.get("mutation_id"),
+                entry.get("danger"),
+                entry.get("fixture"),
+            )
+            if observed != expected[:3]:
+                self.add(
+                    "d005_packet.legacy_inventory",
+                    manifest_path,
+                    f"historical mutation {index + 1} identity, danger, or fixture drifted",
+                )
+                continue
+            digest = entry.get("sha256")
+            fixture_path = input_root / expected[2]
+            fixture_bytes = self._read_repository_bytes(fixture_path)
+            if (
+                not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                or digest != expected[3]
+                or fixture_bytes is None
+                or hashlib.sha256(fixture_bytes).hexdigest() != expected[3]
+            ):
+                self.add(
+                    "d005_packet.legacy_digest",
+                    fixture_path,
+                    "historical mutation fixture is missing or disagrees with its SHA-256 binding",
+                )
+            if fixture_bytes is not None and legacy_schema is not None:
+                try:
+                    fixture = self._load_repository_json(fixture_path)
+                except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
+                    self.add(
+                        "d005_packet.legacy_fixture_parse",
+                        fixture_path,
+                        f"cannot parse historical negative input: {exc}",
+                    )
+                else:
+                    issues = validate_schema_instance(
+                        fixture,
+                        legacy_schema,
+                        legacy_schema_path,
+                        {legacy_schema_path: legacy_schema},
+                        {legacy_schema["$id"]: (legacy_schema_path, legacy_schema)},
+                    )
+                    issues.extend(
+                        validate_cross_record_invariants(
+                            fixture,
+                            legacy_schema_path.name,
+                        )
+                    )
+                    if issues:
+                        self.add(
+                            "d005_packet.legacy_acceptance",
+                            fixture_path,
+                            "historical negative input no longer demonstrates acceptance by the v0.1 shape and second pass",
+                        )
+
+        subject_entry = mutations[-1] if mutations and isinstance(mutations[-1], dict) else {}
+        subject_expected = {
+            "comparison_base": "subject-reuse-original.json",
+            "expected_changed_json_pointers": [
+                "/subject/path",
+                "/subject/digest/value",
+            ],
+        }
+        for field, expected in subject_expected.items():
+            if subject_entry.get(field) != expected:
+                self.add(
+                    "d005_packet.subject_substitution",
+                    manifest_path,
+                    f"subject-substitution field {field!r} drifted",
+                )
+        comparison_digest = subject_entry.get("comparison_base_sha256")
+        expected_comparison_digest = (
+            "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9"
+        )
+        comparison_path = input_root / "subject-reuse-original.json"
+        comparison_bytes = self._read_repository_bytes(comparison_path)
+        if (
+            not isinstance(comparison_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", comparison_digest) is None
+            or comparison_digest != expected_comparison_digest
+            or comparison_bytes is None
+            or hashlib.sha256(comparison_bytes).hexdigest()
+            != expected_comparison_digest
+        ):
+            self.add(
+                "d005_packet.legacy_digest",
+                comparison_path,
+                "subject-substitution comparison base is missing or disagrees with its SHA-256 binding",
+            )
+        if manifest.get("reference_records") != [
+            {
+                "reference_id": "D005-LEGACY-SUBJECT-ORIGINAL",
+                "fixture": "subject-reuse-original.json",
+                "sha256": expected_comparison_digest,
+                "role": "non_mutation_comparison_base",
+            }
+        ]:
+            self.add(
+                "d005_packet.subject_substitution",
+                manifest_path,
+                "historical corpus must retain exactly one digest-bound subject-substitution comparison base",
+            )
 
     def _validate_change_records(self) -> None:
         specifications = (
