@@ -475,26 +475,39 @@ impl<'source> Lexer<'source> {
         if !self.advance_bytes(1) {
             return;
         }
+        let contents_start = self.cursor;
+        let mut contains_escape = false;
         let mut terminated = false;
 
-        while let Some(character) = self.peek_char() {
+        let contents_end = loop {
+            let Some(character) = self.peek_char() else {
+                break self.cursor;
+            };
             match character {
                 '"' => {
+                    let end = self.cursor;
                     if !self.advance_bytes(1) {
                         return;
                     }
                     terminated = true;
-                    break;
+                    break end;
                 }
-                '\n' | '\r' => break,
-                '\\' => self.lex_escape(),
+                '\n' | '\r' => break self.cursor,
+                '\\' => {
+                    contains_escape = true;
+                    let _ = self.consume_escape();
+                    if self.token_storage_failed {
+                        return;
+                    }
+                }
                 _ => {
                     if !self.advance_char() {
                         return;
                     }
                 }
             }
-        }
+        };
+        let token_end = self.cursor;
 
         if !terminated {
             let opening_end = start.saturating_add(1).min(self.text.len());
@@ -509,34 +522,65 @@ impl<'source> Lexer<'source> {
                 .with_note("pre-alpha Orange strings cannot cross a line boundary")
             });
         }
-        self.push_token(TokenKind::String, start, self.cursor);
+
+        // The unterminated-string diagnostic is anchored at the opening quote,
+        // before any invalid escapes inside it. Rescan the bounded contents only
+        // after termination is known so both retention and suppression follow
+        // source order without allocating a pending-diagnostic buffer.
+        if contains_escape {
+            self.cursor = contents_start;
+            while self.cursor < contents_end {
+                let Some(character) = self.peek_char() else {
+                    self.fail_cursor_invariant();
+                    return;
+                };
+                if character == '\\' {
+                    if let Some((escape_start, escape_end)) = self.consume_escape() {
+                        self.push_invalid_escape(escape_start, escape_end);
+                    }
+                } else if !self.advance_char() {
+                    return;
+                }
+                if self.token_storage_failed {
+                    return;
+                }
+            }
+            if self.cursor != contents_end {
+                self.fail_cursor_invariant();
+                return;
+            }
+            self.cursor = token_end;
+        }
+        self.push_token(TokenKind::String, start, token_end);
     }
 
-    fn lex_escape(&mut self) {
+    fn consume_escape(&mut self) -> Option<(usize, usize)> {
         let start = self.cursor;
         if !self.advance_bytes(1) {
-            return;
+            return None;
         }
         let Some(escaped) = self.peek_char() else {
-            self.invalid_escape(start);
-            return;
+            return Some((start, self.cursor));
         };
 
         match escaped {
             '"' | '\\' | 'n' | 'r' | 't' | '0' => {
-                self.advance_char();
+                if !self.advance_char() {
+                    return None;
+                }
+                None
             }
-            '\n' | '\r' => self.invalid_escape(start),
+            '\n' | '\r' => Some((start, self.cursor)),
             'x' => {
                 if !self.advance_bytes(1) {
-                    return;
+                    return None;
                 }
                 let mut valid = true;
                 for _ in 0..2 {
                     match self.peek_char() {
                         Some(character) if character.is_ascii_hexdigit() => {
                             if !self.advance_char() {
-                                return;
+                                return None;
                             }
                         }
                         _ => {
@@ -545,21 +589,18 @@ impl<'source> Lexer<'source> {
                         }
                     }
                 }
-                if !valid {
-                    self.invalid_escape(start);
-                }
+                (!valid).then_some((start, self.cursor))
             }
             _ => {
                 if !self.advance_char() {
-                    return;
+                    return None;
                 }
-                self.invalid_escape(start);
+                Some((start, self.cursor))
             }
         }
     }
 
-    fn invalid_escape(&mut self, start: usize) {
-        let end = self.cursor;
+    fn push_invalid_escape(&mut self, start: usize, end: usize) {
         let span = self.span(start, end);
         let Some(spelling) = self.text.get(start..end) else {
             self.fail_cursor_invariant();
@@ -1138,6 +1179,127 @@ mod tests {
             assert_eq!(lexed.tokens[0].lexeme(source), Some("\"first"));
             assert_eq!(lexed.tokens[1].lexeme(source), Some("next"));
         }
+    }
+
+    #[test]
+    fn unterminated_string_diagnostics_follow_source_order() {
+        for suffix in ["", "\nnext", "\r\nnext", "\rnext"] {
+            let text = format!("\"bad\\q and \\xZ{suffix}");
+            let mut sources = SourceMap::new();
+            let id = sources.add("test.or", text).unwrap();
+            let source = sources.get(id).unwrap();
+            let first = lex(source, Edition::E2026);
+            let second = lex(source, Edition::E2026);
+
+            assert_eq!(first, second, "{suffix:?}");
+            assert_eq!(
+                first
+                    .diagnostics()
+                    .iter()
+                    .map(Diagnostic::code)
+                    .collect::<Vec<_>>(),
+                [
+                    DiagnosticCode::UnterminatedString,
+                    DiagnosticCode::InvalidEscape,
+                    DiagnosticCode::InvalidEscape,
+                ],
+                "{suffix:?}",
+            );
+            assert_eq!(
+                first
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| diagnostic.primary_span().start().bytes())
+                    .collect::<Vec<_>>(),
+                [0, 4, 11],
+                "{suffix:?}",
+            );
+        }
+
+        for ending in ["\n", "\r\n", "\r"] {
+            let text = format!("\"bad\\{ending}next");
+            let (sources, lexed) = lex_text(&text);
+            assert_eq!(
+                lexed
+                    .diagnostics()
+                    .iter()
+                    .map(Diagnostic::code)
+                    .collect::<Vec<_>>(),
+                [
+                    DiagnosticCode::UnterminatedString,
+                    DiagnosticCode::InvalidEscape,
+                ],
+                "{ending:?}",
+            );
+            assert_eq!(
+                lexed
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| diagnostic.primary_span().start().bytes())
+                    .collect::<Vec<_>>(),
+                [0, 4],
+                "{ending:?}",
+            );
+            let source = sources.iter().next().unwrap();
+            assert_eq!(lexed.tokens()[0].lexeme(source), Some("\"bad\\"));
+            assert_eq!(lexed.tokens()[1].lexeme(source), Some("next"));
+        }
+    }
+
+    #[test]
+    fn unterminated_string_precedes_escapes_at_the_diagnostic_limit() {
+        let mut text = "@".repeat(MAX_DIAGNOSTICS_PER_SOURCE - 1);
+        text.push_str("\"\\q");
+        let (_, lexed) = lex_text(&text);
+
+        assert_eq!(lexed.diagnostics().len(), MAX_DIAGNOSTICS_PER_SOURCE + 1);
+        assert!(
+            lexed.diagnostics()[..MAX_DIAGNOSTICS_PER_SOURCE - 1]
+                .iter()
+                .all(|diagnostic| diagnostic.code() == DiagnosticCode::UnexpectedCharacter)
+        );
+        assert_eq!(
+            lexed.diagnostics()[MAX_DIAGNOSTICS_PER_SOURCE - 1].code(),
+            DiagnosticCode::UnterminatedString,
+        );
+        assert_eq!(
+            lexed.diagnostics()[MAX_DIAGNOSTICS_PER_SOURCE].code(),
+            DiagnosticCode::TooManyLexicalErrors,
+        );
+        assert_eq!(
+            lexed.diagnostics()[MAX_DIAGNOSTICS_PER_SOURCE]
+                .primary_span()
+                .start()
+                .bytes(),
+            u32::try_from(MAX_DIAGNOSTICS_PER_SOURCE).unwrap(),
+        );
+        assert_eq!(
+            lexed.diagnostics()[MAX_DIAGNOSTICS_PER_SOURCE]
+                .primary_span()
+                .len(),
+            2,
+        );
+
+        let mut exhausted_text = "@".repeat(MAX_DIAGNOSTICS_PER_SOURCE);
+        exhausted_text.push_str("\"\\q");
+        let (_, exhausted) = lex_text(&exhausted_text);
+
+        assert_eq!(
+            exhausted.diagnostics().len(),
+            MAX_DIAGNOSTICS_PER_SOURCE + 1,
+        );
+        assert!(
+            exhausted.diagnostics()[..MAX_DIAGNOSTICS_PER_SOURCE]
+                .iter()
+                .all(|diagnostic| diagnostic.code() == DiagnosticCode::UnexpectedCharacter)
+        );
+        let suppression = &exhausted.diagnostics()[MAX_DIAGNOSTICS_PER_SOURCE];
+        assert_eq!(suppression.code(), DiagnosticCode::TooManyLexicalErrors);
+        assert_eq!(
+            suppression.primary_span().start().bytes(),
+            u32::try_from(MAX_DIAGNOSTICS_PER_SOURCE).unwrap(),
+        );
+        assert_eq!(suppression.primary_span().len(), 1);
     }
 
     #[test]

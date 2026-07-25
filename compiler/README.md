@@ -227,6 +227,12 @@ to reserve even the initial heap slot uses an allocation-free inline EOF
 fallback, so the public token stream still contains exactly one final EOF. An
 impossible internal UTF-8 cursor mismatch follows the same atomic rejection
 boundary: it emits `ORC0008`, discards partial tokens, and exposes only EOF.
+String scanning determines its closing quote or line/end-of-file boundary
+before admitting invalid-escape diagnostics. An unterminated-string diagnostic
+anchored at the opening quote therefore precedes later escape diagnostics in
+both the raw result and the ordinary-diagnostic budget. Escaped contents are
+rescanned at most once, preserving bounded linear work without a pending-error
+allocation.
 Parsing reserves every owned identifier copy and each module-function slot
 before installing them, and fallibly pre-reserves its complete 102-record
 diagnostic-vector bound. Identifier or declaration reservation failure emits
