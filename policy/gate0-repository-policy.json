@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.96",
+  "policy_version": "0.2.97",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -252,7 +252,7 @@
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
-    "Makefile": "117cd3065e6ee63987da4124101b48a5a5d133d69c8ec0d432e279c70f90d320",
+    "Makefile": "168fdef359964e08fe78fe02a19f182235b75721ff01b4498c7c46cb3273627e",
     "README.md": "82767e5ee4eebabcdaab249a95171d0feae55664d4868c00ca12f103f9382182",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
@@ -296,8 +296,8 @@
     "docs/security/OSPS_BASELINE.md": "38efd43d1e4e15f335c9189c7cf921b58eb9b15ff8305acb75c7a47ff9fd2d72",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "0336a69bdfd1e282b3d2ab165de8795415044ca8d7a151a0d682c555ce67c994",
-    "policy/README.md": "56447c68e2c5fda663b5c5ca5eb7dc5d9c2e492fd16f0cfd2ffedc4945478dd4",
-    "policy/makefile-entrypoint-contract-v0.1.json": "b19f6a5a262b7bac8491c2091d8e29ecf4ba8b91c021b01161695bd8fb6fb7e3",
+    "policy/README.md": "6e942c281e4eafa1585a25466fc7b97b2f3ae5f91ec47540700171c703bcca50",
+    "policy/makefile-entrypoint-contract-v0.1.json": "370e0954ca798d4ba4eb04d71a223167c530ce5f41c4b5a0ddf7e3a34c0fb19f",
     "schemas/README.md": "39a7b91e15a316c1221cfce5082608eb453f20ea58b5e1c5a0cf32a07a81d774",
     "schemas/gate0/claim-record-v0.1.schema.json": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
     "schemas/gate0/evidence-manifest-v0.1.schema.json": "987ba1cddb23aaaf67a1234456fbffde8f80d45678b9671b8df97ad256742efd",
@@ -310,7 +310,7 @@
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_validate_foundation.py": "7a5d34d64733d76e24dc2f188413e5b24af0fd94ff1a1afeb0e2581656da5e92",
-    "tools/tests/test_validate_foundation_hardening.py": "2d1d471fa02bd580b6e605bcc740da8132a2ad66d79770e794560cdced7b1d90"
+    "tools/tests/test_validate_foundation_hardening.py": "1cd7b0badf2f74bb54e1d1eba7a13eaab137c2d3cedd113e9a8629c6575035e9"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

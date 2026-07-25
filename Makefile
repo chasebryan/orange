@@ -192,6 +192,23 @@ check-compiler:
 	artifact_b_mode="$$(/usr/bin/stat --format=%a -- "$$artifact_b")"; \
 	[[ "$$artifact_a_mode" == "$$artifact_b_mode" ]] || { printf 'optimized orangec artifact modes differ: %s -> %s\n' "$$artifact_a_mode" "$$artifact_b_mode" >&2; exit 1; }; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning -c 'import filecmp, sys; raise SystemExit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else "optimized orangec builds differ across source roots")' "$$artifact_a" "$$artifact_b"; \
+	source_install_root="$$cargo_home/source-install"; \
+	source_install_cargo="$$cargo_home/source-install-cargo"; \
+	source_install_target="$$cargo_home/source-install-target"; \
+	source_install_smoke="$$cargo_home/source-install-smoke"; \
+	for source_install_path in "$$source_install_root" "$$source_install_cargo" "$$source_install_target" "$$source_install_smoke"; do \
+		[[ ! -e "$$source_install_path" && ! -L "$$source_install_path" ]] || { printf 'source-install rehearsal path already exists: %s\n' "$$source_install_path" >&2; exit 1; }; \
+	done; \
+	run_cargo /usr/bin/env CARGO_HOME="$$source_install_cargo" CARGO_TARGET_DIR="$$source_install_target" cargo install --path "$$cargo_home/check-src/compiler/crates/orangec" --root "$$source_install_root" --bin orangec --profile release --locked --offline; \
+	installed_artifact="$$source_install_root/bin/orangec"; \
+	[[ -f "$$installed_artifact" && -s "$$installed_artifact" && ! -L "$$installed_artifact" && -x "$$installed_artifact" ]] || { printf '%s\n' 'source-installed orangec artifact type is invalid' >&2; exit 1; }; \
+	installed_artifact_mode="$$(/usr/bin/stat --format=%a -- "$$installed_artifact")"; \
+	[[ "$$installed_artifact_mode" == "$$artifact_a_mode" ]] || { printf 'source-installed orangec artifact mode differs: %s -> %s\n' "$$artifact_a_mode" "$$installed_artifact_mode" >&2; exit 1; }; \
+	installed_artifact_links="$$(/usr/bin/stat --format=%h -- "$$installed_artifact")"; \
+	[[ "$$installed_artifact_links" == 1 ]] || { printf 'source-installed orangec artifact link count is invalid: %s\n' "$$installed_artifact_links" >&2; exit 1; }; \
+	run_cargo /usr/bin/cmp --silent -- "$$artifact_a" "$$installed_artifact"; \
+	/usr/bin/mkdir -- "$$source_install_smoke"; \
+	run_cargo /bin/bash --norc -p -c 'set -euo pipefail; installed="$$1"; fixture="$$2"; smoke_root="$$3"; check_stdout="$$smoke_root/check.stdout"; check_stderr="$$smoke_root/check.stderr"; eval_stdout="$$smoke_root/eval.stdout"; eval_stderr="$$smoke_root/eval.stderr"; expected_stdout="$$smoke_root/eval.expected"; if ! "$$installed" check "$$fixture" >"$$check_stdout" 2>"$$check_stderr"; then /usr/bin/printf "%s\n" "source-installed orangec check failed" >&2; exit 1; fi; [[ -f "$$check_stdout" && ! -L "$$check_stdout" && -f "$$check_stderr" && ! -L "$$check_stderr" ]] || { /usr/bin/printf "%s\n" "source-installed orangec check output type is invalid" >&2; exit 1; }; [[ ! -s "$$check_stdout" && ! -s "$$check_stderr" ]] || { /usr/bin/printf "%s\n" "source-installed orangec check produced output" >&2; exit 1; }; if ! "$$installed" eval "$$fixture" >"$$eval_stdout" 2>"$$eval_stderr"; then /usr/bin/printf "%s\n" "source-installed orangec eval failed" >&2; exit 1; fi; /usr/bin/printf "%s\n" "demo::answer: Int = 42" "demo::negative: Int = -42" "demo::mask: Word[8] = 0xff" >"$$expected_stdout"; [[ -f "$$eval_stdout" && ! -L "$$eval_stdout" && -f "$$eval_stderr" && ! -L "$$eval_stderr" && -f "$$expected_stdout" && ! -L "$$expected_stdout" ]] || { /usr/bin/printf "%s\n" "source-installed orangec eval output type is invalid" >&2; exit 1; }; [[ ! -s "$$eval_stderr" ]] || { /usr/bin/printf "%s\n" "source-installed orangec eval produced stderr" >&2; exit 1; }; /usr/bin/cmp --silent -- "$$expected_stdout" "$$eval_stdout" || { /usr/bin/printf "%s\n" "source-installed orangec eval stdout differs" >&2; exit 1; }' source-install-smoke "$$installed_artifact" "$$cargo_home/check-src/compiler/fixtures/typed-answer.or" "$$source_install_smoke"; \
 	run_cargo cargo test --manifest-path "$$manifest" --workspace --doc --locked --offline; \
 	run_cargo /usr/bin/env PYTHONHASHSEED=0 /usr/bin/python3 -S -P -B -X utf8 -W error::ResourceWarning "$$cargo_home/check-src/tools/validate_foundation.py"; \
 	verify_capture_identity; \

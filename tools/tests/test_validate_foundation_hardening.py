@@ -3346,6 +3346,131 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                'run_cargo /usr/bin/env CARGO_HOME="$$source_install_cargo" '
+                'CARGO_TARGET_DIR="$$source_install_target" cargo install --path '
+                '"$$cargo_home/check-src/compiler/crates/orangec" --root '
+                '"$$source_install_root" --bin orangec --profile release --locked --offline',
+                'run_cargo /usr/bin/env CARGO_HOME="$$source_install_cargo" '
+                'CARGO_TARGET_DIR="$$source_install_target" cargo install --path '
+                '"$$cargo_home/check-src/compiler/crates/orangec" --root '
+                '"$$source_install_root" --bin orangec --locked --offline',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'run_cargo /usr/bin/env CARGO_HOME="$$source_install_cargo" '
+                'CARGO_TARGET_DIR="$$source_install_target" cargo install --path '
+                '"$$cargo_home/check-src/compiler/crates/orangec" --root '
+                '"$$source_install_root" --bin orangec --profile release --locked --offline',
+                'run_cargo /usr/bin/env CARGO_HOME="$$source_install_cargo" '
+                'CARGO_TARGET_DIR="$$source_install_target" cargo install --path '
+                '"$$cargo_home/check-src/compiler/crates/orangec" --root '
+                '"$$source_install_root" --bin orangec --profile release --offline',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'run_cargo /usr/bin/env CARGO_HOME="$$source_install_cargo" '
+                'CARGO_TARGET_DIR="$$source_install_target" cargo install --path '
+                '"$$cargo_home/check-src/compiler/crates/orangec" --root '
+                '"$$source_install_root" --bin orangec --profile release --locked --offline',
+                'run_cargo /usr/bin/env CARGO_HOME="$$source_install_cargo" '
+                'CARGO_TARGET_DIR="$$source_install_target" cargo install --path '
+                '"$$cargo_home/check-src/compiler/crates/orangec" --root '
+                '"$$source_install_root" --bin orangec --profile release --locked',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'CARGO_HOME="$$source_install_cargo"',
+                'CARGO_HOME="$$cargo_home"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'CARGO_TARGET_DIR="$$source_install_target"',
+                'CARGO_TARGET_DIR="$$cargo_home/target-a"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'for source_install_path in "$$source_install_root" '
+                '"$$source_install_cargo" "$$source_install_target" '
+                '"$$source_install_smoke"; do',
+                'for source_install_path in "$$source_install_root" '
+                '"$$source_install_cargo" "$$source_install_target"; do',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ ! -e "$$source_install_path" && ! -L "$$source_install_path" ]]',
+                '[[ ! -e "$$source_install_path" ]]',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ -f "$$installed_artifact" && -s "$$installed_artifact" '
+                '&& ! -L "$$installed_artifact" && -x "$$installed_artifact" ]]',
+                '[[ -e "$$installed_artifact" ]]',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$installed_artifact_mode" == "$$artifact_a_mode" ]]',
+                "[[ 0 == 0 ]]",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$installed_artifact_links" == 1 ]]',
+                "[[ 0 == 0 ]]",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'run_cargo /usr/bin/cmp --silent -- "$$artifact_a" "$$installed_artifact"',
+                'run_cargo /usr/bin/true -- "$$artifact_a" "$$installed_artifact"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                "run_cargo /bin/bash --norc -p -c 'set -euo pipefail; "
+                'installed="$$1"; fixture="$$2";',
+                "run_cargo /bin/true -- 'set -euo pipefail; "
+                'installed="$$1"; fixture="$$2";',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'smoke_root="$$3"',
+                'smoke_root="$$cargo_home"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'if ! "$$installed" check "$$fixture" >"$$check_stdout" '
+                '2>"$$check_stderr"; then',
+                'if ! "$$installed" check "$$fixture" >"$$check_stdout" '
+                '2>&1; then',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ ! -s "$$check_stdout" && ! -s "$$check_stderr" ]]',
+                '[[ ! -s "$$check_stdout" ]]',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'if ! "$$installed" eval "$$fixture" >"$$eval_stdout" '
+                '2>"$$eval_stderr"; then',
+                'if ! "$$installed" eval "$$fixture" >"$$eval_stdout" '
+                '2>&1; then',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '/usr/bin/printf "%s\\n" "demo::answer: Int = 42" '
+                '"demo::negative: Int = -42" '
+                '"demo::mask: Word[8] = 0xff" >"$$expected_stdout"',
+                '/usr/bin/printf "%s\\n" "wrong" >"$$expected_stdout"',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ ! -s "$$eval_stderr" ]]',
+                "[[ 0 == 0 ]]",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '/usr/bin/cmp --silent -- "$$expected_stdout" "$$eval_stdout"',
+                '/usr/bin/true -- "$$expected_stdout" "$$eval_stdout"',
+                "make.compiler_environment_contract",
+            ),
+            (
                 'tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a" "$$repro_home_b/deep/src")',
                 'tested_roots=("$$cargo_home/check-src" "$$cargo_home/repro-a")',
                 "make.compiler_environment_contract",
