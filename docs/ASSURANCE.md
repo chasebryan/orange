@@ -557,8 +557,8 @@ reports.
 - [NIST CAVP](https://csrc.nist.gov/projects/cryptographic-algorithm-validation-program)
 - [NIST ACVP](https://pages.nist.gov/ACVP/)
 - [FIPS 140-3](https://csrc.nist.gov/pubs/fips/140-3/final)
-- [ISO/IEC 29147:2018](https://www.iso.org/standard/72311.html)
-- [ISO/IEC 30111:2019](https://www.iso.org/standard/69725.html)
+- [ISO/IEC 29147:2018](https://webstore.iec.ch/en/publication/64099)
+- [ISO/IEC 30111:2019](https://webstore.iec.ch/en/publication/65872)
 
 Versions in this section are a research snapshot. Release policy pins and
 re-evaluates the then-current final versions rather than following `latest`
