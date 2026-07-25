@@ -73,10 +73,24 @@ cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
   --test d005_decision_suite --locked --offline
 ```
 
-The laboratory deliberately executes no candidate adapter and records 0/32
-completed candidate-case runs, no evidence, and no selection. It does not alter
-compiler behavior, ratify a public claim schema, close D-005, or advance the
-version 1.0.0 gate count.
+The laboratory also prepares a draft adapter transport boundary. It constructs
+canonical requests bound to the packet, replay plan, candidate, case, and
+repetition identities, then validates synthetic already-captured process output
+against a closed canonical response envelope and the packet's exact byte
+ceiling. A valid envelope exposes only an `UnvalidatedPayload`; it is not a case
+verdict, atomic claim outcome, evidence record, or recommendation. Nonzero
+exit, signal, timeout, launch/I/O failure, unsupported isolation, truncation,
+stderr, malformed or noncanonical JSON, identity substitution, and output
+overflow all fail closed.
+
+There is intentionally no subprocess launcher or candidate payload validator.
+The standard library alone cannot enforce the suite's future process-tree,
+network, filesystem, CPU, memory, file, descriptor, and cleanup boundary, and
+the draft epoch has not frozen executable identities or candidate schemas. The
+laboratory therefore executes no candidate adapter and records 0/32 completed
+candidate-case runs, no evidence, and no selection. It does not alter compiler
+behavior, ratify a public claim schema, close D-005, or advance the version
+1.0.0 gate count.
 
 For a local source-install rehearsal, use a fresh private install root:
 
@@ -597,8 +611,8 @@ authority.
   syntax-tree, parser, semantic, Core, and evaluator library;
 - `crates/orange-compiler/tests/d004_decision_suite.rs`: input-only D-004
   pre-epoch packet and balanced-plan checks;
-- `crates/orange-compiler/tests/d005_decision_suite.rs`: input-only D-005
-  packet and replay-plan checks;
+- `crates/orange-compiler/tests/d005_decision_suite.rs`: draft-only D-005
+  packet, replay-plan, and synthetic adapter-transport checks;
 - `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
   `lex` behavior;
 - `crates/orangec/tests/s2_conformance.rs`: protected indexed S2 lexical and

@@ -148,6 +148,12 @@ Current execution evidence is 0/32 candidate-case executions. The provisional
 Gate 0 claim schema and synthetic fixtures are historical shape inputs, not a
 selected candidate or public format.
 
+The candidate-neutral laboratory also prepares canonical adapter requests and
+strictly validates synthetic captured response envelopes. It launches no
+process, validates no candidate payload semantics, creates no result, and
+retains the exact 0/32 baseline. Real execution remains gated on an owner-frozen
+epoch and an approved resource-isolation backend.
+
 D-005 closes only through an Accepted exact-revision OEP after the complete
 owner-executable suite passes. Multidisciplinary external review remains
 `unavailable` in solo mode; any claim whose policy requires it remains

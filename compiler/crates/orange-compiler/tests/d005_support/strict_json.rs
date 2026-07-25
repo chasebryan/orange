@@ -75,7 +75,14 @@ impl JsonError {
 }
 
 pub(crate) fn parse(input: &[u8]) -> Result<JsonValue, JsonError> {
-    if input.len() > BUDGETS.max_packet_bytes {
+    parse_with_max_input(input, BUDGETS.max_packet_bytes)
+}
+
+pub(crate) fn parse_with_max_input(
+    input: &[u8],
+    max_input_bytes: usize,
+) -> Result<JsonValue, JsonError> {
+    if input.len() > max_input_bytes {
         return Err(JsonError::new(JsonErrorKind::InputTooLarge, 0));
     }
     let source = std::str::from_utf8(input)

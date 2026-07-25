@@ -205,6 +205,7 @@ compiler/crates/orange-compiler/tests/d004_support/domain.rs
 compiler/crates/orange-compiler/tests/d004_support/packet.rs
 compiler/crates/orange-compiler/tests/d004_support/runner.rs
 compiler/crates/orange-compiler/tests/d005_decision_suite.rs
+compiler/crates/orange-compiler/tests/d005_support/adapter.rs
 compiler/crates/orange-compiler/tests/d005_support/cases.rs
 compiler/crates/orange-compiler/tests/d005_support/domain.rs
 compiler/crates/orange-compiler/tests/d005_support/packet.rs
@@ -473,7 +474,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "0a45ff227aea8c7717c2319dd58ab2af9e3172fa2fc0bc9faf45e6af60db07c6"
+_PHD = "9b354d72b5c1ea02e003aef231c76cf8de89586271c3e0181be64e7d0fb95fb8"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -861,7 +862,7 @@ D004_INPUT_BINDING_PATHS = {
     "fixture_valid_word8_boundaries": "compiler/fixtures/s3a/valid-word8-boundaries.or",
 }
 D005_DRAFT_PACKET_CANONICAL_SHA256 = (
-    "2a56537bfa61fe1e4f015047b7c49b11fa926bd4cb688c6e7d4a0da07e21b633"
+    "731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194"
 )
 D005_MUTATION_MANIFEST_CANONICAL_SHA256 = (
     "8d069daf4a9443cf9df2d127f86d834e1aefed149324503f980c43f29c356082"
@@ -6172,7 +6173,7 @@ class FoundationValidator:
         expected_input_bindings = {
             "decision_suite": {
                 "path": "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
-                "sha256": "e23fc55a1b315f7ed040412ba5361ecba952b083db7983697bfdc2e6030a29c3",
+                "sha256": "e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f",
             },
             "legacy_v01_manifest": {
                 "path": "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",

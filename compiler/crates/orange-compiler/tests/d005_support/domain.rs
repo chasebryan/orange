@@ -140,7 +140,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; 3] = [
     InputBinding {
         id: InputBindingId::DecisionSuite,
         path: "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
-        sha256: "e23fc55a1b315f7ed040412ba5361ecba952b083db7983697bfdc2e6030a29c3",
+        sha256: "e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f",
     },
     InputBinding {
         id: InputBindingId::LegacyV01Manifest,

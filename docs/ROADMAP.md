@@ -261,6 +261,10 @@ never satisfy or upgrade an atomic claim. Repeated offline replay agrees.
 Decision-case replay is capped at level 2 and independent review remains
 `unavailable` while the operating model stays solo. The decision suites or OEPs
 alone do not close S4 without the implemented and tested proof/claim boundary.
+The current D-005 laboratory prepares only a digest-bound adapter request and a
+fail-closed synthetic capture validator. It has no subprocess launcher or
+candidate payload semantics and leaves execution at 0/32; this preparation is
+not S4 evidence or gate closure.
 
 ### S5 — Compiler IRs and one output path
 
