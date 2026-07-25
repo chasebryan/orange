@@ -300,11 +300,17 @@ I/O, allocation, and non-regular host-boundary failures. Every named test must
 have exactly one unconditional declaration at its expected harness location:
 integration tests at file root and unit tests directly inside the source's
 unique `#[cfg(test)] mod tests` container. Declarations inside comments, strings,
-nested functions, or alternate or disabled modules do not qualify. That
-traceability check is not proof that a named test exhausts its rule. Production
-constants remain policy-bound; rules whose maxima cannot be reached by valid
-public source before an earlier bound use explicitly named injected-limit tests
-for exact accounting and fail-closed behavior.
+nested functions, macro token trees, or alternate or disabled modules do not
+qualify. The runner also binds the exact Cargo workspace and package manifests
+and the unconditional compiler-crate registrations of every mapped unit-test
+module. This is an evidence-registration contract; execution of every mapped
+test binary is established by the protected full repository gate, which clears
+caller Cargo configuration and target runners. A standalone S3a target run is
+not evidence that the other mapped binaries executed. That traceability check
+is not proof that a named test exhausts its rule. Production constants remain
+policy-bound; rules whose maxima cannot be reached by valid public source before
+an earlier bound use explicitly named injected-limit tests for exact accounting
+and fail-closed behavior.
 
 | Rule ID | Clause | Executable obligation | Evidence layer |
 | --- | --- | --- | --- |
