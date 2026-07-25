@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.100",
+  "policy_version": "0.2.101",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -297,7 +297,7 @@
     "conformance/foundation/valid/repository-control-snapshot.json": "c79ed2b11d550573fc39463c27ec8207b3b7811011fe6abb13573651d4c232f3",
     "conformance/foundation/valid/standards-provenance.json": "1cd82e177baef03e1d3f413c86705b18891239cea413f7881331ee4066daf413",
     "conformance/foundation/valid/trust-inventory.json": "edb467fb6843713fea4571bacedf27e6b1039f1871ed835bcc0766dfb728542f",
-    "docs/DECISIONS.md": "fc7ad7245909a40a5e592c8460de52e90b328980ce99854c1b71086b3b1e30d8",
+    "docs/DECISIONS.md": "485e866e0d26428e1eca6b2213b14581f6fac590670f191d8ab125b9711813c2",
     "docs/LANGUAGE_2026.md": "52b6ef45ff5ee5d9f3951b1d6bf0f2e40a1566de623fc01e809a2a6d84d7a082",
     "docs/SEMANTICS_2026.md": "bc429d9f1296aee9376d377f93c013f74ba8b6f7e3cb48eb6410498a0b8a00e7",
     "docs/operations/CI_DEPENDENCIES.md": "4dbcdf456f364a430e2fbc81cc598fdacd4ede315ce7a11c442600ca289d166e",
@@ -319,7 +319,7 @@
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_validate_foundation.py": "7a5d34d64733d76e24dc2f188413e5b24af0fd94ff1a1afeb0e2581656da5e92",
-    "tools/tests/test_validate_foundation_hardening.py": "c4a444418ba29365a0c73d9ed1e7ffe2ed76053d4e54cc2f215cde7009e4868f"
+    "tools/tests/test_validate_foundation_hardening.py": "95ff1936dda85a503b5bb4d4a55bc792b9927013d47e55669544464ad4e2a176"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

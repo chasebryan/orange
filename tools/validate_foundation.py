@@ -446,7 +446,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "0061d073e70d74f610783cd2638fd34e57a31883bcda19a1d257b0c0d30ac6db"
+_PHD = "64f6e11e3bb1a59373936216b0aadb91f0026b78394811e549938405a8d440de"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4305,6 +4305,22 @@ class FoundationValidator:
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
+        header = text.partition("## Solo-mode disposition")[0]
+        statuses = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
+        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
+        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
+        if (
+            tuple(re.sub(r"\s+", " ", value) for value in statuses)
+            != ("owner-executable draft under D-023; no proof foundation selected",)
+            or versions != ("d006-v0.2-draft",)
+            or snapshots != ("2026-07-25",)
+        ):
+            self.add(
+                "proof_suite.header",
+                path,
+                "suite status, version, and snapshot must retain the exact candidate-neutral v0.2 protocol identity",
+            )
+
         candidate_rows = table_rows(markdown_section(text, "## 2. Candidate parity and frozen inputs"), r"C-[0-9]{2}")
         if tuple(row[0] for row in candidate_rows) != ("C-01", "C-02"):
             self.add("proof_suite.candidates", path, "candidate table must contain C-01 and C-02 exactly once in order")
@@ -4335,24 +4351,233 @@ class FoundationValidator:
             for label in required_labels:
                 if f"**{label}:**" not in body:
                     self.add("proof_suite.case_field", path, f"{case_id} is missing {label}")
+        if "### DS-07 — Exercise solo auditability and maintenance" not in cases:
+            self.add(
+                "proof_suite.solo_case",
+                path,
+                "DS-07 must remain the symmetric owner-executable auditability and maintenance case",
+            )
 
         metric_rows = table_rows(markdown_section(text, "## 4. Comparable metrics"), r"M-[0-9]{2}")
         metric_ids = tuple(f"M-{index:02d}" for index in range(1, 19))
         if tuple(row[0] for row in metric_rows) != metric_ids or any(len(row) != 4 for row in metric_rows):
             self.add("proof_suite.metrics", path, "metrics must cover M-01 through M-18 exactly once with four fields")
+        elif tuple(tuple(row) for row in metric_rows[15:18]) != (
+            (
+                "M-16",
+                "Owner audit/maintenance task completion",
+                "Completed common DS-07 tasks / 2 per candidate, with time, assistance, and role overlap recorded",
+                "Hard gate: 2/2 per candidate and every seeded fault detected",
+            ),
+            (
+                "M-17",
+                "Independent-review status",
+                "Exact status for logic/kernel, extraction/distribution, and comparative-decision review",
+                "Disclosure only: `unavailable`; never a selection score or implied claim",
+            ),
+            (
+                "M-18",
+                "Same-owner maintenance variance",
+                "Files, proofs, dependencies, and elapsed owner time for the same seeded change",
+                "Comparative maintainability evidence; no external-usability inference",
+            ),
+        ):
+            self.add(
+                "proof_suite.solo_metrics",
+                path,
+                "M-16 through M-18 must retain owner-task, disclosure-only review, and same-owner variance semantics",
+            )
         hard_gates = markdown_section(text, "## 5. Hard gates and anti-gaming rules")
         gate_numbers = re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates)
         if gate_numbers != [str(index) for index in range(1, 9)]:
             self.add("proof_suite.hard_gates", path, "hard gates must remain the ordered non-compensable set 1 through 8")
+
+        review_rows = table_rows(
+            markdown_section(text, "## 7. Owner review scopes"),
+            r"R-[0-9]{2}",
+        )
+        review_ids = tuple(f"R-{index:02d}" for index in range(1, 10))
+        review_names = (
+            "Suite custody and parity",
+            "Rocq construction and conformance",
+            "Lean 4 construction and conformance",
+            "Language and semantics equivalence",
+            "Assurance and trust closure",
+            "Bootstrap and distribution",
+            "Dependency and provenance disposition",
+            "Solo auditability and maintenance",
+            "Comparative disposition",
+        )
+        if tuple(row[0] for row in review_rows) != review_ids:
+            self.add(
+                "proof_suite.review_scopes",
+                path,
+                "owner review table must retain R-01 through R-09 exactly once in order",
+            )
+        elif any(len(row) != 3 for row in review_rows):
+            self.add(
+                "proof_suite.review_scopes",
+                path,
+                "every owner review scope must retain exactly three fields",
+            )
+        elif tuple(row[1] for row in review_rows) != review_names:
+            self.add(
+                "proof_suite.review_scopes",
+                path,
+                "owner review scope identities must remain exact and candidate-symmetric",
+            )
+
         normalized_text = re.sub(r"\s+", " ", text)
         for assertion in (
             "There is no weighted aggregate score.",
             "The suite conclusion is exactly `recommend_rocq`, `recommend_lean`, `tie`, or",
-            "Execution evidence is currently 0/2 candidates and 0/7 cases.",
-            "Independent review is currently absent.",
         ):
             if assertion not in normalized_text:
                 self.add("proof_suite.assertion", path, f"missing decision-protocol invariant: {assertion}")
+
+        matrix_assertions = (
+            "The frozen matrix contains exactly 14 candidate-case runs per evidence epoch: each of the 2 candidates runs each of the 7 cases.",
+            "Execution evidence is currently 0/14 candidate-case runs (0/7 Rocq and 0/7 Lean 4).",
+        )
+        for assertion in matrix_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "proof_suite.execution_matrix",
+                    path,
+                    f"missing candidate-case cardinality invariant: {assertion}",
+                )
+        if normalized_text.count("Execution evidence is currently ") != 1:
+            self.add(
+                "proof_suite.execution_matrix",
+                path,
+                "suite must contain exactly one canonical current-execution baseline",
+            )
+
+        solo_assertions = (
+            "A second owner run, workspace, tool, or implementation is always labeled same-owner evidence, never independent reproduction or review.",
+            "Both workspaces are same-owner level-2 evidence. Neither is an independent reproduction.",
+            "Level 3 is neither required nor claimed; same-owner workspaces never populate an independent-reproduction field.",
+            "M-17 is a mandatory disclosure, not a technical hard gate:",
+            "This measures same-owner packet auditability and maintenance cost only. It supplies no evidence about a new maintainer, contributor availability, independent review, or external audit.",
+        )
+        for assertion in solo_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "proof_suite.solo_mode",
+                    path,
+                    f"missing solo-mode evidence invariant: {assertion}",
+                )
+        if normalized_text.lower().count("level 3") != 1:
+            self.add(
+                "proof_suite.reproducibility_cap",
+                path,
+                "solo-mode suite must mention level 3 exactly once, solely as the explicit non-claim",
+            )
+        if "Record no result above reproducibility level 2." not in normalized_text:
+            self.add(
+                "proof_suite.reproducibility_cap",
+                path,
+                "decision procedure must cap same-owner evidence at reproducibility level 2",
+            )
+
+        legacy_blockers = (
+            "one non-author witness",
+            "distinct human principal",
+            "At least one independent logic/kernel reviewer",
+            "two non-author practitioners",
+            "Required independent technical reviews",
+            "candidate authors cannot approve their own work",
+            "obtain independent reproductions and required reviews",
+            "authorized Gate 0 decision body",
+        )
+        for blocker in legacy_blockers:
+            if blocker.lower() in normalized_text.lower():
+                self.add(
+                    "proof_suite.solo_blocker",
+                    path,
+                    f"solo-mode protocol reintroduces an unavailable-human blocker: {blocker}",
+                )
+
+        positive_independence_claim = re.search(
+            r"\b(?:is|are|was|were|has been|have been)\s+independently\s+"
+            r"(?:reviewed|reproduced|audited|validated)\b",
+            normalized_text,
+            re.IGNORECASE,
+        )
+        if positive_independence_claim is not None:
+            self.add(
+                "proof_suite.independence_claim",
+                path,
+                "draft suite cannot claim independent review, reproduction, audit, or validation",
+            )
+
+        preselection_patterns = (
+            r"\bcurrent recommendation:\s*(?:Rocq|Lean 4)\b",
+            r"\b(?:Rocq|Lean 4)\s+(?:is|remains|becomes)\s+(?:the\s+)?(?:selected|accepted)\s+(?:candidate|foundation)\b",
+            r"\b(?:Rocq|Lean 4)\s+leads\s+(?:today|the comparison)\b",
+        )
+        if any(re.search(pattern, normalized_text, re.IGNORECASE) for pattern in preselection_patterns):
+            self.add(
+                "proof_suite.preselection",
+                path,
+                "candidate-neutral draft cannot preselect or privilege Rocq or Lean 4",
+            )
+
+        decision_procedure = markdown_section(text, "## 8. Decision procedure")
+        normalized_decision_procedure = re.sub(r"\s+", " ", decision_procedure)
+        for assertion in (
+            "D-006 acceptance requires D-004 and D-005 to be Accepted in their governing records; proposed, investigate, or implementation-only states do not satisfy this dependency gate.",
+            "through an Accepted Orange Enhancement Proposal under ratified governance.",
+            "The `decision-revision` value must be exactly 40 lowercase hexadecimal characters and name the fully validated Git revision.",
+            "contain an `approval-records` entry with the literal `solo-reviewed`",
+            "No approval record may claim that the owner supplied independent review.",
+        ):
+            if assertion not in normalized_decision_procedure:
+                self.add(
+                    "proof_suite.acceptance",
+                    path,
+                    f"missing dependency-ordered exact-revision acceptance invariant: {assertion}",
+                )
+
+        decisions_path = self.root / "docs/DECISIONS.md"
+        if self._hf(decisions_path):
+            decisions_source = self._rt(decisions_path)
+            if decisions_source is not None:
+                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
+                d006 = markdown_section(
+                    decisions_text,
+                    "## D-006",
+                    heading_level=2,
+                    prefix=True,
+                )
+                normalized_d006 = re.sub(r"\s+", " ", d006)
+                for assertion in (
+                    "Dependency order: D-004 and D-005 must each be Accepted before D-006 can be Accepted.",
+                    "Candidates: Rocq and Lean 4. Neither candidate is selected, preferred, or authorized for product use by this register.",
+                    "Current execution evidence is 0/14 candidate-case runs.",
+                ):
+                    if assertion not in normalized_d006:
+                        self.add(
+                            "proof_suite.register_consistency",
+                            decisions_path,
+                            f"D-006 register is not candidate-neutral or disagrees with the execution baseline: {assertion}",
+                        )
+                if normalized_d006.count("Current execution evidence is ") != 1:
+                    self.add(
+                        "proof_suite.register_consistency",
+                        decisions_path,
+                        "D-006 register must contain exactly one canonical current-execution baseline",
+                    )
+                if re.search(
+                    r"\b(?:Current recommendation:\s*(?:Rocq|Lean 4)|Why (?:Rocq|Lean 4) leads)\b",
+                    normalized_d006,
+                    re.IGNORECASE,
+                ):
+                    self.add(
+                        "proof_suite.register_consistency",
+                        decisions_path,
+                        "D-006 register cannot preselect or privilege a candidate before suite execution",
+                    )
 
     def _validate_product_form_decision_packet(self) -> None:
         path = self.root / "docs/PRODUCT_FORM_DECISION_PACKET.md"

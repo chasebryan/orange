@@ -139,24 +139,14 @@ without blocking unrelated S1-S3 development.
 
 Status: investigate; required before proof-bearing components, not the frontend
 
-Current recommendation: Rocq for the normative metatheory, Orange kernel
-soundness, and verified compiler transformations.
+Dependency order: D-004 and D-005 must each be Accepted before D-006 can be
+Accepted.
 
-Strong alternative: Lean 4.
-
-Why Rocq leads today:
-
-- the closest relevant verified compiler, crypto synthesis, Jasmin, SSProve,
-  and related end-to-end research already use the ecosystem;
-- mature extraction paths can produce the authoritative checker/passes;
-- it reduces semantic bridge work with important reference projects.
-
-Why Lean remains serious:
-
-- modern integrated programming/theorem-proving environment;
-- small kernel and strong proof-term discipline;
-- tooling and contributor growth;
-- potentially better implementation ergonomics.
+Candidates: Rocq and Lean 4. Neither candidate is selected, preferred, or
+authorized for product use by this register. Rocq's verified-compiler,
+cryptography, and extraction ecosystem and Lean 4's integrated implementation,
+kernel, and tooling model are candidate-specific hypotheses to measure under the
+same frozen suite, not reasons to preselect a winner.
 
 Required decision suite:
 
@@ -166,17 +156,25 @@ Required decision suite:
 - produce and replay an LRAT-backed bitvector proof;
 - exercise extraction/distribution on all supported hosts;
 - measure clean bootstrap, proof replay, diagnostics, binary size, and long-term
-  dependency surface; and
-- record that external-audit and contributor availability are unavailable in
-  solo mode and therefore cannot distinguish the candidates.
+  dependency surface;
+- exercise published-packet auditability and the same seeded owner maintenance
+  tasks for both candidates; and
+- record independent review and external-audit evidence as `unavailable` in
+  solo mode, disclosure that cannot distinguish the candidates.
 
 The symmetric cases, measurements, hard gates, archive, and inconclusive
 procedure are specified in the
 [D-006 proof-foundation decision suite](PROOF_FOUNDATION_DECISION_SUITE.md).
 
-The decision is evidence-based. D-023 permits proof-neutral compiler work while
-this remains open. No source or Core choice may make a proof foundation
-irreversible before the owner records a revised, solo-executable comparison.
+The decision is evidence-based. The owner-executable `d006-v0.2-draft` defines
+14 candidate-case runs, level-2 same-owner replay, symmetric hard gates, and
+exact `solo-reviewed` OEP acceptance without pretending that the owner is an
+independent reviewer. Current execution evidence is 0/14 candidate-case runs.
+D-023 permits proof-neutral compiler work while this remains open. No source or
+Core choice may make a proof foundation irreversible before the owner completes
+the suite and accepts the selected foundation through an exact-revision OEP.
+The draft admits no proof toolchain dependency and authorizes no proof-bearing
+implementation.
 
 ## D-007 — Orange-owned proof format and checker
 
