@@ -244,6 +244,7 @@ docs/GATE0_SUPPORT_ENVELOPES.md
 docs/LANGUAGE_2026.md
 docs/PRODUCT_FORM_DECISION_PACKET.md
 docs/PROOF_FOUNDATION_DECISION_SUITE.md
+docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md
 docs/REPRODUCIBILITY.md
 docs/USER_JOURNEYS.md
 docs/ARCHITECTURE.md
@@ -382,7 +383,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "e983a431bcfa653efd40a1c342807ed839f76206722169fd1f9e78e42216d10f"
+_RDC = "b4fa92e8e0a24f035a35e2dc282ba52eaeac260d2141f4c76618ba88e7850694"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -446,7 +447,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "64f6e11e3bb1a59373936216b0aadb91f0026b78394811e549938405a8d440de"
+_PHD = "147b2d25edc1d2841664fe0bf2f2928d9e3f850638a8bdf515611675cdaf2462"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -778,6 +779,7 @@ GATE0_CODEOWNERS = tuple(
 /docs/ASSURANCE.md @chasebryan
 /docs/DECISIONS.md @chasebryan
 /docs/GATE0_TRACEABILITY.md @chasebryan
+/docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md @chasebryan
 /docs/PROOF_FOUNDATION_DECISION_SUITE.md @chasebryan
 /docs/USER_JOURNEYS.md @chasebryan
 /docs/governance/ @chasebryan
@@ -2172,6 +2174,7 @@ class FoundationValidator:
         self._validate_proof_foundation_suite()
         self._validate_product_form_decision_packet()
         self._validate_semantic_strata_suite()
+        self._validate_public_assurance_model_suite()
         self._validate_change_records()
         self._validate_repository_templates()
         self._end()
@@ -4938,6 +4941,643 @@ class FoundationValidator:
                         decisions_path,
                         "proposed D-004 must remain candidate-neutral and agree with the suite's execution baseline",
                     )
+
+    def _validate_public_assurance_model_suite(self) -> None:
+        path = self.root / "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md"
+        if not self._hf(path):
+            return
+        source = self._rt(path)
+        if source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
+        header = text.partition("## Solo-mode disposition")[0]
+        statuses = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
+        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
+        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
+        if (
+            tuple(re.sub(r"\s+", " ", value) for value in statuses)
+            != ("owner-executable draft under D-023; no public assurance model selected",)
+            or versions != ("d005-v0.1-draft",)
+            or snapshots != ("2026-07-25",)
+        ):
+            self.add(
+                "assurance_model.header",
+                path,
+                "suite status, version, and snapshot must retain the exact candidate-neutral owner-executable identity",
+            )
+
+        candidate_rows = table_rows(
+            markdown_section(text, "## 2. Candidate parity and frozen invariants"),
+            r"AM-[0-9]{2}",
+        )
+        candidate_ids = tuple(f"AM-{index:02d}" for index in range(1, 5))
+        candidate_names = (
+            "Orthogonal typed claim records",
+            "Named assurance profiles backed by atomic claims",
+            "Evidence graph with derived claim views",
+            "Aggregate package assurance level or verified Boolean",
+        )
+        if tuple(row[0] for row in candidate_rows) != candidate_ids:
+            self.add(
+                "assurance_model.candidates",
+                path,
+                "candidate table must retain AM-01 through AM-04 exactly once in order",
+            )
+        elif any(len(row) != 4 for row in candidate_rows):
+            self.add(
+                "assurance_model.candidates",
+                path,
+                "every assurance-model candidate row must retain exactly four fields",
+            )
+        elif tuple(row[1] for row in candidate_rows) != candidate_names:
+            self.add(
+                "assurance_model.candidates",
+                path,
+                "assurance-model candidate identities must remain exact and candidate-neutral",
+            )
+        for row in candidate_rows:
+            if len(row) != 4 or row[3] != "0/8 cases":
+                self.add(
+                    "assurance_model.candidate_state",
+                    path,
+                    f"{row[0]} must retain the honest zero-evidence baseline",
+                )
+
+        family_rows = table_rows(text, r"CF-[0-9]{2}")
+        family_ids = tuple(f"CF-{index:02d}" for index in range(1, 11))
+        family_names = (
+            "Conformance",
+            "Functional refinement",
+            "Safety",
+            "Termination",
+            "Leakage",
+            "Compiler preservation",
+            "ABI",
+            "Erasure",
+            "Game-based security",
+            "Empirical tests",
+        )
+        if tuple(row[0] for row in family_rows) != family_ids:
+            self.add(
+                "assurance_model.claim_families",
+                path,
+                "claim-family table must retain CF-01 through CF-10 exactly once in order",
+            )
+        elif any(len(row) != 3 for row in family_rows):
+            self.add(
+                "assurance_model.claim_families",
+                path,
+                "every required claim-family row must retain exactly three fields",
+            )
+        elif tuple(row[1] for row in family_rows) != family_names:
+            self.add(
+                "assurance_model.claim_families",
+                path,
+                "the ten claim-family identities must remain exact, including first-class compiler preservation",
+            )
+
+        case_ids = tuple(f"AC-{index:02d}" for index in range(1, 9))
+        case_titles = (
+            "Represent every claim family with mixed outcomes",
+            "Enforce evidence authority and mandatory-basis completeness",
+            "Bind subject, context, theorem, proof, and evidence identities",
+            "Close assumptions, the TCB, and cross-boundary composition",
+            "Apply expiry, revocation, supersession, and downgrade rules",
+            "Separate external authority from solo-produced evidence",
+            "Compose packages, profiles, implementations, and targets",
+            "Render, inspect, replay, and migrate deterministically",
+        )
+        cases = markdown_section(text, "## 3. Required decision cases")
+        case_headings = tuple(
+            re.findall(r"(?m)^###\s+(AC-[0-9]{2})\s+—\s+([^\n]+)$", cases)
+        )
+        if case_headings != tuple(zip(case_ids, case_titles)):
+            self.add(
+                "assurance_model.case_ids",
+                path,
+                "decision cases must retain the eight exact ordered AC identities and titles",
+            )
+
+        required_labels = (
+            "Question",
+            "Dependencies",
+            "Shared inputs",
+            "Candidate outputs",
+            "Positive checks",
+            "Mutation and negative checks",
+            "Hard acceptance",
+        )
+        for case_id in case_ids:
+            body = markdown_section(cases, f"### {case_id}", heading_level=3, prefix=True)
+            for label in required_labels:
+                if f"**{label}:**" not in body:
+                    self.add(
+                        "assurance_model.case_field",
+                        path,
+                        f"{case_id} is missing {label}",
+                    )
+
+        metric_rows = table_rows(
+            markdown_section(text, "## 4. Comparable metrics"),
+            r"M-[0-9]{2}",
+        )
+        metric_ids = tuple(f"M-{index:02d}" for index in range(1, 19))
+        if tuple(row[0] for row in metric_rows) != metric_ids or any(
+            len(row) != 4 for row in metric_rows
+        ):
+            self.add(
+                "assurance_model.metrics",
+                path,
+                "metrics must retain M-01 through M-18 exactly once with four fields",
+            )
+        elif tuple(tuple(row) for row in metric_rows[15:18]) != (
+            (
+                "M-16",
+                "Owner audit/maintenance tasks",
+                "Completed published-only locate-and-change tasks / 2 per candidate",
+                "Hard gate: 2/2 per candidate with seeded faults detected",
+            ),
+            (
+                "M-17",
+                "Independent-review status",
+                "Exact external assurance-model and public-wording review status",
+                "Disclosure only: `unavailable`; never a score, gate, or implied claim",
+            ),
+            (
+                "M-18",
+                "Same-owner maintenance variance",
+                "Files, rules, migrations, dependencies, and elapsed owner time for the same seeded change",
+                "Comparative maintainability evidence only",
+            ),
+        ):
+            self.add(
+                "assurance_model.solo_metrics",
+                path,
+                "M-16 through M-18 must retain owner tasks, disclosure-only independent-review status, and same-owner variance",
+            )
+
+        hard_gates = markdown_section(text, "## 5. Hard gates and anti-gaming rules")
+        gate_numbers = re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates)
+        if gate_numbers != [str(index) for index in range(1, 9)]:
+            self.add(
+                "assurance_model.hard_gates",
+                path,
+                "hard gates must remain the ordered non-compensable set 1 through 8",
+            )
+
+        review_rows = table_rows(
+            markdown_section(text, "## 7. Owner review scopes"),
+            r"AR-[0-9]{2}",
+        )
+        review_ids = tuple(f"AR-{index:02d}" for index in range(1, 9))
+        review_names = (
+            "Suite custody and candidate parity",
+            "Claim-family and outcome semantics",
+            "Evidence authority and identity",
+            "Trust and composition",
+            "Lifecycle and recovery",
+            "Public rendering and migration",
+            "Solo auditability and maintenance",
+            "Comparative disposition",
+        )
+        if tuple(row[0] for row in review_rows) != review_ids:
+            self.add(
+                "assurance_model.review_scopes",
+                path,
+                "owner review table must retain AR-01 through AR-08 exactly once in order",
+            )
+        elif any(len(row) != 3 for row in review_rows):
+            self.add(
+                "assurance_model.review_scopes",
+                path,
+                "every owner review scope must retain exactly three fields",
+            )
+        elif tuple(row[1] for row in review_rows) != review_names:
+            self.add(
+                "assurance_model.review_scopes",
+                path,
+                "owner review scope identities must remain exact and candidate-symmetric",
+            )
+
+        maintenance = markdown_section(
+            hard_gates,
+            "### Frozen owner-maintenance tasks",
+            heading_level=3,
+        )
+        maintenance_rows = table_rows(maintenance, r"MT-[0-9]{2}")
+        expected_maintenance_rows = (
+            (
+                "MT-01",
+                "Revise the frozen target-leakage policy so a named `binary_analysis` basis is mandatory for the affected CF-05 target claim; update enforcement, public projection, migration, and tests without changing unrelated claims",
+                "A checked optional test masks the missing mandatory basis and leaves the affected profile green",
+                "Detect the seed before repair; the affected atomic claim and every containing projection become the frozen non-success, the optional test remains visible without authority upgrade, unrelated claims remain byte-identical, and all new positive/negative fixtures pass",
+            ),
+            (
+                "MT-02",
+                "Add the frozen claim-policy digest as a mandatory identity edge, revoke the prior policy revision at the declared logical time, and update closure, lifecycle propagation, offline replay, migration, and rendering",
+                "Evidence with the old policy digest is accepted through a same-name alias and a cached package summary remains green",
+                "Detect the seed before repair; the alias substitution fails closed, exactly the old-policy dependents invalidate, the unaffected set remains byte-identical, history and migration remain attributable, and three offline renders agree",
+            ),
+        )
+        if tuple(tuple(row) for row in maintenance_rows) != expected_maintenance_rows:
+            self.add(
+                "assurance_model.maintenance_tasks",
+                path,
+                "owner maintenance table must retain the exact MT-01 and MT-02 change requests, seeded faults, and acceptance rules",
+            )
+        normalized_maintenance = re.sub(r"\s+", " ", maintenance)
+        for assertion in (
+            "Each task begins from a distinct clean checkout of the same exact revision with empty candidate-specific caches and output directories.",
+            "The record inventories dependency acquisition, network state, environment, tools, inputs, outputs, and elapsed owner time.",
+            "The owner receives only the frozen public packet and published task text: no private file map, repair note, or candidate-specific hint.",
+            "Any automated assistance uses the same preregistered allowance and retains exact prompts and outputs; prior familiarity and role overlap remain disclosed.",
+            "A task passes only if the owner detects its seed before repair, produces the required migration and adversarial evidence inside the common ceiling, and recreates the repaired result from a second clean workspace.",
+        ):
+            if assertion not in normalized_maintenance:
+                self.add(
+                    "assurance_model.maintenance_protocol",
+                    path,
+                    f"missing clean-workspace or published-only maintenance invariant: {assertion}",
+                )
+
+        normalized_text = re.sub(r"\s+", " ", text)
+        matrix_assertions = (
+            "The frozen matrix contains exactly 32 candidate-case executions per evidence epoch: each of the 4 candidates runs each of the 8 cases.",
+            "Execution evidence is currently 0/32 candidate-case executions (0/8 AM-01, 0/8 AM-02, 0/8 AM-03, and 0/8 AM-04).",
+        )
+        for assertion in matrix_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.execution_matrix",
+                    path,
+                    f"missing candidate-case cardinality invariant: {assertion}",
+                )
+        if normalized_text.count("Execution evidence is currently ") != 1:
+            self.add(
+                "assurance_model.execution_matrix",
+                path,
+                "suite must contain exactly one canonical current-execution baseline",
+            )
+
+        outcome_assertions = (
+            "Each atomic claim has exactly one outcome: `satisfied`, `not_satisfied`, `unresolved`, or `unsupported`.",
+            "These outcomes are categorical, not ordered grades.",
+            "Every case also has one separate verdict, exactly `pass` or `fail`.",
+            "A negative or unsupported claim can be the expected observation in a passing case; it never becomes partial credit for the claim.",
+            "The four outcome meanings are frozen across candidates.",
+            "`satisfied` means the exact proposition has its complete permitted mandatory closure and no valid decisive negative result.",
+            "`not_satisfied` means permitted, identity-bound negative evidence establishes that the exact proposition is false or violated within its scope; absence or incompleteness alone is not `not_satisfied`.",
+            "`unresolved` means the claim is well-formed and within the declared support model, but a required decision remains unknown, incomplete, conflicting, or exhausted.",
+            "`unsupported` means the declared policy or support envelope offers no permitted evaluation or authority path for that exact claim and scope.",
+            "No candidate may reinterpret these categories or map any non-success to success.",
+        )
+        for assertion in outcome_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.outcomes",
+                    path,
+                    f"missing atomic outcome or case-verdict invariant: {assertion}",
+                )
+
+        basis_assertions = (
+            "`satisfied` requires all mandatory elements to be present, valid, unexpired, unrevoked, mutually bound, and permitted.",
+            "One checked but optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory element.",
+            "An assumption is a dependency, never a basis that proves itself.",
+            "No quantity of tests, audits, reviews, or assumptions silently satisfies a proof-, certificate-, laboratory-, or external-authority requirement.",
+        )
+        for assertion in basis_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.basis_policy",
+                    path,
+                    f"missing authority or mandatory-basis invariant: {assertion}",
+                )
+
+        closure_assertions = (
+            "All substitutions fail closed; unresolved mandatory contexts cannot yield `satisfied`; and diagnostics identify the exact mismatched edge without accepting a neighboring valid record.",
+            "Incomplete or inconsistent closure cannot satisfy the dependent claim.",
+            "Expired, revoked, superseded, compromised, conflicting, or stale mandatory evidence cannot support current `satisfied`; rollback and downgrade fail closed; history is append-only and attributable.",
+        )
+        for assertion in closure_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.closure",
+                    path,
+                    f"missing identity, trust, or lifecycle closure invariant: {assertion}",
+                )
+
+        aggregation_assertions = (
+            "Profiles, levels, summaries, queries, neighboring implementations, and package rollups are read-only projections.",
+            "They may never upgrade, average, inherit, or hide an atomic non-success.",
+            "No aggregate, level, Boolean, profile, or neighboring claim upgrades an atomic result.",
+            "There is no weighted aggregate score.",
+        )
+        for assertion in aggregation_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.aggregation",
+                    path,
+                    f"missing non-upgrading projection invariant: {assertion}",
+                )
+
+        historical_assertions = (
+            "`schemas/gate0/claim-record-v0.1.schema.json` is historical, provisional, non-product shape material.",
+            "It lacks a first-class compiler-preservation family, claim-kind-to-basis policy, mandatory-basis completeness, evidence-reference closure, subject-byte verification, theorem/proof binding, trust-closure links, composition edges, and lifecycle invalidation.",
+            "Passing that schema or its current second-pass checks is not evidence that any D-005 candidate passes.",
+            "a checked test run presented as sufficient functional-refinement evidence;",
+            "a checked test run masking a failed mandatory kernel proof;",
+            "target leakage reported `satisfied` while target and leakage contexts remain unresolved;",
+            "an owner-produced checked test presented as external validation;",
+            "a substituted subject path or digest reusing evidence bound to other bytes.",
+            "no historical record is silently promoted or reinterpreted.",
+        )
+        for assertion in historical_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.historical_schema",
+                    path,
+                    f"missing historical-v0.1 non-ratification invariant: {assertion}",
+                )
+
+        authority_assertions = (
+            "It evaluates candidate semantic architectures for public assurance claims:",
+            "Only the Accepted exact-revision OEP in section 8 chooses an architecture.",
+            "This draft installs, adopts, or admits no tool or dependency and grants no dependency-acquisition authority.",
+        )
+        for assertion in authority_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.authority_boundary",
+                    path,
+                    f"missing evaluation-only or dependency-acquisition non-authority invariant: {assertion}",
+                )
+
+        workspace_assertions = (
+            "Throughout this suite, separately provisioned owner workspaces are distinct clean checkouts of the same exact revision with no shared mutable cache, output directory, generated state, or dependency store.",
+            "Each has a separate dependency-acquisition and environment record.",
+            "Only content-addressed, read-only frozen inputs named by both manifests may be shared.",
+            "Every replay records those isolation facts and fails closed when shared or undeclared state cannot be excluded.",
+        )
+        for assertion in workspace_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.workspace_isolation",
+                    path,
+                    f"missing separately provisioned workspace isolation invariant: {assertion}",
+                )
+
+        solo_assertions = (
+            "A second owner run, workspace, implementation, or rendering remains same-owner evidence and records no reproducibility level above 2.",
+            "independent review remains `unavailable`; and no owner, tool, signature, or schema-valid record impersonates an external institution or technical proof.",
+            "Two separately provisioned owner workspaces recreate deterministic manifests from the published packet at reproducibility level 2; neither replay is relabeled as an audit, validation, independent review, or independent reproduction.",
+            "No decision-case result is recorded above reproducibility level 2.",
+            "A bot, second owner pass, second workspace, alternate implementation, or signature may strengthen the analysis but is never an independent reviewer, organization, validation, or technical authority beyond its declared evidence type.",
+        )
+        for assertion in solo_assertions:
+            if assertion not in normalized_text:
+                self.add(
+                    "assurance_model.solo_mode",
+                    path,
+                    f"missing solo-mode authority or level-cap invariant: {assertion}",
+                )
+        if re.search(r"\blevel\s+3\b", normalized_text, re.IGNORECASE):
+            self.add(
+                "assurance_model.reproducibility_cap",
+                path,
+                "owner-executed D-005 evidence cannot claim or require reproducibility level 3",
+            )
+
+        legacy_blockers = (
+            "at least one independent assurance-model reviewer",
+            "two non-author practitioners",
+            "external cryptographer approval is required",
+            "multidisciplinary external review must approve",
+            "separate Assurance and TCB Board approval",
+            "an independent auditor selects the candidate",
+            "laboratory participation is required for this decision",
+            "downstream integrator approval is required",
+        )
+        for blocker in legacy_blockers:
+            if blocker.lower() in normalized_text.lower():
+                self.add(
+                    "assurance_model.solo_blocker",
+                    path,
+                    f"solo-mode protocol reintroduces an unavailable-human blocker: {blocker}",
+                )
+
+        if re.search(
+            r"\b(?:is|are|was|were|has been|have been)\s+independently\s+"
+            r"(?:reviewed|reproduced|audited|validated)\b",
+            normalized_text,
+            re.IGNORECASE,
+        ):
+            self.add(
+                "assurance_model.independence_claim",
+                path,
+                "draft suite cannot claim independent review, reproduction, audit, or validation",
+            )
+
+        preselection_patterns = (
+            r"\bcurrent recommendation:\s*AM-0[1-4]\b",
+            r"\brecommendation:\s*AM-0[1-4]\b",
+            r"\bAM-0[1-4]\s+(?:is|remains|becomes)\s+(?:the\s+)?(?:selected|preferred|accepted)\s+(?:candidate|model)\b",
+        )
+        if any(
+            re.search(pattern, normalized_text, re.IGNORECASE)
+            for pattern in preselection_patterns
+        ):
+            self.add(
+                "assurance_model.preselection",
+                path,
+                "candidate-neutral draft cannot preselect or privilege an assurance-model candidate",
+            )
+
+        decision_procedure = markdown_section(
+            text,
+            "## 8. Decision and acceptance procedure",
+        )
+        normalized_decision_procedure = re.sub(r"\s+", " ", decision_procedure)
+        for assertion in (
+            "A recommendation selects nothing by itself.",
+            "D-005 closes only through an Accepted Orange Enhancement Proposal under the ratified governance process.",
+            "Its `decision-revision` must be exactly 40 lowercase hexadecimal characters naming the fully validated Git revision.",
+            "The OEP must list `Orange Project Owner` as the solo-mode review authority, include an `approval-records` entry containing the literal `solo-reviewed`",
+            "This draft allocates no OEP number.",
+            "no approval record may claim that the owner supplied independent review.",
+            "It does not by itself ratify a concrete public encoding, satisfy a technical claim, accept D-006, close S4, or authorize a release.",
+        ):
+            if assertion not in normalized_decision_procedure:
+                self.add(
+                    "assurance_model.acceptance",
+                    path,
+                    f"missing exact-revision OEP acceptance or non-claim invariant: {assertion}",
+                )
+
+        decisions_path = self.root / "docs/DECISIONS.md"
+        if self._hf(decisions_path):
+            decisions_source = self._rt(decisions_path)
+            if decisions_source is not None:
+                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
+                d005 = markdown_section(
+                    decisions_text,
+                    "## D-005",
+                    heading_level=2,
+                    prefix=True,
+                )
+                normalized_d005 = re.sub(r"\s+", " ", d005)
+                for assertion in (
+                    "Candidates: orthogonal typed claim records, named assurance profiles backed by atomic claims, evidence-graph-derived claim views, and an aggregate package assurance level or `verified` Boolean.",
+                    "No candidate is selected, preferred, or authorized for product use by this register.",
+                    "Each atomic claim has exactly one of `satisfied`, `not_satisfied`, `unresolved`, or `unsupported`; no profile, graph view, package level, Boolean, neighboring claim, or optional evidence may upgrade an atomic non-success.",
+                    "Current execution evidence is 0/32 candidate-case executions.",
+                    "The provisional Gate 0 claim schema and synthetic fixtures are historical shape inputs, not a selected candidate or public format.",
+                    "D-005 closes only through an Accepted exact-revision OEP after the complete owner-executable suite passes.",
+                    "Owner review is labeled `solo-reviewed` and never becomes independent or technical evidence merely through repetition.",
+                ):
+                    if assertion not in normalized_d005:
+                        self.add(
+                            "assurance_model.register_consistency",
+                            decisions_path,
+                            f"D-005 register is not neutral or disagrees with the suite contract: {assertion}",
+                        )
+                if normalized_d005.count("Current execution evidence is ") != 1:
+                    self.add(
+                        "assurance_model.register_consistency",
+                        decisions_path,
+                        "D-005 register must contain exactly one canonical current-execution baseline",
+                    )
+                if re.search(
+                    r"\b(?:Current recommendation|Recommendation|Preferred candidate):",
+                    normalized_d005,
+                    re.IGNORECASE,
+                ):
+                    self.add(
+                        "assurance_model.register_consistency",
+                        decisions_path,
+                        "D-005 register cannot preselect a candidate before symmetric suite execution",
+                    )
+
+        roadmap_path = self.root / "docs/ROADMAP.md"
+        if self._hf(roadmap_path):
+            roadmap_source = self._rt(roadmap_path)
+            if roadmap_source is not None:
+                roadmap_text = markdown_without_fenced_blocks_and_comments(roadmap_source)
+                s4 = markdown_section(
+                    roadmap_text,
+                    "### S4",
+                    heading_level=3,
+                    prefix=True,
+                )
+                normalized_s4 = re.sub(r"\s+", " ", s4)
+                for assertion in (
+                    "Status: pending symmetric execution and exact-revision OEP acceptance of both D-005 and D-006 plus their dependent decisions",
+                    "a selected public-assurance architecture through the symmetric D-005 suite and an Accepted exact-revision OEP, with ten separate claim families, four exact atomic outcomes, complete evidence/TCB closure, and no aggregate upgrade;",
+                    "all four D-005 candidates have complete 8/8 case records and both D-006 candidates have complete 7/7 case records under their frozen epochs.",
+                    "unavailable authorities, stale evidence, and aggregate summaries never satisfy or upgrade an atomic claim.",
+                ):
+                    if assertion not in normalized_s4:
+                        self.add(
+                            "assurance_model.roadmap_consistency",
+                            roadmap_path,
+                            f"S4 roadmap omits a D-005 execution or fail-closed exit invariant: {assertion}",
+                        )
+
+        assurance_path = self.root / "docs/ASSURANCE.md"
+        if self._hf(assurance_path):
+            assurance_source = self._rt(assurance_path)
+            if assurance_source is not None:
+                assurance_text = markdown_without_fenced_blocks_and_comments(assurance_source)
+                dimensions = markdown_section(
+                    assurance_text,
+                    "### 3.1 Independent claim dimensions",
+                    heading_level=3,
+                )
+                normalized_dimensions = re.sub(r"\s+", " ", dimensions)
+                if (
+                    "8. compiler preservation across exact passes to final artifact bytes;"
+                    not in normalized_dimensions
+                ):
+                    self.add(
+                        "assurance_model.explanatory_consistency",
+                        assurance_path,
+                        "ASSURANCE claim dimensions must retain first-class compiler preservation",
+                    )
+                claim_model = markdown_section(
+                    assurance_text,
+                    "### 3.2 Claim record",
+                    heading_level=3,
+                )
+                normalized_claim_model = re.sub(r"\s+", " ", claim_model)
+                for assertion in (
+                    "`satisfied` requires every basis, context, identity binding, trust-closure component, composition edge, freshness condition, and review trigger that the exact claim-kind policy marks mandatory.",
+                    "one favorable optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory element.",
+                    "Owner review may support an explicitly scoped owner-audit or governance record when its policy permits that evidence class, but it cannot act as a proof, certificate, compiler-preservation edge, external validation, certification, or independent review.",
+                ):
+                    if assertion not in normalized_claim_model:
+                        self.add(
+                            "assurance_model.explanatory_consistency",
+                            assurance_path,
+                            f"assurance model weakens a mandatory-basis or owner-authority boundary: {assertion}",
+                        )
+
+        book_path = self.root / "docs/THE_ORANGE_BOOK.md"
+        if self._hf(book_path):
+            book_source = self._rt(book_path)
+            if book_source is not None:
+                book_text = markdown_without_fenced_blocks_and_comments(book_source)
+                normalized_book = re.sub(r"\s+", " ", book_text)
+                chapter = markdown_section(
+                    book_text,
+                    "## Chapter 2: Claims, Not Labels",
+                    heading_level=2,
+                )
+                normalized_chapter = re.sub(r"\s+", " ", chapter)
+                matrix_section = markdown_section(
+                    book_text,
+                    "### One artifact, several answers",
+                    heading_level=3,
+                )
+                matrix_rows = table_rows(
+                    matrix_section,
+                    r"(?:Was sensitive state erased\?|What did empirical testing observe\?)",
+                )
+                expected_matrix_rows = (
+                    (
+                        "Was sensitive state erased?",
+                        "Named object, lifecycle point, target, and architectural model",
+                        "Erasure proof, binary analysis, and scoped measurements",
+                    ),
+                    (
+                        "What did empirical testing observe?",
+                        "Named corpus, method, environment, and implementation/target",
+                        "Vectors, differential tests, fuzzing, timing, or interoperability records",
+                    ),
+                )
+                if tuple(tuple(row) for row in matrix_rows) != expected_matrix_rows:
+                    self.add(
+                        "assurance_model.explanatory_consistency",
+                        book_path,
+                        "Orange Book claim matrix must retain separate erasure and empirical-test rows",
+                    )
+                if (
+                    "An owner review may support only an explicitly scoped owner-audit or governance record; it cannot impersonate a technical proof, external validation, certification, or independent review."
+                    not in normalized_book
+                ):
+                    self.add(
+                        "assurance_model.explanatory_consistency",
+                        book_path,
+                        "Orange Book weakens the owner-review authority boundary",
+                    )
+                for assertion in (
+                    "A favorable optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory basis, context, trust component, or composition edge.",
+                    "D-005 remains proposed, so these files are not the stable public claim format and do not authorize future syntax or assurance behavior.",
+                ):
+                    if assertion not in normalized_chapter:
+                        self.add(
+                            "assurance_model.explanatory_consistency",
+                            book_path,
+                            f"Orange Book weakens or prematurely ratifies the proposed claim model: {assertion}",
+                        )
 
     def _validate_change_records(self) -> None:
         specifications = (

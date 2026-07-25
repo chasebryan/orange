@@ -230,11 +230,15 @@ the S3a acceptance revision, accept either draft decision, or authorize S3b.
 
 ### S4 — Proof and claim boundary
 
-Status: pending execution and exact-revision OEP acceptance of D-006 plus its
-dependent decisions
+Status: pending symmetric execution and exact-revision OEP acceptance of both
+D-005 and D-006 plus their dependent decisions
 
 Permanent outcomes:
 
+- a selected public-assurance architecture through the symmetric D-005 suite
+  and an Accepted exact-revision OEP, with ten separate claim families, four
+  exact atomic outcomes, complete evidence/TCB closure, and no aggregate
+  upgrade;
 - a selected proof foundation through the symmetric D-006 suite and an Accepted
   exact-revision OEP; any explicitly smaller initial proof scope is bounded
   inside that decision and cannot bypass the comparison;
@@ -245,15 +249,18 @@ Permanent outcomes:
 - axiom, assumption, and trust inventories; and
 - mixed-status claim records.
 
-Exit test: both D-006 candidates have complete 7/7 case records under the same
-frozen epoch; the selected foundation passes every non-compensable gate; the
-owner's comparative record is `solo-reviewed`; and the Accepted OEP binds the
-exact validated revision. Implemented malformed-proof and missing-certificate
-paths fail closed, solver timeouts and unknowns never satisfy a claim, and
-repeated offline replay agrees. Decision-case replay is capped at level 2 and
-independent review remains `unavailable` while the operating model stays solo.
-The decision suite or OEP alone does not close S4 without its implemented and
-tested proof/claim boundary.
+Exit test: all four D-005 candidates have complete 8/8 case records and both
+D-006 candidates have complete 7/7 case records under their frozen epochs. The
+selected assurance model and proof foundation each pass every non-compensable
+gate; both owner comparative records are `solo-reviewed`; and both Accepted
+OEPs bind their exact validated revisions. Implemented claim-policy,
+subject/context substitution, trust-closure, composition, lifecycle,
+malformed-proof, and missing-certificate paths fail closed. Solver timeouts,
+unknowns, unavailable authorities, stale evidence, and aggregate summaries
+never satisfy or upgrade an atomic claim. Repeated offline replay agrees.
+Decision-case replay is capped at level 2 and independent review remains
+`unavailable` while the operating model stays solo. The decision suites or OEPs
+alone do not close S4 without the implemented and tested proof/claim boundary.
 
 ### S5 — Compiler IRs and one output path
 
