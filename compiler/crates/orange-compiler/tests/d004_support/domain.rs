@@ -1,7 +1,8 @@
 use std::fmt;
 
 pub(crate) const REQUIRED_CANDIDATE_CASES: usize = 25;
-pub(crate) const INPUT_BINDING_COUNT: usize = 19;
+pub(crate) const INPUT_BINDING_COUNT: usize = 20;
+pub(crate) const CROSS_CUTTING_PROPOSAL_COUNT: usize = 24;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CandidateId {
@@ -110,6 +111,78 @@ pub(crate) const UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES: [&str; 5] = [
     "resource-exhaustion",
 ];
 
+pub(crate) const CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES: [&str; 2] =
+    ["missing-edge", "identity-substitution"];
+
+pub(crate) const CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES: [&str; 3] =
+    ["ambiguity", "unsupported", "resource-exhaustion"];
+
+pub(crate) const MISSING_EDGE_PROPOSAL_IDS: [&str; 14] = [
+    "D004-XF-ME-SR01",
+    "D004-XF-ME-SR02",
+    "D004-XF-ME-SR03",
+    "D004-XF-ME-SR04",
+    "D004-XF-ME-SR05",
+    "D004-XF-ME-SR06",
+    "D004-XF-ME-SR07",
+    "D004-XF-ME-SR08",
+    "D004-XF-ME-SR09",
+    "D004-XF-ME-SR10",
+    "D004-XF-ME-SR11",
+    "D004-XF-ME-SR12",
+    "D004-XF-ME-SR13",
+    "D004-XF-ME-SR14",
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct IdentitySubstitutionProposalSpec {
+    pub(crate) id: &'static str,
+    pub(crate) target: &'static str,
+}
+
+pub(crate) const IDENTITY_SUBSTITUTION_PROPOSALS: [IdentitySubstitutionProposalSpec; 10] = [
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-PACKET",
+        target: "packet_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-REPLAY-PLAN",
+        target: "replay_plan_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-SCHEDULED-SLOT",
+        target: "scheduled_slot_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-INPUT-MANIFEST",
+        target: "input_manifest_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-CANDIDATE-GRAPH",
+        target: "candidate_graph_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-SR-MAP",
+        target: "sr_map_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-SEMANTIC-ENDPOINT",
+        target: "semantic_endpoint_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-PARAMETER-MODEL",
+        target: "parameter_model_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-TOOL",
+        target: "tool_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-ENVIRONMENT",
+        target: "environment_identity",
+    },
+];
+
 pub(crate) const PROTOCOL_GAPS: [&str; 6] = [
     "ambiguity fixture coverage unresolved",
     "missing-edge fixture coverage unresolved",
@@ -126,6 +199,16 @@ pub(crate) const NONCLAIMS: [&str; 6] = [
     "no D-003 disposition inferred",
     "no roadmap gate or readiness movement",
     "no S3b implementation authorized",
+];
+
+pub(crate) const CROSS_CUTTING_PROPOSAL_NONCLAIMS: [&str; 7] = [
+    "no candidate adapter executed",
+    "no D-004 evidence epoch frozen",
+    "no semantic-strata candidate selected",
+    "no D-003 disposition inferred",
+    "no roadmap gate or readiness movement",
+    "no S3b implementation authorized",
+    "proposal definitions are not executable fixture coverage or evidence",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -149,6 +232,7 @@ pub(crate) enum InputBindingId {
     ValidEmptyMixed,
     ValidIntRadices,
     ValidWord8Boundaries,
+    CrossCuttingFixtureProposals,
 }
 
 impl InputBindingId {
@@ -173,6 +257,7 @@ impl InputBindingId {
             Self::ValidEmptyMixed => "fixture_valid_empty_mixed",
             Self::ValidIntRadices => "fixture_valid_int_radices",
             Self::ValidWord8Boundaries => "fixture_valid_word8_boundaries",
+            Self::CrossCuttingFixtureProposals => "cross_cutting_fixture_proposals",
         }
     }
 
@@ -197,6 +282,7 @@ impl InputBindingId {
             Self::ValidEmptyMixed => 16,
             Self::ValidIntRadices => 17,
             Self::ValidWord8Boundaries => 18,
+            Self::CrossCuttingFixtureProposals => 19,
         }
     }
 }
@@ -217,7 +303,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::DecisionSuite,
         path: "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-        sha256: "a359302fcbd8ba81b5c616811bf29f7bd004d362b691450126d6e248cacc8dc2",
+        sha256: "f214d6b5064fd1117e870a107de55b855b1a2b72df3596f93aa22cdd378deb2e",
     },
     InputBinding {
         id: InputBindingId::ProductFormDecisionPacket,
@@ -303,6 +389,11 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
         id: InputBindingId::ValidWord8Boundaries,
         path: "compiler/fixtures/s3a/valid-word8-boundaries.or",
         sha256: "db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee",
+    },
+    InputBinding {
+        id: InputBindingId::CrossCuttingFixtureProposals,
+        path: "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
+        sha256: "12853f50e96c3e594f999e097a68a7be51d0395e7cc9253d7b99f134344f10aa",
     },
 ];
 

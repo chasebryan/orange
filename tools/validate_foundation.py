@@ -281,6 +281,7 @@ policy/README.md
 policy/gate0-repository-policy.json
 policy/makefile-entrypoint-contract-v0.1.json
 research/decisions/D-004/README.md
+research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json
 research/decisions/D-004/d004-v0.2-draft-packet.json
 research/decisions/D-004/d004-v0.2-named-mutations.json
 research/decisions/D-005/README.md
@@ -474,7 +475,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "9b354d72b5c1ea02e003aef231c76cf8de89586271c3e0181be64e7d0fb95fb8"
+_PHD = "81e5babdc281d40ae2de66cb869996c49f6e0f899ebb08044fbf9ec498b81f29"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -830,18 +831,23 @@ docs policy research schemas scripts tools""".split()
 D004_DRAFT_RESEARCH_PATHS = frozenset(
     {
         "research/decisions/D-004/README.md",
+        "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
         "research/decisions/D-004/d004-v0.2-draft-packet.json",
         "research/decisions/D-004/d004-v0.2-named-mutations.json",
     }
 )
 D004_DRAFT_PACKET_CANONICAL_SHA256 = (
-    "6ab790957af9ff6b7dc1dc637800542280a229647367c5312d9b5ac4fd38fb87"
+    "4771ad2f5ae57e229d4d35b71c234875387c23c99c642fdb0efe21b664d971cf"
 )
 D004_MUTATION_MANIFEST_CANONICAL_SHA256 = (
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
 )
+D004_CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_CANONICAL_SHA256 = (
+    "83ebbde05d3a9739cb9a928f6c5472f92545f984a8a39a1f005403211b307279"
+)
 D004_INPUT_BINDING_PATHS = {
     "named_mutations_manifest": "research/decisions/D-004/d004-v0.2-named-mutations.json",
+    "cross_cutting_fixture_proposals": "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
     "decision_suite": "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
     "product_form_decision_packet": "docs/PRODUCT_FORM_DECISION_PACKET.md",
     "accepted_s3a_semantics": "docs/SEMANTICS_2026.md",
@@ -5751,6 +5757,7 @@ class FoundationValidator:
             "hard_gates",
             "mutations",
             "mutation_manifest_sha256",
+            "cross_cutting_fixture_proposal_manifest_sha256",
             "fixture_inventory_status",
             "unresolved_cross_cutting_fixture_classes",
             "protocol_gaps",
@@ -5769,7 +5776,7 @@ class FoundationValidator:
             )
 
         lifecycle = {
-            "schema_version": "d004-pre-epoch-packet-v0.1",
+            "schema_version": "d004-pre-epoch-packet-v0.2",
             "suite_version": "d004-v0.2-draft",
             "status": "draft_unfrozen",
             "epoch": None,
@@ -5866,12 +5873,25 @@ class FoundationValidator:
                 "D-004 packet must bind the reviewed canonical named-mutation manifest",
             )
 
+        proposal_manifest_digest = packet.get(
+            "cross_cutting_fixture_proposal_manifest_sha256"
+        )
+        if (
+            proposal_manifest_digest
+            != D004_CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_CANONICAL_SHA256
+        ):
+            self.add(
+                "d004_packet.proposal_manifest_digest",
+                packet_path,
+                "D-004 packet must bind the exact canonical draft-unreviewed cross-cutting proposal manifest",
+            )
+
         bindings = packet.get("input_bindings")
         if not isinstance(bindings, dict) or set(bindings) != set(D004_INPUT_BINDING_PATHS):
             self.add(
                 "d004_packet.input_bindings",
                 packet_path,
-                "D-004 packet must retain the exact closed 19-input binding inventory",
+                "D-004 packet must retain the exact closed 20-input binding inventory",
             )
             bindings = {}
         for name, expected_path in D004_INPUT_BINDING_PATHS.items():
@@ -6046,6 +6066,205 @@ class FoundationValidator:
                 manifest_path,
                 "D-004 named mutations must remain unique, ordered, and partitioned 4/5/5/6/6",
             )
+
+        proposal_manifest_path = (
+            self.root
+            / "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json"
+        )
+        if not self._hf(proposal_manifest_path):
+            self.add(
+                "d004_packet.proposal_manifest_missing",
+                proposal_manifest_path,
+                "D-004 draft-unreviewed cross-cutting proposal manifest is missing",
+            )
+            return
+        try:
+            proposal_manifest = self._load_repository_json(proposal_manifest_path)
+        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
+            self.add(
+                "d004_packet.proposal_manifest_parse",
+                proposal_manifest_path,
+                f"cannot parse D-004 cross-cutting proposal manifest: {exc}",
+            )
+            return
+        if not isinstance(proposal_manifest, dict):
+            self.add(
+                "d004_packet.proposal_manifest_shape",
+                proposal_manifest_path,
+                "D-004 cross-cutting proposal manifest must be a JSON object",
+            )
+            return
+
+        proposal_manifest_bytes = self._read_repository_bytes(proposal_manifest_path)
+        try:
+            canonical_proposal_manifest = canonical_json_bytes(proposal_manifest)
+        except (TypeError, ValueError) as exc:
+            self.add(
+                "d004_packet.proposal_manifest_canonical",
+                proposal_manifest_path,
+                f"D-004 cross-cutting proposal manifest is outside the canonical I-JSON profile: {exc}",
+            )
+            canonical_proposal_manifest = None
+        if canonical_proposal_manifest is not None:
+            if proposal_manifest_bytes != canonical_proposal_manifest + b"\n":
+                self.add(
+                    "d004_packet.proposal_manifest_canonical",
+                    proposal_manifest_path,
+                    "D-004 cross-cutting proposal manifest bytes must be semantic canonical JSON followed by one LF",
+                )
+            observed_proposal_manifest_digest = hashlib.sha256(
+                canonical_proposal_manifest
+            ).hexdigest()
+            if (
+                observed_proposal_manifest_digest
+                != D004_CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_CANONICAL_SHA256
+                or proposal_manifest_digest != observed_proposal_manifest_digest
+            ):
+                self.add(
+                    "d004_packet.proposal_manifest_digest",
+                    proposal_manifest_path,
+                    "D-004 cross-cutting proposal manifest disagrees with its exact canonical draft binding",
+                )
+
+        expected_proposal_root_fields = {
+            "schema_version",
+            "status",
+            "owner_protocol_review",
+            "executable_inputs_status",
+            "proposal_defined_classes",
+            "proposal_undefined_classes",
+            "replay_repetitions",
+            "evidence_status",
+            "proposals",
+            "nonclaims",
+        }
+        if set(proposal_manifest) != expected_proposal_root_fields:
+            self.add(
+                "d004_packet.proposal_manifest_shape",
+                proposal_manifest_path,
+                "D-004 cross-cutting proposal manifest must retain its exact closed ten-field root",
+            )
+
+        expected_proposal_nonclaims = exact_inventories["nonclaims"] + [
+            "proposal definitions are not executable fixture coverage or evidence"
+        ]
+        expected_proposal_boundary = {
+            "schema_version": "d004-cross-cutting-fixture-proposals-v0.1",
+            "status": "draft_unreviewed",
+            "owner_protocol_review": "none",
+            "executable_inputs_status": "absent",
+            "proposal_defined_classes": ["missing-edge", "identity-substitution"],
+            "proposal_undefined_classes": [
+                "ambiguity",
+                "unsupported",
+                "resource-exhaustion",
+            ],
+            "replay_repetitions": None,
+            "evidence_status": "none",
+            "nonclaims": expected_proposal_nonclaims,
+        }
+        if any(
+            proposal_manifest.get(field) != expected
+            for field, expected in expected_proposal_boundary.items()
+        ):
+            self.add(
+                "d004_packet.proposal_manifest_boundary",
+                proposal_manifest_path,
+                "D-004 cross-cutting proposals must remain draft-unreviewed, non-executable, unreplayed, no-evidence, and non-authorizing",
+            )
+
+        expected_cases = [f"SC-{index:02d}" for index in range(1, 6)]
+        expected_relationships = [f"SR-{index:02d}" for index in range(1, 15)]
+        expected_proposals: list[dict[str, object]] = []
+        for relationship in expected_relationships:
+            expected_proposals.append(
+                {
+                    "capability_credit": "none",
+                    "case_scope": expected_cases,
+                    "class": "missing-edge",
+                    "expected_state": "rejected",
+                    "id": f"D004-XF-ME-SR{relationship[-2:]}",
+                    "layer": "structural",
+                    "match_rule": "required_not_sufficient",
+                    "mutation_kind": "remove_required_relationship_descriptor",
+                    "relationship_scope": [relationship],
+                    "required_invalidation": "dependent_result",
+                    "target": relationship,
+                }
+            )
+        identity_proposals = [
+            ("D004-XF-ID-PACKET", "packet_identity"),
+            ("D004-XF-ID-REPLAY-PLAN", "replay_plan_identity"),
+            ("D004-XF-ID-SCHEDULED-SLOT", "scheduled_slot_identity"),
+            ("D004-XF-ID-INPUT-MANIFEST", "input_manifest_identity"),
+            ("D004-XF-ID-CANDIDATE-GRAPH", "candidate_graph_identity"),
+            ("D004-XF-ID-SR-MAP", "sr_map_identity"),
+            ("D004-XF-ID-SEMANTIC-ENDPOINT", "semantic_endpoint_identity"),
+            ("D004-XF-ID-PARAMETER-MODEL", "parameter_model_identity"),
+            ("D004-XF-ID-TOOL", "tool_identity"),
+            ("D004-XF-ID-ENVIRONMENT", "environment_identity"),
+        ]
+        for proposal_id, target in identity_proposals:
+            expected_proposals.append(
+                {
+                    "capability_credit": "none",
+                    "case_scope": expected_cases,
+                    "class": "identity-substitution",
+                    "expected_state": "rejected",
+                    "id": proposal_id,
+                    "layer": "structural",
+                    "match_rule": "required_not_sufficient",
+                    "mutation_kind": "substitute_bound_identity",
+                    "relationship_scope": expected_relationships,
+                    "required_invalidation": "dependent_result",
+                    "target": target,
+                }
+            )
+
+        proposal_records = proposal_manifest.get("proposals")
+        expected_proposal_fields = {
+            "id",
+            "class",
+            "case_scope",
+            "relationship_scope",
+            "layer",
+            "mutation_kind",
+            "target",
+            "expected_state",
+            "required_invalidation",
+            "match_rule",
+            "capability_credit",
+        }
+        if not isinstance(proposal_records, list):
+            self.add(
+                "d004_packet.proposal_manifest_shape",
+                proposal_manifest_path,
+                "D-004 cross-cutting proposals must be an array",
+            )
+        else:
+            observed_proposal_ids: list[object] = []
+            for index, record in enumerate(proposal_records):
+                if not isinstance(record, dict) or set(record) != expected_proposal_fields:
+                    self.add(
+                        "d004_packet.proposal_manifest_shape",
+                        proposal_manifest_path,
+                        f"D-004 cross-cutting proposal {index + 1} must retain exactly eleven closed fields",
+                    )
+                    continue
+                observed_proposal_ids.append(record.get("id"))
+            expected_proposal_ids = [record["id"] for record in expected_proposals]
+            if (
+                len(proposal_records) != 24
+                or proposal_records != expected_proposals
+                or observed_proposal_ids != expected_proposal_ids
+                or len(set(value for value in observed_proposal_ids if isinstance(value, str)))
+                != 24
+            ):
+                self.add(
+                    "d004_packet.proposal_manifest_inventory",
+                    proposal_manifest_path,
+                    "D-004 must retain exactly 14 ordered SR missing-edge proposals and 10 ordered unique identity-substitution proposals with fail-closed non-credit semantics",
+                )
 
     def _validate_d005_draft_packet(self) -> None:
         research_prefix = "research/decisions/D-005/"

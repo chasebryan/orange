@@ -23,15 +23,21 @@ use std::path::Path;
 
 use cases::MUTATIONS;
 use domain::{
-    BUDGETS, CANDIDATES, CASE_VERDICTS, CASES, DOMAIN_OBSERVATION_STATES, HARD_GATES,
-    INPUT_BINDINGS, InputBindingId, NONCLAIMS, PROTOCOL_GAPS, RELATIONSHIPS,
-    REQUIRED_CANDIDATE_CASES, SOURCE_ROLES, UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES,
+    BUDGETS, CANDIDATES, CASE_VERDICTS, CASES, CROSS_CUTTING_PROPOSAL_COUNT,
+    CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES, CROSS_CUTTING_PROPOSAL_NONCLAIMS,
+    CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES, DOMAIN_OBSERVATION_STATES, HARD_GATES,
+    IDENTITY_SUBSTITUTION_PROPOSALS, INPUT_BINDINGS, InputBindingId, MISSING_EDGE_PROPOSAL_IDS,
+    NONCLAIMS, PROTOCOL_GAPS, RELATIONSHIPS, REQUIRED_CANDIDATE_CASES, SOURCE_ROLES,
+    UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES,
 };
 use packet::{
-    MUTATION_MANIFEST_SHA256, PacketErrorKind, canonical_draft_packet_bytes,
+    CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256, MUTATION_MANIFEST_SHA256, PacketErrorKind,
+    canonical_cross_cutting_fixture_proposal_manifest_bytes,
+    canonical_cross_cutting_fixture_proposal_manifest_file_bytes, canonical_draft_packet_bytes,
     canonical_draft_packet_file_bytes, canonical_mutation_manifest_bytes,
-    canonical_mutation_manifest_file_bytes, mutation_manifest_digest_hex, parse_draft_packet,
-    parse_mutation_manifest,
+    canonical_mutation_manifest_file_bytes, cross_cutting_fixture_proposal_manifest_digest_hex,
+    mutation_manifest_digest_hex, parse_cross_cutting_fixture_proposal_manifest,
+    parse_draft_packet, parse_mutation_manifest,
 };
 use runner::{ReplayError, ReplayInputs};
 use strict_json::{JsonErrorKind, JsonValue};
@@ -40,6 +46,9 @@ const CHECKED_IN_PACKET: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.2-draft-packet.json");
 const NAMED_MUTATIONS: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.2-named-mutations.json");
+const CROSS_CUTTING_FIXTURE_PROPOSALS: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json"
+);
 const DECISION_SUITE: &[u8] = include_bytes!("../../../../docs/SEMANTIC_STRATA_DECISION_SUITE.md");
 const PRODUCT_FORM_DECISION_PACKET: &[u8] =
     include_bytes!("../../../../docs/PRODUCT_FORM_DECISION_PACKET.md");
@@ -87,6 +96,7 @@ fn checked_in_replay_inputs() -> ReplayInputs<'static> {
         VALID_EMPTY_MIXED,
         VALID_INT_RADICES,
         VALID_WORD8_BOUNDARIES,
+        CROSS_CUTTING_FIXTURE_PROPOSALS,
     ])
 }
 
@@ -292,6 +302,211 @@ fn named_mutation_manifest_has_exact_canonical_bytes_and_digests() {
 }
 
 #[test]
+fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() {
+    assert_eq!(
+        CROSS_CUTTING_FIXTURE_PROPOSALS,
+        canonical_cross_cutting_fixture_proposal_manifest_file_bytes()
+    );
+    let value = parse_cross_cutting_fixture_proposal_manifest(CROSS_CUTTING_FIXTURE_PROPOSALS)
+        .expect("checked-in proposal manifest");
+    assert_eq!(
+        strict_json::canonical_bytes(&value),
+        canonical_cross_cutting_fixture_proposal_manifest_bytes()
+    );
+    assert_eq!(
+        cross_cutting_fixture_proposal_manifest_digest_hex(),
+        CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256
+    );
+    assert_eq!(
+        CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
+        "83ebbde05d3a9739cb9a928f6c5472f92545f984a8a39a1f005403211b307279"
+    );
+    assert_eq!(
+        sha256::hex(&sha256::digest(CROSS_CUTTING_FIXTURE_PROPOSALS)),
+        "12853f50e96c3e594f999e097a68a7be51d0395e7cc9253d7b99f134344f10aa"
+    );
+
+    let root = value.as_object().expect("proposal root");
+    assert_eq!(root.len(), 10);
+    assert_eq!(
+        root.get("schema_version").and_then(JsonValue::as_str),
+        Some("d004-cross-cutting-fixture-proposals-v0.1")
+    );
+    assert_eq!(
+        root.get("status").and_then(JsonValue::as_str),
+        Some("draft_unreviewed")
+    );
+    assert_eq!(
+        root.get("owner_protocol_review")
+            .and_then(JsonValue::as_str),
+        Some("none")
+    );
+    assert_eq!(
+        root.get("executable_inputs_status")
+            .and_then(JsonValue::as_str),
+        Some("absent")
+    );
+    assert_eq!(
+        root.get("proposal_defined_classes"),
+        Some(&strict_json::strings(
+            CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES
+        ))
+    );
+    assert_eq!(
+        root.get("proposal_undefined_classes"),
+        Some(&strict_json::strings(
+            CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES
+        ))
+    );
+    assert_eq!(root.get("replay_repetitions"), Some(&JsonValue::Null));
+    assert_eq!(
+        root.get("evidence_status").and_then(JsonValue::as_str),
+        Some("none")
+    );
+    assert_eq!(
+        root.get("nonclaims"),
+        Some(&strict_json::strings(CROSS_CUTTING_PROPOSAL_NONCLAIMS))
+    );
+
+    let proposals = root
+        .get("proposals")
+        .and_then(JsonValue::as_array)
+        .expect("proposal records");
+    assert_eq!(proposals.len(), CROSS_CUTTING_PROPOSAL_COUNT);
+    let expected_fields = BTreeSet::from([
+        "id",
+        "class",
+        "case_scope",
+        "relationship_scope",
+        "layer",
+        "mutation_kind",
+        "target",
+        "expected_state",
+        "required_invalidation",
+        "match_rule",
+        "capability_credit",
+    ]);
+    let expected_cases = strict_json::strings(CASES.map(|case| case.as_str()));
+    let expected_relationships = strict_json::strings(RELATIONSHIPS);
+    let mut ids = BTreeSet::new();
+    for (index, proposal) in proposals.iter().enumerate() {
+        let record = proposal.as_object().expect("closed proposal record");
+        assert_eq!(
+            record.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            expected_fields
+        );
+        assert!(
+            ids.insert(
+                record
+                    .get("id")
+                    .and_then(JsonValue::as_str)
+                    .expect("proposal id")
+            )
+        );
+        assert_eq!(record.get("case_scope"), Some(&expected_cases));
+        assert_eq!(
+            record.get("layer").and_then(JsonValue::as_str),
+            Some("structural")
+        );
+        assert_eq!(
+            record.get("expected_state").and_then(JsonValue::as_str),
+            Some("rejected")
+        );
+        assert_eq!(
+            record
+                .get("required_invalidation")
+                .and_then(JsonValue::as_str),
+            Some("dependent_result")
+        );
+        assert_eq!(
+            record.get("match_rule").and_then(JsonValue::as_str),
+            Some("required_not_sufficient")
+        );
+        assert_eq!(
+            record.get("capability_credit").and_then(JsonValue::as_str),
+            Some("none")
+        );
+
+        if index < RELATIONSHIPS.len() {
+            let relationship = RELATIONSHIPS[index];
+            assert_eq!(
+                record.get("id").and_then(JsonValue::as_str),
+                Some(MISSING_EDGE_PROPOSAL_IDS[index])
+            );
+            assert_eq!(
+                record.get("class").and_then(JsonValue::as_str),
+                Some("missing-edge")
+            );
+            assert_eq!(
+                record.get("relationship_scope"),
+                Some(&strict_json::strings([relationship]))
+            );
+            assert_eq!(
+                record.get("mutation_kind").and_then(JsonValue::as_str),
+                Some("remove_required_relationship_descriptor")
+            );
+            assert_eq!(
+                record.get("target").and_then(JsonValue::as_str),
+                Some(relationship)
+            );
+        } else {
+            let identity = IDENTITY_SUBSTITUTION_PROPOSALS[index - RELATIONSHIPS.len()];
+            assert_eq!(
+                record.get("id").and_then(JsonValue::as_str),
+                Some(identity.id)
+            );
+            assert_eq!(
+                record.get("class").and_then(JsonValue::as_str),
+                Some("identity-substitution")
+            );
+            assert_eq!(
+                record.get("relationship_scope"),
+                Some(&expected_relationships)
+            );
+            assert_eq!(
+                record.get("mutation_kind").and_then(JsonValue::as_str),
+                Some("substitute_bound_identity")
+            );
+            assert_eq!(
+                record.get("target").and_then(JsonValue::as_str),
+                Some(identity.target)
+            );
+        }
+    }
+    assert_eq!(ids.len(), CROSS_CUTTING_PROPOSAL_COUNT);
+
+    let canonical = String::from_utf8(canonical_cross_cutting_fixture_proposal_manifest_bytes())
+        .expect("UTF-8");
+    let unknown = canonical.replacen('{', "{\"unknown\":true,", 1);
+    assert_eq!(
+        parse_cross_cutting_fixture_proposal_manifest(unknown.as_bytes())
+            .expect_err("unknown proposal root field")
+            .kind,
+        PacketErrorKind::UnknownField
+    );
+    let missing = canonical.replace("\"evidence_status\":\"none\",", "");
+    assert_eq!(
+        parse_cross_cutting_fixture_proposal_manifest(missing.as_bytes())
+            .expect_err("missing proposal root field")
+            .kind,
+        PacketErrorKind::MissingField
+    );
+    let weakened = canonical.replace("\"status\":\"draft_unreviewed\"", "\"status\":\"reviewed\"");
+    assert_eq!(
+        parse_cross_cutting_fixture_proposal_manifest(weakened.as_bytes())
+            .expect_err("review was not performed")
+            .kind,
+        PacketErrorKind::InvalidValue
+    );
+    assert_eq!(
+        parse_cross_cutting_fixture_proposal_manifest(canonical.as_bytes())
+            .expect_err("proposal manifest without canonical trailing LF")
+            .kind,
+        PacketErrorKind::NonCanonicalEncoding
+    );
+}
+
+#[test]
 fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(CHECKED_IN_PACKET, canonical_draft_packet_file_bytes());
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
@@ -299,11 +514,11 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(packet.digest(), &sha256::digest(packet.canonical_bytes()));
     assert_eq!(
         packet.digest_hex(),
-        "6ab790957af9ff6b7dc1dc637800542280a229647367c5312d9b5ac4fd38fb87"
+        "4771ad2f5ae57e229d4d35b71c234875387c23c99c642fdb0efe21b664d971cf"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CHECKED_IN_PACKET)),
-        "7a27e97692d60e24a680452179ef29a3095536a7cff03edc77688a85db2fad3d"
+        "88f0ac5b59eef74653716bc5a1b211fc1fee87bff074ffaba9cbd369909090fe"
     );
     assert_eq!(
         parse_draft_packet(packet.canonical_bytes())
@@ -332,6 +547,15 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
         root.get("owner_protocol_review")
             .and_then(JsonValue::as_str),
         Some("none")
+    );
+    assert_eq!(
+        root.get("schema_version").and_then(JsonValue::as_str),
+        Some("d004-pre-epoch-packet-v0.2")
+    );
+    assert_eq!(
+        root.get("cross_cutting_fixture_proposal_manifest_sha256")
+            .and_then(JsonValue::as_str),
+        Some(CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256)
     );
 }
 
@@ -406,6 +630,10 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
         canonical.replace(",\"fail\"", ""),
         canonical.replace(",\"SC-05-M06\"", ""),
         canonical.replace(MUTATION_MANIFEST_SHA256, &"0".repeat(64)),
+        canonical.replace(
+            CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
+            &"0".repeat(64),
+        ),
         canonical.replace("\"case_wall_seconds\":900", "\"case_wall_seconds\":901"),
     ];
     for mutation in mutations {
@@ -422,12 +650,33 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
 fn replay_refuses_every_raw_input_drift_before_scheduling() {
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
     let inputs = checked_in_replay_inputs();
-    assert_eq!(INPUT_BINDINGS.len(), 19);
+    assert_eq!(INPUT_BINDINGS.len(), 20);
     for binding in INPUT_BINDINGS {
         let bytes = inputs.get(binding.id);
         assert_eq!(sha256::hex(&sha256::digest(bytes)), binding.sha256);
         assert_eq!(packet.input_binding(binding.id), binding);
     }
+
+    let mut one_byte_drift = CROSS_CUTTING_FIXTURE_PROPOSALS.to_vec();
+    one_byte_drift[0] = b'[';
+    let proposal_binding = INPUT_BINDINGS[InputBindingId::CrossCuttingFixtureProposals.index()];
+    let error = runner::prepare_replay(
+        &packet,
+        &inputs.with_replacement(
+            InputBindingId::CrossCuttingFixtureProposals,
+            &one_byte_drift,
+        ),
+    )
+    .expect_err("one-byte proposal manifest drift");
+    assert_eq!(
+        error,
+        ReplayError::InputDigest {
+            input: InputBindingId::CrossCuttingFixtureProposals,
+            path: proposal_binding.path,
+            expected_sha256: proposal_binding.sha256,
+            observed_sha256: sha256::hex(&sha256::digest(&one_byte_drift)),
+        }
+    );
     runner::prepare_replay(&packet, &inputs).expect("all exact bindings");
 
     for binding in INPUT_BINDINGS {
@@ -538,7 +787,7 @@ fn replay_schedule_is_balanced_latin_deterministic_and_still_zero_of_25() {
 }
 
 #[test]
-fn d004_research_tree_is_exactly_three_input_only_files() {
+fn d004_research_tree_is_exactly_four_input_only_files() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../research/decisions/D-004");
     let observed = fs::read_dir(&root)
         .expect("D-004 research directory")
@@ -555,6 +804,7 @@ fn d004_research_tree_is_exactly_three_input_only_files() {
         observed,
         BTreeSet::from([
             "README.md".to_owned(),
+            "d004-v0.2-cross-cutting-fixture-proposals.json".to_owned(),
             "d004-v0.2-draft-packet.json".to_owned(),
             "d004-v0.2-named-mutations.json".to_owned(),
         ])

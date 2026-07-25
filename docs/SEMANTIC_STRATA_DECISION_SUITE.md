@@ -417,14 +417,17 @@ for results that do not yet exist.
 
 The repository may carry an exact input-only pre-epoch laboratory before that
 freeze. Its `draft_unfrozen` packet may bind this suite, the accepted S3a
-baseline, the 26 mutations named explicitly by SC-01 through SC-05, and a
-deterministic 25-slot candidate-case plan. The current prose does not yet assign
-complete identifiers and expected observations to every cross-cutting
-ambiguity, missing-edge, identity-substitution, unsupported, and resource
-fixture. Those unresolved fixture classes are freeze blockers, not omissions
-that an adapter may fill privately. The laboratory executes no adapter, creates
-no result or review record, freezes no evidence epoch, and selects no
-candidate.
+baseline, the 26 mutations named explicitly by SC-01 through SC-05, an
+unreviewed structural proposal manifest, and a deterministic 25-slot
+candidate-case plan. That manifest defines 14 missing-edge descriptor proposals
+covering SR-01 through SR-14 and 10 bound-identity substitution proposals. It
+supplies no executable fixture bytes, concrete candidate observations, result,
+evidence, or capability credit. It also defines no ambiguity, unsupported, or
+resource-exhaustion proposal, and it assigns no replay count. All five
+cross-cutting fixture classes therefore remain unresolved freeze blockers, not
+omissions that an adapter may fill privately. The laboratory executes no
+adapter, creates no result or review record, freezes no evidence epoch, and
+selects no candidate.
 
 Each candidate receives at most 24 owner-hours for its first complete case
 packet and one four-owner-hour correction window. Time accounting is elapsed

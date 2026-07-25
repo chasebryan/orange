@@ -43,20 +43,24 @@ non-product D-004 laboratory. It strictly parses and canonicalizes an
 input-only `draft_unfrozen` packet, binds the conditional suite and accepted
 S3a baseline by SHA-256, preserves the 5-candidate by 5-case matrix, 14 required
 relationships, 10 hard gates, and 26 mutations named explicitly by the suite,
-and prepares one deterministic balanced 25-slot plan:
+binds 24 unreviewed structural proposals, and prepares one deterministic
+balanced 25-slot plan:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
   --test d004_decision_suite --locked --offline
 ```
 
-The suite has not yet assigned a complete common inventory to its cross-cutting
+The proposal manifest names 14 missing-edge relationship-descriptor proposals
+and 10 bound-identity substitution proposals. They are definitions, not
+executable fixtures or coverage, and supply no observation, result, evidence,
+or capability credit. The suite still lacks a complete common inventory for
 ambiguity, missing-edge, identity-substitution, unsupported, and resource
-fixtures. The laboratory retains those gaps as freeze blockers. It executes no
-candidate adapter, freezes no evidence epoch, records 0/25 completed slots and
-no evidence, and creates no result, review, recommendation, or selection. It
-does not accept D-003 or D-004, alter compiler behavior, authorize S3b, or
-advance the version 1.0.0 gate count.
+fixtures, so the laboratory retains all five gaps as freeze blockers. It
+executes no candidate adapter, freezes no evidence epoch, records 0/25 completed
+slots and no evidence, and creates no result, review, recommendation, or
+selection. It does not accept D-003 or D-004, alter compiler behavior,
+authorize S3b, or advance the version 1.0.0 gate count.
 
 ## D-005 decision laboratory
 
@@ -610,7 +614,7 @@ authority.
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
   syntax-tree, parser, semantic, Core, and evaluator library;
 - `crates/orange-compiler/tests/d004_decision_suite.rs`: input-only D-004
-  pre-epoch packet and balanced-plan checks;
+  pre-epoch packet, structural-proposal, and balanced-plan checks;
 - `crates/orange-compiler/tests/d005_decision_suite.rs`: draft-only D-005
   packet, replay-plan, and synthetic adapter-transport checks;
 - `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
