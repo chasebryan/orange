@@ -223,12 +223,15 @@ a shutdown retry.
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
-likewise exact. It contains the non-product, draft-unfrozen D-004 input packet
-and named-mutation manifest plus the D-005 execution packet and historical v0.1
-negative corpus. The D-004 inventory preserves its unassigned cross-cutting
-fixture classes as freeze blockers and freezes no evidence epoch. Neither
-inventory contains a candidate result, owner review, accepted decision, or
-release evidence. D-005's protected Rust laboratory may construct canonical
+likewise exact. It contains the non-product, draft-unfrozen D-004 input packet,
+named-mutation manifest, and unreviewed cross-cutting fixture-proposal manifest
+plus the D-005 execution packet and historical v0.1 negative corpus. The D-004
+proposal manifest defines 14 missing-edge descriptor and 10 bound-identity
+substitution proposals, but contains no executable fixtures or evidence and
+resolves no fixture-class blocker. The D-004 inventory preserves all five
+cross-cutting fixture classes as freeze blockers and freezes no evidence epoch.
+Neither inventory contains a candidate result, owner review, accepted decision,
+or release evidence. D-005's protected Rust laboratory may construct canonical
 adapter requests and validate synthetic captured transport envelopes, but it
 contains no subprocess launcher, candidate payload validator, result artifact,
 or execution authority and retains 0/32. The S2 inventory includes

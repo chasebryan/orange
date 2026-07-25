@@ -5,8 +5,11 @@ use super::domain::{
     NONCLAIMS, REQUIRED_CANDIDATE_CASES,
 };
 use super::packet::{
-    DraftPacket, MUTATION_MANIFEST_SHA256, PacketErrorKind, canonical_mutation_manifest_file_bytes,
-    mutation_manifest_digest_hex, parse_mutation_manifest,
+    CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256, DraftPacket, MUTATION_MANIFEST_SHA256,
+    PacketErrorKind, canonical_cross_cutting_fixture_proposal_manifest_file_bytes,
+    canonical_mutation_manifest_file_bytes, cross_cutting_fixture_proposal_manifest_digest_hex,
+    mutation_manifest_digest_hex, parse_cross_cutting_fixture_proposal_manifest,
+    parse_mutation_manifest,
 };
 use super::sha256;
 use super::strict_json::{self, JsonValue};
@@ -52,6 +55,12 @@ pub(crate) enum ReplayError {
     MutationManifest(PacketErrorKind),
     NonCanonicalMutationManifest,
     MutationManifestDigest {
+        expected_sha256: &'static str,
+        observed_sha256: String,
+    },
+    CrossCuttingFixtureProposalManifest(PacketErrorKind),
+    NonCanonicalCrossCuttingFixtureProposalManifest,
+    CrossCuttingFixtureProposalManifestDigest {
         expected_sha256: &'static str,
         observed_sha256: String,
     },
@@ -164,6 +173,25 @@ pub(crate) fn prepare_replay(
         return Err(ReplayError::MutationManifestDigest {
             expected_sha256: MUTATION_MANIFEST_SHA256,
             observed_sha256: observed_manifest_digest,
+        });
+    }
+
+    let proposal_manifest_bytes = inputs.get(InputBindingId::CrossCuttingFixtureProposals);
+    let proposal_manifest = parse_cross_cutting_fixture_proposal_manifest(proposal_manifest_bytes)
+        .map_err(|error| ReplayError::CrossCuttingFixtureProposalManifest(error.kind))?;
+    if proposal_manifest_bytes != canonical_cross_cutting_fixture_proposal_manifest_file_bytes() {
+        return Err(ReplayError::NonCanonicalCrossCuttingFixtureProposalManifest);
+    }
+    let observed_proposal_manifest_digest = sha256::hex(&sha256::digest(
+        &strict_json::canonical_bytes(&proposal_manifest),
+    ));
+    if observed_proposal_manifest_digest != CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256
+        || cross_cutting_fixture_proposal_manifest_digest_hex()
+            != CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256
+    {
+        return Err(ReplayError::CrossCuttingFixtureProposalManifestDigest {
+            expected_sha256: CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
+            observed_sha256: observed_proposal_manifest_digest,
         });
     }
 
