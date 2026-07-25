@@ -8,6 +8,10 @@ use std::process::{Command, Output, Stdio};
 
 const SEMANTICS_SPECIFICATION: &str = include_str!("../../../../docs/SEMANTICS_2026.md");
 const S3A_CONFORMANCE_SOURCE: &str = include_str!("s3a_conformance.rs");
+const WORKSPACE_MANIFEST: &str = include_str!("../../../Cargo.toml");
+const COMPILER_MANIFEST: &str = include_str!("../../orange-compiler/Cargo.toml");
+const ORANGEC_MANIFEST: &str = include_str!("../Cargo.toml");
+const COMPILER_LIB_SOURCE: &str = include_str!("../../orange-compiler/src/lib.rs");
 const CORE_SOURCE: &str = include_str!("../../orange-compiler/src/core.rs");
 const EVAL_SOURCE: &str = include_str!("../../orange-compiler/src/eval.rs");
 const PARSER_SOURCE: &str = include_str!("../../orange-compiler/src/parser.rs");
@@ -15,6 +19,56 @@ const SEMANTICS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics
 const SOURCE_SOURCE: &str = include_str!("../../orange-compiler/src/source.rs");
 const ORANGEC_MAIN_SOURCE: &str = include_str!("../src/main.rs");
 const CLI_TEST_SOURCE: &str = include_str!("cli.rs");
+
+const EXPECTED_WORKSPACE_MANIFEST: &str = r#"[workspace]
+members = [
+  "crates/orange-compiler",
+  "crates/orangec",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.96.1"
+publish = false
+
+[workspace.lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "deny"
+
+[profile.release]
+debug-assertions = true
+overflow-checks = true
+"#;
+const EXPECTED_COMPILER_MANIFEST: &str = r#"[package]
+name = "orange-compiler"
+description = "Permanent compiler foundations for the Orange language"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+"#;
+const EXPECTED_ORANGEC_MANIFEST: &str = r#"[package]
+name = "orangec"
+description = "Command-line frontend for the Orange compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+orange-compiler = { path = "../orange-compiler" }
+
+[lints]
+workspace = true
+"#;
 
 const CLI_EVIDENCE: u16 = 1 << 0;
 const GENERATED_CLI_EVIDENCE: u16 = 1 << 1;
@@ -919,20 +973,26 @@ fn evidence_test_indentation(source_path: &str) -> &'static str {
 }
 
 fn expected_evidence_test_brace_stack(source: &str, source_path: &str) -> Option<Vec<usize>> {
+    if crate_starts_with_inner_attribute(source)? {
+        return None;
+    }
     match source_path {
         "compiler/crates/orangec/tests/cli.rs"
         | "compiler/crates/orangec/tests/s3a_conformance.rs" => Some(Vec::new()),
         _ => {
             const TEST_MODULE: &str = "#[cfg(test)]\nmod tests {";
-            let openings: Vec<_> = source
-                .match_indices(TEST_MODULE)
-                .map(|(offset, _)| offset + TEST_MODULE.len() - 1)
-                .collect();
-            let [opening] = openings.as_slice() else {
+            let modules = source.match_indices(TEST_MODULE).collect::<Vec<_>>();
+            let [(module_offset, _)] = modules.as_slice() else {
                 return None;
             };
-            (rust_code_brace_stack_at(source, *opening) == Some(Vec::new()))
-                .then_some(vec![*opening])
+            if last_code_construct_is_outer_attribute(&source[..*module_offset]) != Some(false) {
+                return None;
+            }
+            let opening = *module_offset + TEST_MODULE.len() - 1;
+            if starts_with_inner_attribute(source, opening + 1)? {
+                return None;
+            }
+            (rust_code_brace_stack_at(source, opening) == Some(Vec::new())).then_some(vec![opening])
         }
     }
 }
@@ -940,6 +1000,25 @@ fn expected_evidence_test_brace_stack(source: &str, source_path: &str) -> Option
 fn exact_test_declaration(source_path: &str, test: &str) -> String {
     let indentation = evidence_test_indentation(source_path);
     format!("{indentation}#[test]\n{indentation}fn {test}(")
+}
+
+fn rust_whitespace_len(source: &str, offset: usize) -> Option<usize> {
+    let character = source.get(offset..)?.chars().next()?;
+    matches!(
+        character,
+        '\u{0009}'
+            | '\u{000a}'
+            | '\u{000b}'
+            | '\u{000c}'
+            | '\u{000d}'
+            | '\u{0020}'
+            | '\u{0085}'
+            | '\u{200e}'
+            | '\u{200f}'
+            | '\u{2028}'
+            | '\u{2029}'
+    )
+    .then_some(character.len_utf8())
 }
 
 fn raw_string_start(bytes: &[u8], offset: usize) -> Option<(usize, usize)> {
@@ -973,7 +1052,7 @@ fn rust_code_brace_stack_at(source: &str, offset: usize) -> Option<Vec<usize>> {
     }
 
     let mut cursor = 0;
-    let mut brace_stack = Vec::new();
+    let mut delimiter_stack = Vec::new();
     let mut block_comment_depth = 0_usize;
     let mut line_comment = false;
     let mut string = false;
@@ -1057,12 +1136,156 @@ fn rust_code_brace_stack_at(source: &str, offset: usize) -> Option<Vec<usize>> {
             cursor += 1;
         } else {
             match bytes[cursor] {
-                b'{' => brace_stack.push(cursor),
-                b'}' => {
-                    brace_stack.pop()?;
+                b'{' | b'(' | b'[' => delimiter_stack.push((bytes[cursor], cursor)),
+                b'}' | b')' | b']' => {
+                    let expected = match bytes[cursor] {
+                        b'}' => b'{',
+                        b')' => b'(',
+                        b']' => b'[',
+                        _ => unreachable!(),
+                    };
+                    let (opening, _) = delimiter_stack.pop()?;
+                    if opening != expected {
+                        return None;
+                    }
                 }
                 _ => {}
             }
+            cursor += 1;
+        }
+    }
+
+    if line_comment
+        || block_comment_depth != 0
+        || raw_string_hashes.is_some()
+        || string
+        || character
+        || delimiter_stack
+            .iter()
+            .any(|(delimiter, _)| *delimiter != b'{')
+    {
+        return None;
+    }
+    Some(
+        delimiter_stack
+            .into_iter()
+            .map(|(_, offset)| offset)
+            .collect(),
+    )
+}
+
+fn last_code_construct_is_outer_attribute(source: &str) -> Option<bool> {
+    let bytes = source.as_bytes();
+    let mut cursor = 0;
+    let mut square_attribute_stack = Vec::new();
+    let mut last_code = None;
+    let mut last_construct_is_attribute = false;
+    let mut block_comment_depth = 0_usize;
+    let mut line_comment = false;
+    let mut string = false;
+    let mut string_escape = false;
+    let mut character = false;
+    let mut character_escape = false;
+    let mut raw_string_hashes = None;
+
+    while cursor < bytes.len() {
+        if line_comment {
+            if bytes[cursor] == b'\n' || bytes[cursor] == b'\r' {
+                line_comment = false;
+            }
+            cursor += 1;
+            continue;
+        }
+        if block_comment_depth != 0 {
+            if bytes.get(cursor..cursor + 2) == Some(b"/*") {
+                block_comment_depth += 1;
+                cursor += 2;
+            } else if bytes.get(cursor..cursor + 2) == Some(b"*/") {
+                block_comment_depth -= 1;
+                cursor += 2;
+            } else {
+                cursor += 1;
+            }
+            continue;
+        }
+        if let Some(hashes) = raw_string_hashes {
+            let terminator_end = cursor + 1 + hashes;
+            if bytes[cursor] == b'"'
+                && terminator_end <= bytes.len()
+                && bytes[cursor + 1..terminator_end]
+                    .iter()
+                    .all(|byte| *byte == b'#')
+            {
+                raw_string_hashes = None;
+                last_code = Some(terminator_end - 1);
+                last_construct_is_attribute = false;
+                cursor = terminator_end;
+            } else {
+                cursor += 1;
+            }
+            continue;
+        }
+        if string {
+            if string_escape {
+                string_escape = false;
+            } else if bytes[cursor] == b'\\' {
+                string_escape = true;
+            } else if bytes[cursor] == b'"' {
+                string = false;
+                last_code = Some(cursor);
+            }
+            cursor += 1;
+            continue;
+        }
+        if character {
+            if character_escape {
+                character_escape = false;
+            } else if bytes[cursor] == b'\\' {
+                character_escape = true;
+            } else if bytes[cursor] == b'\'' {
+                character = false;
+                last_code = Some(cursor);
+            }
+            cursor += 1;
+            continue;
+        }
+
+        if let Some(length) = rust_whitespace_len(source, cursor) {
+            cursor += length;
+        } else if bytes.get(cursor..cursor + 2) == Some(b"//") {
+            line_comment = true;
+            cursor += 2;
+        } else if bytes.get(cursor..cursor + 2) == Some(b"/*") {
+            block_comment_depth = 1;
+            cursor += 2;
+        } else if let Some((hashes, after_opening)) = raw_string_start(bytes, cursor) {
+            raw_string_hashes = Some(hashes);
+            last_code = Some(after_opening - 1);
+            last_construct_is_attribute = false;
+            cursor = after_opening;
+        } else if bytes[cursor] == b'"' {
+            string = true;
+            last_code = Some(cursor);
+            last_construct_is_attribute = false;
+            cursor += 1;
+        } else if bytes[cursor] == b'\'' && char_literal_start(source, cursor) {
+            character = true;
+            last_code = Some(cursor);
+            last_construct_is_attribute = false;
+            cursor += 1;
+        } else {
+            match bytes[cursor] {
+                b'[' => {
+                    square_attribute_stack
+                        .push(last_code.is_some_and(|offset| bytes[offset] == b'#'));
+                    last_construct_is_attribute = false;
+                }
+                b']' => {
+                    last_construct_is_attribute = square_attribute_stack.pop()?;
+                }
+                _ => last_construct_is_attribute = false,
+            }
+            last_code = Some(cursor);
             cursor += 1;
         }
     }
@@ -1071,12 +1294,122 @@ fn rust_code_brace_stack_at(source: &str, offset: usize) -> Option<Vec<usize>> {
         && block_comment_depth == 0
         && raw_string_hashes.is_none()
         && !string
-        && !character)
-        .then_some(brace_stack)
+        && !character
+        && square_attribute_stack.is_empty())
+    .then_some(last_construct_is_attribute)
 }
 
-fn rust_code_brace_depth_at(source: &str, offset: usize) -> Option<usize> {
-    rust_code_brace_stack_at(source, offset).map(|stack| stack.len())
+fn rust_code_offset_after_trivia(source: &str, mut cursor: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    if cursor > bytes.len() || !source.is_char_boundary(cursor) {
+        return None;
+    }
+
+    loop {
+        while let Some(length) = rust_whitespace_len(source, cursor) {
+            cursor += length;
+        }
+        if bytes.get(cursor..cursor + 2) == Some(b"//") {
+            cursor += 2;
+            while bytes
+                .get(cursor)
+                .is_some_and(|byte| *byte != b'\n' && *byte != b'\r')
+            {
+                cursor += 1;
+            }
+            continue;
+        }
+        if bytes.get(cursor..cursor + 2) == Some(b"/*") {
+            let mut depth = 1_usize;
+            cursor += 2;
+            while depth != 0 {
+                if bytes.get(cursor..cursor + 2) == Some(b"/*") {
+                    depth += 1;
+                    cursor += 2;
+                } else if bytes.get(cursor..cursor + 2) == Some(b"*/") {
+                    depth -= 1;
+                    cursor += 2;
+                } else if cursor == bytes.len() {
+                    return None;
+                } else {
+                    cursor += 1;
+                }
+            }
+            continue;
+        }
+        return Some(cursor);
+    }
+}
+
+fn starts_with_inner_attribute(source: &str, offset: usize) -> Option<bool> {
+    let bytes = source.as_bytes();
+    let hash = rust_code_offset_after_trivia(source, offset)?;
+    if bytes.get(hash) != Some(&b'#') {
+        return Some(false);
+    }
+    let bang = rust_code_offset_after_trivia(source, hash + 1)?;
+    if bytes.get(bang) != Some(&b'!') {
+        return Some(false);
+    }
+    let opening = rust_code_offset_after_trivia(source, bang + 1)?;
+    Some(bytes.get(opening) == Some(&b'['))
+}
+
+fn crate_starts_with_inner_attribute(source: &str) -> Option<bool> {
+    let bytes = source.as_bytes();
+    let offset = if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+        3
+    } else {
+        0
+    };
+    if starts_with_inner_attribute(source, offset)? {
+        return Some(true);
+    }
+
+    let first = rust_code_offset_after_trivia(source, offset)?;
+    if bytes.get(first..first + 2) != Some(b"#!") {
+        return Some(false);
+    }
+    let after_shebang = bytes[first..]
+        .iter()
+        .position(|byte| *byte == b'\n' || *byte == b'\r')
+        .map_or(bytes.len(), |line_offset| first + line_offset);
+    starts_with_inner_attribute(source, after_shebang)
+}
+
+fn cargo_test_harness_contract_is_exact(
+    workspace_manifest: &str,
+    compiler_manifest: &str,
+    orangec_manifest: &str,
+) -> bool {
+    workspace_manifest == EXPECTED_WORKSPACE_MANIFEST
+        && compiler_manifest == EXPECTED_COMPILER_MANIFEST
+        && orangec_manifest == EXPECTED_ORANGEC_MANIFEST
+}
+
+fn compiler_unit_harness_is_unconditional(source: &str) -> bool {
+    if crate_starts_with_inner_attribute(source) != Some(false) {
+        return false;
+    }
+    [
+        "pub mod core;",
+        "pub mod eval;",
+        "pub mod parser;",
+        "pub mod semantics;",
+        "pub mod source;",
+    ]
+    .into_iter()
+    .all(|declaration| {
+        let offsets = source
+            .match_indices(declaration)
+            .map(|(offset, _)| offset)
+            .collect::<Vec<_>>();
+        let [offset] = offsets.as_slice() else {
+            return false;
+        };
+        rust_code_brace_stack_at(source, *offset) == Some(Vec::new())
+            && last_code_construct_is_outer_attribute(&source[..*offset]) == Some(false)
+    })
 }
 
 fn internal_evidence_layers(source_path: &str, test: &str) -> u16 {
@@ -1148,74 +1481,216 @@ fn layer_names(layers: u16) -> Vec<&'static str> {
 }
 
 #[test]
-fn named_evidence_depth_rejects_noncode_and_nested_test_lookalikes() {
+fn s3a_named_evidence_scanner_rejects_disabled_and_nested_lookalikes() {
     const UNIT_PATH: &str = "compiler/crates/orange-compiler/src/core.rs";
+    const ROOT_PATH: &str = "compiler/crates/orangec/tests/cli.rs";
 
-    let top_level = "#[test]\nfn real() {}\n";
-    assert_eq!(rust_code_brace_depth_at(top_level, 0), Some(0));
+    for whitespace in [
+        '\u{0009}', '\u{000a}', '\u{000b}', '\u{000c}', '\u{000d}', '\u{0020}', '\u{0085}',
+        '\u{200e}', '\u{200f}', '\u{2028}', '\u{2029}',
+    ] {
+        let encoded = whitespace.to_string();
+        assert_eq!(
+            rust_whitespace_len(&encoded, 0),
+            Some(whitespace.len_utf8())
+        );
+    }
+    assert_eq!(rust_whitespace_len("\u{00a0}", 0), None);
 
-    let module_level = "#[cfg(test)]\nmod tests {\n    #[test]\n    fn real() {}\n}\n";
-    let module_test = module_level.find("    #[test]").unwrap();
-    assert_eq!(rust_code_brace_depth_at(module_level, module_test), Some(1));
+    let root = "#[test]\nfn real() {}\n";
+    assert_eq!(rust_code_brace_stack_at(root, 0), Some(Vec::new()));
     assert_eq!(
-        rust_code_brace_stack_at(module_level, module_test),
-        expected_evidence_test_brace_stack(module_level, UNIT_PATH)
+        expected_evidence_test_brace_stack(root, ROOT_PATH),
+        Some(Vec::new())
     );
 
-    let disabled_module = "#[cfg(any())]\nmod tests {\n    #[test]\n    fn fake() {}\n}\n";
-    let disabled_test = disabled_module.find("    #[test]").unwrap();
+    let unit = "#[cfg(test)]\nmod tests {\n    #[test]\n    fn real() {}\n}\n";
+    let unit_test = unit.find("    #[test]").unwrap();
     assert_eq!(
-        rust_code_brace_depth_at(disabled_module, disabled_test),
-        Some(1)
+        rust_code_brace_stack_at(unit, unit_test),
+        expected_evidence_test_brace_stack(unit, UNIT_PATH)
+    );
+
+    for noncode in [
+        "/* #[test]\nfn fake() {} */\n",
+        "// #[test]\n// fn fake() {}\n",
+        "const LOOKALIKE: &str = \"#[test]\\nfn fake() {}\";\n",
+        "const LOOKALIKE: &str = r#\"#[test]\nfn fake() {}\"#;\n",
+    ] {
+        let offset = noncode.find("#[test]").unwrap();
+        assert_eq!(rust_code_brace_stack_at(noncode, offset), None);
+    }
+
+    let nested =
+        "fn wrapper<'a>() { let _ = '{'; let _ = \"}\";\n    #[test]\n    fn fake() {}\n}\n";
+    let nested_test = nested.find("    #[test]").unwrap();
+    assert_ne!(
+        rust_code_brace_stack_at(nested, nested_test),
+        Some(Vec::new())
+    );
+
+    for (opening, closing) in [('(', ')'), ('[', ']')] {
+        let macro_wrapped = format!("discard!{opening}\n#[test]\nfn fake() {{}}\n{closing};\n");
+        let wrapped_test = macro_wrapped.find("#[test]").unwrap();
+        assert_eq!(rust_code_brace_stack_at(&macro_wrapped, wrapped_test), None);
+    }
+
+    for attribute in [
+        "#[cfg(any())]",
+        "#[ignore]",
+        "# [cfg(any())]",
+        "#\u{200e}[cfg(any())]",
+        "# /* nested /* separator */ comment */ [ignore]",
+    ] {
+        let controlled =
+            format!("fn before() {{\n}}\n{attribute}\n#[test]\nfn controlled() {{}}\n");
+        let test = controlled.find("#[test]").unwrap();
+        assert_eq!(
+            last_code_construct_is_outer_attribute(&controlled[..test]),
+            Some(true)
+        );
+    }
+
+    let alternate_modules = concat!(
+        "#[cfg(test)]\nmod first {}\n",
+        "#[cfg(test)]\nmod second {}\n",
     );
     assert_eq!(
-        expected_evidence_test_brace_stack(disabled_module, UNIT_PATH),
+        expected_evidence_test_brace_stack(alternate_modules, UNIT_PATH),
         None
     );
 
-    let nested = r#"mod tests {
-    fn wrapper<'a>() { let _ = '{'; let _ = "}";
-    #[test]
-    fn fake() {}
+    for additional_attribute in [
+        "#[cfg(any())]\n",
+        "#[cfg(any())]\n// separator\n",
+        "#[cfg(any())]\n/* separator */\n",
+        "# [cfg(any())]\n/* nested /* separator */ comment */\n",
+    ] {
+        let additionally_controlled_module = format!(
+            "{additional_attribute}#[cfg(test)]\nmod tests {{\n    #[test]\n    fn fake() {{}}\n}}\n"
+        );
+        assert_eq!(
+            expected_evidence_test_brace_stack(&additionally_controlled_module, UNIT_PATH),
+            None
+        );
     }
-}
-"#;
-    let nested_test = nested.find("    #[test]").unwrap();
-    assert_eq!(rust_code_brace_depth_at(nested, nested_test), Some(2));
 
-    let block_comment = r#"mod tests {
-    /* nested /* comment */
-    #[test]
-    fn fake() {}
-    */
-}
-"#;
-    let block_test = block_comment.find("    #[test]").unwrap();
-    assert_eq!(rust_code_brace_depth_at(block_comment, block_test), None);
+    for inner_attribute in [
+        "#![cfg(any())]\n",
+        "#![cfg_attr(test, cfg(any()))]\n",
+        "#\u{200e}!\u{200f}[cfg(any())]\n",
+        "# /* separator */ ! /* nested /* separator */ comment */ [cfg(any())]\n",
+    ] {
+        let disabled_unit_module = format!(
+            "#[cfg(test)]\nmod tests {{\n{inner_attribute}    fn helper() {{}}\n    #[test]\n    fn fake() {{}}\n}}\n"
+        );
+        assert_eq!(
+            expected_evidence_test_brace_stack(&disabled_unit_module, UNIT_PATH),
+            None
+        );
 
-    let normal_string = r#"mod tests {
-    let _ = "{
-    #[test]
-    fn fake() {}
-    }";
-}
-"#;
-    let normal_test = normal_string.find("    #[test]").unwrap();
-    assert_eq!(rust_code_brace_depth_at(normal_string, normal_test), None);
+        let disabled_integration_target =
+            format!("{inner_attribute}fn helper() {{}}\n#[test]\nfn fake() {{}}\n");
+        assert_eq!(
+            expected_evidence_test_brace_stack(&disabled_integration_target, ROOT_PATH),
+            None
+        );
+    }
 
-    let raw_string = r###"mod tests {
-    let _ = br##"{ " quoted
-    #[test]
-    fn fake() {}
-    " }"##;
-}
-"###;
-    let raw_test = raw_string.find("    #[test]").unwrap();
-    assert_eq!(rust_code_brace_depth_at(raw_string, raw_test), None);
+    let shebang_disabled_integration_target =
+        "#!/usr/bin/env false\n#![cfg(any())]\n#[test]\nfn fake() {}\n";
+    assert_eq!(
+        expected_evidence_test_brace_stack(shebang_disabled_integration_target, ROOT_PATH),
+        None
+    );
+
+    assert!(cargo_test_harness_contract_is_exact(
+        EXPECTED_WORKSPACE_MANIFEST,
+        EXPECTED_COMPILER_MANIFEST,
+        EXPECTED_ORANGEC_MANIFEST
+    ));
+    for compiler_manifest in [
+        format!("{EXPECTED_COMPILER_MANIFEST}\n[lib]\ntest = false\n"),
+        format!("{EXPECTED_COMPILER_MANIFEST}\n[lib]\nharness = false\n"),
+        format!("{EXPECTED_COMPILER_MANIFEST}\n[lib]\nrequired-features = [\"hidden\"]\n"),
+    ] {
+        assert!(!cargo_test_harness_contract_is_exact(
+            EXPECTED_WORKSPACE_MANIFEST,
+            &compiler_manifest,
+            EXPECTED_ORANGEC_MANIFEST
+        ));
+    }
+    for orangec_manifest in [
+        EXPECTED_ORANGEC_MANIFEST.replacen("[package]\n", "[package]\nautotests = false\n", 1),
+        EXPECTED_ORANGEC_MANIFEST.replacen("[package]\n", "[package]\nautobins = false\n", 1),
+        format!(
+            "{EXPECTED_ORANGEC_MANIFEST}\n[[test]]\nname = \"cli\"\npath = \"tests/elsewhere.rs\"\nrequired-features = [\"hidden\"]\n"
+        ),
+        format!(
+            "{EXPECTED_ORANGEC_MANIFEST}\n[[bin]]\nname = \"orangec\"\npath = \"src/main.rs\"\ntest = false\n"
+        ),
+    ] {
+        assert!(!cargo_test_harness_contract_is_exact(
+            EXPECTED_WORKSPACE_MANIFEST,
+            EXPECTED_COMPILER_MANIFEST,
+            &orangec_manifest
+        ));
+    }
+    let workspace_member_removed =
+        EXPECTED_WORKSPACE_MANIFEST.replace("  \"crates/orangec\",\n", "");
+    assert!(!cargo_test_harness_contract_is_exact(
+        &workspace_member_removed,
+        EXPECTED_COMPILER_MANIFEST,
+        EXPECTED_ORANGEC_MANIFEST
+    ));
+
+    let compiler_root = concat!(
+        "pub mod core;\n",
+        "pub mod eval;\n",
+        "pub mod parser;\n",
+        "pub mod semantics;\n",
+        "pub mod source;\n",
+    );
+    assert!(compiler_unit_harness_is_unconditional(compiler_root));
+    assert!(!compiler_unit_harness_is_unconditional(&format!(
+        "#![cfg(not(test))]\n{compiler_root}"
+    )));
+    for module in ["core", "eval", "parser", "semantics", "source"] {
+        let declaration = format!("pub mod {module};");
+        let controlled = compiler_root.replace(
+            &declaration,
+            &format!("#\u{200e}[cfg(not(test))]\n{declaration}"),
+        );
+        assert!(!compiler_unit_harness_is_unconditional(&controlled));
+    }
+
+    let ordinary_preceding_item = concat!(
+        "const PREVIOUS: [u8; 1] = [0];\n",
+        "// separator\n",
+        "#[cfg(test)]\n",
+        "mod tests {\n",
+        "    #[test]\n",
+        "    fn real() {}\n",
+        "}\n",
+    );
+    assert!(expected_evidence_test_brace_stack(ordinary_preceding_item, UNIT_PATH).is_some());
 }
 
 #[test]
 fn s3a_rule_index_is_exact_and_covered() {
+    assert!(
+        cargo_test_harness_contract_is_exact(
+            WORKSPACE_MANIFEST,
+            COMPILER_MANIFEST,
+            ORANGEC_MANIFEST
+        ),
+        "Cargo workspace and S3a test-target activation contract changed"
+    );
+    assert!(
+        compiler_unit_harness_is_unconditional(COMPILER_LIB_SOURCE),
+        "mapped compiler unit modules are not unconditionally registered"
+    );
+
     let expected: BTreeSet<_> = RULES.iter().map(|rule| rule.id).collect();
     assert_eq!(expected.len(), RULES.len(), "duplicate expected rule ID");
 
@@ -1323,31 +1798,12 @@ fn s3a_rule_index_is_exact_and_covered() {
             evidence.source_path,
             evidence.test
         );
-        let indentation = evidence_test_indentation(evidence.source_path);
-        let previous_item_boundary = format!("{indentation}}}");
-        let mut found_previous_item = false;
-        let mut controlling_attribute = None;
-        for line in source[..offsets[0]].lines().rev() {
-            if line == previous_item_boundary {
-                found_previous_item = true;
-                break;
-            }
-            let line = line.trim();
-            if controlling_attribute.is_none() && line.starts_with("#[") {
-                controlling_attribute = Some(line);
-            }
-        }
-        assert!(
-            found_previous_item,
-            "{} test {} has no preceding item boundary at its expected module depth",
-            evidence.source_path, evidence.test
-        );
-        assert!(
-            controlling_attribute.is_none(),
-            "{} test {} has an additional controlling attribute {:?}",
+        assert_eq!(
+            last_code_construct_is_outer_attribute(&source[..offsets[0]]),
+            Some(false),
+            "{} test {} has an additional controlling attribute or malformed prefix",
             evidence.source_path,
-            evidence.test,
-            controlling_attribute
+            evidence.test
         );
         assert!(
             !evidence.rules.is_empty(),

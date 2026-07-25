@@ -252,10 +252,16 @@ separately requires I/O, allocation, and non-regular host-boundary failures.
 Every named test must have exactly one unconditional declaration at its expected
 harness location: integration tests at file root and unit tests directly inside
 the source's unique `#[cfg(test)] mod tests` container. Declarations inside
-comments, strings, nested functions, or alternate or disabled modules do not
-qualify. That traceability is not proof that a named test exhausts its rule.
-Production constants remain specification-bound by policy validation, and
-internal injected-limit tests exercise accounting where a maximum cannot be
+comments, strings, nested functions, macro token trees, or alternate or disabled
+modules do not qualify. The runner independently binds the exact Cargo
+workspace/package manifests and the compiler crate's unconditional `core`,
+`eval`, `parser`, `semantics`, and `source` registrations. As with S2, the index
+establishes registration; execution of every mapped binary is a protected
+full-gate claim because that gate clears caller Cargo configuration and target
+runners. A standalone S3a target run is not evidence that the other mapped
+binaries executed. That traceability is not proof that a named test exhausts
+its rule. Production constants remain specification-bound by policy validation,
+and internal injected-limit tests exercise accounting where a maximum cannot be
 reached through valid public source before an earlier bound. The normative
 Orange 2026 syntax and semantic documents are digest protected. Adding another
 compiler source, fixture, test runner, or normative language file requires an

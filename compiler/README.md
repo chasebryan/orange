@@ -474,6 +474,16 @@ exact ordered diagnostic-code sequence, the expected diagnostic meaning, and
 the exact primary line and column for every diagnostic. Check and evaluation
 rejection bytes must agree.
 
+The same protected runner binds every named evidence entry to one unconditional
+test at its true integration- or unit-test harness location. It rejects
+comment, string, nested-function, macro-token-tree, and controlling-attribute
+lookalikes; binds the exact Cargo workspace and package manifests; and requires
+unconditional compiler-crate registration of `core`, `eval`, `parser`,
+`semantics`, and `source`. This establishes registration. The execution claim
+for all mapped test binaries belongs to the protected full repository gate,
+which clears caller Cargo configuration and target runners; a standalone S3a
+target run does not show that the other mapped binaries executed.
+
 Six generated black-box cases exercise boundaries and combinations that are
 impractical as ordinary expected-output fixtures. They cover the exact
 significant-bit boundary, leading-zero neutrality, the exact semantic diagnostic
