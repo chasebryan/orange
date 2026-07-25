@@ -14,12 +14,20 @@ candidate output, result, recommendation, owner review, or acceptance record is
 present. Canonical D-005 execution evidence remains 0/32 candidate-case
 executions.
 
+The Rust laboratory now includes a draft-only adapter transport/capture
+boundary. It constructs digest-bound requests and validates synthetic captured
+bytes, but deliberately contains no subprocess launcher or candidate payload
+validator. A transport-valid response exposes only an unvalidated object; it is
+not a candidate result or decision evidence. The research inventory therefore
+adds no adapter output, candidate directory, replay attestation, owner review,
+or disposition artifact.
+
 The machine-readable index is
 [`legacy-v0.1-mutations.json`](d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json).
 The checked-in draft protocol is
 [`epoch.json`](d005-v0.1/epochs/0001/protocol/epoch.json). Its strict canonical
 JSON SHA-256 is
-`2a56537bfa61fe1e4f015047b7c49b11fa926bd4cb688c6e7d4a0da07e21b633`;
+`731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194`;
 the Rust laboratory parses those checked-in bytes and binds that digest before
 it prepares any replay plan. The packet also binds the exact decision-suite
 document, historical claim-record schema, and legacy-input manifest by raw-byte

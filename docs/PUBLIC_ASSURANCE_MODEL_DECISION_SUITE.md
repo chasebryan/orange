@@ -513,6 +513,33 @@ inventories and resource ceilings, and prepares—but does not execute—the
 symmetric replay schedule. Later admitted evidence uses this logical layout;
 empty result directories are not created in advance:
 
+### Draft adapter transport boundary
+
+The laboratory may construct a canonical transport request for a planned slot
+and validate synthetic, already-captured process bytes against a closed draft
+response envelope. The request binds the packet and replay-plan digests,
+ordinal, candidate, case, workspace and render repetitions, input-manifest
+identity, and an explicitly supplied future payload-schema digest. The response
+must echo those identities exactly, use strict canonical JSON followed by one
+line feed, exit successfully with empty standard error, remain inside the
+packet's combined output ceiling, and contain an object payload. Passing this
+boundary yields only unvalidated payload bytes.
+
+This transport laboratory has no process-launch API and supplies no network,
+filesystem, process-tree, CPU, memory, storage, file, descriptor, or cleanup
+enforcement. It treats nonzero exit, signal, timeout, launch or I/O failure,
+unsupported isolation, truncation, overflow, malformed or noncanonical JSON,
+unknown fields, and identity drift as transport failures. The synthetic capture
+objects are not candidate executions or evidence. A real launcher requires a
+separately approved sandbox backend and a frozen epoch that binds executable
+bytes, arguments, environment, working directory, resource policy, cleanup,
+and candidate payload schemas.
+
+The response envelope remains a draft transport contract, not the frozen
+candidate output schemas required by section 2. It defines no case verdict,
+claim outcome, hard-gate result, recommendation, or authority rule and cannot
+increase the `0/32` baseline.
+
 ```text
 d005-v0.1/
   epochs/0001/

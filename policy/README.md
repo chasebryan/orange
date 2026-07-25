@@ -228,7 +228,10 @@ and named-mutation manifest plus the D-005 execution packet and historical v0.1
 negative corpus. The D-004 inventory preserves its unassigned cross-cutting
 fixture classes as freeze blockers and freezes no evidence epoch. Neither
 inventory contains a candidate result, owner review, accepted decision, or
-release evidence. The S2 inventory includes
+release evidence. D-005's protected Rust laboratory may construct canonical
+adapter requests and validate synthetic captured transport envelopes, but it
+contains no subprocess launcher, candidate payload validator, result artifact,
+or execution authority and retains 0/32. The S2 inventory includes
 the lexer and parser sources, the protected S2 conformance runner, and normative
 [`docs/LANGUAGE_2026.md`](../docs/LANGUAGE_2026.md). That runner requires the
 exact stable 13-rule ID inventory, the exact evidence-layer declarations, and

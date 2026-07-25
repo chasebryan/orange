@@ -27,7 +27,7 @@ INPUT_ROOT = Path(
 MANIFEST_PATH = INPUT_ROOT / "legacy-v0.1-mutations.json"
 SCHEMA_PATH = Path("schemas/gate0/claim-record-v0.1.schema.json")
 PACKET_CANONICAL_SHA256 = (
-    "2a56537bfa61fe1e4f015047b7c49b11fa926bd4cb688c6e7d4a0da07e21b633"
+    "731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194"
 )
 
 
