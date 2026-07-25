@@ -806,6 +806,65 @@ mod tests {
             .collect()
     }
 
+    fn reference_decimal_from_bits(bits: &str) -> String {
+        let mut digits = vec![0_u8];
+        for bit in bits.bytes() {
+            let mut carry = bit - b'0';
+            for digit in &mut digits {
+                let doubled = *digit * 2 + carry;
+                *digit = doubled % 10;
+                carry = doubled / 10;
+            }
+            if carry != 0 {
+                digits.push(carry);
+            }
+        }
+        digits
+            .iter()
+            .rev()
+            .map(|digit| char::from(b'0' + *digit))
+            .collect()
+    }
+
+    fn reference_hexadecimal_from_bits(bits: &str) -> String {
+        let padding = bits.len().next_multiple_of(4) - bits.len();
+        let padded = format!("{}{}", "0".repeat(padding), bits);
+        padded
+            .as_bytes()
+            .chunks(4)
+            .map(|nibble| {
+                let value = nibble
+                    .iter()
+                    .fold(0_u32, |value, bit| value * 2 + u32::from(*bit - b'0'));
+                char::from_digit(value, 16).unwrap()
+            })
+            .collect()
+    }
+
+    fn group_digits(digits: &str, width: usize) -> String {
+        let separators = digits.len().saturating_sub(1) / width;
+        let mut grouped = String::with_capacity(digits.len() + separators);
+        for (index, digit) in digits.char_indices() {
+            if index != 0 && (digits.len() - index).is_multiple_of(width) {
+                grouped.push('_');
+            }
+            grouped.push(digit);
+        }
+        grouped
+    }
+
+    fn deterministic_bits(bit_length: usize, state: &mut u64) -> String {
+        let mut bits = String::with_capacity(bit_length);
+        bits.push('1');
+        for _ in 1..bit_length {
+            *state ^= *state << 13;
+            *state ^= *state >> 7;
+            *state ^= *state << 17;
+            bits.push(if *state & 1 == 0 { '0' } else { '1' });
+        }
+        bits
+    }
+
     #[test]
     fn rejects_same_index_syntax_trees_from_another_source_map_repeatably() {
         let text = "edition 2026; module values { spec value() -> Int { 1 } }\n";
@@ -1076,6 +1135,94 @@ mod tests {
             .map(|function| function.value.to_string())
             .collect();
         assert_eq!(observed, expected);
+    }
+
+    #[test]
+    fn multi_limb_integer_decoding_matches_independent_cross_radix_reference() {
+        let bit_lengths = [
+            31,
+            32,
+            33,
+            63,
+            64,
+            65,
+            127,
+            128,
+            129,
+            255,
+            256,
+            257,
+            511,
+            512,
+            513,
+            1_023,
+            1_024,
+            1_025,
+            4_095,
+            4_096,
+            4_097,
+            MAX_INTEGER_BITS - 1,
+            MAX_INTEGER_BITS,
+        ];
+        let mut state = 0xd1b5_4a32_d192_ed03_u64;
+        let mut source = String::from("edition 2026; module multi_limb_reference {\n");
+        let mut expected = Vec::with_capacity(bit_lengths.len() * 4);
+
+        for (index, bit_length) in bit_lengths.into_iter().enumerate() {
+            let bits = deterministic_bits(bit_length, &mut state);
+            let decimal = reference_decimal_from_bits(&bits);
+            let hexadecimal = reference_hexadecimal_from_bits(&bits);
+
+            source.push_str(&format!(
+                "  spec decimal_{index}() -> Int {{ {} }}\n",
+                group_digits(&decimal, 4)
+            ));
+            expected.push(decimal.clone());
+
+            source.push_str(&format!(
+                "  spec binary_{index}() -> Int {{ 0b{} }}\n",
+                group_digits(&bits, 5)
+            ));
+            expected.push(decimal.clone());
+
+            source.push_str(&format!(
+                "  spec hexadecimal_{index}() -> Int {{ 0X{} }}\n",
+                group_digits(&hexadecimal.to_uppercase(), 3)
+            ));
+            expected.push(decimal.clone());
+
+            source.push_str(&format!(
+                "  spec negative_{index}() -> Int {{ -0x{} }}\n",
+                group_digits(&hexadecimal, 7)
+            ));
+            expected.push(format!("-{decimal}"));
+        }
+        source.push_str("}\n");
+
+        let fixture = Fixture::new(source);
+        let first = fixture.analyze();
+        let second = fixture.analyze();
+        assert_eq!(first, second);
+        assert_eq!(first.diagnostics, []);
+        let core = first.core.as_ref().unwrap();
+        let observed_core: Vec<_> = core
+            .functions
+            .iter()
+            .map(|function| function.value.to_string())
+            .collect();
+        assert_eq!(observed_core, expected);
+
+        let first_evaluation = crate::eval::evaluate(core);
+        let second_evaluation = crate::eval::evaluate(core);
+        assert_eq!(first_evaluation, second_evaluation);
+        assert_eq!(first_evaluation.diagnostics(), []);
+        let observed_evaluation: Vec<_> = first_evaluation
+            .values()
+            .unwrap()
+            .iter()
+            .map(|function| function.value().to_string())
+            .collect();
+        assert_eq!(observed_evaluation, expected);
     }
 
     #[test]

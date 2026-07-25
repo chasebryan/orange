@@ -536,6 +536,18 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        test: "multi_limb_integer_decoding_matches_independent_cross_radix_reference",
+        rules: &[
+            "S3A-LIT-DECODE-01",
+            "S3A-LIT-BITS-01",
+            "S3A-INT-01",
+            "S3A-CORE-CONTENT-01",
+            "S3A-EVAL-INT-01",
+            "S3A-DETERMINISM-01",
+        ],
+    },
+    TestEvidence {
+        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
         test: "large_integer_rendering_matches_decimal_doubling_reference",
         rules: &[
             "S3A-LIT-DECODE-01",

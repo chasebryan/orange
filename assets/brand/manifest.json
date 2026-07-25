@@ -95,8 +95,18 @@
       "width": 2048,
       "height": 682,
       "alpha": false,
-      "role": "primary-reader-entrypoint-hand-drawn-horizontal-lockup-on-light",
+      "role": "primary-orange-book-hand-drawn-horizontal-lockup-on-light",
       "sha256": "05578f7080c38ad03464c7e09678a42ef0a67af8c1e73f163637585e8bda1735"
+    },
+    {
+      "path": "orange-cryptography-handdrawn-banner.png",
+      "source_filename": "exec-b489e83f-e13c-467d-85b5-c6f62fe265b7.png",
+      "media_type": "image/png",
+      "width": 2172,
+      "height": 724,
+      "alpha": false,
+      "role": "primary-readme-cryptography-hand-drawn-horizontal-lockup-on-light",
+      "sha256": "143f44c591001f9aec2b94723520a49dd484f2ae26208885e4e849b9db6ef1ff"
     }
   ]
 }
