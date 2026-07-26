@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use super::candidate_mappings::{CandidateMappingErrorKind, parse_candidate_mapping_catalog};
 use super::case_subjects::{CaseSubjectErrorKind, parse_case_subject_catalog};
 use super::domain::{
     CANDIDATES, CASES, CandidateId, CaseId, INPUT_BINDING_COUNT, INPUT_BINDINGS, InputBindingId,
@@ -7,7 +8,8 @@ use super::domain::{
 };
 use super::fixtures::{FixtureErrorKind, parse_fixture_catalog};
 use super::packet::{
-    CASE_SUBJECT_CATALOG_SHA256, CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
+    CANDIDATE_MAPPING_CATALOG_SHA256, CASE_SUBJECT_CATALOG_SHA256,
+    CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
     CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256, DraftPacket, MUTATION_MANIFEST_SHA256,
     PacketErrorKind, canonical_cross_cutting_fixture_proposal_manifest_file_bytes,
     canonical_mutation_manifest_file_bytes, cross_cutting_fixture_proposal_manifest_digest_hex,
@@ -74,6 +76,11 @@ pub(crate) enum ReplayError {
     },
     CaseSubjectCatalog(CaseSubjectErrorKind),
     CaseSubjectCatalogDigest {
+        expected_sha256: &'static str,
+        observed_sha256: String,
+    },
+    CandidateMappingCatalog(CandidateMappingErrorKind),
+    CandidateMappingCatalogDigest {
         expected_sha256: &'static str,
         observed_sha256: String,
     },
@@ -227,6 +234,17 @@ pub(crate) fn prepare_replay(
         return Err(ReplayError::CaseSubjectCatalogDigest {
             expected_sha256: CASE_SUBJECT_CATALOG_SHA256,
             observed_sha256: observed_case_subject_catalog_digest,
+        });
+    }
+
+    let candidate_mapping_bytes = inputs.get(InputBindingId::CandidateMappings);
+    let candidate_mapping_catalog = parse_candidate_mapping_catalog(candidate_mapping_bytes)
+        .map_err(|error| ReplayError::CandidateMappingCatalog(error.kind))?;
+    let observed_candidate_mapping_catalog_digest = candidate_mapping_catalog.digest_hex();
+    if observed_candidate_mapping_catalog_digest != CANDIDATE_MAPPING_CATALOG_SHA256 {
+        return Err(ReplayError::CandidateMappingCatalogDigest {
+            expected_sha256: CANDIDATE_MAPPING_CATALOG_SHA256,
+            observed_sha256: observed_candidate_mapping_catalog_digest,
         });
     }
 

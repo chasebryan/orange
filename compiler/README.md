@@ -46,40 +46,48 @@ input-only `draft_unfrozen` packet, binds the conditional suite and accepted
 S3a baseline by SHA-256, preserves the 5-candidate by 5-case matrix, 14 required
 relationships, 10 hard gates, and 26 mutations named explicitly by the suite,
 binds a closed catalog with five positive and 26 named-mutation subjects plus
-39 unreviewed domain-level structural proposals and their corresponding
-candidate-neutral byte-materialized subjects, and prepares one deterministic
-balanced 25-slot identity plan:
+42 unreviewed domain-level structural proposals and their corresponding
+candidate-neutral byte-materialized subjects, authenticates five unreviewed
+structural candidate graph proposals and 70 unresolved SR mapping rows, and
+prepares one deterministic balanced 25-slot identity plan:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
   --test d004_decision_suite --locked --offline
 ```
 
-The proposal manifest names 14 missing-edge, 10 identity-substitution, and five
+The proposal manifest names 14 missing-edge, 13 identity-substitution, and five
 each of ambiguity, unsupported-behavior, and domain-exhaustion proposals. The
-cross-cutting and case-subject catalogs byte-materialize exactly 70 suite-only
-subjects under `draft_unreviewed_input_only`. Closed parsers authenticate the
-ordered proposal and named-mutation joins, case baselines, and per-subject
-identities, then bounded structural integrity oracles check the fixed models in
-memory. Those checks are not candidate executions and create no candidate
-observation, result, evidence, verdict, or capability credit. All five class
-sufficiency reviews and freeze blockers remain unresolved. Candidate-adapter
+three added identity targets bind the model, dependency manifest, and positive
+subject. The cross-cutting and case-subject catalogs byte-materialize exactly
+73 suite-only subjects under `draft_unreviewed_input_only`. Closed parsers
+authenticate the ordered proposal and named-mutation joins, case baselines, and
+per-subject identities, then bounded structural integrity oracles check the
+fixed models in memory. Those checks are not candidate executions and create no
+candidate observation, result, evidence, verdict, or capability credit. All
+five class sufficiency reviews and freeze blockers remain unresolved. Candidate-adapter
 failure cannot satisfy an unsupported subject, domain exhaustion verifies no
-replay ceiling, and replay repetitions remain unassigned. The laboratory
-also checks a closed, in-memory future-schema descriptor that enumerates
-all 31 top-level future case-record fields, their nested shapes, and their
-cross-field invariants. It binds both authenticated subject catalogs into an
-exact 70-row observation oracle, so a future result cannot supply or broaden
-its own allowed outcomes. The descriptor defines a 10-field scheduled-slot
-preimage contract and fail-closed verdict conditions, including checked
-resource bounds and SR dependency joins. The 25-slot identity plan exists, but
-no concrete slot preimage or digest is available until the epoch, packet
-identity, and replay-plan identity are frozen.
+replay ceiling, and replay repetitions remain unassigned. The separate
+`d004-v0.5-candidate-mappings.json` catalog uses schema
+`d004-candidate-mapping-catalog-v0.1`; its five graphs and 70 SR rows are
+authenticated input-only hypotheses, not reviewed mapping conformance. The
+laboratory also checks a closed, in-memory future-schema descriptor that
+enumerates all 31 top-level future case-record fields, their nested shapes, and
+their cross-field invariants. It binds both authenticated subject catalogs into
+an exact 73-row observation oracle and the candidate-mapping catalog into five
+exact graph/map identity rows, so a future result cannot supply or broaden its
+own allowed outcomes or substitute another mapping. The descriptor defines a
+10-field scheduled-slot preimage contract and fail-closed verdict conditions,
+including checked resource bounds and SR dependency joins. The 25-slot identity
+plan exists, but no concrete slot preimage or digest is available until the
+epoch, packet identity, and replay-plan identity are frozen.
 This synthetic contract accepts no populated records, launches no process or
 adapter, and persists nothing. It approves no schema, assigns no replay
-cardinality, and supplies no candidate mapping or adapter. The epoch remains
-null and unfrozen, owner protocol review remains `none`, execution remains 0/25
-with evidence `none`, and selection and conclusion remain null. D-003
+cardinality, and neither ratifies the separate mapping proposals nor supplies
+an adapter. The epoch remains null and unfrozen, owner protocol review remains
+`none`, execution remains 0/25 with evidence `none`, and selection and
+conclusion remain null. No adapter, execution, evidence, review, freeze,
+selection, or readiness credit follows from mapping authentication. D-003
 acceptance does not accept D-004, alter compiler behavior, authorize S3b, or
 grant roadmap or version 1.0.0 readiness credit; both `roadmap_gate_credit` and
 `readiness_credit` remain `none`.

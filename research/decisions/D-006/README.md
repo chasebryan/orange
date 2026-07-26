@@ -33,4 +33,5 @@ its raw file SHA-256, including the final line feed, is
 Current D-006 execution evidence remains 0/14 candidate-case runs. Neither Rocq
 nor Lean 4 is selected, preferred, recommended, installed, or authorized for
 proof-bearing product work. This preparation does not accept D-004, D-005, or
-D-006, close S4, authorize a release, or advance Orange beyond 30% readiness.
+D-006, close S4, authorize a release, or change Orange's 3/10 (30%) binary
+gate-closure score; that score is not release readiness.

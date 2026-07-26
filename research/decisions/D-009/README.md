@@ -24,9 +24,9 @@ same candidate order through TC-08. It is a canonical identity serialization,
 not an authorized physical execution order.
 
 The packet's strict canonical JSON SHA-256, excluding its final line feed, is
-`609d2b0edaad32a4edde7b44b7e127abfffacd47330e0648bf3e5978635f8f25`;
+`fa1411c83fdb6b57b8100f296ca904d88155ad6aa57bd7f48af62ae90c9ead31`;
 its raw file SHA-256, including the final line feed, is
-`9126ec6b4a46f938c337811b37b4b4939372c0f5fe9347364f21f64bb7a86e3a`.
+`c0ad0227f1f374da8796c6db4866188213be53bd904bbf22b141ee1de6e57171`.
 Its closed packet schema is `d009-pre-epoch-packet-v0.3`; the suite version
 remains `d009-v0.1-draft`, and the existing filename is retained as a stable
 draft locator.
@@ -56,5 +56,5 @@ Current D-009 execution evidence remains 0/24 candidate-case runs. No solver-
 trust candidate is selected, preferred, recommended by this laboratory,
 installed, or authorized for claim-bearing product work. This preparation does
 not accept D-004, D-005, D-006, D-007, or D-009; add or remove a solver from the
-logical TCB; close S4; authorize a release; or advance Orange beyond 30%
-readiness.
+logical TCB; close S4; authorize a release; or change Orange's 3/10 (30%)
+binary gate-closure score; that score is not release readiness.

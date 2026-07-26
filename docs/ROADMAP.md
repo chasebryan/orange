@@ -292,7 +292,8 @@ adapter, runner, observer, or isolation backend; assigns no physical order or
 execution resources; validates no proof, certificate, counterexample, theorem,
 claim, or cache result; and records 0/24 executions, no evidence, no selection,
 and no conclusion. This preparation neither changes the logical TCB nor closes
-S4, authorizes solver-backed proof search, or advances readiness beyond 30%.
+S4, authorizes solver-backed proof search, or changes Orange's 3/10 (30%)
+binary gate-closure score; that score is not release readiness.
 
 ### S5 — Compiler IRs and one output path
 
@@ -381,19 +382,20 @@ define the owner-executable records and research that may run ahead. Explicit
 acceptance on 2026-07-26 and Accepted OEP-0004 bind D-003 candidate PF-01 to
 exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`, but they do not
 accept D-004 or authorize S3b. The D-004 input-only pre-epoch laboratory binds
-exactly 70 candidate-neutral suite-only subjects as
+exactly 73 candidate-neutral suite-only subjects as
 `draft_unreviewed_input_only`: five positive case subjects, all 26 named
-mutation subjects, 14 missing-edge subjects, 10 identity-substitution subjects,
+mutation subjects, 14 missing-edge subjects, 13 identity-substitution subjects,
 and five each for ambiguity, unsupported behavior, and domain exhaustion.
 Sufficiency review and the freeze blocker for every cross-cutting class remain
 unresolved, as do replay repetitions. D-003 is accepted at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner protocol
 review is `none`; the D-004
-epoch is unfrozen; and no candidate mapping or adapter exists. Integrity
-parsing and structural oracles over the opaque suite-only inputs are not
-candidate executions and ratify no semantics. The laboratory remains at 0/25
-with no observation, evidence, result, selection, or conclusion; S3 remains
-open and Orange remains 30% complete by binary gate closure.
+epoch is unfrozen. A separate authenticated input-only catalog contains five
+unreviewed structural candidate graph proposals and 70 unresolved SR mapping
+rows. Those hypotheses create no adapter, execution, evidence, review, freeze,
+result, selection, conclusion, or readiness credit. Integrity parsing and
+structural oracles ratify no semantics; the laboratory remains at 0/25, S3
+remains open, and Orange remains 30% complete by binary gate closure.
 
 ## 7. Quality and claim metrics
 

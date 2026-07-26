@@ -13,41 +13,41 @@ from tools.validate_foundation import FoundationValidator, canonical_json_bytes,
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RESEARCH_ROOT = Path("research/decisions/D-004")
-PACKET_PATH = RESEARCH_ROOT / "d004-v0.4-draft-packet.json"
+PACKET_PATH = RESEARCH_ROOT / "d004-v0.5-draft-packet.json"
 MANIFEST_PATH = RESEARCH_ROOT / "d004-v0.2-named-mutations.json"
 PROPOSAL_MANIFEST_PATH = (
     RESEARCH_ROOT / "d004-v0.2-cross-cutting-fixture-proposals.json"
 )
 PACKET_CANONICAL_SHA256 = (
-    "b298cbf0d1c6af2ca9a4af7bb6b020595ffd00c1ab6896d5f097b3ebff13127d"
+    "b6df1a38f8a1eb6a80a8864324c21a81cb292d4c48e1981b4547bad41933b340"
 )
 PACKET_RAW_SHA256 = (
-    "0da96c89f62125f915152fb0ab30f41e608502bbe3a571a928c91e9d3812bc7a"
+    "ec3a0a593d1dab7a6ace874dae4fd03c1ae0656cf301897ccabf51cb109c4009"
 )
 MANIFEST_CANONICAL_SHA256 = (
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
 )
 PROPOSAL_MANIFEST_CANONICAL_SHA256 = (
-    "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65"
+    "85407a4a43b5a6bf450ea905fe858482f2f79abb4cbe8ee8690bddc1753d0912"
 )
 PROPOSAL_MANIFEST_RAW_SHA256 = (
-    "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93"
+    "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481"
 )
 FIXTURE_CATALOG_PATH = (
     RESEARCH_ROOT / "d004-v0.3-cross-cutting-executable-fixtures.json"
 )
 FIXTURE_CATALOG_CANONICAL_SHA256 = (
-    "ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703"
+    "0516a84260bcc4d8ebb64e0cd3416deb5c43a86b7f5cd882ca757c924e575767"
 )
 FIXTURE_CATALOG_RAW_SHA256 = (
-    "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0"
+    "5fea65960c47818243d41076dd96a6cab2dbd6d4038fd354a3f5ba30a12622ae"
 )
 CASE_SUBJECT_CATALOG_PATH = RESEARCH_ROOT / "d004-v0.4-case-subjects.json"
 CASE_SUBJECT_CATALOG_CANONICAL_SHA256 = (
-    "b3a8bcf4f0f084740e92cbff6fd57273df0a078af9c6b974f68d95ba333c6dc1"
+    "5b9e734b6bad7913072e87adb29c58547d67bdcb46af942eb6bbc79d0e68166e"
 )
 CASE_SUBJECT_CATALOG_RAW_SHA256 = (
-    "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6"
+    "6266b8e38ad1a83fb777278fc0369844749b2915eabb40ba1ddfc9efa7c985f2"
 )
 RESULT_CONTRACT_SOURCE_PATH = Path(
     "compiler/crates/orange-compiler/tests/d004_support/result_contract.rs"
@@ -56,10 +56,51 @@ DECISION_SUITE_SOURCE_PATH = Path(
     "compiler/crates/orange-compiler/tests/d004_decision_suite.rs"
 )
 RESULT_CONTRACT_SOURCE_SHA256 = (
-    "8ef2abfd63d711907e911c415e4abbb903244aa9b44211f59e9b1f963c884292"
+    "f3fdb4187fa9dffb23e849208da20f112aba764cfa85df80ae578754f3c9c97a"
 )
 RESULT_CONTRACT_DESCRIPTOR_SHA256 = (
-    "e3afc61c7127ca0b59dd010e90ae03a92c3354e3eee490c0667482c9218e8789"
+    "58773e8ce29e8726a8a85203ff7e2a4b1a03f8c02bfbcd7f6056f34fe53a2f29"
+)
+CANDIDATE_MAPPING_CATALOG_PATH = RESEARCH_ROOT / "d004-v0.5-candidate-mappings.json"
+CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256 = (
+    "c967d7db8ea5049da054129367ec61cd80d729b8ce8cd34c95a76e42c67c97b8"
+)
+CANDIDATE_MAPPING_CATALOG_RAW_SHA256 = (
+    "70765c64936bbb8aafd6e101fbf20c85396eb722d70e55bb9311d14bfbb15156"
+)
+CANDIDATE_MAPPING_CATALOG_SUBJECT_SHA256 = (
+    "e3b790857ee21a0c651995919aaadb9bf59b05367a8dce99bab6afb6e7d2543f"
+)
+
+MANDATORY_DIGEST_JOIN_FIELDS = (
+    "packet_sha256",
+    "replay_plan_sha256",
+    "scheduled_slot_sha256",
+    "input_manifest_sha256",
+    "model_sha256",
+    "tool_sha256",
+    "dependency_manifest_sha256",
+    "environment_sha256",
+    "candidate_graph_sha256",
+    "sr_map_sha256",
+    "semantic_endpoint_sha256",
+    "parameter_model_sha256",
+    "positive_subject_sha256",
+)
+EXPECTED_IDENTITY_SUBSTITUTIONS = (
+    ("D004-XF-ID-PACKET", "packet_identity"),
+    ("D004-XF-ID-REPLAY-PLAN", "replay_plan_identity"),
+    ("D004-XF-ID-SCHEDULED-SLOT", "scheduled_slot_identity"),
+    ("D004-XF-ID-INPUT-MANIFEST", "input_manifest_identity"),
+    ("D004-XF-ID-CANDIDATE-GRAPH", "candidate_graph_identity"),
+    ("D004-XF-ID-SR-MAP", "sr_map_identity"),
+    ("D004-XF-ID-SEMANTIC-ENDPOINT", "semantic_endpoint_identity"),
+    ("D004-XF-ID-PARAMETER-MODEL", "parameter_model_identity"),
+    ("D004-XF-ID-TOOL", "tool_identity"),
+    ("D004-XF-ID-ENVIRONMENT", "environment_identity"),
+    ("D004-XF-ID-MODEL", "model_identity"),
+    ("D004-XF-ID-DEPENDENCY-MANIFEST", "dependency_manifest_identity"),
+    ("D004-XF-ID-POSITIVE-SUBJECT", "positive_subject_identity"),
 )
 
 
@@ -117,6 +158,286 @@ class D004DraftPacketTests(unittest.TestCase):
             mutate(catalog)
             self._write_canonical(target, catalog)
             self.assertIn(expected_code, self._codes(root))
+
+    @staticmethod
+    def _mapping_codes(root: Path) -> set[str]:
+        validator = FoundationValidator(root)
+        validator._validate_d004_candidate_mapping_catalog()
+        return {
+            finding.code
+            for finding in validator.findings
+            if finding.code.startswith("d004_packet.mapping_catalog_")
+        }
+
+    @staticmethod
+    def _reseal_candidate_mapping_catalog(catalog: dict[str, object]) -> None:
+        subject = catalog["catalog_subject"]
+        assert isinstance(subject, dict)
+        relationships = subject["required_relationships"]
+        graphs = subject["candidate_graphs"]
+        assert isinstance(relationships, list)
+        assert isinstance(graphs, list)
+        relationship_digests = [
+            hashlib.sha256(canonical_json_bytes(relationship)).hexdigest()
+            for relationship in relationships
+        ]
+        for graph_record in graphs:
+            assert isinstance(graph_record, dict)
+            graph = graph_record["graph"]
+            assert isinstance(graph, dict)
+            edges = graph["edges"]
+            rows = graph["sr_rows"]
+            assert isinstance(edges, list)
+            assert isinstance(rows, list)
+            for edge_record in edges:
+                assert isinstance(edge_record, dict)
+                edge_record["edge_sha256"] = hashlib.sha256(
+                    canonical_json_bytes(edge_record["edge_subject"])
+                ).hexdigest()
+            for index, row_record in enumerate(rows):
+                assert isinstance(row_record, dict)
+                mapping = row_record["mapping"]
+                assert isinstance(mapping, dict)
+                if index < len(relationship_digests):
+                    mapping["required_relationship_sha256"] = relationship_digests[index]
+                row_record["mapping_sha256"] = hashlib.sha256(
+                    canonical_json_bytes(mapping)
+                ).hexdigest()
+            graph_record["graph_sha256"] = hashlib.sha256(
+                canonical_json_bytes(graph)
+            ).hexdigest()
+        catalog["catalog_subject_sha256"] = hashlib.sha256(
+            canonical_json_bytes(subject)
+        ).hexdigest()
+
+    def _assert_mapping_catalog_mutation(self, mutate, expected_code: str) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / CANDIDATE_MAPPING_CATALOG_PATH
+            catalog = load_json(target)
+            mutate(catalog)
+            self._reseal_candidate_mapping_catalog(catalog)
+            self._write_canonical(target, catalog)
+            self.assertIn(expected_code, self._mapping_codes(root))
+
+    def test_v05_candidate_mapping_catalog_has_exact_closed_identity(self) -> None:
+        catalog = load_json(REPOSITORY_ROOT / CANDIDATE_MAPPING_CATALOG_PATH)
+        subject = catalog["catalog_subject"]
+        self.assertEqual(
+            (REPOSITORY_ROOT / CANDIDATE_MAPPING_CATALOG_PATH).read_bytes(),
+            canonical_json_bytes(catalog) + b"\n",
+        )
+        self.assertEqual(
+            hashlib.sha256(canonical_json_bytes(catalog)).hexdigest(),
+            CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256,
+        )
+        self.assertEqual(
+            hashlib.sha256(
+                (REPOSITORY_ROOT / CANDIDATE_MAPPING_CATALOG_PATH).read_bytes()
+            ).hexdigest(),
+            CANDIDATE_MAPPING_CATALOG_RAW_SHA256,
+        )
+        self.assertEqual(
+            hashlib.sha256(canonical_json_bytes(subject)).hexdigest(),
+            CANDIDATE_MAPPING_CATALOG_SUBJECT_SHA256,
+        )
+        self.assertEqual(
+            (
+                subject["candidate_count"],
+                subject["relationship_count"],
+                subject["mapping_row_count"],
+            ),
+            (5, 14, 70),
+        )
+        self.assertEqual(
+            [row["candidate"] for row in subject["candidate_graphs"]],
+            ["ST-REL", "ST-UNI", "ST-DUAL", "ST-MIRROR", "ST-HOST"],
+        )
+        self.assertTrue(
+            all(
+                len(row["graph"]["edges"]) == 14
+                and len(row["graph"]["sr_rows"]) == 14
+                for row in subject["candidate_graphs"]
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            self.assertEqual(self._mapping_codes(root), set())
+
+    def test_candidate_mapping_counts_order_and_closed_fields_fail_closed(self) -> None:
+        mutations = (
+            (
+                lambda catalog: catalog["catalog_subject"].__setitem__("candidate_count", 4),
+                "d004_packet.mapping_catalog_counts",
+            ),
+            (
+                lambda catalog: catalog["catalog_subject"]["candidate_graphs"].__setitem__(
+                    slice(0, 2),
+                    list(reversed(catalog["catalog_subject"]["candidate_graphs"][:2])),
+                ),
+                "d004_packet.mapping_catalog_candidate_order",
+            ),
+            (
+                lambda catalog: catalog["catalog_subject"]["required_relationships"].__setitem__(
+                    slice(0, 2),
+                    list(reversed(catalog["catalog_subject"]["required_relationships"][:2])),
+                ),
+                "d004_packet.mapping_catalog_relationship_order",
+            ),
+            (
+                lambda catalog: catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["sr_rows"].pop(),
+                "d004_packet.mapping_catalog_mapping_inventory",
+            ),
+            (
+                lambda catalog: catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["nodes"][0].__setitem__("unknown", "field"),
+                "d004_packet.mapping_catalog_node_schema",
+            ),
+        )
+        for mutate, code in mutations:
+            with self.subTest(code=code):
+                self._assert_mapping_catalog_mutation(mutate, code)
+
+    def test_candidate_mapping_duplicate_and_unknown_keys_fail_closed(self) -> None:
+        self._assert_mapping_catalog_mutation(
+            lambda catalog: catalog.__setitem__("unknown", "field"),
+            "d004_packet.mapping_catalog_schema",
+        )
+        self._assert_mapping_catalog_mutation(
+            lambda catalog: catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["nodes"][1].__setitem__(
+                "id",
+                catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["nodes"][0]["id"],
+            ),
+            "d004_packet.mapping_catalog_node_identity",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / CANDIDATE_MAPPING_CATALOG_PATH
+            raw = target.read_bytes()
+            target.write_bytes(
+                raw.replace(
+                    b'{"canonicalization":',
+                    b'{"canonicalization":"duplicate","canonicalization":',
+                    1,
+                )
+            )
+            self.assertIn(
+                "d004_packet.mapping_catalog_parse",
+                self._mapping_codes(root),
+            )
+
+    def test_candidate_mapping_source_and_nested_hashes_fail_closed(self) -> None:
+        self._assert_mapping_catalog_mutation(
+            lambda catalog: catalog["source_bindings"]["suite"].__setitem__(
+                "raw_sha256", "0" * 64
+            ),
+            "d004_packet.mapping_catalog_source_binding",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / CANDIDATE_MAPPING_CATALOG_PATH
+            catalog = load_json(target)
+            mapping = catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["sr_rows"][0]["mapping"]
+            mapping["draft_hypothesis"] += " drift"
+            catalog["catalog_subject_sha256"] = hashlib.sha256(
+                canonical_json_bytes(catalog["catalog_subject"])
+            ).hexdigest()
+            self._write_canonical(target, catalog)
+            self.assertIn(
+                "d004_packet.mapping_catalog_mapping_digest",
+                self._mapping_codes(root),
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / CANDIDATE_MAPPING_CATALOG_PATH
+            catalog = load_json(target)
+            graph = catalog["catalog_subject"]["candidate_graphs"][0]["graph"]
+            graph["architecture"] += " drift"
+            catalog["catalog_subject_sha256"] = hashlib.sha256(
+                canonical_json_bytes(catalog["catalog_subject"])
+            ).hexdigest()
+            self._write_canonical(target, catalog)
+            self.assertIn(
+                "d004_packet.mapping_catalog_graph_digest",
+                self._mapping_codes(root),
+            )
+
+    def test_candidate_mapping_edge_endpoints_facets_and_sr_joins_fail_closed(self) -> None:
+        def unknown_endpoint(catalog) -> None:
+            edge = catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["edges"][0]["edge_subject"]
+            edge["domain_endpoint"]["node"] = "rel-unknown"
+
+        def unknown_facet(catalog) -> None:
+            edge = catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["edges"][0]["edge_subject"]
+            edge["domain_endpoint"]["facet"] = "unknown"
+
+        def swap_edges(catalog) -> None:
+            edges = catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["edges"]
+            edges[0], edges[1] = edges[1], edges[0]
+
+        def swap_rows(catalog) -> None:
+            rows = catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["sr_rows"]
+            rows[0], rows[1] = rows[1], rows[0]
+
+        for mutate, code in (
+            (unknown_endpoint, "d004_packet.mapping_catalog_edge_endpoint"),
+            (unknown_facet, "d004_packet.mapping_catalog_edge_endpoint"),
+            (swap_edges, "d004_packet.mapping_catalog_edge_relationship"),
+            (swap_rows, "d004_packet.mapping_catalog_mapping_join"),
+        ):
+            with self.subTest(code=code, mutation=mutate.__name__):
+                self._assert_mapping_catalog_mutation(mutate, code)
+
+    def test_candidate_mapping_topology_open_decisions_and_delegation_fail_closed(self) -> None:
+        def detach_required_view(catalog) -> None:
+            nodes = catalog["catalog_subject"]["candidate_graphs"][1]["graph"]["nodes"]
+            next(node for node in nodes if node["id"] == "uni-pure-view")["parent"] = None
+
+        def select_open_decision(catalog) -> None:
+            catalog["open_decisions"][0]["status"] = "accepted"
+
+        def erase_delegation(catalog) -> None:
+            catalog["catalog_subject"]["candidate_graphs"][4]["graph"]["edges"][3]["edge_subject"]["delegation_boundary"] = None
+
+        def retarget_sr14(catalog) -> None:
+            edge = catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["edges"][13]["edge_subject"]
+            edge["codomain_endpoints"] = [copy.deepcopy(edge["domain_endpoint"])]
+
+        for mutate, code in (
+            (detach_required_view, "d004_packet.mapping_catalog_topology"),
+            (select_open_decision, "d004_packet.mapping_catalog_open_decisions"),
+            (erase_delegation, "d004_packet.mapping_catalog_delegation"),
+            (retarget_sr14, "d004_packet.mapping_catalog_topology"),
+        ):
+            with self.subTest(code=code, mutation=mutate.__name__):
+                self._assert_mapping_catalog_mutation(mutate, code)
+
+        for generic_slot in (
+            "delegation_selector",
+            "host_identity",
+            "host_non_success_policy",
+        ):
+            with self.subTest(generic_slot=generic_slot):
+                self._assert_mapping_catalog_mutation(
+                    lambda catalog, slot=generic_slot: catalog["catalog_subject"][
+                        "candidate_graphs"
+                    ][4]["graph"]["edges"][2]["edge_subject"][
+                        "parameter_slots"
+                    ].append(slot),
+                    "d004_packet.mapping_catalog_delegation",
+                )
+
+    def test_candidate_mapping_nonclaim_boundary_rejects_persisted_results(self) -> None:
+        self._assert_mapping_catalog_mutation(
+            lambda catalog: catalog["catalog_subject"]["candidate_graphs"][0]["graph"]["sr_rows"][0]["mapping"].__setitem__(
+                "verdict", "pass"
+            ),
+            "d004_packet.mapping_catalog_nonclaim",
+        )
 
     def test_canonical_pre_epoch_lab_is_valid_and_records_no_execution(self) -> None:
         packet = load_json(REPOSITORY_ROOT / PACKET_PATH)
@@ -189,8 +510,24 @@ class D004DraftPacketTests(unittest.TestCase):
             ).hexdigest(),
             fixture_binding["sha256"],
         )
-        self.assertEqual(packet["schema_version"], "d004-pre-epoch-packet-v0.4")
-        self.assertEqual(packet["suite_version"], "d004-v0.4-draft")
+        mapping_catalog = load_json(REPOSITORY_ROOT / CANDIDATE_MAPPING_CATALOG_PATH)
+        self.assertEqual(
+            packet["candidate_mapping_catalog_sha256"],
+            CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256,
+        )
+        self.assertEqual(
+            packet["candidate_mapping_catalog_sha256"],
+            hashlib.sha256(canonical_json_bytes(mapping_catalog)).hexdigest(),
+        )
+        self.assertEqual(
+            packet["input_bindings"]["candidate_mappings"],
+            {
+                "path": str(CANDIDATE_MAPPING_CATALOG_PATH),
+                "sha256": CANDIDATE_MAPPING_CATALOG_RAW_SHA256,
+            },
+        )
+        self.assertEqual(packet["schema_version"], "d004-pre-epoch-packet-v0.5")
+        self.assertEqual(packet["suite_version"], "d004-v0.5-draft")
         self.assertEqual(packet["status"], "draft_unfrozen")
         self.assertIsNone(packet["epoch"])
         self.assertEqual(packet["epoch_status"], "unfrozen")
@@ -201,7 +538,7 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertEqual(packet["owner_protocol_review"], "none")
         self.assertEqual(
             packet["fixture_inventory_status"],
-            "case_and_cross_cutting_materialized_unreviewed_freeze_blocker",
+            "case_cross_cutting_and_candidate_mapping_materialized_unreviewed_freeze_blocker",
         )
         self.assertEqual(
             packet["execution"],
@@ -248,14 +585,27 @@ class D004DraftPacketTests(unittest.TestCase):
                 for fixture_class, proposal_count in (
                     ("ambiguity", 5),
                     ("missing-edge", 14),
-                    ("identity-substitution", 10),
+                    ("identity-substitution", 13),
                     ("unsupported", 5),
                     ("resource-exhaustion", 5),
                 )
             ],
         )
         self.assertEqual(len(proposal_manifest["nonclaims"]), 11)
-        self.assertEqual(len(proposal_manifest["proposals"]), 39)
+        self.assertEqual(len(proposal_manifest["proposals"]), 42)
+        identity_proposals = [
+            (proposal["id"], proposal["target"])
+            for proposal in proposal_manifest["proposals"]
+            if proposal["class"] == "identity-substitution"
+        ]
+        self.assertEqual(identity_proposals, list(EXPECTED_IDENTITY_SUBSTITUTIONS))
+        self.assertEqual(
+            {target for _, target in identity_proposals},
+            {
+                f"{field.removesuffix('_sha256')}_identity"
+                for field in MANDATORY_DIGEST_JOIN_FIELDS
+            },
+        )
         self.assertTrue(
             all(
                 proposal["observation_level"] == "domain"
@@ -284,24 +634,28 @@ class D004DraftPacketTests(unittest.TestCase):
                 "identity-substitution fixture sufficiency review unresolved",
                 "unsupported fixture sufficiency review unresolved",
                 "resource-exhaustion fixture sufficiency review unresolved",
+                "candidate graph and SR mapping review unresolved",
                 "replay repetition count unresolved",
             ],
         )
 
-        validator = FoundationValidator(REPOSITORY_ROOT)
-        validator._validate_d004_draft_packet()
-        self.assertEqual(
-            [
-                finding
-                for finding in validator.findings
-                if finding.code.startswith("d004_packet.")
-            ],
-            [],
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            validator = FoundationValidator(root)
+            validator._validate_d004_draft_packet()
+            self.assertEqual(
+                [
+                    finding
+                    for finding in validator.findings
+                    if finding.code.startswith("d004_packet.")
+                ],
+                [],
+            )
 
-    def test_packet_binds_all_twenty_two_exact_existing_inputs_by_raw_bytes(self) -> None:
+    def test_packet_binds_all_twenty_three_exact_existing_inputs_by_raw_bytes(self) -> None:
         packet = load_json(REPOSITORY_ROOT / PACKET_PATH)
-        self.assertEqual(len(packet["input_bindings"]), 22)
+        self.assertEqual(len(packet["input_bindings"]), 23)
         self.assertEqual(
             set(packet["input_bindings"]),
             {
@@ -310,6 +664,7 @@ class D004DraftPacketTests(unittest.TestCase):
                 "accepted_s2_language",
                 "cross_cutting_executable_fixtures",
                 "cross_cutting_fixture_proposals",
+                "candidate_mappings",
                 "case_subjects",
                 "decision_suite",
                 "fixture_invalid_duplicate_spec",
@@ -353,6 +708,12 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertIn(
             "pub(crate) fn parse_draft_result_contract_descriptor(", source
         )
+        self.assertIn(
+            "pub(crate) const CANDIDATE_MAPPING_IDENTITY_FIELDS: [&str; 4]",
+            source,
+        )
+        self.assertIn('"candidate_mapping_identity_inventory".to_owned()', source)
+        self.assertIn("candidate_mapping_catalog: &CandidateMappingCatalog", source)
         self.assertNotIn("std::process", source)
         self.assertNotIn("std::fs", source)
         suite_source = (REPOSITORY_ROOT / DECISION_SUITE_SOURCE_PATH).read_text(
@@ -448,6 +809,14 @@ class D004DraftPacketTests(unittest.TestCase):
             ),
             (
                 lambda source: source.replace(
+                    '"candidate_mapping_identity_inventory".to_owned()',
+                    '"unbound_candidate_mapping_inventory".to_owned()',
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source.replace(
                     "pub(crate) const SCHEDULED_SLOT_PREIMAGE_FIELDS: [&str; 10]",
                     "pub(crate) const SCHEDULED_SLOT_PREIMAGE_FIELDS: [&str; 9]",
                     1,
@@ -531,7 +900,7 @@ class D004DraftPacketTests(unittest.TestCase):
         canonical = canonical_json_bytes(catalog)
         raw = path.read_bytes()
         self.assertEqual(raw, canonical + b"\n")
-        self.assertEqual(len(raw), 35_099)
+        self.assertEqual(len(raw), 35_154)
         self.assertEqual(
             hashlib.sha256(canonical).hexdigest(),
             CASE_SUBJECT_CATALOG_CANONICAL_SHA256,
@@ -570,13 +939,17 @@ class D004DraftPacketTests(unittest.TestCase):
             },
         )
         self.assertEqual(catalog["schema_version"], "d004-case-subject-catalog-v0.1")
-        self.assertEqual(catalog["suite_version"], "d004-v0.4-draft")
+        self.assertEqual(catalog["suite_version"], "d004-v0.5-draft")
         self.assertEqual(catalog["status"], "draft_unreviewed_input_only")
         self.assertEqual(catalog["owner_protocol_review"], "none")
         self.assertEqual(catalog["evidence_status"], "none")
         self.assertEqual(catalog["subject_count"], 31)
         self.assertEqual(catalog["positive_subject_count"], 5)
         self.assertEqual(catalog["mutation_subject_count"], 26)
+        self.assertEqual(
+            catalog["nonclaims"][0],
+            "candidate mappings are separate unreviewed input-only hypotheses; no candidate adapter exists",
+        )
         self.assertEqual(
             catalog["execution_boundary"],
             {
@@ -962,7 +1335,7 @@ class D004DraftPacketTests(unittest.TestCase):
         canonical = canonical_json_bytes(catalog)
         raw = catalog_path.read_bytes()
         self.assertEqual(raw, canonical + b"\n")
-        self.assertEqual(len(raw), 67_329)
+        self.assertEqual(len(raw), 87_189)
         self.assertEqual(
             hashlib.sha256(canonical).hexdigest(),
             FIXTURE_CATALOG_CANONICAL_SHA256,
@@ -995,13 +1368,13 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertEqual(catalog["status"], "draft_unreviewed_input_only")
         self.assertEqual(catalog["owner_protocol_review"], "none")
         self.assertEqual(catalog["evidence_status"], "none")
-        self.assertEqual(catalog["fixture_count"], 39)
+        self.assertEqual(catalog["fixture_count"], 42)
         self.assertEqual(
             catalog["class_counts"],
             [
                 {"class": "ambiguity", "fixture_count": 5},
                 {"class": "missing-edge", "fixture_count": 14},
-                {"class": "identity-substitution", "fixture_count": 10},
+                {"class": "identity-substitution", "fixture_count": 13},
                 {"class": "unsupported", "fixture_count": 5},
                 {"class": "resource-exhaustion", "fixture_count": 5},
             ],
@@ -1033,21 +1406,10 @@ class D004DraftPacketTests(unittest.TestCase):
             [proposal["id"] for proposal in proposals],
         )
         self.assertEqual(
-            len({fixture["fixture_subject_sha256"] for fixture in fixtures}), 39
+            len({fixture["fixture_subject_sha256"] for fixture in fixtures}), 42
         )
         relationships = [f"SR-{value:02d}" for value in range(1, 15)]
-        identity_slots = [
-            "packet_identity",
-            "replay_plan_identity",
-            "scheduled_slot_identity",
-            "input_manifest_identity",
-            "candidate_graph_identity",
-            "sr_map_identity",
-            "semantic_endpoint_identity",
-            "parameter_model_identity",
-            "tool_identity",
-            "environment_identity",
-        ]
+        identity_slots = [target for _, target in EXPECTED_IDENTITY_SUBSTITUTIONS]
 
         def identity(slot: str, variant: str) -> str:
             return hashlib.sha256(
@@ -1524,14 +1886,14 @@ class D004DraftPacketTests(unittest.TestCase):
             lambda value: value["proposals"].append(
                 copy.deepcopy(value["proposals"][0])
             ),
-            lambda value: value["proposals"].pop(24),
+            lambda value: value["proposals"].pop(27),
             lambda value: value["proposals"].__setitem__(
                 slice(0, 2),
                 [value["proposals"][1], value["proposals"][0]],
             ),
             lambda value: value["proposals"].__setitem__(
-                slice(24, 26),
-                [value["proposals"][25], value["proposals"][24]],
+                slice(27, 29),
+                [value["proposals"][28], value["proposals"][27]],
             ),
             lambda value: value["proposals"][0].update(
                 {"relationship_scope": ["SR-02"], "target": "SR-02"}
@@ -1542,16 +1904,16 @@ class D004DraftPacketTests(unittest.TestCase):
                     "target": value["proposals"][14]["target"],
                 }
             ),
-            lambda value: value["proposals"][24].update(
+            lambda value: value["proposals"][27].update(
                 {"case_scope": ["SC-02"]}
             ),
-            lambda value: value["proposals"][29].update(
+            lambda value: value["proposals"][32].update(
                 {"relationship_scope": ["SR-01"]}
             ),
-            lambda value: value["proposals"][24].update(
+            lambda value: value["proposals"][27].update(
                 {"class": "unsupported", "expected_state": "unsupported"}
             ),
-            lambda value: value["proposals"][29].update(
+            lambda value: value["proposals"][32].update(
                 {"class": "ambiguity", "expected_state": "rejected"}
             ),
             lambda value: value["proposals"][0].update(
