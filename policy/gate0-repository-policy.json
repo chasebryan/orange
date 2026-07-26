@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.109",
+  "policy_version": "0.2.110",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -362,7 +362,7 @@
     "docs/security/OSPS_BASELINE.md": "5e492541f6d3db51285d2e74eef39a9baf09b019fac415c35f8792bfdb834502",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "d826456176f91d4b5fee3910a58fc6ada64a3e525fe19152f4e2526423a609c1",
-    "policy/README.md": "51e55728991652ea53c1ac6bb8cedc69ac1c005ec4fe1fc04fc74bf573b2fc84",
+    "policy/README.md": "83bf77651acf46ecf0e3c2c0491f158e957dbd667818763e587deb85ef47773a",
     "policy/makefile-entrypoint-contract-v0.1.json": "370e0954ca798d4ba4eb04d71a223167c530ce5f41c4b5a0ddf7e3a34c0fb19f",
     "research/decisions/D-004/README.md": "8844e309480a501bd8602382604f15b78ac01f7eeff87cc424c8a97d38e0d4d0",
     "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json": "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93",
@@ -391,9 +391,9 @@
     "scripts/ci/install-actionlint": "ac2e08280a32b7d213fb3993f43e5f9d9431dc3f960a41dedea551be2d9433b5",
     "scripts/ci/install-lychee": "21dd0050173bdd6b461ce7893dc4f77f74dde67b051d76697d6e8ec466b6c41f",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
-    "tools/tests/test_d004_draft_packet.py": "e0fb4f887fc7e9aa58293bf5633c97941f0f6df64ff738fb01bb2c95de650681",
-    "tools/tests/test_d005_draft_packet.py": "9866ef35b65a78b2d3e042ac0815a556ab126e7227c68ce7611ed70fcc11f820",
-    "tools/tests/test_d006_draft_packet.py": "b4c653a68435692388d37e9b9e16ec60c29e5b8f44165b1da8671575e646b6e2",
+    "tools/tests/test_d004_draft_packet.py": "83fa92af2899df29ee901345c70fc6c5276e17b86e4d5fcac92c3bc4dab10b6f",
+    "tools/tests/test_d005_draft_packet.py": "657d5bf9468d481be3c4b7ee3143fed2b4a9f1253d21bc35477476e968017b09",
+    "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
     "tools/tests/test_validate_foundation.py": "7a5d34d64733d76e24dc2f188413e5b24af0fd94ff1a1afeb0e2581656da5e92",
     "tools/tests/test_validate_foundation_hardening.py": "250284af9b5651f0727502e397c4ab04ac13190184d6eab7d5e2742570a8235a"
   },

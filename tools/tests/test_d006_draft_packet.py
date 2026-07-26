@@ -7,8 +7,15 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from tools.validate_foundation import FoundationValidator, canonical_json_bytes, load_json
+from tools.validate_foundation import (
+    DECISION_LABORATORY_SPECS,
+    FoundationValidator,
+    canonical_json_bytes,
+    decision_laboratory_spec_errors,
+    load_json,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -114,6 +121,117 @@ class D006DraftPacketTests(unittest.TestCase):
             ],
             [],
         )
+
+    def test_decision_laboratory_spec_table_is_closed_and_fail_closed(self) -> None:
+        for name, specification in DECISION_LABORATORY_SPECS.items():
+            with self.subTest(name=name):
+                self.assertEqual(
+                    decision_laboratory_spec_errors(REPOSITORY_ROOT, specification),
+                    (),
+                )
+
+        mutations = []
+        duplicate_json = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        duplicate_json["json_identities"] += (duplicate_json["json_identities"][0],)
+        mutations.append(duplicate_json)
+
+        duplicate_binding = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        duplicate_binding["raw_bindings"] += (duplicate_binding["raw_bindings"][0],)
+        mutations.append(duplicate_binding)
+
+        unsafe_path = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        identity = list(unsafe_path["json_identities"][0])
+        identity[0] = "../escape.json"
+        unsafe_path["json_identities"] = (
+            tuple(identity),
+            *unsafe_path["json_identities"][1:],
+        )
+        mutations.append(unsafe_path)
+
+        uppercase_digest = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        identity = list(uppercase_digest["json_identities"][0])
+        identity[3] = identity[3].upper()
+        uppercase_digest["json_identities"] = (
+            tuple(identity),
+            *uppercase_digest["json_identities"][1:],
+        )
+        mutations.append(uppercase_digest)
+
+        missing_inventory_identity = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        governed_path = missing_inventory_identity["json_identities"][0][0]
+        missing_inventory_identity["inventory"] = frozenset(
+            missing_inventory_identity["inventory"] - {governed_path}
+        )
+        mutations.append(missing_inventory_identity)
+
+        missing_json_identity = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        missing_json_identity["json_identities"] = missing_json_identity[
+            "json_identities"
+        ][1:]
+        mutations.append(missing_json_identity)
+
+        missing_binding = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        missing_binding["raw_bindings"] = missing_binding["raw_bindings"][1:]
+        mutations.append(missing_binding)
+
+        empty_bindings = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        empty_bindings["raw_bindings"] = ()
+        mutations.append(empty_bindings)
+
+        weakened_transport = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        identity = list(weakened_transport["json_identities"][0])
+        identity[5] = False
+        weakened_transport["json_identities"] = (
+            tuple(identity),
+            *weakened_transport["json_identities"][1:],
+        )
+        mutations.append(weakened_transport)
+
+        missing_compatibility = copy.deepcopy(DECISION_LABORATORY_SPECS["d005"])
+        missing_compatibility["schema_compatibility"] = None
+        mutations.append(missing_compatibility)
+
+        empty_compatibility = copy.deepcopy(DECISION_LABORATORY_SPECS["d005"])
+        schema, input_root, _ = empty_compatibility["schema_compatibility"]
+        empty_compatibility["schema_compatibility"] = (schema, input_root, ())
+        mutations.append(empty_compatibility)
+
+        duplicate_compatibility = copy.deepcopy(DECISION_LABORATORY_SPECS["d005"])
+        schema, input_root, fixtures = duplicate_compatibility["schema_compatibility"]
+        duplicate_compatibility["schema_compatibility"] = (
+            schema,
+            input_root,
+            (fixtures[0],) * len(fixtures),
+        )
+        mutations.append(duplicate_compatibility)
+
+        for index, specification in enumerate(mutations):
+            with self.subTest(mutation=index):
+                self.assertTrue(
+                    decision_laboratory_spec_errors(REPOSITORY_ROOT, specification)
+                )
+
+    def test_declared_binding_coverage_rejects_same_count_substitution(self) -> None:
+        specification = copy.deepcopy(DECISION_LABORATORY_SPECS["d006"])
+        readme_digest = hashlib.sha256(
+            (REPOSITORY_ROOT / "README.md").read_bytes()
+        ).hexdigest()
+        specification["raw_bindings"] = (
+            specification["raw_bindings"][0],
+            ("README.md", readme_digest),
+        )
+        self.assertEqual(
+            decision_laboratory_spec_errors(REPOSITORY_ROOT, specification),
+            (),
+        )
+        with mock.patch.dict(
+            DECISION_LABORATORY_SPECS,
+            {"d006": specification},
+        ):
+            self.assertIn(
+                "d006_packet.binding_inventory",
+                self._codes(REPOSITORY_ROOT),
+            )
 
     def test_packet_binds_exact_index_and_suite_raw_bytes(self) -> None:
         packet = load_json(REPOSITORY_ROOT / PACKET_PATH)

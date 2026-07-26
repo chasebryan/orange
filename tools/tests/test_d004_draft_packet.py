@@ -227,16 +227,16 @@ class D004DraftPacketTests(unittest.TestCase):
 
     def test_lifecycle_owner_and_epoch_freeze_drift_are_rejected(self) -> None:
         mutations = (
-            ("schema_version", "d004-pre-epoch-packet-v0.1", "d004_packet.lifecycle"),
-            ("status", "frozen", "d004_packet.lifecycle"),
-            ("epoch", "0001", "d004_packet.lifecycle"),
-            ("epoch_status", "frozen", "d004_packet.lifecycle"),
-            ("d003_disposition", "accepted", "d004_packet.lifecycle"),
-            ("owner_protocol_review", "solo-reviewed", "d004_packet.lifecycle"),
+            ("schema_version", "d004-pre-epoch-packet-v0.1", "d004_packet.digest"),
+            ("status", "frozen", "d004_packet.digest"),
+            ("epoch", "0001", "d004_packet.digest"),
+            ("epoch_status", "frozen", "d004_packet.digest"),
+            ("d003_disposition", "accepted", "d004_packet.digest"),
+            ("owner_protocol_review", "solo-reviewed", "d004_packet.digest"),
             (
                 "fixture_inventory_status",
                 "complete",
-                "d004_packet.protocol_gaps",
+                "d004_packet.digest",
             ),
         )
         for field, replacement, expected_code in mutations:
@@ -250,18 +250,18 @@ class D004DraftPacketTests(unittest.TestCase):
 
     def test_exact_protocol_inventories_and_named_mutation_ids_are_closed(self) -> None:
         mutations = (
-            ("candidates", ["ST-REL"], "d004_packet.inventory"),
-            ("cases", ["SC-01"], "d004_packet.inventory"),
-            ("relationships", ["SR-01"], "d004_packet.inventory"),
-            ("hard_gates", ["SS-G01"], "d004_packet.inventory"),
-            ("source_roles", ["Specification"], "d004_packet.inventory"),
+            ("candidates", ["ST-REL"], "d004_packet.digest"),
+            ("cases", ["SC-01"], "d004_packet.digest"),
+            ("relationships", ["SR-01"], "d004_packet.digest"),
+            ("hard_gates", ["SS-G01"], "d004_packet.digest"),
+            ("source_roles", ["Specification"], "d004_packet.digest"),
             (
                 "domain_observation_states",
                 ["succeeded", "rejected"],
-                "d004_packet.inventory",
+                "d004_packet.digest",
             ),
-            ("case_verdicts", ["pass"], "d004_packet.inventory"),
-            ("mutations", ["SC-01-M01"], "d004_packet.mutations"),
+            ("case_verdicts", ["pass"], "d004_packet.digest"),
+            ("mutations", ["SC-01-M01"], "d004_packet.digest"),
         )
         for field, replacement, expected_code in mutations:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
@@ -279,7 +279,7 @@ class D004DraftPacketTests(unittest.TestCase):
             packet = load_json(target)
             packet["protocol_gaps"].pop()
             self._write_canonical(target, packet)
-            self.assertIn("d004_packet.protocol_gaps", self._codes(root))
+            self.assertIn("d004_packet.digest", self._codes(root))
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -287,32 +287,32 @@ class D004DraftPacketTests(unittest.TestCase):
             packet = load_json(target)
             packet["unresolved_cross_cutting_fixture_classes"].pop()
             self._write_canonical(target, packet)
-            self.assertIn("d004_packet.protocol_gaps", self._codes(root))
+            self.assertIn("d004_packet.digest", self._codes(root))
 
         mutations = (
             (
                 lambda packet: packet["execution"].update(
                     {"completed_candidate_cases": 1, "evidence_status": "partial"}
                 ),
-                "d004_packet.execution",
+                "d004_packet.digest",
             ),
             (
                 lambda packet: packet["execution"].update({"complete_candidates": 1}),
-                "d004_packet.execution",
+                "d004_packet.digest",
             ),
             (
                 lambda packet: packet["execution"].update(
                     {"complete_cross_candidate_cases": 1}
                 ),
-                "d004_packet.execution",
+                "d004_packet.digest",
             ),
             (
                 lambda packet: packet.update({"conclusion": "recommend_st_rel"}),
-                "d004_packet.conclusion",
+                "d004_packet.digest",
             ),
             (
                 lambda packet: packet.update({"selection": "ST-REL"}),
-                "d004_packet.selection",
+                "d004_packet.digest",
             ),
         )
         for mutate, expected_code in mutations:
@@ -365,11 +365,11 @@ class D004DraftPacketTests(unittest.TestCase):
         mutations = (
             (
                 lambda manifest: manifest[0].update({"unexpected": True}),
-                "d004_packet.manifest_shape",
+                "d004_packet.manifest_digest",
             ),
             (
                 lambda manifest: manifest.append(copy.deepcopy(manifest[0])),
-                "d004_packet.manifest_inventory",
+                "d004_packet.manifest_digest",
             ),
             (
                 lambda manifest: manifest[0].update(
@@ -379,11 +379,11 @@ class D004DraftPacketTests(unittest.TestCase):
             ),
             (
                 lambda manifest: manifest[0].update({"case": "SC-05"}),
-                "d004_packet.manifest_inventory",
+                "d004_packet.manifest_digest",
             ),
             (
                 lambda manifest: manifest[0].update({"case": []}),
-                "d004_packet.manifest_inventory",
+                "d004_packet.manifest_digest",
             ),
         )
         for mutate, expected_code in mutations:
@@ -402,33 +402,33 @@ class D004DraftPacketTests(unittest.TestCase):
             packet = load_json(target)
             packet["mutation_manifest_sha256"] = "0" * 64
             self._write_canonical(target, packet)
-            self.assertIn("d004_packet.manifest_digest", self._codes(root))
+            self.assertIn("d004_packet.digest", self._codes(root))
 
     def test_cross_cutting_proposal_manifest_root_and_record_shapes_fail_closed(self) -> None:
         mutations = (
             (
                 lambda value: value.update({"unknown": True}),
-                "d004_packet.proposal_manifest_shape",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value.pop("nonclaims"),
-                "d004_packet.proposal_manifest_shape",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["proposals"][0].pop("observation_level"),
-                "d004_packet.proposal_manifest_shape",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["proposals"][0].update({"result": "pass"}),
-                "d004_packet.proposal_manifest_shape",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].pop("freeze_blocker"),
-                "d004_packet.proposal_manifest_shape",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update({"result": "pass"}),
-                "d004_packet.proposal_manifest_shape",
+                "d004_packet.proposal_manifest_digest",
             ),
         )
         for mutate, expected_code in mutations:
@@ -445,7 +445,7 @@ class D004DraftPacketTests(unittest.TestCase):
         mutations = (
             (
                 lambda value: value["class_statuses"].pop(),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"].append(
@@ -458,68 +458,68 @@ class D004DraftPacketTests(unittest.TestCase):
                         "proposal_status": "draft_unreviewed",
                     }
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"class": "replay-level"}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"proposal_count": 4}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"proposal_status": "reviewed"}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"executable_fixture_count": 1}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"coverage_status": "complete"}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"freeze_blocker": False}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"proposal_count": True}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"executable_fixture_count": False}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"][0].update(
                     {"freeze_blocker": 1}
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 lambda value: value["class_statuses"].__setitem__(
                     slice(0, 2),
                     [value["class_statuses"][1], value["class_statuses"][0]],
                 ),
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
         )
         for mutate, expected_code in mutations:
@@ -601,7 +601,7 @@ class D004DraftPacketTests(unittest.TestCase):
                 mutate(proposal_manifest)
                 self._write_canonical(target, proposal_manifest)
                 self.assertIn(
-                    "d004_packet.proposal_manifest_inventory",
+                    "d004_packet.proposal_manifest_digest",
                     self._codes(root),
                 )
 
@@ -610,33 +610,33 @@ class D004DraftPacketTests(unittest.TestCase):
             (
                 "schema_version",
                 "d004-cross-cutting-fixture-proposals-v0.1",
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
-            ("status", "reviewed", "d004_packet.proposal_manifest_boundary"),
+            ("status", "reviewed", "d004_packet.proposal_manifest_digest"),
             (
                 "owner_protocol_review",
                 "solo-reviewed",
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 "executable_inputs_status",
                 "present",
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 "replay_repetitions",
                 1,
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 "evidence_status",
                 "partial",
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
             (
                 "nonclaims",
                 ["proposal coverage is complete"],
-                "d004_packet.proposal_manifest_boundary",
+                "d004_packet.proposal_manifest_digest",
             ),
         )
         for field, replacement, expected_code in mutations:
@@ -701,7 +701,7 @@ class D004DraftPacketTests(unittest.TestCase):
 
             codes = self._codes(root)
             self.assertIn("d004_packet.proposal_manifest_digest", codes)
-            self.assertIn("d004_packet.proposal_manifest_inventory", codes)
+            self.assertIn("d004_packet.digest", codes)
 
     def test_noncanonical_json_duplicate_keys_and_floats_are_rejected_not_crashed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
