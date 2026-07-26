@@ -475,7 +475,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "81e5babdc281d40ae2de66cb869996c49f6e0f899ebb08044fbf9ec498b81f29"
+_PHD = "de4959a9654395eda578f4d91065dbc21e09bf170abca07e9767d25e3471a643"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -837,13 +837,13 @@ D004_DRAFT_RESEARCH_PATHS = frozenset(
     }
 )
 D004_DRAFT_PACKET_CANONICAL_SHA256 = (
-    "4771ad2f5ae57e229d4d35b71c234875387c23c99c642fdb0efe21b664d971cf"
+    "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c"
 )
 D004_MUTATION_MANIFEST_CANONICAL_SHA256 = (
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
 )
 D004_CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_CANONICAL_SHA256 = (
-    "83ebbde05d3a9739cb9a928f6c5472f92545f984a8a39a1f005403211b307279"
+    "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65"
 )
 D004_INPUT_BINDING_PATHS = {
     "named_mutations_manifest": "research/decisions/D-004/d004-v0.2-named-mutations.json",
@@ -6131,8 +6131,7 @@ class FoundationValidator:
             "status",
             "owner_protocol_review",
             "executable_inputs_status",
-            "proposal_defined_classes",
-            "proposal_undefined_classes",
+            "class_statuses",
             "replay_repetitions",
             "evidence_status",
             "proposals",
@@ -6142,23 +6141,21 @@ class FoundationValidator:
             self.add(
                 "d004_packet.proposal_manifest_shape",
                 proposal_manifest_path,
-                "D-004 cross-cutting proposal manifest must retain its exact closed ten-field root",
+                "D-004 cross-cutting proposal manifest must retain its exact closed nine-field root",
             )
 
         expected_proposal_nonclaims = exact_inventories["nonclaims"] + [
-            "proposal definitions are not executable fixture coverage or evidence"
+            "proposal definitions are not executable fixture coverage or evidence",
+            "unsupported proposals do not establish candidate support or capability absence",
+            "candidate adapter inability is not a preregistered unsupported observation",
+            "resource-exhaustion proposals do not exercise or verify any resource ceiling",
+            "replay repetitions remain unresolved and unassigned",
         ]
         expected_proposal_boundary = {
-            "schema_version": "d004-cross-cutting-fixture-proposals-v0.1",
+            "schema_version": "d004-cross-cutting-fixture-proposals-v0.2",
             "status": "draft_unreviewed",
             "owner_protocol_review": "none",
             "executable_inputs_status": "absent",
-            "proposal_defined_classes": ["missing-edge", "identity-substitution"],
-            "proposal_undefined_classes": [
-                "ambiguity",
-                "unsupported",
-                "resource-exhaustion",
-            ],
             "replay_repetitions": None,
             "evidence_status": "none",
             "nonclaims": expected_proposal_nonclaims,
@@ -6172,6 +6169,64 @@ class FoundationValidator:
                 proposal_manifest_path,
                 "D-004 cross-cutting proposals must remain draft-unreviewed, non-executable, unreplayed, no-evidence, and non-authorizing",
             )
+
+        expected_class_statuses = [
+            {
+                "class": fixture_class,
+                "coverage_status": "unresolved",
+                "executable_fixture_count": 0,
+                "freeze_blocker": True,
+                "proposal_count": proposal_count,
+                "proposal_status": "draft_unreviewed",
+            }
+            for fixture_class, proposal_count in (
+                ("ambiguity", 5),
+                ("missing-edge", 14),
+                ("identity-substitution", 10),
+                ("unsupported", 5),
+                ("resource-exhaustion", 5),
+            )
+        ]
+        class_statuses = proposal_manifest.get("class_statuses")
+        expected_class_status_fields = {
+            "class",
+            "coverage_status",
+            "executable_fixture_count",
+            "freeze_blocker",
+            "proposal_count",
+            "proposal_status",
+        }
+        if not isinstance(class_statuses, list):
+            self.add(
+                "d004_packet.proposal_manifest_shape",
+                proposal_manifest_path,
+                "D-004 cross-cutting class statuses must be an array",
+            )
+        else:
+            for index, status in enumerate(class_statuses):
+                if not isinstance(status, dict) or set(status) != expected_class_status_fields:
+                    self.add(
+                        "d004_packet.proposal_manifest_shape",
+                        proposal_manifest_path,
+                        f"D-004 cross-cutting class status {index + 1} must retain exactly six closed fields",
+                    )
+                    continue
+                if (
+                    type(status.get("proposal_count")) is not int
+                    or type(status.get("executable_fixture_count")) is not int
+                    or type(status.get("freeze_blocker")) is not bool
+                ):
+                    self.add(
+                        "d004_packet.proposal_manifest_boundary",
+                        proposal_manifest_path,
+                        f"D-004 cross-cutting class status {index + 1} must use exact JSON integer counts and a JSON boolean freeze blocker",
+                    )
+            if class_statuses != expected_class_statuses:
+                self.add(
+                    "d004_packet.proposal_manifest_boundary",
+                    proposal_manifest_path,
+                    "D-004 must retain five ordered draft-unreviewed class statuses with exact proposal counts, unresolved coverage, zero executable fixtures, and active freeze blockers",
+                )
 
         expected_cases = [f"SC-{index:02d}" for index in range(1, 6)]
         expected_relationships = [f"SR-{index:02d}" for index in range(1, 15)]
@@ -6187,6 +6242,7 @@ class FoundationValidator:
                     "layer": "structural",
                     "match_rule": "required_not_sufficient",
                     "mutation_kind": "remove_required_relationship_descriptor",
+                    "observation_level": "domain",
                     "relationship_scope": [relationship],
                     "required_invalidation": "dependent_result",
                     "target": relationship,
@@ -6215,7 +6271,105 @@ class FoundationValidator:
                     "layer": "structural",
                     "match_rule": "required_not_sufficient",
                     "mutation_kind": "substitute_bound_identity",
+                    "observation_level": "domain",
                     "relationship_scope": expected_relationships,
+                    "required_invalidation": "dependent_result",
+                    "target": target,
+                }
+            )
+
+        case_scoped_proposals = [
+            (
+                "D004-XF-AMB-SC01",
+                "ambiguity",
+                "SC-01",
+                ["SR-01"],
+                "admit_competing_authoritative_interpretations",
+                "numeric_word_byte_order_and_signedness_interpretation",
+                "rejected",
+            ),
+            (
+                "D004-XF-AMB-SC02",
+                "ambiguity",
+                "SC-02",
+                ["SR-01", "SR-02", "SR-09"],
+                "admit_competing_authoritative_interpretations",
+                "mutable_memory_and_refinement_interpretation",
+                "rejected",
+            ),
+            (
+                "D004-XF-AMB-SC03",
+                "ambiguity",
+                "SC-03",
+                ["SR-02", "SR-10"],
+                "admit_competing_authoritative_interpretations",
+                "suite_policy_observation_classification",
+                "rejected",
+            ),
+            (
+                "D004-XF-AMB-SC04",
+                "ambiguity",
+                "SC-04",
+                ["SR-01", "SR-03", "SR-11"],
+                "admit_competing_authoritative_interpretations",
+                "intrinsic_abstract_machine_mapping",
+                "rejected",
+            ),
+            (
+                "D004-XF-AMB-SC05",
+                "ambiguity",
+                "SC-05",
+                ["SR-04", "SR-08", "SR-12"],
+                "admit_competing_authoritative_interpretations",
+                "game_sampling_probability_and_reduction_interpretation",
+                "rejected",
+            ),
+        ]
+        case_scoped_proposals.extend(
+            (
+                f"D004-XF-US-SC{case_index:02d}",
+                "unsupported",
+                f"SC-{case_index:02d}",
+                [],
+                "exercise_preregistered_unsupported_behavior",
+                f"sc{case_index:02d}_unsupported_fixture_slot",
+                "unsupported",
+            )
+            for case_index in range(1, 6)
+        )
+        case_scoped_proposals.extend(
+            (
+                f"D004-XF-RE-SC{case_index:02d}",
+                "resource-exhaustion",
+                f"SC-{case_index:02d}",
+                [],
+                "exercise_preregistered_domain_exhaustion",
+                f"sc{case_index:02d}_resource_fixture_slot",
+                "exhausted",
+            )
+            for case_index in range(1, 6)
+        )
+        for (
+            proposal_id,
+            fixture_class,
+            case,
+            relationship_scope,
+            mutation_kind,
+            target,
+            expected_state,
+        ) in case_scoped_proposals:
+            expected_proposals.append(
+                {
+                    "capability_credit": "none",
+                    "case_scope": [case],
+                    "class": fixture_class,
+                    "expected_state": expected_state,
+                    "id": proposal_id,
+                    "layer": "structural",
+                    "match_rule": "required_not_sufficient",
+                    "mutation_kind": mutation_kind,
+                    "observation_level": "domain",
+                    "relationship_scope": relationship_scope,
                     "required_invalidation": "dependent_result",
                     "target": target,
                 }
@@ -6234,6 +6388,7 @@ class FoundationValidator:
             "required_invalidation",
             "match_rule",
             "capability_credit",
+            "observation_level",
         }
         if not isinstance(proposal_records, list):
             self.add(
@@ -6248,22 +6403,35 @@ class FoundationValidator:
                     self.add(
                         "d004_packet.proposal_manifest_shape",
                         proposal_manifest_path,
-                        f"D-004 cross-cutting proposal {index + 1} must retain exactly eleven closed fields",
+                        f"D-004 cross-cutting proposal {index + 1} must retain exactly twelve closed fields",
                     )
                     continue
                 observed_proposal_ids.append(record.get("id"))
             expected_proposal_ids = [record["id"] for record in expected_proposals]
+            observed_class_counts = {
+                fixture_class: sum(
+                    1
+                    for record in proposal_records
+                    if isinstance(record, dict) and record.get("class") == fixture_class
+                )
+                for fixture_class in expected_fixture_classes
+            }
+            expected_class_counts = {
+                status["class"]: status["proposal_count"]
+                for status in expected_class_statuses
+            }
             if (
-                len(proposal_records) != 24
+                len(proposal_records) != 39
                 or proposal_records != expected_proposals
                 or observed_proposal_ids != expected_proposal_ids
                 or len(set(value for value in observed_proposal_ids if isinstance(value, str)))
-                != 24
+                != 39
+                or observed_class_counts != expected_class_counts
             ):
                 self.add(
                     "d004_packet.proposal_manifest_inventory",
                     proposal_manifest_path,
-                    "D-004 must retain exactly 14 ordered SR missing-edge proposals and 10 ordered unique identity-substitution proposals with fail-closed non-credit semantics",
+                    "D-004 must retain exactly 39 ordered unique domain-level proposals partitioned 5/14/10/5/5 across ambiguity, missing-edge, identity-substitution, unsupported, and resource-exhaustion with fail-closed non-credit semantics",
                 )
 
     def _validate_d005_draft_packet(self) -> None:

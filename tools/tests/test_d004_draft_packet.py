@@ -19,16 +19,16 @@ PROPOSAL_MANIFEST_PATH = (
     RESEARCH_ROOT / "d004-v0.2-cross-cutting-fixture-proposals.json"
 )
 PACKET_CANONICAL_SHA256 = (
-    "4771ad2f5ae57e229d4d35b71c234875387c23c99c642fdb0efe21b664d971cf"
+    "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c"
 )
 MANIFEST_CANONICAL_SHA256 = (
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
 )
 PROPOSAL_MANIFEST_CANONICAL_SHA256 = (
-    "83ebbde05d3a9739cb9a928f6c5472f92545f984a8a39a1f005403211b307279"
+    "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65"
 )
 PROPOSAL_MANIFEST_RAW_SHA256 = (
-    "12853f50e96c3e594f999e097a68a7be51d0395e7cc9253d7b99f134344f10aa"
+    "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93"
 )
 
 
@@ -125,11 +125,46 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertIsNone(packet["conclusion"])
         self.assertIsNone(packet["selection"])
         self.assertEqual(proposal_manifest["status"], "draft_unreviewed")
+        self.assertEqual(
+            proposal_manifest["schema_version"],
+            "d004-cross-cutting-fixture-proposals-v0.2",
+        )
         self.assertEqual(proposal_manifest["owner_protocol_review"], "none")
         self.assertEqual(proposal_manifest["executable_inputs_status"], "absent")
         self.assertIsNone(proposal_manifest["replay_repetitions"])
         self.assertEqual(proposal_manifest["evidence_status"], "none")
-        self.assertEqual(len(proposal_manifest["proposals"]), 24)
+        self.assertEqual(
+            proposal_manifest["class_statuses"],
+            [
+                {
+                    "class": fixture_class,
+                    "coverage_status": "unresolved",
+                    "executable_fixture_count": 0,
+                    "freeze_blocker": True,
+                    "proposal_count": proposal_count,
+                    "proposal_status": "draft_unreviewed",
+                }
+                for fixture_class, proposal_count in (
+                    ("ambiguity", 5),
+                    ("missing-edge", 14),
+                    ("identity-substitution", 10),
+                    ("unsupported", 5),
+                    ("resource-exhaustion", 5),
+                )
+            ],
+        )
+        self.assertEqual(len(proposal_manifest["nonclaims"]), 11)
+        self.assertEqual(len(proposal_manifest["proposals"]), 39)
+        self.assertTrue(
+            all(
+                proposal["observation_level"] == "domain"
+                for proposal in proposal_manifest["proposals"]
+            )
+        )
+        self.assertNotIn(
+            "replay-level",
+            {proposal["class"] for proposal in proposal_manifest["proposals"]},
+        )
         self.assertEqual(
             packet["unresolved_cross_cutting_fixture_classes"],
             [
@@ -369,7 +404,7 @@ class D004DraftPacketTests(unittest.TestCase):
             self._write_canonical(target, packet)
             self.assertIn("d004_packet.manifest_digest", self._codes(root))
 
-    def test_cross_cutting_proposal_manifest_shape_and_inventory_fail_closed(self) -> None:
+    def test_cross_cutting_proposal_manifest_root_and_record_shapes_fail_closed(self) -> None:
         mutations = (
             (
                 lambda value: value.update({"unknown": True}),
@@ -380,7 +415,7 @@ class D004DraftPacketTests(unittest.TestCase):
                 "d004_packet.proposal_manifest_shape",
             ),
             (
-                lambda value: value["proposals"][0].pop("capability_credit"),
+                lambda value: value["proposals"][0].pop("observation_level"),
                 "d004_packet.proposal_manifest_shape",
             ),
             (
@@ -388,62 +423,12 @@ class D004DraftPacketTests(unittest.TestCase):
                 "d004_packet.proposal_manifest_shape",
             ),
             (
-                lambda value: value["proposals"].append(
-                    copy.deepcopy(value["proposals"][0])
-                ),
-                "d004_packet.proposal_manifest_inventory",
+                lambda value: value["class_statuses"][0].pop("freeze_blocker"),
+                "d004_packet.proposal_manifest_shape",
             ),
             (
-                lambda value: value["proposals"].__setitem__(
-                    slice(0, 2),
-                    [value["proposals"][1], value["proposals"][0]],
-                ),
-                "d004_packet.proposal_manifest_inventory",
-            ),
-            (
-                lambda value: value["proposals"][0].update(
-                    {"relationship_scope": ["SR-02"], "target": "SR-02"}
-                ),
-                "d004_packet.proposal_manifest_inventory",
-            ),
-            (
-                lambda value: value["proposals"][15].update(
-                    {
-                        "id": value["proposals"][14]["id"],
-                        "target": value["proposals"][14]["target"],
-                    }
-                ),
-                "d004_packet.proposal_manifest_inventory",
-            ),
-            (
-                lambda value: value["proposals"][0].update(
-                    {"expected_state": "succeeded"}
-                ),
-                "d004_packet.proposal_manifest_inventory",
-            ),
-            (
-                lambda value: value["proposals"][0].update(
-                    {"layer": "executable"}
-                ),
-                "d004_packet.proposal_manifest_inventory",
-            ),
-            (
-                lambda value: value["proposals"][0].update(
-                    {"required_invalidation": "none"}
-                ),
-                "d004_packet.proposal_manifest_inventory",
-            ),
-            (
-                lambda value: value["proposals"][0].update(
-                    {"match_rule": "sufficient"}
-                ),
-                "d004_packet.proposal_manifest_inventory",
-            ),
-            (
-                lambda value: value["proposals"][0].update(
-                    {"capability_credit": "granted"}
-                ),
-                "d004_packet.proposal_manifest_inventory",
+                lambda value: value["class_statuses"][0].update({"result": "pass"}),
+                "d004_packet.proposal_manifest_shape",
             ),
         )
         for mutate, expected_code in mutations:
@@ -456,8 +441,177 @@ class D004DraftPacketTests(unittest.TestCase):
                 self._write_canonical(target, proposal_manifest)
                 self.assertIn(expected_code, self._codes(root))
 
+    def test_cross_cutting_class_statuses_preserve_zero_coverage_blockers(self) -> None:
+        mutations = (
+            (
+                lambda value: value["class_statuses"].pop(),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"].append(
+                    {
+                        "class": "replay-level",
+                        "coverage_status": "unresolved",
+                        "executable_fixture_count": 0,
+                        "freeze_blocker": True,
+                        "proposal_count": 1,
+                        "proposal_status": "draft_unreviewed",
+                    }
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"class": "replay-level"}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"proposal_count": 4}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"proposal_status": "reviewed"}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"executable_fixture_count": 1}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"coverage_status": "complete"}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"freeze_blocker": False}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"proposal_count": True}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"executable_fixture_count": False}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"][0].update(
+                    {"freeze_blocker": 1}
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+            (
+                lambda value: value["class_statuses"].__setitem__(
+                    slice(0, 2),
+                    [value["class_statuses"][1], value["class_statuses"][0]],
+                ),
+                "d004_packet.proposal_manifest_boundary",
+            ),
+        )
+        for mutate, expected_code in mutations:
+            with self.subTest(code=expected_code), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_lab(root)
+                target = root / PROPOSAL_MANIFEST_PATH
+                proposal_manifest = load_json(target)
+                mutate(proposal_manifest)
+                self._write_canonical(target, proposal_manifest)
+                self.assertIn(expected_code, self._codes(root))
+
+    def test_cross_cutting_proposal_inventory_and_domain_semantics_fail_closed(self) -> None:
+        mutations = (
+            lambda value: value["proposals"].append(
+                copy.deepcopy(value["proposals"][0])
+            ),
+            lambda value: value["proposals"].pop(24),
+            lambda value: value["proposals"].__setitem__(
+                slice(0, 2),
+                [value["proposals"][1], value["proposals"][0]],
+            ),
+            lambda value: value["proposals"].__setitem__(
+                slice(24, 26),
+                [value["proposals"][25], value["proposals"][24]],
+            ),
+            lambda value: value["proposals"][0].update(
+                {"relationship_scope": ["SR-02"], "target": "SR-02"}
+            ),
+            lambda value: value["proposals"][15].update(
+                {
+                    "id": value["proposals"][14]["id"],
+                    "target": value["proposals"][14]["target"],
+                }
+            ),
+            lambda value: value["proposals"][24].update(
+                {"case_scope": ["SC-02"]}
+            ),
+            lambda value: value["proposals"][29].update(
+                {"relationship_scope": ["SR-01"]}
+            ),
+            lambda value: value["proposals"][24].update(
+                {"class": "unsupported", "expected_state": "unsupported"}
+            ),
+            lambda value: value["proposals"][29].update(
+                {"class": "ambiguity", "expected_state": "rejected"}
+            ),
+            lambda value: value["proposals"][0].update(
+                {"expected_state": "succeeded"}
+            ),
+            lambda value: value["proposals"][0].update({"layer": "executable"}),
+            lambda value: value["proposals"][0].update(
+                {"required_invalidation": "none"}
+            ),
+            lambda value: value["proposals"][0].update(
+                {"match_rule": "sufficient"}
+            ),
+            lambda value: value["proposals"][0].update(
+                {"capability_credit": "granted"}
+            ),
+            lambda value: value["proposals"][0].update(
+                {"observation_level": "adapter"}
+            ),
+            lambda value: value["proposals"].append(
+                {
+                    **copy.deepcopy(value["proposals"][-1]),
+                    "class": "replay-level",
+                    "id": "D004-XF-RL-WALL-TIME",
+                    "observation_level": "replay",
+                }
+            ),
+        )
+        for index, mutate in enumerate(mutations):
+            with self.subTest(index=index), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._copy_lab(root)
+                target = root / PROPOSAL_MANIFEST_PATH
+                proposal_manifest = load_json(target)
+                mutate(proposal_manifest)
+                self._write_canonical(target, proposal_manifest)
+                self.assertIn(
+                    "d004_packet.proposal_manifest_inventory",
+                    self._codes(root),
+                )
+
     def test_cross_cutting_proposal_boundary_cannot_claim_review_execution_or_coverage(self) -> None:
         mutations = (
+            (
+                "schema_version",
+                "d004-cross-cutting-fixture-proposals-v0.1",
+                "d004_packet.proposal_manifest_boundary",
+            ),
             ("status", "reviewed", "d004_packet.proposal_manifest_boundary"),
             (
                 "owner_protocol_review",
@@ -480,19 +634,8 @@ class D004DraftPacketTests(unittest.TestCase):
                 "d004_packet.proposal_manifest_boundary",
             ),
             (
-                "proposal_defined_classes",
-                [
-                    "ambiguity",
-                    "missing-edge",
-                    "identity-substitution",
-                    "unsupported",
-                    "resource-exhaustion",
-                ],
-                "d004_packet.proposal_manifest_boundary",
-            ),
-            (
-                "proposal_undefined_classes",
-                [],
+                "nonclaims",
+                ["proposal coverage is complete"],
                 "d004_packet.proposal_manifest_boundary",
             ),
         )

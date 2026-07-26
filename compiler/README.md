@@ -43,24 +43,25 @@ non-product D-004 laboratory. It strictly parses and canonicalizes an
 input-only `draft_unfrozen` packet, binds the conditional suite and accepted
 S3a baseline by SHA-256, preserves the 5-candidate by 5-case matrix, 14 required
 relationships, 10 hard gates, and 26 mutations named explicitly by the suite,
-binds 24 unreviewed structural proposals, and prepares one deterministic
-balanced 25-slot plan:
+binds 39 unreviewed domain-level structural proposals, and prepares one
+deterministic balanced 25-slot plan:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
   --test d004_decision_suite --locked --offline
 ```
 
-The proposal manifest names 14 missing-edge relationship-descriptor proposals
-and 10 bound-identity substitution proposals. They are definitions, not
-executable fixtures or coverage, and supply no observation, result, evidence,
-or capability credit. The suite still lacks a complete common inventory for
-ambiguity, missing-edge, identity-substitution, unsupported, and resource
-fixtures, so the laboratory retains all five gaps as freeze blockers. It
-executes no candidate adapter, freezes no evidence epoch, records 0/25 completed
-slots and no evidence, and creates no result, review, recommendation, or
-selection. It does not accept D-003 or D-004, alter compiler behavior,
-authorize S3b, or advance the version 1.0.0 gate count.
+The proposal manifest names 14 missing-edge, 10 identity-substitution, and five
+each of ambiguity, unsupported-behavior, and domain-exhaustion proposals. They
+are definitions, not executable fixtures or coverage, and supply no
+observation, result, evidence, or capability credit. Every class status records
+zero executable fixtures, unresolved coverage, and an active freeze blocker.
+Candidate-adapter failure cannot satisfy an unsupported proposal, and the
+domain-exhaustion proposals verify no replay ceiling. Replay repetition remains
+unassigned. The laboratory executes no candidate adapter, freezes no evidence
+epoch, records 0/25 completed slots and no evidence, and creates no result,
+review, recommendation, or selection. It does not accept D-003 or D-004, alter
+compiler behavior, authorize S3b, or advance the version 1.0.0 gate count.
 
 ## D-005 decision laboratory
 
