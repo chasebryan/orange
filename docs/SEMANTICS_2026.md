@@ -18,8 +18,8 @@ OEP-0003.
 The corresponding implementation and documentation were merged by PR #9 at
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. Acceptance closes this bounded
 typed-literal slice only. Orange remains pre-alpha and later S3 semantics remain
-incomplete. D-003 candidate PF-01 is owner-accepted pending exact-revision OEP
-closure; D-004 remains unresolved.
+incomplete. D-003 candidate PF-01 is accepted through OEP-0004 at exact
+revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

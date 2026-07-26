@@ -77,8 +77,9 @@ and domain exhaustion. The bytes are opaque suite-only models: bounded
 integrity parsing and structural oracles do not execute a candidate or ratify
 Orange semantics. Five positive cases and 26 named mutations remain
 definition-only; all five class sufficiency reviews and freeze blockers plus
-replay repetitions remain unresolved. D-003 candidate PF-01 is owner-accepted
-as of 2026-07-26 but pending exact-revision OEP closure. D-004 owner review is
+replay repetitions remain unresolved. D-003 candidate PF-01 is accepted through
+OEP-0004 at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`.
+D-004 owner review is
 `none`, the D-004 epoch is unfrozen, and execution remains 0/25 with no mappings,
 adapters, observations, evidence, selection, or conclusion. Materialization
 closes no S3 or readiness gate; Orange remains at 30%.

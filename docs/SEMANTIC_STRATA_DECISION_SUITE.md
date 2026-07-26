@@ -16,12 +16,10 @@ hard gates, resource rules, and an inconclusive outcome. It is decision
 research, not a normative language specification.
 
 On 2026-07-26 the owner explicitly accepted D-003 candidate PF-01, the
-standalone Orange product form. That acceptance provisionally authorizes the
-product-form boundary under [`GOVERNANCE.md`](../GOVERNANCE.md), but D-003
-remains formally pending until an Accepted OEP binds the decision to an exact
-revision. D-004 may collect conditional research, but it cannot be accepted
-before that exact-revision D-003 closure. This suite does not accept D-004 or
-authorize S3b implementation.
+standalone Orange product form. Accepted OEP-0004 binds that decision to exact
+revision `a82a5cec2ee4359dc2fe66171f17c93146747333` under
+[`GOVERNANCE.md`](../GOVERNANCE.md). D-003 is therefore a satisfied dependency
+for D-004. This suite does not accept D-004 or authorize S3b implementation.
 
 The currently accepted semantic boundary remains
 [`SEMANTICS_2026.md`](SEMANTICS_2026.md). Its Typed Reference Core is an
@@ -458,9 +456,10 @@ deterministic integrity-oracle evaluation of these opaque subjects are
 repository-integrity operations, not candidate-case executions. They ratify no
 Orange semantics and create no domain observation or decision evidence. The
 laboratory executes no candidate adapter, creates no result or review record,
-freezes no evidence epoch, and selects no candidate. D-003 is owner-accepted
-pending exact-revision OEP closure; `owner_protocol_review` remains `none` for
-D-004, and the D-004 epoch remains unfrozen.
+freezes no evidence epoch, and selects no candidate. D-003 is accepted at exact
+revision `a82a5cec2ee4359dc2fe66171f17c93146747333`;
+`owner_protocol_review` remains `none` for D-004, and the D-004 epoch remains
+unfrozen.
 
 Each candidate receives at most 24 owner-hours for its first complete case
 packet and one four-owner-hour correction window. Time accounting is elapsed
@@ -544,13 +543,12 @@ exists, and materialization supplies no roadmap or readiness credit.
 
 ## 9. Current handoff
 
-The next authorized actions are to close owner-accepted D-003 through an
-Accepted exact-revision OEP, then review this conditional D-004 protocol and the
-sufficiency of all five cross-cutting classes, materialize the five positive
-and 26 named-mutation subjects, assign replay repetitions, and resolve the
-remaining pre-epoch gaps symmetrically before freezing an evidence epoch.
-Running the later frozen suite then produces decision evidence; it still does
-not implement S3b.
+With D-003 closed, the next authorized actions are to review this conditional
+D-004 protocol and the sufficiency of all five cross-cutting classes,
+materialize the five positive and 26 named-mutation subjects, assign replay
+repetitions, and resolve the remaining pre-epoch gaps symmetrically before
+freezing an evidence epoch. Running the later frozen suite then produces
+decision evidence; it still does not implement S3b.
 
 Until those actions occur, D-004 remains proposed, the architecture role map
 remains a recommendation, the S3a Typed Reference Core remains the only

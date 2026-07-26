@@ -259,7 +259,7 @@ fn validate_packet(value: &JsonValue) -> Result<(), PacketError> {
     require_exact_string(
         root,
         "d003_disposition",
-        "owner_accepted_pending_exact_revision_oep_closure",
+        "accepted_exact_revision_oep_closure",
         "$",
     )?;
     require_exact_string(root, "owner_protocol_review", "none", "$")?;
@@ -623,10 +623,7 @@ fn draft_packet_value() -> JsonValue {
         string_entry("status", "draft_unfrozen"),
         ("epoch".to_owned(), JsonValue::Null),
         string_entry("epoch_status", "unfrozen"),
-        string_entry(
-            "d003_disposition",
-            "owner_accepted_pending_exact_revision_oep_closure",
-        ),
+        string_entry("d003_disposition", "accepted_exact_revision_oep_closure"),
         string_entry("owner_protocol_review", "none"),
         ("candidates".to_owned(), strict_json::strings(candidate_ids)),
         ("cases".to_owned(), strict_json::strings(case_ids)),

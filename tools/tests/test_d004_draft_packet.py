@@ -19,10 +19,10 @@ PROPOSAL_MANIFEST_PATH = (
     RESEARCH_ROOT / "d004-v0.2-cross-cutting-fixture-proposals.json"
 )
 PACKET_CANONICAL_SHA256 = (
-    "32cdb43019bba79666b6b0b0e14e789358cce37933dadc1124f07243f09d3ae8"
+    "7fb725d374e39eeae8a3a01ecf6033d53205f61d28ab94371e35ee0b59a07e58"
 )
 PACKET_RAW_SHA256 = (
-    "0784a87e2b2ca82a7c7c7368de0bd9d33cea84aaa1f430540f8fe5e5382967e1"
+    "0095a821d2a94b6163538965707b3ebadc554c9260b66bd45c943b8cefb9e739"
 )
 MANIFEST_CANONICAL_SHA256 = (
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
@@ -149,7 +149,7 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertEqual(packet["epoch_status"], "unfrozen")
         self.assertEqual(
             packet["d003_disposition"],
-            "owner_accepted_pending_exact_revision_oep_closure",
+            "accepted_exact_revision_oep_closure",
         )
         self.assertEqual(packet["owner_protocol_review"], "none")
         self.assertEqual(

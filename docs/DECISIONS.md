@@ -64,10 +64,10 @@ Change rule: only explicit user/project-governance direction can supersede this.
 
 ## D-003 — Product form
 
-Status: owner-accepted on 2026-07-26; pending Accepted exact-revision OEP
-closure before D-004 or S3b relies on the standalone language and Core boundary
+Status: accepted on 2026-07-26 at exact decision revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`
 
-Owner-accepted direction: a standalone domain-specific language with its own
+Accepted direction: a standalone domain-specific language with its own
 editioned semantics and canonical Core formats.
 
 Alternatives considered:
@@ -92,12 +92,11 @@ The four candidates, eight hard gates, journey coverage, migration boundary,
 resource analysis, and reconsideration rules are specified in the
 [D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md). The owner
 explicitly accepted candidate PF-01, the standalone Orange product form, on
-2026-07-26. Under [`GOVERNANCE.md`](../GOVERNANCE.md), that explicit acceptance
-provisionally authorizes the product-form boundary, but D-003 remains formally
-pending until
+2026-07-26. Under [`GOVERNANCE.md`](../GOVERNANCE.md), Accepted
 [OEP-0004](governance/oeps/OEP-0004-standalone-orange-product-form.md)
-becomes Accepted and records the decision at an exact revision. This acceptance
-does not accept D-004 or authorize S3b.
+formally ratifies that boundary and binds the fully validated merged decision
+revision `a82a5cec2ee4359dc2fe66171f17c93146747333`. This acceptance does not
+accept D-004 or authorize S3b.
 
 ## D-004 — Semantic strata
 
@@ -124,8 +123,7 @@ specified in the
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md).
 That Draft protocol records 0/25 required candidate-case executions: 0/5
 candidates have complete five-case packets, and 0/5 cases have complete
-cross-candidate execution. It selects no stratum, does not close D-003's
-exact-revision OEP requirement, and does not authorize S3b.
+cross-candidate execution. It selects no stratum and does not authorize S3b.
 
 Its input-only pre-epoch laboratory now byte-materializes exactly 39
 candidate-neutral cross-cutting fixture subjects under the status
@@ -135,8 +133,8 @@ positive case subjects and all 26 named mutation subjects remain definition-only
 gaps. All five class sufficiency reviews and freeze blockers remain unresolved,
 and replay repetitions remain unresolved and unassigned. Integrity parsing and
 structural oracles over the opaque suite-only bytes are not candidate executions
-and ratify no Orange semantics. D-003 is
-owner-accepted pending exact-revision OEP closure; the D-004 epoch remains
+and ratify no Orange semantics. D-003 is accepted at exact revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`; the D-004 epoch remains
 unfrozen, and D-004 owner protocol review
 remains `none`. With no candidate mappings or adapters, the laboratory creates
 no observation, evidence, result, recommendation, selection, or conclusion and

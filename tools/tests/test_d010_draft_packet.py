@@ -22,10 +22,10 @@ PACKET_PATH = RESEARCH_ROOT / "d010-v0.1-draft-packet.json"
 INDEX_PATH = RESEARCH_ROOT / "d010-v0.1-case-input-index.json"
 SUITE_PATH = Path("docs/COMPILER_STRATEGY_DECISION_SUITE.md")
 PACKET_CANONICAL_SHA256 = (
-    "58ba55f90d63fcf2ce51585d51ea29bbaed375ed703d5c3d9cd7508571c232d2"
+    "076e911bb5f52ee048d7c854928becca4675c97a678c48a03ae5d40b71a67007"
 )
 PACKET_RAW_SHA256 = (
-    "bee863a6204b5bb13bf91226ed23d9a1c0a36480b3eb15468e1c64f8e904bd8e"
+    "aec7514683746c4fdc3fb33f771e793146fcb258be3d4c9b8b9eadd507bb8d0e"
 )
 INDEX_CANONICAL_SHA256 = (
     "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
@@ -119,7 +119,7 @@ class D010DraftPacketTests(unittest.TestCase):
         self.assertEqual(
             packet["dependency_acceptance"],
             {
-                "D-003": False,
+                "D-003": True,
                 "D-004": False,
                 "D-005": False,
                 "D-006": False,
@@ -302,7 +302,7 @@ class D010DraftPacketTests(unittest.TestCase):
             (
                 "packet_dependency",
                 PACKET_PATH,
-                lambda value: value["dependency_acceptance"].update({"D-003": True}),
+                lambda value: value["dependency_acceptance"].update({"D-003": False}),
                 "d010_packet.digest",
             ),
             (

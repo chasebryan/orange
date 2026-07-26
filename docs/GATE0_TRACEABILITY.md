@@ -150,8 +150,9 @@ Exactly 39 candidate-neutral cross-cutting subjects are byte-materialized as
 each for ambiguity, unsupported behavior, and domain exhaustion. The five
 positive cases and 26 named mutations remain definition-only gaps. All five
 class sufficiency reviews and freeze blockers plus replay repetitions remain
-unresolved. D-003 candidate PF-01 is owner-accepted as of 2026-07-26 but pending
-exact-revision OEP closure. D-004 owner review is `none`, the D-004 epoch is
+unresolved. D-003 candidate PF-01 is accepted through OEP-0004 at exact
+revision `a82a5cec2ee4359dc2fe66171f17c93146747333`. D-004 owner review is
+`none`, the D-004 epoch is
 unfrozen, and there are no candidate mappings, adapters, observations,
 evidence, selection, or conclusion.
 Integrity parsing and structural oracles over opaque suite-only models are not
