@@ -4844,8 +4844,8 @@ class PlanningTraceHardeningTests(unittest.TestCase):
         mutations = (
             (
                 "ROADMAP.md",
-                "both\nD-005 and D-006",
-                "D-006 only",
+                "D-005,\nD-006, and D-009",
+                "D-005 and D-006 only",
                 "assurance_model.roadmap_consistency",
             ),
             (

@@ -230,8 +230,8 @@ the S3a acceptance revision, accept either draft decision, or authorize S3b.
 
 ### S4 — Proof and claim boundary
 
-Status: pending symmetric execution and exact-revision OEP acceptance of both
-D-005 and D-006 plus their dependent decisions
+Status: pending symmetric execution and exact-revision OEP acceptance of D-005,
+D-006, and D-009 plus their dependent decisions
 
 Permanent outcomes:
 
@@ -250,10 +250,12 @@ Permanent outcomes:
 - mixed-status claim records.
 
 Exit test: all four D-005 candidates have complete 8/8 case records and both
-D-006 candidates have complete 7/7 case records under their frozen epochs. The
-selected assurance model and proof foundation each pass every non-compensable
-gate; both owner comparative records are `solo-reviewed`; and both Accepted
-OEPs bind their exact validated revisions. Implemented claim-policy,
+D-006 candidates have complete 7/7 case records, and all three D-009 candidates
+have complete 8/8 case records (24/24 total) under their frozen epochs. The
+selected assurance model, proof foundation, and solver-trust policy each pass
+every non-compensable gate; all three owner comparative records are
+`solo-reviewed`; and all three Accepted OEPs bind their exact validated
+revisions. Implemented claim-policy,
 subject/context substitution, trust-closure, composition, lifecycle,
 malformed-proof, and missing-certificate paths fail closed. Solver timeouts,
 unknowns, unavailable authorities, stale evidence, and aggregate summaries
@@ -279,6 +281,18 @@ candidate-case identities. It admits or installs no proof tool, assigns no
 physical order or execution resources, and leaves D-004/D-005 dependencies,
 result/replay schemas, owner review, selection, and all 14 executions unresolved.
 This preparation is neither S4 evidence nor readiness credit.
+
+The D-009 input-only laboratory binds its candidate-neutral draft packet,
+unchanged solver-trust suite, and eight zero-fixture case blockers, then
+enumerates the exact 24 case-major, candidate-minor SP-01/SP-02/SP-03 identities
+in memory. D-004 and D-005 acceptance remains absent; D-006 and D-007 remain
+downstream consumers rather than cyclic prerequisites. The laboratory admits,
+acquires, installs, or executes no solver, proof assistant, certificate checker,
+adapter, runner, observer, or isolation backend; assigns no physical order or
+execution resources; validates no proof, certificate, counterexample, theorem,
+claim, or cache result; and records 0/24 executions, no evidence, no selection,
+and no conclusion. This preparation neither changes the logical TCB nor closes
+S4, authorizes solver-backed proof search, or advances readiness beyond 30%.
 
 ### S5 — Compiler IRs and one output path
 

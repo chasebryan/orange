@@ -225,12 +225,14 @@ use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
 likewise exact. It contains the non-product, draft-unfrozen D-004 input packet,
 named-mutation manifest, and unreviewed cross-cutting fixture-proposal manifest
-plus the D-005 execution packet and historical v0.1 negative corpus, and the
-D-006 draft-unfrozen packet and seven-row input-only case index. Every D-006
+plus the D-005 execution packet and historical v0.1 negative corpus, the D-006
+draft-unfrozen packet and seven-row input-only case index, and the D-009
+draft-unfrozen packet and eight-row input-only case index. Every D-006 and D-009
 case row has zero executable fixtures, unresolved coverage, and an active
-freeze blocker. Its laboratory may verify the closed inputs and enumerate 14
-candidate-case identities in memory, but that inventory is not a physical run
-order and creates no execution, evidence, review, recommendation, or selection.
+freeze blocker. Their laboratories may verify the closed inputs and enumerate
+14 and 24 candidate-case identities in memory, respectively, but those
+inventories are not physical run orders and create no execution, evidence,
+review, recommendation, or selection.
 The D-004 proposal manifest defines 39 domain-level structural proposals: 14
 missing-edge,
 10 identity-substitution, and five each for ambiguity, unsupported behavior,
@@ -249,7 +251,12 @@ Those receipts fix isolation to unevaluated, payload status to unvalidated, and
 evidence status to none; they do not authorize a physical run order or compare
 opaque payloads. The laboratory contains no subprocess launcher, candidate
 payload validator, result artifact, or execution authority and retains 0/32.
-The D-004 through D-006 policy checks share one table-driven identity boundary:
+The D-009 laboratory likewise retains 0/24 while admitting, acquiring,
+installing, or executing no solver, certificate checker, or proof tool. It
+validates no proof, certificate, counterexample, claim, or cache result and
+does not place any solver inside or outside the logical TCB.
+The D-004 through D-006 and D-009 policy checks share one table-driven identity
+boundary:
 each admitted research tree is exact, JSON is parsed through the bounded strict
 profile, reviewed canonical meanings and raw transports are SHA-256 bound, and
 every external input binding is verified from a trusted path. Whole-object
