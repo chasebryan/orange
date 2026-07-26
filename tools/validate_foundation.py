@@ -213,6 +213,10 @@ compiler/crates/orange-compiler/tests/d005_support/packet.rs
 compiler/crates/orange-compiler/tests/d005_support/runner.rs
 compiler/crates/orange-compiler/tests/d005_support/sha256.rs
 compiler/crates/orange-compiler/tests/d005_support/strict_json.rs
+compiler/crates/orange-compiler/tests/d006_decision_suite.rs
+compiler/crates/orange-compiler/tests/d006_support/domain.rs
+compiler/crates/orange-compiler/tests/d006_support/packet.rs
+compiler/crates/orange-compiler/tests/d006_support/runner.rs
 compiler/crates/orangec/Cargo.toml
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
@@ -294,6 +298,9 @@ research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-exter
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json
+research/decisions/D-006/README.md
+research/decisions/D-006/d006-v0.2-case-input-index.json
+research/decisions/D-006/d006-v0.2-draft-packet.json
 schemas/README.md
 schemas/gate0/claim-record-v0.1.schema.json
 schemas/gate0/evidence-manifest-v0.1.schema.json
@@ -307,6 +314,7 @@ scripts/ci/install-lychee
 tools/fs_sandbox.c
 tools/tests/test_d004_draft_packet.py
 tools/tests/test_d005_draft_packet.py
+tools/tests/test_d006_draft_packet.py
 tools/validate_foundation.py
 tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
@@ -476,7 +484,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "ec4f824640682a022cb77c0237a5f112ebf0dd636d682ec371ac1484da9fb812"
+_PHD = "7678ada1563bd2abbe6fb1e2dbc583d5c15e6141f6a4db5fdcf4529357f876a5"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -887,6 +895,14 @@ D005_DRAFT_RESEARCH_PATHS = frozenset(
         "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json",
     }
 )
+D006_DRAFT_RESEARCH_PATHS = frozenset(
+    "research/decisions/D-006/" + name
+    for name in "README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json".split()
+)
+D006_DRAFT_PACKET_CANONICAL_SHA256 = "b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21"
+D006_CASE_INPUT_INDEX_CANONICAL_SHA256 = "1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0"
+D006_CASE_INPUT_INDEX_RAW_SHA256 = "1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136"
+D006_PROOF_FOUNDATION_SUITE_RAW_SHA256 = "6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b"
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
@@ -2264,6 +2280,7 @@ class FoundationValidator:
         self._validate_public_assurance_model_suite()
         self._validate_d004_draft_packet()
         self._validate_d005_draft_packet()
+        self._validate_d006_draft_packet()
         self._validate_change_records()
         self._validate_repository_templates()
         self._end()
@@ -6915,6 +6932,41 @@ class FoundationValidator:
                 manifest_path,
                 "historical corpus must retain exactly one digest-bound subject-substitution comparison base",
             )
+
+    def _validate_d006_draft_packet(self) -> None:
+        r, pfx = self.root, "research/decisions/D-006/"
+        fail = lambda code, path: self.add(f"d006_packet.{code}", path, "D-006 identity drift")
+        seen = {relative(p, r) for p in self.repository_files if relative(p, r).startswith(pfx)}
+        if seen != D006_DRAFT_RESEARCH_PATHS:
+            fail("research_inventory", r / pfx)
+        bad = "epoch candidate result replay review decision".split()
+        for path in self.repository_files:
+            name = relative(path, r)
+            if name.startswith(pfx) and any(word in name[len(pfx) :].lower() for word in bad):
+                fail("premature_artifact", path)
+
+        base = r / pfx
+        packet, index = base / "d006-v0.2-draft-packet.json", base / "d006-v0.2-case-input-index.json"
+
+        def check(path, tag, want):
+            try:
+                value = self._load_repository_json(path)
+            except (OSError, ValueError):
+                fail(tag + "parse", path)
+                return
+            data = canonical_json_bytes(value)
+            if self._read_repository_bytes(path) != data + b"\n":
+                fail(tag + "canonical", path)
+            if hashlib.sha256(data).hexdigest() != want:
+                fail(tag + "digest", path)
+
+        check(packet, "", D006_DRAFT_PACKET_CANONICAL_SHA256)
+        check(index, "index_", D006_CASE_INPUT_INDEX_CANONICAL_SHA256)
+        suite = r / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
+        for path, want in ((index, D006_CASE_INPUT_INDEX_RAW_SHA256), (suite, D006_PROOF_FOUNDATION_SUITE_RAW_SHA256)):
+            raw = self._read_repository_bytes(path)
+            if raw is None or hashlib.sha256(raw).hexdigest() != want:
+                fail("input_digest", path)
 
     def _validate_change_records(self) -> None:
         specifications = (

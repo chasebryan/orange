@@ -214,6 +214,13 @@ the suite and accepts the selected foundation through an exact-revision OEP.
 The draft admits no proof toolchain dependency and authorizes no proof-bearing
 implementation.
 
+The input-only pre-epoch laboratory binds the unchanged suite and a seven-row
+case-input index. Each DS-01 through DS-07 row retains zero executable fixtures,
+unresolved coverage, and an active freeze blocker. Its deterministic 14-pair
+identity inventory is not a physical run order. The laboratory installs and
+executes no prover, freezes no epoch, creates no result or evidence, performs no
+owner review, and retains the exact 0/14 baseline and null selection.
+
 ## D-007 — Orange-owned proof format and checker
 
 Status: proposed; depends on D-006
