@@ -67,6 +67,23 @@ resource-exhaustion fixtures. Replay repetitions also remain unresolved. All
 five cross-cutting classes therefore remain freeze blockers despite their
 materialized bytes.
 
+The Rust laboratory also checks a closed, in-memory future-schema descriptor
+that enumerates all 31 top-level future case-record fields, their nested shapes,
+and their cross-field invariants. It binds both authenticated subject catalogs
+into an exact 70-row observation oracle; future observation fields must resolve
+that oracle and cannot broaden their own allowed outcomes. It also defines a
+10-field scheduled-slot preimage contract and necessary-and-sufficient verdict
+conditions, including checked resource bounds and SR dependency joins. The
+25-slot identity plan exists, but no concrete slot preimage or digest is
+available until the epoch, packet identity, and replay-plan identity are frozen.
+This synthetic
+contract accepts no populated records, launches no process or adapter, and
+persists nothing. It approves no schema, assigns no replay cardinality, and
+supplies no candidate mapping or adapter. Its epoch remains null and unfrozen,
+owner protocol review remains `none`, execution remains 0/25 with evidence
+`none`, and selection and conclusion remain null. It creates no execution or
+evidence; both `roadmap_gate_credit` and `readiness_credit` remain `none`.
+
 The deterministic 5-candidate by 5-case Latin schedule is still only an
 identity plan. Canonical execution remains 0/25, complete candidates remain
 0/5, complete cross-candidate cases remain 0/5, evidence is `none`, and both

@@ -14,6 +14,8 @@ mod domain;
 mod fixtures;
 #[path = "d004_support/packet.rs"]
 mod packet;
+#[path = "d004_support/result_contract.rs"]
+mod result_contract;
 #[path = "d004_support/runner.rs"]
 mod runner;
 #[path = "d005_support/sha256.rs"]
@@ -27,8 +29,8 @@ use std::path::Path;
 
 use case_subjects::{
     CASE_SUBJECT_CATALOG_CANONICAL_SHA256, CASE_SUBJECT_CATALOG_PATH,
-    CASE_SUBJECT_CATALOG_RAW_SHA256, CASE_SUBJECT_NONCLAIMS, CaseSubjectErrorKind,
-    parse_case_subject_catalog,
+    CASE_SUBJECT_CATALOG_RAW_SHA256, CASE_SUBJECT_NONCLAIMS, CaseSubjectCatalog,
+    CaseSubjectErrorKind, parse_case_subject_catalog,
 };
 use cases::MUTATIONS;
 use domain::{
@@ -41,7 +43,7 @@ use domain::{
 };
 use fixtures::{
     FIXTURE_CATALOG_CANONICAL_SHA256, FIXTURE_CATALOG_PATH, FIXTURE_CATALOG_RAW_SHA256,
-    FIXTURE_NONCLAIMS, FixtureErrorKind, FixtureState, parse_fixture_catalog,
+    FIXTURE_NONCLAIMS, FixtureCatalog, FixtureErrorKind, FixtureState, parse_fixture_catalog,
 };
 use packet::{
     CASE_SUBJECT_CATALOG_SHA256, CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
@@ -52,6 +54,17 @@ use packet::{
     canonical_mutation_manifest_file_bytes, cross_cutting_fixture_proposal_manifest_digest_hex,
     mutation_manifest_digest_hex, parse_cross_cutting_fixture_proposal_manifest,
     parse_draft_packet, parse_mutation_manifest,
+};
+use result_contract::{
+    ADAPTER_STATUS_STATES, DERIVATION_RULES, DIGEST_JOIN_FIELDS, EXECUTION_STATE_KINDS,
+    OBSERVATION_COMPARISONS, OBSERVED_INVALIDATION_STATES, ORDERING_RULES,
+    REPLAY_NON_SUCCESS_STATES, REQUIRED_CASE_RECORD_FIELDS, REQUIRED_GRAPH_EDGE_FIELDS,
+    REQUIRED_IDENTITY_FIELDS, REQUIRED_MUTATION_SUBJECT_BINDING_FIELDS,
+    REQUIRED_OBSERVATION_FIELDS, REQUIRED_OWNER_LABEL_FIELDS,
+    REQUIRED_POSITIVE_SUBJECT_BINDING_FIELDS, REQUIRED_SR_MAP_FIELDS, RESULT_CONTRACT_NONCLAIMS,
+    ResultContractErrorKind, SCHEDULE_SLOT_FIELDS, SCHEDULED_SLOT_PREIMAGE_FIELDS,
+    SR_APPLICABILITY_STATES, SR_CONFORMANCE_STATES, SUBJECT_ORACLE_FIELDS,
+    canonical_draft_result_contract_descriptor_bytes, parse_draft_result_contract_descriptor,
 };
 use runner::{ReplayError, ReplayInputs};
 use strict_json::{JsonErrorKind, JsonValue};
@@ -93,6 +106,8 @@ const VALID_EMPTY_MIXED: &[u8] = include_bytes!("../../../fixtures/s3a/valid-emp
 const VALID_INT_RADICES: &[u8] = include_bytes!("../../../fixtures/s3a/valid-int-radices.or");
 const VALID_WORD8_BOUNDARIES: &[u8] =
     include_bytes!("../../../fixtures/s3a/valid-word8-boundaries.or");
+const RESULT_CONTRACT_DESCRIPTOR_SHA256: &str =
+    "e3afc61c7127ca0b59dd010e90ae03a92c3354e3eee490c0667482c9218e8789";
 
 fn checked_in_replay_inputs() -> ReplayInputs<'static> {
     ReplayInputs::new([
@@ -121,6 +136,29 @@ fn checked_in_replay_inputs() -> ReplayInputs<'static> {
     ])
 }
 
+fn checked_in_subject_catalogs() -> (CaseSubjectCatalog, FixtureCatalog) {
+    let mutation_manifest =
+        parse_mutation_manifest(NAMED_MUTATIONS).expect("checked-in mutation manifest");
+    let case_subject_catalog = parse_case_subject_catalog(CASE_SUBJECTS, &mutation_manifest)
+        .expect("checked-in case-subject catalog");
+    assert_eq!(
+        case_subject_catalog.digest_hex(),
+        CASE_SUBJECT_CATALOG_CANONICAL_SHA256
+    );
+
+    let proposal_manifest =
+        parse_cross_cutting_fixture_proposal_manifest(CROSS_CUTTING_FIXTURE_PROPOSALS)
+            .expect("checked-in proposal manifest");
+    let fixture_catalog =
+        parse_fixture_catalog(CROSS_CUTTING_EXECUTABLE_FIXTURES, &proposal_manifest)
+            .expect("checked-in cross-cutting fixture catalog");
+    assert_eq!(
+        fixture_catalog.digest_hex(),
+        FIXTURE_CATALOG_CANONICAL_SHA256
+    );
+    (case_subject_catalog, fixture_catalog)
+}
+
 fn canonical_json_file_bytes(value: &JsonValue) -> Vec<u8> {
     let mut bytes = strict_json::canonical_bytes(value);
     bytes.push(b'\n');
@@ -131,6 +169,20 @@ fn json_object_mut(value: &mut JsonValue) -> &mut BTreeMap<String, JsonValue> {
     match value {
         JsonValue::Object(object) => object,
         _ => panic!("expected JSON object"),
+    }
+}
+
+fn json_object(value: &JsonValue) -> &BTreeMap<String, JsonValue> {
+    match value {
+        JsonValue::Object(object) => object,
+        _ => panic!("expected JSON object"),
+    }
+}
+
+fn json_array(value: &JsonValue) -> &[JsonValue] {
+    match value {
+        JsonValue::Array(array) => array,
+        _ => panic!("expected JSON array"),
     }
 }
 
@@ -180,6 +232,603 @@ fn rehash_case_subject(catalog: &mut JsonValue, collection: &str, index: usize) 
         record.get("subject").expect("case subject"),
     )));
     record.insert("subject_sha256".to_owned(), JsonValue::String(digest));
+}
+
+type DescriptorMutation = Box<dyn Fn(&mut JsonValue)>;
+
+#[test]
+fn future_result_contract_descriptor_is_exact_closed_and_zero_state() {
+    let (case_subject_catalog, fixture_catalog) = checked_in_subject_catalogs();
+    let bytes =
+        canonical_draft_result_contract_descriptor_bytes(&case_subject_catalog, &fixture_catalog);
+    let descriptor =
+        parse_draft_result_contract_descriptor(&bytes, &case_subject_catalog, &fixture_catalog)
+            .expect("exact descriptor");
+    let descriptor_value = strict_json::parse(&bytes).expect("generated descriptor parses");
+
+    assert_eq!(descriptor.epoch(), None);
+    assert_eq!(descriptor.epoch_status(), "unfrozen");
+    assert_eq!(descriptor.owner_protocol_review(), "none");
+    assert_eq!(descriptor.replay_repetitions(), None);
+    assert_eq!(descriptor.result_record_count(), 0);
+    assert_eq!(descriptor.completed_candidate_cases(), 0);
+    assert_eq!(descriptor.complete_candidates(), 0);
+    assert_eq!(descriptor.complete_cross_candidate_cases(), 0);
+    assert_eq!(descriptor.evidence_status(), "none");
+    assert_eq!(descriptor.selection(), None);
+    assert_eq!(descriptor.conclusion(), None);
+    assert_eq!(descriptor.roadmap_gate_credit(), "none");
+    assert_eq!(descriptor.readiness_credit(), "none");
+    assert_eq!(descriptor.canonical_bytes(), bytes);
+    assert_eq!(
+        descriptor.digest_hex(),
+        RESULT_CONTRACT_DESCRIPTOR_SHA256,
+        "the future result-contract descriptor requires explicit identity review"
+    );
+
+    assert_eq!(
+        REQUIRED_CASE_RECORD_FIELDS,
+        [
+            "schema_version",
+            "suite_version",
+            "epoch",
+            "packet_sha256",
+            "replay_plan_sha256",
+            "slot_ordinal",
+            "round",
+            "position",
+            "candidate",
+            "case",
+            "repetition",
+            "positive_subject",
+            "mutation_subjects",
+            "identities",
+            "argv",
+            "environment",
+            "resource_ceilings",
+            "measured_resources",
+            "execution_state",
+            "observations",
+            "log_manifest",
+            "premises",
+            "assumptions",
+            "trusted_components",
+            "unsupported_features",
+            "candidate_graph",
+            "sr_conformance_map",
+            "case_verdict",
+            "byte_manifest",
+            "replay",
+            "owner_labels",
+        ]
+    );
+    assert_eq!(
+        REQUIRED_POSITIVE_SUBJECT_BINDING_FIELDS,
+        ["subject_id", "subject_sha256"]
+    );
+    assert_eq!(
+        REQUIRED_MUTATION_SUBJECT_BINDING_FIELDS,
+        ["mutation_id", "subject_id", "subject_sha256"]
+    );
+    assert_eq!(
+        REQUIRED_IDENTITY_FIELDS,
+        [
+            "scheduled_slot_sha256",
+            "input_manifest_sha256",
+            "model_sha256",
+            "tool_sha256",
+            "dependency_manifest_sha256",
+            "environment_sha256",
+            "candidate_graph_sha256",
+            "sr_map_sha256",
+            "semantic_endpoint_sha256",
+            "parameter_model_sha256",
+            "positive_subject_sha256",
+        ]
+    );
+    assert_eq!(
+        REQUIRED_OBSERVATION_FIELDS,
+        [
+            "id",
+            "subject_id",
+            "subject_sha256",
+            "observation_level",
+            "allowed_domain_states",
+            "observed_state",
+            "comparison",
+            "required_invalidation",
+            "observed_invalidation",
+            "capability_credit",
+            "normalized_observation_sha256",
+            "raw_log_refs",
+        ]
+    );
+    assert_eq!(REQUIRED_SR_MAP_FIELDS.len(), 15);
+    assert_eq!(REQUIRED_GRAPH_EDGE_FIELDS.len(), 13);
+    assert_eq!(
+        REQUIRED_OWNER_LABEL_FIELDS,
+        [
+            "producer_label",
+            "review_authority",
+            "review_label",
+            "independent_review",
+        ]
+    );
+    assert_eq!(
+        SCHEDULE_SLOT_FIELDS,
+        ["ordinal", "round", "position", "candidate", "case"]
+    );
+    assert_eq!(
+        SCHEDULED_SLOT_PREIMAGE_FIELDS,
+        [
+            "schema_version",
+            "suite_version",
+            "epoch",
+            "packet_sha256",
+            "replay_plan_sha256",
+            "ordinal",
+            "round",
+            "position",
+            "candidate",
+            "case",
+        ]
+    );
+    assert_eq!(DIGEST_JOIN_FIELDS.len(), 13);
+    assert_eq!(
+        EXECUTION_STATE_KINDS,
+        [
+            "completed",
+            "missing_input",
+            "timeout",
+            "resource_exhaustion",
+            "crash",
+            "digest_mismatch",
+            "unsupported_behavior",
+            "oversized_output",
+        ]
+    );
+    assert_eq!(
+        ADAPTER_STATUS_STATES,
+        ["executed", "not_executed", "failed"]
+    );
+    assert_eq!(
+        OBSERVED_INVALIDATION_STATES,
+        ["satisfied", "not_satisfied", "not_required"]
+    );
+    assert_eq!(SR_APPLICABILITY_STATES, ["required", "not_required"]);
+    assert_eq!(
+        SR_CONFORMANCE_STATES,
+        ["satisfied", "not_satisfied", "unresolved", "unsupported",]
+    );
+    assert_eq!(
+        REPLAY_NON_SUCCESS_STATES,
+        [
+            "missing_input",
+            "timeout",
+            "resource_exhaustion",
+            "crash",
+            "digest_mismatch",
+            "unsupported_behavior",
+            "oversized_output",
+        ]
+    );
+    assert_eq!(ORDERING_RULES.len(), 6);
+    assert_eq!(OBSERVATION_COMPARISONS, ["matched", "mismatched"]);
+    assert_eq!(DERIVATION_RULES.len(), 30);
+    assert_eq!(RESULT_CONTRACT_NONCLAIMS.len(), 12);
+
+    let expected_mutations = JsonValue::Array(
+        MUTATIONS
+            .iter()
+            .map(|mutation| {
+                strict_json::object([
+                    ("id".to_owned(), JsonValue::String(mutation.id.to_owned())),
+                    (
+                        "case".to_owned(),
+                        JsonValue::String(mutation.case.as_str().to_owned()),
+                    ),
+                    (
+                        "description".to_owned(),
+                        JsonValue::String(mutation.description.to_owned()),
+                    ),
+                ])
+            })
+            .collect(),
+    );
+    assert_eq!(
+        json_object(&descriptor_value)
+            .get("mutation_inventory")
+            .expect("mutation inventory"),
+        &expected_mutations
+    );
+
+    let root = json_object(&descriptor_value);
+    let catalog_bindings = json_object(
+        root.get("subject_catalog_bindings")
+            .expect("subject catalog bindings"),
+    );
+    let case_binding = json_object(
+        catalog_bindings
+            .get("case_subject_catalog")
+            .expect("case-subject binding"),
+    );
+    assert_eq!(
+        case_binding
+            .get("canonical_sha256")
+            .and_then(JsonValue::as_str),
+        Some(CASE_SUBJECT_CATALOG_CANONICAL_SHA256)
+    );
+    let fixture_binding = json_object(
+        catalog_bindings
+            .get("cross_cutting_fixture_catalog")
+            .expect("cross-cutting fixture binding"),
+    );
+    assert_eq!(
+        fixture_binding
+            .get("canonical_sha256")
+            .and_then(JsonValue::as_str),
+        Some(FIXTURE_CATALOG_CANONICAL_SHA256)
+    );
+
+    let oracle_inventory = json_array(
+        root.get("subject_oracle_inventory")
+            .expect("subject oracle inventory"),
+    );
+    assert_eq!(oracle_inventory.len(), 70);
+    let expected_subjects = case_subject_catalog
+        .preflights()
+        .iter()
+        .map(|subject| (subject.subject_id.as_str(), subject.subject_sha256.as_str()))
+        .chain(fixture_catalog.preflights().iter().map(|subject| {
+            (
+                subject.proposal_id.as_str(),
+                subject.fixture_subject_sha256.as_str(),
+            )
+        }));
+    let mut subject_ids = BTreeSet::new();
+    for (oracle, (expected_id, expected_sha256)) in oracle_inventory.iter().zip(expected_subjects) {
+        let oracle = json_object(oracle);
+        assert_eq!(
+            oracle.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            SUBJECT_ORACLE_FIELDS.into_iter().collect()
+        );
+        assert_eq!(
+            oracle.get("subject_id").and_then(JsonValue::as_str),
+            Some(expected_id)
+        );
+        assert_eq!(
+            oracle.get("subject_sha256").and_then(JsonValue::as_str),
+            Some(expected_sha256)
+        );
+        assert!(subject_ids.insert(expected_id));
+    }
+    assert_eq!(subject_ids.len(), 70);
+
+    let slot_identity = json_object(
+        root.get("scheduled_slot_identity_contract")
+            .expect("scheduled-slot identity contract"),
+    );
+    assert_eq!(
+        slot_identity
+            .get("availability")
+            .and_then(JsonValue::as_str),
+        Some("unavailable_before_frozen_epoch_packet_and_replay_plan")
+    );
+    assert_eq!(
+        json_array(
+            slot_identity
+                .get("preimage_fields")
+                .expect("scheduled-slot preimage fields"),
+        ),
+        &SCHEDULED_SLOT_PREIMAGE_FIELDS.map(|field| JsonValue::String(field.to_owned()))
+    );
+
+    let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
+    let plan = runner::prepare_replay(&packet, &checked_in_replay_inputs())
+        .expect("digest-bound identity plan");
+    let expected_slots = JsonValue::Array(
+        plan.schedule()
+            .iter()
+            .map(|execution| {
+                strict_json::object([
+                    (
+                        "ordinal".to_owned(),
+                        JsonValue::Integer(i64::try_from(execution.ordinal).unwrap()),
+                    ),
+                    (
+                        "round".to_owned(),
+                        JsonValue::Integer(i64::try_from(execution.round).unwrap()),
+                    ),
+                    (
+                        "position".to_owned(),
+                        JsonValue::Integer(i64::try_from(execution.position).unwrap()),
+                    ),
+                    (
+                        "candidate".to_owned(),
+                        JsonValue::String(execution.candidate.as_str().to_owned()),
+                    ),
+                    (
+                        "case".to_owned(),
+                        JsonValue::String(execution.case.as_str().to_owned()),
+                    ),
+                ])
+            })
+            .collect(),
+    );
+    assert_eq!(plan.schedule().len(), REQUIRED_CANDIDATE_CASES);
+    assert_eq!(
+        json_object(&descriptor_value)
+            .get("schedule_slots")
+            .expect("schedule slots"),
+        &expected_slots
+    );
+}
+
+#[test]
+fn future_result_contract_descriptor_fails_closed_on_state_or_schema_drift() {
+    let (case_subject_catalog, fixture_catalog) = checked_in_subject_catalogs();
+    let bytes =
+        canonical_draft_result_contract_descriptor_bytes(&case_subject_catalog, &fixture_catalog);
+    let parsed = strict_json::parse(&bytes).expect("generated descriptor parses");
+    let parse_descriptor = |source: &[u8]| {
+        parse_draft_result_contract_descriptor(source, &case_subject_catalog, &fixture_catalog)
+    };
+
+    let mutations: [DescriptorMutation; 17] = [
+        Box::new(|value| {
+            json_object_mut(value).insert("unknown".to_owned(), JsonValue::Bool(true));
+        }),
+        Box::new(|value| {
+            json_object_mut(value).remove("nonclaims");
+        }),
+        Box::new(|value| {
+            json_object_mut(value).insert(
+                "epoch".to_owned(),
+                JsonValue::String("D004-E001".to_owned()),
+            );
+        }),
+        Box::new(|value| {
+            json_object_mut(value).insert(
+                "owner_protocol_review".to_owned(),
+                JsonValue::String("solo-reviewed".to_owned()),
+            );
+        }),
+        Box::new(|value| {
+            json_object_mut(value).insert("replay_repetitions".to_owned(), JsonValue::Integer(3));
+        }),
+        Box::new(|value| {
+            let state = json_object_mut(
+                json_object_mut(value)
+                    .get_mut("current_state")
+                    .expect("current state"),
+            );
+            state.insert(
+                "completed_candidate_cases".to_owned(),
+                JsonValue::Integer(1),
+            );
+        }),
+        Box::new(|value| {
+            json_array_mut(
+                json_object_mut(value)
+                    .get_mut("result_records")
+                    .expect("result records"),
+            )
+            .push(JsonValue::Object(BTreeMap::new()));
+        }),
+        Box::new(|value| {
+            json_array_mut(
+                json_object_mut(value)
+                    .get_mut("required_case_record_fields")
+                    .expect("record fields"),
+            )
+            .swap(0, 1);
+        }),
+        Box::new(|value| {
+            json_array_mut(
+                json_object_mut(value)
+                    .get_mut("relationships")
+                    .expect("relationships"),
+            )
+            .pop();
+        }),
+        Box::new(|value| {
+            json_object_mut(value).insert(
+                "status".to_owned(),
+                JsonValue::String("accepted".to_owned()),
+            );
+        }),
+        Box::new(|value| {
+            let ceilings = json_object_mut(
+                json_object_mut(value)
+                    .get_mut("resource_ceilings")
+                    .expect("resource ceilings"),
+            );
+            ceilings.insert("wall_seconds".to_owned(), JsonValue::Integer(901));
+        }),
+        Box::new(|value| {
+            json_array_mut(
+                json_object_mut(value)
+                    .get_mut("nonclaims")
+                    .expect("nonclaims"),
+            )
+            .pop();
+        }),
+        Box::new(|value| {
+            let inventory = json_array_mut(
+                json_object_mut(value)
+                    .get_mut("subject_oracle_inventory")
+                    .expect("subject oracle inventory"),
+            );
+            json_array_mut(
+                json_object_mut(&mut inventory[0])
+                    .get_mut("allowed_domain_states")
+                    .expect("oracle allowed states"),
+            )
+            .push(JsonValue::String("unsupported".to_owned()));
+        }),
+        Box::new(|value| {
+            let inventory = json_array_mut(
+                json_object_mut(value)
+                    .get_mut("subject_oracle_inventory")
+                    .expect("subject oracle inventory"),
+            );
+            json_object_mut(&mut inventory[0]).insert(
+                "capability_credit".to_owned(),
+                JsonValue::String("claimed".to_owned()),
+            );
+        }),
+        Box::new(|value| {
+            let bindings = json_object_mut(
+                json_object_mut(value)
+                    .get_mut("subject_catalog_bindings")
+                    .expect("subject catalog bindings"),
+            );
+            json_object_mut(
+                bindings
+                    .get_mut("case_subject_catalog")
+                    .expect("case-subject catalog binding"),
+            )
+            .insert(
+                "canonical_sha256".to_owned(),
+                JsonValue::String("0".repeat(64)),
+            );
+        }),
+        Box::new(|value| {
+            let identity = json_object_mut(
+                json_object_mut(value)
+                    .get_mut("scheduled_slot_identity_contract")
+                    .expect("scheduled-slot identity contract"),
+            );
+            json_array_mut(
+                identity
+                    .get_mut("preimage_fields")
+                    .expect("scheduled-slot preimage fields"),
+            )
+            .swap(0, 1);
+        }),
+        Box::new(|value| {
+            json_array_mut(
+                json_object_mut(value)
+                    .get_mut("sr_conformance_states")
+                    .expect("SR conformance states"),
+            )
+            .pop();
+        }),
+    ];
+
+    for mutate in mutations {
+        let mut mutated = parsed.clone();
+        mutate(&mut mutated);
+        let mutated_bytes = strict_json::canonical_bytes(&mutated);
+        assert_eq!(
+            parse_descriptor(&mutated_bytes)
+                .expect_err("descriptor drift must fail")
+                .kind,
+            ResultContractErrorKind::SchemaMismatch
+        );
+    }
+
+    for collection in [
+        "result_records",
+        "observation_records",
+        "verdict_records",
+        "review_records",
+        "evidence_records",
+    ] {
+        let mut mutated = parsed.clone();
+        json_array_mut(
+            json_object_mut(&mut mutated)
+                .get_mut(collection)
+                .expect("closed record collection"),
+        )
+        .push(JsonValue::Object(BTreeMap::new()));
+        assert_eq!(
+            parse_descriptor(&strict_json::canonical_bytes(&mutated))
+                .expect_err("populated record collections must fail")
+                .kind,
+            ResultContractErrorKind::SchemaMismatch
+        );
+    }
+
+    for field in ["selection", "conclusion"] {
+        let mut mutated = parsed.clone();
+        json_object_mut(
+            json_object_mut(&mut mutated)
+                .get_mut("current_state")
+                .expect("current state"),
+        )
+        .insert(field.to_owned(), JsonValue::String("claimed".to_owned()));
+        assert_eq!(
+            parse_descriptor(&strict_json::canonical_bytes(&mutated))
+                .expect_err("selection or conclusion claims must fail")
+                .kind,
+            ResultContractErrorKind::SchemaMismatch
+        );
+    }
+
+    for (object, field, replacement) in [
+        ("digest_contract", "encoding", "uppercase_hex"),
+        ("transport_contract", "network", "allowed"),
+        ("owner_label_contract", "independent_review", "independent"),
+        ("schedule_contract", "physical_execution_order", "latin"),
+    ] {
+        let mut mutated = parsed.clone();
+        json_object_mut(
+            json_object_mut(&mut mutated)
+                .get_mut(object)
+                .expect("closed nested contract"),
+        )
+        .insert(field.to_owned(), JsonValue::String(replacement.to_owned()));
+        let error = parse_descriptor(&strict_json::canonical_bytes(&mutated))
+            .expect_err("nested contract substitutions must fail");
+        assert_eq!(error.kind, ResultContractErrorKind::SchemaMismatch);
+        assert_eq!(error.path, format!("$/{object}/{field}"));
+    }
+
+    let mut candidate_substitution = parsed.clone();
+    json_array_mut(
+        json_object_mut(&mut candidate_substitution)
+            .get_mut("candidate_ids")
+            .expect("candidate ids"),
+    )[0] = JsonValue::String("ST-OTHER".to_owned());
+    let error = parse_descriptor(&strict_json::canonical_bytes(&candidate_substitution))
+        .expect_err("candidate identity substitution must fail");
+    assert_eq!(error.kind, ResultContractErrorKind::SchemaMismatch);
+    assert_eq!(error.path, "$/candidate_ids/0");
+
+    let mut escaped_unknown_key = parsed.clone();
+    json_object_mut(&mut escaped_unknown_key).insert("a/b~c".to_owned(), JsonValue::Bool(true));
+    let error = parse_descriptor(&strict_json::canonical_bytes(&escaped_unknown_key))
+        .expect_err("unknown key with JSON Pointer metacharacters must fail");
+    assert_eq!(error.kind, ResultContractErrorKind::SchemaMismatch);
+    assert_eq!(error.path, "$/a~1b~0c");
+
+    let mut noncanonical = bytes.clone();
+    noncanonical.push(b'\n');
+    assert_eq!(
+        parse_descriptor(&noncanonical)
+            .expect_err("noncanonical descriptor must fail")
+            .kind,
+        ResultContractErrorKind::NonCanonical
+    );
+    assert_eq!(
+        parse_descriptor(b"{\"x\":1,\"x\":2}")
+            .expect_err("duplicate keys must fail")
+            .kind,
+        ResultContractErrorKind::Json(JsonErrorKind::DuplicateKey)
+    );
+    assert_eq!(
+        parse_descriptor(b"{\"x\":1.0}")
+            .expect_err("floating point must fail")
+            .kind,
+        ResultContractErrorKind::Json(JsonErrorKind::FloatingPoint)
+    );
+    assert_eq!(
+        parse_descriptor(&vec![b' '; BUDGETS.max_packet_bytes + 1])
+            .expect_err("oversized descriptors must fail")
+            .kind,
+        ResultContractErrorKind::Json(JsonErrorKind::InputTooLarge)
+    );
 }
 
 #[test]

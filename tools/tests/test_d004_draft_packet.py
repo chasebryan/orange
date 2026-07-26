@@ -49,6 +49,18 @@ CASE_SUBJECT_CATALOG_CANONICAL_SHA256 = (
 CASE_SUBJECT_CATALOG_RAW_SHA256 = (
     "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6"
 )
+RESULT_CONTRACT_SOURCE_PATH = Path(
+    "compiler/crates/orange-compiler/tests/d004_support/result_contract.rs"
+)
+DECISION_SUITE_SOURCE_PATH = Path(
+    "compiler/crates/orange-compiler/tests/d004_decision_suite.rs"
+)
+RESULT_CONTRACT_SOURCE_SHA256 = (
+    "8ef2abfd63d711907e911c415e4abbb903244aa9b44211f59e9b1f963c884292"
+)
+RESULT_CONTRACT_DESCRIPTOR_SHA256 = (
+    "e3afc61c7127ca0b59dd010e90ae03a92c3354e3eee490c0667482c9218e8789"
+)
 
 
 class D004DraftPacketTests(unittest.TestCase):
@@ -58,6 +70,15 @@ class D004DraftPacketTests(unittest.TestCase):
 
     def _copy_lab(self, root: Path) -> Path:
         shutil.copytree(REPOSITORY_ROOT / RESEARCH_ROOT, root / RESEARCH_ROOT)
+        result_contract_target = root / RESULT_CONTRACT_SOURCE_PATH
+        result_contract_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(
+            REPOSITORY_ROOT / RESULT_CONTRACT_SOURCE_PATH,
+            result_contract_target,
+        )
+        suite_target = root / DECISION_SUITE_SOURCE_PATH
+        suite_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPOSITORY_ROOT / DECISION_SUITE_SOURCE_PATH, suite_target)
         packet = load_json(root / PACKET_PATH)
         for binding in packet["input_bindings"].values():
             source = REPOSITORY_ROOT / binding["path"]
@@ -67,6 +88,15 @@ class D004DraftPacketTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
         return root / PACKET_PATH
+
+    def _assert_result_contract_mutation(self, mutate, expected_code: str) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / RESULT_CONTRACT_SOURCE_PATH
+            source = target.read_text(encoding="utf-8")
+            target.write_text(mutate(source), encoding="utf-8")
+            self.assertIn(expected_code, self._codes(root))
 
     @staticmethod
     def _codes(root: Path) -> set[str]:
@@ -307,6 +337,189 @@ class D004DraftPacketTests(unittest.TestCase):
                     ).hexdigest(),
                     binding["sha256"],
                 )
+
+    def test_future_result_contract_source_is_exact_closed_and_non_executing(
+        self,
+    ) -> None:
+        source_path = REPOSITORY_ROOT / RESULT_CONTRACT_SOURCE_PATH
+        source = source_path.read_text(encoding="utf-8")
+        self.assertEqual(
+            hashlib.sha256(source_path.read_bytes()).hexdigest(),
+            RESULT_CONTRACT_SOURCE_SHA256,
+        )
+        self.assertIn(
+            '"d004-result-contract-descriptor-v0.1-draft"', source
+        )
+        self.assertIn(
+            "pub(crate) fn parse_draft_result_contract_descriptor(", source
+        )
+        self.assertNotIn("std::process", source)
+        self.assertNotIn("std::fs", source)
+        suite_source = (REPOSITORY_ROOT / DECISION_SUITE_SOURCE_PATH).read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(RESULT_CONTRACT_DESCRIPTOR_SHA256, suite_source)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            self.assertFalse(
+                {
+                    code
+                    for code in self._codes(root)
+                    if code.startswith("d004_packet.result_contract_")
+                }
+            )
+
+    def test_future_result_contract_source_drift_and_live_apis_fail_closed(
+        self,
+    ) -> None:
+        mutations = (
+            (
+                lambda source: source.replace(
+                    '"d004-result-contract-descriptor-v0.1-draft"',
+                    '"d004-result-contract-descriptor-v0.2-draft"',
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source.replace(
+                    'string_entry("readiness_credit", "none")',
+                    'string_entry("readiness_credit", "granted")',
+                    1,
+                ),
+                "d004_packet.result_contract_zero_state",
+            ),
+            (
+                lambda source: source
+                + '\nfn readiness_percent() -> usize { 30 }\n',
+                "d004_packet.result_contract_readiness_scope",
+            ),
+            (
+                lambda source: source.replace(
+                    '"no candidate-case execution completed"',
+                    '"candidate-case execution completed"',
+                    1,
+                ),
+                "d004_packet.result_contract_nonclaims",
+            ),
+            (
+                lambda source: source.replace(
+                    "observed_state is a member of the resolved oracle "
+                    "allowed_domain_states",
+                    "allowed_domain_states is an ordered preference list",
+                    1,
+                ),
+                "d004_packet.result_contract_semantics",
+            ),
+            (
+                lambda source: source.replace(
+                    'string_entry("capability_credit", "none")',
+                    'string_entry("capability_credit", "granted")',
+                    1,
+                ),
+                "d004_packet.result_contract_semantics",
+            ),
+            (
+                lambda source: source.replace(
+                    '"execution kind completed requires exit_code zero, signal null, '
+                    'adapter_status executed, and no truncated output"',
+                    '"execution kind completed has no closed invariants"',
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source.replace(
+                    '("mutation_inventory".to_owned(), mutation_inventory_value())',
+                    '("mutation_inventory".to_owned(), JsonValue::Array(Vec::new()))',
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source.replace(
+                    '"subject_oracle_inventory".to_owned()',
+                    '"unbound_subject_inventory".to_owned()',
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source.replace(
+                    "pub(crate) const SCHEDULED_SLOT_PREIMAGE_FIELDS: [&str; 10]",
+                    "pub(crate) const SCHEDULED_SLOT_PREIMAGE_FIELDS: [&str; 9]",
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source.replace(
+                    "pub(crate) const SR_CONFORMANCE_STATES: [&str; 4]",
+                    "pub(crate) const SR_CONFORMANCE_STATES: [&str; 3]",
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source.replace(
+                    "CANDIDATES[(round + position) % CANDIDATES.len()]",
+                    "CANDIDATES[position]",
+                    1,
+                ),
+                "d004_packet.result_contract_schema",
+            ),
+            (
+                lambda source: source
+                + "\npub(crate) fn launch_candidate() {}\n",
+                "d004_packet.result_contract_execution_api",
+            ),
+            (
+                lambda source: source
+                + "\nuse std::fs;\npub(crate) fn persist_result() {}\n",
+                "d004_packet.result_contract_persistence_api",
+            ),
+            (
+                lambda source: source
+                + "\npub(crate) fn parse_case_result() {}\n",
+                "d004_packet.result_contract_parser_api",
+            ),
+        )
+        for mutate, expected_code in mutations:
+            with self.subTest(code=expected_code):
+                self._assert_result_contract_mutation(mutate, expected_code)
+
+        self._assert_result_contract_mutation(
+            lambda source: source + "\n// unreviewed source drift\n",
+            "d004_packet.result_contract_identity",
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            (root / RESULT_CONTRACT_SOURCE_PATH).unlink()
+            self.assertIn(
+                "d004_packet.result_contract_missing",
+                self._codes(root),
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            suite_path = root / DECISION_SUITE_SOURCE_PATH
+            suite_path.write_text(
+                suite_path.read_text(encoding="utf-8").replace(
+                    RESULT_CONTRACT_DESCRIPTOR_SHA256,
+                    "0" * 64,
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            self.assertIn(
+                "d004_packet.result_contract_suite_binding",
+                self._codes(root),
+            )
 
     def test_v04_case_subject_catalog_has_exact_input_only_identity_and_joins(
         self,
@@ -1586,6 +1799,25 @@ class D004DraftPacketTests(unittest.TestCase):
             bound_path = root / binding["path"]
             bound_path.write_bytes(bound_path.read_bytes() + b"\n")
             self.assertIn("d004_packet.input_digest", self._codes(root))
+
+    def test_result_and_evidence_artifacts_cannot_enter_the_pre_epoch_lab(self) -> None:
+        unexpected_paths = (
+            RESEARCH_ROOT / "results" / "ST-REL-SC-01.json",
+            RESEARCH_ROOT / "evidence" / "ST-REL-SC-01.json",
+            RESEARCH_ROOT / "candidate-execution.json",
+        )
+        for unexpected_path in unexpected_paths:
+            with (
+                self.subTest(path=unexpected_path),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                self._copy_lab(root)
+                target = root / unexpected_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("{}\n", encoding="utf-8")
+                codes = self._codes(root)
+                self.assertIn("d004_packet.research_inventory", codes)
 
 
 if __name__ == "__main__":

@@ -244,7 +244,19 @@ structural integrity oracles create no candidate observation or evidence,
 verify no replay ceiling, and do not treat candidate-adapter failure as an
 expected unsupported observation. All five class sufficiency reviews and
 freeze blockers remain unresolved; replay repetitions remain unassigned; and
-the D-004 inventory freezes no evidence epoch. D-003 candidate PF-01 is
+the D-004 inventory freezes no evidence epoch. Its protected Rust laboratory
+also generates and strictly re-parses a closed, in-memory future result/replay
+descriptor. The descriptor derives an exact 70-row observation oracle from the
+authenticated case and cross-cutting subject catalogs, binds the exact
+26-mutation inventory and 25-slot identity plan, and enumerates all 31 top-level
+future case-record fields plus their nested shapes. Its 10-field scheduled-slot
+preimage contract creates no concrete preimage or digest before the epoch,
+packet identity, and replay-plan identity are frozen. The descriptor also closes
+digest joins, checked resource and SR-dependent verdict rules, replay failure
+states, and empty result, observation, verdict, review, and evidence
+collections. It exposes no launcher, adapter, or persistence API; owner
+protocol review remains `none`, execution remains 0/25, and both
+`roadmap_gate_credit` and `readiness_credit` remain `none`. D-003 candidate PF-01 is
 accepted through OEP-0004 at exact revision
 `a82a5cec2ee4359dc2fe66171f17c93146747333`, while D-004 owner protocol review
 remains `none`. None of these input inventories contains a candidate

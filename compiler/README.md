@@ -66,11 +66,23 @@ observation, result, evidence, verdict, or capability credit. All five class
 sufficiency reviews and freeze blockers remain unresolved. Candidate-adapter
 failure cannot satisfy an unsupported subject, domain exhaustion verifies no
 replay ceiling, and replay repetitions remain unassigned. The laboratory
-executes no candidate adapter,
-freezes no evidence epoch, records 0/25 completed slots and no evidence, and
-creates no result, review, recommendation, or selection. D-003 acceptance does
-not accept D-004, alter compiler behavior, authorize S3b, or advance
-the version 1.0.0 gate count.
+also checks a closed, in-memory future-schema descriptor that enumerates
+all 31 top-level future case-record fields, their nested shapes, and their
+cross-field invariants. It binds both authenticated subject catalogs into an
+exact 70-row observation oracle, so a future result cannot supply or broaden
+its own allowed outcomes. The descriptor defines a 10-field scheduled-slot
+preimage contract and fail-closed verdict conditions, including checked
+resource bounds and SR dependency joins. The 25-slot identity plan exists, but
+no concrete slot preimage or digest is available until the epoch, packet
+identity, and replay-plan identity are frozen.
+This synthetic contract accepts no populated records, launches no process or
+adapter, and persists nothing. It approves no schema, assigns no replay
+cardinality, and supplies no candidate mapping or adapter. The epoch remains
+null and unfrozen, owner protocol review remains `none`, execution remains 0/25
+with evidence `none`, and selection and conclusion remain null. D-003
+acceptance does not accept D-004, alter compiler behavior, authorize S3b, or
+grant roadmap or version 1.0.0 readiness credit; both `roadmap_gate_credit` and
+`readiness_credit` remain `none`.
 
 ## D-005 decision laboratory
 
@@ -703,7 +715,8 @@ authority.
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
   syntax-tree, parser, semantic, Core, and evaluator library;
 - `crates/orange-compiler/tests/d004_decision_suite.rs`: input-only D-004
-  pre-epoch packet, structural-proposal, and balanced-plan checks;
+  pre-epoch packet, subject-catalog, balanced-plan, and future result-contract
+  checks;
 - `crates/orange-compiler/tests/d005_decision_suite.rs`: draft-only D-005
   packet, transport-identity, and synthetic capture-integrity checks;
 - `crates/orange-compiler/tests/d006_decision_suite.rs`: input-only D-006
