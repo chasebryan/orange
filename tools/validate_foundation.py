@@ -206,6 +206,7 @@ compiler/crates/orange-compiler/tests/d004_support/packet.rs
 compiler/crates/orange-compiler/tests/d004_support/runner.rs
 compiler/crates/orange-compiler/tests/d005_decision_suite.rs
 compiler/crates/orange-compiler/tests/d005_support/adapter.rs
+compiler/crates/orange-compiler/tests/d005_support/capture.rs
 compiler/crates/orange-compiler/tests/d005_support/cases.rs
 compiler/crates/orange-compiler/tests/d005_support/domain.rs
 compiler/crates/orange-compiler/tests/d005_support/packet.rs
@@ -475,7 +476,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "de4959a9654395eda578f4d91065dbc21e09bf170abca07e9767d25e3471a643"
+_PHD = "ec4f824640682a022cb77c0237a5f112ebf0dd636d682ec371ac1484da9fb812"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"

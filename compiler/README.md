@@ -88,6 +88,25 @@ exit, signal, timeout, launch/I/O failure, unsupported isolation, truncation,
 stderr, malformed or noncanonical JSON, identity substitution, and output
 overflow all fail closed.
 
+The same in-memory boundary expands the existing 32-slot base schedule across
+two workspace identities and three render identities into exactly 192 unique
+transport identities. Base slot is the outer key, workspace is the next key,
+and render is the inner key; this is a canonical serialization order, not an
+authorized physical execution order. A closed 32-record binding table supplies
+the input-manifest and payload-schema digests reused by each slot's six
+identities. Equal digests are allowed, so this draft does not decide whether a
+future schema is global, per candidate, or per case.
+
+For synthetic already-captured bytes, the laboratory can also create and
+strictly revalidate a canonical integrity receipt. The receipt binds the exact
+transport slot and request digest to termination, truncation flags, and raw
+stdout/stderr lengths and SHA-256 digests while fixing isolation to
+`not_evaluated`, payload status to `unvalidated`, and evidence status to `none`.
+An exact in-memory inventory rejects missing, extra, reordered, duplicated, or
+cross-slot observations. Receipt integrity does not make a failed capture pass:
+the existing fail-closed response validator remains the next boundary, and no
+opaque payloads are compared across repetitions.
+
 There is intentionally no subprocess launcher or candidate payload validator.
 The standard library alone cannot enforce the suite's future process-tree,
 network, filesystem, CPU, memory, file, descriptor, and cleanup boundary, and

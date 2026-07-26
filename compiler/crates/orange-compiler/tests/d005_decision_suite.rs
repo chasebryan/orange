@@ -5,6 +5,8 @@
 
 #[path = "d005_support/adapter.rs"]
 mod adapter;
+#[path = "d005_support/capture.rs"]
+mod capture;
 #[path = "d005_support/cases.rs"]
 mod cases;
 #[path = "d005_support/domain.rs"]
@@ -69,6 +71,63 @@ fn prepared_draft_adapter_request() -> adapter::DraftAdapterRequest {
         SYNTHETIC_PAYLOAD_SCHEMA_SHA256,
     )
     .expect("draft transport request")
+}
+
+fn draft_base_slot_bindings(plan: &runner::ReplayPlan) -> Vec<adapter::DraftBaseSlotBinding> {
+    plan.schedule()
+        .iter()
+        .map(|execution| adapter::DraftBaseSlotBinding {
+            execution: *execution,
+            input_manifest_sha256: format!("{:064x}", execution.ordinal),
+            payload_schema_sha256: format!("{:064x}", 4_096 + execution.ordinal),
+        })
+        .collect()
+}
+
+fn equal_draft_base_slot_bindings(plan: &runner::ReplayPlan) -> Vec<adapter::DraftBaseSlotBinding> {
+    plan.schedule()
+        .iter()
+        .map(|execution| adapter::DraftBaseSlotBinding {
+            execution: *execution,
+            input_manifest_sha256: SYNTHETIC_INPUT_MANIFEST_SHA256.to_owned(),
+            payload_schema_sha256: SYNTHETIC_PAYLOAD_SCHEMA_SHA256.to_owned(),
+        })
+        .collect()
+}
+
+fn prepared_draft_transport_identities()
+-> (runner::ReplayPlan, Vec<adapter::DraftTransportIdentity>) {
+    let packet = parse_draft_packet(CHECKED_IN_DRAFT_PACKET).expect("checked-in draft packet");
+    let plan =
+        runner::prepare_replay(&packet, &checked_in_replay_inputs()).expect("bound replay plan");
+    let bindings = draft_base_slot_bindings(&plan);
+    let identities = adapter::enumerate_draft_transport_identities(&plan, &bindings)
+        .expect("exact draft transport identities");
+    (plan, identities)
+}
+
+fn bounded_integrity_capture(identity: &adapter::DraftTransportIdentity) -> CapturedProcess {
+    CapturedProcess {
+        termination: CapturedTermination::Exited(0),
+        stdout: format!(
+            "synthetic-capture-slot:{}\n",
+            identity.capture_slot_ordinal()
+        )
+        .into_bytes(),
+        stderr: Vec::new(),
+        stdout_truncated: false,
+        stderr_truncated: false,
+    }
+}
+
+fn raw_sha256(bytes: &[u8]) -> String {
+    sha256::hex(&sha256::digest(bytes))
+}
+
+fn substituted_sha256(value: &str) -> String {
+    let mut substituted = value.as_bytes().to_vec();
+    substituted[0] = if substituted[0] == b'0' { b'1' } else { b'0' };
+    String::from_utf8(substituted).expect("lowercase SHA-256")
 }
 
 fn synthetic_payload() -> JsonValue {
@@ -650,6 +709,735 @@ fn draft_adapter_requests_are_deterministic_schedule_bound_and_non_executing() {
         assert_eq!(error.kind, DraftRequestErrorKind::InvalidDigest);
         assert_eq!(error.path, expected_path);
     }
+}
+
+#[test]
+fn draft_transport_matrix_is_exact_ordered_unique_deterministic_and_non_executing() {
+    let packet = parse_draft_packet(CHECKED_IN_DRAFT_PACKET).expect("checked-in draft packet");
+    let plan =
+        runner::prepare_replay(&packet, &checked_in_replay_inputs()).expect("bound replay plan");
+    let bindings = draft_base_slot_bindings(&plan);
+    let first = adapter::enumerate_draft_transport_identities(&plan, &bindings)
+        .expect("exact draft transport matrix");
+    let second = adapter::enumerate_draft_transport_identities(&plan, &bindings)
+        .expect("deterministic draft transport matrix");
+
+    assert_eq!(first, second);
+    assert_eq!(first.len(), adapter::REQUIRED_DRAFT_TRANSPORT_IDENTITIES);
+    assert_eq!(first.len(), 192);
+    assert_eq!(bindings.len(), REQUIRED_CANDIDATE_CASES);
+
+    let coordinates = first
+        .iter()
+        .map(|identity| {
+            let request = identity.request();
+            (
+                request.execution(),
+                request.workspace_replay(),
+                request.render_repetition(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(coordinates.len(), 192);
+    let request_digests = first
+        .iter()
+        .map(|identity| identity.request().digest_hex())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(request_digests.len(), 192);
+
+    for (capture_index, identity) in first.iter().enumerate() {
+        let base_index = capture_index / 6;
+        let coordinate_index = capture_index % 6;
+        let expected_workspace_replay = coordinate_index / 3 + 1;
+        let expected_render_repetition = coordinate_index % 3 + 1;
+        let request = identity.request();
+
+        assert_eq!(identity.capture_slot_ordinal(), capture_index + 1);
+        assert_eq!(request.execution(), plan.schedule()[base_index]);
+        assert_eq!(request.workspace_replay(), expected_workspace_replay);
+        assert_eq!(request.render_repetition(), expected_render_repetition);
+        assert_eq!(
+            request.input_manifest_sha256(),
+            bindings[base_index].input_manifest_sha256
+        );
+        assert_eq!(
+            request.payload_schema_sha256(),
+            bindings[base_index].payload_schema_sha256
+        );
+    }
+    for (base_index, identities) in first.chunks_exact(6).enumerate() {
+        assert_eq!(
+            identities
+                .iter()
+                .map(|identity| {
+                    (
+                        identity.request().workspace_replay(),
+                        identity.request().render_repetition(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2), (2, 3)]
+        );
+        assert!(
+            identities
+                .iter()
+                .all(|identity| identity.request().execution() == plan.schedule()[base_index])
+        );
+    }
+
+    assert_eq!(plan.completed_candidate_cases(), 0);
+    assert_eq!(plan.evidence_status(), "none");
+    assert_eq!(plan.selection(), None);
+}
+
+#[test]
+fn draft_transport_matrix_binds_digests_and_keeps_captures_non_interchangeable() {
+    let packet = parse_draft_packet(CHECKED_IN_DRAFT_PACKET).expect("checked-in draft packet");
+    let plan =
+        runner::prepare_replay(&packet, &checked_in_replay_inputs()).expect("bound replay plan");
+    let bindings = draft_base_slot_bindings(&plan);
+    let identities = adapter::enumerate_draft_transport_identities(&plan, &bindings)
+        .expect("slot-specific digest bindings");
+
+    let first_request = identities[0].request();
+    let second_base_request = identities[6].request();
+    assert_eq!(
+        first_request.input_manifest_sha256(),
+        bindings[0].input_manifest_sha256
+    );
+    assert_eq!(
+        second_base_request.input_manifest_sha256(),
+        bindings[1].input_manifest_sha256
+    );
+    assert_ne!(
+        first_request.input_manifest_sha256(),
+        second_base_request.input_manifest_sha256()
+    );
+    assert_ne!(first_request.digest_hex(), second_base_request.digest_hex());
+
+    let response = draft_response_for_payload(first_request, &synthetic_payload())
+        .expect("canonical synthetic capture");
+    let unvalidated =
+        adapter::validate_capture(first_request, &successful_capture(response.clone()))
+            .expect("identity-bound unvalidated payload");
+    assert_eq!(
+        unvalidated.binding().input_manifest_sha256,
+        bindings[0].input_manifest_sha256
+    );
+    let error = adapter::validate_capture(second_base_request, &successful_capture(response))
+        .expect_err("capture from another digest-bound base slot");
+    assert_eq!(error.kind, TransportErrorKind::InvalidValue);
+    assert_eq!(error.path, "$/request_sha256");
+
+    let equal_bindings = equal_draft_base_slot_bindings(&plan);
+    let equal_digest_identities =
+        adapter::enumerate_draft_transport_identities(&plan, &equal_bindings)
+            .expect("equal digests are allowed across exact base-slot keys");
+    assert_eq!(equal_digest_identities.len(), 192);
+    assert!(equal_digest_identities.iter().all(|identity| {
+        identity.request().input_manifest_sha256() == SYNTHETIC_INPUT_MANIFEST_SHA256
+            && identity.request().payload_schema_sha256() == SYNTHETIC_PAYLOAD_SCHEMA_SHA256
+    }));
+    assert_eq!(
+        equal_digest_identities
+            .iter()
+            .map(|identity| identity.request().digest_hex())
+            .collect::<BTreeSet<_>>()
+            .len(),
+        192
+    );
+}
+
+#[test]
+fn draft_transport_matrix_rejects_open_reordered_or_substituted_binding_tables() {
+    let packet = parse_draft_packet(CHECKED_IN_DRAFT_PACKET).expect("checked-in draft packet");
+    let plan =
+        runner::prepare_replay(&packet, &checked_in_replay_inputs()).expect("bound replay plan");
+    let canonical = draft_base_slot_bindings(&plan);
+
+    let mut missing = canonical.clone();
+    missing.pop();
+    let error = adapter::enumerate_draft_transport_identities(&plan, &missing)
+        .expect_err("missing binding");
+    assert_eq!(
+        error.kind,
+        adapter::DraftTransportMatrixErrorKind::BindingCardinality
+    );
+    assert_eq!(error.path, "$/bindings");
+
+    let mut extra = canonical.clone();
+    extra.push(canonical[0].clone());
+    let error =
+        adapter::enumerate_draft_transport_identities(&plan, &extra).expect_err("extra binding");
+    assert_eq!(
+        error.kind,
+        adapter::DraftTransportMatrixErrorKind::BindingCardinality
+    );
+    assert_eq!(error.path, "$/bindings");
+
+    let mut reordered = canonical.clone();
+    reordered.swap(0, 1);
+    let error = adapter::enumerate_draft_transport_identities(&plan, &reordered)
+        .expect_err("reordered bindings");
+    assert_eq!(
+        error.kind,
+        adapter::DraftTransportMatrixErrorKind::BindingMismatch
+    );
+    assert_eq!(error.path, "$/bindings/0/execution");
+
+    for substituted_execution in [
+        runner::PlannedExecution {
+            ordinal: canonical[0].execution.ordinal + 1,
+            ..canonical[0].execution
+        },
+        runner::PlannedExecution {
+            candidate: CANDIDATES[1],
+            ..canonical[0].execution
+        },
+        runner::PlannedExecution {
+            case: CASES[1],
+            ..canonical[0].execution
+        },
+    ] {
+        let mut substituted = canonical.clone();
+        substituted[0].execution = substituted_execution;
+        let error = adapter::enumerate_draft_transport_identities(&plan, &substituted)
+            .expect_err("full planned-execution key substitution");
+        assert_eq!(
+            error.kind,
+            adapter::DraftTransportMatrixErrorKind::BindingMismatch
+        );
+        assert_eq!(error.path, "$/bindings/0/execution");
+    }
+
+    for (field, invalid_digest, expected_path) in [
+        (
+            "input_manifest_sha256",
+            "short",
+            "$/bindings/7/input_manifest_sha256",
+        ),
+        (
+            "payload_schema_sha256",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "$/bindings/7/payload_schema_sha256",
+        ),
+    ] {
+        let mut invalid = canonical.clone();
+        match field {
+            "input_manifest_sha256" => {
+                invalid[7].input_manifest_sha256 = invalid_digest.to_owned();
+            }
+            "payload_schema_sha256" => {
+                invalid[7].payload_schema_sha256 = invalid_digest.to_owned();
+            }
+            _ => unreachable!("closed test field inventory"),
+        }
+        let error = adapter::enumerate_draft_transport_identities(&plan, &invalid)
+            .expect_err("invalid binding digest");
+        assert_eq!(
+            error.kind,
+            adapter::DraftTransportMatrixErrorKind::InvalidDigest
+        );
+        assert_eq!(error.path, expected_path);
+    }
+
+    assert_eq!(plan.completed_candidate_cases(), 0);
+    assert_eq!(plan.evidence_status(), "none");
+    assert_eq!(plan.selection(), None);
+}
+
+#[test]
+fn synthetic_capture_integrity_receipt_is_canonical_exact_and_non_evidentiary() {
+    let (plan, identities) = prepared_draft_transport_identities();
+    let identity = &identities[0];
+    let capture = bounded_integrity_capture(identity);
+    let first = capture::create_synthetic_capture_integrity_receipt(identity, &capture)
+        .expect("bounded synthetic capture receipt");
+    let second = capture::create_synthetic_capture_integrity_receipt(identity, &capture)
+        .expect("deterministic synthetic capture receipt");
+
+    assert_eq!(first, second);
+    assert_eq!(first.capture_slot_ordinal(), 1);
+    assert_eq!(first.request_sha256(), identity.request().digest_hex());
+    assert_eq!(first.canonical_bytes(), second.canonical_bytes());
+    assert_eq!(first.digest_hex(), second.digest_hex());
+    let value = strict_json::parse(&first.canonical_bytes()).expect("canonical receipt");
+    assert_eq!(
+        strict_json::canonical_bytes(&value),
+        first.canonical_bytes()
+    );
+    let root = value.as_object().expect("closed receipt object");
+    assert_eq!(root.len(), 14);
+    assert_eq!(
+        root.get("schema_version").and_then(JsonValue::as_str),
+        Some("d005-capture-integrity-receipt-v0.1-draft")
+    );
+    assert_eq!(
+        root.get("isolation_status").and_then(JsonValue::as_str),
+        Some("not_evaluated")
+    );
+    assert_eq!(
+        root.get("payload_status").and_then(JsonValue::as_str),
+        Some("unvalidated")
+    );
+    assert_eq!(
+        root.get("evidence_status").and_then(JsonValue::as_str),
+        Some("none")
+    );
+    assert_eq!(root.get("exit_code"), Some(&JsonValue::Integer(0)));
+    assert_eq!(
+        root.get("stdout_bytes").and_then(JsonValue::as_integer),
+        Some(i64::try_from(capture.stdout.len()).expect("bounded stdout length"))
+    );
+    assert_eq!(
+        root.get("stdout_sha256").and_then(JsonValue::as_str),
+        Some(sha256::hex(&sha256::digest(&capture.stdout)).as_str())
+    );
+    let parsed = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        &first.canonical_bytes(),
+        &first.digest_hex(),
+        identity,
+        &capture,
+    )
+    .expect("strict receipt verification");
+    assert_eq!(parsed, first);
+
+    assert_eq!(plan.completed_candidate_cases(), 0);
+    assert_eq!(plan.evidence_status(), "none");
+    assert_eq!(plan.selection(), None);
+}
+
+#[test]
+fn integrity_receipts_allow_bounded_failures_while_adapter_validation_still_rejects_them() {
+    let (_, identities) = prepared_draft_transport_identities();
+    let identity = &identities[0];
+    let failures = [
+        CapturedTermination::Exited(1),
+        CapturedTermination::Signaled,
+        CapturedTermination::TimedOut,
+        CapturedTermination::StdoutLimit,
+        CapturedTermination::StderrLimit,
+        CapturedTermination::SpawnFailed,
+        CapturedTermination::IoFailed,
+        CapturedTermination::UnsupportedSandbox,
+    ];
+    for termination in failures {
+        let capture = CapturedProcess {
+            termination,
+            stdout: b"bounded synthetic failure".to_vec(),
+            stderr: b"bounded diagnostic".to_vec(),
+            stdout_truncated: matches!(termination, CapturedTermination::StdoutLimit),
+            stderr_truncated: matches!(termination, CapturedTermination::StderrLimit),
+        };
+        let receipt = capture::create_synthetic_capture_integrity_receipt(identity, &capture)
+            .expect("failure capture still has integrity metadata");
+        capture::parse_and_verify_synthetic_capture_integrity_receipt(
+            &receipt.canonical_bytes(),
+            &receipt.digest_hex(),
+            identity,
+            &capture,
+        )
+        .expect("failure receipt round trip");
+        adapter::validate_capture(identity.request(), &capture)
+            .expect_err("integrity receipt cannot upgrade a failed adapter capture");
+
+        let value = strict_json::parse(&receipt.canonical_bytes()).expect("failure receipt");
+        let root = value.as_object().expect("receipt object");
+        if matches!(termination, CapturedTermination::Exited(_)) {
+            assert_eq!(root.get("exit_code"), Some(&JsonValue::Integer(1)));
+        } else {
+            assert_eq!(root.get("exit_code"), Some(&JsonValue::Null));
+        }
+        assert_eq!(
+            root.get("evidence_status").and_then(JsonValue::as_str),
+            Some("none")
+        );
+    }
+
+    let truncated_success = CapturedProcess {
+        termination: CapturedTermination::Exited(0),
+        stdout: b"bounded truncated bytes".to_vec(),
+        stderr: Vec::new(),
+        stdout_truncated: true,
+        stderr_truncated: false,
+    };
+    capture::create_synthetic_capture_integrity_receipt(identity, &truncated_success)
+        .expect("bounded truncation can be integrity-recorded");
+    assert_eq!(
+        adapter::validate_capture(identity.request(), &truncated_success)
+            .expect_err("truncation remains an adapter failure")
+            .kind,
+        TransportErrorKind::StdoutTruncated
+    );
+
+    let oversized = CapturedProcess {
+        termination: CapturedTermination::StdoutLimit,
+        stdout: vec![0; BUDGETS.max_output_bytes + 1],
+        stderr: Vec::new(),
+        stdout_truncated: true,
+        stderr_truncated: false,
+    };
+    let error = capture::create_synthetic_capture_integrity_receipt(identity, &oversized)
+        .expect_err("receipt inputs remain bounded");
+    assert_eq!(error.kind, capture::CaptureReceiptErrorKind::OutputTooLarge);
+    assert_eq!(error.path, "$/capture");
+}
+
+#[test]
+fn capture_integrity_receipt_rejects_malformed_open_noncanonical_or_substituted_data() {
+    let (_, identities) = prepared_draft_transport_identities();
+    let identity = &identities[0];
+    let capture = bounded_integrity_capture(identity);
+    let receipt = capture::create_synthetic_capture_integrity_receipt(identity, &capture)
+        .expect("canonical integrity receipt");
+    let canonical = receipt.canonical_bytes();
+    let expected_receipt_sha256 = receipt.digest_hex();
+    let text = String::from_utf8(canonical.clone()).expect("UTF-8 receipt");
+
+    for invalid_digest in ["short".to_owned(), "A".repeat(64)] {
+        let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+            &canonical,
+            &invalid_digest,
+            identity,
+            &capture,
+        )
+        .expect_err("malformed expected receipt digest");
+        assert_eq!(error.kind, capture::CaptureReceiptErrorKind::InvalidDigest);
+        assert_eq!(error.path, "$/expected_receipt_sha256");
+    }
+
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        &canonical,
+        &"0".repeat(64),
+        identity,
+        &capture,
+    )
+    .expect_err("wrong expected receipt digest");
+    assert_eq!(
+        error.kind,
+        capture::CaptureReceiptErrorKind::ReceiptDigestMismatch
+    );
+    assert_eq!(error.path, "$/receipt_sha256");
+
+    let oversized_receipt = vec![b' '; BUDGETS.max_packet_bytes + 1];
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        &oversized_receipt,
+        &raw_sha256(&oversized_receipt),
+        identity,
+        &capture,
+    )
+    .expect_err("receipt source hashing remains input-bounded");
+    assert_eq!(
+        error.kind,
+        capture::CaptureReceiptErrorKind::Json(JsonErrorKind::InputTooLarge)
+    );
+    assert_eq!(error.path, "$/receipt@0");
+
+    let malformed = b"{";
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        malformed,
+        &raw_sha256(malformed),
+        identity,
+        &capture,
+    )
+    .expect_err("malformed receipt");
+    assert!(matches!(
+        error.kind,
+        capture::CaptureReceiptErrorKind::Json(_)
+    ));
+
+    let unknown = text.replacen('}', ",\"unknown\":true}", 1);
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        unknown.as_bytes(),
+        &raw_sha256(unknown.as_bytes()),
+        identity,
+        &capture,
+    )
+    .expect_err("unknown receipt field");
+    assert_eq!(error.kind, capture::CaptureReceiptErrorKind::UnknownField);
+    assert_eq!(error.path, "$/unknown");
+
+    let missing = text.replace("\"evidence_status\":\"none\",", "");
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        missing.as_bytes(),
+        &raw_sha256(missing.as_bytes()),
+        identity,
+        &capture,
+    )
+    .expect_err("missing receipt field");
+    assert_eq!(error.kind, capture::CaptureReceiptErrorKind::MissingField);
+    assert_eq!(error.path, "$/evidence_status");
+
+    let duplicate = text.replacen('{', "{\"capture_slot_ordinal\":1,", 1);
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        duplicate.as_bytes(),
+        &raw_sha256(duplicate.as_bytes()),
+        identity,
+        &capture,
+    )
+    .expect_err("duplicate receipt key");
+    assert_eq!(
+        error.kind,
+        capture::CaptureReceiptErrorKind::Json(JsonErrorKind::DuplicateKey)
+    );
+
+    let noncanonical = format!(" {text}");
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        noncanonical.as_bytes(),
+        &raw_sha256(noncanonical.as_bytes()),
+        identity,
+        &capture,
+    )
+    .expect_err("noncanonical receipt transport");
+    assert_eq!(error.kind, capture::CaptureReceiptErrorKind::NonCanonical);
+
+    let request_digest = identity.request().digest_hex();
+    let altered_request_digest = substituted_sha256(&request_digest);
+    let stdout_digest = raw_sha256(&capture.stdout);
+    let altered_stdout_digest = substituted_sha256(&stdout_digest);
+    let stderr_digest = raw_sha256(&capture.stderr);
+    let altered_stderr_digest = substituted_sha256(&stderr_digest);
+    let semantic_mutations = [
+        (
+            "\"capture_slot_ordinal\":1".to_owned(),
+            "\"capture_slot_ordinal\":2".to_owned(),
+            "$/capture_slot_ordinal",
+        ),
+        (request_digest, altered_request_digest, "$/request_sha256"),
+        (
+            "\"termination_kind\":\"exited\"".to_owned(),
+            "\"termination_kind\":\"timed_out\"".to_owned(),
+            "$/termination_kind",
+        ),
+        (
+            "\"exit_code\":0".to_owned(),
+            "\"exit_code\":1".to_owned(),
+            "$/exit_code",
+        ),
+        (
+            format!("\"stdout_bytes\":{}", capture.stdout.len()),
+            format!("\"stdout_bytes\":{}", capture.stdout.len() + 1),
+            "$/stdout_bytes",
+        ),
+        (stdout_digest, altered_stdout_digest, "$/stdout_sha256"),
+        (
+            format!("\"stderr_bytes\":{}", capture.stderr.len()),
+            format!("\"stderr_bytes\":{}", capture.stderr.len() + 1),
+            "$/stderr_bytes",
+        ),
+        (stderr_digest, altered_stderr_digest, "$/stderr_sha256"),
+        (
+            "\"stdout_truncated\":false".to_owned(),
+            "\"stdout_truncated\":true".to_owned(),
+            "$/stdout_truncated",
+        ),
+        (
+            "\"stderr_truncated\":false".to_owned(),
+            "\"stderr_truncated\":true".to_owned(),
+            "$/stderr_truncated",
+        ),
+        (
+            "\"isolation_status\":\"not_evaluated\"".to_owned(),
+            "\"isolation_status\":\"passed\"".to_owned(),
+            "$/isolation_status",
+        ),
+        (
+            "\"payload_status\":\"unvalidated\"".to_owned(),
+            "\"payload_status\":\"validated\"".to_owned(),
+            "$/payload_status",
+        ),
+        (
+            "\"evidence_status\":\"none\"".to_owned(),
+            "\"evidence_status\":\"complete\"".to_owned(),
+            "$/evidence_status",
+        ),
+    ];
+    for (before, after, expected_path) in semantic_mutations {
+        let mutated = text.replacen(&before, &after, 1);
+        assert_ne!(mutated, text, "receipt mutation must alter bytes");
+        let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+            mutated.as_bytes(),
+            &raw_sha256(mutated.as_bytes()),
+            identity,
+            &capture,
+        )
+        .expect_err("receipt identity or status substitution");
+        assert_eq!(error.kind, capture::CaptureReceiptErrorKind::InvalidValue);
+        assert_eq!(error.path, expected_path);
+    }
+
+    let timeout_capture = CapturedProcess {
+        termination: CapturedTermination::TimedOut,
+        stdout: b"bounded timeout".to_vec(),
+        stderr: Vec::new(),
+        stdout_truncated: false,
+        stderr_truncated: false,
+    };
+    let timeout_receipt =
+        capture::create_synthetic_capture_integrity_receipt(identity, &timeout_capture)
+            .expect("bounded timeout receipt");
+    let timeout_text = String::from_utf8(timeout_receipt.canonical_bytes())
+        .expect("UTF-8 timeout receipt")
+        .replace("\"exit_code\":null", "\"exit_code\":0");
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        timeout_text.as_bytes(),
+        &raw_sha256(timeout_text.as_bytes()),
+        identity,
+        &timeout_capture,
+    )
+    .expect_err("non-exit termination cannot carry an exit code");
+    assert_eq!(error.kind, capture::CaptureReceiptErrorKind::InvalidValue);
+    assert_eq!(error.path, "$/exit_code");
+
+    let mut altered_capture = capture.clone();
+    altered_capture.stdout[0] ^= 1;
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        &canonical,
+        &expected_receipt_sha256,
+        identity,
+        &altered_capture,
+    )
+    .expect_err("same-length capture byte substitution");
+    assert_eq!(error.kind, capture::CaptureReceiptErrorKind::InvalidValue);
+    assert_eq!(error.path, "$/stdout_sha256");
+
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        &canonical,
+        &expected_receipt_sha256,
+        &identities[1],
+        &capture,
+    )
+    .expect_err("cross-slot request substitution");
+    assert_eq!(error.kind, capture::CaptureReceiptErrorKind::InvalidValue);
+    assert_eq!(error.path, "$/capture_slot_ordinal");
+
+    let coordinated_receipt =
+        capture::create_synthetic_capture_integrity_receipt(identity, &altered_capture)
+            .expect("coordinated altered receipt");
+    let error = capture::parse_and_verify_synthetic_capture_integrity_receipt(
+        &coordinated_receipt.canonical_bytes(),
+        &expected_receipt_sha256,
+        identity,
+        &altered_capture,
+    )
+    .expect_err("retained external digest rejects coordinated receipt and capture mutation");
+    assert_eq!(
+        error.kind,
+        capture::CaptureReceiptErrorKind::ReceiptDigestMismatch
+    );
+    assert_eq!(error.path, "$/receipt_sha256");
+}
+
+#[test]
+fn capture_observation_inventory_is_exact_deterministic_and_still_zero_of_32() {
+    let (plan, identities) = prepared_draft_transport_identities();
+    let observations = identities
+        .iter()
+        .map(|identity| {
+            capture::create_synthetic_capture_integrity_receipt(
+                identity,
+                &bounded_integrity_capture(identity),
+            )
+            .expect("bounded in-memory observation")
+        })
+        .collect::<Vec<_>>();
+    let first =
+        capture::bind_draft_capture_observation_inventory(&identities, observations.clone())
+            .expect("exact observation inventory");
+    let second = capture::bind_draft_capture_observation_inventory(&identities, observations)
+        .expect("deterministic observation inventory");
+
+    assert_eq!(first, second);
+    assert_eq!(first.observations().len(), 192);
+    for (index, observation) in first.observations().iter().enumerate() {
+        assert_eq!(observation.capture_slot_ordinal(), index + 1);
+        assert_eq!(
+            observation.request_sha256(),
+            identities[index].request().digest_hex()
+        );
+    }
+    assert_eq!(first.completed_candidate_cases(), 0);
+    assert_eq!(first.evidence_status(), "none");
+    assert_eq!(first.selection(), None);
+    assert_eq!(plan.completed_candidate_cases(), 0);
+    assert_eq!(plan.evidence_status(), "none");
+    assert_eq!(plan.selection(), None);
+}
+
+#[test]
+fn capture_observation_inventory_rejects_missing_extra_duplicate_reordered_and_cross_slot_data() {
+    let (_, identities) = prepared_draft_transport_identities();
+    let canonical = identities
+        .iter()
+        .map(|identity| {
+            capture::create_synthetic_capture_integrity_receipt(
+                identity,
+                &bounded_integrity_capture(identity),
+            )
+            .expect("bounded in-memory observation")
+        })
+        .collect::<Vec<_>>();
+
+    let mut missing = canonical.clone();
+    missing.pop();
+    let error = capture::bind_draft_capture_observation_inventory(&identities, missing)
+        .expect_err("missing observation");
+    assert_eq!(
+        error.kind,
+        capture::CaptureInventoryErrorKind::ObservationCardinality
+    );
+    assert_eq!(error.path, "$/observations");
+
+    let mut extra = canonical.clone();
+    extra.push(canonical[0].clone());
+    let error = capture::bind_draft_capture_observation_inventory(&identities, extra)
+        .expect_err("extra observation");
+    assert_eq!(
+        error.kind,
+        capture::CaptureInventoryErrorKind::ObservationCardinality
+    );
+    assert_eq!(error.path, "$/observations");
+
+    let mut duplicate = canonical.clone();
+    duplicate[1] = duplicate[0].clone();
+    let error = capture::bind_draft_capture_observation_inventory(&identities, duplicate)
+        .expect_err("duplicate observation");
+    assert_eq!(
+        error.kind,
+        capture::CaptureInventoryErrorKind::DuplicateObservation
+    );
+    assert_eq!(error.path, "$/observations/1");
+
+    let mut reordered = canonical.clone();
+    reordered.swap(0, 1);
+    let error = capture::bind_draft_capture_observation_inventory(&identities, reordered)
+        .expect_err("reordered cross-slot observations");
+    assert_eq!(
+        error.kind,
+        capture::CaptureInventoryErrorKind::CrossSlotObservation
+    );
+    assert_eq!(error.path, "$/observations/0");
+
+    let mut missing_identity = identities.clone();
+    missing_identity.pop();
+    let error =
+        capture::bind_draft_capture_observation_inventory(&missing_identity, canonical.clone())
+            .expect_err("missing expected identity");
+    assert_eq!(
+        error.kind,
+        capture::CaptureInventoryErrorKind::IdentityCardinality
+    );
+    assert_eq!(error.path, "$/identities");
+
+    let mut reordered_identities = identities.clone();
+    reordered_identities.swap(0, 1);
+    let error = capture::bind_draft_capture_observation_inventory(&reordered_identities, canonical)
+        .expect_err("reordered expected identities");
+    assert_eq!(
+        error.kind,
+        capture::CaptureInventoryErrorKind::IdentityOrder
+    );
+    assert_eq!(error.path, "$/identities/0");
 }
 
 #[test]
