@@ -5,11 +5,12 @@ use super::domain::{
     CASE_INPUT_NONCLAIMS, CASES, COMPARATIVE_LABELS, CONCLUSIONS, HARD_GATE_COUNT,
     HARD_GATE_STATE_PRECEDENCE, HARD_GATE_STATES, INPUT_BINDINGS, InputBinding, InputBindingId,
     METRICS, NONCLAIMS, OWNER_SCOPES, PROTOCOL_COUNTS, PROTOCOL_GAPS, REQUIRED_CANDIDATE_CASES,
+    SEMANTIC_BINDING_COUNT, SEMANTIC_BINDINGS, SemanticBinding, SemanticBindingId,
 };
 use super::sha256;
 use super::strict_json::{self, JsonErrorKind, JsonValue};
 
-const PACKET_ROOT_FIELDS: [&str; 31] = [
+const PACKET_ROOT_FIELDS: [&str; 32] = [
     "atomic_outcome_meanings",
     "atomic_outcomes",
     "schema_version",
@@ -39,12 +40,21 @@ const PACKET_ROOT_FIELDS: [&str; 31] = [
     "execution",
     "physical_execution_order",
     "selection",
+    "semantic_bindings",
     "conclusion",
     "nonclaims",
 ];
 const CANDIDATE_FIELDS: [&str; 2] = ["id", "name"];
 const DEPENDENCY_ACCEPTANCE_FIELDS: [&str; 2] = ["D-004", "D-005"];
 const INPUT_BINDING_FIELDS: [&str; 2] = ["path", "sha256"];
+const SEMANTIC_BINDING_FIELDS: [&str; 6] = [
+    "normalization",
+    "normalized_sha256",
+    "path",
+    "scope",
+    "section_end_heading",
+    "section_start_heading",
+];
 const LABORATORY_BUDGET_FIELDS: [&str; 4] = [
     "max_packet_bytes",
     "max_json_depth",
@@ -155,6 +165,10 @@ impl DraftPacket {
 
     pub(crate) fn input_binding(&self, id: InputBindingId) -> InputBinding {
         INPUT_BINDINGS[id.index()]
+    }
+
+    pub(crate) fn semantic_binding(&self, id: SemanticBindingId) -> SemanticBinding {
+        SEMANTIC_BINDINGS[id.index()]
     }
 
     pub(crate) const fn case_input_index_sha256(&self) -> &'static str {
@@ -291,6 +305,19 @@ fn validate_packet_shape(value: &JsonValue) -> Result<(), PacketError> {
             "$/input_bindings",
         )?;
     }
+    validate_closed_object(root, "semantic_bindings", &semantic_binding_names(), "$")?;
+    let semantic_bindings = require_object(
+        require_field(root, "semantic_bindings", "$")?,
+        "$/semantic_bindings",
+    )?;
+    for binding in SEMANTIC_BINDINGS {
+        validate_closed_object(
+            semantic_bindings,
+            binding.id.as_str(),
+            &SEMANTIC_BINDING_FIELDS,
+            "$/semantic_bindings",
+        )?;
+    }
     validate_closed_object(root, "laboratory_budgets", &LABORATORY_BUDGET_FIELDS, "$")?;
     validate_closed_object(root, "protocol_counts", &PROTOCOL_COUNT_FIELDS, "$")?;
     validate_closed_object(
@@ -396,6 +423,10 @@ fn input_binding_names() -> [&'static str; 2] {
     INPUT_BINDINGS.map(|binding| binding.id.as_str())
 }
 
+fn semantic_binding_names() -> [&'static str; SEMANTIC_BINDING_COUNT] {
+    SEMANTIC_BINDINGS.map(|binding| binding.id.as_str())
+}
+
 fn draft_packet_value() -> JsonValue {
     strict_json::object([
         (
@@ -470,8 +501,9 @@ fn draft_packet_value() -> JsonValue {
             "protocol_gaps".to_owned(),
             strict_json::strings(PROTOCOL_GAPS),
         ),
-        string_entry("schema_version", "d009-pre-epoch-packet-v0.1"),
+        string_entry("schema_version", "d009-pre-epoch-packet-v0.3"),
         ("selection".to_owned(), JsonValue::Null),
+        ("semantic_bindings".to_owned(), semantic_bindings_value()),
         string_entry("status", "draft_unfrozen"),
         string_entry("suite_version", "d009-v0.1-draft"),
     ])
@@ -517,6 +549,32 @@ fn input_bindings_value() -> JsonValue {
             strict_json::object([
                 string_entry("path", binding.path),
                 string_entry("sha256", binding.sha256),
+            ]),
+        )
+    }))
+}
+
+fn semantic_bindings_value() -> JsonValue {
+    strict_json::object(SEMANTIC_BINDINGS.map(|binding| {
+        (
+            binding.id.as_str().to_owned(),
+            strict_json::object([
+                string_entry("normalization", binding.normalization),
+                string_entry("normalized_sha256", binding.normalized_sha256),
+                string_entry("path", binding.path),
+                string_entry("scope", binding.scope),
+                (
+                    "section_end_heading".to_owned(),
+                    binding
+                        .section_end_heading
+                        .map_or(JsonValue::Null, |value| JsonValue::String(value.to_owned())),
+                ),
+                (
+                    "section_start_heading".to_owned(),
+                    binding
+                        .section_start_heading
+                        .map_or(JsonValue::Null, |value| JsonValue::String(value.to_owned())),
+                ),
             ]),
         )
     }))
