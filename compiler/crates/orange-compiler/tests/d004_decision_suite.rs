@@ -1021,11 +1021,11 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(packet.digest(), &sha256::digest(packet.canonical_bytes()));
     assert_eq!(
         packet.digest_hex(),
-        "32cdb43019bba79666b6b0b0e14e789358cce37933dadc1124f07243f09d3ae8"
+        "7fb725d374e39eeae8a3a01ecf6033d53205f61d28ab94371e35ee0b59a07e58"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CHECKED_IN_PACKET)),
-        "0784a87e2b2ca82a7c7c7368de0bd9d33cea84aaa1f430540f8fe5e5382967e1"
+        "0095a821d2a94b6163538965707b3ebadc554c9260b66bd45c943b8cefb9e739"
     );
     assert_eq!(
         parse_draft_packet(packet.canonical_bytes())
@@ -1048,7 +1048,7 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     );
     assert_eq!(
         root.get("d003_disposition").and_then(JsonValue::as_str),
-        Some("owner_accepted_pending_exact_revision_oep_closure")
+        Some("accepted_exact_revision_oep_closure")
     );
     assert_eq!(
         root.get("owner_protocol_review")
@@ -1116,8 +1116,8 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
             "\"epoch_status\":\"frozen\"",
         ),
         canonical.replace(
-            "\"d003_disposition\":\"owner_accepted_pending_exact_revision_oep_closure\"",
-            "\"d003_disposition\":\"accepted\"",
+            "\"d003_disposition\":\"accepted_exact_revision_oep_closure\"",
+            "\"d003_disposition\":\"pending\"",
         ),
         canonical.replace(
             "\"owner_protocol_review\":\"none\"",

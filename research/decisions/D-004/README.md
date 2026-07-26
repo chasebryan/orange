@@ -3,10 +3,11 @@
 Status: `draft_unfrozen`; no D-004 evidence epoch, protocol review, candidate
 execution, result, conclusion, or semantic-strata selection exists here.
 
-On 2026-07-26 the owner accepted D-003 candidate PF-01. The current D-004
-packet records that disposition as
-`owner_accepted_pending_exact_revision_oep_closure`; it does not claim that the
-required exact-revision D-003 OEP closure already exists.
+On 2026-07-26 the owner accepted D-003 candidate PF-01. Accepted OEP-0004 binds
+that disposition to exact revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`; the current D-004 packet records
+it as `accepted_exact_revision_oep_closure` without inferring any D-004
+disposition.
 
 This exact five-file inventory is an input-only D-004 laboratory:
 
@@ -29,9 +30,9 @@ recomputes every proposal and subject digest, and evaluates the bounded
 structural integrity oracle.
 
 The v0.3 packet's canonical SHA-256, excluding its terminal line feed, is
-`32cdb43019bba79666b6b0b0e14e789358cce37933dadc1124f07243f09d3ae8`;
+`7fb725d374e39eeae8a3a01ecf6033d53205f61d28ab94371e35ee0b59a07e58`;
 its raw-file SHA-256, including that line feed, is
-`0784a87e2b2ca82a7c7c7368de0bd9d33cea84aaa1f430540f8fe5e5382967e1`.
+`0095a821d2a94b6163538965707b3ebadc554c9260b66bd45c943b8cefb9e739`.
 
 The catalog's 39 subjects comprise 14 missing-edge, 10
 identity-substitution, and five each for ambiguity, explicit suite-domain

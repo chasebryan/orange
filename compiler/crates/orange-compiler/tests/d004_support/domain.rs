@@ -370,7 +370,7 @@ pub(crate) const NONCLAIMS: [&str; 6] = [
     "no candidate adapter executed",
     "no D-004 evidence epoch frozen",
     "no semantic-strata candidate selected",
-    "no D-003 exact-revision OEP closure inferred",
+    "no D-004 disposition inferred from D-003 acceptance",
     "no roadmap gate or readiness movement",
     "no S3b implementation authorized",
 ];
@@ -484,17 +484,17 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::DecisionSuite,
         path: "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-        sha256: "434fbd40aca233f66de0d78675ac7b19ae9ca4694b4a1bb14e4e595c4ff09ee7",
+        sha256: "463908ca7ee53ade921ff51f353051323b236def5bac150c3f918e358f7a4d07",
     },
     InputBinding {
         id: InputBindingId::ProductFormDecisionPacket,
         path: "docs/PRODUCT_FORM_DECISION_PACKET.md",
-        sha256: "7d6dad961c2bdb21a5e5f23a342964c2d05c03d1943c30e662feb4ac89ea6cfa",
+        sha256: "1ef0be53344667993778d1abd9a83423fc92b358735ed7ad74cb766bb29d33fd",
     },
     InputBinding {
         id: InputBindingId::AcceptedS2Language,
         path: "docs/LANGUAGE_2026.md",
-        sha256: "446ea34d8ce17a15a48827c88adddae5613a88d8b9de1caf32eb109804d14cc4",
+        sha256: "35981310cbe1e1ae61c889b4005b2610d0077e6a615a5e032b0ca9a5860b328a",
     },
     InputBinding {
         id: InputBindingId::UserJourneys,
@@ -504,7 +504,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::AcceptedS3aSemantics,
         path: "docs/SEMANTICS_2026.md",
-        sha256: "61457ad795354b87bf99185e1e6cc95868bf96088e7b073fa4a7ff1e92664828",
+        sha256: "63e14d674eb687f46aa600b36d6d13e3732090d658fb05fd805646b1d469dbdf",
     },
     InputBinding {
         id: InputBindingId::AcceptedS3aOep,

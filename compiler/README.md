@@ -17,9 +17,10 @@ verified lowering, and code generation do not exist.
 This boundary was merged by
 [PR #9](https://github.com/chasebryan/orange/pull/9) as commit
 `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. Orange remains pre-alpha; that
-merge creates no stable public compatibility promise. The owner accepted D-003
-candidate PF-01 on 2026-07-26, with formal status pending exact-revision OEP
-closure. Later S3 semantics remain incomplete, and D-004 remains unresolved.
+merge creates no stable public compatibility promise. Accepted D-003 and
+OEP-0004 establish PF-01 at exact revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`. Later S3 semantics remain
+incomplete, and D-004 remains unresolved.
 
 ## Run
 
@@ -66,8 +67,8 @@ freeze blockers remain unresolved. Candidate-adapter failure cannot satisfy an
 unsupported subject, domain exhaustion verifies no replay ceiling, and replay
 repetitions remain unassigned. The laboratory executes no candidate adapter,
 freezes no evidence epoch, records 0/25 completed slots and no evidence, and
-creates no result, review, recommendation, or selection. It does not formally
-close D-003, accept D-004, alter compiler behavior, authorize S3b, or advance
+creates no result, review, recommendation, or selection. D-003 acceptance does
+not accept D-004, alter compiler behavior, authorize S3b, or advance
 the version 1.0.0 gate count.
 
 ## D-005 decision laboratory

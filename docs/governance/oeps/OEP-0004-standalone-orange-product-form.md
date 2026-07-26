@@ -4,7 +4,7 @@ title: Standalone editioned Orange product form
 authors:
   - Chase Bryan
 champion: Chase Bryan
-status: Provisional
+status: Accepted
 type: Standards
 created: 2026-07-26
 updated: 2026-07-26
@@ -26,10 +26,10 @@ supersedes: []
 superseded-by: null
 review-authorities:
   - Orange Project Owner
-decision-date: null
-decision-revision: null
+decision-date: 2026-07-26
+decision-revision: a82a5cec2ee4359dc2fe66171f17c93146747333
 approval-records:
-  - solo-reviewed owner direction Accept PF-01 received 2026-07-26; exact-revision closure pending
+  - solo-reviewed owner direction Accept PF-01 accepted at merged revision a82a5cec2ee4359dc2fe66171f17c93146747333 on 2026-07-26
 ---
 
 # OEP-0004: Standalone editioned Orange product form
@@ -43,11 +43,11 @@ other cryptographic tools may participate only through explicit, versioned
 boundaries; none becomes the implicit definition of Orange program meaning.
 
 On 2026-07-26 the Orange Project Owner supplied the exact direction
-`Accept PF-01`. Under [`GOVERNANCE.md`](../../../GOVERNANCE.md), that direction provisionally authorizes
-this product-form boundary. This record remains Provisional until a follow-up
-change binds the fully validated merged revision and changes the status to
-Accepted. It does not accept D-004 or authorize S3b, a release, or any technical
-assurance claim.
+`Accept PF-01`. Under [`GOVERNANCE.md`](../../../GOVERNANCE.md), that direction
+authorizes this product-form boundary. The reviewed candidate merged green as
+exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; this Accepted
+record binds that revision. It does not accept D-004 or authorize S3b, a
+release, or any technical assurance claim.
 
 ## Motivation
 
@@ -98,7 +98,7 @@ behavior. Adapter failure invalidates only its dependent artifact or claim. It
 cannot choose a second Orange meaning, silently fall back to another host
 semantics, or upgrade external output into native Orange evidence.
 
-The eight D-003 hard-gate dispositions are owner-accepted as recorded in the
+The eight D-003 hard-gate dispositions are accepted as recorded in the
 decision packet: PF-01 passes PF-G01 through PF-G08. PF-02, PF-03, and PF-04
 remain ineligible as the product form because each has at least one failed or
 unproven non-compensable gate. Their orchestration, proof-hosting, and systems
@@ -214,16 +214,16 @@ accepted S1 through S3a permanent lineage, the private-to-canonical Core
 migration boundary, the solo resource comparison, and the packet's explicit
 reconsideration triggers.
 
-Before Accepted status, the exact candidate revision must keep this OEP, D-003,
-the roadmap, architecture, assurance, research, traceability, threat model, and
-policy mutually consistent; preserve the noncanonical Typed Reference Core
-boundary; pass the full repository check; and receive a follow-up acceptance
-record binding that merged revision. Mechanical success cannot manufacture the
+The accepted decision revision keeps this OEP, D-003, the roadmap,
+architecture, assurance, research, traceability, threat model, and policy
+mutually consistent; preserves the noncanonical Typed Reference Core boundary;
+and passed the full repository check and required hosted checks. This follow-up
+record binds that merged revision. Mechanical success cannot manufacture the
 owner authority already supplied or any technical evidence not present.
 
 ## Operations, release, and recovery
 
-This Provisional decision creates no service, registry, deployment, signing
+This Accepted decision creates no service, registry, deployment, signing
 key, update channel, package, or release operation. If PF-01 assumptions later
 fail, the owner may halt affected work, preserve the last readable edition and
 artifacts, withdraw dependent claims, and propose a superseding OEP. Recovery
@@ -240,12 +240,11 @@ deprecation rules.
 
 ## Unresolved questions
 
-The exact-revision closure is unresolved until this provisional record and all
-coupled files merge with green checks. D-004 must still select semantic strata
-and Core membership. Later decisions must select canonical encodings, proof and
-solver boundaries, compiler and target paths, ABI and leakage models, packages,
-licenses, support terms, and release authority. None of those questions changes
-the owner disposition of PF-01.
+The exact-revision D-003 closure is complete. D-004 must still select semantic
+strata and Core membership. Later decisions must select canonical encodings,
+proof and solver boundaries, compiler and target paths, ABI and leakage models,
+packages, licenses, support terms, and release authority. None of those
+questions changes the accepted disposition of PF-01.
 
 ## Decision record
 
@@ -257,8 +256,8 @@ disposition, and the recorded rejection of PF-02 through PF-04 as product forms
 while retaining their bounded techniques.
 
 The review is literally `solo-reviewed`. No independent person or organization
-participated, and no such review is claimed. Formal D-003 closure remains
-conditional on a fully green merged revision and a follow-up change that sets
-this OEP to Accepted, records the exact `decision-revision`, and binds that
-revision in an immutable approval record. D-004 and S3b remain unauthorized by
-this decision.
+participated, and no such review is claimed. The fully validated candidate
+merged green as exact revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`. This Accepted OEP records that
+`decision-revision` and binds it in the immutable approval record above, formally
+closing D-003. D-004 and S3b remain unauthorized by this decision.

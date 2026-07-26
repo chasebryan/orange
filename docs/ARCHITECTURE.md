@@ -20,10 +20,10 @@ incomplete.
 
 The Typed Reference Core has no canonical encoding, proof identity, refinement
 relation, target, ABI, package or release identity, cryptographic, or leakage
-meaning. D-003 candidate PF-01 is owner-accepted as of 2026-07-26 and
-provisionally authorizes the standalone product-form boundary under
-[`GOVERNANCE.md`](../GOVERNANCE.md), but D-003 remains formally pending an
-Accepted exact-revision OEP. D-004 remains unresolved and unratified, and open
+meaning. Accepted D-003 and OEP-0004 establish the PF-01 standalone
+product-form boundary at exact revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`. D-004 remains unresolved and
+unratified, and open
 architecture choices continue to gate only the component or claim that depends
 on them.
 
@@ -34,8 +34,9 @@ each for ambiguity, unsupported behavior, and domain exhaustion. They are
 opaque suite-only inputs for later symmetric comparison, not members of the
 accepted language or Core family. The five positive cases and 26 named
 mutations remain definition-only; all five class sufficiency reviews and freeze
-blockers plus replay repetitions remain unresolved. D-003 is owner-accepted
-pending exact-revision OEP closure; D-004 owner review is `none`, the D-004
+blockers plus replay repetitions remain unresolved. D-003 is accepted at exact
+revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner review is
+`none`, the D-004
 epoch is unfrozen, and no candidate mapping, adapter, evidence, selection, or
 conclusion exists. Integrity parsing and structural oracles are not candidate
 executions and ratify no semantic boundary. D-004 remains at 0/25 and Orange at

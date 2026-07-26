@@ -365,31 +365,30 @@ local and hosted evidence recorded.
 
 Before S3b expands the Typed Reference Core with pure expressions or calls:
 
-1. close owner-accepted D-003 by promoting
-   [OEP-0004](governance/oeps/OEP-0004-standalone-orange-product-form.md) to
-   Accepted at the exact reviewed revision for the PF-01 standalone product
-   form;
+1. retain accepted D-003 and
+   [OEP-0004](governance/oeps/OEP-0004-standalone-orange-product-form.md) as
+   the exact-revision PF-01 standalone product-form boundary;
 2. decide D-004, the complete semantic strata and Core relationships; and
 3. authorize the bounded S3b surface through an OEP with explicit conformance,
    resource, compatibility, threat, and non-claim boundaries.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
-The owner-accepted
-[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md), still
-pending exact-revision OEP closure, and the conditional
+The accepted
+[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md) and the conditional
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md)
 define the owner-executable records and research that may run ahead. Explicit
-acceptance on 2026-07-26 provisionally authorizes D-003 candidate PF-01 under
-[`GOVERNANCE.md`](../GOVERNANCE.md), but it does not accept D-004 or authorize
-S3b. The D-004 input-only pre-epoch laboratory binds
+acceptance on 2026-07-26 and Accepted OEP-0004 bind D-003 candidate PF-01 to
+exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`, but they do not
+accept D-004 or authorize S3b. The D-004 input-only pre-epoch laboratory binds
 exactly 39 candidate-neutral cross-cutting fixture subjects as
 `materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
 each for ambiguity, unsupported behavior, and domain exhaustion. The five
 positive case subjects and 26 named mutation subjects remain definition-only
 gaps. Sufficiency review and the freeze blocker for every cross-cutting class
-remain unresolved, as do replay repetitions. D-003 is owner-accepted pending
-exact-revision OEP closure; D-004 owner protocol review is `none`; the D-004
+remain unresolved, as do replay repetitions. D-003 is accepted at exact
+revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner protocol
+review is `none`; the D-004
 epoch is unfrozen; and no candidate mapping or adapter exists. Integrity
 parsing and structural oracles over the opaque suite-only inputs are not
 candidate executions and ratify no semantics. The laboratory remains at 0/25

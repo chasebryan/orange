@@ -244,8 +244,9 @@ unsupported observation. The five positive case subjects and 26 named-mutation
 subjects remain definition-only gaps; all five class sufficiency reviews and
 freeze blockers remain unresolved; replay repetitions remain unassigned; and
 the D-004 inventory freezes no evidence epoch. D-003 candidate PF-01 is
-owner-accepted pending exact-revision OEP closure, while D-004 owner protocol
-review remains `none`. None of these input inventories contains a candidate
+accepted through OEP-0004 at exact revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`, while D-004 owner protocol review
+remains `none`. None of these input inventories contains a candidate
 result, accepted D-004 decision, or release evidence. D-005's protected Rust
 laboratory may construct
 canonical adapter requests and validate synthetic captured transport envelopes,
@@ -329,9 +330,9 @@ The admitted
 and
 [`docs/SEMANTIC_STRATA_DECISION_SUITE.md`](../docs/SEMANTIC_STRATA_DECISION_SUITE.md)
 are structurally validated, non-normative D-003 and D-004 decision records. The
-owner's exact `Accept PF-01` direction and Provisional OEP-0004 now establish
-the D-003 product-form boundary provisionally, but D-003 remains pending
-Accepted exact-revision closure. Their presence does not accept D-004, widen
+owner's exact `Accept PF-01` direction and Accepted OEP-0004 establish the
+D-003 product-form boundary at exact revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`. Their presence does not accept D-004, widen
 the implemented semantics, or authorize S3b.
 
 The living [Orange Book](../docs/THE_ORANGE_BOOK.md) v0.2 remains a
@@ -348,10 +349,11 @@ policy record.
 Changing one requires an intentional update to both enforcement sources. Solo
 owner review is a change-control record, not independent review.
 
-Official binary brand assets remain closed by exact path, role, provenance, and
-SHA-256 digest. Their inventory under [`assets/brand/`](../assets/brand/) records
-working project identity; it does not claim trademark clearance or grant a
-repository-wide license.
+Official binary visual assets remain closed by exact path, role, provenance,
+and SHA-256 digest. The inventory under
+[`assets/brand/`](../assets/brand/) records working project identity, while
+[`docs/images/`](../docs/images/) records revision-bound documentation visuals.
+Neither record claims trademark clearance or grants a repository-wide license.
 
 The validator and policy JSON cannot safely contain their own digests without a
 self-reference cycle. Their integrity depends on exact path and executable

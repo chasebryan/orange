@@ -37,13 +37,13 @@ const COMPILER_STRATEGY_SUITE: &[u8] =
     include_bytes!("../../../../docs/COMPILER_STRATEGY_DECISION_SUITE.md");
 
 const PACKET_CANONICAL_SHA256: &str =
-    "58ba55f90d63fcf2ce51585d51ea29bbaed375ed703d5c3d9cd7508571c232d2";
-const PACKET_RAW_SHA256: &str = "bee863a6204b5bb13bf91226ed23d9a1c0a36480b3eb15468e1c64f8e904bd8e";
+    "076e911bb5f52ee048d7c854928becca4675c97a678c48a03ae5d40b71a67007";
+const PACKET_RAW_SHA256: &str = "aec7514683746c4fdc3fb33f771e793146fcb258be3d4c9b8b9eadd507bb8d0e";
 const INDEX_RAW_SHA256: &str = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670";
 const SUITE_RAW_SHA256: &str = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73";
 
 const PACKET_NONCLAIMS: [&str; 10] = [
-    "no D-003, D-004, D-005, D-006, D-007, D-009, D-010, D-011, D-012, or D-013 acceptance inferred",
+    "D-003 acceptance grants no D-004, D-005, D-006, D-007, D-009, D-010, D-011, D-012, or D-013 acceptance",
     "no compiler, backend, proof assistant, solver, checker, assembler, linker, adapter, runner, observer, emulator, or isolation dependency admitted, acquired, installed, or executed",
     "no executable shared input, candidate mapping, result schema, or physical execution order exists",
     "no evidence epoch, candidate result, selection, or conclusion exists",
@@ -55,8 +55,7 @@ const PACKET_NONCLAIMS: [&str; 10] = [
     "no roadmap gate, S5 closure, release authority, compiler capability, or readiness credit",
 ];
 
-const PROTOCOL_GAPS: [&str; 14] = [
-    "D-003 Accepted exact-revision OEP closure absent",
+const PROTOCOL_GAPS: [&str; 13] = [
     "D-004 acceptance absent",
     "D-005 acceptance absent",
     "D-006 acceptance absent",
@@ -403,7 +402,8 @@ fn draft_packet_is_canonical_content_addressed_and_zero_of_40() {
         .and_then(JsonValue::as_object)
         .expect("dependency acceptance");
     assert_eq!(dependencies.len(), 5);
-    for dependency in ["D-003", "D-004", "D-005", "D-006", "D-009"] {
+    assert_eq!(dependencies.get("D-003"), Some(&JsonValue::Bool(true)));
+    for dependency in ["D-004", "D-005", "D-006", "D-009"] {
         assert_eq!(dependencies.get(dependency), Some(&JsonValue::Bool(false)));
     }
 
@@ -524,7 +524,7 @@ fn packet_and_index_reject_malformed_mutated_or_noncanonical_json() {
     for mutation in [
         packet.replacen('{', "{\"unknown\":null,", 1),
         packet.replace(",\"selection\":null", ""),
-        packet.replacen("\"D-003\":false", "\"D-003\":true", 1),
+        packet.replacen("\"D-003\":true", "\"D-003\":false", 1),
         packet.replacen("\"epoch\":null", "\"epoch\":\"0001\"", 1),
         packet.replacen(
             "\"completed_candidate_cases\":0",

@@ -3044,8 +3044,23 @@ class BrandAssetHardeningTests(unittest.TestCase):
             "![Hand-drawn Orange carton emblem and wordmark]"
             "(../assets/brand/orange-handdrawn-marker-banner.png)"
         )
+        prism = (
+            "![Orange Semantic Prism conceptual architecture snapshot showing proposed "
+            "Spec, Impl, Game, and Machine strata connected by a claim-indexed evidence "
+            "path; S3a is implemented, three of ten gates are closed, and D-004 is "
+            "unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)"
+        )
+        prism_caption = (
+            "*S3a semantic-prism snapshot at `a82a5ce`. Its embedded `D-003 PF-01\n"
+            "provisionally accepted / exact-revision OEP closure pending` text records the\n"
+            "pre-closure state of that revision; D-003 and OEP-0004 are now Accepted. D-004\n"
+            "remains unselected at 0/25, and 30% denotes binary gate closure, not release\n"
+            "readiness. See the [asset record](docs/images/README.md).*"
+        )
         self.assertEqual(readme.count(readme_banner), 1)
         self.assertEqual(orange_book.count(book_banner), 1)
+        self.assertEqual(readme.count(prism), 1)
+        self.assertEqual(readme.count(prism_caption), 1)
         self.assertNotIn("user-attachments/assets", readme)
         self.assertNotIn("user-attachments/assets", orange_book)
 
@@ -5277,7 +5292,7 @@ class PlanningTraceHardeningTests(unittest.TestCase):
                 "product_form.candidates",
             ),
             (
-                "Owner accepted; exact-revision OEP closure pending",
+                "Accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`",
                 "Recommend",
                 "product_form.candidates",
             ),
@@ -5512,10 +5527,10 @@ class PlanningTraceHardeningTests(unittest.TestCase):
             shutil.copyfile(source_root / "docs/DECISIONS.md", decisions)
             text = decisions.read_text(encoding="utf-8")
             mutated = text.replace(
-                "cross-candidate execution. It selects no stratum,",
+                "cross-candidate execution. It selects no stratum and",
                 "cross-candidate execution.\n\n"
                 "That Draft protocol records 25/25 required candidate-case "
-                "executions.\n\nIt selects no stratum,",
+                "executions.\n\nIt selects no stratum and",
                 1,
             )
             self.assertNotEqual(mutated, text)

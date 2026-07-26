@@ -1,14 +1,14 @@
 # D-003 product-form decision packet
 
-Status: owner-accepted PF-01; exact-revision OEP closure pending
+Status: accepted PF-01 at exact decision revision `a82a5cec2ee4359dc2fe66171f17c93146747333`
 
-Packet version: `d003-v0.2-owner-accepted`
+Packet version: `d003-v0.3-accepted`
 
 Snapshot: 2026-07-26
 
 ## Abstract
 
-The owner-accepted PF-01 direction makes Orange a standalone, editioned
+Accepted PF-01 makes Orange a standalone, editioned
 domain-specific language whose source semantics and canonical Core boundary are
 owned by the Orange project. External proof assistants, solvers, compilers,
 cryptography systems, and host languages remain valuable tools and
@@ -29,19 +29,19 @@ proposal must define its migration into the first versioned canonical boundary.
 
 On 2026-07-26 the Orange Project Owner supplied the exact direction
 `Accept PF-01`. This packet therefore records owner acceptance of the
-standalone form and its hard-gate dispositions. Formal D-003 closure still
-requires OEP-0004 to bind a fully validated exact revision. The direction
-grants no implementation authority for S3b and no product release or assurance
-claim.
+standalone form and its hard-gate dispositions. Accepted OEP-0004 binds that
+decision to fully validated merged revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`, formally closing D-003. The
+direction grants no implementation authority for S3b and no product release or
+assurance claim.
 
 ## Motivation
 
-[D-003](DECISIONS.md#d-003--product-form) is the first formally unclosed
-dependency in the active roadmap after S3a. Its product-form question is now
-owner-disposed, but the exact-revision acceptance record must close before D-004
-or S3b can rely on it as an Accepted dependency. Leaving the product form
-implicit would let each new construct choose a host language, proof assistant,
-or orchestration seam accidentally.
+[D-003](DECISIONS.md#d-003--product-form) was the first formally unclosed
+dependency in the active roadmap after S3a. Its exact-revision acceptance is
+now complete; D-004 is the next unresolved dependency before S3b. Leaving the
+product form implicit would have let each new construct choose a host language,
+proof assistant, or orchestration seam accidentally.
 
 The proposed 1.0 boundary has 8/8 structurally specified design journeys and
 0/8 completed journeys in [`USER_JOURNEYS.md`](USER_JOURNEYS.md):
@@ -93,9 +93,9 @@ PF-01 does not select:
 - a cryptographic primitive, standard, corpus, release, or support profile; or
 - a repository-wide license or final public product name.
 
-This packet changes no accepted language behavior. S3b remains blocked on an
-Accepted exact-revision D-003 OEP record, an accepted D-004 disposition, and
-its own bounded OEP.
+This packet changes no accepted language behavior. The exact-revision D-003
+requirement is satisfied. S3b remains blocked on an accepted D-004 disposition
+and its own bounded OEP.
 
 ## Specification
 
@@ -190,7 +190,7 @@ The proposal's assessment is:
 
 | Candidate | G01 | G02 | G03 | G04 | G05 | G06 | G07 | G08 | Disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| PF-01: standalone editioned Orange DSL | Pass | Pass | Pass | Pass | Pass | Pass | Pass | Pass | Owner accepted; exact-revision OEP closure pending |
+| PF-01: standalone editioned Orange DSL | Pass | Pass | Pass | Pass | Pass | Pass | Pass | Pass | Accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333` |
 | PF-02: manifest-only orchestration | Fail | Pass | Pass | Pass | Unproven | Pass | Pass | Unproven | Reject as product form; retain orchestration techniques |
 | PF-03: DSL embedded in F\*, Lean, or Rocq | Pass | Pass | Pass | Unproven | Unproven | Pass | Pass | Unproven | Reject as product form; retain proof adapters |
 | PF-04: Rust subset with proof annotations | Pass | Pass | Pass | Unproven | Unproven | Pass | Pass | Unproven | Reject as product form; retain Rust implementation and integration paths |
@@ -288,7 +288,7 @@ members.
 ## Compatibility and migration
 
 This packet changes no source, compiler, Core, proof, package, or artifact
-behavior. The owner-accepted product-form direction preserves every source
+behavior. The accepted product-form direction preserves every source
 accepted by OEP-0002 and OEP-0003 until an edition-aware semantic proposal
 records a change.
 
@@ -305,18 +305,18 @@ Core claim, a later accepted proposal must:
 5. provide a rollback path that restores the last accepted internal boundary
    without accepting two competing meanings.
 
-Retiring the packet removes no implemented feature. After formal exact-revision
-closure, changing the standalone product form requires a superseding OEP,
+Retiring the packet removes no implemented feature. Following formal
+exact-revision closure, changing the standalone product form requires a superseding OEP,
 complete journey and migration analysis, and explicit disposition of every
 published Orange-owned identity.
 
 ## Semantic and claim effects
 
 This packet defines no new Orange expression, type, evaluation rule, or
-accepted Core artifact. The owner direction provisionally makes the ownership
+accepted Core artifact. The accepted owner direction makes the ownership
 boundary normative: Orange specifications define Orange meaning, and public
-semantic identities use Orange-owned formats. Exact-revision OEP closure will
-make the governance record Accepted; it will not add technical semantics.
+semantic identities use Orange-owned formats. Exact-revision OEP closure makes
+the governance record Accepted; it adds no technical semantics.
 
 The decision does not establish semantic soundness, completeness, refinement,
 proof soundness, compilation correctness, cryptographic correctness, leakage
@@ -334,7 +334,7 @@ checker, solver, certificate, or extraction path. The current Rust frontend,
 standard library, toolchain, host, and sole owner remain engineering trust
 dependencies for implemented behavior.
 
-Under the provisionally authorized boundary, later proof and compiler
+Under the accepted boundary, later proof and compiler
 components must expose their external trust through boundaries bound to
 canonical Orange Core identities. A proof
 assistant kernel may become part of the logical construction or extraction TCB
@@ -411,7 +411,7 @@ The current owner-executable decision evidence is:
 - the solo resource comparison and incremental scope rule; and
 - falsifiable reconsideration triggers below.
 
-Formal exact-revision closure requires all of the following to be true at an
+Formal exact-revision closure required all of the following to be true at an
 exact reviewed revision, followed by an Accepted record that binds that
 revision:
 
@@ -431,9 +431,11 @@ revision:
    `solo-reviewed` owner approval record without implying independence.
 
 Requirement 1 is satisfied by the exact owner direction `Accept PF-01` received
-on 2026-07-26. Requirements 2 through 5 are being assembled and validated in
-the coupled candidate revision. Requirement 6 necessarily remains pending
-until that revision has merged and has an immutable commit identity.
+on 2026-07-26. Requirements 2 through 5 passed in merged revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333`, including its local and hosted
+checks. Accepted OEP-0004 satisfies requirement 6 by binding that immutable
+revision with a literal `solo-reviewed` approval record. Formal D-003 closure
+is complete.
 
 Formal closure of D-003 does not authorize S3b. D-004 and a bounded S3b OEP
 remain separate gates.
@@ -456,7 +458,7 @@ This decision adds no service, registry, deployment, key, build publication,
 update channel, package, or release operation. Record changes, withdrawal, and
 supersession are repository-document changes only.
 
-If the owner-accepted product-form assumptions later prove false, the owner may
+If the accepted product-form assumptions later prove false, the owner may
 stop the affected capability, retain the last known-good edition and artifact readers,
 withdraw unsupported claims, and propose a replacement OEP. History and
 canonical artifacts must remain inspectable; recovery cannot silently reinterpret
@@ -475,8 +477,8 @@ Orange artifacts it once translated.
 
 ## Unresolved questions
 
-The owner disposition is no longer unresolved. OEP-0004 must still bind the
-fully validated merged revision before D-003 becomes formally Accepted.
+The owner disposition and exact-revision D-003 closure are no longer
+unresolved.
 
 D-004 must still decide the semantic strata, Core membership, shared pure
 fragment, embeddings, erasures, and refinement relations. A later proposal must
@@ -484,8 +486,8 @@ select the first canonical Core encoding and version. D-006, S3b semantics,
 targets, ABI, leakage, packages, releases, licensing, and the final public name
 remain separate decisions.
 
-No unresolved implementation detail reverses the owner disposition, but none
-permits the packet to claim exact-revision closure or authorize D-004 or S3b.
+No unresolved implementation detail reverses the owner disposition. D-003
+closure does not authorize D-004 or S3b.
 
 ## Current disposition
 
@@ -504,11 +506,11 @@ disposition, and the rejection of manifest-only orchestration, a proof-assistant
 embedding, and a Rust subset as product forms while retaining each as a possible
 bounded interoperability or implementation technique.
 
-The bootstrap steward assigned OEP-0004. Its Provisional record preserves the
+The bootstrap steward assigned OEP-0004. Its Accepted record preserves the
 literal `solo-reviewed` owner direction, review authority, decision scope, and
-pending exact-revision closure. No independent review occurred or is claimed.
-The future Accepted record must name the fully validated merged revision in
-both `decision-revision` and its immutable approval record.
+names fully validated merged revision
+`a82a5cec2ee4359dc2fe66171f17c93146747333` in both `decision-revision` and
+its immutable approval record. No independent review occurred or is claimed.
 
-This packet records owner acceptance but does not itself formally close D-003,
-accept D-004, or authorize S3b implementation.
+This packet documents formal D-003 closure but does not accept D-004 or
+authorize S3b implementation.
