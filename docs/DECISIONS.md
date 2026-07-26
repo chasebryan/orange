@@ -125,14 +125,14 @@ That Draft protocol records 0/25 required candidate-case executions: 0/5
 candidates have complete five-case packets, and 0/5 cases have complete
 cross-candidate execution. It selects no stratum and does not authorize S3b.
 
-Its input-only pre-epoch laboratory now byte-materializes exactly 39
-candidate-neutral cross-cutting fixture subjects under the status
-`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
-each for ambiguity, unsupported behavior, and domain exhaustion. The five
-positive case subjects and all 26 named mutation subjects remain definition-only
-gaps. All five class sufficiency reviews and freeze blockers remain unresolved,
-and replay repetitions remain unresolved and unassigned. Integrity parsing and
-structural oracles over the opaque suite-only bytes are not candidate executions
+Its input-only pre-epoch laboratory now byte-materializes exactly 70
+candidate-neutral suite-only subjects under
+`draft_unreviewed_input_only`: five positive case subjects, all 26 named
+mutation subjects, 14 missing-edge subjects, 10 identity-substitution subjects,
+and five each for ambiguity, unsupported behavior, and domain exhaustion. All
+five class sufficiency reviews and freeze blockers remain unresolved, and
+replay repetitions remain unresolved and unassigned. Integrity parsing and
+structural oracles over those fixed input bytes are not candidate executions
 and ratify no Orange semantics. D-003 is accepted at exact revision
 `a82a5cec2ee4359dc2fe66171f17c93146747333`; the D-004 epoch remains
 unfrozen, and D-004 owner protocol review

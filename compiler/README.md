@@ -45,7 +45,8 @@ non-product D-004 laboratory. It strictly parses and canonicalizes an
 input-only `draft_unfrozen` packet, binds the conditional suite and accepted
 S3a baseline by SHA-256, preserves the 5-candidate by 5-case matrix, 14 required
 relationships, 10 hard gates, and 26 mutations named explicitly by the suite,
-binds 39 unreviewed domain-level structural proposals and their corresponding
+binds a closed catalog with five positive and 26 named-mutation subjects plus
+39 unreviewed domain-level structural proposals and their corresponding
 candidate-neutral byte-materialized subjects, and prepares one deterministic
 balanced 25-slot identity plan:
 
@@ -56,16 +57,16 @@ cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
 
 The proposal manifest names 14 missing-edge, 10 identity-substitution, and five
 each of ambiguity, unsupported-behavior, and domain-exhaustion proposals. The
-separate catalog byte-materializes exactly those 39 subjects under
-`materialized_unreviewed`. A closed parser authenticates their ordered proposal
-join and per-subject identities, then a bounded structural integrity oracle
-checks the opaque suite-only models in memory. Those checks are not candidate
-executions and create no candidate observation, result, evidence, verdict, or
-capability credit. The five positive case subjects and 26 named mutation
-subjects remain definition-only gaps; all five class sufficiency reviews and
-freeze blockers remain unresolved. Candidate-adapter failure cannot satisfy an
-unsupported subject, domain exhaustion verifies no replay ceiling, and replay
-repetitions remain unassigned. The laboratory executes no candidate adapter,
+cross-cutting and case-subject catalogs byte-materialize exactly 70 suite-only
+subjects under `draft_unreviewed_input_only`. Closed parsers authenticate the
+ordered proposal and named-mutation joins, case baselines, and per-subject
+identities, then bounded structural integrity oracles check the fixed models in
+memory. Those checks are not candidate executions and create no candidate
+observation, result, evidence, verdict, or capability credit. All five class
+sufficiency reviews and freeze blockers remain unresolved. Candidate-adapter
+failure cannot satisfy an unsupported subject, domain exhaustion verifies no
+replay ceiling, and replay repetitions remain unassigned. The laboratory
+executes no candidate adapter,
 freezes no evidence epoch, records 0/25 completed slots and no evidence, and
 creates no result, review, recommendation, or selection. D-003 acceptance does
 not accept D-004, alter compiler behavior, authorize S3b, or advance

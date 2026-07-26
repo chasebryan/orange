@@ -1,7 +1,7 @@
 use std::fmt;
 
 pub(crate) const REQUIRED_CANDIDATE_CASES: usize = 25;
-pub(crate) const INPUT_BINDING_COUNT: usize = 21;
+pub(crate) const INPUT_BINDING_COUNT: usize = 22;
 pub(crate) const CROSS_CUTTING_PROPOSAL_COUNT: usize = 39;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -355,9 +355,7 @@ pub(crate) const CASE_SCOPED_CROSS_CUTTING_PROPOSALS: [CaseScopedProposalSpec; 1
     },
 ];
 
-pub(crate) const PROTOCOL_GAPS: [&str; 8] = [
-    "five positive subjects absent",
-    "26 named-mutation subjects absent",
+pub(crate) const PROTOCOL_GAPS: [&str; 6] = [
     "ambiguity fixture sufficiency review unresolved",
     "missing-edge fixture sufficiency review unresolved",
     "identity-substitution fixture sufficiency review unresolved",
@@ -412,6 +410,7 @@ pub(crate) enum InputBindingId {
     ValidWord8Boundaries,
     CrossCuttingFixtureProposals,
     CrossCuttingExecutableFixtures,
+    CaseSubjects,
 }
 
 impl InputBindingId {
@@ -438,6 +437,7 @@ impl InputBindingId {
             Self::ValidWord8Boundaries => "fixture_valid_word8_boundaries",
             Self::CrossCuttingFixtureProposals => "cross_cutting_fixture_proposals",
             Self::CrossCuttingExecutableFixtures => "cross_cutting_executable_fixtures",
+            Self::CaseSubjects => "case_subjects",
         }
     }
 
@@ -464,6 +464,7 @@ impl InputBindingId {
             Self::ValidWord8Boundaries => 18,
             Self::CrossCuttingFixtureProposals => 19,
             Self::CrossCuttingExecutableFixtures => 20,
+            Self::CaseSubjects => 21,
         }
     }
 }
@@ -484,7 +485,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::DecisionSuite,
         path: "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-        sha256: "463908ca7ee53ade921ff51f353051323b236def5bac150c3f918e358f7a4d07",
+        sha256: "f44c556202d0e235fd42c03181134ab3047d3e9b6f19b3015dae15a86d00dc0b",
     },
     InputBinding {
         id: InputBindingId::ProductFormDecisionPacket,
@@ -580,6 +581,11 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
         id: InputBindingId::CrossCuttingExecutableFixtures,
         path: "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json",
         sha256: "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0",
+    },
+    InputBinding {
+        id: InputBindingId::CaseSubjects,
+        path: "research/decisions/D-004/d004-v0.4-case-subjects.json",
+        sha256: "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6",
     },
 ];
 

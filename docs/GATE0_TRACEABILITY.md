@@ -145,10 +145,10 @@ The preserved Gate 0 closure ledger was:
 | F-14 | Reproducible, signed releases for supported hosts | W6 and W7; Release Engineering, PSIRT, and Assurance and TCB Board | All preceding features; D-008 implementation languages; D-011 host/target envelope; D-014 package model; D-019 release authority; D-020 supply-chain target; D-021 bootstrap policy; D-022 funded support policy | `N/M/C/A/X/O`: hermetic build closure, two independent rebuild attestations, signatures and transparency records, SBOM/CBOM, provenance and proof bundles, audits, and release/revocation/recovery drills | At Gate 7 two independently administered builders reproduce each supported artifact; network-disabled build and offline verification bind source, claims, SBOM/CBOM, provenance, proofs, and signatures; all stop-ship findings are closed; rollback, freeze, compromise, revocation, and disaster-recovery drills pass with multi-role sign-off | `proposed`; `blocked` | Gate 7 | `mapped` |
 
 D-004 input materialization is separate from feature or gate completion.
-Exactly 39 candidate-neutral cross-cutting subjects are byte-materialized as
-`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
-each for ambiguity, unsupported behavior, and domain exhaustion. The five
-positive cases and 26 named mutations remain definition-only gaps. All five
+Exactly 70 candidate-neutral suite-only subjects are byte-materialized as
+`draft_unreviewed_input_only`: five positive case subjects, all 26 named
+mutations, 14 missing-edge subjects, 10 identity-substitution subjects, and five
+each for ambiguity, unsupported behavior, and domain exhaustion. All five
 class sufficiency reviews and freeze blockers plus replay repetitions remain
 unresolved. D-003 candidate PF-01 is accepted through OEP-0004 at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`. D-004 owner review is

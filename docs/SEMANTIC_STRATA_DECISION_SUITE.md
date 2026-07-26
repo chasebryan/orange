@@ -3,7 +3,7 @@
 Status: draft owner-executable decision protocol; no semantic-strata candidate
 selected
 
-Suite version: `d004-v0.3-draft`
+Suite version: `d004-v0.4-draft`
 
 Snapshot: 2026-07-26
 
@@ -79,15 +79,15 @@ The candidate packet freezes:
 - a correction window that applies equally to all candidates; and
 - a variance log in which any changed premise creates a new evidence epoch.
 
-The current pre-epoch laboratory has byte-materialized exactly 39
-candidate-neutral cross-cutting fixture subjects: 14 missing-edge subjects, 10
-identity-substitution subjects, and five subjects each for ambiguity,
-unsupported behavior, and domain exhaustion. Their status is
-`materialized_unreviewed`. They are opaque suite-only models with fixed
-identities and expected domain states, not accepted Orange syntax, semantics,
-Core members, relations, or candidate observations. The five positive case
-subjects and all 26 named mutation subjects remain definition-only gaps, and no
-candidate mapping or adapter exists.
+The current pre-epoch laboratory has byte-materialized exactly 70
+candidate-neutral suite-only subjects: five positive case subjects, all 26
+named-mutation subjects, and 39 cross-cutting subjects comprising 14
+missing-edge subjects, 10 identity-substitution subjects, and five subjects
+each for ambiguity, unsupported behavior, and domain exhaustion. Their status
+is `draft_unreviewed_input_only`. They are fixed input bytes with declared
+expectations, not accepted Orange syntax, semantics, Core members, relations,
+candidate observations, or execution evidence. No candidate mapping or
+adapter exists.
 
 ## 3. Proposed role map
 
@@ -192,10 +192,11 @@ executions per evidence epoch: each of the 5 candidates runs each of the 5
 cases. A case has complete cross-candidate execution only when all five of its
 candidate-specific records exist in the same epoch.
 
-The prose below still defines, rather than materializes, the five positive case
-subjects and 26 named mutation subjects. Byte materialization of the separate
-39-subject cross-cutting corpus does not make any SC-01-through-SC-05 case
-executable for a candidate, because candidate mappings and adapters are absent.
+The prose below governs the five positive case subjects and 26 named-mutation
+subjects byte-materialized in the separate candidate-neutral case-subject
+catalog. Materialization fixes input bytes and declared expectations only. It
+does not make any SC-01-through-SC-05 case executable for a candidate because
+candidate mappings and adapters are absent.
 
 ### SC-01 — SHA-like word code
 
@@ -433,23 +434,21 @@ for results that do not yet exist.
 
 The repository may carry an exact input-only pre-epoch laboratory before that
 freeze. Its `draft_unfrozen` packet may bind this suite, the accepted S3a
-baseline, the 26 mutations named explicitly by SC-01 through SC-05, the
-unreviewed structural proposal manifest, the exactly 39 corresponding
-candidate-neutral byte-materialized subjects, and a deterministic 25-slot
-candidate-case identity plan. The 39 subjects remain
-`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
-each for ambiguity, unsupported behavior, and domain exhaustion. They carry
-fixed bytes and expected domain states only. They contain no candidate mapping,
-adapter output, observed state, comparison result, case verdict, evidence, or
-capability credit.
+baseline, a case-subject catalog containing the five positive subjects and all
+26 mutations named explicitly by SC-01 through SC-05, the unreviewed structural
+proposal manifest, the exactly 39 corresponding candidate-neutral
+cross-cutting subjects, and a deterministic 25-slot candidate-case identity
+plan. All 70 subjects remain `draft_unreviewed_input_only`. They carry fixed
+bytes and declared expected domain states only. They contain no candidate
+mapping, adapter output, observed state, comparison result, case verdict,
+evidence, or capability credit.
 
-The five positive case subjects and all 26 named mutation subjects remain
-definition-only gaps. Sufficiency review for each of the five cross-cutting
-classes remains unresolved, every class retains an active freeze blocker, and
-replay repetitions remain unresolved and unassigned. Candidate-adapter
-inability cannot satisfy an unsupported subject, and a domain-exhaustion
-subject neither exercises a replay ceiling nor converts replay-level failure
-into a matching observation.
+Sufficiency review for each of the five cross-cutting classes remains
+unresolved, every class retains an active freeze blocker, and replay
+repetitions remain unresolved and unassigned. Candidate-adapter inability
+cannot satisfy an unsupported subject, and a domain-exhaustion subject neither
+exercises a replay ceiling nor converts replay-level failure into a matching
+observation.
 
 Canonical parsing, digest verification, bounded structural checks, and
 deterministic integrity-oracle evaluation of these opaque subjects are
@@ -537,18 +536,19 @@ Execution evidence is currently 0/25 required candidate-case executions: 0/5
 candidates have complete five-case packets, and 0/5 cases have complete
 cross-candidate execution.
 
-The 39 byte-materialized cross-cutting subjects do not change that baseline.
-No candidate mapping, adapter, observation, evidence, selection, or conclusion
-exists, and materialization supplies no roadmap or readiness credit.
+The 70 byte-materialized case and cross-cutting subjects do not change that
+baseline. No candidate mapping, adapter, observation, evidence, selection, or
+conclusion exists, and materialization supplies no roadmap or readiness credit.
 
 ## 9. Current handoff
 
-With D-003 closed, the next authorized actions are to review this conditional
-D-004 protocol and the sufficiency of all five cross-cutting classes,
-materialize the five positive and 26 named-mutation subjects, assign replay
-repetitions, and resolve the remaining pre-epoch gaps symmetrically before
-freezing an evidence epoch. Running the later frozen suite then produces
-decision evidence; it still does not implement S3b.
+With D-003 closed and all 70 suite-only subjects materialized, the remaining
+pre-epoch acts are to review this conditional D-004 protocol and the
+sufficiency of all five cross-cutting classes, assign replay repetitions, and
+resolve the resulting freeze record symmetrically. The Project Owner must
+approve those dispositions and bind the frozen evidence epoch to an exact
+reviewed revision before any candidate execution begins. Running that later
+frozen suite then produces decision evidence; it still does not implement S3b.
 
 Until those actions occur, D-004 remains proposed, the architecture role map
 remains a recommendation, the S3a Typed Reference Core remains the only

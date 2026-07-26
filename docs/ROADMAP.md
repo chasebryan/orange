@@ -381,12 +381,12 @@ define the owner-executable records and research that may run ahead. Explicit
 acceptance on 2026-07-26 and Accepted OEP-0004 bind D-003 candidate PF-01 to
 exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`, but they do not
 accept D-004 or authorize S3b. The D-004 input-only pre-epoch laboratory binds
-exactly 39 candidate-neutral cross-cutting fixture subjects as
-`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
-each for ambiguity, unsupported behavior, and domain exhaustion. The five
-positive case subjects and 26 named mutation subjects remain definition-only
-gaps. Sufficiency review and the freeze blocker for every cross-cutting class
-remain unresolved, as do replay repetitions. D-003 is accepted at exact
+exactly 70 candidate-neutral suite-only subjects as
+`draft_unreviewed_input_only`: five positive case subjects, all 26 named
+mutation subjects, 14 missing-edge subjects, 10 identity-substitution subjects,
+and five each for ambiguity, unsupported behavior, and domain exhaustion.
+Sufficiency review and the freeze blocker for every cross-cutting class remain
+unresolved, as do replay repetitions. D-003 is accepted at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner protocol
 review is `none`; the D-004
 epoch is unfrozen; and no candidate mapping or adapter exists. Integrity
