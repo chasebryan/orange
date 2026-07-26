@@ -13,16 +13,16 @@ from tools.validate_foundation import FoundationValidator, canonical_json_bytes,
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RESEARCH_ROOT = Path("research/decisions/D-004")
-PACKET_PATH = RESEARCH_ROOT / "d004-v0.3-draft-packet.json"
+PACKET_PATH = RESEARCH_ROOT / "d004-v0.4-draft-packet.json"
 MANIFEST_PATH = RESEARCH_ROOT / "d004-v0.2-named-mutations.json"
 PROPOSAL_MANIFEST_PATH = (
     RESEARCH_ROOT / "d004-v0.2-cross-cutting-fixture-proposals.json"
 )
 PACKET_CANONICAL_SHA256 = (
-    "7fb725d374e39eeae8a3a01ecf6033d53205f61d28ab94371e35ee0b59a07e58"
+    "b298cbf0d1c6af2ca9a4af7bb6b020595ffd00c1ab6896d5f097b3ebff13127d"
 )
 PACKET_RAW_SHA256 = (
-    "0095a821d2a94b6163538965707b3ebadc554c9260b66bd45c943b8cefb9e739"
+    "0da96c89f62125f915152fb0ab30f41e608502bbe3a571a928c91e9d3812bc7a"
 )
 MANIFEST_CANONICAL_SHA256 = (
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
@@ -41,6 +41,13 @@ FIXTURE_CATALOG_CANONICAL_SHA256 = (
 )
 FIXTURE_CATALOG_RAW_SHA256 = (
     "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0"
+)
+CASE_SUBJECT_CATALOG_PATH = RESEARCH_ROOT / "d004-v0.4-case-subjects.json"
+CASE_SUBJECT_CATALOG_CANONICAL_SHA256 = (
+    "b3a8bcf4f0f084740e92cbff6fd57273df0a078af9c6b974f68d95ba333c6dc1"
+)
+CASE_SUBJECT_CATALOG_RAW_SHA256 = (
+    "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6"
 )
 
 
@@ -70,6 +77,16 @@ class D004DraftPacketTests(unittest.TestCase):
             for finding in validator.findings
             if finding.code.startswith("d004_packet.")
         }
+
+    def _assert_case_catalog_mutation(self, mutate, expected_code: str) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / CASE_SUBJECT_CATALOG_PATH
+            catalog = load_json(target)
+            mutate(catalog)
+            self._write_canonical(target, catalog)
+            self.assertIn(expected_code, self._codes(root))
 
     def test_canonical_pre_epoch_lab_is_valid_and_records_no_execution(self) -> None:
         packet = load_json(REPOSITORY_ROOT / PACKET_PATH)
@@ -142,8 +159,8 @@ class D004DraftPacketTests(unittest.TestCase):
             ).hexdigest(),
             fixture_binding["sha256"],
         )
-        self.assertEqual(packet["schema_version"], "d004-pre-epoch-packet-v0.3")
-        self.assertEqual(packet["suite_version"], "d004-v0.3-draft")
+        self.assertEqual(packet["schema_version"], "d004-pre-epoch-packet-v0.4")
+        self.assertEqual(packet["suite_version"], "d004-v0.4-draft")
         self.assertEqual(packet["status"], "draft_unfrozen")
         self.assertIsNone(packet["epoch"])
         self.assertEqual(packet["epoch_status"], "unfrozen")
@@ -154,7 +171,7 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertEqual(packet["owner_protocol_review"], "none")
         self.assertEqual(
             packet["fixture_inventory_status"],
-            "cross_cutting_materialized_unreviewed_freeze_blocker",
+            "case_and_cross_cutting_materialized_unreviewed_freeze_blocker",
         )
         self.assertEqual(
             packet["execution"],
@@ -232,8 +249,6 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertEqual(
             packet["protocol_gaps"],
             [
-                "five positive subjects absent",
-                "26 named-mutation subjects absent",
                 "ambiguity fixture sufficiency review unresolved",
                 "missing-edge fixture sufficiency review unresolved",
                 "identity-substitution fixture sufficiency review unresolved",
@@ -254,9 +269,9 @@ class D004DraftPacketTests(unittest.TestCase):
             [],
         )
 
-    def test_packet_binds_all_twenty_one_exact_existing_inputs_by_raw_bytes(self) -> None:
+    def test_packet_binds_all_twenty_two_exact_existing_inputs_by_raw_bytes(self) -> None:
         packet = load_json(REPOSITORY_ROOT / PACKET_PATH)
-        self.assertEqual(len(packet["input_bindings"]), 21)
+        self.assertEqual(len(packet["input_bindings"]), 22)
         self.assertEqual(
             set(packet["input_bindings"]),
             {
@@ -265,6 +280,7 @@ class D004DraftPacketTests(unittest.TestCase):
                 "accepted_s2_language",
                 "cross_cutting_executable_fixtures",
                 "cross_cutting_fixture_proposals",
+                "case_subjects",
                 "decision_suite",
                 "fixture_invalid_duplicate_spec",
                 "fixture_invalid_int_magnitude",
@@ -291,6 +307,438 @@ class D004DraftPacketTests(unittest.TestCase):
                     ).hexdigest(),
                     binding["sha256"],
                 )
+
+    def test_v04_case_subject_catalog_has_exact_input_only_identity_and_joins(
+        self,
+    ) -> None:
+        path = REPOSITORY_ROOT / CASE_SUBJECT_CATALOG_PATH
+        catalog = load_json(path)
+        manifest = load_json(REPOSITORY_ROOT / MANIFEST_PATH)
+        packet = load_json(REPOSITORY_ROOT / PACKET_PATH)
+        canonical = canonical_json_bytes(catalog)
+        raw = path.read_bytes()
+        self.assertEqual(raw, canonical + b"\n")
+        self.assertEqual(len(raw), 35_099)
+        self.assertEqual(
+            hashlib.sha256(canonical).hexdigest(),
+            CASE_SUBJECT_CATALOG_CANONICAL_SHA256,
+        )
+        self.assertEqual(
+            hashlib.sha256(raw).hexdigest(), CASE_SUBJECT_CATALOG_RAW_SHA256
+        )
+        self.assertEqual(
+            packet["case_subject_catalog_sha256"],
+            CASE_SUBJECT_CATALOG_CANONICAL_SHA256,
+        )
+        self.assertEqual(
+            packet["input_bindings"]["case_subjects"],
+            {
+                "path": str(CASE_SUBJECT_CATALOG_PATH),
+                "sha256": CASE_SUBJECT_CATALOG_RAW_SHA256,
+            },
+        )
+        self.assertEqual(
+            set(catalog),
+            {
+                "canonicalization",
+                "evidence_status",
+                "execution_boundary",
+                "mutation_subject_count",
+                "mutation_subjects",
+                "nonclaims",
+                "owner_protocol_review",
+                "positive_subject_count",
+                "positive_subjects",
+                "schema_version",
+                "source_bindings",
+                "status",
+                "subject_count",
+                "suite_version",
+            },
+        )
+        self.assertEqual(catalog["schema_version"], "d004-case-subject-catalog-v0.1")
+        self.assertEqual(catalog["suite_version"], "d004-v0.4-draft")
+        self.assertEqual(catalog["status"], "draft_unreviewed_input_only")
+        self.assertEqual(catalog["owner_protocol_review"], "none")
+        self.assertEqual(catalog["evidence_status"], "none")
+        self.assertEqual(catalog["subject_count"], 31)
+        self.assertEqual(catalog["positive_subject_count"], 5)
+        self.assertEqual(catalog["mutation_subject_count"], 26)
+        self.assertEqual(
+            catalog["execution_boundary"],
+            {
+                "candidate_adapter": "not_invoked",
+                "candidate_process": "not_invoked",
+                "candidate_tool": "not_invoked",
+                "network": "not_used",
+                "preflight_output_persistence": "none",
+            },
+        )
+        self.assertEqual(
+            catalog["source_bindings"],
+            {
+                "named_mutation_manifest": {
+                    "canonical_sha256": MANIFEST_CANONICAL_SHA256,
+                    "path": str(MANIFEST_PATH),
+                    "raw_sha256": hashlib.sha256(
+                        (REPOSITORY_ROOT / MANIFEST_PATH).read_bytes()
+                    ).hexdigest(),
+                },
+                "suite": {
+                    "path": "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
+                    "raw_sha256": packet["input_bindings"]["decision_suite"][
+                        "sha256"
+                    ],
+                },
+            },
+        )
+
+        cases = [f"SC-{index:02d}" for index in range(1, 6)]
+        relationships = {
+            "SC-01": ["SR-01"],
+            "SC-02": ["SR-01", "SR-02", "SR-09"],
+            "SC-03": ["SR-02", "SR-10"],
+            "SC-04": ["SR-01", "SR-03", "SR-11"],
+            "SC-05": ["SR-04", "SR-08", "SR-12"],
+        }
+        positives = catalog["positive_subjects"]
+        self.assertEqual([record["case"] for record in positives], cases)
+        self.assertEqual(
+            [record["id"] for record in positives],
+            [f"D004-CS-POS-SC{index:02d}" for index in range(1, 6)],
+        )
+        positive_digests = {}
+        for record in positives:
+            case = record["case"]
+            subject = record["subject"]
+            self.assertEqual(
+                set(record),
+                {"case", "declared_expectation", "id", "subject", "subject_sha256"},
+            )
+            self.assertEqual(
+                record["declared_expectation"],
+                {
+                    "allowed_domain_states": ["succeeded"],
+                    "forbidden_domain_states": ["exhausted", "timeout"],
+                    "observation_level": "domain",
+                },
+            )
+            self.assertEqual(
+                set(subject),
+                {"case", "id", "kind", "model", "relationship_scope", "schema_version"},
+            )
+            self.assertEqual(subject["case"], case)
+            self.assertEqual(subject["id"], record["id"])
+            self.assertEqual(subject["kind"], "suite-only-positive-case")
+            self.assertEqual(subject["relationship_scope"], relationships[case])
+            self.assertEqual(subject["schema_version"], "d004-case-subject-v0.1")
+            digest = hashlib.sha256(canonical_json_bytes(subject)).hexdigest()
+            self.assertEqual(record["subject_sha256"], digest)
+            positive_digests[case] = digest
+
+        mutations = catalog["mutation_subjects"]
+        self.assertEqual(
+            [record["mutation_id"] for record in mutations],
+            [record["id"] for record in manifest],
+        )
+        self.assertEqual(len({record["subject_sha256"] for record in positives + mutations}), 31)
+        for record, manifest_record in zip(mutations, manifest):
+            mutation_id = manifest_record["id"]
+            case = manifest_record["case"]
+            subject = record["subject"]
+            model = subject["model"]
+            self.assertEqual(
+                set(record),
+                {
+                    "case", "declared_expectation", "id", "manifest_record_sha256",
+                    "mutation_id", "subject", "subject_sha256",
+                },
+            )
+            self.assertEqual(record["case"], case)
+            self.assertEqual(record["mutation_id"], mutation_id)
+            self.assertEqual(
+                record["manifest_record_sha256"],
+                hashlib.sha256(canonical_json_bytes(manifest_record)).hexdigest(),
+            )
+            self.assertEqual(
+                set(subject),
+                {
+                    "case", "id", "kind", "model", "mutation_id",
+                    "positive_subject_sha256", "relationship_scope", "schema_version",
+                },
+            )
+            self.assertEqual(subject["case"], case)
+            self.assertEqual(subject["id"], record["id"])
+            self.assertEqual(subject["kind"], "suite-only-named-mutation")
+            self.assertEqual(subject["mutation_id"], mutation_id)
+            self.assertEqual(subject["positive_subject_sha256"], positive_digests[case])
+            self.assertEqual(subject["relationship_scope"], relationships[case])
+            self.assertEqual(subject["schema_version"], "d004-case-subject-v0.1")
+            self.assertEqual(
+                set(model),
+                {"baseline_value", "dependent_result", "kind", "mutated_value", "operator", "target"},
+            )
+            self.assertEqual(model["kind"], "suite-only-single-invariant-mutation")
+            self.assertNotEqual(model["baseline_value"], model["mutated_value"])
+            self.assertEqual(
+                model["dependent_result"],
+                {
+                    "id": "dependent_result",
+                    "required_target": model["target"],
+                    "required_value": model["baseline_value"],
+                },
+            )
+            self.assertEqual(
+                record["subject_sha256"],
+                hashlib.sha256(canonical_json_bytes(subject)).hexdigest(),
+            )
+
+        forbidden = {
+            "adapter_output", "candidate_execution", "candidate_observation",
+            "capability_credit", "case_result", "case_verdict", "loader_status",
+            "matched", "observed_invalidation", "observed_state", "verdict",
+        }
+        pending = [catalog]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, dict):
+                self.assertTrue(forbidden.isdisjoint(value))
+                pending.extend(value.values())
+            elif isinstance(value, list):
+                pending.extend(value)
+
+    def test_case_subject_catalog_root_and_record_fields_fail_closed(self) -> None:
+        mutations = (
+            (lambda value: value.update({"unknown": True}), "d004_packet.case_subject_schema"),
+            (lambda value: value.pop("nonclaims"), "d004_packet.case_subject_schema"),
+            (
+                lambda value: value.update({"status": "reviewed"}),
+                "d004_packet.case_subject_boundary",
+            ),
+            (
+                lambda value: value.update({"owner_protocol_review": "solo-reviewed"}),
+                "d004_packet.case_subject_boundary",
+            ),
+            (
+                lambda value: value.update({"evidence_status": "partial"}),
+                "d004_packet.case_subject_boundary",
+            ),
+            (
+                lambda value: value.update({"positive_subject_count": 6}),
+                "d004_packet.case_subject_boundary",
+            ),
+            (
+                lambda value: value["execution_boundary"].update(
+                    {"candidate_adapter": "invoked"}
+                ),
+                "d004_packet.case_subject_boundary",
+            ),
+            (
+                lambda value: value["source_bindings"]["suite"].update(
+                    {"raw_sha256": "0" * 64}
+                ),
+                "d004_packet.case_subject_boundary",
+            ),
+            (
+                lambda value: value["positive_subjects"][0].update(
+                    {"unknown": True}
+                ),
+                "d004_packet.case_subject_positive_schema",
+            ),
+            (
+                lambda value: value["positive_subjects"][0].pop("subject_sha256"),
+                "d004_packet.case_subject_positive_schema",
+            ),
+            (
+                lambda value: value["positive_subjects"][0]["subject"].update(
+                    {"observed_state": "succeeded"}
+                ),
+                "d004_packet.case_subject_positive_subject_schema",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0].update(
+                    {"unknown": True}
+                ),
+                "d004_packet.case_subject_mutation_schema",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0]["subject"].pop(
+                    "positive_subject_sha256"
+                ),
+                "d004_packet.case_subject_mutation_subject_schema",
+            ),
+        )
+        for mutate, expected_code in mutations:
+            with self.subTest(code=expected_code):
+                self._assert_case_catalog_mutation(mutate, expected_code)
+
+    def test_case_subject_catalog_order_joins_digests_and_expectations_fail_closed(
+        self,
+    ) -> None:
+        def duplicate_positive(value: dict[str, object]) -> None:
+            value["positive_subjects"][1] = copy.deepcopy(value["positive_subjects"][0])
+
+        def duplicate_mutation(value: dict[str, object]) -> None:
+            value["mutation_subjects"][1] = copy.deepcopy(value["mutation_subjects"][0])
+
+        def substitute_positive_baseline(value: dict[str, object]) -> None:
+            record = value["mutation_subjects"][0]
+            subject = record["subject"]
+            subject["positive_subject_sha256"] = value["positive_subjects"][1][
+                "subject_sha256"
+            ]
+            record["subject_sha256"] = hashlib.sha256(
+                canonical_json_bytes(subject)
+            ).hexdigest()
+
+        mutations = (
+            (duplicate_positive, "d004_packet.case_subject_positive_join"),
+            (duplicate_mutation, "d004_packet.case_subject_mutation_join"),
+            (
+                lambda value: value["positive_subjects"][0].update(
+                    {"subject_sha256": "0" * 64}
+                ),
+                "d004_packet.case_subject_positive_digest",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0].update(
+                    {"subject_sha256": "0" * 64}
+                ),
+                "d004_packet.case_subject_mutation_digest",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0].update(
+                    {"manifest_record_sha256": "0" * 64}
+                ),
+                "d004_packet.case_subject_mutation_join",
+            ),
+            (substitute_positive_baseline, "d004_packet.case_subject_mutation_subject"),
+            (
+                lambda value: value["positive_subjects"][0][
+                    "declared_expectation"
+                ].update({"allowed_domain_states": ["rejected"]}),
+                "d004_packet.case_subject_positive_expectation",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0][
+                    "declared_expectation"
+                ].update({"allowed_domain_states": ["succeeded"]}),
+                "d004_packet.case_subject_mutation_expectation",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0][
+                    "declared_expectation"
+                ].update({"required_invalidation": "none"}),
+                "d004_packet.case_subject_mutation_expectation",
+            ),
+        )
+        for mutate, expected_code in mutations:
+            with self.subTest(code=expected_code):
+                self._assert_case_catalog_mutation(mutate, expected_code)
+
+    def test_case_subject_catalog_model_and_nonclaim_drift_fail_closed(self) -> None:
+        def coherently_substitute_positive_model(value: dict[str, object]) -> None:
+            record = value["positive_subjects"][0]
+            subject = record["subject"]
+            subject["model"]["authority"] = "substituted-positive-model"
+            record["subject_sha256"] = hashlib.sha256(
+                canonical_json_bytes(subject)
+            ).hexdigest()
+
+        def coherently_substitute_mutation_target(value: dict[str, object]) -> None:
+            record = value["mutation_subjects"][0]
+            subject = record["subject"]
+            model = subject["model"]
+            model["target"] = "substituted_target"
+            model["dependent_result"]["required_target"] = "substituted_target"
+            record["subject_sha256"] = hashlib.sha256(
+                canonical_json_bytes(subject)
+            ).hexdigest()
+
+        mutations = (
+            (
+                coherently_substitute_positive_model,
+                "d004_packet.case_subject_positive_subject",
+            ),
+            (
+                coherently_substitute_mutation_target,
+                "d004_packet.case_subject_mutation_model",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0]["subject"][
+                    "model"
+                ].update({"target": "different_target"}),
+                "d004_packet.case_subject_mutation_model",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0]["subject"][
+                    "model"
+                ].update({"baseline_value": "different_baseline"}),
+                "d004_packet.case_subject_mutation_model",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0]["subject"][
+                    "model"
+                ].update(
+                    {
+                        "mutated_value": value["mutation_subjects"][0]["subject"][
+                            "model"
+                        ]["baseline_value"]
+                    }
+                ),
+                "d004_packet.case_subject_mutation_model",
+            ),
+            (
+                lambda value: value["mutation_subjects"][0]["subject"][
+                    "model"
+                ]["dependent_result"].update({"required_value": "substituted"}),
+                "d004_packet.case_subject_mutation_model",
+            ),
+            (
+                lambda value: value["positive_subjects"][0].update(
+                    {"evidence": {"verdict": "pass"}}
+                ),
+                "d004_packet.case_subject_positive_schema",
+            ),
+            (
+                lambda value: value["positive_subjects"][0]["subject"][
+                    "model"
+                ].update({"candidate_execution": "performed"}),
+                "d004_packet.case_subject_nonclaim",
+            ),
+        )
+        for mutate, expected_code in mutations:
+            with self.subTest(code=expected_code):
+                self._assert_case_catalog_mutation(mutate, expected_code)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / CASE_SUBJECT_CATALOG_PATH
+            catalog = load_json(target)
+            target.write_text(
+                json.dumps(catalog, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            self.assertIn(
+                "d004_packet.case_subject_catalog_canonical", self._codes(root)
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / CASE_SUBJECT_CATALOG_PATH
+            raw = target.read_bytes()
+            target.write_bytes(
+                raw.replace(
+                    b"{",
+                    b'{"status":"draft_unreviewed_input_only",',
+                    1,
+                )
+            )
+            self.assertIn(
+                "d004_packet.case_subject_catalog_parse", self._codes(root)
+            )
 
     def test_v03_fixture_catalog_has_exact_ordered_byte_addressed_input_only_coverage(
         self,
@@ -675,6 +1123,10 @@ class D004DraftPacketTests(unittest.TestCase):
             (
                 FIXTURE_CATALOG_PATH,
                 "d004_packet.fixture_catalog_missing",
+            ),
+            (
+                CASE_SUBJECT_CATALOG_PATH,
+                "d004_packet.case_subject_catalog_missing",
             ),
         ):
             with self.subTest(path=removed), tempfile.TemporaryDirectory() as directory:

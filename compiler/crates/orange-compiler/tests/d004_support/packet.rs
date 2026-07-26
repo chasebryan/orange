@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use super::case_subjects::CASE_SUBJECT_CATALOG_CANONICAL_SHA256;
 use super::cases::MUTATIONS;
 use super::domain::{
     BUDGETS, CANDIDATES, CASE_SCOPED_CROSS_CUTTING_PROPOSALS, CASE_VERDICTS, CASES,
@@ -13,7 +14,7 @@ use super::fixtures::FIXTURE_CATALOG_CANONICAL_SHA256;
 use super::sha256;
 use super::strict_json::{self, JsonErrorKind, JsonValue};
 
-const ROOT_FIELDS: [&str; 27] = [
+const ROOT_FIELDS: [&str; 28] = [
     "schema_version",
     "suite_version",
     "status",
@@ -30,6 +31,7 @@ const ROOT_FIELDS: [&str; 27] = [
     "hard_gates",
     "mutations",
     "mutation_manifest_sha256",
+    "case_subject_catalog_sha256",
     "cross_cutting_fixture_proposal_manifest_sha256",
     "cross_cutting_executable_fixture_catalog_sha256",
     "fixture_inventory_status",
@@ -102,6 +104,7 @@ pub(crate) const CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256: &str =
     "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65";
 pub(crate) const CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256: &str =
     FIXTURE_CATALOG_CANONICAL_SHA256;
+pub(crate) const CASE_SUBJECT_CATALOG_SHA256: &str = CASE_SUBJECT_CATALOG_CANONICAL_SHA256;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PacketErrorKind {
@@ -251,8 +254,8 @@ fn validate_packet(value: &JsonValue) -> Result<(), PacketError> {
     let root = require_object(value, "$")?;
     exact_fields(root, &ROOT_FIELDS, "$")?;
 
-    require_exact_string(root, "schema_version", "d004-pre-epoch-packet-v0.3", "$")?;
-    require_exact_string(root, "suite_version", "d004-v0.3-draft", "$")?;
+    require_exact_string(root, "schema_version", "d004-pre-epoch-packet-v0.4", "$")?;
+    require_exact_string(root, "suite_version", "d004-v0.4-draft", "$")?;
     require_exact_string(root, "status", "draft_unfrozen", "$")?;
     require_null(root, "epoch", "$")?;
     require_exact_string(root, "epoch_status", "unfrozen", "$")?;
@@ -291,6 +294,12 @@ fn validate_packet(value: &JsonValue) -> Result<(), PacketError> {
         MUTATION_MANIFEST_SHA256,
         "$",
     )?;
+    require_exact_string(
+        root,
+        "case_subject_catalog_sha256",
+        CASE_SUBJECT_CATALOG_SHA256,
+        "$",
+    )?;
     if cross_cutting_fixture_proposal_manifest_digest_hex()
         != CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256
     {
@@ -314,7 +323,7 @@ fn validate_packet(value: &JsonValue) -> Result<(), PacketError> {
     require_exact_string(
         root,
         "fixture_inventory_status",
-        "cross_cutting_materialized_unreviewed_freeze_blocker",
+        "case_and_cross_cutting_materialized_unreviewed_freeze_blocker",
         "$",
     )?;
     require_exact_strings(
@@ -618,8 +627,8 @@ fn draft_packet_value() -> JsonValue {
     let case_ids = CASES.map(|case| case.as_str());
     let mutation_ids = MUTATIONS.map(|mutation| mutation.id);
     strict_json::object([
-        string_entry("schema_version", "d004-pre-epoch-packet-v0.3"),
-        string_entry("suite_version", "d004-v0.3-draft"),
+        string_entry("schema_version", "d004-pre-epoch-packet-v0.4"),
+        string_entry("suite_version", "d004-v0.4-draft"),
         string_entry("status", "draft_unfrozen"),
         ("epoch".to_owned(), JsonValue::Null),
         string_entry("epoch_status", "unfrozen"),
@@ -646,6 +655,7 @@ fn draft_packet_value() -> JsonValue {
         ("hard_gates".to_owned(), strict_json::strings(HARD_GATES)),
         ("mutations".to_owned(), strict_json::strings(mutation_ids)),
         string_entry("mutation_manifest_sha256", MUTATION_MANIFEST_SHA256),
+        string_entry("case_subject_catalog_sha256", CASE_SUBJECT_CATALOG_SHA256),
         string_entry(
             "cross_cutting_fixture_proposal_manifest_sha256",
             CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
@@ -656,7 +666,7 @@ fn draft_packet_value() -> JsonValue {
         ),
         string_entry(
             "fixture_inventory_status",
-            "cross_cutting_materialized_unreviewed_freeze_blocker",
+            "case_and_cross_cutting_materialized_unreviewed_freeze_blocker",
         ),
         (
             "unresolved_cross_cutting_fixture_classes".to_owned(),

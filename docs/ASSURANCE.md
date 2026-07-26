@@ -38,12 +38,12 @@ PR #9 merged the S3a implementation and normative records as commit
 implementation evidence, not proof of semantic soundness or a stable public
 compatibility promise.
 
-The D-004 input-only laboratory byte-materializes exactly 39 candidate-neutral
-cross-cutting fixture subjects as `materialized_unreviewed`: 14 missing-edge,
-10 identity-substitution, and five each for ambiguity, unsupported behavior,
-and domain exhaustion. The five positive cases and 26 named mutations remain
-definition-only gaps; all five class sufficiency reviews and freeze blockers,
-plus replay repetitions, remain unresolved. D-003 is accepted at exact revision
+The D-004 input-only laboratory byte-materializes exactly 70 candidate-neutral
+suite-only subjects as `draft_unreviewed_input_only`: five positive case
+subjects, all 26 named mutations, 14 missing-edge subjects, 10
+identity-substitution subjects, and five each for ambiguity, unsupported
+behavior, and domain exhaustion. All five class sufficiency reviews and freeze
+blockers, plus replay repetitions, remain unresolved. D-003 is accepted at exact revision
 `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner protocol review is
 `none`, the D-004
 epoch is unfrozen, and execution remains 0/25 with no mappings, adapters,

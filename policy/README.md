@@ -224,8 +224,9 @@ The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
 likewise exact. It contains the non-product, draft-unfrozen D-004 input packet,
-named-mutation manifest, unreviewed cross-cutting fixture-proposal manifest, and
-39-subject executable-input catalog; the D-005 execution packet and historical
+named-mutation manifest, five-positive/26-mutation case-subject catalog,
+unreviewed cross-cutting fixture-proposal manifest, and 39-subject
+executable-input catalog; the D-005 execution packet and historical
 v0.1 negative corpus; and the input-only D-006, D-009, and D-010 packets and case
 indexes. Every D-006, D-009, and D-010 case row has zero executable fixtures,
 unresolved coverage, and an active freeze blocker. Their laboratories may
@@ -235,13 +236,13 @@ create no execution, evidence, review, recommendation, or selection.
 
 The D-004 proposal manifest defines 39 domain-level structural proposals: 14
 missing-edge, 10 identity-substitution, and five each for ambiguity,
-unsupported behavior, and domain exhaustion. The separate canonical catalog
-byte-materializes exactly those 39 candidate-neutral subjects as
-`materialized_unreviewed`. Its closed parser, digest checks, and bounded
-structural integrity oracle create no candidate observation or evidence, verify
-no replay ceiling, and do not treat candidate-adapter failure as an expected
-unsupported observation. The five positive case subjects and 26 named-mutation
-subjects remain definition-only gaps; all five class sufficiency reviews and
+unsupported behavior, and domain exhaustion. Its separate canonical catalog,
+together with the case-subject catalog's five positive and 26 named-mutation
+subjects, byte-materializes exactly 70 candidate-neutral suite-only inputs as
+`draft_unreviewed_input_only`. Their closed parsers, digest checks, and bounded
+structural integrity oracles create no candidate observation or evidence,
+verify no replay ceiling, and do not treat candidate-adapter failure as an
+expected unsupported observation. All five class sufficiency reviews and
 freeze blockers remain unresolved; replay repetitions remain unassigned; and
 the D-004 inventory freezes no evidence epoch. D-003 candidate PF-01 is
 accepted through OEP-0004 at exact revision

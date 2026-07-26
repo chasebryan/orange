@@ -26,9 +26,9 @@ candidate order through CC-08. It is a canonical identity serialization, not an
 authorized physical execution order.
 
 The packet's strict canonical JSON SHA-256, excluding its final line feed, is
-`076e911bb5f52ee048d7c854928becca4675c97a678c48a03ae5d40b71a67007`;
+`9ec828033df99afa71ca88911484abfbfd007bd42538d8e02a5d7462413943b0`;
 its raw file SHA-256, including the final line feed, is
-`aec7514683746c4fdc3fb33f771e793146fcb258be3d4c9b8b9eadd507bb8d0e`.
+`f081c3428c83a7be6d296317564adee0284d13f4913739e5cf33634ed748e799`.
 Its closed packet schema is `d010-pre-epoch-packet-v0.1`, and the suite version
 is `d010-v0.1-draft`. The case-input index's strict canonical JSON SHA-256 is
 `4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209`;

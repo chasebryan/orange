@@ -4,6 +4,8 @@
 //! slots. They execute no candidate adapter, freeze no epoch, select no
 //! semantic architecture, and create no D-004 result or product evidence.
 
+#[path = "d004_support/case_subjects.rs"]
+mod case_subjects;
 #[path = "d004_support/cases.rs"]
 mod cases;
 #[path = "d004_support/domain.rs"]
@@ -23,6 +25,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use case_subjects::{
+    CASE_SUBJECT_CATALOG_CANONICAL_SHA256, CASE_SUBJECT_CATALOG_PATH,
+    CASE_SUBJECT_CATALOG_RAW_SHA256, CASE_SUBJECT_NONCLAIMS, CaseSubjectErrorKind,
+    parse_case_subject_catalog,
+};
 use cases::MUTATIONS;
 use domain::{
     BUDGETS, CANDIDATES, CASE_SCOPED_CROSS_CUTTING_PROPOSALS, CASE_VERDICTS, CASES,
@@ -37,7 +44,7 @@ use fixtures::{
     FIXTURE_NONCLAIMS, FixtureErrorKind, FixtureState, parse_fixture_catalog,
 };
 use packet::{
-    CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
+    CASE_SUBJECT_CATALOG_SHA256, CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
     CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256, MUTATION_MANIFEST_SHA256, PacketErrorKind,
     canonical_cross_cutting_fixture_proposal_manifest_bytes,
     canonical_cross_cutting_fixture_proposal_manifest_file_bytes, canonical_draft_packet_bytes,
@@ -50,7 +57,7 @@ use runner::{ReplayError, ReplayInputs};
 use strict_json::{JsonErrorKind, JsonValue};
 
 const CHECKED_IN_PACKET: &[u8] =
-    include_bytes!("../../../../research/decisions/D-004/d004-v0.3-draft-packet.json");
+    include_bytes!("../../../../research/decisions/D-004/d004-v0.4-draft-packet.json");
 const NAMED_MUTATIONS: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.2-named-mutations.json");
 const CROSS_CUTTING_FIXTURE_PROPOSALS: &[u8] = include_bytes!(
@@ -59,6 +66,8 @@ const CROSS_CUTTING_FIXTURE_PROPOSALS: &[u8] = include_bytes!(
 const CROSS_CUTTING_EXECUTABLE_FIXTURES: &[u8] = include_bytes!(
     "../../../../research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json"
 );
+const CASE_SUBJECTS: &[u8] =
+    include_bytes!("../../../../research/decisions/D-004/d004-v0.4-case-subjects.json");
 const DECISION_SUITE: &[u8] = include_bytes!("../../../../docs/SEMANTIC_STRATA_DECISION_SUITE.md");
 const PRODUCT_FORM_DECISION_PACKET: &[u8] =
     include_bytes!("../../../../docs/PRODUCT_FORM_DECISION_PACKET.md");
@@ -108,6 +117,7 @@ fn checked_in_replay_inputs() -> ReplayInputs<'static> {
         VALID_WORD8_BOUNDARIES,
         CROSS_CUTTING_FIXTURE_PROPOSALS,
         CROSS_CUTTING_EXECUTABLE_FIXTURES,
+        CASE_SUBJECTS,
     ])
 }
 
@@ -149,6 +159,27 @@ fn rehash_fixture_subject(catalog: &mut JsonValue, index: usize) {
         "fixture_subject_sha256".to_owned(),
         JsonValue::String(digest),
     );
+}
+
+fn case_subject_record_mut<'a>(
+    catalog: &'a mut JsonValue,
+    collection: &str,
+    index: usize,
+) -> &'a mut BTreeMap<String, JsonValue> {
+    let subjects = json_array_mut(
+        json_object_mut(catalog)
+            .get_mut(collection)
+            .expect("case-subject collection"),
+    );
+    json_object_mut(&mut subjects[index])
+}
+
+fn rehash_case_subject(catalog: &mut JsonValue, collection: &str, index: usize) {
+    let record = case_subject_record_mut(catalog, collection, index);
+    let digest = sha256::hex(&sha256::digest(&strict_json::canonical_bytes(
+        record.get("subject").expect("case subject"),
+    )));
+    record.insert("subject_sha256".to_owned(), JsonValue::String(digest));
 }
 
 #[test]
@@ -260,8 +291,6 @@ fn d004_pre_epoch_contract_preserves_every_freeze_blocker_and_budget() {
     assert_eq!(
         PROTOCOL_GAPS,
         [
-            "five positive subjects absent",
-            "26 named-mutation subjects absent",
             "ambiguity fixture sufficiency review unresolved",
             "missing-edge fixture sufficiency review unresolved",
             "identity-substitution fixture sufficiency review unresolved",
@@ -1014,6 +1043,396 @@ fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation()
 }
 
 #[test]
+fn case_subject_catalog_is_exact_addressed_complete_and_input_only() {
+    let manifest = parse_mutation_manifest(NAMED_MUTATIONS).expect("checked-in mutation manifest");
+    let catalog = parse_case_subject_catalog(CASE_SUBJECTS, &manifest)
+        .expect("checked-in case-subject catalog");
+
+    assert_eq!(
+        CASE_SUBJECT_CATALOG_PATH,
+        "research/decisions/D-004/d004-v0.4-case-subjects.json"
+    );
+    assert_eq!(CASE_SUBJECTS.len(), 35_099);
+    assert_eq!(
+        catalog.canonical_bytes(),
+        &CASE_SUBJECTS[..CASE_SUBJECTS.len() - 1]
+    );
+    assert_eq!(catalog.digest_hex(), CASE_SUBJECT_CATALOG_CANONICAL_SHA256);
+    assert_eq!(
+        catalog.digest_hex(),
+        "b3a8bcf4f0f084740e92cbff6fd57273df0a078af9c6b974f68d95ba333c6dc1"
+    );
+    assert_eq!(
+        sha256::hex(&sha256::digest(CASE_SUBJECTS)),
+        CASE_SUBJECT_CATALOG_RAW_SHA256
+    );
+    assert_eq!(
+        CASE_SUBJECT_CATALOG_RAW_SHA256,
+        "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6"
+    );
+
+    let preflights = catalog.preflights();
+    assert_eq!(preflights.len(), 31);
+    assert_eq!(
+        preflights[..5]
+            .iter()
+            .map(|preflight| preflight.subject_id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "D004-CS-POS-SC01",
+            "D004-CS-POS-SC02",
+            "D004-CS-POS-SC03",
+            "D004-CS-POS-SC04",
+            "D004-CS-POS-SC05",
+        ]
+    );
+    assert!(
+        preflights[..5]
+            .iter()
+            .all(|preflight| preflight.subject_kind == "positive")
+    );
+    assert!(
+        preflights[5..]
+            .iter()
+            .all(|preflight| preflight.subject_kind == "named-mutation")
+    );
+    assert!(preflights.iter().all(|preflight| {
+        preflight.integrity_status == "accepted"
+            && preflight.candidate_execution == "not_performed"
+            && preflight.evidence_status == "none"
+    }));
+
+    let ids = preflights
+        .iter()
+        .map(|preflight| preflight.subject_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let digests = preflights
+        .iter()
+        .map(|preflight| preflight.subject_sha256.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(ids.len(), 31);
+    assert_eq!(digests.len(), 31);
+    let mut per_case = BTreeMap::new();
+    for preflight in preflights {
+        *per_case.entry(preflight.case.as_str()).or_insert(0_usize) += 1;
+    }
+    assert_eq!(
+        CASES.map(|case| per_case.get(case.as_str()).copied().unwrap_or(0)),
+        [5, 6, 6, 7, 7]
+    );
+
+    let root = catalog.value().as_object().expect("case-subject root");
+    assert_eq!(
+        root.get("nonclaims"),
+        Some(&strict_json::strings(CASE_SUBJECT_NONCLAIMS))
+    );
+    assert_eq!(
+        root.get("subject_count").and_then(JsonValue::as_integer),
+        Some(31)
+    );
+    assert_eq!(
+        root.get("positive_subject_count")
+            .and_then(JsonValue::as_integer),
+        Some(5)
+    );
+    assert_eq!(
+        root.get("mutation_subject_count")
+            .and_then(JsonValue::as_integer),
+        Some(26)
+    );
+    for collection in ["positive_subjects", "mutation_subjects"] {
+        for record in root
+            .get(collection)
+            .and_then(JsonValue::as_array)
+            .expect("case-subject records")
+        {
+            let record = record.as_object().expect("case-subject record");
+            for forbidden in [
+                "candidate_execution",
+                "capability_credit",
+                "case_result",
+                "case_verdict",
+                "matched",
+                "observed_state",
+                "verdict",
+            ] {
+                assert!(!record.contains_key(forbidden));
+            }
+        }
+    }
+    for candidate in CANDIDATES {
+        assert!(
+            !CASE_SUBJECTS
+                .windows(candidate.as_str().len())
+                .any(|window| window == candidate.as_str().as_bytes())
+        );
+    }
+}
+
+#[test]
+fn case_subject_catalog_loader_fails_closed_before_candidate_execution() {
+    let manifest = parse_mutation_manifest(NAMED_MUTATIONS).expect("checked-in mutation manifest");
+    let baseline = strict_json::parse(CASE_SUBJECTS).expect("checked-in case-subject JSON");
+
+    assert_eq!(
+        parse_case_subject_catalog(&CASE_SUBJECTS[..CASE_SUBJECTS.len() - 1], &manifest)
+            .expect_err("catalog without canonical trailing LF")
+            .kind,
+        CaseSubjectErrorKind::NonCanonicalEncoding
+    );
+    let mut noncanonical = Vec::with_capacity(CASE_SUBJECTS.len() + 1);
+    noncanonical.push(b' ');
+    noncanonical.extend_from_slice(CASE_SUBJECTS);
+    assert_eq!(
+        parse_case_subject_catalog(&noncanonical, &manifest)
+            .expect_err("noncanonical transport")
+            .kind,
+        CaseSubjectErrorKind::NonCanonicalEncoding
+    );
+
+    let canonical = String::from_utf8(CASE_SUBJECTS.to_vec()).expect("UTF-8 catalog");
+    let duplicate = canonical.replacen('{', "{\"status\":\"draft_unreviewed_input_only\",", 1);
+    assert_eq!(
+        parse_case_subject_catalog(duplicate.as_bytes(), &manifest)
+            .expect_err("duplicate root key")
+            .kind,
+        CaseSubjectErrorKind::Json(JsonErrorKind::DuplicateKey)
+    );
+
+    let mut unknown = baseline.clone();
+    json_object_mut(&mut unknown).insert("unknown".to_owned(), JsonValue::Bool(true));
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&unknown), &manifest)
+            .expect_err("unknown root field")
+            .kind,
+        CaseSubjectErrorKind::UnknownField
+    );
+
+    let mut missing = baseline.clone();
+    json_object_mut(&mut missing).remove("nonclaims");
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&missing), &manifest)
+            .expect_err("missing root field")
+            .kind,
+        CaseSubjectErrorKind::MissingField
+    );
+
+    let mut source_binding = baseline.clone();
+    let bindings = json_object_mut(
+        json_object_mut(&mut source_binding)
+            .get_mut("source_bindings")
+            .expect("source bindings"),
+    );
+    let suite = json_object_mut(bindings.get_mut("suite").expect("suite binding"));
+    suite.insert("raw_sha256".to_owned(), JsonValue::String("0".repeat(64)));
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&source_binding), &manifest)
+            .expect_err("source-binding substitution")
+            .kind,
+        CaseSubjectErrorKind::SourceBinding
+    );
+
+    let mut executed = baseline.clone();
+    let boundary = json_object_mut(
+        json_object_mut(&mut executed)
+            .get_mut("execution_boundary")
+            .expect("execution boundary"),
+    );
+    boundary.insert(
+        "candidate_adapter".to_owned(),
+        JsonValue::String("invoked".to_owned()),
+    );
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&executed), &manifest)
+            .expect_err("candidate execution claim")
+            .kind,
+        CaseSubjectErrorKind::InvalidValue
+    );
+
+    let mut persisted = baseline.clone();
+    let subject = json_object_mut(
+        case_subject_record_mut(&mut persisted, "positive_subjects", 0)
+            .get_mut("subject")
+            .expect("positive subject"),
+    );
+    let model = json_object_mut(subject.get_mut("model").expect("positive model"));
+    model.insert(
+        "observed_state".to_owned(),
+        JsonValue::String("succeeded".to_owned()),
+    );
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&persisted), &manifest)
+            .expect_err("persisted observation")
+            .kind,
+        CaseSubjectErrorKind::PersistedResult
+    );
+
+    let mut stale_positive = baseline.clone();
+    {
+        let subject = json_object_mut(
+            case_subject_record_mut(&mut stale_positive, "positive_subjects", 0)
+                .get_mut("subject")
+                .expect("positive subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("positive model"));
+        model.insert(
+            "authority".to_owned(),
+            JsonValue::String("substituted".to_owned()),
+        );
+    }
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&stale_positive), &manifest)
+            .expect_err("stale positive subject digest")
+            .kind,
+        CaseSubjectErrorKind::SubjectDigest
+    );
+    rehash_case_subject(&mut stale_positive, "positive_subjects", 0);
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&stale_positive), &manifest)
+            .expect_err("rehashed positive model substitution")
+            .kind,
+        CaseSubjectErrorKind::StructuralMismatch
+    );
+
+    let mut manifest_digest = baseline.clone();
+    case_subject_record_mut(&mut manifest_digest, "mutation_subjects", 0).insert(
+        "manifest_record_sha256".to_owned(),
+        JsonValue::String("0".repeat(64)),
+    );
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&manifest_digest), &manifest)
+            .expect_err("manifest-record identity substitution")
+            .kind,
+        CaseSubjectErrorKind::ManifestDigest
+    );
+
+    let mut reordered_manifest = manifest.clone();
+    json_array_mut(&mut reordered_manifest).swap(0, 1);
+    assert_eq!(
+        parse_case_subject_catalog(CASE_SUBJECTS, &reordered_manifest)
+            .expect_err("manifest order substitution")
+            .kind,
+        CaseSubjectErrorKind::ManifestDigest
+    );
+    assert_eq!(
+        parse_case_subject_catalog(CASE_SUBJECTS, &JsonValue::Null)
+            .expect_err("non-array mutation manifest")
+            .kind,
+        CaseSubjectErrorKind::ManifestJoin
+    );
+
+    let mut baseline_substitution = baseline.clone();
+    let subject = json_object_mut(
+        case_subject_record_mut(&mut baseline_substitution, "mutation_subjects", 0)
+            .get_mut("subject")
+            .expect("mutation subject"),
+    );
+    subject.insert(
+        "positive_subject_sha256".to_owned(),
+        JsonValue::String("0".repeat(64)),
+    );
+    assert_eq!(
+        parse_case_subject_catalog(
+            &canonical_json_file_bytes(&baseline_substitution),
+            &manifest
+        )
+        .expect_err("positive baseline substitution")
+        .kind,
+        CaseSubjectErrorKind::StructuralMismatch
+    );
+
+    let mut expectation_drift = baseline.clone();
+    let expectation = json_object_mut(
+        case_subject_record_mut(&mut expectation_drift, "mutation_subjects", 0)
+            .get_mut("declared_expectation")
+            .expect("mutation expectation"),
+    );
+    expectation.insert(
+        "allowed_domain_states".to_owned(),
+        strict_json::strings(["succeeded"]),
+    );
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&expectation_drift), &manifest)
+            .expect_err("allowed-state widening")
+            .kind,
+        CaseSubjectErrorKind::InvalidValue
+    );
+
+    let mut target_drift = baseline.clone();
+    {
+        let subject = json_object_mut(
+            case_subject_record_mut(&mut target_drift, "mutation_subjects", 0)
+                .get_mut("subject")
+                .expect("mutation subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("mutation model"));
+        model.insert(
+            "target".to_owned(),
+            JsonValue::String("substituted_target".to_owned()),
+        );
+    }
+    rehash_case_subject(&mut target_drift, "mutation_subjects", 0);
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&target_drift), &manifest)
+            .expect_err("rehashed mutation target substitution")
+            .kind,
+        CaseSubjectErrorKind::StructuralMismatch
+    );
+
+    let mut dependency_drift = baseline.clone();
+    {
+        let subject = json_object_mut(
+            case_subject_record_mut(&mut dependency_drift, "mutation_subjects", 0)
+                .get_mut("subject")
+                .expect("mutation subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("mutation model"));
+        let dependent =
+            json_object_mut(model.get_mut("dependent_result").expect("dependent result"));
+        dependent.insert(
+            "required_value".to_owned(),
+            JsonValue::String("implicit_allowed".to_owned()),
+        );
+    }
+    rehash_case_subject(&mut dependency_drift, "mutation_subjects", 0);
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&dependency_drift), &manifest)
+            .expect_err("dependent-result baseline substitution")
+            .kind,
+        CaseSubjectErrorKind::StructuralMismatch
+    );
+
+    let mut stale_mutation_digest = baseline.clone();
+    case_subject_record_mut(&mut stale_mutation_digest, "mutation_subjects", 0).insert(
+        "subject_sha256".to_owned(),
+        JsonValue::String("0".repeat(64)),
+    );
+    assert_eq!(
+        parse_case_subject_catalog(
+            &canonical_json_file_bytes(&stale_mutation_digest),
+            &manifest
+        )
+        .expect_err("stale mutation subject digest")
+        .kind,
+        CaseSubjectErrorKind::SubjectDigest
+    );
+
+    let mut reordered = baseline;
+    json_array_mut(
+        json_object_mut(&mut reordered)
+            .get_mut("positive_subjects")
+            .expect("positive subjects"),
+    )
+    .swap(0, 1);
+    assert_eq!(
+        parse_case_subject_catalog(&canonical_json_file_bytes(&reordered), &manifest)
+            .expect_err("positive-subject order substitution")
+            .kind,
+        CaseSubjectErrorKind::InvalidValue
+    );
+}
+
+#[test]
 fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(CHECKED_IN_PACKET, canonical_draft_packet_file_bytes());
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
@@ -1021,11 +1440,11 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(packet.digest(), &sha256::digest(packet.canonical_bytes()));
     assert_eq!(
         packet.digest_hex(),
-        "7fb725d374e39eeae8a3a01ecf6033d53205f61d28ab94371e35ee0b59a07e58"
+        "b298cbf0d1c6af2ca9a4af7bb6b020595ffd00c1ab6896d5f097b3ebff13127d"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CHECKED_IN_PACKET)),
-        "0095a821d2a94b6163538965707b3ebadc554c9260b66bd45c943b8cefb9e739"
+        "0da96c89f62125f915152fb0ab30f41e608502bbe3a571a928c91e9d3812bc7a"
     );
     assert_eq!(
         parse_draft_packet(packet.canonical_bytes())
@@ -1057,7 +1476,12 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     );
     assert_eq!(
         root.get("schema_version").and_then(JsonValue::as_str),
-        Some("d004-pre-epoch-packet-v0.3")
+        Some("d004-pre-epoch-packet-v0.4")
+    );
+    assert_eq!(
+        root.get("case_subject_catalog_sha256")
+            .and_then(JsonValue::as_str),
+        Some(CASE_SUBJECT_CATALOG_SHA256)
     );
     assert_eq!(
         root.get("cross_cutting_fixture_proposal_manifest_sha256")
@@ -1072,7 +1496,7 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(
         root.get("fixture_inventory_status")
             .and_then(JsonValue::as_str),
-        Some("cross_cutting_materialized_unreviewed_freeze_blocker")
+        Some("case_and_cross_cutting_materialized_unreviewed_freeze_blocker")
     );
 }
 
@@ -1139,10 +1563,8 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
         canonical.replace("\"selection\":null", "\"selection\":\"ST-REL\""),
         canonical.replace("\"conclusion\":null", "\"conclusion\":\"recommend_st_rel\""),
         canonical.replace(",\"replay repetition count unresolved\"", ""),
-        canonical.replace("\"five positive subjects absent\",", ""),
-        canonical.replace(",\"26 named-mutation subjects absent\"", ""),
         canonical.replace(
-            "\"fixture_inventory_status\":\"cross_cutting_materialized_unreviewed_freeze_blocker\"",
+            "\"fixture_inventory_status\":\"case_and_cross_cutting_materialized_unreviewed_freeze_blocker\"",
             "\"fixture_inventory_status\":\"complete\"",
         ),
         canonical.replace(",\"resource-exhaustion\"", ""),
@@ -1161,6 +1583,7 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
             CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
             &"0".repeat(64),
         ),
+        canonical.replace(CASE_SUBJECT_CATALOG_SHA256, &"0".repeat(64)),
         canonical.replace("\"case_wall_seconds\":900", "\"case_wall_seconds\":901"),
     ];
     for mutation in mutations {
@@ -1177,7 +1600,7 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
 fn replay_refuses_every_raw_input_drift_before_scheduling() {
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
     let inputs = checked_in_replay_inputs();
-    assert_eq!(INPUT_BINDINGS.len(), 21);
+    assert_eq!(INPUT_BINDINGS.len(), 22);
     for binding in INPUT_BINDINGS {
         let bytes = inputs.get(binding.id);
         assert_eq!(sha256::hex(&sha256::digest(bytes)), binding.sha256);
@@ -1314,7 +1737,7 @@ fn replay_schedule_is_balanced_latin_deterministic_and_still_zero_of_25() {
 }
 
 #[test]
-fn d004_research_tree_is_exactly_five_input_only_files() {
+fn d004_research_tree_is_exactly_six_input_only_files() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../research/decisions/D-004");
     let observed = fs::read_dir(&root)
         .expect("D-004 research directory")
@@ -1334,7 +1757,8 @@ fn d004_research_tree_is_exactly_five_input_only_files() {
             "d004-v0.2-cross-cutting-fixture-proposals.json".to_owned(),
             "d004-v0.2-named-mutations.json".to_owned(),
             "d004-v0.3-cross-cutting-executable-fixtures.json".to_owned(),
-            "d004-v0.3-draft-packet.json".to_owned(),
+            "d004-v0.4-case-subjects.json".to_owned(),
+            "d004-v0.4-draft-packet.json".to_owned(),
         ])
     );
     for forbidden in [

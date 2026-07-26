@@ -161,12 +161,12 @@ control branches or addresses. Probabilistic sampling must not appear in a pure
 deterministic specification. Vector intrinsics must name their target feature
 and semantics. These are separate strata with checked crossings.
 
-The D-004 pre-epoch corpus now byte-materializes exactly 39 candidate-neutral
-cross-cutting fixture subjects as `materialized_unreviewed`: 14 missing-edge,
-10 identity-substitution, and five each for ambiguity, unsupported behavior,
-and domain exhaustion. These are opaque suite-only research models, not Orange
-syntax or semantics. The five positive cases and 26 named mutations remain
-definition-only gaps; every class sufficiency review and freeze blocker plus
+The D-004 pre-epoch corpus now byte-materializes exactly 70 candidate-neutral
+suite-only subjects as `draft_unreviewed_input_only`: five positive case
+subjects, all 26 named mutations, 14 missing-edge subjects, 10
+identity-substitution subjects, and five each for ambiguity, unsupported
+behavior, and domain exhaustion. These are fixed research inputs, not Orange
+syntax or semantics. Every class sufficiency review and freeze blocker plus
 replay repetitions remains unresolved. D-003 candidate PF-01 is accepted
 through OEP-0004 at exact revision
 `a82a5cec2ee4359dc2fe66171f17c93146747333`. With D-004 owner review

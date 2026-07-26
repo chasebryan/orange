@@ -27,14 +27,14 @@ unratified, and open
 architecture choices continue to gate only the component or claim that depends
 on them.
 
-The D-004 pre-epoch laboratory now byte-materializes exactly 39
-candidate-neutral cross-cutting fixture subjects as
-`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
-each for ambiguity, unsupported behavior, and domain exhaustion. They are
-opaque suite-only inputs for later symmetric comparison, not members of the
-accepted language or Core family. The five positive cases and 26 named
-mutations remain definition-only; all five class sufficiency reviews and freeze
-blockers plus replay repetitions remain unresolved. D-003 is accepted at exact
+The D-004 pre-epoch laboratory now byte-materializes exactly 70
+candidate-neutral suite-only subjects as `draft_unreviewed_input_only`: five
+positive case subjects, all 26 named mutations, 14 missing-edge subjects, 10
+identity-substitution subjects, and five each for ambiguity, unsupported
+behavior, and domain exhaustion. They are fixed inputs for later symmetric
+comparison, not members of the accepted language or Core family. All five
+class sufficiency reviews and freeze blockers plus replay repetitions remain
+unresolved. D-003 is accepted at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner review is
 `none`, the D-004
 epoch is unfrozen, and no candidate mapping, adapter, evidence, selection, or
