@@ -104,11 +104,11 @@ class D005DraftPacketTests(unittest.TestCase):
 
     def test_packet_identity_inventory_and_zero_baseline_drift_are_rejected(self) -> None:
         mutations = (
-            ("suite_version", "d005-v0.2", "d005_packet.identity"),
-            ("candidates", ["AM-01", "AM-02", "AM-03"], "d005_packet.inventory"),
-            ("cases", [f"AC-{index:02d}" for index in range(1, 8)], "d005_packet.inventory"),
-            ("mutations", ["AC-01-M01"], "d005_packet.mutations"),
-            ("selection", "AM-01", "d005_packet.selection"),
+            ("suite_version", "d005-v0.2", "d005_packet.digest"),
+            ("candidates", ["AM-01", "AM-02", "AM-03"], "d005_packet.digest"),
+            ("cases", [f"AC-{index:02d}" for index in range(1, 8)], "d005_packet.digest"),
+            ("mutations", ["AC-01-M01"], "d005_packet.digest"),
+            ("selection", "AM-01", "d005_packet.digest"),
         )
         for field, replacement, expected_code in mutations:
             with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
@@ -137,7 +137,7 @@ class D005DraftPacketTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_d005_draft_packet()
             self.assertIn(
-                "d005_packet.execution",
+                "d005_packet.digest",
                 {finding.code for finding in validator.findings},
             )
 
@@ -151,7 +151,7 @@ class D005DraftPacketTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_d005_draft_packet()
             self.assertIn(
-                "d005_packet.shape",
+                "d005_packet.digest",
                 {finding.code for finding in validator.findings},
             )
 
@@ -221,6 +221,28 @@ class D005DraftPacketTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(fixture.read_bytes()).hexdigest(), entry["sha256"])
                 self.assertEqual(self._validate_historical_record(fixture), [])
 
+    def test_historical_schema_acceptance_is_rechecked_dynamically(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_research_packet(root)
+            schema_path = root / SCHEMA_PATH
+            schema_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPOSITORY_ROOT / SCHEMA_PATH, schema_path)
+
+            fixture_path = root / INPUT_ROOT / "checked-test-as-functional-refinement.json"
+            fixture = load_json(fixture_path)
+            fixture.pop("basis")
+            fixture_path.write_text(
+                json.dumps(fixture, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            validator = FoundationValidator(root)
+            validator._validate_d005_draft_packet()
+            codes = {finding.code for finding in validator.findings}
+            self.assertIn("d005_packet.legacy_digest", codes)
+            self.assertIn("d005_packet.legacy_acceptance", codes)
+
     def test_historical_manifest_drift_and_result_inflation_are_rejected(self) -> None:
         mutations = (
             (
@@ -229,17 +251,17 @@ class D005DraftPacketTests(unittest.TestCase):
             ),
             (
                 lambda manifest: manifest.update({"candidate_records": ["am-01.json"]}),
-                "d005_packet.legacy_boundary",
+                "d005_packet.legacy_digest",
             ),
             (
                 lambda manifest: manifest["mutations"][-1].update(
                     {"expected_changed_json_pointers": ["/subject/path"]}
                 ),
-                "d005_packet.subject_substitution",
+                "d005_packet.legacy_digest",
             ),
             (
                 lambda manifest: manifest.update({"recommendation": "AM-01"}),
-                "d005_packet.legacy_shape",
+                "d005_packet.legacy_digest",
             ),
         )
         for mutate, expected_code in mutations:
@@ -266,7 +288,7 @@ class D005DraftPacketTests(unittest.TestCase):
             validator = FoundationValidator(root)
             validator._validate_d005_draft_packet()
             self.assertIn(
-                "d005_packet.legacy_shape",
+                "d005_packet.legacy_digest",
                 {finding.code for finding in validator.findings},
             )
 

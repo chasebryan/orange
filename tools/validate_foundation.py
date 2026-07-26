@@ -484,7 +484,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "7678ada1563bd2abbe6fb1e2dbc583d5c15e6141f6a4db5fdcf4529357f876a5"
+_PHD = "26cb5481e52649f088cd4451724fdaa19e0bfac65863340a198710e0865ce9c1"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -837,72 +837,239 @@ CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md M
 README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
 docs policy research schemas scripts tools""".split()
 )
-D004_DRAFT_RESEARCH_PATHS = frozenset(
-    {
-        "research/decisions/D-004/README.md",
-        "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
-        "research/decisions/D-004/d004-v0.2-draft-packet.json",
-        "research/decisions/D-004/d004-v0.2-named-mutations.json",
-    }
-)
-D004_DRAFT_PACKET_CANONICAL_SHA256 = (
-    "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c"
-)
-D004_MUTATION_MANIFEST_CANONICAL_SHA256 = (
-    "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
-)
-D004_CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_CANONICAL_SHA256 = (
-    "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65"
-)
-D004_INPUT_BINDING_PATHS = {
-    "named_mutations_manifest": "research/decisions/D-004/d004-v0.2-named-mutations.json",
-    "cross_cutting_fixture_proposals": "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
-    "decision_suite": "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-    "product_form_decision_packet": "docs/PRODUCT_FORM_DECISION_PACKET.md",
-    "accepted_s3a_semantics": "docs/SEMANTICS_2026.md",
-    "accepted_s2_language": "docs/LANGUAGE_2026.md",
-    "accepted_s3a_oep": "docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md",
-    "user_journeys": "docs/USER_JOURNEYS.md",
-    "s3a_conformance_runner": "compiler/crates/orangec/tests/s3a_conformance.rs",
-    "permanent_s3a_fixture": "compiler/fixtures/typed-answer.or",
-    "fixture_invalid_duplicate_spec": "compiler/fixtures/s3a/invalid-duplicate-spec.or",
-    "fixture_invalid_int_magnitude": "compiler/fixtures/s3a/invalid-int-magnitude.or",
-    "fixture_invalid_negative_word": "compiler/fixtures/s3a/invalid-negative-word.or",
-    "fixture_invalid_typed_impl": "compiler/fixtures/s3a/invalid-typed-impl.or",
-    "fixture_invalid_unsupported_type": "compiler/fixtures/s3a/invalid-unsupported-type.or",
-    "fixture_invalid_word_range": "compiler/fixtures/s3a/invalid-word-range.or",
-    "fixture_invalid_word_width": "compiler/fixtures/s3a/invalid-word-width.or",
-    "fixture_valid_empty_mixed": "compiler/fixtures/s3a/valid-empty-mixed.or",
-    "fixture_valid_int_radices": "compiler/fixtures/s3a/valid-int-radices.or",
-    "fixture_valid_word8_boundaries": "compiler/fixtures/s3a/valid-word8-boundaries.or",
+DECISION_LABORATORY_SPECS = {
+    "d004": {
+        "finding_prefix": "d004_packet",
+        "research_root": "research/decisions/D-004/",
+        "inventory": frozenset(
+            "research/decisions/D-004/" + name
+            for name in (
+                "README.md d004-v0.2-cross-cutting-fixture-proposals.json "
+                "d004-v0.2-draft-packet.json d004-v0.2-named-mutations.json"
+            ).split()
+        ),
+        "premature": (
+            "research/decisions/D-004/",
+            r"(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])",
+            "premature_artifact",
+        ),
+        "json_identities": (
+            (
+                "research/decisions/D-004/d004-v0.2-draft-packet.json",
+                "",
+                "missing",
+                "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c",
+                "58b2b820a1f83fa7366c9f23d8f6a3c2e86e4ff9641bbb76f072df0549d67d28",
+                True,
+            ),
+            (
+                "research/decisions/D-004/d004-v0.2-named-mutations.json",
+                "manifest_",
+                "manifest_missing",
+                "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c",
+                "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54",
+                True,
+            ),
+            (
+                "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
+                "proposal_manifest_",
+                "proposal_manifest_missing",
+                "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65",
+                "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93",
+                True,
+            ),
+        ),
+        "raw_bindings": (
+            ("docs/LANGUAGE_2026.md", "52b6ef45ff5ee5d9f3951b1d6bf0f2e40a1566de623fc01e809a2a6d84d7a082"),
+            ("docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md", "4ea34fc2499ba6b90eb930262f84f15a41ff0df0f526a4533a48e54ea4f9b4b8"),
+            ("docs/SEMANTICS_2026.md", "bc429d9f1296aee9376d377f93c013f74ba8b6f7e3cb48eb6410498a0b8a00e7"),
+            ("research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json", "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93"),
+            ("docs/SEMANTIC_STRATA_DECISION_SUITE.md", "6bbe26201f46c2ba9cc615646695454ab257973a935ba15862c9b67728ab4957"),
+            ("compiler/fixtures/s3a/invalid-duplicate-spec.or", "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6"),
+            ("compiler/fixtures/s3a/invalid-int-magnitude.or", "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542"),
+            ("compiler/fixtures/s3a/invalid-negative-word.or", "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b"),
+            ("compiler/fixtures/s3a/invalid-typed-impl.or", "4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07"),
+            ("compiler/fixtures/s3a/invalid-unsupported-type.or", "14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc"),
+            ("compiler/fixtures/s3a/invalid-word-range.or", "4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf"),
+            ("compiler/fixtures/s3a/invalid-word-width.or", "d92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2"),
+            ("compiler/fixtures/s3a/valid-empty-mixed.or", "c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96"),
+            ("compiler/fixtures/s3a/valid-int-radices.or", "937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4"),
+            ("compiler/fixtures/s3a/valid-word8-boundaries.or", "db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee"),
+            ("research/decisions/D-004/d004-v0.2-named-mutations.json", "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54"),
+            ("compiler/fixtures/typed-answer.or", "22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e"),
+            ("docs/PRODUCT_FORM_DECISION_PACKET.md", "8fcd7cf378d488bed49ed3cdd3609475d681c7b1e414927c7c761989e67093e9"),
+            ("compiler/crates/orangec/tests/s3a_conformance.rs", "7d25ea303fcb3c1603d60b6cb32d89ae15173cc043b8b695daedb737162b8116"),
+            ("docs/USER_JOURNEYS.md", "f26b179db777295b620731402962dc3092128f8f9a27049638f22883e0652bed"),
+        ),
+        "schema_compatibility": None,
+    },
+    "d005": {
+        "finding_prefix": "d005_packet",
+        "research_root": "research/decisions/D-005/",
+        "inventory": frozenset(
+            "research/decisions/D-005/" + name
+            for name in (
+                "README.md d005-v0.1/epochs/0001/protocol/epoch.json "
+                "d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json "
+                "d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json "
+                "d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json "
+                "d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json "
+                "d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json "
+                "d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json "
+                "d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json"
+            ).split()
+        ),
+        "premature": (
+            "research/decisions/D-005/d005-v0.1/epochs/0001/",
+            r"(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)",
+            "premature_results",
+        ),
+        "json_identities": (
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json",
+                "",
+                "missing",
+                "731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194",
+                "5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b",
+                False,
+            ),
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",
+                "legacy_",
+                "legacy_missing",
+                "8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf",
+                "2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d",
+                False,
+            ),
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json",
+                "legacy_",
+                "legacy_missing",
+                "cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531",
+                "c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e",
+                False,
+            ),
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json",
+                "legacy_",
+                "legacy_missing",
+                "35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df",
+                "ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad",
+                False,
+            ),
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json",
+                "legacy_",
+                "legacy_missing",
+                "9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d",
+                "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39",
+                False,
+            ),
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json",
+                "legacy_",
+                "legacy_missing",
+                "75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e",
+                "795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5",
+                False,
+            ),
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json",
+                "legacy_",
+                "legacy_missing",
+                "96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98",
+                "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900",
+                False,
+            ),
+            (
+                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json",
+                "legacy_",
+                "legacy_missing",
+                "e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3",
+                "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9",
+                False,
+            ),
+        ),
+        "raw_bindings": (
+            ("docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md", "e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f"),
+            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json", "2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d"),
+            ("schemas/gate0/claim-record-v0.1.schema.json", "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131"),
+            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json", "c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e"),
+            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json", "ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad"),
+            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json", "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39"),
+            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json", "795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5"),
+            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json", "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900"),
+            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json", "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9"),
+        ),
+        "schema_compatibility": (
+            "schemas/gate0/claim-record-v0.1.schema.json",
+            "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs",
+            (
+                "checked-test-as-functional-refinement.json",
+                "checked-test-masks-failed-kernel-proof.json",
+                "satisfied-target-leakage-with-unresolved-contexts.json",
+                "owner-test-as-external-validation.json",
+                "substituted-subject-reuses-evidence.json",
+            ),
+        ),
+    },
+    "d006": {
+        "finding_prefix": "d006_packet",
+        "research_root": "research/decisions/D-006/",
+        "inventory": frozenset(
+            "research/decisions/D-006/" + name
+            for name in "README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json".split()
+        ),
+        "premature": (
+            "research/decisions/D-006/",
+            r"(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])",
+            "premature_artifact",
+        ),
+        "json_identities": (
+            (
+                "research/decisions/D-006/d006-v0.2-draft-packet.json",
+                "",
+                "parse",
+                "b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21",
+                "210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff",
+                True,
+            ),
+            (
+                "research/decisions/D-006/d006-v0.2-case-input-index.json",
+                "index_",
+                "index_parse",
+                "1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0",
+                "1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136",
+                True,
+            ),
+        ),
+        "raw_bindings": (
+            ("research/decisions/D-006/d006-v0.2-case-input-index.json", "1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136"),
+            ("docs/PROOF_FOUNDATION_DECISION_SUITE.md", "6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b"),
+        ),
+        "schema_compatibility": None,
+    },
 }
-D005_DRAFT_PACKET_CANONICAL_SHA256 = (
-    "731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194"
-)
-D005_MUTATION_MANIFEST_CANONICAL_SHA256 = (
-    "8d069daf4a9443cf9df2d127f86d834e1aefed149324503f980c43f29c356082"
-)
-D005_DRAFT_RESEARCH_PATHS = frozenset(
-    {
-        "research/decisions/D-005/README.md",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json",
-        "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json",
-    }
-)
-D006_DRAFT_RESEARCH_PATHS = frozenset(
-    "research/decisions/D-006/" + name
-    for name in "README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json".split()
-)
-D006_DRAFT_PACKET_CANONICAL_SHA256 = "b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21"
-D006_CASE_INPUT_INDEX_CANONICAL_SHA256 = "1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0"
-D006_CASE_INPUT_INDEX_RAW_SHA256 = "1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136"
-D006_PROOF_FOUNDATION_SUITE_RAW_SHA256 = "6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b"
+DECISION_LABORATORY_INVARIANTS = {
+    "research/decisions/D-004/": (3, 20, True, None),
+    "research/decisions/D-005/": (
+        8,
+        9,
+        False,
+        (
+            "schemas/gate0/claim-record-v0.1.schema.json",
+            "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs",
+            (
+                "checked-test-as-functional-refinement.json",
+                "checked-test-masks-failed-kernel-proof.json",
+                "satisfied-target-leakage-with-unresolved-contexts.json",
+                "owner-test-as-external-validation.json",
+                "substituted-subject-reuses-evidence.json",
+            ),
+        ),
+    ),
+    "research/decisions/D-006/": (2, 2, True, None),
+}
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
@@ -1094,6 +1261,161 @@ def canonical_json_bytes(value: Any) -> bytes:
         raise TypeError(f"unsupported JSON value {type(item).__name__}")
 
     return serialize(value).encode("utf-8")
+
+
+def decision_laboratory_spec_errors(
+    root: Path, specification: Mapping[str, Any]
+) -> tuple[str, ...]:
+    expected_fields = {
+        "finding_prefix",
+        "research_root",
+        "inventory",
+        "premature",
+        "json_identities",
+        "raw_bindings",
+        "schema_compatibility",
+    }
+    errors: list[str] = []
+    if set(specification) != expected_fields:
+        return ("specification fields are not exact",)
+
+    research_root = specification["research_root"]
+    if (
+        not isinstance(research_root, str)
+        or not research_root.endswith("/")
+        or safe_manifest_path(root, research_root.rstrip("/")) is None
+    ):
+        errors.append("research root is not a safe relative directory")
+        research_root = ""
+    invariant = DECISION_LABORATORY_INVARIANTS.get(research_root)
+    if invariant is None:
+        errors.append("research root has no closed laboratory invariant")
+    if not isinstance(specification["finding_prefix"], str) or not specification[
+        "finding_prefix"
+    ]:
+        errors.append("finding prefix is invalid")
+
+    inventory = specification["inventory"]
+    if not isinstance(inventory, frozenset):
+        errors.append("research inventory must be a frozenset")
+        inventory = frozenset()
+    for value in inventory:
+        if (
+            not isinstance(value, str)
+            or safe_manifest_path(root, value) is None
+            or not value.startswith(research_root)
+        ):
+            errors.append("research inventory contains an unsafe or out-of-root path")
+
+    json_paths: list[str] = []
+    identities = specification["json_identities"]
+    if not isinstance(identities, tuple):
+        errors.append("JSON identities must be a tuple")
+        identities = ()
+    for identity in identities:
+        if not isinstance(identity, tuple) or len(identity) != 6:
+            errors.append("JSON identity row shape is invalid")
+            continue
+        value, label, missing_code, canonical, raw, canonical_transport = identity
+        if not isinstance(value, str) or safe_manifest_path(root, value) is None:
+            errors.append("JSON identity path is unsafe")
+            continue
+        json_paths.append(value)
+        if value not in inventory:
+            errors.append("JSON identity is absent from the exact research inventory")
+        if not value.endswith(".json"):
+            errors.append("JSON identity path does not name a JSON artifact")
+        if not isinstance(label, str) or not isinstance(missing_code, str) or not missing_code:
+            errors.append("JSON diagnostic identity is invalid")
+        if not isinstance(canonical_transport, bool):
+            errors.append("JSON transport mode must be Boolean")
+        for digest in (canonical, raw):
+            if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+                errors.append("JSON identity is not a lowercase SHA-256 value")
+    if len(json_paths) != len(set(json_paths)):
+        errors.append("JSON identity paths are duplicated")
+    inventory_json_paths = {
+        value for value in inventory if isinstance(value, str) and value.endswith(".json")
+    }
+    if set(json_paths) != inventory_json_paths:
+        errors.append("JSON identities do not exactly cover the research JSON inventory")
+    if invariant is not None:
+        expected_json_count, _, expected_transport, _ = invariant
+        if len(json_paths) != expected_json_count:
+            errors.append("JSON identity count disagrees with the closed laboratory invariant")
+        if any(
+            not isinstance(identity, tuple)
+            or len(identity) != 6
+            or identity[5] is not expected_transport
+            for identity in identities
+        ):
+            errors.append("JSON transport modes disagree with the closed laboratory invariant")
+
+    binding_paths: list[str] = []
+    bindings = specification["raw_bindings"]
+    if not isinstance(bindings, tuple):
+        errors.append("raw bindings must be a tuple")
+        bindings = ()
+    for binding in bindings:
+        if not isinstance(binding, tuple) or len(binding) != 2:
+            errors.append("raw binding row shape is invalid")
+            continue
+        value, digest = binding
+        if not isinstance(value, str) or safe_manifest_path(root, value) is None:
+            errors.append("raw binding path is unsafe")
+            continue
+        binding_paths.append(value)
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            errors.append("raw binding identity is not a lowercase SHA-256 value")
+    if len(binding_paths) != len(set(binding_paths)):
+        errors.append("raw binding paths are duplicated")
+    if invariant is not None and len(binding_paths) != invariant[1]:
+        errors.append("raw binding count disagrees with the closed laboratory invariant")
+
+    premature = specification["premature"]
+    if not isinstance(premature, tuple) or len(premature) != 3:
+        errors.append("premature-artifact rule shape is invalid")
+    else:
+        scan_root, pattern, code = premature
+        if (
+            not isinstance(scan_root, str)
+            or not scan_root.endswith("/")
+            or safe_manifest_path(root, scan_root.rstrip("/")) is None
+            or not isinstance(code, str)
+            or not code
+        ):
+            errors.append("premature-artifact rule path or code is invalid")
+        try:
+            re.compile(pattern)
+        except (TypeError, re.error):
+            errors.append("premature-artifact pattern is invalid")
+
+    compatibility = specification["schema_compatibility"]
+    if invariant is not None and compatibility != invariant[3]:
+        errors.append("schema compatibility disagrees with the closed laboratory invariant")
+    if compatibility is not None:
+        if not isinstance(compatibility, tuple) or len(compatibility) != 3:
+            errors.append("schema compatibility rule shape is invalid")
+        else:
+            schema_value, input_root, fixture_names = compatibility
+            if (
+                not isinstance(schema_value, str)
+                or safe_manifest_path(root, schema_value) is None
+                or not isinstance(input_root, str)
+                or safe_manifest_path(root, input_root) is None
+                or not isinstance(fixture_names, tuple)
+            ):
+                errors.append("schema compatibility path inventory is invalid")
+            else:
+                for name in fixture_names:
+                    if not isinstance(name, str) or safe_manifest_path(root, name) is None:
+                        errors.append("schema compatibility fixture name is unsafe")
+                        continue
+                    if f"{input_root}/{name}" not in json_paths:
+                        errors.append("schema compatibility fixture has no fixed JSON identity")
+                if schema_value not in binding_paths:
+                    errors.append("schema compatibility schema has no fixed raw binding")
+    return tuple(errors)
 
 
 def relative(path: Path, root: Path) -> str:
@@ -5685,1288 +6007,214 @@ class FoundationValidator:
                             f"Orange Book weakens or prematurely ratifies the proposed claim model: {assertion}",
                         )
 
-    def _validate_d004_draft_packet(self) -> None:
-        research_prefix = "research/decisions/D-004/"
-        observed_research_paths = {
-            relative(candidate, self.root)
-            for candidate in self.repository_files
-            if relative(candidate, self.root).startswith(research_prefix)
-        }
-        if observed_research_paths != D004_DRAFT_RESEARCH_PATHS:
-            self.add(
-                "d004_packet.research_inventory",
-                self.root / "research/decisions/D-004",
-                "draft D-004 research paths must retain the exact input-only inventory; "
-                f"missing={sorted(D004_DRAFT_RESEARCH_PATHS - observed_research_paths)}, "
-                f"unexpected={sorted(observed_research_paths - D004_DRAFT_RESEARCH_PATHS)}",
-            )
-        premature_pattern = re.compile(
-            r"(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])"
+    def _validate_decision_laboratory(self, laboratory: str) -> None:
+        specification = DECISION_LABORATORY_SPECS[laboratory]
+        observed_prefix = specification.get("finding_prefix")
+        finding_prefix = (
+            observed_prefix
+            if isinstance(observed_prefix, str) and observed_prefix
+            else "decision_laboratory"
         )
-        for candidate in self.repository_files:
-            value = relative(candidate, self.root)
-            if value.startswith(research_prefix) and premature_pattern.search(
-                value[len(research_prefix) :].lower()
+
+        def fail(suffix: str, path: str | Path, message: str) -> None:
+            self.add(f"{finding_prefix}.{suffix}", path, message)
+
+        spec_errors = decision_laboratory_spec_errors(self.root, specification)
+        if spec_errors:
+            for message in spec_errors:
+                fail("spec", self.root / "tools/validate_foundation.py", message)
+            return
+
+        research_root = str(specification["research_root"])
+        observed_inventory = {
+            relative(path, self.root)
+            for path in self.repository_files
+            if relative(path, self.root).startswith(research_root)
+        }
+        expected_inventory = specification["inventory"]
+        if observed_inventory != expected_inventory:
+            fail(
+                "research_inventory",
+                self.root / research_root,
+                "decision-laboratory research paths must retain their exact reviewed inventory; "
+                f"missing={sorted(expected_inventory - observed_inventory)}, "
+                f"unexpected={sorted(observed_inventory - expected_inventory)}",
+            )
+
+        scan_root, premature_pattern, premature_code = specification["premature"]
+        pattern = re.compile(str(premature_pattern))
+        for path in self.repository_files:
+            value = relative(path, self.root)
+            if value.startswith(str(scan_root)) and pattern.search(
+                value[len(str(scan_root)) :].lower()
             ):
-                self.add(
-                    "d004_packet.premature_artifact",
-                    candidate,
-                    "draft-unfrozen D-004 research cannot contain an epoch, result, review, or decision artifact",
+                fail(
+                    str(premature_code),
+                    path,
+                    "input-only decision research cannot contain premature execution, "
+                    "result, replay, review, epoch, or decision artifacts",
                 )
 
-        packet_path = self.root / "research/decisions/D-004/d004-v0.2-draft-packet.json"
-        if not self._hf(packet_path):
-            self.add(
-                "d004_packet.missing",
-                packet_path,
-                "draft-unfrozen D-004 pre-epoch packet is missing",
-            )
-            return
-        try:
-            packet = self._load_repository_json(packet_path)
-        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
-            self.add("d004_packet.parse", packet_path, f"cannot parse D-004 packet: {exc}")
-            return
-        if not isinstance(packet, dict):
-            self.add("d004_packet.shape", packet_path, "D-004 packet must be a JSON object")
-            return
+        declared_bindings: set[tuple[str, str]] = set()
+        identity_closure_valid = True
 
-        packet_bytes = self._read_repository_bytes(packet_path)
-        try:
-            canonical_packet = canonical_json_bytes(packet)
-        except (TypeError, ValueError) as exc:
-            self.add(
-                "d004_packet.canonical",
-                packet_path,
-                f"D-004 packet is outside the canonical I-JSON profile: {exc}",
-            )
-            canonical_packet = None
-        if canonical_packet is not None:
-            if packet_bytes != canonical_packet + b"\n":
-                self.add(
-                    "d004_packet.canonical",
-                    packet_path,
-                    "D-004 packet bytes must be semantic canonical JSON followed by one LF",
-                )
-            if (
-                hashlib.sha256(canonical_packet).hexdigest()
-                != D004_DRAFT_PACKET_CANONICAL_SHA256
-            ):
-                self.add(
-                    "d004_packet.digest",
-                    packet_path,
-                    "D-004 packet canonical bytes disagree with the reviewed SHA-256 identity",
-                )
-
-        expected_packet_keys = {
-            "schema_version",
-            "suite_version",
-            "status",
-            "epoch",
-            "epoch_status",
-            "d003_disposition",
-            "owner_protocol_review",
-            "candidates",
-            "cases",
-            "source_roles",
-            "relationships",
-            "domain_observation_states",
-            "case_verdicts",
-            "hard_gates",
-            "mutations",
-            "mutation_manifest_sha256",
-            "cross_cutting_fixture_proposal_manifest_sha256",
-            "fixture_inventory_status",
-            "unresolved_cross_cutting_fixture_classes",
-            "protocol_gaps",
-            "input_bindings",
-            "budgets",
-            "execution",
-            "selection",
-            "conclusion",
-            "nonclaims",
-        }
-        if set(packet) != expected_packet_keys:
-            self.add(
-                "d004_packet.shape",
-                packet_path,
-                "D-004 packet fields must retain the exact closed inventory",
-            )
-
-        lifecycle = {
-            "schema_version": "d004-pre-epoch-packet-v0.2",
-            "suite_version": "d004-v0.2-draft",
-            "status": "draft_unfrozen",
-            "epoch": None,
-            "epoch_status": "unfrozen",
-            "d003_disposition": "pending",
-            "owner_protocol_review": "none",
-        }
-        if any(packet.get(field) != expected for field, expected in lifecycle.items()):
-            self.add(
-                "d004_packet.lifecycle",
-                packet_path,
-                "D-004 must remain draft_unfrozen with no epoch, D-003 disposition, or owner protocol review",
-            )
-
-        exact_inventories = {
-            "candidates": ["ST-REL", "ST-UNI", "ST-DUAL", "ST-MIRROR", "ST-HOST"],
-            "cases": [f"SC-{index:02d}" for index in range(1, 6)],
-            "source_roles": [
-                "Specification",
-                "Implementation",
-                "Machine Implementation",
-                "Game",
-                "Proof",
-            ],
-            "relationships": [f"SR-{index:02d}" for index in range(1, 15)],
-            "domain_observation_states": [
-                "succeeded",
-                "rejected",
-                "unknown",
-                "timeout",
-                "unsupported",
-                "exhausted",
-            ],
-            "case_verdicts": ["pass", "fail"],
-            "hard_gates": [f"SS-G{index:02d}" for index in range(1, 11)],
-            "nonclaims": [
-                "no candidate adapter executed",
-                "no D-004 evidence epoch frozen",
-                "no semantic-strata candidate selected",
-                "no D-003 disposition inferred",
-                "no roadmap gate or readiness movement",
-                "no S3b implementation authorized",
-            ],
-        }
-        for field, expected in exact_inventories.items():
-            if packet.get(field) != expected:
-                self.add(
-                    "d004_packet.inventory",
-                    packet_path,
-                    f"{field} must retain its exact ordered D-004 inventory",
-                )
-
-        mutation_counts = (4, 5, 5, 6, 6)
-        expected_mutations = [
-            f"SC-{case_index:02d}-M{mutation_index:02d}"
-            for case_index, count in enumerate(mutation_counts, start=1)
-            for mutation_index in range(1, count + 1)
-        ]
-        if packet.get("mutations") != expected_mutations:
-            self.add(
-                "d004_packet.mutations",
-                packet_path,
-                "D-004 packet must retain all 26 exact ordered named mutation identifiers",
-            )
-
-        expected_fixture_classes = [
-            "ambiguity",
-            "missing-edge",
-            "identity-substitution",
-            "unsupported",
-            "resource-exhaustion",
-        ]
-        expected_protocol_gaps = [
-            f"{fixture_class} fixture coverage unresolved"
-            for fixture_class in expected_fixture_classes
-        ] + ["replay repetition count unresolved"]
-        if (
-            packet.get("fixture_inventory_status") != "incomplete_freeze_blocker"
-            or packet.get("unresolved_cross_cutting_fixture_classes")
-            != expected_fixture_classes
-            or packet.get("protocol_gaps") != expected_protocol_gaps
-        ):
-            self.add(
-                "d004_packet.protocol_gaps",
-                packet_path,
-                "D-004 must retain the incomplete fixture inventory and all six explicit freeze blockers",
-            )
-
-        manifest_digest = packet.get("mutation_manifest_sha256")
-        if manifest_digest != D004_MUTATION_MANIFEST_CANONICAL_SHA256:
-            self.add(
-                "d004_packet.manifest_digest",
-                packet_path,
-                "D-004 packet must bind the reviewed canonical named-mutation manifest",
-            )
-
-        proposal_manifest_digest = packet.get(
-            "cross_cutting_fixture_proposal_manifest_sha256"
-        )
-        if (
-            proposal_manifest_digest
-            != D004_CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_CANONICAL_SHA256
-        ):
-            self.add(
-                "d004_packet.proposal_manifest_digest",
-                packet_path,
-                "D-004 packet must bind the exact canonical draft-unreviewed cross-cutting proposal manifest",
-            )
-
-        bindings = packet.get("input_bindings")
-        if not isinstance(bindings, dict) or set(bindings) != set(D004_INPUT_BINDING_PATHS):
-            self.add(
-                "d004_packet.input_bindings",
-                packet_path,
-                "D-004 packet must retain the exact closed 20-input binding inventory",
-            )
-            bindings = {}
-        for name, expected_path in D004_INPUT_BINDING_PATHS.items():
-            binding = bindings.get(name)
-            if (
-                not isinstance(binding, dict)
-                or set(binding) != {"path", "sha256"}
-                or binding.get("path") != expected_path
-                or not isinstance(binding.get("sha256"), str)
-                or re.fullmatch(r"[0-9a-f]{64}", binding.get("sha256", "")) is None
-            ):
-                self.add(
-                    "d004_packet.input_bindings",
-                    packet_path,
-                    f"D-004 input binding {name!r} has a missing, unknown, or invalid field",
-                )
-                continue
-            bound_path = self.root / expected_path
-            bound_bytes = self._read_repository_bytes(bound_path)
-            if (
-                bound_bytes is None
-                or hashlib.sha256(bound_bytes).hexdigest() != binding["sha256"]
-            ):
-                self.add(
-                    "d004_packet.input_digest",
-                    bound_path,
-                    f"D-004 input binding {name!r} disagrees with checked-in raw bytes",
-                )
-
-        expected_budgets = {
-            "max_packet_bytes": 262_144,
-            "max_json_depth": 32,
-            "max_json_nodes": 16_384,
-            "max_string_bytes": 16_384,
-            "case_wall_seconds": 900,
-            "case_peak_memory_bytes": 4_294_967_296,
-            "case_temp_storage_bytes": 2_147_483_648,
-            "case_output_bytes": 268_435_456,
-            "candidate_owner_hours": 24,
-            "correction_owner_hours": 4,
-        }
-        if packet.get("budgets") != expected_budgets:
-            self.add(
-                "d004_packet.budgets",
-                packet_path,
-                "D-004 packet budgets must retain their exact fail-closed ceilings without a replay count",
-            )
-
-        expected_execution = {
-            "required_candidate_cases": 25,
-            "completed_candidate_cases": 0,
-            "complete_candidates": 0,
-            "complete_cross_candidate_cases": 0,
-            "evidence_status": "none",
-        }
-        if packet.get("execution") != expected_execution:
-            self.add(
-                "d004_packet.execution",
-                packet_path,
-                "D-004 packet must retain the honest 0/25, 0/5, 0/5 no-evidence baseline",
-            )
-        if packet.get("conclusion") is not None:
-            self.add(
-                "d004_packet.conclusion",
-                packet_path,
-                "draft-unfrozen D-004 cannot record a conclusion or recommendation",
-            )
-        if packet.get("selection") is not None:
-            self.add(
-                "d004_packet.selection",
-                packet_path,
-                "draft-unfrozen D-004 cannot select a semantic-strata candidate",
-            )
-
-        manifest_path = (
-            self.root / "research/decisions/D-004/d004-v0.2-named-mutations.json"
-        )
-        if not self._hf(manifest_path):
-            self.add(
-                "d004_packet.manifest_missing",
-                manifest_path,
-                "D-004 named-mutation manifest is missing",
-            )
-            return
-        try:
-            manifest = self._load_repository_json(manifest_path)
-        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
-            self.add(
-                "d004_packet.manifest_parse",
-                manifest_path,
-                f"cannot parse D-004 named-mutation manifest: {exc}",
-            )
-            return
-        if not isinstance(manifest, list):
-            self.add(
-                "d004_packet.manifest_shape",
-                manifest_path,
-                "D-004 named-mutation manifest must be a JSON array",
-            )
-            return
-        manifest_bytes = self._read_repository_bytes(manifest_path)
-        try:
-            canonical_manifest = canonical_json_bytes(manifest)
-        except (TypeError, ValueError) as exc:
-            self.add(
-                "d004_packet.manifest_canonical",
-                manifest_path,
-                f"D-004 manifest is outside the canonical I-JSON profile: {exc}",
-            )
-            canonical_manifest = None
-        if canonical_manifest is not None:
-            if manifest_bytes != canonical_manifest + b"\n":
-                self.add(
-                    "d004_packet.manifest_canonical",
-                    manifest_path,
-                    "D-004 manifest bytes must be semantic canonical JSON followed by one LF",
-                )
-            observed_manifest_digest = hashlib.sha256(canonical_manifest).hexdigest()
-            if (
-                observed_manifest_digest != D004_MUTATION_MANIFEST_CANONICAL_SHA256
-                or manifest_digest != observed_manifest_digest
-            ):
-                self.add(
-                    "d004_packet.manifest_digest",
-                    manifest_path,
-                    "D-004 named-mutation manifest disagrees with its canonical SHA-256 binding",
-                )
-
-        if len(manifest) != len(expected_mutations):
-            self.add(
-                "d004_packet.manifest_inventory",
-                manifest_path,
-                "D-004 manifest must retain exactly 26 ordered named mutations",
-            )
-        observed_ids: list[object] = []
-        observed_counts = {f"SC-{index:02d}": 0 for index in range(1, 6)}
-        for index, entry in enumerate(manifest[: len(expected_mutations)]):
-            if not isinstance(entry, dict) or set(entry) != {"id", "case", "description"}:
-                self.add(
-                    "d004_packet.manifest_shape",
-                    manifest_path,
-                    f"D-004 named mutation {index + 1} must contain only id, case, and description",
-                )
-                continue
-            observed_ids.append(entry.get("id"))
-            expected_case = expected_mutations[index][:5]
-            case = entry.get("case")
-            description = entry.get("description")
-            if isinstance(case, str) and case in observed_counts:
-                observed_counts[case] += 1
-            if (
-                entry.get("id") != expected_mutations[index]
-                or case != expected_case
-                or not isinstance(description, str)
-                or not description
-                or description != description.strip()
-            ):
-                self.add(
-                    "d004_packet.manifest_inventory",
-                    manifest_path,
-                    f"D-004 named mutation {index + 1} identity, case, or description drifted",
-                )
-        if observed_ids != expected_mutations or observed_counts != {
-            "SC-01": 4,
-            "SC-02": 5,
-            "SC-03": 5,
-            "SC-04": 6,
-            "SC-05": 6,
-        }:
-            self.add(
-                "d004_packet.manifest_inventory",
-                manifest_path,
-                "D-004 named mutations must remain unique, ordered, and partitioned 4/5/5/6/6",
-            )
-
-        proposal_manifest_path = (
-            self.root
-            / "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json"
-        )
-        if not self._hf(proposal_manifest_path):
-            self.add(
-                "d004_packet.proposal_manifest_missing",
-                proposal_manifest_path,
-                "D-004 draft-unreviewed cross-cutting proposal manifest is missing",
-            )
-            return
-        try:
-            proposal_manifest = self._load_repository_json(proposal_manifest_path)
-        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
-            self.add(
-                "d004_packet.proposal_manifest_parse",
-                proposal_manifest_path,
-                f"cannot parse D-004 cross-cutting proposal manifest: {exc}",
-            )
-            return
-        if not isinstance(proposal_manifest, dict):
-            self.add(
-                "d004_packet.proposal_manifest_shape",
-                proposal_manifest_path,
-                "D-004 cross-cutting proposal manifest must be a JSON object",
-            )
-            return
-
-        proposal_manifest_bytes = self._read_repository_bytes(proposal_manifest_path)
-        try:
-            canonical_proposal_manifest = canonical_json_bytes(proposal_manifest)
-        except (TypeError, ValueError) as exc:
-            self.add(
-                "d004_packet.proposal_manifest_canonical",
-                proposal_manifest_path,
-                f"D-004 cross-cutting proposal manifest is outside the canonical I-JSON profile: {exc}",
-            )
-            canonical_proposal_manifest = None
-        if canonical_proposal_manifest is not None:
-            if proposal_manifest_bytes != canonical_proposal_manifest + b"\n":
-                self.add(
-                    "d004_packet.proposal_manifest_canonical",
-                    proposal_manifest_path,
-                    "D-004 cross-cutting proposal manifest bytes must be semantic canonical JSON followed by one LF",
-                )
-            observed_proposal_manifest_digest = hashlib.sha256(
-                canonical_proposal_manifest
-            ).hexdigest()
-            if (
-                observed_proposal_manifest_digest
-                != D004_CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_CANONICAL_SHA256
-                or proposal_manifest_digest != observed_proposal_manifest_digest
-            ):
-                self.add(
-                    "d004_packet.proposal_manifest_digest",
-                    proposal_manifest_path,
-                    "D-004 cross-cutting proposal manifest disagrees with its exact canonical draft binding",
-                )
-
-        expected_proposal_root_fields = {
-            "schema_version",
-            "status",
-            "owner_protocol_review",
-            "executable_inputs_status",
-            "class_statuses",
-            "replay_repetitions",
-            "evidence_status",
-            "proposals",
-            "nonclaims",
-        }
-        if set(proposal_manifest) != expected_proposal_root_fields:
-            self.add(
-                "d004_packet.proposal_manifest_shape",
-                proposal_manifest_path,
-                "D-004 cross-cutting proposal manifest must retain its exact closed nine-field root",
-            )
-
-        expected_proposal_nonclaims = exact_inventories["nonclaims"] + [
-            "proposal definitions are not executable fixture coverage or evidence",
-            "unsupported proposals do not establish candidate support or capability absence",
-            "candidate adapter inability is not a preregistered unsupported observation",
-            "resource-exhaustion proposals do not exercise or verify any resource ceiling",
-            "replay repetitions remain unresolved and unassigned",
-        ]
-        expected_proposal_boundary = {
-            "schema_version": "d004-cross-cutting-fixture-proposals-v0.2",
-            "status": "draft_unreviewed",
-            "owner_protocol_review": "none",
-            "executable_inputs_status": "absent",
-            "replay_repetitions": None,
-            "evidence_status": "none",
-            "nonclaims": expected_proposal_nonclaims,
-        }
-        if any(
-            proposal_manifest.get(field) != expected
-            for field, expected in expected_proposal_boundary.items()
-        ):
-            self.add(
-                "d004_packet.proposal_manifest_boundary",
-                proposal_manifest_path,
-                "D-004 cross-cutting proposals must remain draft-unreviewed, non-executable, unreplayed, no-evidence, and non-authorizing",
-            )
-
-        expected_class_statuses = [
-            {
-                "class": fixture_class,
-                "coverage_status": "unresolved",
-                "executable_fixture_count": 0,
-                "freeze_blocker": True,
-                "proposal_count": proposal_count,
-                "proposal_status": "draft_unreviewed",
-            }
-            for fixture_class, proposal_count in (
-                ("ambiguity", 5),
-                ("missing-edge", 14),
-                ("identity-substitution", 10),
-                ("unsupported", 5),
-                ("resource-exhaustion", 5),
-            )
-        ]
-        class_statuses = proposal_manifest.get("class_statuses")
-        expected_class_status_fields = {
-            "class",
-            "coverage_status",
-            "executable_fixture_count",
-            "freeze_blocker",
-            "proposal_count",
-            "proposal_status",
-        }
-        if not isinstance(class_statuses, list):
-            self.add(
-                "d004_packet.proposal_manifest_shape",
-                proposal_manifest_path,
-                "D-004 cross-cutting class statuses must be an array",
-            )
-        else:
-            for index, status in enumerate(class_statuses):
-                if not isinstance(status, dict) or set(status) != expected_class_status_fields:
-                    self.add(
-                        "d004_packet.proposal_manifest_shape",
-                        proposal_manifest_path,
-                        f"D-004 cross-cutting class status {index + 1} must retain exactly six closed fields",
+        def collect_declared_bindings(value: Any, base: PurePosixPath) -> None:
+            if isinstance(value, dict):
+                path = value.get("path")
+                digest = value.get("sha256")
+                if isinstance(path, str) and isinstance(digest, str):
+                    declared_bindings.add((path, digest))
+                fixture = value.get("fixture")
+                if isinstance(fixture, str) and isinstance(digest, str):
+                    declared_bindings.add(((base / fixture).as_posix(), digest))
+                comparison = value.get("comparison_base")
+                comparison_digest = value.get("comparison_base_sha256")
+                if isinstance(comparison, str) and isinstance(comparison_digest, str):
+                    declared_bindings.add(
+                        ((base / comparison).as_posix(), comparison_digest)
                     )
-                    continue
-                if (
-                    type(status.get("proposal_count")) is not int
-                    or type(status.get("executable_fixture_count")) is not int
-                    or type(status.get("freeze_blocker")) is not bool
-                ):
-                    self.add(
-                        "d004_packet.proposal_manifest_boundary",
-                        proposal_manifest_path,
-                        f"D-004 cross-cutting class status {index + 1} must use exact JSON integer counts and a JSON boolean freeze blocker",
-                    )
-            if class_statuses != expected_class_statuses:
-                self.add(
-                    "d004_packet.proposal_manifest_boundary",
-                    proposal_manifest_path,
-                    "D-004 must retain five ordered draft-unreviewed class statuses with exact proposal counts, unresolved coverage, zero executable fixtures, and active freeze blockers",
-                )
+                for item in value.values():
+                    collect_declared_bindings(item, base)
+            elif isinstance(value, list):
+                for item in value:
+                    collect_declared_bindings(item, base)
 
-        expected_cases = [f"SC-{index:02d}" for index in range(1, 6)]
-        expected_relationships = [f"SR-{index:02d}" for index in range(1, 15)]
-        expected_proposals: list[dict[str, object]] = []
-        for relationship in expected_relationships:
-            expected_proposals.append(
-                {
-                    "capability_credit": "none",
-                    "case_scope": expected_cases,
-                    "class": "missing-edge",
-                    "expected_state": "rejected",
-                    "id": f"D004-XF-ME-SR{relationship[-2:]}",
-                    "layer": "structural",
-                    "match_rule": "required_not_sufficient",
-                    "mutation_kind": "remove_required_relationship_descriptor",
-                    "observation_level": "domain",
-                    "relationship_scope": [relationship],
-                    "required_invalidation": "dependent_result",
-                    "target": relationship,
-                }
-            )
-        identity_proposals = [
-            ("D004-XF-ID-PACKET", "packet_identity"),
-            ("D004-XF-ID-REPLAY-PLAN", "replay_plan_identity"),
-            ("D004-XF-ID-SCHEDULED-SLOT", "scheduled_slot_identity"),
-            ("D004-XF-ID-INPUT-MANIFEST", "input_manifest_identity"),
-            ("D004-XF-ID-CANDIDATE-GRAPH", "candidate_graph_identity"),
-            ("D004-XF-ID-SR-MAP", "sr_map_identity"),
-            ("D004-XF-ID-SEMANTIC-ENDPOINT", "semantic_endpoint_identity"),
-            ("D004-XF-ID-PARAMETER-MODEL", "parameter_model_identity"),
-            ("D004-XF-ID-TOOL", "tool_identity"),
-            ("D004-XF-ID-ENVIRONMENT", "environment_identity"),
-        ]
-        for proposal_id, target in identity_proposals:
-            expected_proposals.append(
-                {
-                    "capability_credit": "none",
-                    "case_scope": expected_cases,
-                    "class": "identity-substitution",
-                    "expected_state": "rejected",
-                    "id": proposal_id,
-                    "layer": "structural",
-                    "match_rule": "required_not_sufficient",
-                    "mutation_kind": "substitute_bound_identity",
-                    "observation_level": "domain",
-                    "relationship_scope": expected_relationships,
-                    "required_invalidation": "dependent_result",
-                    "target": target,
-                }
-            )
-
-        case_scoped_proposals = [
-            (
-                "D004-XF-AMB-SC01",
-                "ambiguity",
-                "SC-01",
-                ["SR-01"],
-                "admit_competing_authoritative_interpretations",
-                "numeric_word_byte_order_and_signedness_interpretation",
-                "rejected",
-            ),
-            (
-                "D004-XF-AMB-SC02",
-                "ambiguity",
-                "SC-02",
-                ["SR-01", "SR-02", "SR-09"],
-                "admit_competing_authoritative_interpretations",
-                "mutable_memory_and_refinement_interpretation",
-                "rejected",
-            ),
-            (
-                "D004-XF-AMB-SC03",
-                "ambiguity",
-                "SC-03",
-                ["SR-02", "SR-10"],
-                "admit_competing_authoritative_interpretations",
-                "suite_policy_observation_classification",
-                "rejected",
-            ),
-            (
-                "D004-XF-AMB-SC04",
-                "ambiguity",
-                "SC-04",
-                ["SR-01", "SR-03", "SR-11"],
-                "admit_competing_authoritative_interpretations",
-                "intrinsic_abstract_machine_mapping",
-                "rejected",
-            ),
-            (
-                "D004-XF-AMB-SC05",
-                "ambiguity",
-                "SC-05",
-                ["SR-04", "SR-08", "SR-12"],
-                "admit_competing_authoritative_interpretations",
-                "game_sampling_probability_and_reduction_interpretation",
-                "rejected",
-            ),
-        ]
-        case_scoped_proposals.extend(
-            (
-                f"D004-XF-US-SC{case_index:02d}",
-                "unsupported",
-                f"SC-{case_index:02d}",
-                [],
-                "exercise_preregistered_unsupported_behavior",
-                f"sc{case_index:02d}_unsupported_fixture_slot",
-                "unsupported",
-            )
-            for case_index in range(1, 6)
-        )
-        case_scoped_proposals.extend(
-            (
-                f"D004-XF-RE-SC{case_index:02d}",
-                "resource-exhaustion",
-                f"SC-{case_index:02d}",
-                [],
-                "exercise_preregistered_domain_exhaustion",
-                f"sc{case_index:02d}_resource_fixture_slot",
-                "exhausted",
-            )
-            for case_index in range(1, 6)
-        )
         for (
-            proposal_id,
-            fixture_class,
-            case,
-            relationship_scope,
-            mutation_kind,
-            target,
-            expected_state,
-        ) in case_scoped_proposals:
-            expected_proposals.append(
-                {
-                    "capability_credit": "none",
-                    "case_scope": [case],
-                    "class": fixture_class,
-                    "expected_state": expected_state,
-                    "id": proposal_id,
-                    "layer": "structural",
-                    "match_rule": "required_not_sufficient",
-                    "mutation_kind": mutation_kind,
-                    "observation_level": "domain",
-                    "relationship_scope": relationship_scope,
-                    "required_invalidation": "dependent_result",
-                    "target": target,
-                }
-            )
-
-        proposal_records = proposal_manifest.get("proposals")
-        expected_proposal_fields = {
-            "id",
-            "class",
-            "case_scope",
-            "relationship_scope",
-            "layer",
-            "mutation_kind",
-            "target",
-            "expected_state",
-            "required_invalidation",
-            "match_rule",
-            "capability_credit",
-            "observation_level",
-        }
-        if not isinstance(proposal_records, list):
-            self.add(
-                "d004_packet.proposal_manifest_shape",
-                proposal_manifest_path,
-                "D-004 cross-cutting proposals must be an array",
-            )
-        else:
-            observed_proposal_ids: list[object] = []
-            for index, record in enumerate(proposal_records):
-                if not isinstance(record, dict) or set(record) != expected_proposal_fields:
-                    self.add(
-                        "d004_packet.proposal_manifest_shape",
-                        proposal_manifest_path,
-                        f"D-004 cross-cutting proposal {index + 1} must retain exactly twelve closed fields",
-                    )
-                    continue
-                observed_proposal_ids.append(record.get("id"))
-            expected_proposal_ids = [record["id"] for record in expected_proposals]
-            observed_class_counts = {
-                fixture_class: sum(
-                    1
-                    for record in proposal_records
-                    if isinstance(record, dict) and record.get("class") == fixture_class
-                )
-                for fixture_class in expected_fixture_classes
-            }
-            expected_class_counts = {
-                status["class"]: status["proposal_count"]
-                for status in expected_class_statuses
-            }
-            if (
-                len(proposal_records) != 39
-                or proposal_records != expected_proposals
-                or observed_proposal_ids != expected_proposal_ids
-                or len(set(value for value in observed_proposal_ids if isinstance(value, str)))
-                != 39
-                or observed_class_counts != expected_class_counts
-            ):
-                self.add(
-                    "d004_packet.proposal_manifest_inventory",
-                    proposal_manifest_path,
-                    "D-004 must retain exactly 39 ordered unique domain-level proposals partitioned 5/14/10/5/5 across ambiguity, missing-edge, identity-substitution, unsupported, and resource-exhaustion with fail-closed non-credit semantics",
-                )
-
-    def _validate_d005_draft_packet(self) -> None:
-        research_prefix = "research/decisions/D-005/"
-        observed_research_paths = {
-            relative(candidate, self.root)
-            for candidate in self.repository_files
-            if relative(candidate, self.root).startswith(research_prefix)
-        }
-        if observed_research_paths != D005_DRAFT_RESEARCH_PATHS:
-            self.add(
-                "d005_packet.research_inventory",
-                self.root / "research/decisions/D-005",
-                "draft D-005 research paths must retain the exact input-only inventory; "
-                f"missing={sorted(D005_DRAFT_RESEARCH_PATHS - observed_research_paths)}, "
-                f"unexpected={sorted(observed_research_paths - D005_DRAFT_RESEARCH_PATHS)}",
-            )
-        path = (
-            self.root
-            / "research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json"
-        )
-        if not self._hf(path):
-            self.add("d005_packet.missing", path, "draft D-005 protocol packet is missing")
-            return
-        try:
-            packet = self._load_repository_json(path)
-        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
-            self.add("d005_packet.parse", path, f"cannot parse draft packet: {exc}")
-            return
-        if not isinstance(packet, dict):
-            self.add("d005_packet.shape", path, "draft packet must be a JSON object")
-            return
-
-        canonical_packet = canonical_json_bytes(packet)
-        if hashlib.sha256(canonical_packet).hexdigest() != D005_DRAFT_PACKET_CANONICAL_SHA256:
-            self.add(
-                "d005_packet.digest",
-                path,
-                "draft packet canonical bytes disagree with the reviewed SHA-256 identity",
-            )
-
-        expected_keys = {
-            "schema_version",
-            "suite_version",
-            "epoch",
-            "status",
-            "candidates",
-            "cases",
-            "claim_families",
-            "metrics",
-            "hard_gates",
-            "owner_scopes",
-            "mutations",
-            "mutation_manifest_sha256",
-            "legacy_v01_mutations",
-            "input_bindings",
-            "budgets",
-            "execution",
-            "selection",
-            "nonclaims",
-        }
-        if set(packet) != expected_keys:
-            self.add(
-                "d005_packet.shape",
-                path,
-                "draft packet fields must retain the exact closed inventory",
-            )
-
-        exact_scalars = {
-            "schema_version": "d005-execution-packet-v0.1",
-            "suite_version": "d005-v0.1-draft",
-            "epoch": "0001",
-            "status": "draft",
-            "mutation_manifest_sha256": D005_MUTATION_MANIFEST_CANONICAL_SHA256,
-        }
-        for field, expected in exact_scalars.items():
-            if packet.get(field) != expected:
-                self.add(
-                    "d005_packet.identity",
-                    path,
-                    f"{field} must remain {expected!r}",
-                )
-
-        exact_inventories = {
-            "candidates": [f"AM-{index:02d}" for index in range(1, 5)],
-            "cases": [f"AC-{index:02d}" for index in range(1, 9)],
-            "claim_families": [f"CF-{index:02d}" for index in range(1, 11)],
-            "metrics": [f"M-{index:02d}" for index in range(1, 19)],
-            "hard_gates": [f"HG-{index:02d}" for index in range(1, 9)],
-            "owner_scopes": [f"AR-{index:02d}" for index in range(1, 9)],
-            "legacy_v01_mutations": [
-                "LV01-TEST-AS-REFINEMENT",
-                "LV01-OPTIONAL-MASKS-FAILED-KERNEL",
-                "LV01-UNRESOLVED-TARGET-LEAKAGE",
-                "LV01-OWNER-AS-EXTERNAL",
-                "LV01-SUBJECT-SUBSTITUTION",
-            ],
-            "nonclaims": [
-                "no candidate selected",
-                "no D-005 execution evidence",
-                "no public assurance schema ratified",
-                "no milestone or release authorized",
-            ],
-        }
-        for field, expected in exact_inventories.items():
-            if packet.get(field) != expected:
-                self.add(
-                    "d005_packet.inventory",
-                    path,
-                    f"{field} must retain its exact ordered draft inventory",
-                )
-
-        mutation_counts = (6, 6, 6, 6, 7, 5, 6, 8)
-        expected_mutations = [
-            f"AC-{case_index:02d}-M{mutation_index:02d}"
-            for case_index, count in enumerate(mutation_counts, start=1)
-            for mutation_index in range(1, count + 1)
-        ]
-        if packet.get("mutations") != expected_mutations:
-            self.add(
-                "d005_packet.mutations",
-                path,
-                "draft packet must retain all 50 exact ordered AC mutation identifiers",
-            )
-
-        expected_input_bindings = {
-            "decision_suite": {
-                "path": "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md",
-                "sha256": "e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f",
-            },
-            "legacy_v01_manifest": {
-                "path": "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",
-                "sha256": "2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d",
-            },
-            "claim_record_v01_schema": {
-                "path": "schemas/gate0/claim-record-v0.1.schema.json",
-                "sha256": "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131",
-            },
-        }
-        if packet.get("input_bindings") != expected_input_bindings:
-            self.add(
-                "d005_packet.input_bindings",
-                path,
-                "draft packet must retain the exact closed shared-input bindings",
-            )
-        for name, binding in expected_input_bindings.items():
-            bound_path = self.root / binding["path"]
-            bound_bytes = self._read_repository_bytes(bound_path)
-            if (
-                bound_bytes is None
-                or hashlib.sha256(bound_bytes).hexdigest() != binding["sha256"]
-            ):
-                self.add(
-                    "d005_packet.input_digest",
-                    bound_path,
-                    f"D-005 input binding {name!r} disagrees with checked-in bytes",
-                )
-
-        expected_budgets = {
-            "max_packet_bytes": 262_144,
-            "max_json_depth": 32,
-            "max_json_nodes": 16_384,
-            "max_string_bytes": 16_384,
-            "max_diagnostics": 256,
-            "max_claims": 4_096,
-            "max_edges": 16_384,
-            "max_output_bytes": 4_194_304,
-            "render_repetitions": 3,
-            "workspace_replays": 2,
-        }
-        if packet.get("budgets") != expected_budgets:
-            self.add(
-                "d005_packet.budgets",
-                path,
-                "draft packet budgets must retain their exact fail-closed limits",
-            )
-
-        if packet.get("execution") != {
-            "required_candidate_cases": 32,
-            "completed_candidate_cases": 0,
-            "evidence_status": "none",
-        }:
-            self.add(
-                "d005_packet.execution",
-                path,
-                "draft packet must retain the honest 0/32 no-evidence baseline",
-            )
-        if packet.get("selection") is not None:
-            self.add(
-                "d005_packet.selection",
-                path,
-                "draft packet cannot select or recommend a candidate",
-            )
-
-        forbidden_segments = {
-            "candidates",
-            "cross-candidate",
-            "same-owner-replays",
-            "owner-reviews",
-            "decision",
-        }
-        prefix = "research/decisions/D-005/d005-v0.1/epochs/0001/"
-        for candidate in self.repository_files:
-            value = relative(candidate, self.root)
-            if not value.startswith(prefix):
+            value,
+            label,
+            missing_code,
+            canonical_identity,
+            raw_identity,
+            canonical_transport,
+        ) in specification["json_identities"]:
+            path = self.root / str(value)
+            if not self._hf(path):
+                fail(str(missing_code), path, "reviewed decision-laboratory JSON is missing")
+                identity_closure_valid = False
                 continue
-            if forbidden_segments.intersection(value[len(prefix) :].split("/")):
-                self.add(
-                    "d005_packet.premature_results",
-                    candidate,
-                    "draft-unfrozen packet cannot contain candidate results, replay attestations, owner reviews, or a disposition",
-                )
-
-        input_root = (
-            self.root
-            / "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs"
-        )
-        manifest_path = input_root / "legacy-v0.1-mutations.json"
-        if not self._hf(manifest_path):
-            self.add(
-                "d005_packet.legacy_missing",
-                manifest_path,
-                "historical negative-corpus manifest is missing",
-            )
-            return
-        try:
-            manifest = self._load_repository_json(manifest_path)
-        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
-            self.add(
-                "d005_packet.legacy_parse",
-                manifest_path,
-                f"cannot parse historical negative-corpus manifest: {exc}",
-            )
-            return
-
-        if not isinstance(manifest, dict):
-            self.add(
-                "d005_packet.legacy_shape",
-                manifest_path,
-                "historical negative-corpus manifest must be a JSON object",
-            )
-            return
-
-        expected_manifest_keys = {
-            "corpus_version",
-            "record_status",
-            "lifecycle",
-            "non_product",
-            "decision_id",
-            "suite_version",
-            "schema",
-            "epoch_directory_status",
-            "canonical_execution_baseline",
-            "expected_current_validation",
-            "mutation_count",
-            "mutations",
-            "reference_records",
-            "candidate_records",
-            "result_records",
-            "owner_review_records",
-        }
-        if set(manifest) != expected_manifest_keys:
-            self.add(
-                "d005_packet.legacy_shape",
-                manifest_path,
-                "historical negative-corpus manifest fields must retain the exact closed inventory",
-            )
-        expected_manifest_values = {
-            "corpus_version": "d005-legacy-v0.1-mutations",
-            "record_status": "historical_research_input",
-            "lifecycle": "draft_unfrozen",
-            "non_product": True,
-            "decision_id": "D-005",
-            "suite_version": "d005-v0.1-draft",
-            "schema": "schemas/gate0/claim-record-v0.1.schema.json",
-            "epoch_directory_status": "reserved_layout_only_not_frozen",
-            "canonical_execution_baseline": {
-                "completed_candidate_case_executions": 0,
-                "required_candidate_case_executions": 32,
-            },
-            "expected_current_validation": {
-                "json_schema": "accepted",
-                "second_pass": "accepted",
-            },
-            "mutation_count": 5,
-            "candidate_records": [],
-            "result_records": [],
-            "owner_review_records": [],
-        }
-        for field, expected in expected_manifest_values.items():
-            if manifest.get(field) != expected:
-                self.add(
-                    "d005_packet.legacy_boundary",
-                    manifest_path,
-                    f"historical corpus field {field!r} weakens its draft-unfrozen 0/32 boundary",
-                )
-
-        expected_legacy_entries = (
-            (
-                "LV01-TEST-AS-REFINEMENT",
-                "checked_test_as_sufficient_functional_refinement_evidence",
-                "checked-test-as-functional-refinement.json",
-                "c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e",
-            ),
-            (
-                "LV01-OPTIONAL-MASKS-FAILED-KERNEL",
-                "checked_test_masks_failed_mandatory_kernel_proof",
-                "checked-test-masks-failed-kernel-proof.json",
-                "ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad",
-            ),
-            (
-                "LV01-UNRESOLVED-TARGET-LEAKAGE",
-                "satisfied_target_leakage_with_unresolved_target_and_leakage_contexts",
-                "satisfied-target-leakage-with-unresolved-contexts.json",
-                "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39",
-            ),
-            (
-                "LV01-OWNER-AS-EXTERNAL",
-                "owner_produced_checked_test_presented_as_external_validation",
-                "owner-test-as-external-validation.json",
-                "795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5",
-            ),
-            (
-                "LV01-SUBJECT-SUBSTITUTION",
-                "substituted_subject_path_and_digest_reuse_other_subject_evidence",
-                "substituted-subject-reuses-evidence.json",
-                "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900",
-            ),
-        )
-        legacy_schema_path = self.root / "schemas/gate0/claim-record-v0.1.schema.json"
-        legacy_schema: dict[str, Any] | None = None
-        if self._hf(legacy_schema_path):
             try:
-                loaded_legacy_schema = self._load_repository_json(legacy_schema_path)
-            except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
-                self.add(
-                    "d005_packet.legacy_schema",
-                    legacy_schema_path,
-                    f"cannot parse historical claim-record schema: {exc}",
-                )
-            else:
-                if isinstance(loaded_legacy_schema, dict) and isinstance(
-                    loaded_legacy_schema.get("$id"), str
-                ):
-                    legacy_schema = loaded_legacy_schema
-                else:
-                    self.add(
-                        "d005_packet.legacy_schema",
-                        legacy_schema_path,
-                        "historical claim-record schema must be an identified JSON object",
-                    )
-        mutations = manifest.get("mutations")
-        if not isinstance(mutations, list) or len(mutations) != len(expected_legacy_entries):
-            self.add(
-                "d005_packet.legacy_inventory",
-                manifest_path,
-                "historical corpus must retain exactly five ordered dangerous mutations",
-            )
-            mutations = []
-        for index, expected in enumerate(expected_legacy_entries):
-            if index >= len(mutations) or not isinstance(mutations[index], dict):
+                document = self._load_repository_json(path)
+            except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError, TypeError) as exc:
+                fail(f"{label}parse", path, f"cannot strictly parse reviewed JSON: {exc}")
+                identity_closure_valid = False
                 continue
-            entry = mutations[index]
-            expected_entry_fields = {"mutation_id", "danger", "fixture", "sha256"}
-            if index == len(expected_legacy_entries) - 1:
-                expected_entry_fields.update(
-                    {
-                        "comparison_base",
-                        "comparison_base_sha256",
-                        "expected_changed_json_pointers",
-                    }
-                )
-            if set(entry) != expected_entry_fields:
-                self.add(
-                    "d005_packet.legacy_shape",
-                    manifest_path,
-                    f"historical mutation {index + 1} fields drifted",
-                )
-            observed = (
-                entry.get("mutation_id"),
-                entry.get("danger"),
-                entry.get("fixture"),
-            )
-            if observed != expected[:3]:
-                self.add(
-                    "d005_packet.legacy_inventory",
-                    manifest_path,
-                    f"historical mutation {index + 1} identity, danger, or fixture drifted",
-                )
+            raw = self._read_repository_bytes(path)
+            if raw is None:
+                fail(f"{label}parse", path, _BF)
+                identity_closure_valid = False
                 continue
-            digest = entry.get("sha256")
-            fixture_path = input_root / expected[2]
-            fixture_bytes = self._read_repository_bytes(fixture_path)
-            if (
-                not isinstance(digest, str)
-                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-                or digest != expected[3]
-                or fixture_bytes is None
-                or hashlib.sha256(fixture_bytes).hexdigest() != expected[3]
+            try:
+                canonical = canonical_json_bytes(document)
+            except (TypeError, ValueError) as exc:
+                fail(
+                    f"{label}canonical",
+                    path,
+                    f"reviewed JSON is outside the canonical I-JSON profile: {exc}",
+                )
+                identity_closure_valid = False
+                continue
+            exact_terminal_lf = raw.endswith(b"\n") and not raw.endswith(b"\n\n")
+            if (canonical_transport and raw != canonical + b"\n") or (
+                not canonical_transport and not exact_terminal_lf
             ):
-                self.add(
-                    "d005_packet.legacy_digest",
-                    fixture_path,
-                    "historical mutation fixture is missing or disagrees with its SHA-256 binding",
+                fail(
+                    f"{label}canonical",
+                    path,
+                    "reviewed JSON transport must retain its exact encoding and one terminal LF",
                 )
-            if fixture_bytes is not None and legacy_schema is not None:
+            if (
+                hashlib.sha256(canonical).hexdigest() != canonical_identity
+                or hashlib.sha256(raw).hexdigest() != raw_identity
+            ):
+                fail(
+                    f"{label}digest",
+                    path,
+                    "reviewed canonical or raw SHA-256 identity drifted",
+                )
+                identity_closure_valid = False
+            else:
+                collect_declared_bindings(document, PurePosixPath(str(value)).parent)
+
+        if identity_closure_valid and declared_bindings != set(
+            specification["raw_bindings"]
+        ):
+            fail(
+                "binding_inventory",
+                self.root / research_root,
+                "raw binding rows must exactly cover every path and SHA-256 identity "
+                "declared by the reviewed decision-laboratory JSON",
+            )
+
+        for value, expected_digest in specification["raw_bindings"]:
+            path = self.root / str(value)
+            raw = self._read_repository_bytes(path)
+            if raw is None or hashlib.sha256(raw).hexdigest() != expected_digest:
+                fail(
+                    "input_digest",
+                    path,
+                    "externally bound decision-laboratory input disagrees with its reviewed raw SHA-256 identity",
+                )
+
+        compatibility = specification["schema_compatibility"]
+        if compatibility is not None:
+            schema_value, input_root_value, fixture_names = compatibility
+            schema_path = self.root / str(schema_value)
+            try:
+                schema = self._load_repository_json(schema_path)
+            except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError, TypeError) as exc:
+                fail("legacy_schema", schema_path, f"cannot parse fixed historical schema: {exc}")
+                return
+            schema_identifier = schema.get("$id") if isinstance(schema, dict) else None
+            if not isinstance(schema_identifier, str):
+                fail(
+                    "legacy_schema",
+                    schema_path,
+                    "fixed historical schema must remain an identified JSON object",
+                )
+                return
+            for name in fixture_names:
+                fixture_path = self.root / str(input_root_value) / str(name)
                 try:
                     fixture = self._load_repository_json(fixture_path)
-                except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError) as exc:
-                    self.add(
-                        "d005_packet.legacy_fixture_parse",
+                except (
+                    DuplicateKeyError,
+                    OSError,
+                    UnicodeDecodeError,
+                    ValueError,
+                    TypeError,
+                ) as exc:
+                    fail(
+                        "legacy_fixture_parse",
                         fixture_path,
-                        f"cannot parse historical negative input: {exc}",
+                        f"cannot parse fixed historical mutation fixture: {exc}",
                     )
-                else:
-                    issues = validate_schema_instance(
-                        fixture,
-                        legacy_schema,
-                        legacy_schema_path,
-                        {legacy_schema_path: legacy_schema},
-                        {legacy_schema["$id"]: (legacy_schema_path, legacy_schema)},
-                    )
-                    issues.extend(
-                        validate_cross_record_invariants(
-                            fixture,
-                            legacy_schema_path.name,
-                        )
-                    )
-                    if issues:
-                        self.add(
-                            "d005_packet.legacy_acceptance",
-                            fixture_path,
-                            "historical negative input no longer demonstrates acceptance by the v0.1 shape and second pass",
-                        )
-
-        subject_entry = mutations[-1] if mutations and isinstance(mutations[-1], dict) else {}
-        subject_expected = {
-            "comparison_base": "subject-reuse-original.json",
-            "expected_changed_json_pointers": [
-                "/subject/path",
-                "/subject/digest/value",
-            ],
-        }
-        for field, expected in subject_expected.items():
-            if subject_entry.get(field) != expected:
-                self.add(
-                    "d005_packet.subject_substitution",
-                    manifest_path,
-                    f"subject-substitution field {field!r} drifted",
+                    continue
+                issues = validate_schema_instance(
+                    fixture,
+                    schema,
+                    schema_path,
+                    {schema_path: schema},
+                    {schema_identifier: (schema_path, schema)},
                 )
-        comparison_digest = subject_entry.get("comparison_base_sha256")
-        expected_comparison_digest = (
-            "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9"
-        )
-        comparison_path = input_root / "subject-reuse-original.json"
-        comparison_bytes = self._read_repository_bytes(comparison_path)
-        if (
-            not isinstance(comparison_digest, str)
-            or re.fullmatch(r"[0-9a-f]{64}", comparison_digest) is None
-            or comparison_digest != expected_comparison_digest
-            or comparison_bytes is None
-            or hashlib.sha256(comparison_bytes).hexdigest()
-            != expected_comparison_digest
-        ):
-            self.add(
-                "d005_packet.legacy_digest",
-                comparison_path,
-                "subject-substitution comparison base is missing or disagrees with its SHA-256 binding",
-            )
-        if manifest.get("reference_records") != [
-            {
-                "reference_id": "D005-LEGACY-SUBJECT-ORIGINAL",
-                "fixture": "subject-reuse-original.json",
-                "sha256": expected_comparison_digest,
-                "role": "non_mutation_comparison_base",
-            }
-        ]:
-            self.add(
-                "d005_packet.subject_substitution",
-                manifest_path,
-                "historical corpus must retain exactly one digest-bound subject-substitution comparison base",
-            )
+                issues.extend(
+                    validate_cross_record_invariants(fixture, schema_path.name)
+                )
+                if issues:
+                    fail(
+                        "legacy_acceptance",
+                        fixture_path,
+                        "fixed historical mutation must remain accepted by the "
+                        "historical schema and second-pass validator",
+                    )
+
+    def _validate_d004_draft_packet(self) -> None:
+        self._validate_decision_laboratory("d004")
+
+    def _validate_d005_draft_packet(self) -> None:
+        self._validate_decision_laboratory("d005")
 
     def _validate_d006_draft_packet(self) -> None:
-        r, pfx = self.root, "research/decisions/D-006/"
-        fail = lambda code, path: self.add(f"d006_packet.{code}", path, "D-006 identity drift")
-        seen = {relative(p, r) for p in self.repository_files if relative(p, r).startswith(pfx)}
-        if seen != D006_DRAFT_RESEARCH_PATHS:
-            fail("research_inventory", r / pfx)
-        bad = "epoch candidate result replay review decision".split()
-        for path in self.repository_files:
-            name = relative(path, r)
-            if name.startswith(pfx) and any(word in name[len(pfx) :].lower() for word in bad):
-                fail("premature_artifact", path)
-
-        base = r / pfx
-        packet, index = base / "d006-v0.2-draft-packet.json", base / "d006-v0.2-case-input-index.json"
-
-        def check(path, tag, want):
-            try:
-                value = self._load_repository_json(path)
-            except (OSError, ValueError):
-                fail(tag + "parse", path)
-                return
-            data = canonical_json_bytes(value)
-            if self._read_repository_bytes(path) != data + b"\n":
-                fail(tag + "canonical", path)
-            if hashlib.sha256(data).hexdigest() != want:
-                fail(tag + "digest", path)
-
-        check(packet, "", D006_DRAFT_PACKET_CANONICAL_SHA256)
-        check(index, "index_", D006_CASE_INPUT_INDEX_CANONICAL_SHA256)
-        suite = r / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
-        for path, want in ((index, D006_CASE_INPUT_INDEX_RAW_SHA256), (suite, D006_PROOF_FOUNDATION_SUITE_RAW_SHA256)):
-            raw = self._read_repository_bytes(path)
-            if raw is None or hashlib.sha256(raw).hexdigest() != want:
-                fail("input_digest", path)
+        self._validate_decision_laboratory("d006")
 
     def _validate_change_records(self) -> None:
         specifications = (

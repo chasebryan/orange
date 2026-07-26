@@ -249,6 +249,16 @@ Those receipts fix isolation to unevaluated, payload status to unvalidated, and
 evidence status to none; they do not authorize a physical run order or compare
 opaque payloads. The laboratory contains no subprocess launcher, candidate
 payload validator, result artifact, or execution authority and retains 0/32.
+The D-004 through D-006 policy checks share one table-driven identity boundary:
+each admitted research tree is exact, JSON is parsed through the bounded strict
+profile, reviewed canonical meanings and raw transports are SHA-256 bound, and
+every external input binding is verified from a trusted path. Whole-object
+identity drift now receives an artifact-level diagnostic instead of a
+field-specific diagnosis. D-005 additionally retains the live check that all
+five fixed historical mutations are still accepted by the historical v0.1
+schema and second pass; hashes alone cannot establish that compatibility. This
+consolidation changes no research input, decision, execution count, evidence,
+gate status, or readiness credit.
 The S2 inventory includes
 the lexer and parser sources, the protected S2 conformance runner, and normative
 [`docs/LANGUAGE_2026.md`](../docs/LANGUAGE_2026.md). That runner requires the
