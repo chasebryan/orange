@@ -157,6 +157,15 @@ process, validates no candidate payload semantics, creates no result, and
 retains the exact 0/32 baseline. Real execution remains gated on an owner-frozen
 epoch and an approved resource-isolation backend.
 
+That draft boundary now enumerates exactly 192 in-memory transport identities
+from the 32 candidate-case base slots, two workspace identities, and three
+render identities. Its order is a canonical identity serialization only, not a
+physical run order. It also binds synthetic capture receipts to the exact slot,
+request digest, termination, truncation flags, and raw stream lengths and
+digests. Every receipt keeps isolation `not_evaluated`, payload `unvalidated`,
+and evidence `none`; exact inventory checks create no execution credit and do
+not compare opaque payloads across repetitions.
+
 D-005 closes only through an Accepted exact-revision OEP after the complete
 owner-executable suite passes. Multidisciplinary external review remains
 `unavailable` in solo mode; any claim whose policy requires it remains

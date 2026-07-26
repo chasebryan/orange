@@ -266,6 +266,13 @@ fail-closed synthetic capture validator. It has no subprocess launcher or
 candidate payload semantics and leaves execution at 0/32; this preparation is
 not S4 evidence or gate closure.
 
+It also enumerates the exact 32-by-2-by-3 in-memory transport identity matrix
+and can bind synthetic raw captures to canonical integrity receipts. The 192
+identity order does not authorize a physical run order; receipt verification
+leaves isolation unevaluated, payloads unvalidated, and evidence absent. Missing
+or cross-slot observations fail closed, but no opaque payload comparison,
+candidate result, execution credit, or readiness credit follows.
+
 ### S5 — Compiler IRs and one output path
 
 Status: pending S3

@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use super::domain::{BUDGETS, CandidateId, CaseId};
+use super::domain::{
+    BUDGETS, CandidateId, CaseId, REQUIRED_CANDIDATE_CASES, REQUIRED_RENDER_REPETITIONS,
+    REQUIRED_WORKSPACE_REPLAYS,
+};
 use super::runner::{PlannedExecution, ReplayPlan};
 use super::sha256;
 use super::strict_json::{self, JsonErrorKind, JsonValue};
@@ -8,6 +11,8 @@ use super::strict_json::{self, JsonErrorKind, JsonValue};
 const REQUEST_SCHEMA_VERSION: &str = "d005-adapter-request-v0.1-draft";
 const RESPONSE_SCHEMA_VERSION: &str = "d005-adapter-response-v0.1-draft";
 const MAX_IJSON_INTEGER: i64 = 9_007_199_254_740_991;
+pub(crate) const REQUIRED_DRAFT_TRANSPORT_IDENTITIES: usize =
+    REQUIRED_CANDIDATE_CASES * REQUIRED_WORKSPACE_REPLAYS * REQUIRED_RENDER_REPETITIONS;
 const RESPONSE_FIELDS: [&str; 12] = [
     "schema_version",
     "packet_sha256",
@@ -57,6 +62,30 @@ pub(crate) struct DraftAdapterRequest {
 }
 
 impl DraftAdapterRequest {
+    pub(crate) const fn execution(&self) -> PlannedExecution {
+        PlannedExecution {
+            ordinal: self.ordinal,
+            candidate: self.candidate,
+            case: self.case,
+        }
+    }
+
+    pub(crate) const fn workspace_replay(&self) -> usize {
+        self.workspace_replay
+    }
+
+    pub(crate) const fn render_repetition(&self) -> usize {
+        self.render_repetition
+    }
+
+    pub(crate) fn input_manifest_sha256(&self) -> &str {
+        &self.input_manifest_sha256
+    }
+
+    pub(crate) fn payload_schema_sha256(&self) -> &str {
+        &self.payload_schema_sha256
+    }
+
     pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
         strict_json::canonical_bytes(&self.value())
     }
@@ -132,6 +161,131 @@ pub(crate) fn prepare_draft_request(
         input_manifest_sha256: input_manifest_sha256.to_owned(),
         payload_schema_sha256: payload_schema_sha256.to_owned(),
     })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DraftBaseSlotBinding {
+    pub(crate) execution: PlannedExecution,
+    pub(crate) input_manifest_sha256: String,
+    pub(crate) payload_schema_sha256: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DraftTransportMatrixErrorKind {
+    BaseScheduleCardinality,
+    BindingCardinality,
+    BindingMismatch,
+    InvalidDigest,
+    Request(DraftRequestErrorKind),
+    TransportCardinality,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DraftTransportMatrixError {
+    pub(crate) kind: DraftTransportMatrixErrorKind,
+    pub(crate) path: String,
+}
+
+impl DraftTransportMatrixError {
+    fn new(kind: DraftTransportMatrixErrorKind, path: impl Into<String>) -> Self {
+        Self {
+            kind,
+            path: path.into(),
+        }
+    }
+}
+
+/// One deterministic draft transport identity. Its ordinal identifies the
+/// enumeration slot only; it does not authorize or prescribe physical execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DraftTransportIdentity {
+    capture_slot_ordinal: usize,
+    request: DraftAdapterRequest,
+}
+
+impl DraftTransportIdentity {
+    pub(crate) const fn capture_slot_ordinal(&self) -> usize {
+        self.capture_slot_ordinal
+    }
+
+    pub(crate) const fn request(&self) -> &DraftAdapterRequest {
+        &self.request
+    }
+}
+
+/// Expands the exact base-slot binding table into an in-memory identity matrix.
+/// It performs no launch, capture, payload validation, comparison, or execution.
+pub(crate) fn enumerate_draft_transport_identities(
+    plan: &ReplayPlan,
+    bindings: &[DraftBaseSlotBinding],
+) -> Result<Vec<DraftTransportIdentity>, DraftTransportMatrixError> {
+    if plan.schedule().len() != REQUIRED_CANDIDATE_CASES {
+        return Err(DraftTransportMatrixError::new(
+            DraftTransportMatrixErrorKind::BaseScheduleCardinality,
+            "$/base_schedule",
+        ));
+    }
+    if bindings.len() != REQUIRED_CANDIDATE_CASES {
+        return Err(DraftTransportMatrixError::new(
+            DraftTransportMatrixErrorKind::BindingCardinality,
+            "$/bindings",
+        ));
+    }
+
+    for (index, (execution, binding)) in plan.schedule().iter().zip(bindings).enumerate() {
+        let binding_path = format!("$/bindings/{index}");
+        if binding.execution != *execution {
+            return Err(DraftTransportMatrixError::new(
+                DraftTransportMatrixErrorKind::BindingMismatch,
+                format!("{binding_path}/execution"),
+            ));
+        }
+        for (digest, field) in [
+            (&binding.input_manifest_sha256, "input_manifest_sha256"),
+            (&binding.payload_schema_sha256, "payload_schema_sha256"),
+        ] {
+            if !is_sha256_hex(digest) {
+                return Err(DraftTransportMatrixError::new(
+                    DraftTransportMatrixErrorKind::InvalidDigest,
+                    format!("{binding_path}/{field}"),
+                ));
+            }
+        }
+    }
+
+    let mut identities = Vec::with_capacity(REQUIRED_DRAFT_TRANSPORT_IDENTITIES);
+    for (base_index, binding) in bindings.iter().enumerate() {
+        for workspace_replay in 1..=REQUIRED_WORKSPACE_REPLAYS {
+            for render_repetition in 1..=REQUIRED_RENDER_REPETITIONS {
+                let request = prepare_draft_request(
+                    plan,
+                    binding.execution,
+                    workspace_replay,
+                    render_repetition,
+                    &binding.input_manifest_sha256,
+                    &binding.payload_schema_sha256,
+                )
+                .map_err(|error| {
+                    let suffix = error.path.strip_prefix('$').unwrap_or(error.path);
+                    DraftTransportMatrixError::new(
+                        DraftTransportMatrixErrorKind::Request(error.kind),
+                        format!("$/bindings/{base_index}/request{suffix}"),
+                    )
+                })?;
+                identities.push(DraftTransportIdentity {
+                    capture_slot_ordinal: identities.len() + 1,
+                    request,
+                });
+            }
+        }
+    }
+    if identities.len() != REQUIRED_DRAFT_TRANSPORT_IDENTITIES {
+        return Err(DraftTransportMatrixError::new(
+            DraftTransportMatrixErrorKind::TransportCardinality,
+            "$/capture_slots",
+        ));
+    }
+    Ok(identities)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

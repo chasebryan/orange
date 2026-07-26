@@ -236,8 +236,13 @@ repetition remains unresolved, and the D-004 inventory freezes no evidence
 epoch. Neither inventory contains a candidate result, owner review, accepted
 decision, or release evidence. D-005's protected Rust laboratory may construct
 canonical adapter requests and validate synthetic captured transport envelopes,
-but it contains no subprocess launcher, candidate payload validator, result
-artifact, or execution authority and retains 0/32. The S2 inventory includes
+enumerate the exact 192 in-memory transport identities, and bind a closed
+synthetic observation inventory to canonical raw-stream integrity receipts.
+Those receipts fix isolation to unevaluated, payload status to unvalidated, and
+evidence status to none; they do not authorize a physical run order or compare
+opaque payloads. The laboratory contains no subprocess launcher, candidate
+payload validator, result artifact, or execution authority and retains 0/32.
+The S2 inventory includes
 the lexer and parser sources, the protected S2 conformance runner, and normative
 [`docs/LANGUAGE_2026.md`](../docs/LANGUAGE_2026.md). That runner requires the
 exact stable 13-rule ID inventory, the exact evidence-layer declarations, and

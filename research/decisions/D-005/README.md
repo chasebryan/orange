@@ -22,6 +22,15 @@ not a candidate result or decision evidence. The research inventory therefore
 adds no adapter output, candidate directory, replay attestation, owner review,
 or disposition artifact.
 
+The boundary expands the 32 base candidate-case slots into exactly 192
+in-memory identities across two workspace and three render identities. That
+canonical identity order is not a physical execution order. A strict synthetic
+capture receipt binds each slot and request digest to termination, truncation,
+and raw stream lengths and SHA-256 digests while retaining
+`isolation_status:not_evaluated`, `payload_status:unvalidated`, and
+`evidence_status:none`. Exact inventory validation creates no filesystem or
+research artifact, execution credit, payload comparison, or evidence.
+
 The machine-readable index is
 [`legacy-v0.1-mutations.json`](d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json).
 The checked-in draft protocol is
