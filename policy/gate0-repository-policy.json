@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.111",
+  "policy_version": "0.2.112",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -410,7 +410,7 @@
     "tools/tests/test_d004_draft_packet.py": "83fa92af2899df29ee901345c70fc6c5276e17b86e4d5fcac92c3bc4dab10b6f",
     "tools/tests/test_d005_draft_packet.py": "657d5bf9468d481be3c4b7ee3143fed2b4a9f1253d21bc35477476e968017b09",
     "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
-    "tools/tests/test_d009_draft_packet.py": "84aa3e8b641191da651f96d35ef312c357736a51065e3028e3a5c81d8c5ac512",
+    "tools/tests/test_d009_draft_packet.py": "fda322d3609597d0b87924ed712c2734a20910f46e9205ac7c2871bbbff7c704",
     "tools/tests/test_validate_foundation.py": "7a5d34d64733d76e24dc2f188413e5b24af0fd94ff1a1afeb0e2581656da5e92",
     "tools/tests/test_validate_foundation_hardening.py": "d3737a0879a1ed81690a87242d109b699a60d3cb2b69e0842dced533eb0b5c6c"
   },

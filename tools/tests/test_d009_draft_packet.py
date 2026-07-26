@@ -3,12 +3,14 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import tools.validate_foundation as validate_foundation
 from tools.validate_foundation import (
     DECISION_LABORATORY_SPECS,
     FoundationValidator,
@@ -510,6 +512,49 @@ class D009DraftPacketTests(unittest.TestCase):
             ),
             "d009_suite.register_semantics",
         )
+
+    def test_resealed_register_cannot_grant_draft_oep_closure_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            decisions_path = root / DECISIONS_PATH
+            source = decisions_path.read_text(encoding="utf-8")
+            assertion = "An accepted D-009\npolicy constrains later D-006 and D-007 work"
+            self.assertIn(assertion, source)
+            decisions_path.write_text(
+                source.replace(
+                    assertion,
+                    "A Draft Orange Enhancement Proposal may also close D-009.\n\n"
+                    + assertion,
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            decisions_text = validate_foundation.markdown_without_fenced_blocks_and_comments(
+                decisions_path.read_text(encoding="utf-8")
+            )
+            normalized_d009 = re.sub(
+                r"\s+",
+                " ",
+                validate_foundation.markdown_section(
+                    decisions_text,
+                    "## D-009",
+                    heading_level=2,
+                    prefix=True,
+                ),
+            )
+            resealed = list(validate_foundation._D009_SEMANTIC_DIGESTS)
+            resealed[1] = hashlib.sha256(normalized_d009.encode()).hexdigest()
+            with mock.patch.object(
+                validate_foundation,
+                "_D009_SEMANTIC_DIGESTS",
+                tuple(resealed),
+            ):
+                codes = self._semantic_codes(root)
+
+            self.assertNotIn("d009_suite.register_semantics", codes)
+            self.assertIn("d009_suite.register_closure_authority", codes)
 
     def test_roadmap_requires_d009_closure_without_current_readiness_credit(self) -> None:
         self._assert_text_mutations(

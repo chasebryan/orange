@@ -493,7 +493,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "551e2586e90d6d2224c71ed2f48a5e9fc3e9d7d2f551eec7004d46a52492f826"
+_PHD = "4e8d2d4fb8e9c9e81758988155dc1a890b1dfbd94992278857973e5fd7b404f6"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -6472,6 +6472,24 @@ class FoundationValidator:
                 decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
                 d009 = markdown_section(decisions_text, "## D-009", heading_level=2, prefix=True)
                 normalized_d009 = re.sub(r"\s+", " ", d009)
+                accepted_oep_binding = (
+                    "An Accepted Orange Enhancement Proposal must then bind that policy "
+                    "to the exact fully validated Git revision."
+                )
+                remaining_oep_text = normalized_d009.replace(accepted_oep_binding, "", 1)
+                if (
+                    normalized_d009.count(accepted_oep_binding) != 1
+                    or re.search(
+                        r"\b(?:Orange Enhancement Proposals?|OEPs?)\b",
+                        remaining_oep_text,
+                    )
+                ):
+                    self.add(
+                        "d009_suite.register_closure_authority",
+                        decisions_path,
+                        "D-009 must name exactly one closure proposal: the exact Accepted "
+                        "OEP binding, with no competing proposal authority",
+                    )
                 if hashlib.sha256(normalized_d009.encode()).hexdigest() != _D009_SEMANTIC_DIGESTS[1]:
                     self.add(
                         "d009_suite.register_semantics",
