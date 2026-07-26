@@ -23,9 +23,9 @@ use std::path::Path;
 
 use cases::MUTATIONS;
 use domain::{
-    BUDGETS, CANDIDATES, CASE_VERDICTS, CASES, CROSS_CUTTING_PROPOSAL_COUNT,
-    CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES, CROSS_CUTTING_PROPOSAL_NONCLAIMS,
-    CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES, DOMAIN_OBSERVATION_STATES, HARD_GATES,
+    BUDGETS, CANDIDATES, CASE_SCOPED_CROSS_CUTTING_PROPOSALS, CASE_VERDICTS, CASES,
+    CROSS_CUTTING_PROPOSAL_CLASS_STATUSES, CROSS_CUTTING_PROPOSAL_COUNT,
+    CROSS_CUTTING_PROPOSAL_NONCLAIMS, DOMAIN_OBSERVATION_STATES, HARD_GATES,
     IDENTITY_SUBSTITUTION_PROPOSALS, INPUT_BINDINGS, InputBindingId, MISSING_EDGE_PROPOSAL_IDS,
     NONCLAIMS, PROTOCOL_GAPS, RELATIONSHIPS, REQUIRED_CANDIDATE_CASES, SOURCE_ROLES,
     UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES,
@@ -319,18 +319,18 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
     );
     assert_eq!(
         CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
-        "83ebbde05d3a9739cb9a928f6c5472f92545f984a8a39a1f005403211b307279"
+        "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CROSS_CUTTING_FIXTURE_PROPOSALS)),
-        "12853f50e96c3e594f999e097a68a7be51d0395e7cc9253d7b99f134344f10aa"
+        "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93"
     );
 
     let root = value.as_object().expect("proposal root");
-    assert_eq!(root.len(), 10);
+    assert_eq!(root.len(), 9);
     assert_eq!(
         root.get("schema_version").and_then(JsonValue::as_str),
-        Some("d004-cross-cutting-fixture-proposals-v0.1")
+        Some("d004-cross-cutting-fixture-proposals-v0.2")
     );
     assert_eq!(
         root.get("status").and_then(JsonValue::as_str),
@@ -346,18 +346,55 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
             .and_then(JsonValue::as_str),
         Some("absent")
     );
+    let class_statuses = root
+        .get("class_statuses")
+        .and_then(JsonValue::as_array)
+        .expect("class statuses");
     assert_eq!(
-        root.get("proposal_defined_classes"),
-        Some(&strict_json::strings(
-            CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES
-        ))
+        class_statuses.len(),
+        CROSS_CUTTING_PROPOSAL_CLASS_STATUSES.len()
     );
-    assert_eq!(
-        root.get("proposal_undefined_classes"),
-        Some(&strict_json::strings(
-            CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES
-        ))
-    );
+    let expected_class_status_fields = BTreeSet::from([
+        "class",
+        "proposal_count",
+        "proposal_status",
+        "executable_fixture_count",
+        "coverage_status",
+        "freeze_blocker",
+    ]);
+    for (status, expected) in class_statuses
+        .iter()
+        .zip(CROSS_CUTTING_PROPOSAL_CLASS_STATUSES)
+    {
+        let status = status.as_object().expect("closed class status");
+        assert_eq!(
+            status.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            expected_class_status_fields
+        );
+        assert_eq!(
+            status.get("class").and_then(JsonValue::as_str),
+            Some(expected.class)
+        );
+        assert_eq!(
+            status.get("proposal_count").and_then(JsonValue::as_integer),
+            Some(i64::try_from(expected.proposal_count).expect("proposal count"))
+        );
+        assert_eq!(
+            status.get("proposal_status").and_then(JsonValue::as_str),
+            Some("draft_unreviewed")
+        );
+        assert_eq!(
+            status
+                .get("executable_fixture_count")
+                .and_then(JsonValue::as_integer),
+            Some(0)
+        );
+        assert_eq!(
+            status.get("coverage_status").and_then(JsonValue::as_str),
+            Some("unresolved")
+        );
+        assert_eq!(status.get("freeze_blocker"), Some(&JsonValue::Bool(true)));
+    }
     assert_eq!(root.get("replay_repetitions"), Some(&JsonValue::Null));
     assert_eq!(
         root.get("evidence_status").and_then(JsonValue::as_str),
@@ -385,10 +422,12 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
         "required_invalidation",
         "match_rule",
         "capability_credit",
+        "observation_level",
     ]);
     let expected_cases = strict_json::strings(CASES.map(|case| case.as_str()));
     let expected_relationships = strict_json::strings(RELATIONSHIPS);
     let mut ids = BTreeSet::new();
+    let mut class_counts = BTreeMap::new();
     for (index, proposal) in proposals.iter().enumerate() {
         let record = proposal.as_object().expect("closed proposal record");
         assert_eq!(
@@ -403,14 +442,22 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
                     .expect("proposal id")
             )
         );
-        assert_eq!(record.get("case_scope"), Some(&expected_cases));
+        let class = record
+            .get("class")
+            .and_then(JsonValue::as_str)
+            .expect("proposal class");
+        *class_counts.entry(class).or_insert(0_usize) += 1;
+        assert!(!matches!(class, "replay-ceiling" | "repetition"));
+        assert!(
+            !record
+                .get("id")
+                .and_then(JsonValue::as_str)
+                .expect("proposal id")
+                .starts_with("D004-XF-RP-")
+        );
         assert_eq!(
             record.get("layer").and_then(JsonValue::as_str),
             Some("structural")
-        );
-        assert_eq!(
-            record.get("expected_state").and_then(JsonValue::as_str),
-            Some("rejected")
         );
         assert_eq!(
             record
@@ -426,6 +473,16 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
             record.get("capability_credit").and_then(JsonValue::as_str),
             Some("none")
         );
+        assert_eq!(
+            record.get("observation_level").and_then(JsonValue::as_str),
+            Some("domain")
+        );
+        let mutation_kind = record
+            .get("mutation_kind")
+            .and_then(JsonValue::as_str)
+            .expect("mutation kind");
+        assert!(!mutation_kind.contains("repetition"));
+        assert!(!mutation_kind.contains("replay_ceiling"));
 
         if index < RELATIONSHIPS.len() {
             let relationship = RELATIONSHIPS[index];
@@ -433,6 +490,7 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
                 record.get("id").and_then(JsonValue::as_str),
                 Some(MISSING_EDGE_PROPOSAL_IDS[index])
             );
+            assert_eq!(record.get("case_scope"), Some(&expected_cases));
             assert_eq!(
                 record.get("class").and_then(JsonValue::as_str),
                 Some("missing-edge")
@@ -449,12 +507,17 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
                 record.get("target").and_then(JsonValue::as_str),
                 Some(relationship)
             );
-        } else {
+            assert_eq!(
+                record.get("expected_state").and_then(JsonValue::as_str),
+                Some("rejected")
+            );
+        } else if index < RELATIONSHIPS.len() + IDENTITY_SUBSTITUTION_PROPOSALS.len() {
             let identity = IDENTITY_SUBSTITUTION_PROPOSALS[index - RELATIONSHIPS.len()];
             assert_eq!(
                 record.get("id").and_then(JsonValue::as_str),
                 Some(identity.id)
             );
+            assert_eq!(record.get("case_scope"), Some(&expected_cases));
             assert_eq!(
                 record.get("class").and_then(JsonValue::as_str),
                 Some("identity-substitution")
@@ -471,9 +534,56 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
                 record.get("target").and_then(JsonValue::as_str),
                 Some(identity.target)
             );
+            assert_eq!(
+                record.get("expected_state").and_then(JsonValue::as_str),
+                Some("rejected")
+            );
+        } else {
+            let scoped = CASE_SCOPED_CROSS_CUTTING_PROPOSALS
+                [index - RELATIONSHIPS.len() - IDENTITY_SUBSTITUTION_PROPOSALS.len()];
+            assert_eq!(
+                record.get("id").and_then(JsonValue::as_str),
+                Some(scoped.id)
+            );
+            assert_eq!(
+                record.get("class").and_then(JsonValue::as_str),
+                Some(scoped.class)
+            );
+            assert_eq!(
+                record.get("case_scope"),
+                Some(&strict_json::strings([scoped.case.as_str()]))
+            );
+            assert_eq!(
+                record.get("relationship_scope"),
+                Some(&strict_json::strings(
+                    scoped.relationship_scope.iter().copied()
+                ))
+            );
+            assert_eq!(
+                record.get("mutation_kind").and_then(JsonValue::as_str),
+                Some(scoped.mutation_kind)
+            );
+            assert_eq!(
+                record.get("target").and_then(JsonValue::as_str),
+                Some(scoped.target)
+            );
+            assert_eq!(
+                record.get("expected_state").and_then(JsonValue::as_str),
+                Some(scoped.expected_state)
+            );
         }
     }
     assert_eq!(ids.len(), CROSS_CUTTING_PROPOSAL_COUNT);
+    assert_eq!(
+        class_counts,
+        BTreeMap::from([
+            ("ambiguity", 5),
+            ("identity-substitution", 10),
+            ("missing-edge", 14),
+            ("resource-exhaustion", 5),
+            ("unsupported", 5),
+        ])
+    );
 
     let canonical = String::from_utf8(canonical_cross_cutting_fixture_proposal_manifest_bytes())
         .expect("UTF-8");
@@ -498,6 +608,52 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
             .kind,
         PacketErrorKind::InvalidValue
     );
+    let semantic_drifts = [
+        canonical.replace(
+            "d004-cross-cutting-fixture-proposals-v0.2",
+            "d004-cross-cutting-fixture-proposals-v0.1",
+        ),
+        canonical.replacen("\"proposal_count\":5", "\"proposal_count\":6", 1),
+        canonical.replacen("\"freeze_blocker\":true", "\"freeze_blocker\":false", 1),
+        canonical.replace(
+            "\"case_scope\":[\"SC-01\"],\"class\":\"ambiguity\",\"expected_state\":\"rejected\",\"id\":\"D004-XF-AMB-SC01\"",
+            "\"case_scope\":[\"SC-02\"],\"class\":\"ambiguity\",\"expected_state\":\"rejected\",\"id\":\"D004-XF-AMB-SC01\"",
+        ),
+        canonical.replacen(
+            "\"mutation_kind\":\"exercise_preregistered_unsupported_behavior\",\"observation_level\":\"domain\",\"relationship_scope\":[]",
+            "\"mutation_kind\":\"exercise_preregistered_unsupported_behavior\",\"observation_level\":\"domain\",\"relationship_scope\":[\"SR-01\"]",
+            1,
+        ),
+        canonical.replace(
+            "\"class\":\"ambiguity\",\"expected_state\":\"rejected\",\"id\":\"D004-XF-AMB-SC01\"",
+            "\"class\":\"unsupported\",\"expected_state\":\"rejected\",\"id\":\"D004-XF-AMB-SC01\"",
+        ),
+        canonical.replace(
+            "\"expected_state\":\"unsupported\",\"id\":\"D004-XF-US-SC01\"",
+            "\"expected_state\":\"rejected\",\"id\":\"D004-XF-US-SC01\"",
+        ),
+        canonical.replace(
+            "\"expected_state\":\"exhausted\",\"id\":\"D004-XF-RE-SC01\"",
+            "\"expected_state\":\"timeout\",\"id\":\"D004-XF-RE-SC01\"",
+        ),
+        canonical.replacen(
+            "\"observation_level\":\"domain\"",
+            "\"observation_level\":\"adapter\"",
+            1,
+        ),
+        canonical
+            .replace("D004-XF-AMB-SC01", "D004-XF-AMB-TEMP")
+            .replace("D004-XF-AMB-SC02", "D004-XF-AMB-SC01")
+            .replace("D004-XF-AMB-TEMP", "D004-XF-AMB-SC02"),
+    ];
+    for drift in semantic_drifts {
+        assert_eq!(
+            parse_cross_cutting_fixture_proposal_manifest(drift.as_bytes())
+                .expect_err("proposal catalog semantic drift")
+                .kind,
+            PacketErrorKind::InvalidValue
+        );
+    }
     assert_eq!(
         parse_cross_cutting_fixture_proposal_manifest(canonical.as_bytes())
             .expect_err("proposal manifest without canonical trailing LF")
@@ -514,11 +670,11 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(packet.digest(), &sha256::digest(packet.canonical_bytes()));
     assert_eq!(
         packet.digest_hex(),
-        "4771ad2f5ae57e229d4d35b71c234875387c23c99c642fdb0efe21b664d971cf"
+        "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CHECKED_IN_PACKET)),
-        "88f0ac5b59eef74653716bc5a1b211fc1fee87bff074ffaba9cbd369909090fe"
+        "58b2b820a1f83fa7366c9f23d8f6a3c2e86e4ff9641bbb76f072df0549d67d28"
     );
     assert_eq!(
         parse_draft_packet(packet.canonical_bytes())

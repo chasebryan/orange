@@ -13,14 +13,15 @@ before it creates a schedule if any bound byte changes.
 
 The named-mutation manifest names exactly 26 case mutations: 4 for SC-01, 5 for
 SC-02, 5 for SC-03, 6 for SC-04, and 6 for SC-05. The separate proposal
-manifest names 14 missing-edge descriptor proposals, one for each SR-01 through
-SR-14, and 10 bound-identity substitution proposals. Those 24 records are
-unreviewed structural definitions only: they contain no executable input,
-candidate observation, result, evidence, or capability credit and resolve zero
-fixture classes. Ambiguity, missing-edge, identity-substitution, unsupported,
-and resource-exhaustion coverage remain explicit freeze blockers, and the
-replay repetition count remains unresolved. An owner must review and repair
-these protocol gaps symmetrically before freezing any epoch.
+manifest names 39 unreviewed structural definitions: 14 missing-edge, 10
+identity-substitution, and five each for ambiguity, unsupported behavior, and
+domain exhaustion. Every class records zero executable fixtures, unresolved
+coverage, and an active freeze blocker. The proposals contain no executable
+input, candidate observation, result, evidence, or capability credit and
+resolve zero fixture classes. Candidate-adapter failure is not an expected
+unsupported observation, and the exhaustion proposals exercise no replay
+ceiling. The replay repetition count remains unresolved. An owner must review
+and repair all six protocol gaps symmetrically before freezing any epoch.
 
 The Rust laboratory may deterministically plan the 5-candidate by 5-case Latin
 schedule only after validating the packet, both canonical manifests, and every

@@ -118,12 +118,13 @@ cross-candidate execution. It selects no stratum, does not accept D-003, and
 does not authorize S3b.
 
 Its input-only pre-epoch laboratory binds the 26 case mutations named explicitly
-by the suite plus 24 unreviewed structural proposals for missing relationship
-descriptors and bound-identity substitution, then plans all 25 candidate-case
-slots. The proposals contain no executable fixture or evidence and resolve none
-of the five cross-cutting fixture-class freeze blockers. The laboratory executes
-no candidate and creates no evidence epoch, result, review, recommendation, or
-selection.
+by the suite plus 39 unreviewed domain-level structural proposals: 14
+missing-edge, 10 identity-substitution, and five each for ambiguity, unsupported
+behavior, and domain exhaustion. It then plans all 25 candidate-case slots. The
+proposals contain zero executable fixtures and no observation or evidence; all
+five class statuses remain coverage-unresolved freeze blockers, and the replay
+count remains unassigned. The laboratory executes no candidate and creates no
+evidence epoch, result, review, recommendation, or selection.
 
 ## D-005 — Public assurance model
 

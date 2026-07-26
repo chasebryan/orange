@@ -327,10 +327,11 @@ conditional
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md)
 define the owner-executable research that may run ahead. Neither packet decides
 its subject or authorizes S3b. The D-004 input-only pre-epoch laboratory binds
-the named case mutations and an unreviewed, non-executable structural proposal
-catalog before it plans the symmetric 25-slot matrix. All five fixture-class
-blockers remain unresolved; the catalog freezes no epoch, creates no evidence,
-and advances no roadmap gate or readiness percentage.
+the named case mutations and 39 unreviewed, domain-level structural proposal
+definitions before it plans the symmetric 25-slot matrix. Every fixture class
+still has zero executable fixtures, unresolved coverage, and an active freeze
+blocker; replay repetition remains unassigned. The catalog freezes no epoch,
+creates no evidence, and advances no roadmap gate or readiness percentage.
 
 ## 7. Quality and claim metrics
 

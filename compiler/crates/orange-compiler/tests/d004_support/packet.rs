@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use super::cases::MUTATIONS;
 use super::domain::{
-    BUDGETS, CANDIDATES, CASE_VERDICTS, CASES, CROSS_CUTTING_PROPOSAL_COUNT,
-    CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES, CROSS_CUTTING_PROPOSAL_NONCLAIMS,
-    CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES, DOMAIN_OBSERVATION_STATES, HARD_GATES,
+    BUDGETS, CANDIDATES, CASE_SCOPED_CROSS_CUTTING_PROPOSALS, CASE_VERDICTS, CASES,
+    CROSS_CUTTING_PROPOSAL_CLASS_STATUSES, CROSS_CUTTING_PROPOSAL_COUNT,
+    CROSS_CUTTING_PROPOSAL_NONCLAIMS, DOMAIN_OBSERVATION_STATES, HARD_GATES,
     IDENTITY_SUBSTITUTION_PROPOSALS, INPUT_BINDINGS, InputBinding, InputBindingId,
     MISSING_EDGE_PROPOSAL_IDS, NONCLAIMS, PROTOCOL_GAPS, RELATIONSHIPS, REQUIRED_CANDIDATE_CASES,
     SOURCE_ROLES, UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES,
@@ -40,19 +40,26 @@ const ROOT_FIELDS: [&str; 26] = [
     "conclusion",
     "nonclaims",
 ];
-const CROSS_CUTTING_PROPOSAL_ROOT_FIELDS: [&str; 10] = [
+const CROSS_CUTTING_PROPOSAL_ROOT_FIELDS: [&str; 9] = [
     "schema_version",
     "status",
     "owner_protocol_review",
     "executable_inputs_status",
-    "proposal_defined_classes",
-    "proposal_undefined_classes",
+    "class_statuses",
     "replay_repetitions",
     "evidence_status",
     "proposals",
     "nonclaims",
 ];
-const CROSS_CUTTING_PROPOSAL_FIELDS: [&str; 11] = [
+const CROSS_CUTTING_PROPOSAL_CLASS_STATUS_FIELDS: [&str; 6] = [
+    "class",
+    "proposal_count",
+    "proposal_status",
+    "executable_fixture_count",
+    "coverage_status",
+    "freeze_blocker",
+];
+const CROSS_CUTTING_PROPOSAL_FIELDS: [&str; 12] = [
     "id",
     "class",
     "case_scope",
@@ -64,6 +71,7 @@ const CROSS_CUTTING_PROPOSAL_FIELDS: [&str; 11] = [
     "required_invalidation",
     "match_rule",
     "capability_credit",
+    "observation_level",
 ];
 const INPUT_BINDING_FIELDS: [&str; 2] = ["path", "sha256"];
 const BUDGET_FIELDS: [&str; 10] = [
@@ -89,7 +97,7 @@ const EXECUTION_FIELDS: [&str; 5] = [
 pub(crate) const MUTATION_MANIFEST_SHA256: &str =
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c";
 pub(crate) const CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256: &str =
-    "83ebbde05d3a9739cb9a928f6c5472f92545f984a8a39a1f005403211b307279";
+    "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PacketErrorKind {
@@ -319,22 +327,26 @@ fn validate_cross_cutting_fixture_proposal_manifest(value: &JsonValue) -> Result
     require_exact_string(
         root,
         "schema_version",
-        "d004-cross-cutting-fixture-proposals-v0.1",
+        "d004-cross-cutting-fixture-proposals-v0.2",
         "$",
     )?;
     require_exact_string(root, "status", "draft_unreviewed", "$")?;
     require_exact_string(root, "owner_protocol_review", "none", "$")?;
     require_exact_string(root, "executable_inputs_status", "absent", "$")?;
-    require_exact_strings(
-        root,
-        "proposal_defined_classes",
-        &CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES,
-    )?;
-    require_exact_strings(
-        root,
-        "proposal_undefined_classes",
-        &CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES,
-    )?;
+    let class_statuses = require_field(root, "class_statuses", "$")?
+        .as_array()
+        .ok_or_else(|| PacketError::new(PacketErrorKind::InvalidValue, "$/class_statuses"))?;
+    if class_statuses.len() != CROSS_CUTTING_PROPOSAL_CLASS_STATUSES.len() {
+        return Err(PacketError::new(
+            PacketErrorKind::InvalidValue,
+            "$/class_statuses",
+        ));
+    }
+    for (index, status) in class_statuses.iter().enumerate() {
+        let path = format!("$/class_statuses/{index}");
+        let record = require_object(status, &path)?;
+        exact_fields(record, &CROSS_CUTTING_PROPOSAL_CLASS_STATUS_FIELDS, &path)?;
+    }
     require_null(root, "replay_repetitions", "$")?;
     require_exact_string(root, "evidence_status", "none", "$")?;
     require_exact_strings(root, "nonclaims", &CROSS_CUTTING_PROPOSAL_NONCLAIMS)?;
@@ -658,43 +670,50 @@ fn mutation_manifest_value() -> JsonValue {
 
 fn cross_cutting_fixture_proposal_manifest_value() -> JsonValue {
     let mut proposals = Vec::with_capacity(CROSS_CUTTING_PROPOSAL_COUNT);
+    let all_cases = CASES.map(|case| case.as_str());
     for (id, relationship) in MISSING_EDGE_PROPOSAL_IDS.into_iter().zip(RELATIONSHIPS) {
         proposals.push(cross_cutting_fixture_proposal_value(
             id,
             "missing-edge",
+            &all_cases,
             &[relationship],
-            "structural",
             "remove_required_relationship_descriptor",
             relationship,
+            "rejected",
         ));
     }
     for proposal in IDENTITY_SUBSTITUTION_PROPOSALS {
         proposals.push(cross_cutting_fixture_proposal_value(
             proposal.id,
             "identity-substitution",
+            &all_cases,
             &RELATIONSHIPS,
-            "structural",
             "substitute_bound_identity",
             proposal.target,
+            "rejected",
+        ));
+    }
+    for proposal in CASE_SCOPED_CROSS_CUTTING_PROPOSALS {
+        proposals.push(cross_cutting_fixture_proposal_value(
+            proposal.id,
+            proposal.class,
+            &[proposal.case.as_str()],
+            proposal.relationship_scope,
+            proposal.mutation_kind,
+            proposal.target,
+            proposal.expected_state,
         ));
     }
     debug_assert_eq!(proposals.len(), CROSS_CUTTING_PROPOSAL_COUNT);
     strict_json::object([
         string_entry(
             "schema_version",
-            "d004-cross-cutting-fixture-proposals-v0.1",
+            "d004-cross-cutting-fixture-proposals-v0.2",
         ),
         string_entry("status", "draft_unreviewed"),
         string_entry("owner_protocol_review", "none"),
         string_entry("executable_inputs_status", "absent"),
-        (
-            "proposal_defined_classes".to_owned(),
-            strict_json::strings(CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES),
-        ),
-        (
-            "proposal_undefined_classes".to_owned(),
-            strict_json::strings(CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES),
-        ),
+        ("class_statuses".to_owned(), proposal_class_statuses_value()),
         ("replay_repetitions".to_owned(), JsonValue::Null),
         string_entry("evidence_status", "none"),
         ("proposals".to_owned(), JsonValue::Array(proposals)),
@@ -708,30 +727,50 @@ fn cross_cutting_fixture_proposal_manifest_value() -> JsonValue {
 fn cross_cutting_fixture_proposal_value(
     id: &'static str,
     class: &'static str,
+    case_scope: &[&'static str],
     relationship_scope: &[&'static str],
-    layer: &'static str,
     mutation_kind: &'static str,
     target: &'static str,
+    expected_state: &'static str,
 ) -> JsonValue {
     strict_json::object([
         string_entry("id", id),
         string_entry("class", class),
         (
             "case_scope".to_owned(),
-            strict_json::strings(CASES.map(|case| case.as_str())),
+            strict_json::strings(case_scope.iter().copied()),
         ),
         (
             "relationship_scope".to_owned(),
             strict_json::strings(relationship_scope.iter().copied()),
         ),
-        string_entry("layer", layer),
+        string_entry("layer", "structural"),
         string_entry("mutation_kind", mutation_kind),
         string_entry("target", target),
-        string_entry("expected_state", "rejected"),
+        string_entry("expected_state", expected_state),
         string_entry("required_invalidation", "dependent_result"),
         string_entry("match_rule", "required_not_sufficient"),
         string_entry("capability_credit", "none"),
+        string_entry("observation_level", "domain"),
     ])
+}
+
+fn proposal_class_statuses_value() -> JsonValue {
+    JsonValue::Array(
+        CROSS_CUTTING_PROPOSAL_CLASS_STATUSES
+            .iter()
+            .map(|status| {
+                strict_json::object([
+                    string_entry("class", status.class),
+                    usize_entry("proposal_count", status.proposal_count),
+                    string_entry("proposal_status", "draft_unreviewed"),
+                    usize_entry("executable_fixture_count", 0),
+                    string_entry("coverage_status", "unresolved"),
+                    ("freeze_blocker".to_owned(), JsonValue::Bool(true)),
+                ])
+            })
+            .collect(),
+    )
 }
 
 fn input_bindings_value() -> JsonValue {

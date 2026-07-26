@@ -2,7 +2,7 @@ use std::fmt;
 
 pub(crate) const REQUIRED_CANDIDATE_CASES: usize = 25;
 pub(crate) const INPUT_BINDING_COUNT: usize = 20;
-pub(crate) const CROSS_CUTTING_PROPOSAL_COUNT: usize = 24;
+pub(crate) const CROSS_CUTTING_PROPOSAL_COUNT: usize = 39;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CandidateId {
@@ -111,11 +111,34 @@ pub(crate) const UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES: [&str; 5] = [
     "resource-exhaustion",
 ];
 
-pub(crate) const CROSS_CUTTING_PROPOSAL_DEFINED_CLASSES: [&str; 2] =
-    ["missing-edge", "identity-substitution"];
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ProposalClassStatusSpec {
+    pub(crate) class: &'static str,
+    pub(crate) proposal_count: usize,
+}
 
-pub(crate) const CROSS_CUTTING_PROPOSAL_UNDEFINED_CLASSES: [&str; 3] =
-    ["ambiguity", "unsupported", "resource-exhaustion"];
+pub(crate) const CROSS_CUTTING_PROPOSAL_CLASS_STATUSES: [ProposalClassStatusSpec; 5] = [
+    ProposalClassStatusSpec {
+        class: "ambiguity",
+        proposal_count: 5,
+    },
+    ProposalClassStatusSpec {
+        class: "missing-edge",
+        proposal_count: 14,
+    },
+    ProposalClassStatusSpec {
+        class: "identity-substitution",
+        proposal_count: 10,
+    },
+    ProposalClassStatusSpec {
+        class: "unsupported",
+        proposal_count: 5,
+    },
+    ProposalClassStatusSpec {
+        class: "resource-exhaustion",
+        proposal_count: 5,
+    },
+];
 
 pub(crate) const MISSING_EDGE_PROPOSAL_IDS: [&str; 14] = [
     "D004-XF-ME-SR01",
@@ -183,6 +206,155 @@ pub(crate) const IDENTITY_SUBSTITUTION_PROPOSALS: [IdentitySubstitutionProposalS
     },
 ];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CaseScopedProposalSpec {
+    pub(crate) id: &'static str,
+    pub(crate) class: &'static str,
+    pub(crate) case: CaseId,
+    pub(crate) relationship_scope: &'static [&'static str],
+    pub(crate) mutation_kind: &'static str,
+    pub(crate) target: &'static str,
+    pub(crate) expected_state: &'static str,
+}
+
+pub(crate) const CASE_SCOPED_CROSS_CUTTING_PROPOSALS: [CaseScopedProposalSpec; 15] = [
+    CaseScopedProposalSpec {
+        id: "D004-XF-AMB-SC01",
+        class: "ambiguity",
+        case: CaseId::Sc01,
+        relationship_scope: &["SR-01"],
+        mutation_kind: "admit_competing_authoritative_interpretations",
+        target: "numeric_word_byte_order_and_signedness_interpretation",
+        expected_state: "rejected",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-AMB-SC02",
+        class: "ambiguity",
+        case: CaseId::Sc02,
+        relationship_scope: &["SR-01", "SR-02", "SR-09"],
+        mutation_kind: "admit_competing_authoritative_interpretations",
+        target: "mutable_memory_and_refinement_interpretation",
+        expected_state: "rejected",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-AMB-SC03",
+        class: "ambiguity",
+        case: CaseId::Sc03,
+        relationship_scope: &["SR-02", "SR-10"],
+        mutation_kind: "admit_competing_authoritative_interpretations",
+        target: "suite_policy_observation_classification",
+        expected_state: "rejected",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-AMB-SC04",
+        class: "ambiguity",
+        case: CaseId::Sc04,
+        relationship_scope: &["SR-01", "SR-03", "SR-11"],
+        mutation_kind: "admit_competing_authoritative_interpretations",
+        target: "intrinsic_abstract_machine_mapping",
+        expected_state: "rejected",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-AMB-SC05",
+        class: "ambiguity",
+        case: CaseId::Sc05,
+        relationship_scope: &["SR-04", "SR-08", "SR-12"],
+        mutation_kind: "admit_competing_authoritative_interpretations",
+        target: "game_sampling_probability_and_reduction_interpretation",
+        expected_state: "rejected",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-US-SC01",
+        class: "unsupported",
+        case: CaseId::Sc01,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_unsupported_behavior",
+        target: "sc01_unsupported_fixture_slot",
+        expected_state: "unsupported",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-US-SC02",
+        class: "unsupported",
+        case: CaseId::Sc02,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_unsupported_behavior",
+        target: "sc02_unsupported_fixture_slot",
+        expected_state: "unsupported",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-US-SC03",
+        class: "unsupported",
+        case: CaseId::Sc03,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_unsupported_behavior",
+        target: "sc03_unsupported_fixture_slot",
+        expected_state: "unsupported",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-US-SC04",
+        class: "unsupported",
+        case: CaseId::Sc04,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_unsupported_behavior",
+        target: "sc04_unsupported_fixture_slot",
+        expected_state: "unsupported",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-US-SC05",
+        class: "unsupported",
+        case: CaseId::Sc05,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_unsupported_behavior",
+        target: "sc05_unsupported_fixture_slot",
+        expected_state: "unsupported",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-RE-SC01",
+        class: "resource-exhaustion",
+        case: CaseId::Sc01,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_domain_exhaustion",
+        target: "sc01_resource_fixture_slot",
+        expected_state: "exhausted",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-RE-SC02",
+        class: "resource-exhaustion",
+        case: CaseId::Sc02,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_domain_exhaustion",
+        target: "sc02_resource_fixture_slot",
+        expected_state: "exhausted",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-RE-SC03",
+        class: "resource-exhaustion",
+        case: CaseId::Sc03,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_domain_exhaustion",
+        target: "sc03_resource_fixture_slot",
+        expected_state: "exhausted",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-RE-SC04",
+        class: "resource-exhaustion",
+        case: CaseId::Sc04,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_domain_exhaustion",
+        target: "sc04_resource_fixture_slot",
+        expected_state: "exhausted",
+    },
+    CaseScopedProposalSpec {
+        id: "D004-XF-RE-SC05",
+        class: "resource-exhaustion",
+        case: CaseId::Sc05,
+        relationship_scope: &[],
+        mutation_kind: "exercise_preregistered_domain_exhaustion",
+        target: "sc05_resource_fixture_slot",
+        expected_state: "exhausted",
+    },
+];
+
 pub(crate) const PROTOCOL_GAPS: [&str; 6] = [
     "ambiguity fixture coverage unresolved",
     "missing-edge fixture coverage unresolved",
@@ -201,7 +373,7 @@ pub(crate) const NONCLAIMS: [&str; 6] = [
     "no S3b implementation authorized",
 ];
 
-pub(crate) const CROSS_CUTTING_PROPOSAL_NONCLAIMS: [&str; 7] = [
+pub(crate) const CROSS_CUTTING_PROPOSAL_NONCLAIMS: [&str; 11] = [
     "no candidate adapter executed",
     "no D-004 evidence epoch frozen",
     "no semantic-strata candidate selected",
@@ -209,6 +381,10 @@ pub(crate) const CROSS_CUTTING_PROPOSAL_NONCLAIMS: [&str; 7] = [
     "no roadmap gate or readiness movement",
     "no S3b implementation authorized",
     "proposal definitions are not executable fixture coverage or evidence",
+    "unsupported proposals do not establish candidate support or capability absence",
+    "candidate adapter inability is not a preregistered unsupported observation",
+    "resource-exhaustion proposals do not exercise or verify any resource ceiling",
+    "replay repetitions remain unresolved and unassigned",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -303,7 +479,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::DecisionSuite,
         path: "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-        sha256: "f214d6b5064fd1117e870a107de55b855b1a2b72df3596f93aa22cdd378deb2e",
+        sha256: "6bbe26201f46c2ba9cc615646695454ab257973a935ba15862c9b67728ab4957",
     },
     InputBinding {
         id: InputBindingId::ProductFormDecisionPacket,
@@ -393,7 +569,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::CrossCuttingFixtureProposals,
         path: "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
-        sha256: "12853f50e96c3e594f999e097a68a7be51d0395e7cc9253d7b99f134344f10aa",
+        sha256: "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93",
     },
 ];
 
