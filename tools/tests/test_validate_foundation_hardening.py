@@ -5366,8 +5366,8 @@ class PlanningTraceHardeningTests(unittest.TestCase):
                 "semantic_strata.header",
             ),
             (
+                "Suite version: `d004-v0.5-draft`",
                 "Suite version: `d004-v0.4-draft`",
-                "Suite version: `d004-v0.3-draft`",
                 "semantic_strata.header",
             ),
             (

@@ -38,20 +38,22 @@ PR #9 merged the S3a implementation and normative records as commit
 implementation evidence, not proof of semantic soundness or a stable public
 compatibility promise.
 
-The D-004 input-only laboratory byte-materializes exactly 70 candidate-neutral
+The D-004 input-only laboratory byte-materializes exactly 73 candidate-neutral
 suite-only subjects as `draft_unreviewed_input_only`: five positive case
-subjects, all 26 named mutations, 14 missing-edge subjects, 10
+subjects, all 26 named mutations, 14 missing-edge subjects, 13
 identity-substitution subjects, and five each for ambiguity, unsupported
 behavior, and domain exhaustion. All five class sufficiency reviews and freeze
 blockers, plus replay repetitions, remain unresolved. D-003 is accepted at exact revision
 `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner protocol review is
 `none`, the D-004
-epoch is unfrozen, and execution remains 0/25 with no mappings, adapters,
-observations, evidence, selection, or conclusion. Canonical parsing, digest
-checks, and structural integrity oracles over opaque suite-only models are not
-candidate executions and establish no Orange semantics, proof, leakage,
-target, cryptographic, or readiness assurance. Orange remains 30% complete by
-binary gate closure.
+epoch is unfrozen, and execution remains 0/25. A separate authenticated
+input-only catalog contains five unreviewed candidate graph hypotheses and 70
+unresolved relationship mappings, with no adapters, observations, evidence,
+selection, or conclusion. Canonical parsing, digest checks, and structural
+integrity oracles over opaque suite-only models are not candidate executions
+and establish no Orange semantics, proof, leakage, target, cryptographic, or
+readiness assurance. Orange's binary gate-closure score remains 3/10 (30%);
+that mechanical score is not release readiness.
 
 The D-010 input-only laboratory is planning evidence only. It compares five
 candidate identities across eight zero-fixture cases and remains at 0/40. It

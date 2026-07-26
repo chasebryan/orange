@@ -12,9 +12,9 @@ pub(crate) const FIXTURE_CATALOG_PATH: &str =
 pub(crate) const FIXTURE_CATALOG_SCHEMA: &str = "d004-cross-cutting-executable-fixtures-v0.1";
 pub(crate) const FIXTURE_SUBJECT_SCHEMA: &str = "d004-cross-cutting-fixture-subject-v0.1";
 pub(crate) const FIXTURE_CATALOG_CANONICAL_SHA256: &str =
-    "ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703";
+    "0516a84260bcc4d8ebb64e0cd3416deb5c43a86b7f5cd882ca757c924e575767";
 pub(crate) const FIXTURE_CATALOG_RAW_SHA256: &str =
-    "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0";
+    "5fea65960c47818243d41076dd96a6cab2dbd6d4038fd354a3f5ba30a12622ae";
 
 const ROOT_FIELDS: [&str; 12] = [
     "schema_version",
@@ -355,13 +355,13 @@ fn validate_proposal_manifest_binding(
     require_exact_string(
         binding,
         "canonical_sha256",
-        "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65",
+        "85407a4a43b5a6bf450ea905fe858482f2f79abb4cbe8ee8690bddc1753d0912",
         path,
     )?;
     require_exact_string(
         binding,
         "raw_sha256",
-        "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93",
+        "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481",
         path,
     )
 }

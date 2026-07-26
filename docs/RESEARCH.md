@@ -161,19 +161,21 @@ control branches or addresses. Probabilistic sampling must not appear in a pure
 deterministic specification. Vector intrinsics must name their target feature
 and semantics. These are separate strata with checked crossings.
 
-The D-004 pre-epoch corpus now byte-materializes exactly 70 candidate-neutral
+The D-004 pre-epoch corpus now byte-materializes exactly 73 candidate-neutral
 suite-only subjects as `draft_unreviewed_input_only`: five positive case
-subjects, all 26 named mutations, 14 missing-edge subjects, 10
+subjects, all 26 named mutations, 14 missing-edge subjects, 13
 identity-substitution subjects, and five each for ambiguity, unsupported
 behavior, and domain exhaustion. These are fixed research inputs, not Orange
 syntax or semantics. Every class sufficiency review and freeze blocker plus
 replay repetitions remains unresolved. D-003 candidate PF-01 is accepted
 through OEP-0004 at exact revision
 `a82a5cec2ee4359dc2fe66171f17c93146747333`. With D-004 owner review
-`none`, an unfrozen D-004 epoch, and no candidate mappings or adapters,
+`none`, an unfrozen D-004 epoch, five unreviewed input-only candidate graph
+hypotheses with 70 unresolved relationship mappings, and no candidate adapters,
 integrity parsing and structural oracles create no candidate execution,
-evidence, selection, conclusion, or readiness credit. D-004 remains at 0/25 and
-Orange at 30% readiness by binary gate closure.
+evidence, selection, conclusion, or readiness credit. D-004 remains at 0/25.
+Orange's binary gate-closure score remains 3/10 (30%); that mechanical score is
+not release readiness.
 
 ### 4.5 End-to-end proof still needs interoperability
 

@@ -4,6 +4,8 @@
 //! slots. They execute no candidate adapter, freeze no epoch, select no
 //! semantic architecture, and create no D-004 result or product evidence.
 
+#[path = "d004_support/candidate_mappings.rs"]
+mod candidate_mappings;
 #[path = "d004_support/case_subjects.rs"]
 mod case_subjects;
 #[path = "d004_support/cases.rs"]
@@ -27,6 +29,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use candidate_mappings::{
+    CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256, CANDIDATE_MAPPING_CATALOG_PATH,
+    CANDIDATE_MAPPING_CATALOG_RAW_SHA256, CANDIDATE_MAPPING_CATALOG_SUBJECT_SHA256,
+    CANDIDATE_MAPPING_COUNT, CANDIDATE_MAPPING_NONCLAIMS, CANDIDATE_MAPPING_RELATIONSHIP_COUNT,
+    CANDIDATE_MAPPING_ROW_COUNT, CandidateMappingCatalog, CandidateMappingErrorKind,
+    parse_candidate_mapping_catalog,
+};
 use case_subjects::{
     CASE_SUBJECT_CATALOG_CANONICAL_SHA256, CASE_SUBJECT_CATALOG_PATH,
     CASE_SUBJECT_CATALOG_RAW_SHA256, CASE_SUBJECT_NONCLAIMS, CaseSubjectCatalog,
@@ -46,7 +55,8 @@ use fixtures::{
     FIXTURE_NONCLAIMS, FixtureCatalog, FixtureErrorKind, FixtureState, parse_fixture_catalog,
 };
 use packet::{
-    CASE_SUBJECT_CATALOG_SHA256, CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
+    CANDIDATE_MAPPING_CATALOG_SHA256, CASE_SUBJECT_CATALOG_SHA256,
+    CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
     CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256, MUTATION_MANIFEST_SHA256, PacketErrorKind,
     canonical_cross_cutting_fixture_proposal_manifest_bytes,
     canonical_cross_cutting_fixture_proposal_manifest_file_bytes, canonical_draft_packet_bytes,
@@ -56,8 +66,8 @@ use packet::{
     parse_draft_packet, parse_mutation_manifest,
 };
 use result_contract::{
-    ADAPTER_STATUS_STATES, DERIVATION_RULES, DIGEST_JOIN_FIELDS, EXECUTION_STATE_KINDS,
-    OBSERVATION_COMPARISONS, OBSERVED_INVALIDATION_STATES, ORDERING_RULES,
+    ADAPTER_STATUS_STATES, CANDIDATE_MAPPING_IDENTITY_FIELDS, DERIVATION_RULES, DIGEST_JOIN_FIELDS,
+    EXECUTION_STATE_KINDS, OBSERVATION_COMPARISONS, OBSERVED_INVALIDATION_STATES, ORDERING_RULES,
     REPLAY_NON_SUCCESS_STATES, REQUIRED_CASE_RECORD_FIELDS, REQUIRED_GRAPH_EDGE_FIELDS,
     REQUIRED_IDENTITY_FIELDS, REQUIRED_MUTATION_SUBJECT_BINDING_FIELDS,
     REQUIRED_OBSERVATION_FIELDS, REQUIRED_OWNER_LABEL_FIELDS,
@@ -70,7 +80,7 @@ use runner::{ReplayError, ReplayInputs};
 use strict_json::{JsonErrorKind, JsonValue};
 
 const CHECKED_IN_PACKET: &[u8] =
-    include_bytes!("../../../../research/decisions/D-004/d004-v0.4-draft-packet.json");
+    include_bytes!("../../../../research/decisions/D-004/d004-v0.5-draft-packet.json");
 const NAMED_MUTATIONS: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.2-named-mutations.json");
 const CROSS_CUTTING_FIXTURE_PROPOSALS: &[u8] = include_bytes!(
@@ -81,6 +91,8 @@ const CROSS_CUTTING_EXECUTABLE_FIXTURES: &[u8] = include_bytes!(
 );
 const CASE_SUBJECTS: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.4-case-subjects.json");
+const CANDIDATE_MAPPINGS: &[u8] =
+    include_bytes!("../../../../research/decisions/D-004/d004-v0.5-candidate-mappings.json");
 const DECISION_SUITE: &[u8] = include_bytes!("../../../../docs/SEMANTIC_STRATA_DECISION_SUITE.md");
 const PRODUCT_FORM_DECISION_PACKET: &[u8] =
     include_bytes!("../../../../docs/PRODUCT_FORM_DECISION_PACKET.md");
@@ -107,7 +119,7 @@ const VALID_INT_RADICES: &[u8] = include_bytes!("../../../fixtures/s3a/valid-int
 const VALID_WORD8_BOUNDARIES: &[u8] =
     include_bytes!("../../../fixtures/s3a/valid-word8-boundaries.or");
 const RESULT_CONTRACT_DESCRIPTOR_SHA256: &str =
-    "e3afc61c7127ca0b59dd010e90ae03a92c3354e3eee490c0667482c9218e8789";
+    "58773e8ce29e8726a8a85203ff7e2a4b1a03f8c02bfbcd7f6056f34fe53a2f29";
 
 fn checked_in_replay_inputs() -> ReplayInputs<'static> {
     ReplayInputs::new([
@@ -133,10 +145,11 @@ fn checked_in_replay_inputs() -> ReplayInputs<'static> {
         CROSS_CUTTING_FIXTURE_PROPOSALS,
         CROSS_CUTTING_EXECUTABLE_FIXTURES,
         CASE_SUBJECTS,
+        CANDIDATE_MAPPINGS,
     ])
 }
 
-fn checked_in_subject_catalogs() -> (CaseSubjectCatalog, FixtureCatalog) {
+fn checked_in_catalogs() -> (CaseSubjectCatalog, FixtureCatalog, CandidateMappingCatalog) {
     let mutation_manifest =
         parse_mutation_manifest(NAMED_MUTATIONS).expect("checked-in mutation manifest");
     let case_subject_catalog = parse_case_subject_catalog(CASE_SUBJECTS, &mutation_manifest)
@@ -156,7 +169,17 @@ fn checked_in_subject_catalogs() -> (CaseSubjectCatalog, FixtureCatalog) {
         fixture_catalog.digest_hex(),
         FIXTURE_CATALOG_CANONICAL_SHA256
     );
-    (case_subject_catalog, fixture_catalog)
+    let candidate_mapping_catalog =
+        parse_candidate_mapping_catalog(CANDIDATE_MAPPINGS).expect("checked-in candidate mappings");
+    assert_eq!(
+        candidate_mapping_catalog.digest_hex(),
+        CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256
+    );
+    (
+        case_subject_catalog,
+        fixture_catalog,
+        candidate_mapping_catalog,
+    )
 }
 
 fn canonical_json_file_bytes(value: &JsonValue) -> Vec<u8> {
@@ -238,12 +261,19 @@ type DescriptorMutation = Box<dyn Fn(&mut JsonValue)>;
 
 #[test]
 fn future_result_contract_descriptor_is_exact_closed_and_zero_state() {
-    let (case_subject_catalog, fixture_catalog) = checked_in_subject_catalogs();
-    let bytes =
-        canonical_draft_result_contract_descriptor_bytes(&case_subject_catalog, &fixture_catalog);
-    let descriptor =
-        parse_draft_result_contract_descriptor(&bytes, &case_subject_catalog, &fixture_catalog)
-            .expect("exact descriptor");
+    let (case_subject_catalog, fixture_catalog, candidate_mapping_catalog) = checked_in_catalogs();
+    let bytes = canonical_draft_result_contract_descriptor_bytes(
+        &case_subject_catalog,
+        &fixture_catalog,
+        &candidate_mapping_catalog,
+    );
+    let descriptor = parse_draft_result_contract_descriptor(
+        &bytes,
+        &case_subject_catalog,
+        &fixture_catalog,
+        &candidate_mapping_catalog,
+    )
+    .expect("exact descriptor");
     let descriptor_value = strict_json::parse(&bytes).expect("generated descriptor parses");
 
     assert_eq!(descriptor.epoch(), None);
@@ -414,7 +444,7 @@ fn future_result_contract_descriptor_is_exact_closed_and_zero_state() {
     );
     assert_eq!(ORDERING_RULES.len(), 6);
     assert_eq!(OBSERVATION_COMPARISONS, ["matched", "mismatched"]);
-    assert_eq!(DERIVATION_RULES.len(), 30);
+    assert_eq!(DERIVATION_RULES.len(), 31);
     assert_eq!(RESULT_CONTRACT_NONCLAIMS.len(), 12);
 
     let expected_mutations = JsonValue::Array(
@@ -469,12 +499,62 @@ fn future_result_contract_descriptor_is_exact_closed_and_zero_state() {
             .and_then(JsonValue::as_str),
         Some(FIXTURE_CATALOG_CANONICAL_SHA256)
     );
+    let mapping_binding = json_object(
+        catalog_bindings
+            .get("candidate_mapping_catalog")
+            .expect("candidate-mapping catalog binding"),
+    );
+    assert_eq!(
+        mapping_binding
+            .get("canonical_sha256")
+            .and_then(JsonValue::as_str),
+        Some(CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256)
+    );
+
+    let mapping_identities = json_array(
+        root.get("candidate_mapping_identity_inventory")
+            .expect("candidate-mapping identity inventory"),
+    );
+    assert_eq!(mapping_identities.len(), CANDIDATE_MAPPING_COUNT);
+    for (record, expected) in mapping_identities
+        .iter()
+        .zip(candidate_mapping_catalog.identities())
+    {
+        let record = json_object(record);
+        assert_eq!(
+            record.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            CANDIDATE_MAPPING_IDENTITY_FIELDS.into_iter().collect()
+        );
+        assert_eq!(
+            record.get("candidate").and_then(JsonValue::as_str),
+            Some(expected.candidate.as_str())
+        );
+        assert_eq!(
+            record.get("graph_sha256").and_then(JsonValue::as_str),
+            Some(expected.graph_sha256.as_str())
+        );
+        assert_eq!(
+            record.get("sr_map_sha256").and_then(JsonValue::as_str),
+            Some(expected.sr_map_sha256.as_str())
+        );
+        assert_eq!(
+            record.get("mapping_sha256"),
+            Some(&JsonValue::Array(
+                expected
+                    .mapping_sha256
+                    .iter()
+                    .cloned()
+                    .map(JsonValue::String)
+                    .collect()
+            ))
+        );
+    }
 
     let oracle_inventory = json_array(
         root.get("subject_oracle_inventory")
             .expect("subject oracle inventory"),
     );
-    assert_eq!(oracle_inventory.len(), 70);
+    assert_eq!(oracle_inventory.len(), 73);
     let expected_subjects = case_subject_catalog
         .preflights()
         .iter()
@@ -502,7 +582,7 @@ fn future_result_contract_descriptor_is_exact_closed_and_zero_state() {
         );
         assert!(subject_ids.insert(expected_id));
     }
-    assert_eq!(subject_ids.len(), 70);
+    assert_eq!(subject_ids.len(), 73);
 
     let slot_identity = json_object(
         root.get("scheduled_slot_identity_contract")
@@ -566,15 +646,23 @@ fn future_result_contract_descriptor_is_exact_closed_and_zero_state() {
 
 #[test]
 fn future_result_contract_descriptor_fails_closed_on_state_or_schema_drift() {
-    let (case_subject_catalog, fixture_catalog) = checked_in_subject_catalogs();
-    let bytes =
-        canonical_draft_result_contract_descriptor_bytes(&case_subject_catalog, &fixture_catalog);
+    let (case_subject_catalog, fixture_catalog, candidate_mapping_catalog) = checked_in_catalogs();
+    let bytes = canonical_draft_result_contract_descriptor_bytes(
+        &case_subject_catalog,
+        &fixture_catalog,
+        &candidate_mapping_catalog,
+    );
     let parsed = strict_json::parse(&bytes).expect("generated descriptor parses");
     let parse_descriptor = |source: &[u8]| {
-        parse_draft_result_contract_descriptor(source, &case_subject_catalog, &fixture_catalog)
+        parse_draft_result_contract_descriptor(
+            source,
+            &case_subject_catalog,
+            &fixture_catalog,
+            &candidate_mapping_catalog,
+        )
     };
 
-    let mutations: [DescriptorMutation; 17] = [
+    let mutations: [DescriptorMutation; 18] = [
         Box::new(|value| {
             json_object_mut(value).insert("unknown".to_owned(), JsonValue::Bool(true));
         }),
@@ -690,6 +778,17 @@ fn future_result_contract_descriptor_fails_closed_on_state_or_schema_drift() {
             )
             .insert(
                 "canonical_sha256".to_owned(),
+                JsonValue::String("0".repeat(64)),
+            );
+        }),
+        Box::new(|value| {
+            let identities = json_array_mut(
+                json_object_mut(value)
+                    .get_mut("candidate_mapping_identity_inventory")
+                    .expect("candidate-mapping identity inventory"),
+            );
+            json_object_mut(&mut identities[0]).insert(
+                "sr_map_sha256".to_owned(),
                 JsonValue::String("0".repeat(64)),
             );
         }),
@@ -945,6 +1044,7 @@ fn d004_pre_epoch_contract_preserves_every_freeze_blocker_and_budget() {
             "identity-substitution fixture sufficiency review unresolved",
             "unsupported fixture sufficiency review unresolved",
             "resource-exhaustion fixture sufficiency review unresolved",
+            "candidate graph and SR mapping review unresolved",
             "replay repetition count unresolved",
         ]
     );
@@ -1050,11 +1150,11 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
     );
     assert_eq!(
         CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
-        "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65"
+        "85407a4a43b5a6bf450ea905fe858482f2f79abb4cbe8ee8690bddc1753d0912"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CROSS_CUTTING_FIXTURE_PROPOSALS)),
-        "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93"
+        "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481"
     );
 
     let root = value.as_object().expect("proposal root");
@@ -1309,12 +1409,52 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
         class_counts,
         BTreeMap::from([
             ("ambiguity", 5),
-            ("identity-substitution", 10),
+            ("identity-substitution", 13),
             ("missing-edge", 14),
             ("resource-exhaustion", 5),
             ("unsupported", 5),
         ])
     );
+    assert_eq!(
+        IDENTITY_SUBSTITUTION_PROPOSALS
+            .iter()
+            .map(|proposal| (proposal.id, proposal.target))
+            .collect::<Vec<_>>(),
+        vec![
+            ("D004-XF-ID-PACKET", "packet_identity"),
+            ("D004-XF-ID-REPLAY-PLAN", "replay_plan_identity"),
+            ("D004-XF-ID-SCHEDULED-SLOT", "scheduled_slot_identity"),
+            ("D004-XF-ID-INPUT-MANIFEST", "input_manifest_identity"),
+            ("D004-XF-ID-CANDIDATE-GRAPH", "candidate_graph_identity"),
+            ("D004-XF-ID-SR-MAP", "sr_map_identity"),
+            ("D004-XF-ID-SEMANTIC-ENDPOINT", "semantic_endpoint_identity"),
+            ("D004-XF-ID-PARAMETER-MODEL", "parameter_model_identity"),
+            ("D004-XF-ID-TOOL", "tool_identity"),
+            ("D004-XF-ID-ENVIRONMENT", "environment_identity"),
+            ("D004-XF-ID-MODEL", "model_identity"),
+            (
+                "D004-XF-ID-DEPENDENCY-MANIFEST",
+                "dependency_manifest_identity",
+            ),
+            ("D004-XF-ID-POSITIVE-SUBJECT", "positive_subject_identity",),
+        ]
+    );
+    let mandatory_digest_targets = DIGEST_JOIN_FIELDS
+        .iter()
+        .map(|field| {
+            format!(
+                "{}_identity",
+                field
+                    .strip_suffix("_sha256")
+                    .expect("mandatory digest join field suffix")
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let identity_substitution_targets = IDENTITY_SUBSTITUTION_PROPOSALS
+        .iter()
+        .map(|proposal| proposal.target.to_owned())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(identity_substitution_targets, mandatory_digest_targets);
 
     let canonical = String::from_utf8(canonical_cross_cutting_fixture_proposal_manifest_bytes())
         .expect("UTF-8");
@@ -1404,7 +1544,7 @@ fn cross_cutting_executable_fixture_catalog_is_exact_addressed_and_input_only() 
         FIXTURE_CATALOG_PATH,
         "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json"
     );
-    assert_eq!(CROSS_CUTTING_EXECUTABLE_FIXTURES.len(), 67_329);
+    assert_eq!(CROSS_CUTTING_EXECUTABLE_FIXTURES.len(), 87_189);
     assert_eq!(
         catalog.canonical_bytes(),
         &CROSS_CUTTING_EXECUTABLE_FIXTURES[..CROSS_CUTTING_EXECUTABLE_FIXTURES.len() - 1]
@@ -1412,7 +1552,7 @@ fn cross_cutting_executable_fixture_catalog_is_exact_addressed_and_input_only() 
     assert_eq!(catalog.digest_hex(), FIXTURE_CATALOG_CANONICAL_SHA256);
     assert_eq!(
         catalog.digest_hex(),
-        "ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703"
+        "0516a84260bcc4d8ebb64e0cd3416deb5c43a86b7f5cd882ca757c924e575767"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CROSS_CUTTING_EXECUTABLE_FIXTURES)),
@@ -1420,7 +1560,7 @@ fn cross_cutting_executable_fixture_catalog_is_exact_addressed_and_input_only() 
     );
     assert_eq!(
         FIXTURE_CATALOG_RAW_SHA256,
-        "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0"
+        "5fea65960c47818243d41076dd96a6cab2dbd6d4038fd354a3f5ba30a12622ae"
     );
     assert_eq!(catalog.preflights().len(), CROSS_CUTTING_PROPOSAL_COUNT);
 
@@ -1443,7 +1583,7 @@ fn cross_cutting_executable_fixture_catalog_is_exact_addressed_and_input_only() 
             .iter()
             .filter(|preflight| preflight.observed_state == FixtureState::Rejected)
             .count(),
-        29
+        32
     );
     assert_eq!(
         catalog
@@ -1577,39 +1717,43 @@ fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation()
         FixtureErrorKind::StructuralMismatch
     );
 
-    let mut identity = baseline.clone();
-    {
-        let subject = json_object_mut(
-            fixture_record_mut(&mut identity, 14)
-                .get_mut("fixture_subject")
-                .expect("subject"),
-        );
-        let model = json_object_mut(subject.get_mut("model").expect("model"));
-        let baseline_bindings = json_array_mut(
-            model
-                .get_mut("baseline_bindings")
-                .expect("baseline bindings"),
-        );
-        let original = json_object_mut(&mut baseline_bindings[0])
+    for (identity_index, proposal) in IDENTITY_SUBSTITUTION_PROPOSALS.iter().enumerate() {
+        let fixture_index = RELATIONSHIPS.len() + identity_index;
+        let mut identity = baseline.clone();
+        {
+            let subject = json_object_mut(
+                fixture_record_mut(&mut identity, fixture_index)
+                    .get_mut("fixture_subject")
+                    .expect("subject"),
+            );
+            let model = json_object_mut(subject.get_mut("model").expect("model"));
+            let original = json_object(
+                &json_array(model.get("baseline_bindings").expect("baseline bindings"))
+                    [identity_index],
+            )
             .get("identity_sha256")
             .expect("original identity")
             .clone();
-        let mutated_bindings =
-            json_array_mut(model.get_mut("mutated_bindings").expect("mutated bindings"));
-        json_object_mut(&mut mutated_bindings[0]).insert("identity_sha256".to_owned(), original);
+            let mutated_bindings =
+                json_array_mut(model.get_mut("mutated_bindings").expect("mutated bindings"));
+            json_object_mut(&mut mutated_bindings[identity_index])
+                .insert("identity_sha256".to_owned(), original);
+        }
+        rehash_fixture_subject(&mut identity, fixture_index);
+        assert_eq!(
+            parse_fixture_catalog(&canonical_json_file_bytes(&identity), &proposals)
+                .expect_err("identity fixture must contain exactly one substitution")
+                .kind,
+            FixtureErrorKind::StructuralMismatch,
+            "{}",
+            proposal.id
+        );
     }
-    rehash_fixture_subject(&mut identity, 14);
-    assert_eq!(
-        parse_fixture_catalog(&canonical_json_file_bytes(&identity), &proposals)
-            .expect_err("identity fixture must contain exactly one substitution")
-            .kind,
-        FixtureErrorKind::StructuralMismatch
-    );
 
     let mut ambiguity = baseline.clone();
     {
         let subject = json_object_mut(
-            fixture_record_mut(&mut ambiguity, 24)
+            fixture_record_mut(&mut ambiguity, 27)
                 .get_mut("fixture_subject")
                 .expect("subject"),
         );
@@ -1622,7 +1766,7 @@ fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation()
             .clone();
         json_object_mut(&mut interpretations[1]).insert("value".to_owned(), first);
     }
-    rehash_fixture_subject(&mut ambiguity, 24);
+    rehash_fixture_subject(&mut ambiguity, 27);
     assert_eq!(
         parse_fixture_catalog(&canonical_json_file_bytes(&ambiguity), &proposals)
             .expect_err("ambiguity fixture requires distinct interpretations")
@@ -1633,7 +1777,7 @@ fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation()
     let mut unsupported = baseline.clone();
     {
         let subject = json_object_mut(
-            fixture_record_mut(&mut unsupported, 29)
+            fixture_record_mut(&mut unsupported, 32)
                 .get_mut("fixture_subject")
                 .expect("subject"),
         );
@@ -1646,7 +1790,7 @@ fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation()
         )
         .clear();
     }
-    rehash_fixture_subject(&mut unsupported, 29);
+    rehash_fixture_subject(&mut unsupported, 32);
     assert_eq!(
         parse_fixture_catalog(&canonical_json_file_bytes(&unsupported), &proposals)
             .expect_err("absence is not an explicit unsupported observation")
@@ -1657,7 +1801,7 @@ fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation()
     let mut resource = baseline.clone();
     {
         let subject = json_object_mut(
-            fixture_record_mut(&mut resource, 34)
+            fixture_record_mut(&mut resource, 37)
                 .get_mut("fixture_subject")
                 .expect("subject"),
         );
@@ -1665,7 +1809,7 @@ fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation()
         let request = json_object_mut(model.get_mut("request").expect("request"));
         json_array_mut(request.get_mut("work_items").expect("work items")).pop();
     }
-    rehash_fixture_subject(&mut resource, 34);
+    rehash_fixture_subject(&mut resource, 37);
     assert_eq!(
         parse_fixture_catalog(&canonical_json_file_bytes(&resource), &proposals)
             .expect_err("domain exhaustion must remain deterministic and explicit")
@@ -1701,7 +1845,7 @@ fn case_subject_catalog_is_exact_addressed_complete_and_input_only() {
         CASE_SUBJECT_CATALOG_PATH,
         "research/decisions/D-004/d004-v0.4-case-subjects.json"
     );
-    assert_eq!(CASE_SUBJECTS.len(), 35_099);
+    assert_eq!(CASE_SUBJECTS.len(), 35_154);
     assert_eq!(
         catalog.canonical_bytes(),
         &CASE_SUBJECTS[..CASE_SUBJECTS.len() - 1]
@@ -1709,7 +1853,7 @@ fn case_subject_catalog_is_exact_addressed_complete_and_input_only() {
     assert_eq!(catalog.digest_hex(), CASE_SUBJECT_CATALOG_CANONICAL_SHA256);
     assert_eq!(
         catalog.digest_hex(),
-        "b3a8bcf4f0f084740e92cbff6fd57273df0a078af9c6b974f68d95ba333c6dc1"
+        "5b9e734b6bad7913072e87adb29c58547d67bdcb46af942eb6bbc79d0e68166e"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CASE_SUBJECTS)),
@@ -1717,7 +1861,7 @@ fn case_subject_catalog_is_exact_addressed_complete_and_input_only() {
     );
     assert_eq!(
         CASE_SUBJECT_CATALOG_RAW_SHA256,
-        "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6"
+        "6266b8e38ad1a83fb777278fc0369844749b2915eabb40ba1ddfc9efa7c985f2"
     );
 
     let preflights = catalog.preflights();
@@ -2082,6 +2226,225 @@ fn case_subject_catalog_loader_fails_closed_before_candidate_execution() {
 }
 
 #[test]
+fn candidate_mapping_catalog_is_exact_complete_and_input_only() {
+    let catalog = parse_candidate_mapping_catalog(CANDIDATE_MAPPINGS)
+        .expect("checked-in candidate-mapping catalog");
+    assert_eq!(
+        CANDIDATE_MAPPINGS,
+        canonical_json_file_bytes(catalog.value())
+    );
+    assert_eq!(
+        catalog.canonical_bytes(),
+        &CANDIDATE_MAPPINGS[..CANDIDATE_MAPPINGS.len() - 1]
+    );
+    assert_eq!(
+        catalog.digest_hex(),
+        CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256
+    );
+    assert_eq!(
+        catalog.subject_digest_hex(),
+        CANDIDATE_MAPPING_CATALOG_SUBJECT_SHA256
+    );
+    assert_eq!(
+        sha256::hex(&sha256::digest(CANDIDATE_MAPPINGS)),
+        CANDIDATE_MAPPING_CATALOG_RAW_SHA256
+    );
+    assert_eq!(CANDIDATE_MAPPING_CATALOG_PATH, INPUT_BINDINGS[22].path);
+    assert_eq!(CANDIDATE_MAPPING_COUNT, CANDIDATES.len());
+    assert_eq!(CANDIDATE_MAPPING_RELATIONSHIP_COUNT, RELATIONSHIPS.len());
+    assert_eq!(CANDIDATE_MAPPING_ROW_COUNT, 70);
+    assert_eq!(catalog.identities().len(), CANDIDATE_MAPPING_COUNT);
+    for (identity, candidate) in catalog.identities().iter().zip(CANDIDATES) {
+        assert_eq!(identity.candidate, candidate.as_str());
+        assert_eq!(identity.graph_sha256.len(), 64);
+        assert_eq!(identity.sr_map_sha256.len(), 64);
+        assert_ne!(identity.sr_map_sha256, identity.graph_sha256);
+        assert_eq!(
+            identity.mapping_sha256.len(),
+            CANDIDATE_MAPPING_RELATIONSHIP_COUNT
+        );
+    }
+
+    let root = json_object(catalog.value());
+    assert_eq!(
+        root.get("status").and_then(JsonValue::as_str),
+        Some("draft_unreviewed_input_only")
+    );
+    assert_eq!(root.get("epoch"), Some(&JsonValue::Null));
+    assert_eq!(root.get("frozen"), Some(&JsonValue::Bool(false)));
+    assert_eq!(
+        root.get("owner_protocol_review")
+            .and_then(JsonValue::as_str),
+        Some("none")
+    );
+    assert_eq!(
+        root.get("evidence_status").and_then(JsonValue::as_str),
+        Some("none")
+    );
+    assert_eq!(
+        root.get("nonclaims"),
+        Some(&strict_json::strings(CANDIDATE_MAPPING_NONCLAIMS))
+    );
+}
+
+#[test]
+fn candidate_mapping_catalog_rejects_structural_and_identity_substitution() {
+    let baseline = strict_json::parse(CANDIDATE_MAPPINGS).expect("candidate mappings JSON");
+
+    let mut selected_decision = baseline.clone();
+    let open_decisions = json_array_mut(
+        json_object_mut(&mut selected_decision)
+            .get_mut("open_decisions")
+            .expect("open decisions"),
+    );
+    json_object_mut(&mut open_decisions[0]).insert(
+        "status".to_owned(),
+        JsonValue::String("selected".to_owned()),
+    );
+    assert_eq!(
+        parse_candidate_mapping_catalog(&canonical_json_file_bytes(&selected_decision))
+            .expect_err("selected open decision")
+            .kind,
+        CandidateMappingErrorKind::InvalidValue
+    );
+
+    let mut requirement_substitution = baseline.clone();
+    let graphs = json_array_mut(
+        json_object_mut(
+            json_object_mut(&mut requirement_substitution)
+                .get_mut("catalog_subject")
+                .expect("catalog subject"),
+        )
+        .get_mut("candidate_graphs")
+        .expect("candidate graphs"),
+    );
+    let rows = json_array_mut(
+        json_object_mut(
+            json_object_mut(&mut graphs[0])
+                .get_mut("graph")
+                .expect("candidate graph"),
+        )
+        .get_mut("sr_rows")
+        .expect("SR rows"),
+    );
+    json_object_mut(
+        json_object_mut(&mut rows[0])
+            .get_mut("mapping")
+            .expect("mapping row"),
+    )
+    .insert(
+        "required_relationship_sha256".to_owned(),
+        JsonValue::String("0".repeat(64)),
+    );
+    assert_eq!(
+        parse_candidate_mapping_catalog(&canonical_json_file_bytes(&requirement_substitution))
+            .expect_err("requirement identity substitution")
+            .kind,
+        CandidateMappingErrorKind::InvalidValue
+    );
+
+    for generic_slot in [
+        "delegation_selector",
+        "host_identity",
+        "host_non_success_policy",
+    ] {
+        let mut generic_local_slot = baseline.clone();
+        let graphs = json_array_mut(
+            json_object_mut(
+                json_object_mut(&mut generic_local_slot)
+                    .get_mut("catalog_subject")
+                    .expect("catalog subject"),
+            )
+            .get_mut("candidate_graphs")
+            .expect("candidate graphs"),
+        );
+        let edges = json_array_mut(
+            json_object_mut(
+                json_object_mut(&mut graphs[4])
+                    .get_mut("graph")
+                    .expect("candidate graph"),
+            )
+            .get_mut("edges")
+            .expect("native edges"),
+        );
+        let subject = json_object_mut(
+            json_object_mut(&mut edges[2])
+                .get_mut("edge_subject")
+                .expect("edge subject"),
+        );
+        json_array_mut(subject.get_mut("parameter_slots").expect("parameter slots"))
+            .push(JsonValue::String(generic_slot.to_owned()));
+        assert_eq!(
+            parse_candidate_mapping_catalog(&canonical_json_file_bytes(&generic_local_slot))
+                .expect_err("ST-HOST SR-03 generic delegation slot")
+                .kind,
+            CandidateMappingErrorKind::StructuralMismatch,
+            "{generic_slot}"
+        );
+    }
+
+    let mut edge_swap = baseline;
+    let graphs = json_array_mut(
+        json_object_mut(
+            json_object_mut(&mut edge_swap)
+                .get_mut("catalog_subject")
+                .expect("catalog subject"),
+        )
+        .get_mut("candidate_graphs")
+        .expect("candidate graphs"),
+    );
+    let rows = json_array_mut(
+        json_object_mut(
+            json_object_mut(&mut graphs[0])
+                .get_mut("graph")
+                .expect("candidate graph"),
+        )
+        .get_mut("sr_rows")
+        .expect("SR rows"),
+    );
+    let first_edge = json_array(
+        json_object(json_object(&rows[0]).get("mapping").expect("first mapping"))
+            .get("native_edges")
+            .expect("first native edges"),
+    )[0]
+    .clone();
+    let second_edge = json_array(
+        json_object(
+            json_object(&rows[1])
+                .get("mapping")
+                .expect("second mapping"),
+        )
+        .get("native_edges")
+        .expect("second native edges"),
+    )[0]
+    .clone();
+    json_array_mut(
+        json_object_mut(
+            json_object_mut(&mut rows[0])
+                .get_mut("mapping")
+                .expect("first mapping"),
+        )
+        .get_mut("native_edges")
+        .expect("first native edges"),
+    )[0] = second_edge;
+    json_array_mut(
+        json_object_mut(
+            json_object_mut(&mut rows[1])
+                .get_mut("mapping")
+                .expect("second mapping"),
+        )
+        .get_mut("native_edges")
+        .expect("second native edges"),
+    )[0] = first_edge;
+    assert_eq!(
+        parse_candidate_mapping_catalog(&canonical_json_file_bytes(&edge_swap))
+            .expect_err("SR-native edge swap")
+            .kind,
+        CandidateMappingErrorKind::UnresolvedEdge
+    );
+}
+
+#[test]
 fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(CHECKED_IN_PACKET, canonical_draft_packet_file_bytes());
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
@@ -2089,11 +2452,11 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(packet.digest(), &sha256::digest(packet.canonical_bytes()));
     assert_eq!(
         packet.digest_hex(),
-        "b298cbf0d1c6af2ca9a4af7bb6b020595ffd00c1ab6896d5f097b3ebff13127d"
+        "b6df1a38f8a1eb6a80a8864324c21a81cb292d4c48e1981b4547bad41933b340"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CHECKED_IN_PACKET)),
-        "0da96c89f62125f915152fb0ab30f41e608502bbe3a571a928c91e9d3812bc7a"
+        "ec3a0a593d1dab7a6ace874dae4fd03c1ae0656cf301897ccabf51cb109c4009"
     );
     assert_eq!(
         parse_draft_packet(packet.canonical_bytes())
@@ -2125,12 +2488,17 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     );
     assert_eq!(
         root.get("schema_version").and_then(JsonValue::as_str),
-        Some("d004-pre-epoch-packet-v0.4")
+        Some("d004-pre-epoch-packet-v0.5")
     );
     assert_eq!(
         root.get("case_subject_catalog_sha256")
             .and_then(JsonValue::as_str),
         Some(CASE_SUBJECT_CATALOG_SHA256)
+    );
+    assert_eq!(
+        root.get("candidate_mapping_catalog_sha256")
+            .and_then(JsonValue::as_str),
+        Some(CANDIDATE_MAPPING_CATALOG_SHA256)
     );
     assert_eq!(
         root.get("cross_cutting_fixture_proposal_manifest_sha256")
@@ -2145,7 +2513,7 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(
         root.get("fixture_inventory_status")
             .and_then(JsonValue::as_str),
-        Some("case_and_cross_cutting_materialized_unreviewed_freeze_blocker")
+        Some("case_cross_cutting_and_candidate_mapping_materialized_unreviewed_freeze_blocker")
     );
 }
 
@@ -2213,7 +2581,7 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
         canonical.replace("\"conclusion\":null", "\"conclusion\":\"recommend_st_rel\""),
         canonical.replace(",\"replay repetition count unresolved\"", ""),
         canonical.replace(
-            "\"fixture_inventory_status\":\"case_and_cross_cutting_materialized_unreviewed_freeze_blocker\"",
+            "\"fixture_inventory_status\":\"case_cross_cutting_and_candidate_mapping_materialized_unreviewed_freeze_blocker\"",
             "\"fixture_inventory_status\":\"complete\"",
         ),
         canonical.replace(",\"resource-exhaustion\"", ""),
@@ -2233,6 +2601,7 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
             &"0".repeat(64),
         ),
         canonical.replace(CASE_SUBJECT_CATALOG_SHA256, &"0".repeat(64)),
+        canonical.replace(CANDIDATE_MAPPING_CATALOG_SHA256, &"0".repeat(64)),
         canonical.replace("\"case_wall_seconds\":900", "\"case_wall_seconds\":901"),
     ];
     for mutation in mutations {
@@ -2249,7 +2618,7 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
 fn replay_refuses_every_raw_input_drift_before_scheduling() {
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
     let inputs = checked_in_replay_inputs();
-    assert_eq!(INPUT_BINDINGS.len(), 22);
+    assert_eq!(INPUT_BINDINGS.len(), 23);
     for binding in INPUT_BINDINGS {
         let bytes = inputs.get(binding.id);
         assert_eq!(sha256::hex(&sha256::digest(bytes)), binding.sha256);
@@ -2386,7 +2755,7 @@ fn replay_schedule_is_balanced_latin_deterministic_and_still_zero_of_25() {
 }
 
 #[test]
-fn d004_research_tree_is_exactly_six_input_only_files() {
+fn d004_research_tree_is_exactly_seven_input_only_files() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../research/decisions/D-004");
     let observed = fs::read_dir(&root)
         .expect("D-004 research directory")
@@ -2407,7 +2776,8 @@ fn d004_research_tree_is_exactly_six_input_only_files() {
             "d004-v0.2-named-mutations.json".to_owned(),
             "d004-v0.3-cross-cutting-executable-fixtures.json".to_owned(),
             "d004-v0.4-case-subjects.json".to_owned(),
-            "d004-v0.4-draft-packet.json".to_owned(),
+            "d004-v0.5-draft-packet.json".to_owned(),
+            "d004-v0.5-candidate-mappings.json".to_owned(),
         ])
     );
     for forbidden in [

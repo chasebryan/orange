@@ -26,9 +26,9 @@ candidate order through CC-08. It is a canonical identity serialization, not an
 authorized physical execution order.
 
 The packet's strict canonical JSON SHA-256, excluding its final line feed, is
-`9ec828033df99afa71ca88911484abfbfd007bd42538d8e02a5d7462413943b0`;
+`1638d417a92c83cd6df984df1d832cb133aec839d170776ca27851e95232b00d`;
 its raw file SHA-256, including the final line feed, is
-`f081c3428c83a7be6d296317564adee0284d13f4913739e5cf33634ed748e799`.
+`cdc0217c65468f05f6dc63ecbd743e2793a729988aad32f56004f0f124597f69`.
 Its closed packet schema is `d010-pre-epoch-packet-v0.1`, and the suite version
 is `d010-v0.1-draft`. The case-input index's strict canonical JSON SHA-256 is
 `4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209`;
@@ -59,4 +59,5 @@ Current D-010 execution evidence remains 0/40 candidate-case runs. No compiler
 strategy or output path is selected, preferred, recommended by this laboratory,
 implemented, installed, or authorized for claim-bearing product work. This
 preparation does not accept any prerequisite or downstream decision, close S5,
-authorize a release, or advance Orange beyond 30% readiness.
+authorize a release, or change Orange's 3/10 (30%) binary gate-closure score;
+that mechanical score is not release readiness.

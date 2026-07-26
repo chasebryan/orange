@@ -145,20 +145,20 @@ The preserved Gate 0 closure ledger was:
 | F-14 | Reproducible, signed releases for supported hosts | W6 and W7; Release Engineering, PSIRT, and Assurance and TCB Board | All preceding features; D-008 implementation languages; D-011 host/target envelope; D-014 package model; D-019 release authority; D-020 supply-chain target; D-021 bootstrap policy; D-022 funded support policy | `N/M/C/A/X/O`: hermetic build closure, two independent rebuild attestations, signatures and transparency records, SBOM/CBOM, provenance and proof bundles, audits, and release/revocation/recovery drills | At Gate 7 two independently administered builders reproduce each supported artifact; network-disabled build and offline verification bind source, claims, SBOM/CBOM, provenance, proofs, and signatures; all stop-ship findings are closed; rollback, freeze, compromise, revocation, and disaster-recovery drills pass with multi-role sign-off | `proposed`; `blocked` | Gate 7 | `mapped` |
 
 D-004 input materialization is separate from feature or gate completion.
-Exactly 70 candidate-neutral suite-only subjects are byte-materialized as
+Exactly 73 candidate-neutral suite-only subjects are byte-materialized as
 `draft_unreviewed_input_only`: five positive case subjects, all 26 named
-mutations, 14 missing-edge subjects, 10 identity-substitution subjects, and five
+mutations, 14 missing-edge subjects, 13 identity-substitution subjects, and five
 each for ambiguity, unsupported behavior, and domain exhaustion. All five
 class sufficiency reviews and freeze blockers plus replay repetitions remain
 unresolved. D-003 candidate PF-01 is accepted through OEP-0004 at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`. D-004 owner review is
-`none`, the D-004 epoch is
-unfrozen, and there are no candidate mappings, adapters, observations,
-evidence, selection, or conclusion.
+`none`, the D-004 epoch is unfrozen, and five unreviewed input-only candidate
+graph hypotheses with 70 unresolved relationship mappings exist without
+adapters, observations, evidence, selection, or conclusion.
 Integrity parsing and structural oracles over opaque suite-only models are not
 candidate executions and satisfy none of the F-01, F-03, F-04, or F-06 exit
-evidence. D-004 remains at 0/25, S3 remains open, and readiness remains 30% by
-binary gate closure.
+evidence. D-004 remains at 0/25 and S3 remains open. The binary gate-closure
+score remains 3/10 (30%); that mechanical score is not release readiness.
 
 D-010 candidate identity is separate from feature completion. Its two
 direct-native candidates, versioned Jasmin boundary, portable C11 boundary, and

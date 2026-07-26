@@ -225,8 +225,9 @@ use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
 likewise exact. It contains the non-product, draft-unfrozen D-004 input packet,
 named-mutation manifest, five-positive/26-mutation case-subject catalog,
-unreviewed cross-cutting fixture-proposal manifest, and 39-subject
-executable-input catalog; the D-005 execution packet and historical
+unreviewed cross-cutting fixture-proposal manifest, and 42-subject
+executable-input catalog, plus the five-graph/70-row unreviewed candidate-mapping
+catalog; the D-005 execution packet and historical
 v0.1 negative corpus; and the input-only D-006, D-009, and D-010 packets and case
 indexes. Every D-006, D-009, and D-010 case row has zero executable fixtures,
 unresolved coverage, and an active freeze blocker. Their laboratories may
@@ -234,19 +235,23 @@ verify the closed inputs and enumerate 14, 24, and 40 candidate-case identities
 in memory, respectively, but those inventories are not physical run orders and
 create no execution, evidence, review, recommendation, or selection.
 
-The D-004 proposal manifest defines 39 domain-level structural proposals: 14
-missing-edge, 10 identity-substitution, and five each for ambiguity,
+The D-004 proposal manifest defines 42 domain-level structural proposals: 14
+missing-edge, 13 identity-substitution, and five each for ambiguity,
 unsupported behavior, and domain exhaustion. Its separate canonical catalog,
 together with the case-subject catalog's five positive and 26 named-mutation
-subjects, byte-materializes exactly 70 candidate-neutral suite-only inputs as
+subjects, byte-materializes exactly 73 candidate-neutral suite-only inputs as
 `draft_unreviewed_input_only`. Their closed parsers, digest checks, and bounded
 structural integrity oracles create no candidate observation or evidence,
 verify no replay ceiling, and do not treat candidate-adapter failure as an
 expected unsupported observation. All five class sufficiency reviews and
 freeze blockers remain unresolved; replay repetitions remain unassigned; and
-the D-004 inventory freezes no evidence epoch. Its protected Rust laboratory
+the D-004 inventory freezes no evidence epoch. Its separate authenticated
+input-only mapping catalog contains five unreviewed structural candidate graph
+proposals and 70 unresolved SR mapping rows. Those hypotheses create no adapter,
+execution, evidence, review, freeze, selection, or readiness credit. Its
+protected Rust laboratory
 also generates and strictly re-parses a closed, in-memory future result/replay
-descriptor. The descriptor derives an exact 70-row observation oracle from the
+descriptor. The descriptor derives an exact 73-row observation oracle from the
 authenticated case and cross-cutting subject catalogs, binds the exact
 26-mutation inventory and 25-slot identity plan, and enumerates all 31 top-level
 future case-record fields plus their nested shapes. Its 10-field scheduled-slot

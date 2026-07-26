@@ -7,6 +7,7 @@ import argparse
 import dataclasses
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -21,6 +22,45 @@ import unicodedata
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import unquote, urlsplit
+
+
+_D004_HELPER_RAW_SHA256 = (
+    "c273b900963f970ce265b8aa503b47a223c130a74b3026582e7ff891507a8fab"
+)
+
+
+def _load_d004_helper_functions() -> tuple[Any, Any]:
+    validator_path = Path(__file__).resolve(strict=True)
+    helper_entry = validator_path.with_name("d004_candidate_mappings.py")
+    if helper_entry.is_symlink():
+        raise RuntimeError("D-004 helper must not be a symbolic link")
+    helper_path = helper_entry.resolve(strict=True)
+    if helper_path.parent != validator_path.parent:
+        raise RuntimeError("D-004 helper must resolve beside the foundation validator")
+    if not helper_path.is_file() or helper_path.stat().st_nlink != 1:
+        raise RuntimeError("D-004 helper must be one regular single-link file")
+    if hashlib.sha256(helper_path.read_bytes()).hexdigest() != _D004_HELPER_RAW_SHA256:
+        raise RuntimeError("D-004 helper raw SHA-256 identity drifted")
+    specification = importlib.util.spec_from_file_location(
+        "_orange_d004_candidate_mappings", helper_path
+    )
+    if specification is None or specification.loader is None:
+        raise RuntimeError("cannot create the closed D-004 helper import")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    catalog_validator = getattr(module, "validate_candidate_mapping_catalog", None)
+    result_contract_validator = getattr(
+        module, "validate_d004_result_contract_source", None
+    )
+    if not callable(catalog_validator) or not callable(result_contract_validator):
+        raise RuntimeError("D-004 helper does not expose its exact validator surface")
+    return catalog_validator, result_contract_validator
+
+
+(
+    _validate_candidate_mapping_catalog_helper,
+    _validate_d004_result_contract_source_helper,
+) = _load_d004_helper_functions()
 
 
 POLICY_PATH = Path("policy/gate0-repository-policy.json")
@@ -200,6 +240,7 @@ compiler/crates/orange-compiler/src/parser.rs
 compiler/crates/orange-compiler/src/semantics.rs
 compiler/crates/orange-compiler/src/source.rs
 compiler/crates/orange-compiler/tests/d004_decision_suite.rs
+compiler/crates/orange-compiler/tests/d004_support/candidate_mappings.rs
 compiler/crates/orange-compiler/tests/d004_support/case_subjects.rs
 compiler/crates/orange-compiler/tests/d004_support/cases.rs
 compiler/crates/orange-compiler/tests/d004_support/domain.rs
@@ -305,7 +346,8 @@ research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json
 research/decisions/D-004/d004-v0.2-named-mutations.json
 research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json
 research/decisions/D-004/d004-v0.4-case-subjects.json
-research/decisions/D-004/d004-v0.4-draft-packet.json
+research/decisions/D-004/d004-v0.5-candidate-mappings.json
+research/decisions/D-004/d004-v0.5-draft-packet.json
 research/decisions/D-005/README.md
 research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json
@@ -334,6 +376,7 @@ scripts/ci/check-repository
 scripts/ci/check-external-links
 scripts/ci/install-actionlint
 scripts/ci/install-lychee
+tools/d004_candidate_mappings.py
 tools/fs_sandbox.c
 tools/tests/test_d004_draft_packet.py
 tools/tests/test_d005_draft_packet.py
@@ -516,7 +559,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "8d9812520af56fa07f105ed1b12ad9c33fd6737084ed12194adcc292534766bb"
+_PHD = "b2b42c4042aaf390edbbf99399184f4a6d3507642698856f21ee3453ba235525"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -875,8 +918,8 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "9ec828033df99afa71ca88911484abfbfd007bd42538d8e02a5d7462413943b0"
-_D010_PACKET_RAW_SHA256 = "f081c3428c83a7be6d296317564adee0284d13f4913739e5cf33634ed748e799"
+_D010_PACKET_CANONICAL_SHA256 = "1638d417a92c83cd6df984df1d832cb133aec839d170776ca27851e95232b00d"
+_D010_PACKET_RAW_SHA256 = "cdc0217c65468f05f6dc63ecbd743e2793a729988aad32f56004f0f124597f69"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"
@@ -887,13 +930,124 @@ _D004_DECISION_SUITE_SOURCE = (
     "compiler/crates/orange-compiler/tests/d004_decision_suite.rs"
 )
 _D004_RESULT_CONTRACT_SOURCE_SHA256 = (
-    "8ef2abfd63d711907e911c415e4abbb903244aa9b44211f59e9b1f963c884292"
+    "f3fdb4187fa9dffb23e849208da20f112aba764cfa85df80ae578754f3c9c97a"
 )
 _D004_RESULT_CONTRACT_DESCRIPTOR_SHA256 = (
-    "e3afc61c7127ca0b59dd010e90ae03a92c3354e3eee490c0667482c9218e8789"
+    "58773e8ce29e8726a8a85203ff7e2a4b1a03f8c02bfbcd7f6056f34fe53a2f29"
 )
-DECISION_LABORATORY_SPECS = {'d004': {'finding_prefix': 'd004_packet', 'research_root': 'research/decisions/D-004/', 'inventory': frozenset({'research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json', 'research/decisions/D-004/d004-v0.4-case-subjects.json', 'research/decisions/D-004/d004-v0.4-draft-packet.json', 'research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json', 'research/decisions/D-004/README.md', 'research/decisions/D-004/d004-v0.2-named-mutations.json'}), 'premature': ('research/decisions/D-004/', '(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-004/d004-v0.4-draft-packet.json', '', 'missing', 'b298cbf0d1c6af2ca9a4af7bb6b020595ffd00c1ab6896d5f097b3ebff13127d', '0da96c89f62125f915152fb0ab30f41e608502bbe3a571a928c91e9d3812bc7a', True), ('research/decisions/D-004/d004-v0.2-named-mutations.json', 'manifest_', 'manifest_missing', '970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c', '1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54', True), ('research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json', 'proposal_manifest_', 'proposal_manifest_missing', '457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65', '171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93', True), ('research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json', 'fixture_catalog_', 'fixture_catalog_missing', 'ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703', '268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0', True), ('research/decisions/D-004/d004-v0.4-case-subjects.json', 'case_subject_catalog_', 'case_subject_catalog_missing', 'b3a8bcf4f0f084740e92cbff6fd57273df0a078af9c6b974f68d95ba333c6dc1', 'c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6', True)), 'raw_bindings': (('docs/LANGUAGE_2026.md', '35981310cbe1e1ae61c889b4005b2610d0077e6a615a5e032b0ca9a5860b328a'), ('docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md', '4ea34fc2499ba6b90eb930262f84f15a41ff0df0f526a4533a48e54ea4f9b4b8'), ('docs/SEMANTICS_2026.md', '63e14d674eb687f46aa600b36d6d13e3732090d658fb05fd805646b1d469dbdf'), ('research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json', '171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93'), ('research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json', '268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0'), ('docs/SEMANTIC_STRATA_DECISION_SUITE.md', 'f44c556202d0e235fd42c03181134ab3047d3e9b6f19b3015dae15a86d00dc0b'), ('compiler/fixtures/s3a/invalid-duplicate-spec.or', 'f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6'), ('compiler/fixtures/s3a/invalid-int-magnitude.or', '11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542'), ('compiler/fixtures/s3a/invalid-negative-word.or', '4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b'), ('compiler/fixtures/s3a/invalid-typed-impl.or', '4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07'), ('compiler/fixtures/s3a/invalid-unsupported-type.or', '14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc'), ('compiler/fixtures/s3a/invalid-word-range.or', '4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf'), ('compiler/fixtures/s3a/invalid-word-width.or', 'd92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2'), ('compiler/fixtures/s3a/valid-empty-mixed.or', 'c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96'), ('compiler/fixtures/s3a/valid-int-radices.or', '937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4'), ('compiler/fixtures/s3a/valid-word8-boundaries.or', 'db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee'), ('research/decisions/D-004/d004-v0.2-named-mutations.json', '1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54'), ('compiler/fixtures/typed-answer.or', '22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e'), ('docs/PRODUCT_FORM_DECISION_PACKET.md', '1ef0be53344667993778d1abd9a83423fc92b358735ed7ad74cb766bb29d33fd'), ('compiler/crates/orangec/tests/s3a_conformance.rs', '7d25ea303fcb3c1603d60b6cb32d89ae15173cc043b8b695daedb737162b8116'), ('docs/USER_JOURNEYS.md', 'f26b179db777295b620731402962dc3092128f8f9a27049638f22883e0652bed'), ('research/decisions/D-004/d004-v0.4-case-subjects.json', 'c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6')), 'schema_compatibility': None}, 'd005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', '609d2b0edaad32a4edde7b44b7e127abfffacd47330e0648bf3e5978635f8f25', '9126ec6b4a46f938c337811b37b4b4939372c0f5fe9347364f21f64bb7a86e3a', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
-DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (5, 22, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
+_D004_CANDIDATE_MAPPING_CATALOG = (
+    "research/decisions/D-004/d004-v0.5-candidate-mappings.json"
+)
+_D004_CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256 = (
+    "c967d7db8ea5049da054129367ec61cd80d729b8ce8cd34c95a76e42c67c97b8"
+)
+_D004_CANDIDATE_MAPPING_CATALOG_RAW_SHA256 = (
+    "70765c64936bbb8aafd6e101fbf20c85396eb722d70e55bb9311d14bfbb15156"
+)
+_D004_CANDIDATE_MAPPING_CATALOG_SUBJECT_SHA256 = (
+    "e3b790857ee21a0c651995919aaadb9bf59b05367a8dce99bab6afb6e7d2543f"
+)
+_D004_SUITE_RAW_SHA256 = (
+    "64abe8290955f889e28f8bb9ce7653a26ef71a624286aef900d4dbfc3b7eb117"
+)
+DECISION_LABORATORY_SPECS = {'d005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', '6c1da1fb28069b3511ef77350b3dcd6ba2759f087837f04155f545319ad3a18b', 'acaaa774d8a14b19a505a719e38b9793b41883748280be7b3b7115c6266bfcae', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
+DECISION_LABORATORY_SPECS["d004"] = {
+    "finding_prefix": "d004_packet",
+    "research_root": "research/decisions/D-004/",
+    "inventory": frozenset(
+        {
+            "research/decisions/D-004/README.md",
+            "research/decisions/D-004/d004-v0.2-named-mutations.json",
+            "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
+            "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json",
+            "research/decisions/D-004/d004-v0.4-case-subjects.json",
+            _D004_CANDIDATE_MAPPING_CATALOG,
+            "research/decisions/D-004/d004-v0.5-draft-packet.json",
+        }
+    ),
+    "premature": (
+        "research/decisions/D-004/",
+        r"(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])",
+        "premature_artifact",
+    ),
+    "json_identities": (
+        (
+            "research/decisions/D-004/d004-v0.5-draft-packet.json",
+            "",
+            "missing",
+            "b6df1a38f8a1eb6a80a8864324c21a81cb292d4c48e1981b4547bad41933b340",
+            "ec3a0a593d1dab7a6ace874dae4fd03c1ae0656cf301897ccabf51cb109c4009",
+            True,
+        ),
+        (
+            "research/decisions/D-004/d004-v0.2-named-mutations.json",
+            "manifest_",
+            "manifest_missing",
+            "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c",
+            "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54",
+            True,
+        ),
+        (
+            "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
+            "proposal_manifest_",
+            "proposal_manifest_missing",
+            "85407a4a43b5a6bf450ea905fe858482f2f79abb4cbe8ee8690bddc1753d0912",
+            "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481",
+            True,
+        ),
+        (
+            "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json",
+            "fixture_catalog_",
+            "fixture_catalog_missing",
+            "0516a84260bcc4d8ebb64e0cd3416deb5c43a86b7f5cd882ca757c924e575767",
+            "5fea65960c47818243d41076dd96a6cab2dbd6d4038fd354a3f5ba30a12622ae",
+            True,
+        ),
+        (
+            "research/decisions/D-004/d004-v0.4-case-subjects.json",
+            "case_subject_catalog_",
+            "case_subject_catalog_missing",
+            "5b9e734b6bad7913072e87adb29c58547d67bdcb46af942eb6bbc79d0e68166e",
+            "6266b8e38ad1a83fb777278fc0369844749b2915eabb40ba1ddfc9efa7c985f2",
+            True,
+        ),
+        (
+            _D004_CANDIDATE_MAPPING_CATALOG,
+            "mapping_catalog_",
+            "mapping_catalog_missing",
+            _D004_CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256,
+            _D004_CANDIDATE_MAPPING_CATALOG_RAW_SHA256,
+            True,
+        ),
+    ),
+    "raw_bindings": (
+        ("docs/LANGUAGE_2026.md", "35981310cbe1e1ae61c889b4005b2610d0077e6a615a5e032b0ca9a5860b328a"),
+        ("docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md", "4ea34fc2499ba6b90eb930262f84f15a41ff0df0f526a4533a48e54ea4f9b4b8"),
+        ("docs/SEMANTICS_2026.md", "63e14d674eb687f46aa600b36d6d13e3732090d658fb05fd805646b1d469dbdf"),
+        (_D004_CANDIDATE_MAPPING_CATALOG, _D004_CANDIDATE_MAPPING_CATALOG_RAW_SHA256),
+        ("research/decisions/D-004/d004-v0.4-case-subjects.json", "6266b8e38ad1a83fb777278fc0369844749b2915eabb40ba1ddfc9efa7c985f2"),
+        ("research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json", "5fea65960c47818243d41076dd96a6cab2dbd6d4038fd354a3f5ba30a12622ae"),
+        ("research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json", "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481"),
+        ("docs/SEMANTIC_STRATA_DECISION_SUITE.md", _D004_SUITE_RAW_SHA256),
+        ("compiler/fixtures/s3a/invalid-duplicate-spec.or", "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6"),
+        ("compiler/fixtures/s3a/invalid-int-magnitude.or", "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542"),
+        ("compiler/fixtures/s3a/invalid-negative-word.or", "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b"),
+        ("compiler/fixtures/s3a/invalid-typed-impl.or", "4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07"),
+        ("compiler/fixtures/s3a/invalid-unsupported-type.or", "14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc"),
+        ("compiler/fixtures/s3a/invalid-word-range.or", "4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf"),
+        ("compiler/fixtures/s3a/invalid-word-width.or", "d92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2"),
+        ("compiler/fixtures/s3a/valid-empty-mixed.or", "c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96"),
+        ("compiler/fixtures/s3a/valid-int-radices.or", "937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4"),
+        ("compiler/fixtures/s3a/valid-word8-boundaries.or", "db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee"),
+        ("research/decisions/D-004/d004-v0.2-named-mutations.json", "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54"),
+        ("compiler/fixtures/typed-answer.or", "22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e"),
+        ("docs/PRODUCT_FORM_DECISION_PACKET.md", "1ef0be53344667993778d1abd9a83423fc92b358735ed7ad74cb766bb29d33fd"),
+        ("compiler/crates/orangec/tests/s3a_conformance.rs", "7d25ea303fcb3c1603d60b6cb32d89ae15173cc043b8b695daedb737162b8116"),
+        ("docs/USER_JOURNEYS.md", "f26b179db777295b620731402962dc3092128f8f9a27049638f22883e0652bed"),
+    ),
+    "schema_compatibility": None,
+}
+DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
 _ATOMIC_OUTCOMES = (
     "satisfied",
     "not_satisfied",
@@ -4728,7 +4882,7 @@ class FoundationValidator:
         candidate_scope = ('## 2. Candidate architectures', 2, False)
         case_scope = ('## 5. Required decision cases', 2, False)
         gate_scope = ('## 6. Hard gates and anti-gaming rules', 2, False)
-        self._validate_markdown_rules((('docs/SEMANTIC_STRATA_DECISION_SUITE.md', (('header', prefix + 'header', '## 1. Authority and decision boundary', (('draft owner-executable decision protocol; no semantic-strata candidate selected',), ('d004-v0.4-draft',), ('2026-07-26',))), ('table', prefix + 'candidates', candidate_scope, 'ST-[A-Z]+', 4, ((0, candidates), (1, ('Role-oriented related family', 'Universal Core', 'Pure/effect pair', 'Five mirrored Cores', 'Host-delegated strata'))), None), ('table', prefix + 'candidate_state', candidate_scope, 'ST-[A-Z]+', 4, ((3, ('0/5 cases',) * 5),), None), ('table', prefix + 'relationships', ('## 4. Required relationship graph', 2, False), 'SR-[0-9A-Z]+', 3, ((0, tuple((f'SR-{index:02d}' for index in range(1, 15)))),), None), ('matches', prefix + 'case_ids', case_scope, '(?m)^###\\s+(SC-[0-9A-Z]+)\\b', cases), ('fields', prefix + 'case_field', case_scope, cases, ('Question', 'Dependencies', 'Inputs', 'Required boundary observations', 'Positive case', 'Mutation and negative case', 'Resource bounds', 'Non-claims', 'Falsification')), ('matches', prefix + 'hard_gates', gate_scope, '(?m)^([1-9][0-9]*)\\.\\s+\\*\\*(SS-G[0-9A-Z]+)\\b', tuple(((str(index), f'SS-G{index:02d}') for index in range(1, 11)))), ('required', prefix + 'assertion', None, ('There is no weighted aggregate score.', 'Independent review is currently absent.', 'No semantic stratum is selected by this draft suite.', 'This suite does not accept D-004 or authorize S3b implementation.')), ('required', prefix + 'execution_matrix', None, ('The frozen matrix therefore contains exactly 25 required candidate-case executions per evidence epoch: each of the 5 candidates runs each of the 5 cases.', 'Execution evidence is currently 0/25 required candidate-case executions: 0/5 candidates have complete five-case packets, and 0/5 cases have complete cross-candidate execution.')), ('count', prefix + 'execution_matrix', None, 'Execution evidence is currently ', 1, False), ('required', prefix + 'evidence_state', None, ("each normalized domain observation's separate expected state, observed state, and `matched` or `mismatched` comparison;", 'one overall case verdict, exactly `pass` or `fail`;', 'Only an overall case verdict of `pass` satisfies SS-G05.', 'a preregistered negative or resource fixture may still pass when its domain observation is the expected `unknown`, `unsupported`, or `exhausted`; that match demonstrates fail-closed handling only and grants neither capability nor partial credit.', 'An expected `unknown`, `unsupported`, or `exhausted` observation can match and contribute to a `pass`; it is never used as the overall case verdict.', "A candidate adapter's inability to execute therefore cannot masquerade as a correctly observed domain-level `unsupported` state.")), ('required', prefix + 'equivalence_map', None, ('An equivalent graph is not a waiver from this table.', 'Every candidate supplies a total SR conformance map with exactly one entry for each of SR-01 through SR-14.', 'A candidate-specific correction creates a linked new run, retains the failed prior record, and consumes the common correction window.', 'Changing an SR requirement or the shared equivalence rule creates a new evidence epoch for all candidates.')))), ('docs/DECISIONS.md', (('required', prefix + 'register_consistency', ('## D-004', 2, True), ('Alternative under comparison: one universal IR.', 'The alternative is not rejected by this proposed register entry; it must run the same symmetric suite as every other candidate.', 'That Draft protocol records 0/25 required candidate-case executions: 0/5 candidates have complete five-case packets, and 0/5 cases have complete cross-candidate execution.')), ('forbidden', prefix + 'register_consistency', ('## D-004', 2, True), ('Rejected default:',)), ('count', prefix + 'register_consistency', ('## D-004', 2, True), 'That Draft protocol records ', 1, False)))))
+        self._validate_markdown_rules((('docs/SEMANTIC_STRATA_DECISION_SUITE.md', (('header', prefix + 'header', '## 1. Authority and decision boundary', (('draft owner-executable decision protocol; no semantic-strata candidate selected',), ('d004-v0.5-draft',), ('2026-07-26',))), ('table', prefix + 'candidates', candidate_scope, 'ST-[A-Z]+', 4, ((0, candidates), (1, ('Role-oriented related family', 'Universal Core', 'Pure/effect pair', 'Five mirrored Cores', 'Host-delegated strata'))), None), ('table', prefix + 'candidate_state', candidate_scope, 'ST-[A-Z]+', 4, ((3, ('0/5 cases',) * 5),), None), ('table', prefix + 'relationships', ('## 4. Required relationship graph', 2, False), 'SR-[0-9A-Z]+', 3, ((0, tuple((f'SR-{index:02d}' for index in range(1, 15)))),), None), ('matches', prefix + 'case_ids', case_scope, '(?m)^###\\s+(SC-[0-9A-Z]+)\\b', cases), ('fields', prefix + 'case_field', case_scope, cases, ('Question', 'Dependencies', 'Inputs', 'Required boundary observations', 'Positive case', 'Mutation and negative case', 'Resource bounds', 'Non-claims', 'Falsification')), ('matches', prefix + 'hard_gates', gate_scope, '(?m)^([1-9][0-9]*)\\.\\s+\\*\\*(SS-G[0-9A-Z]+)\\b', tuple(((str(index), f'SS-G{index:02d}') for index in range(1, 11)))), ('required', prefix + 'assertion', None, ('There is no weighted aggregate score.', 'Independent review is currently absent.', 'No semantic stratum is selected by this draft suite.', 'This suite does not accept D-004 or authorize S3b implementation.')), ('required', prefix + 'execution_matrix', None, ('The frozen matrix therefore contains exactly 25 required candidate-case executions per evidence epoch: each of the 5 candidates runs each of the 5 cases.', 'Execution evidence is currently 0/25 required candidate-case executions: 0/5 candidates have complete five-case packets, and 0/5 cases have complete cross-candidate execution.')), ('count', prefix + 'execution_matrix', None, 'Execution evidence is currently ', 1, False), ('required', prefix + 'evidence_state', None, ("each normalized domain observation's separate expected state, observed state, and `matched` or `mismatched` comparison;", 'one overall case verdict, exactly `pass` or `fail`;', 'Only an overall case verdict of `pass` satisfies SS-G05.', 'a preregistered negative or resource fixture may still pass when its domain observation is the expected `unknown`, `unsupported`, or `exhausted`; that match demonstrates fail-closed handling only and grants neither capability nor partial credit.', 'An expected `unknown`, `unsupported`, or `exhausted` observation can match and contribute to a `pass`; it is never used as the overall case verdict.', "A candidate adapter's inability to execute therefore cannot masquerade as a correctly observed domain-level `unsupported` state.")), ('required', prefix + 'equivalence_map', None, ('An equivalent graph is not a waiver from this table.', 'Every candidate supplies a total SR conformance map with exactly one entry for each of SR-01 through SR-14.', 'A candidate-specific correction creates a linked new run, retains the failed prior record, and consumes the common correction window.', 'Changing an SR requirement or the shared equivalence rule creates a new evidence epoch for all candidates.')))), ('docs/DECISIONS.md', (('required', prefix + 'register_consistency', ('## D-004', 2, True), ('Alternative under comparison: one universal IR.', 'The alternative is not rejected by this proposed register entry; it must run the same symmetric suite as every other candidate.', 'That Draft protocol records 0/25 required candidate-case executions: 0/5 candidates have complete five-case packets, and 0/5 cases have complete cross-candidate execution.')), ('forbidden', prefix + 'register_consistency', ('## D-004', 2, True), ('Rejected default:',)), ('count', prefix + 'register_consistency', ('## D-004', 2, True), 'That Draft protocol records ', 1, False)))))
 
 
     def _validate_public_assurance_model_suite(self) -> None:
@@ -4852,282 +5006,32 @@ class FoundationValidator:
                 if issues:
                     fail('legacy_acceptance', fixture_path, 'fixed historical mutation must remain accepted by the historical schema and second-pass validator')
 
+    def _validate_d004_candidate_mapping_catalog(self) -> None:
+        _validate_candidate_mapping_catalog_helper(
+            self,
+            catalog_path=_D004_CANDIDATE_MAPPING_CATALOG,
+            canonical_sha256=_D004_CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256,
+            raw_sha256=_D004_CANDIDATE_MAPPING_CATALOG_RAW_SHA256,
+            subject_sha256=_D004_CANDIDATE_MAPPING_CATALOG_SUBJECT_SHA256,
+            suite_raw_sha256=_D004_SUITE_RAW_SHA256,
+            canonical_json_bytes=canonical_json_bytes,
+        )
+
     def _validate_d004_result_contract_source(self) -> None:
-        path = self.root / _D004_RESULT_CONTRACT_SOURCE
-        source_bytes = self._read_repository_bytes(path)
-        if source_bytes is None:
-            self.add(
-                "d004_packet.result_contract_missing",
-                path,
-                "closed D-004 future-result schema descriptor source is missing",
-            )
-            return
-        if hashlib.sha256(source_bytes).hexdigest() != _D004_RESULT_CONTRACT_SOURCE_SHA256:
-            self.add(
-                "d004_packet.result_contract_identity",
-                path,
-                "future-result descriptor source identity drifted",
-            )
-        try:
-            source = source_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            self.add(
-                "d004_packet.result_contract_source",
-                path,
-                "future-result descriptor source is not UTF-8",
-            )
-            return
+        _validate_d004_result_contract_source_helper(
+            self,
+            result_contract_source=_D004_RESULT_CONTRACT_SOURCE,
+            result_contract_source_sha256=_D004_RESULT_CONTRACT_SOURCE_SHA256,
+            decision_suite_source=_D004_DECISION_SUITE_SOURCE,
+            descriptor_sha256=_D004_RESULT_CONTRACT_DESCRIPTOR_SHA256,
+        )
 
-        suite_path = self.root / _D004_DECISION_SUITE_SOURCE
-        suite_bytes = self._read_repository_bytes(suite_path)
-        suite_markers = (
-            '#[path = "d004_support/result_contract.rs"]',
-            "mod result_contract;",
-            'const RESULT_CONTRACT_DESCRIPTOR_SHA256: &str =',
-            f'"{_D004_RESULT_CONTRACT_DESCRIPTOR_SHA256}"',
-            "canonical_draft_result_contract_descriptor_bytes",
-            "parse_draft_result_contract_descriptor",
-            "assert_eq!(oracle_inventory.len(), 70);",
-            "assert_eq!(subject_ids.len(), 70);",
-            "assert_eq!(plan.schedule().len(), REQUIRED_CANDIDATE_CASES);",
-            '.get("schedule_slots")',
-        )
-        if suite_bytes is None:
-            self.add(
-                "d004_packet.result_contract_suite_binding",
-                suite_path,
-                "D-004 suite source is unavailable for descriptor binding",
-            )
-        else:
-            try:
-                suite_source = suite_bytes.decode("utf-8")
-            except UnicodeDecodeError:
-                suite_source = ""
-            if any(marker not in suite_source for marker in suite_markers):
-                self.add(
-                    "d004_packet.result_contract_suite_binding",
-                    suite_path,
-                    "D-004 suite no longer binds the exact descriptor module and digest",
-                )
-
-        schema_markers = (
-            '"d004-result-contract-descriptor-v0.1-draft"',
-            "pub(crate) const REQUIRED_CASE_RECORD_FIELDS: [&str; 31]",
-            "pub(crate) const REQUIRED_POSITIVE_SUBJECT_BINDING_FIELDS: [&str; 2]",
-            "pub(crate) const REQUIRED_MUTATION_SUBJECT_BINDING_FIELDS: [&str; 3]",
-            "pub(crate) const REQUIRED_IDENTITY_FIELDS: [&str; 11]",
-            "pub(crate) const REQUIRED_RESOURCE_CEILING_FIELDS: [&str; 4]",
-            "pub(crate) const REQUIRED_MEASURED_RESOURCE_FIELDS: [&str; 5]",
-            "pub(crate) const REQUIRED_EXECUTION_STATE_FIELDS: [&str; 6]",
-            "pub(crate) const REQUIRED_OBSERVATION_FIELDS: [&str; 12]",
-            "pub(crate) const REQUIRED_LOG_MANIFEST_FIELDS: [&str; 2]",
-            "pub(crate) const REQUIRED_LOG_MANIFEST_ENTRY_FIELDS: [&str; 5]",
-            "pub(crate) const REQUIRED_CONTEXT_INVENTORIES: [&str; 4]",
-            "pub(crate) const REQUIRED_CANDIDATE_GRAPH_FIELDS: [&str; 3]",
-            "pub(crate) const REQUIRED_GRAPH_NODE_FIELDS: [&str; 3]",
-            "pub(crate) const REQUIRED_GRAPH_EDGE_FIELDS: [&str; 13]",
-            "pub(crate) const REQUIRED_SR_MAP_FIELDS: [&str; 15]",
-            "pub(crate) const REQUIRED_BYTE_MANIFEST_FIELDS: [&str; 2]",
-            "pub(crate) const REQUIRED_BYTE_MANIFEST_ENTRY_FIELDS: [&str; 4]",
-            "pub(crate) const REQUIRED_ENVIRONMENT_ENTRY_FIELDS: [&str; 2]",
-            "pub(crate) const REQUIRED_CONTEXT_ENTRY_FIELDS: [&str; 4]",
-            "pub(crate) const REQUIRED_UNSUPPORTED_FEATURE_FIELDS: [&str; 4]",
-            "pub(crate) const REQUIRED_REPLAY_FIELDS: [&str; 6]",
-            "pub(crate) const REQUIRED_OWNER_LABEL_FIELDS: [&str; 4]",
-            "pub(crate) const REPLAY_NON_SUCCESS_STATES: [&str; 7]",
-            "pub(crate) const EXECUTION_STATE_KINDS: [&str; 8]",
-            'pub(crate) const ADAPTER_STATUS_STATES: [&str; 3] = '
-            '["executed", "not_executed", "failed"]',
-            "pub(crate) const OBSERVED_INVALIDATION_STATES: [&str; 3]",
-            "pub(crate) const SR_APPLICABILITY_STATES: [&str; 2]",
-            "pub(crate) const SR_CONFORMANCE_STATES: [&str; 4]",
-            "pub(crate) const SCHEDULE_SLOT_FIELDS: [&str; 5]",
-            "pub(crate) const SCHEDULED_SLOT_PREIMAGE_FIELDS: [&str; 10]",
-            "pub(crate) const SUBJECT_ORACLE_FIELDS: [&str; 11]",
-            "pub(crate) const DIGEST_JOIN_FIELDS: [&str; 13]",
-            "pub(crate) const ORDERING_RULES: [&str; 6]",
-            "pub(crate) const OBSERVATION_COMPARISONS: [&str; 2]",
-            "pub(crate) const DERIVATION_RULES: [&str; 30]",
-            "pub(crate) const RESULT_CONTRACT_NONCLAIMS: [&str; 12]",
-            "pub(crate) fn canonical_draft_result_contract_descriptor_bytes(",
-            "pub(crate) fn parse_draft_result_contract_descriptor(",
-            "let expected = descriptor_value(case_subject_catalog, fixture_catalog);",
-            "if value != expected",
-            "Ok(DraftResultContractDescriptor {",
-            "case_subject_catalog: &CaseSubjectCatalog",
-            "fixture_catalog: &FixtureCatalog",
-            "use super::cases::MUTATIONS;",
-            '("mutation_inventory".to_owned(), mutation_inventory_value())',
-            '"subject_catalog_bindings".to_owned()',
-            '"subject_oracle_inventory".to_owned()',
-            "subject_oracle_inventory_value(case_subject_catalog, fixture_catalog)",
-            '("schedule_slots".to_owned(), schedule_slots_value())',
-            '"scheduled_slot_identity_contract".to_owned()',
-            "MUTATIONS",
-            "Vec::with_capacity(REQUIRED_CANDIDATE_CASES)",
-            "Vec::with_capacity(positives.len() + mutations.len() + fixtures.len())",
-            "CANDIDATES[(round + position) % CANDIDATES.len()]",
-            "CASES[(2 * round + position) % CASES.len()]",
-            "fn pointer_token(value: &str) -> String",
-            "value.replace('~', \"~0\").replace('/', \"~1\")",
-            '"execution kind completed requires exit_code zero, signal null, '
-            'adapter_status executed, and no truncated output"',
-            '"replay resource_exhaustion is distinct from preregistered '
-            'domain-level exhausted"',
-            '"case_verdict is pass if and only if execution is validly completed, '
-            'every resource bound holds, the frozen authenticated observation inventory '
-            'is complete and matched, every required invalidation is satisfied, every '
-            'digest and manifest join succeeds, all required SR rows are satisfied with '
-            'valid dependencies, and the replay contract is satisfied"',
-        )
-        if any(marker not in source for marker in schema_markers):
-            self.add(
-                "d004_packet.result_contract_schema",
-                path,
-                "future-result descriptor schema or exact-only parser surface drifted",
-            )
-
-        zero_state_markers = (
-            '("epoch".to_owned(), JsonValue::Null)',
-            'string_entry("epoch_status", "unfrozen")',
-            'string_entry("owner_protocol_review", "none")',
-            '("replay_repetitions".to_owned(), JsonValue::Null)',
-            'usize_entry("required_candidate_cases", REQUIRED_CANDIDATE_CASES)',
-            'usize_entry("result_record_count", 0)',
-            'usize_entry("completed_candidate_cases", 0)',
-            'usize_entry("complete_candidates", 0)',
-            'usize_entry("complete_cross_candidate_cases", 0)',
-            'string_entry("evidence_status", "none")',
-            '("selection".to_owned(), JsonValue::Null)',
-            '("conclusion".to_owned(), JsonValue::Null)',
-            'string_entry("roadmap_gate_credit", "none")',
-            'string_entry("readiness_credit", "none")',
-            'string_entry("status", "identity_plan_only")',
-            'string_entry("physical_execution_order", "unassigned")',
-            'string_entry("persistence", "none_before_frozen_epoch")',
-            'string_entry("current_record_status", "absent")',
-        )
-        empty_record_arrays = (
-            "result_records",
-            "observation_records",
-            "verdict_records",
-            "review_records",
-            "evidence_records",
-        )
-        empty_records = all(
-            re.search(
-                rf'"{re.escape(name)}"\.to_owned\(\),\s*'
-                r'JsonValue::Array\(Vec::new\(\)\)\s*,?\s*\)',
-                source,
-            )
-            is not None
-            for name in empty_record_arrays
-        )
-        if any(marker not in source for marker in zero_state_markers) or not empty_records:
-            self.add(
-                "d004_packet.result_contract_zero_state",
-                path,
-                "descriptor weakened the exact unfrozen 0/25, no-evidence, no-credit state",
-            )
-        if any(
-            marker in source
-            for marker in (
-                'fn readiness_percent(',
-                '"readiness_percent"',
-                '"roadmap_gates_closed"',
-                '"roadmap_gates_total"',
-            )
-        ):
-            self.add(
-                "d004_packet.result_contract_readiness_scope",
-                path,
-                "D-004 descriptor must not restate global gate count or readiness percentage",
-            )
-
-        nonclaims = (
-            "descriptor only; no populated case record exists",
-            "no candidate mapping or adapter exists",
-            "no candidate process or tool invoked",
-            "no result, observation, verdict, review, or evidence record accepted",
-            "no replay repetition count assigned",
-            "no D-004 evidence epoch frozen",
-            "no candidate-case execution completed",
-            "no semantic-strata candidate selected",
-            "no D-004 disposition accepted",
-            "no S3b implementation authorized",
-            "no independent review claimed",
-            "no roadmap gate or readiness movement",
-        )
-        if any(f'"{value}"' not in source for value in nonclaims):
-            self.add(
-                "d004_packet.result_contract_nonclaims",
-                path,
-                "future-result descriptor weakened its exact nonclaims",
-            )
-
-        if (
-            '"allowed_domain_states"' not in source
-            or (
-                "observed_state is a member of the resolved oracle "
-                "allowed_domain_states"
-            )
-            not in source
-            or '"comparison is mismatched otherwise"' not in source
-            or '"no replay repetition count assigned"' not in source
-            or 'string_entry("capability_credit", "none")' not in source
-            or (
-                "observation_level, allowed_domain_states, required_invalidation, "
-                "and capability_credit must equal the resolved oracle and cannot be "
-                "result-defined or broadened"
-            )
-            not in source
-        ):
-            self.add(
-                "d004_packet.result_contract_semantics",
-                path,
-                "oracle-bound observation semantics or unresolved replay cardinality drifted",
-            )
-
-        function_names = set(
-            re.findall(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", source)
-        )
-        execution_prefixes = ("execute", "launch", "invoke", "spawn", "run_candidate")
-        if (
-            any(name.startswith(execution_prefixes) for name in function_names)
-            or re.search(
-                r"\b(?:std::process|Command::new|process::Command)\b", source
-            )
-        ):
-            self.add(
-                "d004_packet.result_contract_execution_api",
-                path,
-                "future-result descriptor must expose no candidate launcher or execution API",
-            )
-        persistence_prefixes = ("persist", "save", "store", "write", "capture", "emit")
-        if (
-            any(name.startswith(persistence_prefixes) for name in function_names)
-            or re.search(
-                r"\b(?:std::fs|std::io::Write|OpenOptions|File::create|fs::write)\b",
-                source,
-            )
-        ):
-            self.add(
-                "d004_packet.result_contract_persistence_api",
-                path,
-                "future-result descriptor must expose no capture or persistence API",
-            )
-        parser_names = {name for name in function_names if name.startswith("parse")}
-        if parser_names != {"parse_draft_result_contract_descriptor"}:
-            self.add(
-                "d004_packet.result_contract_parser_api",
-                path,
-                "only the exact closed-descriptor parser is permitted",
-            )
 
     def _validate_d004_draft_packet(self) -> None:
+        self._validate_d004_candidate_mapping_catalog()
         self._validate_d004_result_contract_source()
         self._validate_decision_laboratory("d004")
-        packet_path = self.root / "research/decisions/D-004/d004-v0.4-draft-packet.json"
+        packet_path = self.root / "research/decisions/D-004/d004-v0.5-draft-packet.json"
         catalog_path = self.root / "research/decisions/D-004/d004-v0.4-case-subjects.json"
         try:
             packet = self._load_repository_json(packet_path)
@@ -5141,16 +5045,17 @@ class FoundationValidator:
             "d003_disposition", "owner_protocol_review", "candidates", "cases",
             "source_roles", "relationships", "domain_observation_states", "case_verdicts",
             "hard_gates", "mutations", "mutation_manifest_sha256",
-            "case_subject_catalog_sha256", "cross_cutting_fixture_proposal_manifest_sha256",
+            "candidate_mapping_catalog_sha256", "case_subject_catalog_sha256",
+            "cross_cutting_fixture_proposal_manifest_sha256",
             "cross_cutting_executable_fixture_catalog_sha256", "fixture_inventory_status",
             "unresolved_cross_cutting_fixture_classes", "protocol_gaps", "input_bindings",
             "budgets", "execution", "selection", "conclusion", "nonclaims",
         }
         if set(packet) != expected_packet_fields:
-            self.add("d004_packet.schema", packet_path, "v0.4 packet fields are not closed")
+            self.add("d004_packet.schema", packet_path, "v0.5 packet fields are not closed")
         exact_packet_values = {
-            "schema_version": "d004-pre-epoch-packet-v0.4",
-            "suite_version": "d004-v0.4-draft",
+            "schema_version": "d004-pre-epoch-packet-v0.5",
+            "suite_version": "d004-v0.5-draft",
             "status": "draft_unfrozen",
             "epoch": None,
             "epoch_status": "unfrozen",
@@ -5164,9 +5069,9 @@ class FoundationValidator:
             "case_verdicts": ["pass", "fail"],
             "hard_gates": [f"SS-G{index:02d}" for index in range(1, 11)],
             "mutation_manifest_sha256": "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c",
-            "cross_cutting_fixture_proposal_manifest_sha256": "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65",
-            "cross_cutting_executable_fixture_catalog_sha256": "ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703",
-            "fixture_inventory_status": "case_and_cross_cutting_materialized_unreviewed_freeze_blocker",
+            "cross_cutting_fixture_proposal_manifest_sha256": "85407a4a43b5a6bf450ea905fe858482f2f79abb4cbe8ee8690bddc1753d0912",
+            "cross_cutting_executable_fixture_catalog_sha256": "0516a84260bcc4d8ebb64e0cd3416deb5c43a86b7f5cd882ca757c924e575767",
+            "fixture_inventory_status": "case_cross_cutting_and_candidate_mapping_materialized_unreviewed_freeze_blocker",
             "unresolved_cross_cutting_fixture_classes": ["ambiguity", "missing-edge", "identity-substitution", "unsupported", "resource-exhaustion"],
             "protocol_gaps": [
                 "ambiguity fixture sufficiency review unresolved",
@@ -5174,6 +5079,7 @@ class FoundationValidator:
                 "identity-substitution fixture sufficiency review unresolved",
                 "unsupported fixture sufficiency review unresolved",
                 "resource-exhaustion fixture sufficiency review unresolved",
+                "candidate graph and SR mapping review unresolved",
                 "replay repetition count unresolved",
             ],
             "budgets": {
@@ -5192,14 +5098,15 @@ class FoundationValidator:
             "selection": None,
             "conclusion": None,
             "nonclaims": [
-                "no candidate adapter executed", "no D-004 evidence epoch frozen",
+                "candidate mappings are unreviewed input-only hypotheses, not accepted semantics",
+                "no candidate adapter exists or executed", "no D-004 evidence epoch frozen",
                 "no semantic-strata candidate selected",
                 "no D-004 disposition inferred from D-003 acceptance",
                 "no roadmap gate or readiness movement", "no S3b implementation authorized",
             ],
         }
         if any(packet.get(key) != value for key, value in exact_packet_values.items()):
-            self.add("d004_packet.unfrozen_state", packet_path, "v0.4 packet weakened its exact unfrozen zero-evidence state")
+            self.add("d004_packet.unfrozen_state", packet_path, "v0.5 packet weakened its exact unfrozen zero-evidence state")
         mutation_counts = (4, 5, 5, 6, 6)
         expected_mutations = [
             f"SC-{case_index:02d}-M{mutation_index:02d}"
@@ -5209,11 +5116,11 @@ class FoundationValidator:
         if packet.get("mutations") != expected_mutations:
             self.add("d004_packet.mutations", packet_path, "packet must retain all 26 ordered named mutations")
         bindings = packet.get("input_bindings")
-        if not isinstance(bindings, dict) or len(bindings) != 22 or any(
+        if not isinstance(bindings, dict) or len(bindings) != 23 or any(
             not isinstance(row, dict) or set(row) != {"path", "sha256"}
             for row in bindings.values()
         ):
-            self.add("d004_packet.input_bindings", packet_path, "packet must retain 22 closed path/digest bindings")
+            self.add("d004_packet.input_bindings", packet_path, "packet must retain 23 closed path/digest bindings")
         else:
             case_binding = bindings.get("case_subjects")
             catalog_raw = self._read_repository_bytes(catalog_path)
@@ -5222,12 +5129,35 @@ class FoundationValidator:
                 "sha256": hashlib.sha256(catalog_raw).hexdigest() if catalog_raw is not None else "",
             }:
                 self.add("d004_packet.case_subject_binding", packet_path, "case-subject raw binding drifted")
+            mapping_raw = self._read_repository_bytes(
+                self.root / _D004_CANDIDATE_MAPPING_CATALOG
+            )
+            if bindings.get("candidate_mappings") != {
+                "path": _D004_CANDIDATE_MAPPING_CATALOG,
+                "sha256": hashlib.sha256(mapping_raw).hexdigest()
+                if mapping_raw is not None
+                else "",
+            }:
+                self.add(
+                    "d004_packet.candidate_mapping_binding",
+                    packet_path,
+                    "candidate-mapping raw binding drifted",
+                )
         try:
             catalog_digest = hashlib.sha256(canonical_json_bytes(catalog)).hexdigest()
         except (TypeError, ValueError):
             catalog_digest = ""
         if packet.get("case_subject_catalog_sha256") != catalog_digest:
             self.add("d004_packet.case_subject_identity", packet_path, "case-subject canonical identity drifted")
+        if (
+            packet.get("candidate_mapping_catalog_sha256")
+            != _D004_CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256
+        ):
+            self.add(
+                "d004_packet.candidate_mapping_identity",
+                packet_path,
+                "candidate-mapping canonical identity drifted",
+            )
         self._validate_d004_case_subject_catalog(catalog, catalog_path)
 
     def _validate_d004_case_subject_catalog(self, catalog: dict[str, Any], path: Path) -> None:
@@ -5251,7 +5181,7 @@ class FoundationValidator:
             },
             "mutation_subject_count": 26,
             "nonclaims": [
-                "no candidate mapping or adapter exists",
+                "candidate mappings are separate unreviewed input-only hypotheses; no candidate adapter exists",
                 "no candidate process or tool invoked",
                 "no observed state, match, result, or verdict produced",
                 "no candidate capability or capability absence established",
@@ -5271,12 +5201,12 @@ class FoundationValidator:
                 },
                 "suite": {
                     "path": "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-                    "raw_sha256": "f44c556202d0e235fd42c03181134ab3047d3e9b6f19b3015dae15a86d00dc0b",
+                    "raw_sha256": _D004_SUITE_RAW_SHA256,
                 },
             },
             "status": "draft_unreviewed_input_only",
             "subject_count": 31,
-            "suite_version": "d004-v0.4-draft",
+            "suite_version": "d004-v0.5-draft",
         }
         if set(catalog) != root_fields:
             fail("schema", "catalog root fields are not closed")

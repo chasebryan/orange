@@ -125,20 +125,22 @@ That Draft protocol records 0/25 required candidate-case executions: 0/5
 candidates have complete five-case packets, and 0/5 cases have complete
 cross-candidate execution. It selects no stratum and does not authorize S3b.
 
-Its input-only pre-epoch laboratory now byte-materializes exactly 70
+Its input-only pre-epoch laboratory now byte-materializes exactly 73
 candidate-neutral suite-only subjects under
 `draft_unreviewed_input_only`: five positive case subjects, all 26 named
-mutation subjects, 14 missing-edge subjects, 10 identity-substitution subjects,
+mutation subjects, 14 missing-edge subjects, 13 identity-substitution subjects,
 and five each for ambiguity, unsupported behavior, and domain exhaustion. All
 five class sufficiency reviews and freeze blockers remain unresolved, and
 replay repetitions remain unresolved and unassigned. Integrity parsing and
 structural oracles over those fixed input bytes are not candidate executions
-and ratify no Orange semantics. D-003 is accepted at exact revision
+and ratify no Orange semantics. A separate authenticated input-only catalog now
+contains five unreviewed structural candidate graph proposals and 70 unresolved
+SR mapping rows. D-003 is accepted at exact revision
 `a82a5cec2ee4359dc2fe66171f17c93146747333`; the D-004 epoch remains
 unfrozen, and D-004 owner protocol review
-remains `none`. With no candidate mappings or adapters, the laboratory creates
-no observation, evidence, result, recommendation, selection, or conclusion and
-advances no roadmap gate or readiness beyond 30%.
+remains `none`. The mapping hypotheses create no adapter, execution, evidence,
+review, freeze, recommendation, selection, or conclusion and supply no roadmap
+or readiness credit. Orange remains at 30% by binary gate closure.
 
 ## D-005 — Public assurance model
 

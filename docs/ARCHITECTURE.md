@@ -27,9 +27,9 @@ unratified, and open
 architecture choices continue to gate only the component or claim that depends
 on them.
 
-The D-004 pre-epoch laboratory now byte-materializes exactly 70
+The D-004 pre-epoch laboratory now byte-materializes exactly 73
 candidate-neutral suite-only subjects as `draft_unreviewed_input_only`: five
-positive case subjects, all 26 named mutations, 14 missing-edge subjects, 10
+positive case subjects, all 26 named mutations, 14 missing-edge subjects, 13
 identity-substitution subjects, and five each for ambiguity, unsupported
 behavior, and domain exhaustion. They are fixed inputs for later symmetric
 comparison, not members of the accepted language or Core family. All five
@@ -37,10 +37,13 @@ class sufficiency reviews and freeze blockers plus replay repetitions remain
 unresolved. D-003 is accepted at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner review is
 `none`, the D-004
-epoch is unfrozen, and no candidate mapping, adapter, evidence, selection, or
-conclusion exists. Integrity parsing and structural oracles are not candidate
-executions and ratify no semantic boundary. D-004 remains at 0/25 and Orange at
-30% readiness by binary gate closure.
+epoch is unfrozen, and a separate authenticated input-only catalog contains
+five unreviewed structural candidate graph proposals and 70 unresolved SR
+mapping rows. Those hypotheses create no adapter, execution, evidence, review,
+freeze, selection, conclusion, or readiness credit. Integrity parsing and
+structural oracles ratify no semantic boundary. D-004 remains at 0/25 and Orange
+at 3/10 binary gate closure (30%); that mechanical score is not release
+readiness.
 
 D-010 also remains unresolved. Compiler descriptions below are candidate
 requirements and claim-boundary obligations, not a selected backend, pass

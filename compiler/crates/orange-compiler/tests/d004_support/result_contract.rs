@@ -1,3 +1,7 @@
+use super::candidate_mappings::{
+    CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256, CANDIDATE_MAPPING_CATALOG_PATH,
+    CANDIDATE_MAPPING_CATALOG_RAW_SHA256, CandidateMappingCatalog,
+};
 use super::case_subjects::{
     CASE_SUBJECT_CATALOG_CANONICAL_SHA256, CASE_SUBJECT_CATALOG_PATH,
     CASE_SUBJECT_CATALOG_RAW_SHA256, CaseSubjectCatalog,
@@ -255,6 +259,13 @@ pub(crate) const SUBJECT_ORACLE_FIELDS: [&str; 11] = [
     "capability_credit",
 ];
 
+pub(crate) const CANDIDATE_MAPPING_IDENTITY_FIELDS: [&str; 4] = [
+    "candidate",
+    "graph_sha256",
+    "sr_map_sha256",
+    "mapping_sha256",
+];
+
 pub(crate) const DIGEST_JOIN_FIELDS: [&str; 13] = [
     "packet_sha256",
     "replay_plan_sha256",
@@ -282,7 +293,7 @@ pub(crate) const ORDERING_RULES: [&str; 6] = [
 
 pub(crate) const OBSERVATION_COMPARISONS: [&str; 2] = ["matched", "mismatched"];
 
-pub(crate) const DERIVATION_RULES: [&str; 30] = [
+pub(crate) const DERIVATION_RULES: [&str; 31] = [
     "each observation subject_id and subject_sha256 must resolve exactly one authenticated subject-oracle row",
     "observation_level, allowed_domain_states, required_invalidation, and capability_credit must equal the resolved oracle and cannot be result-defined or broadened",
     "comparison is matched if and only if observed_state is a member of the resolved oracle allowed_domain_states",
@@ -295,6 +306,7 @@ pub(crate) const DERIVATION_RULES: [&str; 30] = [
     "candidate-adapter inability cannot satisfy a domain-level unsupported expectation",
     "domain-level unknown, unsupported, or exhausted can match only when preregistered",
     "every SR-01 through SR-14 relationship appears exactly once in canonical order",
+    "candidate_graph and sr_conformance_map identities must resolve the exact candidate entry in the authenticated candidate-mapping catalog",
     "SR applicability is derived from authenticated subject relationship scopes rather than declared by a result",
     "every required SR row must be satisfied; not_satisfied, unresolved, or unsupported forces case_verdict fail",
     "every dependent_observation_id must join exactly one authenticated observation in the same candidate-case repetition",
@@ -317,7 +329,7 @@ pub(crate) const DERIVATION_RULES: [&str; 30] = [
 
 pub(crate) const RESULT_CONTRACT_NONCLAIMS: [&str; 12] = [
     "descriptor only; no populated case record exists",
-    "no candidate mapping or adapter exists",
+    "candidate mappings are unreviewed input-only hypotheses; no candidate adapter exists",
     "no candidate process or tool invoked",
     "no result, observation, verdict, review, or evidence record accepted",
     "no replay repetition count assigned",
@@ -424,14 +436,20 @@ impl DraftResultContractDescriptor {
 pub(crate) fn canonical_draft_result_contract_descriptor_bytes(
     case_subject_catalog: &CaseSubjectCatalog,
     fixture_catalog: &FixtureCatalog,
+    candidate_mapping_catalog: &CandidateMappingCatalog,
 ) -> Vec<u8> {
-    strict_json::canonical_bytes(&descriptor_value(case_subject_catalog, fixture_catalog))
+    strict_json::canonical_bytes(&descriptor_value(
+        case_subject_catalog,
+        fixture_catalog,
+        candidate_mapping_catalog,
+    ))
 }
 
 pub(crate) fn parse_draft_result_contract_descriptor(
     source: &[u8],
     case_subject_catalog: &CaseSubjectCatalog,
     fixture_catalog: &FixtureCatalog,
+    candidate_mapping_catalog: &CandidateMappingCatalog,
 ) -> Result<DraftResultContractDescriptor, ResultContractError> {
     let value = strict_json::parse(source).map_err(|error| {
         ResultContractError::new(
@@ -445,7 +463,11 @@ pub(crate) fn parse_draft_result_contract_descriptor(
             "$/descriptor",
         ));
     }
-    let expected = descriptor_value(case_subject_catalog, fixture_catalog);
+    let expected = descriptor_value(
+        case_subject_catalog,
+        fixture_catalog,
+        candidate_mapping_catalog,
+    );
     if value != expected {
         return Err(ResultContractError::new(
             ResultContractErrorKind::SchemaMismatch,
@@ -512,10 +534,11 @@ fn pointer_token(value: &str) -> String {
 fn descriptor_value(
     case_subject_catalog: &CaseSubjectCatalog,
     fixture_catalog: &FixtureCatalog,
+    candidate_mapping_catalog: &CandidateMappingCatalog,
 ) -> JsonValue {
     strict_json::object([
         string_entry("schema_version", RESULT_CONTRACT_SCHEMA_VERSION),
-        string_entry("suite_version", "d004-v0.4-draft"),
+        string_entry("suite_version", "d004-v0.5-draft"),
         string_entry("status", "draft_schema_descriptor_only"),
         string_entry("canonicalization", "RFC8785_ASCII_INTEGER_SUBSET"),
         ("epoch".to_owned(), JsonValue::Null),
@@ -532,7 +555,15 @@ fn descriptor_value(
         ("mutation_inventory".to_owned(), mutation_inventory_value()),
         (
             "subject_catalog_bindings".to_owned(),
-            subject_catalog_bindings_value(case_subject_catalog, fixture_catalog),
+            subject_catalog_bindings_value(
+                case_subject_catalog,
+                fixture_catalog,
+                candidate_mapping_catalog,
+            ),
+        ),
+        (
+            "candidate_mapping_identity_inventory".to_owned(),
+            candidate_mapping_identity_inventory_value(candidate_mapping_catalog),
         ),
         (
             "subject_oracle_inventory".to_owned(),
@@ -690,6 +721,7 @@ fn mutation_inventory_value() -> JsonValue {
 fn subject_catalog_bindings_value(
     case_subject_catalog: &CaseSubjectCatalog,
     fixture_catalog: &FixtureCatalog,
+    candidate_mapping_catalog: &CandidateMappingCatalog,
 ) -> JsonValue {
     assert_eq!(
         case_subject_catalog.digest_hex(),
@@ -700,6 +732,11 @@ fn subject_catalog_bindings_value(
         fixture_catalog.digest_hex(),
         FIXTURE_CATALOG_CANONICAL_SHA256,
         "result descriptor requires the authenticated cross-cutting fixture catalog"
+    );
+    assert_eq!(
+        candidate_mapping_catalog.digest_hex(),
+        CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256,
+        "result descriptor requires the authenticated candidate-mapping catalog"
     );
     strict_json::object([
         (
@@ -718,6 +755,14 @@ fn subject_catalog_bindings_value(
                 FIXTURE_CATALOG_CANONICAL_SHA256,
             ),
         ),
+        (
+            "candidate_mapping_catalog".to_owned(),
+            catalog_binding_value(
+                CANDIDATE_MAPPING_CATALOG_PATH,
+                CANDIDATE_MAPPING_CATALOG_RAW_SHA256,
+                CANDIDATE_MAPPING_CATALOG_CANONICAL_SHA256,
+            ),
+        ),
     ])
 }
 
@@ -727,6 +772,35 @@ fn catalog_binding_value(path: &str, raw_sha256: &str, canonical_sha256: &str) -
         string_entry("raw_sha256", raw_sha256),
         string_entry("canonical_sha256", canonical_sha256),
     ])
+}
+
+fn candidate_mapping_identity_inventory_value(
+    candidate_mapping_catalog: &CandidateMappingCatalog,
+) -> JsonValue {
+    JsonValue::Array(
+        candidate_mapping_catalog
+            .identities()
+            .iter()
+            .map(|identity| {
+                strict_json::object([
+                    string_entry("candidate", &identity.candidate),
+                    string_entry("graph_sha256", &identity.graph_sha256),
+                    string_entry("sr_map_sha256", &identity.sr_map_sha256),
+                    (
+                        "mapping_sha256".to_owned(),
+                        JsonValue::Array(
+                            identity
+                                .mapping_sha256
+                                .iter()
+                                .cloned()
+                                .map(JsonValue::String)
+                                .collect(),
+                        ),
+                    ),
+                ])
+            })
+            .collect(),
+    )
 }
 
 fn subject_oracle_inventory_value(
@@ -878,7 +952,7 @@ fn schedule_contract_value() -> JsonValue {
 fn scheduled_slot_identity_contract_value() -> JsonValue {
     strict_json::object([
         string_entry("schema_version", "d004-scheduled-slot-identity-v0.1"),
-        string_entry("suite_version", "d004-v0.4-draft"),
+        string_entry("suite_version", "d004-v0.5-draft"),
         string_entry("canonicalization", "RFC8785_ASCII_INTEGER_SUBSET"),
         ("terminal_line_feed".to_owned(), JsonValue::Bool(false)),
         string_entry("hash", "sha256"),

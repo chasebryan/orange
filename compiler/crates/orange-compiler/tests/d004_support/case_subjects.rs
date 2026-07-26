@@ -8,16 +8,16 @@ use super::strict_json::{self, JsonErrorKind, JsonValue};
 pub(crate) const CASE_SUBJECT_CATALOG_PATH: &str =
     "research/decisions/D-004/d004-v0.4-case-subjects.json";
 pub(crate) const CASE_SUBJECT_CATALOG_CANONICAL_SHA256: &str =
-    "b3a8bcf4f0f084740e92cbff6fd57273df0a078af9c6b974f68d95ba333c6dc1";
+    "5b9e734b6bad7913072e87adb29c58547d67bdcb46af942eb6bbc79d0e68166e";
 pub(crate) const CASE_SUBJECT_CATALOG_RAW_SHA256: &str =
-    "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6";
+    "6266b8e38ad1a83fb777278fc0369844749b2915eabb40ba1ddfc9efa7c985f2";
 
 const CASE_SUBJECT_SCHEMA: &str = "d004-case-subject-v0.1";
 const POSITIVE_SUBJECT_COUNT: usize = 5;
 const MUTATION_SUBJECT_COUNT: usize = 26;
 const SUBJECT_COUNT: usize = POSITIVE_SUBJECT_COUNT + MUTATION_SUBJECT_COUNT;
 const DECISION_SUITE_RAW_SHA256: &str =
-    "f44c556202d0e235fd42c03181134ab3047d3e9b6f19b3015dae15a86d00dc0b";
+    "64abe8290955f889e28f8bb9ce7653a26ef71a624286aef900d4dbfc3b7eb117";
 const MUTATION_MANIFEST_CANONICAL_SHA256: &str =
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c";
 const MUTATION_MANIFEST_RAW_SHA256: &str =
@@ -106,7 +106,7 @@ const DEPENDENT_RESULT_FIELDS: [&str; 3] = ["id", "required_target", "required_v
 const MANIFEST_RECORD_FIELDS: [&str; 3] = ["id", "case", "description"];
 
 pub(crate) const CASE_SUBJECT_NONCLAIMS: [&str; 9] = [
-    "no candidate mapping or adapter exists",
+    "candidate mappings are separate unreviewed input-only hypotheses; no candidate adapter exists",
     "no candidate process or tool invoked",
     "no observed state, match, result, or verdict produced",
     "no candidate capability or capability absence established",
@@ -524,7 +524,7 @@ fn validate_catalog(
         "d004-case-subject-catalog-v0.1",
         "$",
     )?;
-    require_exact_string(root, "suite_version", "d004-v0.4-draft", "$")?;
+    require_exact_string(root, "suite_version", "d004-v0.5-draft", "$")?;
     require_exact_string(root, "status", "draft_unreviewed_input_only", "$")?;
     require_exact_string(root, "owner_protocol_review", "none", "$")?;
     require_exact_string(

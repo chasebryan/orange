@@ -1,8 +1,8 @@
 use std::fmt;
 
 pub(crate) const REQUIRED_CANDIDATE_CASES: usize = 25;
-pub(crate) const INPUT_BINDING_COUNT: usize = 22;
-pub(crate) const CROSS_CUTTING_PROPOSAL_COUNT: usize = 39;
+pub(crate) const INPUT_BINDING_COUNT: usize = 23;
+pub(crate) const CROSS_CUTTING_PROPOSAL_COUNT: usize = 42;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CandidateId {
@@ -128,7 +128,7 @@ pub(crate) const CROSS_CUTTING_PROPOSAL_CLASS_STATUSES: [ProposalClassStatusSpec
     },
     ProposalClassStatusSpec {
         class: "identity-substitution",
-        proposal_count: 10,
+        proposal_count: 13,
     },
     ProposalClassStatusSpec {
         class: "unsupported",
@@ -163,7 +163,7 @@ pub(crate) struct IdentitySubstitutionProposalSpec {
     pub(crate) target: &'static str,
 }
 
-pub(crate) const IDENTITY_SUBSTITUTION_PROPOSALS: [IdentitySubstitutionProposalSpec; 10] = [
+pub(crate) const IDENTITY_SUBSTITUTION_PROPOSALS: [IdentitySubstitutionProposalSpec; 13] = [
     IdentitySubstitutionProposalSpec {
         id: "D004-XF-ID-PACKET",
         target: "packet_identity",
@@ -203,6 +203,18 @@ pub(crate) const IDENTITY_SUBSTITUTION_PROPOSALS: [IdentitySubstitutionProposalS
     IdentitySubstitutionProposalSpec {
         id: "D004-XF-ID-ENVIRONMENT",
         target: "environment_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-MODEL",
+        target: "model_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-DEPENDENCY-MANIFEST",
+        target: "dependency_manifest_identity",
+    },
+    IdentitySubstitutionProposalSpec {
+        id: "D004-XF-ID-POSITIVE-SUBJECT",
+        target: "positive_subject_identity",
     },
 ];
 
@@ -355,17 +367,19 @@ pub(crate) const CASE_SCOPED_CROSS_CUTTING_PROPOSALS: [CaseScopedProposalSpec; 1
     },
 ];
 
-pub(crate) const PROTOCOL_GAPS: [&str; 6] = [
+pub(crate) const PROTOCOL_GAPS: [&str; 7] = [
     "ambiguity fixture sufficiency review unresolved",
     "missing-edge fixture sufficiency review unresolved",
     "identity-substitution fixture sufficiency review unresolved",
     "unsupported fixture sufficiency review unresolved",
     "resource-exhaustion fixture sufficiency review unresolved",
+    "candidate graph and SR mapping review unresolved",
     "replay repetition count unresolved",
 ];
 
-pub(crate) const NONCLAIMS: [&str; 6] = [
-    "no candidate adapter executed",
+pub(crate) const NONCLAIMS: [&str; 7] = [
+    "candidate mappings are unreviewed input-only hypotheses, not accepted semantics",
+    "no candidate adapter exists or executed",
     "no D-004 evidence epoch frozen",
     "no semantic-strata candidate selected",
     "no D-004 disposition inferred from D-003 acceptance",
@@ -411,6 +425,7 @@ pub(crate) enum InputBindingId {
     CrossCuttingFixtureProposals,
     CrossCuttingExecutableFixtures,
     CaseSubjects,
+    CandidateMappings,
 }
 
 impl InputBindingId {
@@ -438,6 +453,7 @@ impl InputBindingId {
             Self::CrossCuttingFixtureProposals => "cross_cutting_fixture_proposals",
             Self::CrossCuttingExecutableFixtures => "cross_cutting_executable_fixtures",
             Self::CaseSubjects => "case_subjects",
+            Self::CandidateMappings => "candidate_mappings",
         }
     }
 
@@ -465,6 +481,7 @@ impl InputBindingId {
             Self::CrossCuttingFixtureProposals => 19,
             Self::CrossCuttingExecutableFixtures => 20,
             Self::CaseSubjects => 21,
+            Self::CandidateMappings => 22,
         }
     }
 }
@@ -485,7 +502,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::DecisionSuite,
         path: "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-        sha256: "f44c556202d0e235fd42c03181134ab3047d3e9b6f19b3015dae15a86d00dc0b",
+        sha256: "64abe8290955f889e28f8bb9ce7653a26ef71a624286aef900d4dbfc3b7eb117",
     },
     InputBinding {
         id: InputBindingId::ProductFormDecisionPacket,
@@ -575,17 +592,22 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::CrossCuttingFixtureProposals,
         path: "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
-        sha256: "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93",
+        sha256: "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481",
     },
     InputBinding {
         id: InputBindingId::CrossCuttingExecutableFixtures,
         path: "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json",
-        sha256: "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0",
+        sha256: "5fea65960c47818243d41076dd96a6cab2dbd6d4038fd354a3f5ba30a12622ae",
     },
     InputBinding {
         id: InputBindingId::CaseSubjects,
         path: "research/decisions/D-004/d004-v0.4-case-subjects.json",
-        sha256: "c94100598aaf39954fe683a44f6a4d34837304eb361a1b478ca26884892d8ed6",
+        sha256: "6266b8e38ad1a83fb777278fc0369844749b2915eabb40ba1ddfc9efa7c985f2",
+    },
+    InputBinding {
+        id: InputBindingId::CandidateMappings,
+        path: "research/decisions/D-004/d004-v0.5-candidate-mappings.json",
+        sha256: "70765c64936bbb8aafd6e101fbf20c85396eb722d70e55bb9311d14bfbb15156",
     },
 ];
 
