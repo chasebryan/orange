@@ -27,8 +27,10 @@ The S3a slice has separate `spec` and `impl` name namespaces, but only
 typed specifications acquire values. It defines no parameters, operators,
 calls, typed implementations, refinement, proof system, canonical Core encoding,
 code generation, ABI, standard library, package or release behavior, or verified
-cryptographic implementation. D-003 and D-004 remain unresolved and unratified,
-and later S3 semantic work is incomplete.
+cryptographic implementation. The owner accepted D-003 candidate PF-01 on
+2026-07-26, provisionally establishing Orange's standalone product form while
+its exact-revision OEP closure remains pending. D-004 remains unresolved and
+unratified, and later S3 semantic work is incomplete.
 
 The accepted S3a implementation and normative documentation were merged by
 [PR #9](https://github.com/chasebryan/orange/pull/9) as commit
@@ -87,6 +89,7 @@ ratified incrementally before the component or claim that depends on them.
 - [Solo-development process](docs/governance/oeps/OEP-0001-solo-development.md)
 - [Edition 2026 parser proposal](docs/governance/oeps/OEP-0002-edition-2026-parser.md)
 - [Accepted typed-literal semantics OEP](docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md)
+- [Provisional standalone-product-form OEP](docs/governance/oeps/OEP-0004-standalone-orange-product-form.md)
 - [Compiler status and usage](compiler/README.md)
 
 ## Repository and compiler foundation

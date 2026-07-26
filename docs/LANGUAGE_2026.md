@@ -5,7 +5,7 @@ additively extended with accepted S3a syntax under D-026 and OEP-0003
 
 Edition: `2026`
 
-Snapshot: 2026-07-25
+Snapshot: 2026-07-26
 
 This document defines the complete lexical and syntactic language accepted by
 the Orange 2026 parser. It is intentionally small. Acceptance establishes only
@@ -18,7 +18,8 @@ other correctness property.
 The S3a extension was merged by PR #9 at commit
 `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. This records the implemented
 pre-alpha boundary, not a stable syntax-compatibility guarantee; later S3 work
-and the D-003/D-004 architecture decisions remain open.
+remains incomplete. D-003 candidate PF-01 is owner-accepted pending
+exact-revision OEP closure, while D-004 remains unresolved.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

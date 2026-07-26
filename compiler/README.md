@@ -17,8 +17,9 @@ verified lowering, and code generation do not exist.
 This boundary was merged by
 [PR #9](https://github.com/chasebryan/orange/pull/9) as commit
 `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. Orange remains pre-alpha; that
-merge creates no stable public compatibility promise.
-Later S3 semantics remain incomplete, and D-003 and D-004 remain unresolved.
+merge creates no stable public compatibility promise. The owner accepted D-003
+candidate PF-01 on 2026-07-26, with formal status pending exact-revision OEP
+closure. Later S3 semantics remain incomplete, and D-004 remains unresolved.
 
 ## Run
 
@@ -43,8 +44,9 @@ non-product D-004 laboratory. It strictly parses and canonicalizes an
 input-only `draft_unfrozen` packet, binds the conditional suite and accepted
 S3a baseline by SHA-256, preserves the 5-candidate by 5-case matrix, 14 required
 relationships, 10 hard gates, and 26 mutations named explicitly by the suite,
-binds 39 unreviewed domain-level structural proposals, and prepares one
-deterministic balanced 25-slot plan:
+binds 39 unreviewed domain-level structural proposals and their corresponding
+candidate-neutral byte-materialized subjects, and prepares one deterministic
+balanced 25-slot identity plan:
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
@@ -52,16 +54,21 @@ cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
 ```
 
 The proposal manifest names 14 missing-edge, 10 identity-substitution, and five
-each of ambiguity, unsupported-behavior, and domain-exhaustion proposals. They
-are definitions, not executable fixtures or coverage, and supply no
-observation, result, evidence, or capability credit. Every class status records
-zero executable fixtures, unresolved coverage, and an active freeze blocker.
-Candidate-adapter failure cannot satisfy an unsupported proposal, and the
-domain-exhaustion proposals verify no replay ceiling. Replay repetition remains
-unassigned. The laboratory executes no candidate adapter, freezes no evidence
-epoch, records 0/25 completed slots and no evidence, and creates no result,
-review, recommendation, or selection. It does not accept D-003 or D-004, alter
-compiler behavior, authorize S3b, or advance the version 1.0.0 gate count.
+each of ambiguity, unsupported-behavior, and domain-exhaustion proposals. The
+separate catalog byte-materializes exactly those 39 subjects under
+`materialized_unreviewed`. A closed parser authenticates their ordered proposal
+join and per-subject identities, then a bounded structural integrity oracle
+checks the opaque suite-only models in memory. Those checks are not candidate
+executions and create no candidate observation, result, evidence, verdict, or
+capability credit. The five positive case subjects and 26 named mutation
+subjects remain definition-only gaps; all five class sufficiency reviews and
+freeze blockers remain unresolved. Candidate-adapter failure cannot satisfy an
+unsupported subject, domain exhaustion verifies no replay ceiling, and replay
+repetitions remain unassigned. The laboratory executes no candidate adapter,
+freezes no evidence epoch, records 0/25 completed slots and no evidence, and
+creates no result, review, recommendation, or selection. It does not formally
+close D-003, accept D-004, alter compiler behavior, authorize S3b, or advance
+the version 1.0.0 gate count.
 
 ## D-005 decision laboratory
 

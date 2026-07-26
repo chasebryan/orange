@@ -8,6 +8,8 @@
 mod cases;
 #[path = "d004_support/domain.rs"]
 mod domain;
+#[path = "d004_support/fixtures.rs"]
+mod fixtures;
 #[path = "d004_support/packet.rs"]
 mod packet;
 #[path = "d004_support/runner.rs"]
@@ -30,7 +32,12 @@ use domain::{
     NONCLAIMS, PROTOCOL_GAPS, RELATIONSHIPS, REQUIRED_CANDIDATE_CASES, SOURCE_ROLES,
     UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES,
 };
+use fixtures::{
+    FIXTURE_CATALOG_CANONICAL_SHA256, FIXTURE_CATALOG_PATH, FIXTURE_CATALOG_RAW_SHA256,
+    FIXTURE_NONCLAIMS, FixtureErrorKind, FixtureState, parse_fixture_catalog,
+};
 use packet::{
+    CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
     CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256, MUTATION_MANIFEST_SHA256, PacketErrorKind,
     canonical_cross_cutting_fixture_proposal_manifest_bytes,
     canonical_cross_cutting_fixture_proposal_manifest_file_bytes, canonical_draft_packet_bytes,
@@ -43,11 +50,14 @@ use runner::{ReplayError, ReplayInputs};
 use strict_json::{JsonErrorKind, JsonValue};
 
 const CHECKED_IN_PACKET: &[u8] =
-    include_bytes!("../../../../research/decisions/D-004/d004-v0.2-draft-packet.json");
+    include_bytes!("../../../../research/decisions/D-004/d004-v0.3-draft-packet.json");
 const NAMED_MUTATIONS: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.2-named-mutations.json");
 const CROSS_CUTTING_FIXTURE_PROPOSALS: &[u8] = include_bytes!(
     "../../../../research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json"
+);
+const CROSS_CUTTING_EXECUTABLE_FIXTURES: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json"
 );
 const DECISION_SUITE: &[u8] = include_bytes!("../../../../docs/SEMANTIC_STRATA_DECISION_SUITE.md");
 const PRODUCT_FORM_DECISION_PACKET: &[u8] =
@@ -97,7 +107,48 @@ fn checked_in_replay_inputs() -> ReplayInputs<'static> {
         VALID_INT_RADICES,
         VALID_WORD8_BOUNDARIES,
         CROSS_CUTTING_FIXTURE_PROPOSALS,
+        CROSS_CUTTING_EXECUTABLE_FIXTURES,
     ])
+}
+
+fn canonical_json_file_bytes(value: &JsonValue) -> Vec<u8> {
+    let mut bytes = strict_json::canonical_bytes(value);
+    bytes.push(b'\n');
+    bytes
+}
+
+fn json_object_mut(value: &mut JsonValue) -> &mut BTreeMap<String, JsonValue> {
+    match value {
+        JsonValue::Object(object) => object,
+        _ => panic!("expected JSON object"),
+    }
+}
+
+fn json_array_mut(value: &mut JsonValue) -> &mut Vec<JsonValue> {
+    match value {
+        JsonValue::Array(array) => array,
+        _ => panic!("expected JSON array"),
+    }
+}
+
+fn fixture_record_mut(catalog: &mut JsonValue, index: usize) -> &mut BTreeMap<String, JsonValue> {
+    let fixtures = json_array_mut(
+        json_object_mut(catalog)
+            .get_mut("fixtures")
+            .expect("fixture catalog array"),
+    );
+    json_object_mut(&mut fixtures[index])
+}
+
+fn rehash_fixture_subject(catalog: &mut JsonValue, index: usize) {
+    let record = fixture_record_mut(catalog, index);
+    let digest = sha256::hex(&sha256::digest(&strict_json::canonical_bytes(
+        record.get("fixture_subject").expect("fixture subject"),
+    )));
+    record.insert(
+        "fixture_subject_sha256".to_owned(),
+        JsonValue::String(digest),
+    );
 }
 
 #[test]
@@ -209,11 +260,13 @@ fn d004_pre_epoch_contract_preserves_every_freeze_blocker_and_budget() {
     assert_eq!(
         PROTOCOL_GAPS,
         [
-            "ambiguity fixture coverage unresolved",
-            "missing-edge fixture coverage unresolved",
-            "identity-substitution fixture coverage unresolved",
-            "unsupported fixture coverage unresolved",
-            "resource-exhaustion fixture coverage unresolved",
+            "five positive subjects absent",
+            "26 named-mutation subjects absent",
+            "ambiguity fixture sufficiency review unresolved",
+            "missing-edge fixture sufficiency review unresolved",
+            "identity-substitution fixture sufficiency review unresolved",
+            "unsupported fixture sufficiency review unresolved",
+            "resource-exhaustion fixture sufficiency review unresolved",
             "replay repetition count unresolved",
         ]
     );
@@ -663,6 +716,304 @@ fn cross_cutting_fixture_proposals_are_closed_canonical_and_candidate_neutral() 
 }
 
 #[test]
+fn cross_cutting_executable_fixture_catalog_is_exact_addressed_and_input_only() {
+    let proposals = parse_cross_cutting_fixture_proposal_manifest(CROSS_CUTTING_FIXTURE_PROPOSALS)
+        .expect("checked-in proposal manifest");
+    let catalog = parse_fixture_catalog(CROSS_CUTTING_EXECUTABLE_FIXTURES, &proposals)
+        .expect("checked-in executable fixture catalog");
+
+    assert_eq!(
+        FIXTURE_CATALOG_PATH,
+        "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json"
+    );
+    assert_eq!(CROSS_CUTTING_EXECUTABLE_FIXTURES.len(), 67_329);
+    assert_eq!(
+        catalog.canonical_bytes(),
+        &CROSS_CUTTING_EXECUTABLE_FIXTURES[..CROSS_CUTTING_EXECUTABLE_FIXTURES.len() - 1]
+    );
+    assert_eq!(catalog.digest_hex(), FIXTURE_CATALOG_CANONICAL_SHA256);
+    assert_eq!(
+        catalog.digest_hex(),
+        "ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703"
+    );
+    assert_eq!(
+        sha256::hex(&sha256::digest(CROSS_CUTTING_EXECUTABLE_FIXTURES)),
+        FIXTURE_CATALOG_RAW_SHA256
+    );
+    assert_eq!(
+        FIXTURE_CATALOG_RAW_SHA256,
+        "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0"
+    );
+    assert_eq!(catalog.preflights().len(), CROSS_CUTTING_PROPOSAL_COUNT);
+
+    let mut ids = BTreeSet::new();
+    let mut subject_digests = BTreeSet::new();
+    for preflight in catalog.preflights() {
+        assert!(ids.insert(preflight.proposal_id.as_str()));
+        assert!(subject_digests.insert(preflight.fixture_subject_sha256.as_str()));
+        assert_eq!(preflight.loader_status, "accepted");
+        assert_eq!(preflight.observed_invalidation, "dependent_result");
+        assert!(preflight.matched);
+        assert_eq!(preflight.candidate_execution, "not_performed");
+        assert_eq!(preflight.capability_credit, "none");
+        assert_eq!(preflight.evidence_status, "none");
+        assert!(!preflight.replay_ceiling_exercised);
+    }
+    assert_eq!(
+        catalog
+            .preflights()
+            .iter()
+            .filter(|preflight| preflight.observed_state == FixtureState::Rejected)
+            .count(),
+        29
+    );
+    assert_eq!(
+        catalog
+            .preflights()
+            .iter()
+            .filter(|preflight| preflight.observed_state == FixtureState::Unsupported)
+            .count(),
+        5
+    );
+    assert_eq!(
+        catalog
+            .preflights()
+            .iter()
+            .filter(|preflight| preflight.observed_state == FixtureState::Exhausted)
+            .count(),
+        5
+    );
+
+    let root = catalog.value().as_object().expect("catalog root");
+    assert_eq!(
+        root.get("nonclaims"),
+        Some(&strict_json::strings(FIXTURE_NONCLAIMS))
+    );
+    let fixtures = root
+        .get("fixtures")
+        .and_then(JsonValue::as_array)
+        .expect("fixture entries");
+    assert!(fixtures.iter().all(|fixture| {
+        let fixture = fixture.as_object().expect("fixture record");
+        !fixture.contains_key("loader_status")
+            && !fixture.contains_key("observed_state")
+            && !fixture.contains_key("matched")
+            && !fixture.contains_key("result")
+    }));
+    for candidate in CANDIDATES {
+        assert!(
+            !CROSS_CUTTING_EXECUTABLE_FIXTURES
+                .windows(candidate.as_str().len())
+                .any(|window| window == candidate.as_str().as_bytes())
+        );
+    }
+}
+
+#[test]
+fn cross_cutting_executable_fixture_loader_fails_closed_before_any_observation() {
+    let proposals = parse_cross_cutting_fixture_proposal_manifest(CROSS_CUTTING_FIXTURE_PROPOSALS)
+        .expect("checked-in proposal manifest");
+    let baseline = strict_json::parse(CROSS_CUTTING_EXECUTABLE_FIXTURES)
+        .expect("checked-in fixture catalog JSON");
+
+    let mut noncanonical = Vec::with_capacity(CROSS_CUTTING_EXECUTABLE_FIXTURES.len() + 1);
+    noncanonical.push(b' ');
+    noncanonical.extend_from_slice(CROSS_CUTTING_EXECUTABLE_FIXTURES);
+    assert_eq!(
+        parse_fixture_catalog(&noncanonical, &proposals)
+            .expect_err("noncanonical transport")
+            .kind,
+        FixtureErrorKind::NonCanonicalEncoding
+    );
+
+    let mut unknown = baseline.clone();
+    json_object_mut(&mut unknown).insert("unknown".to_owned(), JsonValue::Bool(true));
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&unknown), &proposals)
+            .expect_err("unknown root field")
+            .kind,
+        FixtureErrorKind::UnknownField
+    );
+
+    let mut missing = baseline.clone();
+    json_object_mut(&mut missing).remove("nonclaims");
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&missing), &proposals)
+            .expect_err("missing root field")
+            .kind,
+        FixtureErrorKind::MissingField
+    );
+
+    let mut reordered = baseline.clone();
+    json_array_mut(
+        json_object_mut(&mut reordered)
+            .get_mut("fixtures")
+            .expect("fixtures"),
+    )
+    .swap(0, 1);
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&reordered), &proposals)
+            .expect_err("proposal order substitution")
+            .kind,
+        FixtureErrorKind::ProposalJoin
+    );
+
+    let mut proposal_digest = baseline.clone();
+    fixture_record_mut(&mut proposal_digest, 0).insert(
+        "proposal_record_sha256".to_owned(),
+        JsonValue::String("0".repeat(64)),
+    );
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&proposal_digest), &proposals)
+            .expect_err("proposal record identity substitution")
+            .kind,
+        FixtureErrorKind::ProposalDigest
+    );
+
+    let mut missing_edge = baseline.clone();
+    {
+        let subject = json_object_mut(
+            fixture_record_mut(&mut missing_edge, 0)
+                .get_mut("fixture_subject")
+                .expect("subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("model"));
+        json_array_mut(
+            model
+                .get_mut("mutated_relationships")
+                .expect("mutated relationships"),
+        )
+        .push(JsonValue::String("SR-01".to_owned()));
+    }
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&missing_edge), &proposals)
+            .expect_err("stale subject digest")
+            .kind,
+        FixtureErrorKind::SubjectDigest
+    );
+    rehash_fixture_subject(&mut missing_edge, 0);
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&missing_edge), &proposals)
+            .expect_err("rehashed but structurally invalid missing-edge fixture")
+            .kind,
+        FixtureErrorKind::StructuralMismatch
+    );
+
+    let mut identity = baseline.clone();
+    {
+        let subject = json_object_mut(
+            fixture_record_mut(&mut identity, 14)
+                .get_mut("fixture_subject")
+                .expect("subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("model"));
+        let baseline_bindings = json_array_mut(
+            model
+                .get_mut("baseline_bindings")
+                .expect("baseline bindings"),
+        );
+        let original = json_object_mut(&mut baseline_bindings[0])
+            .get("identity_sha256")
+            .expect("original identity")
+            .clone();
+        let mutated_bindings =
+            json_array_mut(model.get_mut("mutated_bindings").expect("mutated bindings"));
+        json_object_mut(&mut mutated_bindings[0]).insert("identity_sha256".to_owned(), original);
+    }
+    rehash_fixture_subject(&mut identity, 14);
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&identity), &proposals)
+            .expect_err("identity fixture must contain exactly one substitution")
+            .kind,
+        FixtureErrorKind::StructuralMismatch
+    );
+
+    let mut ambiguity = baseline.clone();
+    {
+        let subject = json_object_mut(
+            fixture_record_mut(&mut ambiguity, 24)
+                .get_mut("fixture_subject")
+                .expect("subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("model"));
+        let interpretations =
+            json_array_mut(model.get_mut("interpretations").expect("interpretations"));
+        let first = json_object_mut(&mut interpretations[0])
+            .get("value")
+            .expect("first interpretation")
+            .clone();
+        json_object_mut(&mut interpretations[1]).insert("value".to_owned(), first);
+    }
+    rehash_fixture_subject(&mut ambiguity, 24);
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&ambiguity), &proposals)
+            .expect_err("ambiguity fixture requires distinct interpretations")
+            .kind,
+        FixtureErrorKind::StructuralMismatch
+    );
+
+    let mut unsupported = baseline.clone();
+    {
+        let subject = json_object_mut(
+            fixture_record_mut(&mut unsupported, 29)
+                .get_mut("fixture_subject")
+                .expect("subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("model"));
+        let domain = json_object_mut(model.get_mut("support_domain").expect("support domain"));
+        json_array_mut(
+            domain
+                .get_mut("unsupported_operations")
+                .expect("unsupported operations"),
+        )
+        .clear();
+    }
+    rehash_fixture_subject(&mut unsupported, 29);
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&unsupported), &proposals)
+            .expect_err("absence is not an explicit unsupported observation")
+            .kind,
+        FixtureErrorKind::StructuralMismatch
+    );
+
+    let mut resource = baseline.clone();
+    {
+        let subject = json_object_mut(
+            fixture_record_mut(&mut resource, 34)
+                .get_mut("fixture_subject")
+                .expect("subject"),
+        );
+        let model = json_object_mut(subject.get_mut("model").expect("model"));
+        let request = json_object_mut(model.get_mut("request").expect("request"));
+        json_array_mut(request.get_mut("work_items").expect("work items")).pop();
+    }
+    rehash_fixture_subject(&mut resource, 34);
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&resource), &proposals)
+            .expect_err("domain exhaustion must remain deterministic and explicit")
+            .kind,
+        FixtureErrorKind::StructuralMismatch
+    );
+
+    let mut capability = baseline;
+    let expectation = json_object_mut(
+        fixture_record_mut(&mut capability, 0)
+            .get_mut("expected_observation")
+            .expect("expectation"),
+    );
+    expectation.insert(
+        "capability_credit".to_owned(),
+        JsonValue::String("granted".to_owned()),
+    );
+    assert_eq!(
+        parse_fixture_catalog(&canonical_json_file_bytes(&capability), &proposals)
+            .expect_err("capability upgrade")
+            .kind,
+        FixtureErrorKind::ProposalJoin
+    );
+}
+
+#[test]
 fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(CHECKED_IN_PACKET, canonical_draft_packet_file_bytes());
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
@@ -670,11 +1021,11 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     assert_eq!(packet.digest(), &sha256::digest(packet.canonical_bytes()));
     assert_eq!(
         packet.digest_hex(),
-        "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c"
+        "32cdb43019bba79666b6b0b0e14e789358cce37933dadc1124f07243f09d3ae8"
     );
     assert_eq!(
         sha256::hex(&sha256::digest(CHECKED_IN_PACKET)),
-        "58b2b820a1f83fa7366c9f23d8f6a3c2e86e4ff9641bbb76f072df0549d67d28"
+        "0784a87e2b2ca82a7c7c7368de0bd9d33cea84aaa1f430540f8fe5e5382967e1"
     );
     assert_eq!(
         parse_draft_packet(packet.canonical_bytes())
@@ -697,7 +1048,7 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     );
     assert_eq!(
         root.get("d003_disposition").and_then(JsonValue::as_str),
-        Some("pending")
+        Some("owner_accepted_pending_exact_revision_oep_closure")
     );
     assert_eq!(
         root.get("owner_protocol_review")
@@ -706,12 +1057,22 @@ fn draft_packet_has_exact_canonical_bytes_digest_and_zero_baseline() {
     );
     assert_eq!(
         root.get("schema_version").and_then(JsonValue::as_str),
-        Some("d004-pre-epoch-packet-v0.2")
+        Some("d004-pre-epoch-packet-v0.3")
     );
     assert_eq!(
         root.get("cross_cutting_fixture_proposal_manifest_sha256")
             .and_then(JsonValue::as_str),
         Some(CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256)
+    );
+    assert_eq!(
+        root.get("cross_cutting_executable_fixture_catalog_sha256")
+            .and_then(JsonValue::as_str),
+        Some(CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256)
+    );
+    assert_eq!(
+        root.get("fixture_inventory_status")
+            .and_then(JsonValue::as_str),
+        Some("cross_cutting_materialized_unreviewed_freeze_blocker")
     );
 }
 
@@ -755,7 +1116,7 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
             "\"epoch_status\":\"frozen\"",
         ),
         canonical.replace(
-            "\"d003_disposition\":\"pending\"",
+            "\"d003_disposition\":\"owner_accepted_pending_exact_revision_oep_closure\"",
             "\"d003_disposition\":\"accepted\"",
         ),
         canonical.replace(
@@ -778,6 +1139,12 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
         canonical.replace("\"selection\":null", "\"selection\":\"ST-REL\""),
         canonical.replace("\"conclusion\":null", "\"conclusion\":\"recommend_st_rel\""),
         canonical.replace(",\"replay repetition count unresolved\"", ""),
+        canonical.replace("\"five positive subjects absent\",", ""),
+        canonical.replace(",\"26 named-mutation subjects absent\"", ""),
+        canonical.replace(
+            "\"fixture_inventory_status\":\"cross_cutting_materialized_unreviewed_freeze_blocker\"",
+            "\"fixture_inventory_status\":\"complete\"",
+        ),
         canonical.replace(",\"resource-exhaustion\"", ""),
         canonical.replace(",\"SR-14\"", ""),
         canonical.replace(",\"SS-G10\"", ""),
@@ -788,6 +1155,10 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
         canonical.replace(MUTATION_MANIFEST_SHA256, &"0".repeat(64)),
         canonical.replace(
             CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
+            &"0".repeat(64),
+        ),
+        canonical.replace(
+            CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
             &"0".repeat(64),
         ),
         canonical.replace("\"case_wall_seconds\":900", "\"case_wall_seconds\":901"),
@@ -806,7 +1177,7 @@ fn draft_packet_rejects_unknown_missing_or_weakened_fields() {
 fn replay_refuses_every_raw_input_drift_before_scheduling() {
     let packet = parse_draft_packet(CHECKED_IN_PACKET).expect("checked-in packet");
     let inputs = checked_in_replay_inputs();
-    assert_eq!(INPUT_BINDINGS.len(), 20);
+    assert_eq!(INPUT_BINDINGS.len(), 21);
     for binding in INPUT_BINDINGS {
         let bytes = inputs.get(binding.id);
         assert_eq!(sha256::hex(&sha256::digest(bytes)), binding.sha256);
@@ -943,7 +1314,7 @@ fn replay_schedule_is_balanced_latin_deterministic_and_still_zero_of_25() {
 }
 
 #[test]
-fn d004_research_tree_is_exactly_four_input_only_files() {
+fn d004_research_tree_is_exactly_five_input_only_files() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../research/decisions/D-004");
     let observed = fs::read_dir(&root)
         .expect("D-004 research directory")
@@ -961,8 +1332,9 @@ fn d004_research_tree_is_exactly_four_input_only_files() {
         BTreeSet::from([
             "README.md".to_owned(),
             "d004-v0.2-cross-cutting-fixture-proposals.json".to_owned(),
-            "d004-v0.2-draft-packet.json".to_owned(),
             "d004-v0.2-named-mutations.json".to_owned(),
+            "d004-v0.3-cross-cutting-executable-fixtures.json".to_owned(),
+            "d004-v0.3-draft-packet.json".to_owned(),
         ])
     );
     for forbidden in [

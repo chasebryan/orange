@@ -4,7 +4,9 @@ use super::domain::{
     CANDIDATES, CASES, CandidateId, CaseId, INPUT_BINDING_COUNT, INPUT_BINDINGS, InputBindingId,
     NONCLAIMS, REQUIRED_CANDIDATE_CASES,
 };
+use super::fixtures::{FixtureErrorKind, parse_fixture_catalog};
 use super::packet::{
+    CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
     CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256, DraftPacket, MUTATION_MANIFEST_SHA256,
     PacketErrorKind, canonical_cross_cutting_fixture_proposal_manifest_file_bytes,
     canonical_mutation_manifest_file_bytes, cross_cutting_fixture_proposal_manifest_digest_hex,
@@ -61,6 +63,11 @@ pub(crate) enum ReplayError {
     CrossCuttingFixtureProposalManifest(PacketErrorKind),
     NonCanonicalCrossCuttingFixtureProposalManifest,
     CrossCuttingFixtureProposalManifestDigest {
+        expected_sha256: &'static str,
+        observed_sha256: String,
+    },
+    CrossCuttingExecutableFixtureCatalog(FixtureErrorKind),
+    CrossCuttingExecutableFixtureCatalogDigest {
         expected_sha256: &'static str,
         observed_sha256: String,
     },
@@ -192,6 +199,17 @@ pub(crate) fn prepare_replay(
         return Err(ReplayError::CrossCuttingFixtureProposalManifestDigest {
             expected_sha256: CROSS_CUTTING_FIXTURE_PROPOSAL_MANIFEST_SHA256,
             observed_sha256: observed_proposal_manifest_digest,
+        });
+    }
+
+    let fixture_catalog_bytes = inputs.get(InputBindingId::CrossCuttingExecutableFixtures);
+    let fixture_catalog = parse_fixture_catalog(fixture_catalog_bytes, &proposal_manifest)
+        .map_err(|error| ReplayError::CrossCuttingExecutableFixtureCatalog(error.kind))?;
+    let observed_fixture_catalog_digest = fixture_catalog.digest_hex();
+    if observed_fixture_catalog_digest != CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256 {
+        return Err(ReplayError::CrossCuttingExecutableFixtureCatalogDigest {
+            expected_sha256: CROSS_CUTTING_EXECUTABLE_FIXTURE_CATALOG_SHA256,
+            observed_sha256: observed_fixture_catalog_digest,
         });
     }
 

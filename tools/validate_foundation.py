@@ -202,6 +202,7 @@ compiler/crates/orange-compiler/src/source.rs
 compiler/crates/orange-compiler/tests/d004_decision_suite.rs
 compiler/crates/orange-compiler/tests/d004_support/cases.rs
 compiler/crates/orange-compiler/tests/d004_support/domain.rs
+compiler/crates/orange-compiler/tests/d004_support/fixtures.rs
 compiler/crates/orange-compiler/tests/d004_support/packet.rs
 compiler/crates/orange-compiler/tests/d004_support/runner.rs
 compiler/crates/orange-compiler/tests/d005_decision_suite.rs
@@ -297,8 +298,9 @@ policy/gate0-repository-policy.json
 policy/makefile-entrypoint-contract-v0.1.json
 research/decisions/D-004/README.md
 research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json
-research/decisions/D-004/d004-v0.2-draft-packet.json
 research/decisions/D-004/d004-v0.2-named-mutations.json
+research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json
+research/decisions/D-004/d004-v0.3-draft-packet.json
 research/decisions/D-005/README.md
 research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json
@@ -438,7 +440,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "5dec78628ae2fc7b171cfecf22a5ea6fd1e150da5777debbe5fd316b20816373"
+_RDC = "9f7809268683454def2c444eb44e99fd72998c9270759391488d09c01dfb2880"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -502,7 +504,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "1744cdee8ec77b9b5849cddc3ed71d7977e9808eefbd9d139b52a5bfc914f04a"
+_PHD = "fd4e2c3c0cc964cf92fb2ea1a4a4cb8ae9a95a749b508259926e0b5e1939ba5a"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -861,294 +863,13 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "9414cc150679506a8187f0ea47585b24aac469f4bdfd2996748bbaf76e6f6b55"
-_D010_PACKET_RAW_SHA256 = "c4bfa32dfaf046b69ebf4a0b7fa7dcd40aa9a6890d9430c6a70a1b7061163b2a"
+_D010_PACKET_CANONICAL_SHA256 = "58ba55f90d63fcf2ce51585d51ea29bbaed375ed703d5c3d9cd7508571c232d2"
+_D010_PACKET_RAW_SHA256 = "bee863a6204b5bb13bf91226ed23d9a1c0a36480b3eb15468e1c64f8e904bd8e"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"
-DECISION_LABORATORY_SPECS = {
-    "d004": {
-        "finding_prefix": "d004_packet",
-        "research_root": "research/decisions/D-004/",
-        "inventory": frozenset(
-            "research/decisions/D-004/" + name
-            for name in (
-                "README.md d004-v0.2-cross-cutting-fixture-proposals.json "
-                "d004-v0.2-draft-packet.json d004-v0.2-named-mutations.json"
-            ).split()
-        ),
-        "premature": (
-            "research/decisions/D-004/",
-            r"(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])",
-            "premature_artifact",
-        ),
-        "json_identities": (
-            (
-                "research/decisions/D-004/d004-v0.2-draft-packet.json",
-                "",
-                "missing",
-                "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c",
-                "58b2b820a1f83fa7366c9f23d8f6a3c2e86e4ff9641bbb76f072df0549d67d28",
-                True,
-            ),
-            (
-                "research/decisions/D-004/d004-v0.2-named-mutations.json",
-                "manifest_",
-                "manifest_missing",
-                "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c",
-                "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54",
-                True,
-            ),
-            (
-                "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
-                "proposal_manifest_",
-                "proposal_manifest_missing",
-                "457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65",
-                "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93",
-                True,
-            ),
-        ),
-        "raw_bindings": (
-            ("docs/LANGUAGE_2026.md", "52b6ef45ff5ee5d9f3951b1d6bf0f2e40a1566de623fc01e809a2a6d84d7a082"),
-            ("docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md", "4ea34fc2499ba6b90eb930262f84f15a41ff0df0f526a4533a48e54ea4f9b4b8"),
-            ("docs/SEMANTICS_2026.md", "bc429d9f1296aee9376d377f93c013f74ba8b6f7e3cb48eb6410498a0b8a00e7"),
-            ("research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json", "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93"),
-            ("docs/SEMANTIC_STRATA_DECISION_SUITE.md", "6bbe26201f46c2ba9cc615646695454ab257973a935ba15862c9b67728ab4957"),
-            ("compiler/fixtures/s3a/invalid-duplicate-spec.or", "f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6"),
-            ("compiler/fixtures/s3a/invalid-int-magnitude.or", "11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542"),
-            ("compiler/fixtures/s3a/invalid-negative-word.or", "4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b"),
-            ("compiler/fixtures/s3a/invalid-typed-impl.or", "4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07"),
-            ("compiler/fixtures/s3a/invalid-unsupported-type.or", "14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc"),
-            ("compiler/fixtures/s3a/invalid-word-range.or", "4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf"),
-            ("compiler/fixtures/s3a/invalid-word-width.or", "d92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2"),
-            ("compiler/fixtures/s3a/valid-empty-mixed.or", "c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96"),
-            ("compiler/fixtures/s3a/valid-int-radices.or", "937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4"),
-            ("compiler/fixtures/s3a/valid-word8-boundaries.or", "db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee"),
-            ("research/decisions/D-004/d004-v0.2-named-mutations.json", "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54"),
-            ("compiler/fixtures/typed-answer.or", "22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e"),
-            ("docs/PRODUCT_FORM_DECISION_PACKET.md", "8fcd7cf378d488bed49ed3cdd3609475d681c7b1e414927c7c761989e67093e9"),
-            ("compiler/crates/orangec/tests/s3a_conformance.rs", "7d25ea303fcb3c1603d60b6cb32d89ae15173cc043b8b695daedb737162b8116"),
-            ("docs/USER_JOURNEYS.md", "f26b179db777295b620731402962dc3092128f8f9a27049638f22883e0652bed"),
-        ),
-        "schema_compatibility": None,
-    },
-    "d005": {
-        "finding_prefix": "d005_packet",
-        "research_root": "research/decisions/D-005/",
-        "inventory": frozenset(
-            "research/decisions/D-005/" + name
-            for name in (
-                "README.md d005-v0.1/epochs/0001/protocol/epoch.json "
-                "d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json "
-                "d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json "
-                "d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json "
-                "d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json "
-                "d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json "
-                "d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json "
-                "d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json"
-            ).split()
-        ),
-        "premature": (
-            "research/decisions/D-005/d005-v0.1/epochs/0001/",
-            r"(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)",
-            "premature_results",
-        ),
-        "json_identities": (
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json",
-                "",
-                "missing",
-                "731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194",
-                "5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b",
-                False,
-            ),
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json",
-                "legacy_",
-                "legacy_missing",
-                "8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf",
-                "2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d",
-                False,
-            ),
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json",
-                "legacy_",
-                "legacy_missing",
-                "cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531",
-                "c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e",
-                False,
-            ),
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json",
-                "legacy_",
-                "legacy_missing",
-                "35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df",
-                "ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad",
-                False,
-            ),
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json",
-                "legacy_",
-                "legacy_missing",
-                "9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d",
-                "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39",
-                False,
-            ),
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json",
-                "legacy_",
-                "legacy_missing",
-                "75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e",
-                "795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5",
-                False,
-            ),
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json",
-                "legacy_",
-                "legacy_missing",
-                "96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98",
-                "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900",
-                False,
-            ),
-            (
-                "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json",
-                "legacy_",
-                "legacy_missing",
-                "e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3",
-                "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9",
-                False,
-            ),
-        ),
-        "raw_bindings": (
-            ("docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md", "e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f"),
-            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json", "2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d"),
-            ("schemas/gate0/claim-record-v0.1.schema.json", "a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131"),
-            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json", "c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e"),
-            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json", "ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad"),
-            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json", "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39"),
-            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json", "795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5"),
-            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json", "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900"),
-            ("research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json", "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9"),
-        ),
-        "schema_compatibility": (
-            "schemas/gate0/claim-record-v0.1.schema.json",
-            "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs",
-            (
-                "checked-test-as-functional-refinement.json",
-                "checked-test-masks-failed-kernel-proof.json",
-                "satisfied-target-leakage-with-unresolved-contexts.json",
-                "owner-test-as-external-validation.json",
-                "substituted-subject-reuses-evidence.json",
-            ),
-        ),
-    },
-    "d006": {
-        "finding_prefix": "d006_packet",
-        "research_root": "research/decisions/D-006/",
-        "inventory": frozenset(
-            "research/decisions/D-006/" + name
-            for name in "README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json".split()
-        ),
-        "premature": (
-            "research/decisions/D-006/",
-            r"(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])",
-            "premature_artifact",
-        ),
-        "json_identities": (
-            (
-                "research/decisions/D-006/d006-v0.2-draft-packet.json",
-                "",
-                "parse",
-                "b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21",
-                "210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff",
-                True,
-            ),
-            (
-                "research/decisions/D-006/d006-v0.2-case-input-index.json",
-                "index_",
-                "index_parse",
-                "1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0",
-                "1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136",
-                True,
-            ),
-        ),
-        "raw_bindings": (
-            ("research/decisions/D-006/d006-v0.2-case-input-index.json", "1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136"),
-            ("docs/PROOF_FOUNDATION_DECISION_SUITE.md", "6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b"),
-        ),
-        "schema_compatibility": None,
-    },
-    "d009": {
-        "finding_prefix": "d009_packet",
-        "research_root": "research/decisions/D-009/",
-        "inventory": frozenset(
-            "research/decisions/D-009/" + name
-            for name in "README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json".split()
-        ),
-        "premature": (
-            "research/decisions/D-009/",
-            r"(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])",
-            "premature_artifact",
-        ),
-        "json_identities": (
-            (
-                "research/decisions/D-009/d009-v0.1-draft-packet.json",
-                "",
-                "parse",
-                "1bbc5aaa815765d9a5ba66aa5177136089e8a8e420a9f9cd94b63e0dc464872c",
-                "c2293da629f4e551f5368483cf899082f48bd3fa8a7ead26e84decf953636124",
-                True,
-            ),
-            (
-                "research/decisions/D-009/d009-v0.1-case-input-index.json",
-                "index_",
-                "index_parse",
-                "2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e",
-                "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859",
-                True,
-            ),
-        ),
-        "raw_bindings": (
-            ("research/decisions/D-009/d009-v0.1-case-input-index.json", "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859"),
-            ("docs/SOLVER_TRUST_DECISION_SUITE.md", "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b"),
-        ),
-        "schema_compatibility": None,
-    },
-    "d010": {
-        "finding_prefix": "d010_packet",
-        "research_root": _D010_ROOT,
-        "inventory": frozenset(_D010_ROOT + name for name in "README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json".split()),
-        "premature": (_D010_ROOT, r"(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])", "premature_artifact"),
-        "json_identities": (
-            (_D010_PACKET, "", "parse", _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True),
-            (_D010_INDEX, "index_", "index_parse", _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True),
-        ),
-        "raw_bindings": ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)),
-        "schema_compatibility": None,
-    },
-}
-DECISION_LABORATORY_INVARIANTS = {
-    "research/decisions/D-004/": (3, 20, True, None),
-    "research/decisions/D-005/": (
-        8,
-        9,
-        False,
-        (
-            "schemas/gate0/claim-record-v0.1.schema.json",
-            "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs",
-            (
-                "checked-test-as-functional-refinement.json",
-                "checked-test-masks-failed-kernel-proof.json",
-                "satisfied-target-leakage-with-unresolved-contexts.json",
-                "owner-test-as-external-validation.json",
-                "substituted-subject-reuses-evidence.json",
-            ),
-        ),
-    ),
-    "research/decisions/D-006/": (2, 2, True, None),
-    "research/decisions/D-009/": (2, 2, True, None),
-    "research/decisions/D-010/": (2, 2, True, None),
-}
+DECISION_LABORATORY_SPECS = {'d004': {'finding_prefix': 'd004_packet', 'research_root': 'research/decisions/D-004/', 'inventory': frozenset(('research/decisions/D-004/' + name for name in 'README.md d004-v0.2-cross-cutting-fixture-proposals.json d004-v0.2-named-mutations.json d004-v0.3-cross-cutting-executable-fixtures.json d004-v0.3-draft-packet.json'.split())), 'premature': ('research/decisions/D-004/', '(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-004/d004-v0.3-draft-packet.json', '', 'missing', '32cdb43019bba79666b6b0b0e14e789358cce37933dadc1124f07243f09d3ae8', '0784a87e2b2ca82a7c7c7368de0bd9d33cea84aaa1f430540f8fe5e5382967e1', True), ('research/decisions/D-004/d004-v0.2-named-mutations.json', 'manifest_', 'manifest_missing', '970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c', '1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54', True), ('research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json', 'proposal_manifest_', 'proposal_manifest_missing', '457c14e7d41f677b21af254af45e331b24e6c685a7d7aa8eae556ced5bd7be65', '171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93', True), ('research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json', 'fixture_catalog_', 'fixture_catalog_missing', 'ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703', '268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0', True)), 'raw_bindings': (('docs/LANGUAGE_2026.md', '446ea34d8ce17a15a48827c88adddae5613a88d8b9de1caf32eb109804d14cc4'), ('docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md', '4ea34fc2499ba6b90eb930262f84f15a41ff0df0f526a4533a48e54ea4f9b4b8'), ('docs/SEMANTICS_2026.md', '61457ad795354b87bf99185e1e6cc95868bf96088e7b073fa4a7ff1e92664828'), ('research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json', '171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93'), ('research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json', '268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0'), ('docs/SEMANTIC_STRATA_DECISION_SUITE.md', '434fbd40aca233f66de0d78675ac7b19ae9ca4694b4a1bb14e4e595c4ff09ee7'), ('compiler/fixtures/s3a/invalid-duplicate-spec.or', 'f3b870468c5f4a98c9dae6c94de74aacbabbf15e480296f696a87d5aebb209d6'), ('compiler/fixtures/s3a/invalid-int-magnitude.or', '11826c807240ac2fc4beddb26f25c3b14dd75008ed756f2afa3ee95668b05542'), ('compiler/fixtures/s3a/invalid-negative-word.or', '4643e1247a017202f25a240ad72c83adbd7d2f436ec4de2dffbac1e292ce161b'), ('compiler/fixtures/s3a/invalid-typed-impl.or', '4e457e50fbc3b8458c877c9a790e169ff643784b5b78f7a3a0f83a117cc7be07'), ('compiler/fixtures/s3a/invalid-unsupported-type.or', '14190eb262c79772b583c458500c777c54ef0c8913fc046a8809b5a146cfb9fc'), ('compiler/fixtures/s3a/invalid-word-range.or', '4a7a4fd4bdfecdc21133f5f6ff24e212dde0bf357fe6d6807816930895300ddf'), ('compiler/fixtures/s3a/invalid-word-width.or', 'd92ac896bd872f1aa4a3c8988d0b654a23c95ec10ec9183a7d2431cd12238be2'), ('compiler/fixtures/s3a/valid-empty-mixed.or', 'c30ab3cda5caa11d826dc38ea257d9c9413d6240c09b236a7f50f1cac9016b96'), ('compiler/fixtures/s3a/valid-int-radices.or', '937f8f67b20794c9a887bcca15ea619276f921bc9bf884fdc35e7caab6ac11e4'), ('compiler/fixtures/s3a/valid-word8-boundaries.or', 'db37bd00375daa1db43498c5f10b831fdaa5d43b3b886ef838ecbb8d0fbea2ee'), ('research/decisions/D-004/d004-v0.2-named-mutations.json', '1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54'), ('compiler/fixtures/typed-answer.or', '22c71b6b8e09ff8dbb7393abfb6ce46597eed0b45f9a34660aa948071138ff6e'), ('docs/PRODUCT_FORM_DECISION_PACKET.md', '7d6dad961c2bdb21a5e5f23a342964c2d05c03d1943c30e662feb4ac89ea6cfa'), ('compiler/crates/orangec/tests/s3a_conformance.rs', '7d25ea303fcb3c1603d60b6cb32d89ae15173cc043b8b695daedb737162b8116'), ('docs/USER_JOURNEYS.md', 'f26b179db777295b620731402962dc3092128f8f9a27049638f22883e0652bed')), 'schema_compatibility': None}, 'd005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', '0c0a7d5c051265d225d52cecaf7e0875ac76b7140f6e47cc54a117a9f0f6ad9b', '0b58a8e67223ccead6ac51d50b6dd005e34202fcff7af32ea2540ae1e12b237e', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
+DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (4, 21, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
 _ATOMIC_OUTCOMES = (
     "satisfied",
     "not_satisfied",
@@ -1193,69 +914,8 @@ _SEMANTIC_BINDING_FIELDS = frozenset(
         "section_start_heading",
     }
 )
-_SEMANTIC_BINDING_SPECS = {
-    "d009": (
-        "research/decisions/D-009/d009-v0.1-draft-packet.json",
-        "d009_suite.semantic_binding",
-        {
-            "decision_register_document": ("docs/DECISIONS.md", *_WHOLE_MARKDOWN),
-            "decision_register_d009": ("docs/DECISIONS.md", "markdown_exact_heading_range", "## D-009 — Solver trust", "## D-010 — Compiler strategy"),
-            "roadmap_document": ("docs/ROADMAP.md", *_WHOLE_MARKDOWN),
-            "roadmap_s4": ("docs/ROADMAP.md", "markdown_exact_heading_range", "### S4 — Proof and claim boundary", "### S5 — Compiler IRs and one output path"),
-            "solver_trust_suite": ("docs/SOLVER_TRUST_DECISION_SUITE.md", *_WHOLE_MARKDOWN),
-        },
-    ),
-    "d010": (
-        _D010_PACKET,
-        "d010_suite.semantic_binding",
-        {
-            "architecture_document": ("docs/ARCHITECTURE.md", *_WHOLE_MARKDOWN),
-            "assurance_document": ("docs/ASSURANCE.md", *_WHOLE_MARKDOWN),
-            "compiler_strategy_suite": (_D010_SUITE, *_WHOLE_MARKDOWN),
-            "decision_register_d010": ("docs/DECISIONS.md", "markdown_exact_heading_range", "## D-010 — Compiler strategy", "## D-011 — Initial native target envelope"),
-            "decision_register_document": ("docs/DECISIONS.md", *_WHOLE_MARKDOWN),
-            "research_document": ("docs/RESEARCH.md", *_WHOLE_MARKDOWN),
-            "roadmap_document": ("docs/ROADMAP.md", *_WHOLE_MARKDOWN),
-            "roadmap_s5": ("docs/ROADMAP.md", "markdown_exact_heading_range", "### S5 — Compiler IRs and one output path", "### S6 — Memory, leakage, ABI, and native targets"),
-            "threat_model_document": ("docs/security/THREAT_MODEL.md", *_WHOLE_MARKDOWN),
-            "traceability_document": ("docs/GATE0_TRACEABILITY.md", *_WHOLE_MARKDOWN),
-        },
-    ),
-}
-_DECISION_SUITE_SPECS = {
-    "d009": (
-        "docs/SOLVER_TRUST_DECISION_SUITE.md",
-        "owner-executable draft under D-023; no solver-trust policy selected",
-        "d009-v0.1-draft", "2026-07-25",
-        (("SP-01", "Checked-artifact portfolio"), ("SP-02", "Kernel-only reconstruction"), ("SP-03", "Direct trusted-solver authority")),
-        "TC", 16, 0, "## 5. Hard gates and anti-gaming rules",
-        "## 7. Owner review scopes", "SR",
-        ("Suite custody and parity", "Checked-artifact candidate", "Kernel-only candidate", "Trusted-solver candidate", "Outcome and authority semantics", "Identity, cache, and trust closure", "Replay, dependency, and isolation", "Comparative disposition"),
-        (
-            "The frozen matrix contains exactly 24 candidate-case runs per evidence epoch: each of the 3 candidates runs each of the 8 cases.",
-            "The exact execution baseline is 0/24 candidate-case runs.",
-            "D-004 and D-005 must be Accepted before D-009 can be Accepted",
-            "D-006 and D-007 are downstream consumers, not D-009 acceptance prerequisites.",
-            "D-006 case DS-04 itself needs the D-009 policy.",
-        ),
-    ),
-    "d010": (
-        _D010_SUITE,
-        "owner-executable draft under D-023; no compiler strategy selected",
-        "d010-v0.1-draft", "2026-07-26",
-        (("CP-01", "Theorem/certificate hybrid direct-native path"), ("CP-02", "Mechanized proof-per-pass direct-native path"), ("CP-03", "Versioned Jasmin backend boundary"), ("CP-04", "Portable C11 interoperability boundary"), ("CP-05", "Versioned LLVM IR interoperability boundary")),
-        "CC", 19, 9, "## 6. Hard gates and anti-gaming rules",
-        "## 8. Owner review scopes", "CR",
-        ("Suite custody and candidate parity", "Hybrid direct-native candidate", "Proof-per-pass direct-native candidate", "Jasmin backend candidate", "Portable C11 candidate", "LLVM IR candidate", "Functional and structural-lowering semantics", "Optimization, leakage, and claim frontier", "Endpoint, object, fallback, and trust closure", "Replay, dependencies, resources, and isolation", "Comparative disposition"),
-        (
-            "The frozen matrix contains exactly 40 candidate-case runs per evidence epoch: each of the 5 candidates runs each of the 8 cases.",
-            "The exact execution baseline is 0/40 candidate-case runs.",
-            "D-003, D-004, D-005, D-006, and D-009 must be Accepted before D-010 can be Accepted.",
-            "D-007, D-011, D-012, and D-013 are downstream decisions, not D-010 acceptance prerequisites.",
-            "no roadmap gate, S5 closure, release authority, compiler capability, or readiness credit follows.",
-        ),
-    ),
-}
+_SEMANTIC_BINDING_SPECS = {'d009': ('research/decisions/D-009/d009-v0.1-draft-packet.json', 'd009_suite.semantic_binding', {'decision_register_document': ('docs/DECISIONS.md', *_WHOLE_MARKDOWN), 'decision_register_d009': ('docs/DECISIONS.md', 'markdown_exact_heading_range', '## D-009 — Solver trust', '## D-010 — Compiler strategy'), 'roadmap_document': ('docs/ROADMAP.md', *_WHOLE_MARKDOWN), 'roadmap_s4': ('docs/ROADMAP.md', 'markdown_exact_heading_range', '### S4 — Proof and claim boundary', '### S5 — Compiler IRs and one output path'), 'solver_trust_suite': ('docs/SOLVER_TRUST_DECISION_SUITE.md', *_WHOLE_MARKDOWN)}), 'd010': (_D010_PACKET, 'd010_suite.semantic_binding', {'architecture_document': ('docs/ARCHITECTURE.md', *_WHOLE_MARKDOWN), 'assurance_document': ('docs/ASSURANCE.md', *_WHOLE_MARKDOWN), 'compiler_strategy_suite': (_D010_SUITE, *_WHOLE_MARKDOWN), 'decision_register_d010': ('docs/DECISIONS.md', 'markdown_exact_heading_range', '## D-010 — Compiler strategy', '## D-011 — Initial native target envelope'), 'decision_register_document': ('docs/DECISIONS.md', *_WHOLE_MARKDOWN), 'research_document': ('docs/RESEARCH.md', *_WHOLE_MARKDOWN), 'roadmap_document': ('docs/ROADMAP.md', *_WHOLE_MARKDOWN), 'roadmap_s5': ('docs/ROADMAP.md', 'markdown_exact_heading_range', '### S5 — Compiler IRs and one output path', '### S6 — Memory, leakage, ABI, and native targets'), 'threat_model_document': ('docs/security/THREAT_MODEL.md', *_WHOLE_MARKDOWN), 'traceability_document': ('docs/GATE0_TRACEABILITY.md', *_WHOLE_MARKDOWN)})}
+_DECISION_SUITE_SPECS = {'d009': ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'owner-executable draft under D-023; no solver-trust policy selected', 'd009-v0.1-draft', '2026-07-25', (('SP-01', 'Checked-artifact portfolio'), ('SP-02', 'Kernel-only reconstruction'), ('SP-03', 'Direct trusted-solver authority')), 'TC', 16, 0, '## 5. Hard gates and anti-gaming rules', '## 7. Owner review scopes', 'SR', ('Suite custody and parity', 'Checked-artifact candidate', 'Kernel-only candidate', 'Trusted-solver candidate', 'Outcome and authority semantics', 'Identity, cache, and trust closure', 'Replay, dependency, and isolation', 'Comparative disposition'), ('The frozen matrix contains exactly 24 candidate-case runs per evidence epoch: each of the 3 candidates runs each of the 8 cases.', 'The exact execution baseline is 0/24 candidate-case runs.', 'D-004 and D-005 must be Accepted before D-009 can be Accepted', 'D-006 and D-007 are downstream consumers, not D-009 acceptance prerequisites.', 'D-006 case DS-04 itself needs the D-009 policy.')), 'd010': (_D010_SUITE, 'owner-executable draft under D-023; no compiler strategy selected', 'd010-v0.1-draft', '2026-07-26', (('CP-01', 'Theorem/certificate hybrid direct-native path'), ('CP-02', 'Mechanized proof-per-pass direct-native path'), ('CP-03', 'Versioned Jasmin backend boundary'), ('CP-04', 'Portable C11 interoperability boundary'), ('CP-05', 'Versioned LLVM IR interoperability boundary')), 'CC', 19, 9, '## 6. Hard gates and anti-gaming rules', '## 8. Owner review scopes', 'CR', ('Suite custody and candidate parity', 'Hybrid direct-native candidate', 'Proof-per-pass direct-native candidate', 'Jasmin backend candidate', 'Portable C11 candidate', 'LLVM IR candidate', 'Functional and structural-lowering semantics', 'Optimization, leakage, and claim frontier', 'Endpoint, object, fallback, and trust closure', 'Replay, dependencies, resources, and isolation', 'Comparative disposition'), ('The frozen matrix contains exactly 40 candidate-case runs per evidence epoch: each of the 5 candidates runs each of the 8 cases.', 'The exact execution baseline is 0/40 candidate-case runs.', 'D-003, D-004, D-005, D-006, and D-009 must be Accepted before D-010 can be Accepted.', 'D-007, D-011, D-012, and D-013 are downstream decisions, not D-010 acceptance prerequisites.', 'no roadmap gate, S5 closure, release authority, compiler capability, or readiness credit follows.'))}
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
@@ -4918,1484 +4578,255 @@ class FoundationValidator:
                 if not supporting <= set(_JI) or supporting & observed:
                     self.add(code, path, f"{identity} has invalid or overlapping supporting journeys")
 
+    def _validate_markdown_rules(self, documents: Sequence[tuple[str, Sequence[tuple[Any, ...]]]]) -> None:
+        for path_value, rules in documents:
+            path = self.root / path_value
+            if not self._hf(path):
+                continue
+            source = self._rt(path)
+            if source is None:
+                continue
+            text = markdown_without_fenced_blocks_and_comments(source)
+            sections: dict[tuple[str, int, bool] | None, str] = {None: text}
+
+            def section(scope: tuple[str, int, bool] | None) -> str:
+                if scope not in sections:
+                    assert scope is not None
+                    sections[scope] = markdown_section(text, scope[0], heading_level=scope[1], prefix=scope[2])
+                return sections[scope]
+            for rule in rules:
+                kind, code, *arguments = rule
+                if kind == 'header':
+                    boundary, expected = arguments
+                    header = text.partition(boundary)[0]
+                    observed = (tuple((re.sub('\\s+', ' ', value) for value in re.findall('(?ms)^Status:\\s+(.+?)(?=\\n\\n)', header))), tuple(re.findall('(?m)^Suite version: `([^`]+)`$', header)), tuple(re.findall('(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$', header)))
+                    if observed != expected:
+                        self.add(code, path, 'header contract drifted')
+                elif kind == 'table':
+                    scope, pattern, width, columns, expected_rows = arguments
+                    rows = table_rows(section(scope), pattern)
+                    invalid = any((len(row) != width for row in rows))
+                    for index, expected in columns:
+                        observed = tuple((row[index] if len(row) > index else None for row in rows))
+                        invalid |= observed != expected
+                    if expected_rows is not None:
+                        invalid |= tuple((tuple(row) for row in rows)) != expected_rows
+                    if invalid:
+                        self.add(code, path, 'table contract drifted')
+                elif kind == 'table_slice':
+                    scope, pattern, start, stop, expected = arguments
+                    rows = table_rows(section(scope), pattern)
+                    if tuple((tuple(row) for row in rows[start:stop])) != expected:
+                        self.add(code, path, 'table slice drifted')
+                elif kind == 'matches':
+                    scope, pattern, expected = arguments
+                    if tuple(re.findall(pattern, section(scope))) != expected:
+                        self.add(code, path, 'ordered identity contract drifted')
+                elif kind == 'fields':
+                    scope, identities, labels = arguments
+                    body = section(scope)
+                    for identity in identities:
+                        item = markdown_section(body, f'### {identity}', heading_level=3, prefix=True)
+                        for label in labels:
+                            if f'**{label}:**' not in item:
+                                self.add(code, path, f'{identity} is missing {label}')
+                elif kind == 'required':
+                    scope, required = arguments
+                    normalized = re.sub('\\s+', ' ', section(scope))
+                    for value in required:
+                        if value not in normalized:
+                            self.add(code, path, f'missing invariant: {value}')
+                elif kind == 'forbidden':
+                    scope, forbidden = arguments
+                    normalized = re.sub('\\s+', ' ', section(scope)).lower()
+                    for value in forbidden:
+                        if value.lower() in normalized:
+                            self.add(code, path, f'forbidden invariant: {value}')
+                elif kind == 'forbidden_regex':
+                    scope, patterns = arguments
+                    normalized = re.sub('\\s+', ' ', section(scope))
+                    for pattern in patterns:
+                        if re.search(pattern, normalized, re.IGNORECASE):
+                            self.add(code, path, f'forbidden pattern: {pattern}')
+                elif kind == 'count':
+                    scope, value, expected, fold = arguments
+                    normalized = re.sub('\\s+', ' ', section(scope))
+                    if fold:
+                        normalized, value = (normalized.lower(), value.lower())
+                    if normalized.count(value) != expected:
+                        self.add(code, path, f'invariant count drifted: {value}')
+
     def _validate_proof_foundation_suite(self) -> None:
-        path = self.root / "docs/PROOF_FOUNDATION_DECISION_SUITE.md"
-        if not self._hf(path):
-            return
-        source = self._rt(path)
-        if source is None:
-            return
-        text = markdown_without_fenced_blocks_and_comments(source)
-        header = text.partition("## Solo-mode disposition")[0]
-        statuses = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
-        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
-        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
-        if (
-            tuple(re.sub(r"\s+", " ", value) for value in statuses)
-            != ("owner-executable draft under D-023; no proof foundation selected",)
-            or versions != ("d006-v0.2-draft",)
-            or snapshots != ("2026-07-25",)
-        ):
-            self.add(
-                "proof_suite.header",
-                path,
-                "suite status, version, and snapshot must retain the exact candidate-neutral v0.2 protocol identity",
-            )
+        cases = tuple((f'DS-{index:02d}' for index in range(1, 8)))
+        candidate_scope = ('## 2. Candidate parity and frozen inputs', 2, False)
+        case_scope = ('## 3. Required decision cases', 2, False)
+        metric_scope = ('## 4. Comparable metrics', 2, False)
+        gate_scope = ('## 5. Hard gates and anti-gaming rules', 2, False)
+        review_scope = ('## 7. Owner review scopes', 2, False)
+        decision_scope = ('## 8. Decision procedure', 2, False)
+        self._validate_markdown_rules((('docs/PROOF_FOUNDATION_DECISION_SUITE.md', (('header', 'proof_suite.header', '## Solo-mode disposition', (('owner-executable draft under D-023; no proof foundation selected',), ('d006-v0.2-draft',), ('2026-07-25',))), ('table', 'proof_suite.candidates', candidate_scope, 'C-[0-9]{2}', 4, ((0, ('C-01', 'C-02')), (1, ('Rocq', 'Lean 4'))), None), ('table', 'proof_suite.candidate_state', candidate_scope, 'C-[0-9]{2}', 4, ((3, ('0/7 cases', '0/7 cases')),), None), ('matches', 'proof_suite.case_ids', case_scope, '(?m)^###\\s+(DS-[0-9]{2})\\b', cases), ('fields', 'proof_suite.case_field', case_scope, cases, ('Question', 'Dependencies', 'Shared inputs', 'Candidate outputs', 'Positive checks', 'Mutation and negative checks', 'Hard acceptance')), ('required', 'proof_suite.solo_case', case_scope, ('### DS-07 — Exercise solo auditability and maintenance',)), ('table', 'proof_suite.metrics', metric_scope, 'M-[0-9]{2}', 4, ((0, tuple((f'M-{index:02d}' for index in range(1, 19)))),), None), ('table_slice', 'proof_suite.solo_metrics', metric_scope, 'M-[0-9]{2}', 15, 18, (('M-16', 'Owner audit/maintenance task completion', 'Completed common DS-07 tasks / 2 per candidate, with time, assistance, and role overlap recorded', 'Hard gate: 2/2 per candidate and every seeded fault detected'), ('M-17', 'Independent-review status', 'Exact status for logic/kernel, extraction/distribution, and comparative-decision review', 'Disclosure only: `unavailable`; never a selection score or implied claim'), ('M-18', 'Same-owner maintenance variance', 'Files, proofs, dependencies, and elapsed owner time for the same seeded change', 'Comparative maintainability evidence; no external-usability inference'))), ('matches', 'proof_suite.hard_gates', gate_scope, '(?m)^([1-9][0-9]*)\\.\\s', tuple((str(index) for index in range(1, 9)))), ('table', 'proof_suite.review_scopes', review_scope, 'R-[0-9]{2}', 3, ((0, tuple((f'R-{index:02d}' for index in range(1, 10)))), (1, ('Suite custody and parity', 'Rocq construction and conformance', 'Lean 4 construction and conformance', 'Language and semantics equivalence', 'Assurance and trust closure', 'Bootstrap and distribution', 'Dependency and provenance disposition', 'Solo auditability and maintenance', 'Comparative disposition'))), None), ('required', 'proof_suite.assertion', None, ('There is no weighted aggregate score.', 'The suite conclusion is exactly `recommend_rocq`, `recommend_lean`, `tie`, or')), ('required', 'proof_suite.execution_matrix', None, ('The frozen matrix contains exactly 14 candidate-case runs per evidence epoch: each of the 2 candidates runs each of the 7 cases.', 'Execution evidence is currently 0/14 candidate-case runs (0/7 Rocq and 0/7 Lean 4).')), ('count', 'proof_suite.execution_matrix', None, 'Execution evidence is currently ', 1, False), ('required', 'proof_suite.solo_mode', None, ('A second owner run, workspace, tool, or implementation is always labeled same-owner evidence, never independent reproduction or review.', 'Both workspaces are same-owner level-2 evidence. Neither is an independent reproduction.', 'Level 3 is neither required nor claimed; same-owner workspaces never populate an independent-reproduction field.', 'M-17 is a mandatory disclosure, not a technical hard gate:', 'This measures same-owner packet auditability and maintenance cost only. It supplies no evidence about a new maintainer, contributor availability, independent review, or external audit.')), ('count', 'proof_suite.reproducibility_cap', None, 'level 3', 1, True), ('required', 'proof_suite.reproducibility_cap', None, ('Record no result above reproducibility level 2.',)), ('forbidden', 'proof_suite.solo_blocker', None, ('one non-author witness', 'distinct human principal', 'At least one independent logic/kernel reviewer', 'two non-author practitioners', 'Required independent technical reviews', 'candidate authors cannot approve their own work', 'obtain independent reproductions and required reviews', 'authorized Gate 0 decision body')), ('forbidden_regex', 'proof_suite.independence_claim', None, ('\\b(?:is|are|was|were|has been|have been)\\s+independently\\s+(?:reviewed|reproduced|audited|validated)\\b',)), ('forbidden_regex', 'proof_suite.preselection', None, ('\\bcurrent recommendation:\\s*(?:Rocq|Lean 4)\\b', '\\b(?:Rocq|Lean 4)\\s+(?:is|remains|becomes)\\s+(?:the\\s+)?(?:selected|accepted)\\s+(?:candidate|foundation)\\b', '\\b(?:Rocq|Lean 4)\\s+leads\\s+(?:today|the comparison)\\b')), ('required', 'proof_suite.acceptance', decision_scope, ('D-006 acceptance requires D-004 and D-005 to be Accepted in their governing records; proposed, investigate, or implementation-only states do not satisfy this dependency gate.', 'through an Accepted Orange Enhancement Proposal under ratified governance.', 'The `decision-revision` value must be exactly 40 lowercase hexadecimal characters and name the fully validated Git revision.', 'contain an `approval-records` entry with the literal `solo-reviewed`', 'No approval record may claim that the owner supplied independent review.')))), ('docs/DECISIONS.md', (('required', 'proof_suite.register_consistency', ('## D-006', 2, True), ('Dependency order: D-004 and D-005 must each be Accepted before D-006 can be Accepted.', 'Candidates: Rocq and Lean 4. Neither candidate is selected, preferred, or authorized for product use by this register.', 'Current execution evidence is 0/14 candidate-case runs.')), ('count', 'proof_suite.register_consistency', ('## D-006', 2, True), 'Current execution evidence is ', 1, False), ('forbidden_regex', 'proof_suite.register_consistency', ('## D-006', 2, True), ('\\b(?:Current recommendation:\\s*(?:Rocq|Lean 4)|Why (?:Rocq|Lean 4) leads)\\b',))))))
 
-        candidate_rows = table_rows(markdown_section(text, "## 2. Candidate parity and frozen inputs"), r"C-[0-9]{2}")
-        if tuple(row[0] for row in candidate_rows) != ("C-01", "C-02"):
-            self.add("proof_suite.candidates", path, "candidate table must contain C-01 and C-02 exactly once in order")
-        elif any(len(row) != 4 for row in candidate_rows):
-            self.add("proof_suite.candidates", path, "candidate rows must contain exactly four table fields")
-        elif [row[1] for row in candidate_rows] != ["Rocq", "Lean 4"]:
-            self.add("proof_suite.candidates", path, "C-01 and C-02 must remain Rocq and Lean 4")
-        for row in candidate_rows:
-            if len(row) != 4 or row[3] != "0/7 cases":
-                self.add("proof_suite.candidate_state", path, f"{row[0]} must retain the honest zero-evidence baseline")
-
-        case_ids = tuple(f"DS-{index:02d}" for index in range(1, 8))
-        cases = markdown_section(text, "## 3. Required decision cases")
-        headings = tuple(re.findall(r"(?m)^###\s+(DS-[0-9]{2})\b", cases))
-        if headings != case_ids:
-            self.add("proof_suite.case_ids", path, "decision cases must cover DS-01 through DS-07 exactly once in order")
-        required_labels = (
-            "Question",
-            "Dependencies",
-            "Shared inputs",
-            "Candidate outputs",
-            "Positive checks",
-            "Mutation and negative checks",
-            "Hard acceptance",
-        )
-        for case_id in case_ids:
-            body = markdown_section(cases, f"### {case_id}", heading_level=3, prefix=True)
-            for label in required_labels:
-                if f"**{label}:**" not in body:
-                    self.add("proof_suite.case_field", path, f"{case_id} is missing {label}")
-        if "### DS-07 — Exercise solo auditability and maintenance" not in cases:
-            self.add(
-                "proof_suite.solo_case",
-                path,
-                "DS-07 must remain the symmetric owner-executable auditability and maintenance case",
-            )
-
-        metric_rows = table_rows(markdown_section(text, "## 4. Comparable metrics"), r"M-[0-9]{2}")
-        metric_ids = tuple(f"M-{index:02d}" for index in range(1, 19))
-        if tuple(row[0] for row in metric_rows) != metric_ids or any(len(row) != 4 for row in metric_rows):
-            self.add("proof_suite.metrics", path, "metrics must cover M-01 through M-18 exactly once with four fields")
-        elif tuple(tuple(row) for row in metric_rows[15:18]) != (
-            (
-                "M-16",
-                "Owner audit/maintenance task completion",
-                "Completed common DS-07 tasks / 2 per candidate, with time, assistance, and role overlap recorded",
-                "Hard gate: 2/2 per candidate and every seeded fault detected",
-            ),
-            (
-                "M-17",
-                "Independent-review status",
-                "Exact status for logic/kernel, extraction/distribution, and comparative-decision review",
-                "Disclosure only: `unavailable`; never a selection score or implied claim",
-            ),
-            (
-                "M-18",
-                "Same-owner maintenance variance",
-                "Files, proofs, dependencies, and elapsed owner time for the same seeded change",
-                "Comparative maintainability evidence; no external-usability inference",
-            ),
-        ):
-            self.add(
-                "proof_suite.solo_metrics",
-                path,
-                "M-16 through M-18 must retain owner-task, disclosure-only review, and same-owner variance semantics",
-            )
-        hard_gates = markdown_section(text, "## 5. Hard gates and anti-gaming rules")
-        gate_numbers = re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates)
-        if gate_numbers != [str(index) for index in range(1, 9)]:
-            self.add("proof_suite.hard_gates", path, "hard gates must remain the ordered non-compensable set 1 through 8")
-
-        review_rows = table_rows(
-            markdown_section(text, "## 7. Owner review scopes"),
-            r"R-[0-9]{2}",
-        )
-        review_ids = tuple(f"R-{index:02d}" for index in range(1, 10))
-        review_names = (
-            "Suite custody and parity",
-            "Rocq construction and conformance",
-            "Lean 4 construction and conformance",
-            "Language and semantics equivalence",
-            "Assurance and trust closure",
-            "Bootstrap and distribution",
-            "Dependency and provenance disposition",
-            "Solo auditability and maintenance",
-            "Comparative disposition",
-        )
-        if tuple(row[0] for row in review_rows) != review_ids:
-            self.add(
-                "proof_suite.review_scopes",
-                path,
-                "owner review table must retain R-01 through R-09 exactly once in order",
-            )
-        elif any(len(row) != 3 for row in review_rows):
-            self.add(
-                "proof_suite.review_scopes",
-                path,
-                "every owner review scope must retain exactly three fields",
-            )
-        elif tuple(row[1] for row in review_rows) != review_names:
-            self.add(
-                "proof_suite.review_scopes",
-                path,
-                "owner review scope identities must remain exact and candidate-symmetric",
-            )
-
-        normalized_text = re.sub(r"\s+", " ", text)
-        for assertion in (
-            "There is no weighted aggregate score.",
-            "The suite conclusion is exactly `recommend_rocq`, `recommend_lean`, `tie`, or",
-        ):
-            if assertion not in normalized_text:
-                self.add("proof_suite.assertion", path, f"missing decision-protocol invariant: {assertion}")
-
-        matrix_assertions = (
-            "The frozen matrix contains exactly 14 candidate-case runs per evidence epoch: each of the 2 candidates runs each of the 7 cases.",
-            "Execution evidence is currently 0/14 candidate-case runs (0/7 Rocq and 0/7 Lean 4).",
-        )
-        for assertion in matrix_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "proof_suite.execution_matrix",
-                    path,
-                    f"missing candidate-case cardinality invariant: {assertion}",
-                )
-        if normalized_text.count("Execution evidence is currently ") != 1:
-            self.add(
-                "proof_suite.execution_matrix",
-                path,
-                "suite must contain exactly one canonical current-execution baseline",
-            )
-
-        solo_assertions = (
-            "A second owner run, workspace, tool, or implementation is always labeled same-owner evidence, never independent reproduction or review.",
-            "Both workspaces are same-owner level-2 evidence. Neither is an independent reproduction.",
-            "Level 3 is neither required nor claimed; same-owner workspaces never populate an independent-reproduction field.",
-            "M-17 is a mandatory disclosure, not a technical hard gate:",
-            "This measures same-owner packet auditability and maintenance cost only. It supplies no evidence about a new maintainer, contributor availability, independent review, or external audit.",
-        )
-        for assertion in solo_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "proof_suite.solo_mode",
-                    path,
-                    f"missing solo-mode evidence invariant: {assertion}",
-                )
-        if normalized_text.lower().count("level 3") != 1:
-            self.add(
-                "proof_suite.reproducibility_cap",
-                path,
-                "solo-mode suite must mention level 3 exactly once, solely as the explicit non-claim",
-            )
-        if "Record no result above reproducibility level 2." not in normalized_text:
-            self.add(
-                "proof_suite.reproducibility_cap",
-                path,
-                "decision procedure must cap same-owner evidence at reproducibility level 2",
-            )
-
-        legacy_blockers = (
-            "one non-author witness",
-            "distinct human principal",
-            "At least one independent logic/kernel reviewer",
-            "two non-author practitioners",
-            "Required independent technical reviews",
-            "candidate authors cannot approve their own work",
-            "obtain independent reproductions and required reviews",
-            "authorized Gate 0 decision body",
-        )
-        for blocker in legacy_blockers:
-            if blocker.lower() in normalized_text.lower():
-                self.add(
-                    "proof_suite.solo_blocker",
-                    path,
-                    f"solo-mode protocol reintroduces an unavailable-human blocker: {blocker}",
-                )
-
-        positive_independence_claim = re.search(
-            r"\b(?:is|are|was|were|has been|have been)\s+independently\s+"
-            r"(?:reviewed|reproduced|audited|validated)\b",
-            normalized_text,
-            re.IGNORECASE,
-        )
-        if positive_independence_claim is not None:
-            self.add(
-                "proof_suite.independence_claim",
-                path,
-                "draft suite cannot claim independent review, reproduction, audit, or validation",
-            )
-
-        preselection_patterns = (
-            r"\bcurrent recommendation:\s*(?:Rocq|Lean 4)\b",
-            r"\b(?:Rocq|Lean 4)\s+(?:is|remains|becomes)\s+(?:the\s+)?(?:selected|accepted)\s+(?:candidate|foundation)\b",
-            r"\b(?:Rocq|Lean 4)\s+leads\s+(?:today|the comparison)\b",
-        )
-        if any(re.search(pattern, normalized_text, re.IGNORECASE) for pattern in preselection_patterns):
-            self.add(
-                "proof_suite.preselection",
-                path,
-                "candidate-neutral draft cannot preselect or privilege Rocq or Lean 4",
-            )
-
-        decision_procedure = markdown_section(text, "## 8. Decision procedure")
-        normalized_decision_procedure = re.sub(r"\s+", " ", decision_procedure)
-        for assertion in (
-            "D-006 acceptance requires D-004 and D-005 to be Accepted in their governing records; proposed, investigate, or implementation-only states do not satisfy this dependency gate.",
-            "through an Accepted Orange Enhancement Proposal under ratified governance.",
-            "The `decision-revision` value must be exactly 40 lowercase hexadecimal characters and name the fully validated Git revision.",
-            "contain an `approval-records` entry with the literal `solo-reviewed`",
-            "No approval record may claim that the owner supplied independent review.",
-        ):
-            if assertion not in normalized_decision_procedure:
-                self.add(
-                    "proof_suite.acceptance",
-                    path,
-                    f"missing dependency-ordered exact-revision acceptance invariant: {assertion}",
-                )
-
-        decisions_path = self.root / "docs/DECISIONS.md"
-        if self._hf(decisions_path):
-            decisions_source = self._rt(decisions_path)
-            if decisions_source is not None:
-                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
-                d006 = markdown_section(
-                    decisions_text,
-                    "## D-006",
-                    heading_level=2,
-                    prefix=True,
-                )
-                normalized_d006 = re.sub(r"\s+", " ", d006)
-                for assertion in (
-                    "Dependency order: D-004 and D-005 must each be Accepted before D-006 can be Accepted.",
-                    "Candidates: Rocq and Lean 4. Neither candidate is selected, preferred, or authorized for product use by this register.",
-                    "Current execution evidence is 0/14 candidate-case runs.",
-                ):
-                    if assertion not in normalized_d006:
-                        self.add(
-                            "proof_suite.register_consistency",
-                            decisions_path,
-                            f"D-006 register is not candidate-neutral or disagrees with the execution baseline: {assertion}",
-                        )
-                if normalized_d006.count("Current execution evidence is ") != 1:
-                    self.add(
-                        "proof_suite.register_consistency",
-                        decisions_path,
-                        "D-006 register must contain exactly one canonical current-execution baseline",
-                    )
-                if re.search(
-                    r"\b(?:Current recommendation:\s*(?:Rocq|Lean 4)|Why (?:Rocq|Lean 4) leads)\b",
-                    normalized_d006,
-                    re.IGNORECASE,
-                ):
-                    self.add(
-                        "proof_suite.register_consistency",
-                        decisions_path,
-                        "D-006 register cannot preselect or privilege a candidate before suite execution",
-                    )
 
     def _validate_product_form_decision_packet(self) -> None:
-        path = self.root / "docs/PRODUCT_FORM_DECISION_PACKET.md"
+        path = self.root / 'docs/PRODUCT_FORM_DECISION_PACKET.md'
         if not self._hf(path):
             return
         source = self._rt(path)
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
-
-        required_headings = (
-            "Abstract",
-            "Motivation",
-            "Scope and non-goals",
-            "Specification",
-            "Alternatives",
-            "Compatibility and migration",
-            "Semantic and claim effects",
-            "TCB, axiom, and proof effects",
-            "Threat, abuse, and leakage effects",
-            "Target and ABI effects",
-            "Standards, errata, and provenance",
-            "Dependencies, licenses, and IP",
-            "Conformance, tests, and evidence",
-            "Operations, release, and recovery",
-            "Support and deprecation",
-            "Unresolved questions",
-            "Current disposition",
-        )
+        required_headings = ('Abstract', 'Motivation', 'Scope and non-goals', 'Specification', 'Alternatives', 'Compatibility and migration', 'Semantic and claim effects', 'TCB, axiom, and proof effects', 'Threat, abuse, and leakage effects', 'Target and ABI effects', 'Standards, errata, and provenance', 'Dependencies, licenses, and IP', 'Conformance, tests, and evidence', 'Operations, release, and recovery', 'Support and deprecation', 'Unresolved questions', 'Current disposition')
         for heading in required_headings:
-            if len(markdown_section(text, f"## {heading}").strip()) < 20:
-                self.add(
-                    "product_form.section",
-                    path,
-                    f"missing or empty substantive section: {heading}",
-                )
-
-        decision_gates = markdown_section(text, "### Decision gates", heading_level=3)
-        gate_rows = table_rows(decision_gates, r"PF-G[0-9A-Z]+")
-        gate_ids = tuple(f"PF-G{index:02d}" for index in range(1, 9))
-        if tuple(row[0] for row in gate_rows) != gate_ids or any(
-            len(row) != 2 for row in gate_rows
-        ):
-            self.add(
-                "product_form.hard_gates",
-                path,
-                "hard-gate table must retain PF-G01 through PF-G08 exactly once in order",
-            )
-
-        candidate_rows = table_rows(decision_gates, r"PF-[0-9A-Z]+:.*")
-        expected_candidate_rows = (
-            (
-                "PF-01: standalone editioned Orange DSL",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Recommend",
-            ),
-            (
-                "PF-02: manifest-only orchestration",
-                "Fail",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Unproven",
-                "Pass",
-                "Pass",
-                "Unproven",
-                "Reject as product form; retain orchestration techniques",
-            ),
-            (
-                r"PF-03: DSL embedded in F\*, Lean, or Rocq",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Unproven",
-                "Unproven",
-                "Pass",
-                "Pass",
-                "Unproven",
-                "Reject as product form; retain proof adapters",
-            ),
-            (
-                "PF-04: Rust subset with proof annotations",
-                "Pass",
-                "Pass",
-                "Pass",
-                "Unproven",
-                "Unproven",
-                "Pass",
-                "Pass",
-                "Unproven",
-                "Reject as product form; retain Rust implementation and integration paths",
-            ),
-        )
-        if tuple(tuple(row) for row in candidate_rows) != expected_candidate_rows:
-            self.add(
-                "product_form.candidates",
-                path,
-                "candidate matrix must retain the four exact design-level assessments",
-            )
-
-        journey_rows = table_rows(
-            markdown_section(text, "### Journey coverage", heading_level=3),
-            r"J-[0-9A-Z]+",
-        )
-        journey_ids = tuple(f"J-{index:02d}" for index in range(1, 9))
-        if tuple(row[0] for row in journey_rows) != journey_ids or any(
-            len(row) != 2 for row in journey_rows
-        ):
-            self.add(
-                "product_form.journeys",
-                path,
-                "journey coverage must retain J-01 through J-08 exactly once in order",
-            )
-
-        normalized_text = re.sub(r"\s+", " ", text)
-        for assertion in (
-            "Status: draft owner-review packet; no product form selected",
-            "There is no weighted score;",
-            "8/8 structurally specified design journeys and 0/8 completed journeys",
-            "This is design coverage, not journey completion or user validation.",
-            "No owner review or approval is recorded.",
-            "The packet has no OEP number, intake or discussion reference, decision date, decision revision, approval record, or change authority.",
-            "This packet does not accept D-003 or authorize S3b implementation.",
-        ):
+            if len(markdown_section(text, f'## {heading}').strip()) < 20:
+                self.add('product_form.section', path, f'missing or empty substantive section: {heading}')
+        decision_gates = markdown_section(text, '### Decision gates', heading_level=3)
+        gate_rows = table_rows(decision_gates, 'PF-G[0-9A-Z]+')
+        gate_ids = tuple((f'PF-G{index:02d}' for index in range(1, 9)))
+        if tuple((row[0] for row in gate_rows)) != gate_ids or any((len(row) != 2 for row in gate_rows)):
+            self.add('product_form.hard_gates', path, 'hard-gate table must retain PF-G01 through PF-G08 exactly once in order')
+        candidate_rows = table_rows(decision_gates, 'PF-[0-9A-Z]+:.*')
+        expected_candidate_rows = (('PF-01: standalone editioned Orange DSL', 'Pass', 'Pass', 'Pass', 'Pass', 'Pass', 'Pass', 'Pass', 'Pass', 'Owner accepted; exact-revision OEP closure pending'), ('PF-02: manifest-only orchestration', 'Fail', 'Pass', 'Pass', 'Pass', 'Unproven', 'Pass', 'Pass', 'Unproven', 'Reject as product form; retain orchestration techniques'), ('PF-03: DSL embedded in F\\*, Lean, or Rocq', 'Pass', 'Pass', 'Pass', 'Unproven', 'Unproven', 'Pass', 'Pass', 'Unproven', 'Reject as product form; retain proof adapters'), ('PF-04: Rust subset with proof annotations', 'Pass', 'Pass', 'Pass', 'Unproven', 'Unproven', 'Pass', 'Pass', 'Unproven', 'Reject as product form; retain Rust implementation and integration paths'))
+        if tuple((tuple(row) for row in candidate_rows)) != expected_candidate_rows:
+            self.add('product_form.candidates', path, 'candidate matrix must retain the four exact design-level assessments')
+        journey_rows = table_rows(markdown_section(text, '### Journey coverage', heading_level=3), 'J-[0-9A-Z]+')
+        journey_ids = tuple((f'J-{index:02d}' for index in range(1, 9)))
+        if tuple((row[0] for row in journey_rows)) != journey_ids or any((len(row) != 2 for row in journey_rows)):
+            self.add('product_form.journeys', path, 'journey coverage must retain J-01 through J-08 exactly once in order')
+        normalized_text = re.sub('\\s+', ' ', text)
+        for assertion in ('Status: owner-accepted PF-01; exact-revision OEP closure pending', 'There is no weighted score;', '8/8 structurally specified design journeys and 0/8 completed journeys', 'This is design coverage, not journey completion or user validation.', 'On 2026-07-26 the Orange Project Owner supplied the exact direction `Accept PF-01`.', 'The bootstrap steward assigned OEP-0004. Its Provisional record preserves the literal `solo-reviewed` owner direction, review authority, decision scope, and pending exact-revision closure.', 'This packet records owner acceptance but does not itself formally close D-003, accept D-004, or authorize S3b implementation.'):
             if assertion not in normalized_text:
-                self.add(
-                    "product_form.assertion",
-                    path,
-                    f"missing decision-packet invariant: {assertion}",
-                )
+                self.add('product_form.assertion', path, f'missing decision-packet invariant: {assertion}')
 
     def _validate_semantic_strata_suite(self) -> None:
-        path = self.root / "docs/SEMANTIC_STRATA_DECISION_SUITE.md"
-        if not self._hf(path):
-            return
-        source = self._rt(path)
-        if source is None:
-            return
-        text = markdown_without_fenced_blocks_and_comments(source)
+        prefix = 'semantic_strata.'
+        candidates = ('ST-REL', 'ST-UNI', 'ST-DUAL', 'ST-MIRROR', 'ST-HOST')
+        cases = tuple((f'SC-{index:02d}' for index in range(1, 6)))
+        candidate_scope = ('## 2. Candidate architectures', 2, False)
+        case_scope = ('## 5. Required decision cases', 2, False)
+        gate_scope = ('## 6. Hard gates and anti-gaming rules', 2, False)
+        self._validate_markdown_rules((('docs/SEMANTIC_STRATA_DECISION_SUITE.md', (('header', prefix + 'header', '## 1. Authority and decision boundary', (('draft owner-executable decision protocol; no semantic-strata candidate selected',), ('d004-v0.3-draft',), ('2026-07-26',))), ('table', prefix + 'candidates', candidate_scope, 'ST-[A-Z]+', 4, ((0, candidates), (1, ('Role-oriented related family', 'Universal Core', 'Pure/effect pair', 'Five mirrored Cores', 'Host-delegated strata'))), None), ('table', prefix + 'candidate_state', candidate_scope, 'ST-[A-Z]+', 4, ((3, ('0/5 cases',) * 5),), None), ('table', prefix + 'relationships', ('## 4. Required relationship graph', 2, False), 'SR-[0-9A-Z]+', 3, ((0, tuple((f'SR-{index:02d}' for index in range(1, 15)))),), None), ('matches', prefix + 'case_ids', case_scope, '(?m)^###\\s+(SC-[0-9A-Z]+)\\b', cases), ('fields', prefix + 'case_field', case_scope, cases, ('Question', 'Dependencies', 'Inputs', 'Required boundary observations', 'Positive case', 'Mutation and negative case', 'Resource bounds', 'Non-claims', 'Falsification')), ('matches', prefix + 'hard_gates', gate_scope, '(?m)^([1-9][0-9]*)\\.\\s+\\*\\*(SS-G[0-9A-Z]+)\\b', tuple(((str(index), f'SS-G{index:02d}') for index in range(1, 11)))), ('required', prefix + 'assertion', None, ('There is no weighted aggregate score.', 'Independent review is currently absent.', 'No semantic stratum is selected by this draft suite.', 'This suite does not accept D-004 or authorize S3b implementation.')), ('required', prefix + 'execution_matrix', None, ('The frozen matrix therefore contains exactly 25 required candidate-case executions per evidence epoch: each of the 5 candidates runs each of the 5 cases.', 'Execution evidence is currently 0/25 required candidate-case executions: 0/5 candidates have complete five-case packets, and 0/5 cases have complete cross-candidate execution.')), ('count', prefix + 'execution_matrix', None, 'Execution evidence is currently ', 1, False), ('required', prefix + 'evidence_state', None, ("each normalized domain observation's separate expected state, observed state, and `matched` or `mismatched` comparison;", 'one overall case verdict, exactly `pass` or `fail`;', 'Only an overall case verdict of `pass` satisfies SS-G05.', 'a preregistered negative or resource fixture may still pass when its domain observation is the expected `unknown`, `unsupported`, or `exhausted`; that match demonstrates fail-closed handling only and grants neither capability nor partial credit.', 'An expected `unknown`, `unsupported`, or `exhausted` observation can match and contribute to a `pass`; it is never used as the overall case verdict.', "A candidate adapter's inability to execute therefore cannot masquerade as a correctly observed domain-level `unsupported` state.")), ('required', prefix + 'equivalence_map', None, ('An equivalent graph is not a waiver from this table.', 'Every candidate supplies a total SR conformance map with exactly one entry for each of SR-01 through SR-14.', 'A candidate-specific correction creates a linked new run, retains the failed prior record, and consumes the common correction window.', 'Changing an SR requirement or the shared equivalence rule creates a new evidence epoch for all candidates.')))), ('docs/DECISIONS.md', (('required', prefix + 'register_consistency', ('## D-004', 2, True), ('Alternative under comparison: one universal IR.', 'The alternative is not rejected by this proposed register entry; it must run the same symmetric suite as every other candidate.', 'That Draft protocol records 0/25 required candidate-case executions: 0/5 candidates have complete five-case packets, and 0/5 cases have complete cross-candidate execution.')), ('forbidden', prefix + 'register_consistency', ('## D-004', 2, True), ('Rejected default:',)), ('count', prefix + 'register_consistency', ('## D-004', 2, True), 'That Draft protocol records ', 1, False)))))
 
-        header = text.partition("## 1. Authority and decision boundary")[0]
-        status = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
-        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
-        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
-        if (
-            tuple(re.sub(r"\s+", " ", value) for value in status)
-            != ("draft owner-executable decision protocol; no semantic-strata candidate selected",)
-            or versions != ("d004-v0.2-draft",)
-            or snapshots != ("2026-07-25",)
-        ):
-            self.add(
-                "semantic_strata.header",
-                path,
-                "suite status, version, and snapshot must retain the exact candidate-neutral v0.2 protocol identity",
-            )
-
-        candidate_rows = table_rows(
-            markdown_section(text, "## 2. Candidate architectures"),
-            r"ST-[A-Z]+",
-        )
-        candidate_ids = ("ST-REL", "ST-UNI", "ST-DUAL", "ST-MIRROR", "ST-HOST")
-        candidate_names = (
-            "Role-oriented related family",
-            "Universal Core",
-            "Pure/effect pair",
-            "Five mirrored Cores",
-            "Host-delegated strata",
-        )
-        candidate_shapes_valid = all(len(row) == 4 for row in candidate_rows)
-        if tuple(row[0] for row in candidate_rows) != candidate_ids:
-            self.add(
-                "semantic_strata.candidates",
-                path,
-                "candidate table must retain the five exact ordered candidate identities",
-            )
-        elif not candidate_shapes_valid:
-            self.add(
-                "semantic_strata.candidates",
-                path,
-                "every candidate row must retain four fields",
-            )
-        elif tuple(row[1] for row in candidate_rows) != candidate_names:
-            self.add(
-                "semantic_strata.candidates",
-                path,
-                "candidate identities must retain their exact architecture names",
-            )
-        for row in candidate_rows:
-            if len(row) != 4 or row[3] != "0/5 cases":
-                self.add(
-                    "semantic_strata.candidate_state",
-                    path,
-                    f"{row[0]} must retain the honest zero-evidence baseline",
-                )
-
-        relationship_rows = table_rows(
-            markdown_section(text, "## 4. Required relationship graph"),
-            r"SR-[0-9A-Z]+",
-        )
-        relationship_ids = tuple(f"SR-{index:02d}" for index in range(1, 15))
-        if tuple(row[0] for row in relationship_rows) != relationship_ids or any(
-            len(row) != 3 for row in relationship_rows
-        ):
-            self.add(
-                "semantic_strata.relationships",
-                path,
-                "relationship graph must retain SR-01 through SR-14 exactly once in order with three fields",
-            )
-
-        case_ids = tuple(f"SC-{index:02d}" for index in range(1, 6))
-        required_candidate_case_executions = len(candidate_ids) * len(case_ids)
-        cases = markdown_section(text, "## 5. Required decision cases")
-        case_headings = tuple(re.findall(r"(?m)^###\s+(SC-[0-9A-Z]+)\b", cases))
-        if case_headings != case_ids:
-            self.add(
-                "semantic_strata.case_ids",
-                path,
-                "decision cases must retain SC-01 through SC-05 exactly once in order",
-            )
-        required_labels = (
-            "Question",
-            "Dependencies",
-            "Inputs",
-            "Required boundary observations",
-            "Positive case",
-            "Mutation and negative case",
-            "Resource bounds",
-            "Non-claims",
-            "Falsification",
-        )
-        for case_id in case_ids:
-            body = markdown_section(cases, f"### {case_id}", heading_level=3, prefix=True)
-            for label in required_labels:
-                if f"**{label}:**" not in body:
-                    self.add(
-                        "semantic_strata.case_field",
-                        path,
-                        f"{case_id} is missing {label}",
-                    )
-
-        hard_gates = markdown_section(text, "## 6. Hard gates and anti-gaming rules")
-        gate_rows = re.findall(
-            r"(?m)^([1-9][0-9]*)\.\s+\*\*(SS-G[0-9A-Z]+)\b",
-            hard_gates,
-        )
-        expected_gates = tuple((str(index), f"SS-G{index:02d}") for index in range(1, 11))
-        if tuple(gate_rows) != expected_gates:
-            self.add(
-                "semantic_strata.hard_gates",
-                path,
-                "hard gates must retain ordered non-compensable SS-G01 through SS-G10",
-            )
-
-        normalized_text = re.sub(r"\s+", " ", text)
-        for assertion in (
-            "There is no weighted aggregate score.",
-            "Independent review is currently absent.",
-            "No semantic stratum is selected by this draft suite.",
-            "This suite does not accept D-003 or authorize S3b implementation.",
-        ):
-            if assertion not in normalized_text:
-                self.add(
-                    "semantic_strata.assertion",
-                    path,
-                    f"missing decision-protocol invariant: {assertion}",
-                )
-
-        execution_matrix_assertions = (
-            (
-                "The frozen matrix therefore contains exactly "
-                f"{required_candidate_case_executions} required candidate-case executions per evidence epoch: "
-                f"each of the {len(candidate_ids)} candidates runs each of the {len(case_ids)} cases."
-            ),
-            (
-                "Execution evidence is currently "
-                f"0/{required_candidate_case_executions} required candidate-case executions: "
-                f"0/{len(candidate_ids)} candidates have complete five-case packets, and "
-                f"0/{len(case_ids)} cases have complete cross-candidate execution."
-            ),
-        )
-        for assertion in execution_matrix_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "semantic_strata.execution_matrix",
-                    path,
-                    f"missing candidate-case cardinality invariant: {assertion}",
-                )
-        if normalized_text.count("Execution evidence is currently ") != 1:
-            self.add(
-                "semantic_strata.execution_matrix",
-                path,
-                "suite must contain exactly one canonical current-execution baseline",
-            )
-
-        for assertion in (
-            "each normalized domain observation's separate expected state, observed state, and `matched` or `mismatched` comparison;",
-            "one overall case verdict, exactly `pass` or `fail`;",
-            "Only an overall case verdict of `pass` satisfies SS-G05.",
-            "a preregistered negative or resource fixture may still pass when its domain observation is the expected `unknown`, `unsupported`, or `exhausted`; that match demonstrates fail-closed handling only and grants neither capability nor partial credit.",
-            "An expected `unknown`, `unsupported`, or `exhausted` observation can match and contribute to a `pass`; it is never used as the overall case verdict.",
-            "A candidate adapter's inability to execute therefore cannot masquerade as a correctly observed domain-level `unsupported` state.",
-        ):
-            if assertion not in normalized_text:
-                self.add(
-                    "semantic_strata.evidence_state",
-                    path,
-                    f"missing case-verdict or observation-state invariant: {assertion}",
-                )
-
-        for assertion in (
-            "An equivalent graph is not a waiver from this table.",
-            "Every candidate supplies a total SR conformance map with exactly one entry for each of SR-01 through SR-14.",
-            "A candidate-specific correction creates a linked new run, retains the failed prior record, and consumes the common correction window.",
-            "Changing an SR requirement or the shared equivalence rule creates a new evidence epoch for all candidates.",
-        ):
-            if assertion not in normalized_text:
-                self.add(
-                    "semantic_strata.equivalence_map",
-                    path,
-                    f"missing equivalent-graph mapping invariant: {assertion}",
-                )
-
-        decisions_path = self.root / "docs/DECISIONS.md"
-        if self._hf(decisions_path):
-            decisions_source = self._rt(decisions_path)
-            if decisions_source is not None:
-                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
-                d004 = markdown_section(
-                    decisions_text,
-                    "## D-004",
-                    heading_level=2,
-                    prefix=True,
-                )
-                normalized_d004 = re.sub(r"\s+", " ", d004)
-                register_baseline = (
-                    "That Draft protocol records "
-                    f"0/{required_candidate_case_executions} required candidate-case executions: "
-                    f"0/{len(candidate_ids)} candidates have complete five-case packets, and "
-                    f"0/{len(case_ids)} cases have complete cross-candidate execution."
-                )
-                if (
-                    "Alternative under comparison: one universal IR." not in normalized_d004
-                    or "The alternative is not rejected by this proposed register entry; it must run the same symmetric suite as every other candidate."
-                    not in normalized_d004
-                    or "Rejected default:" in normalized_d004
-                    or register_baseline not in normalized_d004
-                    or normalized_d004.count("That Draft protocol records ") != 1
-                ):
-                    self.add(
-                        "semantic_strata.register_consistency",
-                        decisions_path,
-                        "proposed D-004 must remain candidate-neutral and agree with the suite's execution baseline",
-                    )
 
     def _validate_public_assurance_model_suite(self) -> None:
-        path = self.root / "docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md"
-        if not self._hf(path):
-            return
-        source = self._rt(path)
-        if source is None:
-            return
-        text = markdown_without_fenced_blocks_and_comments(source)
-        header = text.partition("## Solo-mode disposition")[0]
-        statuses = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
-        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
-        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
-        if (
-            tuple(re.sub(r"\s+", " ", value) for value in statuses)
-            != ("owner-executable draft under D-023; no public assurance model selected",)
-            or versions != ("d005-v0.1-draft",)
-            or snapshots != ("2026-07-25",)
-        ):
-            self.add(
-                "assurance_model.header",
-                path,
-                "suite status, version, and snapshot must retain the exact candidate-neutral owner-executable identity",
-            )
+        prefix = 'assurance_model.'
+        candidates = tuple((f'AM-{index:02d}' for index in range(1, 5)))
+        cases = tuple((f'AC-{index:02d}' for index in range(1, 9)))
+        candidate_scope = ('## 2. Candidate parity and frozen invariants', 2, False)
+        case_scope = ('## 3. Required decision cases', 2, False)
+        metric_scope = ('## 4. Comparable metrics', 2, False)
+        gate_scope = ('## 5. Hard gates and anti-gaming rules', 2, False)
+        review_scope = ('## 7. Owner review scopes', 2, False)
+        maintenance_scope = ('### Frozen owner-maintenance tasks', 3, False)
+        acceptance_scope = ('## 8. Decision and acceptance procedure', 2, False)
+        self._validate_markdown_rules((('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', (('header', prefix + 'header', '## Solo-mode disposition', (('owner-executable draft under D-023; no public assurance model selected',), ('d005-v0.1-draft',), ('2026-07-25',))), ('table', prefix + 'candidates', candidate_scope, 'AM-[0-9]{2}', 4, ((0, candidates), (1, ('Orthogonal typed claim records', 'Named assurance profiles backed by atomic claims', 'Evidence graph with derived claim views', 'Aggregate package assurance level or verified Boolean'))), None), ('table', prefix + 'candidate_state', candidate_scope, 'AM-[0-9]{2}', 4, ((3, ('0/8 cases',) * 4),), None), ('table', prefix + 'claim_families', None, 'CF-[0-9]{2}', 3, ((0, tuple((f'CF-{index:02d}' for index in range(1, 11)))), (1, ('Conformance', 'Functional refinement', 'Safety', 'Termination', 'Leakage', 'Compiler preservation', 'ABI', 'Erasure', 'Game-based security', 'Empirical tests'))), None), ('matches', prefix + 'case_ids', case_scope, '(?m)^###\\s+(AC-[0-9]{2})\\s+—\\s+([^\\n]+)$', tuple(zip(cases, ('Represent every claim family with mixed outcomes', 'Enforce evidence authority and mandatory-basis completeness', 'Bind subject, context, theorem, proof, and evidence identities', 'Close assumptions, the TCB, and cross-boundary composition', 'Apply expiry, revocation, supersession, and downgrade rules', 'Separate external authority from solo-produced evidence', 'Compose packages, profiles, implementations, and targets', 'Render, inspect, replay, and migrate deterministically')))), ('fields', prefix + 'case_field', case_scope, cases, ('Question', 'Dependencies', 'Shared inputs', 'Candidate outputs', 'Positive checks', 'Mutation and negative checks', 'Hard acceptance')), ('table', prefix + 'metrics', metric_scope, 'M-[0-9]{2}', 4, ((0, tuple((f'M-{index:02d}' for index in range(1, 19)))),), None), ('table_slice', prefix + 'solo_metrics', metric_scope, 'M-[0-9]{2}', 15, 18, (('M-16', 'Owner audit/maintenance tasks', 'Completed published-only locate-and-change tasks / 2 per candidate', 'Hard gate: 2/2 per candidate with seeded faults detected'), ('M-17', 'Independent-review status', 'Exact external assurance-model and public-wording review status', 'Disclosure only: `unavailable`; never a score, gate, or implied claim'), ('M-18', 'Same-owner maintenance variance', 'Files, rules, migrations, dependencies, and elapsed owner time for the same seeded change', 'Comparative maintainability evidence only'))), ('matches', prefix + 'hard_gates', gate_scope, '(?m)^([1-9][0-9]*)\\.\\s', tuple((str(index) for index in range(1, 9)))), ('table', prefix + 'review_scopes', review_scope, 'AR-[0-9]{2}', 3, ((0, tuple((f'AR-{index:02d}' for index in range(1, 9)))), (1, ('Suite custody and candidate parity', 'Claim-family and outcome semantics', 'Evidence authority and identity', 'Trust and composition', 'Lifecycle and recovery', 'Public rendering and migration', 'Solo auditability and maintenance', 'Comparative disposition'))), None), ('table', prefix + 'maintenance_tasks', maintenance_scope, 'MT-[0-9]{2}', 4, (), (('MT-01', 'Revise the frozen target-leakage policy so a named `binary_analysis` basis is mandatory for the affected CF-05 target claim; update enforcement, public projection, migration, and tests without changing unrelated claims', 'A checked optional test masks the missing mandatory basis and leaves the affected profile green', 'Detect the seed before repair; the affected atomic claim and every containing projection become the frozen non-success, the optional test remains visible without authority upgrade, unrelated claims remain byte-identical, and all new positive/negative fixtures pass'), ('MT-02', 'Add the frozen claim-policy digest as a mandatory identity edge, revoke the prior policy revision at the declared logical time, and update closure, lifecycle propagation, offline replay, migration, and rendering', 'Evidence with the old policy digest is accepted through a same-name alias and a cached package summary remains green', 'Detect the seed before repair; the alias substitution fails closed, exactly the old-policy dependents invalidate, the unaffected set remains byte-identical, history and migration remain attributable, and three offline renders agree'))), ('required', prefix + 'maintenance_protocol', maintenance_scope, ('Each task begins from a distinct clean checkout of the same exact revision with empty candidate-specific caches and output directories.', 'The record inventories dependency acquisition, network state, environment, tools, inputs, outputs, and elapsed owner time.', 'The owner receives only the frozen public packet and published task text: no private file map, repair note, or candidate-specific hint.', 'Any automated assistance uses the same preregistered allowance and retains exact prompts and outputs; prior familiarity and role overlap remain disclosed.', 'A task passes only if the owner detects its seed before repair, produces the required migration and adversarial evidence inside the common ceiling, and recreates the repaired result from a second clean workspace.')), ('required', prefix + 'execution_matrix', None, ('The frozen matrix contains exactly 32 candidate-case executions per evidence epoch: each of the 4 candidates runs each of the 8 cases.', 'Execution evidence is currently 0/32 candidate-case executions (0/8 AM-01, 0/8 AM-02, 0/8 AM-03, and 0/8 AM-04).')), ('count', prefix + 'execution_matrix', None, 'Execution evidence is currently ', 1, False), ('required', prefix + 'outcomes', None, ('Each atomic claim has exactly one outcome: `satisfied`, `not_satisfied`, `unresolved`, or `unsupported`.', 'These outcomes are categorical, not ordered grades.', 'Every case also has one separate verdict, exactly `pass` or `fail`.', 'A negative or unsupported claim can be the expected observation in a passing case; it never becomes partial credit for the claim.', 'The four outcome meanings are frozen across candidates.', '`satisfied` means the exact proposition has its complete permitted mandatory closure and no valid decisive negative result.', '`not_satisfied` means permitted, identity-bound negative evidence establishes that the exact proposition is false or violated within its scope; absence or incompleteness alone is not `not_satisfied`.', '`unresolved` means the claim is well-formed and within the declared support model, but a required decision remains unknown, incomplete, conflicting, or exhausted.', '`unsupported` means the declared policy or support envelope offers no permitted evaluation or authority path for that exact claim and scope.', 'No candidate may reinterpret these categories or map any non-success to success.')), ('required', prefix + 'basis_policy', None, ('`satisfied` requires all mandatory elements to be present, valid, unexpired, unrevoked, mutually bound, and permitted.', 'One checked but optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory element.', 'An assumption is a dependency, never a basis that proves itself.', 'No quantity of tests, audits, reviews, or assumptions silently satisfies a proof-, certificate-, laboratory-, or external-authority requirement.')), ('required', prefix + 'closure', None, ('All substitutions fail closed; unresolved mandatory contexts cannot yield `satisfied`; and diagnostics identify the exact mismatched edge without accepting a neighboring valid record.', 'Incomplete or inconsistent closure cannot satisfy the dependent claim.', 'Expired, revoked, superseded, compromised, conflicting, or stale mandatory evidence cannot support current `satisfied`; rollback and downgrade fail closed; history is append-only and attributable.')), ('required', prefix + 'aggregation', None, ('Profiles, levels, summaries, queries, neighboring implementations, and package rollups are read-only projections.', 'They may never upgrade, average, inherit, or hide an atomic non-success.', 'No aggregate, level, Boolean, profile, or neighboring claim upgrades an atomic result.', 'There is no weighted aggregate score.')), ('required', prefix + 'historical_schema', None, ('`schemas/gate0/claim-record-v0.1.schema.json` is historical, provisional, non-product shape material.', 'It lacks a first-class compiler-preservation family, claim-kind-to-basis policy, mandatory-basis completeness, evidence-reference closure, subject-byte verification, theorem/proof binding, trust-closure links, composition edges, and lifecycle invalidation.', 'Passing that schema or its current second-pass checks is not evidence that any D-005 candidate passes.', 'a checked test run presented as sufficient functional-refinement evidence;', 'a checked test run masking a failed mandatory kernel proof;', 'target leakage reported `satisfied` while target and leakage contexts remain unresolved;', 'an owner-produced checked test presented as external validation;', 'a substituted subject path or digest reusing evidence bound to other bytes.', 'no historical record is silently promoted or reinterpreted.')), ('required', prefix + 'authority_boundary', None, ('It evaluates candidate semantic architectures for public assurance claims:', 'Only the Accepted exact-revision OEP in section 8 chooses an architecture.', 'This draft installs, adopts, or admits no tool or dependency and grants no dependency-acquisition authority.')), ('required', prefix + 'workspace_isolation', None, ('Throughout this suite, separately provisioned owner workspaces are distinct clean checkouts of the same exact revision with no shared mutable cache, output directory, generated state, or dependency store.', 'Each has a separate dependency-acquisition and environment record.', 'Only content-addressed, read-only frozen inputs named by both manifests may be shared.', 'Every replay records those isolation facts and fails closed when shared or undeclared state cannot be excluded.')), ('required', prefix + 'solo_mode', None, ('A second owner run, workspace, implementation, or rendering remains same-owner evidence and records no reproducibility level above 2.', 'independent review remains `unavailable`; and no owner, tool, signature, or schema-valid record impersonates an external institution or technical proof.', 'Two separately provisioned owner workspaces recreate deterministic manifests from the published packet at reproducibility level 2; neither replay is relabeled as an audit, validation, independent review, or independent reproduction.', 'No decision-case result is recorded above reproducibility level 2.', 'A bot, second owner pass, second workspace, alternate implementation, or signature may strengthen the analysis but is never an independent reviewer, organization, validation, or technical authority beyond its declared evidence type.')), ('forbidden_regex', prefix + 'reproducibility_cap', None, ('\\blevel\\s+3\\b',)), ('forbidden', prefix + 'solo_blocker', None, ('at least one independent assurance-model reviewer', 'two non-author practitioners', 'external cryptographer approval is required', 'multidisciplinary external review must approve', 'separate Assurance and TCB Board approval', 'an independent auditor selects the candidate', 'laboratory participation is required for this decision', 'downstream integrator approval is required')), ('forbidden_regex', prefix + 'independence_claim', None, ('\\b(?:is|are|was|were|has been|have been)\\s+independently\\s+(?:reviewed|reproduced|audited|validated)\\b',)), ('forbidden_regex', prefix + 'preselection', None, ('\\bcurrent recommendation:\\s*AM-0[1-4]\\b', '\\brecommendation:\\s*AM-0[1-4]\\b', '\\bAM-0[1-4]\\s+(?:is|remains|becomes)\\s+(?:the\\s+)?(?:selected|preferred|accepted)\\s+(?:candidate|model)\\b')), ('required', prefix + 'acceptance', acceptance_scope, ('A recommendation selects nothing by itself.', 'D-005 closes only through an Accepted Orange Enhancement Proposal under the ratified governance process.', 'Its `decision-revision` must be exactly 40 lowercase hexadecimal characters naming the fully validated Git revision.', 'The OEP must list `Orange Project Owner` as the solo-mode review authority, include an `approval-records` entry containing the literal `solo-reviewed`', 'This draft allocates no OEP number.', 'no approval record may claim that the owner supplied independent review.', 'It does not by itself ratify a concrete public encoding, satisfy a technical claim, accept D-006, close S4, or authorize a release.')))), ('docs/DECISIONS.md', (('required', prefix + 'register_consistency', ('## D-005', 2, True), ('Candidates: orthogonal typed claim records, named assurance profiles backed by atomic claims, evidence-graph-derived claim views, and an aggregate package assurance level or `verified` Boolean.', 'No candidate is selected, preferred, or authorized for product use by this register.', 'Each atomic claim has exactly one of `satisfied`, `not_satisfied`, `unresolved`, or `unsupported`; no profile, graph view, package level, Boolean, neighboring claim, or optional evidence may upgrade an atomic non-success.', 'Current execution evidence is 0/32 candidate-case executions.', 'The provisional Gate 0 claim schema and synthetic fixtures are historical shape inputs, not a selected candidate or public format.', 'D-005 closes only through an Accepted exact-revision OEP after the complete owner-executable suite passes.', 'Owner review is labeled `solo-reviewed` and never becomes independent or technical evidence merely through repetition.')), ('count', prefix + 'register_consistency', ('## D-005', 2, True), 'Current execution evidence is ', 1, False), ('forbidden_regex', prefix + 'register_consistency', ('## D-005', 2, True), ('\\b(?:Current recommendation|Recommendation|Preferred candidate):',)))), ('docs/ROADMAP.md', (('required', prefix + 'roadmap_consistency', ('### S4', 3, True), ('Status: pending symmetric execution and exact-revision OEP acceptance of D-005, D-006, and D-009 plus their dependent decisions', 'a selected public-assurance architecture through the symmetric D-005 suite and an Accepted exact-revision OEP, with ten separate claim families, four exact atomic outcomes, complete evidence/TCB closure, and no aggregate upgrade;', 'all four D-005 candidates have complete 8/8 case records and both D-006 candidates have complete 7/7 case records, and all three D-009 candidates have complete 8/8 case records (24/24 total) under their frozen epochs.', 'unavailable authorities, stale evidence, and aggregate summaries never satisfy or upgrade an atomic claim.')),)), ('docs/ASSURANCE.md', (('required', prefix + 'explanatory_consistency', ('### 3.1 Independent claim dimensions', 3, False), ('8. compiler preservation across exact in-frontier transitions, reaching final artifact bytes only when those bytes are part of the claim;',)), ('required', prefix + 'explanatory_consistency', ('### 3.2 Claim record', 3, False), ('`satisfied` requires every basis, context, identity binding, trust-closure component, composition edge, freshness condition, and review trigger that the exact claim-kind policy marks mandatory.', 'one favorable optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory element.', 'Owner review may support an explicitly scoped owner-audit or governance record when its policy permits that evidence class, but it cannot act as a proof, certificate, compiler-preservation edge, external validation, certification, or independent review.')))), ('docs/THE_ORANGE_BOOK.md', (('table', prefix + 'explanatory_consistency', ('### One artifact, several answers', 3, False), '(?:Was sensitive state erased\\?|What did empirical testing observe\\?)', 3, (), (('Was sensitive state erased?', 'Named object, lifecycle point, target, and architectural model', 'Erasure proof, binary analysis, and scoped measurements'), ('What did empirical testing observe?', 'Named corpus, method, environment, and implementation/target', 'Vectors, differential tests, fuzzing, timing, or interoperability records'))), ('required', prefix + 'explanatory_consistency', None, ('An owner review may support only an explicitly scoped owner-audit or governance record; it cannot impersonate a technical proof, external validation, certification, or independent review.',)), ('required', prefix + 'explanatory_consistency', ('## Chapter 2: Claims, Not Labels', 2, False), ('A favorable optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory basis, context, trust component, or composition edge.', 'D-005 remains proposed, so these files are not the stable public claim format and do not authorize future syntax or assurance behavior.'))))))
 
-        candidate_rows = table_rows(
-            markdown_section(text, "## 2. Candidate parity and frozen invariants"),
-            r"AM-[0-9]{2}",
-        )
-        candidate_ids = tuple(f"AM-{index:02d}" for index in range(1, 5))
-        candidate_names = (
-            "Orthogonal typed claim records",
-            "Named assurance profiles backed by atomic claims",
-            "Evidence graph with derived claim views",
-            "Aggregate package assurance level or verified Boolean",
-        )
-        if tuple(row[0] for row in candidate_rows) != candidate_ids:
-            self.add(
-                "assurance_model.candidates",
-                path,
-                "candidate table must retain AM-01 through AM-04 exactly once in order",
-            )
-        elif any(len(row) != 4 for row in candidate_rows):
-            self.add(
-                "assurance_model.candidates",
-                path,
-                "every assurance-model candidate row must retain exactly four fields",
-            )
-        elif tuple(row[1] for row in candidate_rows) != candidate_names:
-            self.add(
-                "assurance_model.candidates",
-                path,
-                "assurance-model candidate identities must remain exact and candidate-neutral",
-            )
-        for row in candidate_rows:
-            if len(row) != 4 or row[3] != "0/8 cases":
-                self.add(
-                    "assurance_model.candidate_state",
-                    path,
-                    f"{row[0]} must retain the honest zero-evidence baseline",
-                )
-
-        family_rows = table_rows(text, r"CF-[0-9]{2}")
-        family_ids = tuple(f"CF-{index:02d}" for index in range(1, 11))
-        family_names = (
-            "Conformance",
-            "Functional refinement",
-            "Safety",
-            "Termination",
-            "Leakage",
-            "Compiler preservation",
-            "ABI",
-            "Erasure",
-            "Game-based security",
-            "Empirical tests",
-        )
-        if tuple(row[0] for row in family_rows) != family_ids:
-            self.add(
-                "assurance_model.claim_families",
-                path,
-                "claim-family table must retain CF-01 through CF-10 exactly once in order",
-            )
-        elif any(len(row) != 3 for row in family_rows):
-            self.add(
-                "assurance_model.claim_families",
-                path,
-                "every required claim-family row must retain exactly three fields",
-            )
-        elif tuple(row[1] for row in family_rows) != family_names:
-            self.add(
-                "assurance_model.claim_families",
-                path,
-                "the ten claim-family identities must remain exact, including first-class compiler preservation",
-            )
-
-        case_ids = tuple(f"AC-{index:02d}" for index in range(1, 9))
-        case_titles = (
-            "Represent every claim family with mixed outcomes",
-            "Enforce evidence authority and mandatory-basis completeness",
-            "Bind subject, context, theorem, proof, and evidence identities",
-            "Close assumptions, the TCB, and cross-boundary composition",
-            "Apply expiry, revocation, supersession, and downgrade rules",
-            "Separate external authority from solo-produced evidence",
-            "Compose packages, profiles, implementations, and targets",
-            "Render, inspect, replay, and migrate deterministically",
-        )
-        cases = markdown_section(text, "## 3. Required decision cases")
-        case_headings = tuple(
-            re.findall(r"(?m)^###\s+(AC-[0-9]{2})\s+—\s+([^\n]+)$", cases)
-        )
-        if case_headings != tuple(zip(case_ids, case_titles)):
-            self.add(
-                "assurance_model.case_ids",
-                path,
-                "decision cases must retain the eight exact ordered AC identities and titles",
-            )
-
-        required_labels = (
-            "Question",
-            "Dependencies",
-            "Shared inputs",
-            "Candidate outputs",
-            "Positive checks",
-            "Mutation and negative checks",
-            "Hard acceptance",
-        )
-        for case_id in case_ids:
-            body = markdown_section(cases, f"### {case_id}", heading_level=3, prefix=True)
-            for label in required_labels:
-                if f"**{label}:**" not in body:
-                    self.add(
-                        "assurance_model.case_field",
-                        path,
-                        f"{case_id} is missing {label}",
-                    )
-
-        metric_rows = table_rows(
-            markdown_section(text, "## 4. Comparable metrics"),
-            r"M-[0-9]{2}",
-        )
-        metric_ids = tuple(f"M-{index:02d}" for index in range(1, 19))
-        if tuple(row[0] for row in metric_rows) != metric_ids or any(
-            len(row) != 4 for row in metric_rows
-        ):
-            self.add(
-                "assurance_model.metrics",
-                path,
-                "metrics must retain M-01 through M-18 exactly once with four fields",
-            )
-        elif tuple(tuple(row) for row in metric_rows[15:18]) != (
-            (
-                "M-16",
-                "Owner audit/maintenance tasks",
-                "Completed published-only locate-and-change tasks / 2 per candidate",
-                "Hard gate: 2/2 per candidate with seeded faults detected",
-            ),
-            (
-                "M-17",
-                "Independent-review status",
-                "Exact external assurance-model and public-wording review status",
-                "Disclosure only: `unavailable`; never a score, gate, or implied claim",
-            ),
-            (
-                "M-18",
-                "Same-owner maintenance variance",
-                "Files, rules, migrations, dependencies, and elapsed owner time for the same seeded change",
-                "Comparative maintainability evidence only",
-            ),
-        ):
-            self.add(
-                "assurance_model.solo_metrics",
-                path,
-                "M-16 through M-18 must retain owner tasks, disclosure-only independent-review status, and same-owner variance",
-            )
-
-        hard_gates = markdown_section(text, "## 5. Hard gates and anti-gaming rules")
-        gate_numbers = re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates)
-        if gate_numbers != [str(index) for index in range(1, 9)]:
-            self.add(
-                "assurance_model.hard_gates",
-                path,
-                "hard gates must remain the ordered non-compensable set 1 through 8",
-            )
-
-        review_rows = table_rows(
-            markdown_section(text, "## 7. Owner review scopes"),
-            r"AR-[0-9]{2}",
-        )
-        review_ids = tuple(f"AR-{index:02d}" for index in range(1, 9))
-        review_names = (
-            "Suite custody and candidate parity",
-            "Claim-family and outcome semantics",
-            "Evidence authority and identity",
-            "Trust and composition",
-            "Lifecycle and recovery",
-            "Public rendering and migration",
-            "Solo auditability and maintenance",
-            "Comparative disposition",
-        )
-        if tuple(row[0] for row in review_rows) != review_ids:
-            self.add(
-                "assurance_model.review_scopes",
-                path,
-                "owner review table must retain AR-01 through AR-08 exactly once in order",
-            )
-        elif any(len(row) != 3 for row in review_rows):
-            self.add(
-                "assurance_model.review_scopes",
-                path,
-                "every owner review scope must retain exactly three fields",
-            )
-        elif tuple(row[1] for row in review_rows) != review_names:
-            self.add(
-                "assurance_model.review_scopes",
-                path,
-                "owner review scope identities must remain exact and candidate-symmetric",
-            )
-
-        maintenance = markdown_section(
-            hard_gates,
-            "### Frozen owner-maintenance tasks",
-            heading_level=3,
-        )
-        maintenance_rows = table_rows(maintenance, r"MT-[0-9]{2}")
-        expected_maintenance_rows = (
-            (
-                "MT-01",
-                "Revise the frozen target-leakage policy so a named `binary_analysis` basis is mandatory for the affected CF-05 target claim; update enforcement, public projection, migration, and tests without changing unrelated claims",
-                "A checked optional test masks the missing mandatory basis and leaves the affected profile green",
-                "Detect the seed before repair; the affected atomic claim and every containing projection become the frozen non-success, the optional test remains visible without authority upgrade, unrelated claims remain byte-identical, and all new positive/negative fixtures pass",
-            ),
-            (
-                "MT-02",
-                "Add the frozen claim-policy digest as a mandatory identity edge, revoke the prior policy revision at the declared logical time, and update closure, lifecycle propagation, offline replay, migration, and rendering",
-                "Evidence with the old policy digest is accepted through a same-name alias and a cached package summary remains green",
-                "Detect the seed before repair; the alias substitution fails closed, exactly the old-policy dependents invalidate, the unaffected set remains byte-identical, history and migration remain attributable, and three offline renders agree",
-            ),
-        )
-        if tuple(tuple(row) for row in maintenance_rows) != expected_maintenance_rows:
-            self.add(
-                "assurance_model.maintenance_tasks",
-                path,
-                "owner maintenance table must retain the exact MT-01 and MT-02 change requests, seeded faults, and acceptance rules",
-            )
-        normalized_maintenance = re.sub(r"\s+", " ", maintenance)
-        for assertion in (
-            "Each task begins from a distinct clean checkout of the same exact revision with empty candidate-specific caches and output directories.",
-            "The record inventories dependency acquisition, network state, environment, tools, inputs, outputs, and elapsed owner time.",
-            "The owner receives only the frozen public packet and published task text: no private file map, repair note, or candidate-specific hint.",
-            "Any automated assistance uses the same preregistered allowance and retains exact prompts and outputs; prior familiarity and role overlap remain disclosed.",
-            "A task passes only if the owner detects its seed before repair, produces the required migration and adversarial evidence inside the common ceiling, and recreates the repaired result from a second clean workspace.",
-        ):
-            if assertion not in normalized_maintenance:
-                self.add(
-                    "assurance_model.maintenance_protocol",
-                    path,
-                    f"missing clean-workspace or published-only maintenance invariant: {assertion}",
-                )
-
-        normalized_text = re.sub(r"\s+", " ", text)
-        matrix_assertions = (
-            "The frozen matrix contains exactly 32 candidate-case executions per evidence epoch: each of the 4 candidates runs each of the 8 cases.",
-            "Execution evidence is currently 0/32 candidate-case executions (0/8 AM-01, 0/8 AM-02, 0/8 AM-03, and 0/8 AM-04).",
-        )
-        for assertion in matrix_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.execution_matrix",
-                    path,
-                    f"missing candidate-case cardinality invariant: {assertion}",
-                )
-        if normalized_text.count("Execution evidence is currently ") != 1:
-            self.add(
-                "assurance_model.execution_matrix",
-                path,
-                "suite must contain exactly one canonical current-execution baseline",
-            )
-
-        outcome_assertions = (
-            "Each atomic claim has exactly one outcome: `satisfied`, `not_satisfied`, `unresolved`, or `unsupported`.",
-            "These outcomes are categorical, not ordered grades.",
-            "Every case also has one separate verdict, exactly `pass` or `fail`.",
-            "A negative or unsupported claim can be the expected observation in a passing case; it never becomes partial credit for the claim.",
-            "The four outcome meanings are frozen across candidates.",
-            "`satisfied` means the exact proposition has its complete permitted mandatory closure and no valid decisive negative result.",
-            "`not_satisfied` means permitted, identity-bound negative evidence establishes that the exact proposition is false or violated within its scope; absence or incompleteness alone is not `not_satisfied`.",
-            "`unresolved` means the claim is well-formed and within the declared support model, but a required decision remains unknown, incomplete, conflicting, or exhausted.",
-            "`unsupported` means the declared policy or support envelope offers no permitted evaluation or authority path for that exact claim and scope.",
-            "No candidate may reinterpret these categories or map any non-success to success.",
-        )
-        for assertion in outcome_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.outcomes",
-                    path,
-                    f"missing atomic outcome or case-verdict invariant: {assertion}",
-                )
-
-        basis_assertions = (
-            "`satisfied` requires all mandatory elements to be present, valid, unexpired, unrevoked, mutually bound, and permitted.",
-            "One checked but optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory element.",
-            "An assumption is a dependency, never a basis that proves itself.",
-            "No quantity of tests, audits, reviews, or assumptions silently satisfies a proof-, certificate-, laboratory-, or external-authority requirement.",
-        )
-        for assertion in basis_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.basis_policy",
-                    path,
-                    f"missing authority or mandatory-basis invariant: {assertion}",
-                )
-
-        closure_assertions = (
-            "All substitutions fail closed; unresolved mandatory contexts cannot yield `satisfied`; and diagnostics identify the exact mismatched edge without accepting a neighboring valid record.",
-            "Incomplete or inconsistent closure cannot satisfy the dependent claim.",
-            "Expired, revoked, superseded, compromised, conflicting, or stale mandatory evidence cannot support current `satisfied`; rollback and downgrade fail closed; history is append-only and attributable.",
-        )
-        for assertion in closure_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.closure",
-                    path,
-                    f"missing identity, trust, or lifecycle closure invariant: {assertion}",
-                )
-
-        aggregation_assertions = (
-            "Profiles, levels, summaries, queries, neighboring implementations, and package rollups are read-only projections.",
-            "They may never upgrade, average, inherit, or hide an atomic non-success.",
-            "No aggregate, level, Boolean, profile, or neighboring claim upgrades an atomic result.",
-            "There is no weighted aggregate score.",
-        )
-        for assertion in aggregation_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.aggregation",
-                    path,
-                    f"missing non-upgrading projection invariant: {assertion}",
-                )
-
-        historical_assertions = (
-            "`schemas/gate0/claim-record-v0.1.schema.json` is historical, provisional, non-product shape material.",
-            "It lacks a first-class compiler-preservation family, claim-kind-to-basis policy, mandatory-basis completeness, evidence-reference closure, subject-byte verification, theorem/proof binding, trust-closure links, composition edges, and lifecycle invalidation.",
-            "Passing that schema or its current second-pass checks is not evidence that any D-005 candidate passes.",
-            "a checked test run presented as sufficient functional-refinement evidence;",
-            "a checked test run masking a failed mandatory kernel proof;",
-            "target leakage reported `satisfied` while target and leakage contexts remain unresolved;",
-            "an owner-produced checked test presented as external validation;",
-            "a substituted subject path or digest reusing evidence bound to other bytes.",
-            "no historical record is silently promoted or reinterpreted.",
-        )
-        for assertion in historical_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.historical_schema",
-                    path,
-                    f"missing historical-v0.1 non-ratification invariant: {assertion}",
-                )
-
-        authority_assertions = (
-            "It evaluates candidate semantic architectures for public assurance claims:",
-            "Only the Accepted exact-revision OEP in section 8 chooses an architecture.",
-            "This draft installs, adopts, or admits no tool or dependency and grants no dependency-acquisition authority.",
-        )
-        for assertion in authority_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.authority_boundary",
-                    path,
-                    f"missing evaluation-only or dependency-acquisition non-authority invariant: {assertion}",
-                )
-
-        workspace_assertions = (
-            "Throughout this suite, separately provisioned owner workspaces are distinct clean checkouts of the same exact revision with no shared mutable cache, output directory, generated state, or dependency store.",
-            "Each has a separate dependency-acquisition and environment record.",
-            "Only content-addressed, read-only frozen inputs named by both manifests may be shared.",
-            "Every replay records those isolation facts and fails closed when shared or undeclared state cannot be excluded.",
-        )
-        for assertion in workspace_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.workspace_isolation",
-                    path,
-                    f"missing separately provisioned workspace isolation invariant: {assertion}",
-                )
-
-        solo_assertions = (
-            "A second owner run, workspace, implementation, or rendering remains same-owner evidence and records no reproducibility level above 2.",
-            "independent review remains `unavailable`; and no owner, tool, signature, or schema-valid record impersonates an external institution or technical proof.",
-            "Two separately provisioned owner workspaces recreate deterministic manifests from the published packet at reproducibility level 2; neither replay is relabeled as an audit, validation, independent review, or independent reproduction.",
-            "No decision-case result is recorded above reproducibility level 2.",
-            "A bot, second owner pass, second workspace, alternate implementation, or signature may strengthen the analysis but is never an independent reviewer, organization, validation, or technical authority beyond its declared evidence type.",
-        )
-        for assertion in solo_assertions:
-            if assertion not in normalized_text:
-                self.add(
-                    "assurance_model.solo_mode",
-                    path,
-                    f"missing solo-mode authority or level-cap invariant: {assertion}",
-                )
-        if re.search(r"\blevel\s+3\b", normalized_text, re.IGNORECASE):
-            self.add(
-                "assurance_model.reproducibility_cap",
-                path,
-                "owner-executed D-005 evidence cannot claim or require reproducibility level 3",
-            )
-
-        legacy_blockers = (
-            "at least one independent assurance-model reviewer",
-            "two non-author practitioners",
-            "external cryptographer approval is required",
-            "multidisciplinary external review must approve",
-            "separate Assurance and TCB Board approval",
-            "an independent auditor selects the candidate",
-            "laboratory participation is required for this decision",
-            "downstream integrator approval is required",
-        )
-        for blocker in legacy_blockers:
-            if blocker.lower() in normalized_text.lower():
-                self.add(
-                    "assurance_model.solo_blocker",
-                    path,
-                    f"solo-mode protocol reintroduces an unavailable-human blocker: {blocker}",
-                )
-
-        if re.search(
-            r"\b(?:is|are|was|were|has been|have been)\s+independently\s+"
-            r"(?:reviewed|reproduced|audited|validated)\b",
-            normalized_text,
-            re.IGNORECASE,
-        ):
-            self.add(
-                "assurance_model.independence_claim",
-                path,
-                "draft suite cannot claim independent review, reproduction, audit, or validation",
-            )
-
-        preselection_patterns = (
-            r"\bcurrent recommendation:\s*AM-0[1-4]\b",
-            r"\brecommendation:\s*AM-0[1-4]\b",
-            r"\bAM-0[1-4]\s+(?:is|remains|becomes)\s+(?:the\s+)?(?:selected|preferred|accepted)\s+(?:candidate|model)\b",
-        )
-        if any(
-            re.search(pattern, normalized_text, re.IGNORECASE)
-            for pattern in preselection_patterns
-        ):
-            self.add(
-                "assurance_model.preselection",
-                path,
-                "candidate-neutral draft cannot preselect or privilege an assurance-model candidate",
-            )
-
-        decision_procedure = markdown_section(
-            text,
-            "## 8. Decision and acceptance procedure",
-        )
-        normalized_decision_procedure = re.sub(r"\s+", " ", decision_procedure)
-        for assertion in (
-            "A recommendation selects nothing by itself.",
-            "D-005 closes only through an Accepted Orange Enhancement Proposal under the ratified governance process.",
-            "Its `decision-revision` must be exactly 40 lowercase hexadecimal characters naming the fully validated Git revision.",
-            "The OEP must list `Orange Project Owner` as the solo-mode review authority, include an `approval-records` entry containing the literal `solo-reviewed`",
-            "This draft allocates no OEP number.",
-            "no approval record may claim that the owner supplied independent review.",
-            "It does not by itself ratify a concrete public encoding, satisfy a technical claim, accept D-006, close S4, or authorize a release.",
-        ):
-            if assertion not in normalized_decision_procedure:
-                self.add(
-                    "assurance_model.acceptance",
-                    path,
-                    f"missing exact-revision OEP acceptance or non-claim invariant: {assertion}",
-                )
-
-        decisions_path = self.root / "docs/DECISIONS.md"
-        if self._hf(decisions_path):
-            decisions_source = self._rt(decisions_path)
-            if decisions_source is not None:
-                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
-                d005 = markdown_section(
-                    decisions_text,
-                    "## D-005",
-                    heading_level=2,
-                    prefix=True,
-                )
-                normalized_d005 = re.sub(r"\s+", " ", d005)
-                for assertion in (
-                    "Candidates: orthogonal typed claim records, named assurance profiles backed by atomic claims, evidence-graph-derived claim views, and an aggregate package assurance level or `verified` Boolean.",
-                    "No candidate is selected, preferred, or authorized for product use by this register.",
-                    "Each atomic claim has exactly one of `satisfied`, `not_satisfied`, `unresolved`, or `unsupported`; no profile, graph view, package level, Boolean, neighboring claim, or optional evidence may upgrade an atomic non-success.",
-                    "Current execution evidence is 0/32 candidate-case executions.",
-                    "The provisional Gate 0 claim schema and synthetic fixtures are historical shape inputs, not a selected candidate or public format.",
-                    "D-005 closes only through an Accepted exact-revision OEP after the complete owner-executable suite passes.",
-                    "Owner review is labeled `solo-reviewed` and never becomes independent or technical evidence merely through repetition.",
-                ):
-                    if assertion not in normalized_d005:
-                        self.add(
-                            "assurance_model.register_consistency",
-                            decisions_path,
-                            f"D-005 register is not neutral or disagrees with the suite contract: {assertion}",
-                        )
-                if normalized_d005.count("Current execution evidence is ") != 1:
-                    self.add(
-                        "assurance_model.register_consistency",
-                        decisions_path,
-                        "D-005 register must contain exactly one canonical current-execution baseline",
-                    )
-                if re.search(
-                    r"\b(?:Current recommendation|Recommendation|Preferred candidate):",
-                    normalized_d005,
-                    re.IGNORECASE,
-                ):
-                    self.add(
-                        "assurance_model.register_consistency",
-                        decisions_path,
-                        "D-005 register cannot preselect a candidate before symmetric suite execution",
-                    )
-
-        roadmap_path = self.root / "docs/ROADMAP.md"
-        if self._hf(roadmap_path):
-            roadmap_source = self._rt(roadmap_path)
-            if roadmap_source is not None:
-                roadmap_text = markdown_without_fenced_blocks_and_comments(roadmap_source)
-                s4 = markdown_section(
-                    roadmap_text,
-                    "### S4",
-                    heading_level=3,
-                    prefix=True,
-                )
-                normalized_s4 = re.sub(r"\s+", " ", s4)
-                for assertion in (
-                    "Status: pending symmetric execution and exact-revision OEP acceptance of D-005, D-006, and D-009 plus their dependent decisions",
-                    "a selected public-assurance architecture through the symmetric D-005 suite and an Accepted exact-revision OEP, with ten separate claim families, four exact atomic outcomes, complete evidence/TCB closure, and no aggregate upgrade;",
-                    "all four D-005 candidates have complete 8/8 case records and both D-006 candidates have complete 7/7 case records, and all three D-009 candidates have complete 8/8 case records (24/24 total) under their frozen epochs.",
-                    "unavailable authorities, stale evidence, and aggregate summaries never satisfy or upgrade an atomic claim.",
-                ):
-                    if assertion not in normalized_s4:
-                        self.add(
-                            "assurance_model.roadmap_consistency",
-                            roadmap_path,
-                            f"S4 roadmap omits a D-005 execution or fail-closed exit invariant: {assertion}",
-                        )
-
-        assurance_path = self.root / "docs/ASSURANCE.md"
-        if self._hf(assurance_path):
-            assurance_source = self._rt(assurance_path)
-            if assurance_source is not None:
-                assurance_text = markdown_without_fenced_blocks_and_comments(assurance_source)
-                dimensions = markdown_section(
-                    assurance_text,
-                    "### 3.1 Independent claim dimensions",
-                    heading_level=3,
-                )
-                normalized_dimensions = re.sub(r"\s+", " ", dimensions)
-                if (
-                    "8. compiler preservation across exact in-frontier transitions, reaching final artifact bytes only when those bytes are part of the claim;"
-                    not in normalized_dimensions
-                ):
-                    self.add(
-                        "assurance_model.explanatory_consistency",
-                        assurance_path,
-                        "ASSURANCE claim dimensions must retain first-class compiler preservation",
-                    )
-                claim_model = markdown_section(
-                    assurance_text,
-                    "### 3.2 Claim record",
-                    heading_level=3,
-                )
-                normalized_claim_model = re.sub(r"\s+", " ", claim_model)
-                for assertion in (
-                    "`satisfied` requires every basis, context, identity binding, trust-closure component, composition edge, freshness condition, and review trigger that the exact claim-kind policy marks mandatory.",
-                    "one favorable optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory element.",
-                    "Owner review may support an explicitly scoped owner-audit or governance record when its policy permits that evidence class, but it cannot act as a proof, certificate, compiler-preservation edge, external validation, certification, or independent review.",
-                ):
-                    if assertion not in normalized_claim_model:
-                        self.add(
-                            "assurance_model.explanatory_consistency",
-                            assurance_path,
-                            f"assurance model weakens a mandatory-basis or owner-authority boundary: {assertion}",
-                        )
-
-        book_path = self.root / "docs/THE_ORANGE_BOOK.md"
-        if self._hf(book_path):
-            book_source = self._rt(book_path)
-            if book_source is not None:
-                book_text = markdown_without_fenced_blocks_and_comments(book_source)
-                normalized_book = re.sub(r"\s+", " ", book_text)
-                chapter = markdown_section(
-                    book_text,
-                    "## Chapter 2: Claims, Not Labels",
-                    heading_level=2,
-                )
-                normalized_chapter = re.sub(r"\s+", " ", chapter)
-                matrix_section = markdown_section(
-                    book_text,
-                    "### One artifact, several answers",
-                    heading_level=3,
-                )
-                matrix_rows = table_rows(
-                    matrix_section,
-                    r"(?:Was sensitive state erased\?|What did empirical testing observe\?)",
-                )
-                expected_matrix_rows = (
-                    (
-                        "Was sensitive state erased?",
-                        "Named object, lifecycle point, target, and architectural model",
-                        "Erasure proof, binary analysis, and scoped measurements",
-                    ),
-                    (
-                        "What did empirical testing observe?",
-                        "Named corpus, method, environment, and implementation/target",
-                        "Vectors, differential tests, fuzzing, timing, or interoperability records",
-                    ),
-                )
-                if tuple(tuple(row) for row in matrix_rows) != expected_matrix_rows:
-                    self.add(
-                        "assurance_model.explanatory_consistency",
-                        book_path,
-                        "Orange Book claim matrix must retain separate erasure and empirical-test rows",
-                    )
-                if (
-                    "An owner review may support only an explicitly scoped owner-audit or governance record; it cannot impersonate a technical proof, external validation, certification, or independent review."
-                    not in normalized_book
-                ):
-                    self.add(
-                        "assurance_model.explanatory_consistency",
-                        book_path,
-                        "Orange Book weakens the owner-review authority boundary",
-                    )
-                for assertion in (
-                    "A favorable optional basis cannot mask a failed, expired, unavailable, missing, or mismatched mandatory basis, context, trust component, or composition edge.",
-                    "D-005 remains proposed, so these files are not the stable public claim format and do not authorize future syntax or assurance behavior.",
-                ):
-                    if assertion not in normalized_chapter:
-                        self.add(
-                            "assurance_model.explanatory_consistency",
-                            book_path,
-                            f"Orange Book weakens or prematurely ratifies the proposed claim model: {assertion}",
-                        )
 
     def _validate_decision_laboratory(self, laboratory: str) -> None:
         specification = DECISION_LABORATORY_SPECS[laboratory]
-        observed_prefix = specification.get("finding_prefix")
-        finding_prefix = (
-            observed_prefix
-            if isinstance(observed_prefix, str) and observed_prefix
-            else "decision_laboratory"
-        )
+        observed_prefix = specification.get('finding_prefix')
+        finding_prefix = observed_prefix if isinstance(observed_prefix, str) and observed_prefix else 'decision_laboratory'
 
         def fail(suffix: str, path: str | Path, message: str) -> None:
-            self.add(f"{finding_prefix}.{suffix}", path, message)
-
+            self.add(f'{finding_prefix}.{suffix}', path, message)
         spec_errors = decision_laboratory_spec_errors(self.root, specification)
         if spec_errors:
             for message in spec_errors:
-                fail("spec", self.root / "tools/validate_foundation.py", message)
+                fail('spec', self.root / 'tools/validate_foundation.py', message)
             return
-
-        research_root = str(specification["research_root"])
-        observed_inventory = {
-            relative(path, self.root)
-            for path in self.repository_files
-            if relative(path, self.root).startswith(research_root)
-        }
-        expected_inventory = specification["inventory"]
+        research_root = str(specification['research_root'])
+        observed_inventory = {relative(path, self.root) for path in self.repository_files if relative(path, self.root).startswith(research_root)}
+        expected_inventory = specification['inventory']
         if observed_inventory != expected_inventory:
-            fail(
-                "research_inventory",
-                self.root / research_root,
-                "decision-laboratory research paths must retain their exact reviewed inventory; "
-                f"missing={sorted(expected_inventory - observed_inventory)}, "
-                f"unexpected={sorted(observed_inventory - expected_inventory)}",
-            )
-
-        scan_root, premature_pattern, premature_code = specification["premature"]
+            fail('research_inventory', self.root / research_root, f'decision-laboratory research paths must retain their exact reviewed inventory; missing={sorted(expected_inventory - observed_inventory)}, unexpected={sorted(observed_inventory - expected_inventory)}')
+        scan_root, premature_pattern, premature_code = specification['premature']
         pattern = re.compile(str(premature_pattern))
         for path in self.repository_files:
             value = relative(path, self.root)
-            if value.startswith(str(scan_root)) and pattern.search(
-                value[len(str(scan_root)) :].lower()
-            ):
-                fail(
-                    str(premature_code),
-                    path,
-                    "input-only decision research cannot contain premature execution, "
-                    "result, replay, review, epoch, or decision artifacts",
-                )
-
+            if value.startswith(str(scan_root)) and pattern.search(value[len(str(scan_root)):].lower()):
+                fail(str(premature_code), path, 'input-only decision research cannot contain premature execution, result, replay, review, epoch, or decision artifacts')
         declared_bindings: set[tuple[str, str]] = set()
         identity_closure_valid = True
 
         def collect_declared_bindings(value: Any, base: PurePosixPath) -> None:
             if isinstance(value, dict):
-                path = value.get("path")
-                digest = value.get("sha256")
+                path = value.get('path')
+                digest = value.get('sha256')
                 if isinstance(path, str) and isinstance(digest, str):
                     declared_bindings.add((path, digest))
-                fixture = value.get("fixture")
+                fixture = value.get('fixture')
                 if isinstance(fixture, str) and isinstance(digest, str):
                     declared_bindings.add(((base / fixture).as_posix(), digest))
-                comparison = value.get("comparison_base")
-                comparison_digest = value.get("comparison_base_sha256")
+                comparison = value.get('comparison_base')
+                comparison_digest = value.get('comparison_base_sha256')
                 if isinstance(comparison, str) and isinstance(comparison_digest, str):
-                    declared_bindings.add(
-                        ((base / comparison).as_posix(), comparison_digest)
-                    )
+                    declared_bindings.add(((base / comparison).as_posix(), comparison_digest))
                 for item in value.values():
                     collect_declared_bindings(item, base)
             elif isinstance(value, list):
                 for item in value:
                     collect_declared_bindings(item, base)
-
-        for (
-            value,
-            label,
-            missing_code,
-            canonical_identity,
-            raw_identity,
-            canonical_transport,
-        ) in specification["json_identities"]:
+        for value, label, missing_code, canonical_identity, raw_identity, canonical_transport in specification['json_identities']:
             path = self.root / str(value)
             if not self._hf(path):
-                fail(str(missing_code), path, "reviewed decision-laboratory JSON is missing")
+                fail(str(missing_code), path, 'reviewed decision-laboratory JSON is missing')
                 identity_closure_valid = False
                 continue
             try:
                 document = self._load_repository_json(path)
             except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError, TypeError) as exc:
-                fail(f"{label}parse", path, f"cannot strictly parse reviewed JSON: {exc}")
+                fail(f'{label}parse', path, f'cannot strictly parse reviewed JSON: {exc}')
                 identity_closure_valid = False
                 continue
             raw = self._read_repository_bytes(path)
             if raw is None:
-                fail(f"{label}parse", path, _BF)
+                fail(f'{label}parse', path, _BF)
                 identity_closure_valid = False
                 continue
             try:
                 canonical = canonical_json_bytes(document)
             except (TypeError, ValueError) as exc:
-                fail(
-                    f"{label}canonical",
-                    path,
-                    f"reviewed JSON is outside the canonical I-JSON profile: {exc}",
-                )
+                fail(f'{label}canonical', path, f'reviewed JSON is outside the canonical I-JSON profile: {exc}')
                 identity_closure_valid = False
                 continue
-            exact_terminal_lf = raw.endswith(b"\n") and not raw.endswith(b"\n\n")
-            if (canonical_transport and raw != canonical + b"\n") or (
-                not canonical_transport and not exact_terminal_lf
-            ):
-                fail(
-                    f"{label}canonical",
-                    path,
-                    "reviewed JSON transport must retain its exact encoding and one terminal LF",
-                )
-            if (
-                hashlib.sha256(canonical).hexdigest() != canonical_identity
-                or hashlib.sha256(raw).hexdigest() != raw_identity
-            ):
-                fail(
-                    f"{label}digest",
-                    path,
-                    "reviewed canonical or raw SHA-256 identity drifted",
-                )
+            exact_terminal_lf = raw.endswith(b'\n') and (not raw.endswith(b'\n\n'))
+            if canonical_transport and raw != canonical + b'\n' or (not canonical_transport and (not exact_terminal_lf)):
+                fail(f'{label}canonical', path, 'reviewed JSON transport must retain its exact encoding and one terminal LF')
+            if hashlib.sha256(canonical).hexdigest() != canonical_identity or hashlib.sha256(raw).hexdigest() != raw_identity:
+                fail(f'{label}digest', path, 'reviewed canonical or raw SHA-256 identity drifted')
                 identity_closure_valid = False
             else:
                 collect_declared_bindings(document, PurePosixPath(str(value)).parent)
-
-        if identity_closure_valid and declared_bindings != set(
-            specification["raw_bindings"]
-        ):
-            fail(
-                "binding_inventory",
-                self.root / research_root,
-                "raw binding rows must exactly cover every path and SHA-256 identity "
-                "declared by the reviewed decision-laboratory JSON",
-            )
-
-        for value, expected_digest in specification["raw_bindings"]:
+        if identity_closure_valid and declared_bindings != set(specification['raw_bindings']):
+            fail('binding_inventory', self.root / research_root, 'raw binding rows must exactly cover every path and SHA-256 identity declared by the reviewed decision-laboratory JSON')
+        for value, expected_digest in specification['raw_bindings']:
             path = self.root / str(value)
             raw = self._read_repository_bytes(path)
             if raw is None or hashlib.sha256(raw).hexdigest() != expected_digest:
-                fail(
-                    "input_digest",
-                    path,
-                    "externally bound decision-laboratory input disagrees with its reviewed raw SHA-256 identity",
-                )
-
-        compatibility = specification["schema_compatibility"]
+                fail('input_digest', path, 'externally bound decision-laboratory input disagrees with its reviewed raw SHA-256 identity')
+        compatibility = specification['schema_compatibility']
         if compatibility is not None:
             schema_value, input_root_value, fixture_names = compatibility
             schema_path = self.root / str(schema_value)
             try:
                 schema = self._load_repository_json(schema_path)
             except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError, TypeError) as exc:
-                fail("legacy_schema", schema_path, f"cannot parse fixed historical schema: {exc}")
+                fail('legacy_schema', schema_path, f'cannot parse fixed historical schema: {exc}')
                 return
-            schema_identifier = schema.get("$id") if isinstance(schema, dict) else None
+            schema_identifier = schema.get('$id') if isinstance(schema, dict) else None
             if not isinstance(schema_identifier, str):
-                fail(
-                    "legacy_schema",
-                    schema_path,
-                    "fixed historical schema must remain an identified JSON object",
-                )
+                fail('legacy_schema', schema_path, 'fixed historical schema must remain an identified JSON object')
                 return
             for name in fixture_names:
                 fixture_path = self.root / str(input_root_value) / str(name)
                 try:
                     fixture = self._load_repository_json(fixture_path)
-                except (
-                    DuplicateKeyError,
-                    OSError,
-                    UnicodeDecodeError,
-                    ValueError,
-                    TypeError,
-                ) as exc:
-                    fail(
-                        "legacy_fixture_parse",
-                        fixture_path,
-                        f"cannot parse fixed historical mutation fixture: {exc}",
-                    )
+                except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError, TypeError) as exc:
+                    fail('legacy_fixture_parse', fixture_path, f'cannot parse fixed historical mutation fixture: {exc}')
                     continue
-                issues = validate_schema_instance(
-                    fixture,
-                    schema,
-                    schema_path,
-                    {schema_path: schema},
-                    {schema_identifier: (schema_path, schema)},
-                )
-                issues.extend(
-                    validate_cross_record_invariants(fixture, schema_path.name)
-                )
+                issues = validate_schema_instance(fixture, schema, schema_path, {schema_path: schema}, {schema_identifier: (schema_path, schema)})
+                issues.extend(validate_cross_record_invariants(fixture, schema_path.name))
                 if issues:
-                    fail(
-                        "legacy_acceptance",
-                        fixture_path,
-                        "fixed historical mutation must remain accepted by the "
-                        "historical schema and second-pass validator",
-                    )
+                    fail('legacy_acceptance', fixture_path, 'fixed historical mutation must remain accepted by the historical schema and second-pass validator')
 
     def _validate_d004_draft_packet(self) -> None:
         self._validate_decision_laboratory("d004")
@@ -6407,8 +4838,8 @@ class FoundationValidator:
         self._validate_decision_laboratory("d006")
 
     def _validate_d009_draft_packet(self) -> None:
-        self._validate_decision_laboratory("d009")
-        path = self.root / "research/decisions/D-009/d009-v0.1-draft-packet.json"
+        self._validate_decision_laboratory('d009')
+        path = self.root / 'research/decisions/D-009/d009-v0.1-draft-packet.json'
         if not self._hf(path):
             return
         try:
@@ -6417,22 +4848,11 @@ class FoundationValidator:
             return
         if not isinstance(packet, dict):
             return
-        if (
-            packet.get("atomic_outcomes") != list(_ATOMIC_OUTCOMES)
-            or packet.get("atomic_outcome_meanings") != _ATOMIC_OUTCOME_MEANINGS
-            or packet.get("hard_gate_states") != list(_HARD_GATE_STATES)
-            or packet.get("hard_gate_state_precedence")
-            != list(_HARD_GATE_STATE_PRECEDENCE)
-        ):
-            self.add(
-                "d009_packet.decision_vocabulary",
-                path,
-                "packet must retain the exact D-005 atomic outcome meanings and the "
-                "unsupported/fail/unresolved/pass hard-gate first-match precedence",
-            )
+        if packet.get('atomic_outcomes') != list(_ATOMIC_OUTCOMES) or packet.get('atomic_outcome_meanings') != _ATOMIC_OUTCOME_MEANINGS or packet.get('hard_gate_states') != list(_HARD_GATE_STATES) or (packet.get('hard_gate_state_precedence') != list(_HARD_GATE_STATE_PRECEDENCE)):
+            self.add('d009_packet.decision_vocabulary', path, 'packet must retain the exact D-005 atomic outcome meanings and the unsupported/fail/unresolved/pass hard-gate first-match precedence')
 
     def _validate_d010_draft_packet(self) -> None:
-        self._validate_decision_laboratory("d010")
+        self._validate_decision_laboratory('d010')
         packet_path = self.root / _D010_PACKET
         index_path = self.root / _D010_INDEX
         try:
@@ -6442,166 +4862,84 @@ class FoundationValidator:
             return
         if not isinstance(packet, dict) or not isinstance(index, dict):
             return
+
         def values(document: dict[str, Any], keys: Sequence[str]) -> tuple[Any, ...]:
-            return tuple(document.get(key) for key in keys)
-
-        expected_candidates = _DECISION_SUITE_SPECS["d010"][4]
-        candidate_ids = tuple(row[0] for row in expected_candidates)
-        case_ids = tuple(f"CC-{value:02d}" for value in range(1, 9))
-        candidates = packet.get("candidates")
-        candidate_states = packet.get("candidate_states")
-        if (
-            not isinstance(candidates, list)
-            or tuple((row.get("id"), row.get("name")) for row in candidates if isinstance(row, dict)) != expected_candidates
-            or any(not isinstance(row, dict) or set(row) != {"id", "name"} for row in candidates)
-            or not isinstance(candidate_states, list)
-            or candidate_states != [
-                {"adapter_status": "absent", "candidate": candidate, "dependency_admission_status": "absent", "execution_status": "not_performed", "implementation_status": "absent"}
-                for candidate in candidate_ids
-            ]
-            or packet.get("cases") != list(case_ids)
-            or packet.get("metrics") != [f"M-{value:02d}" for value in range(1, 20)]
-            or packet.get("comparative_axes") != [f"AX-{value:02d}" for value in range(1, 10)]
-            or packet.get("owner_scopes") != [f"CR-{value:02d}" for value in range(1, 12)]
-        ):
-            self.add("d010_packet.inventory", packet_path, "D-010 inventory drifted")
-        if values(packet, ("atomic_outcomes", "atomic_outcome_meanings", "hard_gate_states", "hard_gate_state_precedence", "hard_gate_count")) != (list(_ATOMIC_OUTCOMES), _ATOMIC_OUTCOME_MEANINGS, list(_HARD_GATE_STATES), list(_HARD_GATE_STATE_PRECEDENCE), 8):
-            self.add("d010_packet.decision_vocabulary", packet_path, "decision vocabulary drifted")
-        if packet.get("dependency_acceptance") != {decision: False for decision in ("D-003", "D-004", "D-005", "D-006", "D-009")}:
-            self.add("d010_packet.dependencies", packet_path, "prerequisite state drifted")
-        zero_keys = "schema_version suite_version status epoch epoch_status physical_execution_order selection conclusion owner_protocol_review independent_review_status execution".split()
-        zero_values = ("d010-pre-epoch-packet-v0.1", "d010-v0.1-draft", "draft_unfrozen", None, "unfrozen", None, None, None, "none", "unavailable", {"complete_candidates": 0, "complete_cross_candidate_cases": 0, "completed_candidate_cases": 0, "evidence_status": "none", "required_candidate_cases": 40})
+            return tuple((document.get(key) for key in keys))
+        expected_candidates = _DECISION_SUITE_SPECS['d010'][4]
+        candidate_ids = tuple((row[0] for row in expected_candidates))
+        case_ids = tuple((f'CC-{value:02d}' for value in range(1, 9)))
+        candidates = packet.get('candidates')
+        candidate_states = packet.get('candidate_states')
+        if not isinstance(candidates, list) or tuple(((row.get('id'), row.get('name')) for row in candidates if isinstance(row, dict))) != expected_candidates or any((not isinstance(row, dict) or set(row) != {'id', 'name'} for row in candidates)) or (not isinstance(candidate_states, list)) or (candidate_states != [{'adapter_status': 'absent', 'candidate': candidate, 'dependency_admission_status': 'absent', 'execution_status': 'not_performed', 'implementation_status': 'absent'} for candidate in candidate_ids]) or (packet.get('cases') != list(case_ids)) or (packet.get('metrics') != [f'M-{value:02d}' for value in range(1, 20)]) or (packet.get('comparative_axes') != [f'AX-{value:02d}' for value in range(1, 10)]) or (packet.get('owner_scopes') != [f'CR-{value:02d}' for value in range(1, 12)]):
+            self.add('d010_packet.inventory', packet_path, 'D-010 inventory drifted')
+        if values(packet, ('atomic_outcomes', 'atomic_outcome_meanings', 'hard_gate_states', 'hard_gate_state_precedence', 'hard_gate_count')) != (list(_ATOMIC_OUTCOMES), _ATOMIC_OUTCOME_MEANINGS, list(_HARD_GATE_STATES), list(_HARD_GATE_STATE_PRECEDENCE), 8):
+            self.add('d010_packet.decision_vocabulary', packet_path, 'decision vocabulary drifted')
+        if packet.get('dependency_acceptance') != {decision: False for decision in ('D-003', 'D-004', 'D-005', 'D-006', 'D-009')}:
+            self.add('d010_packet.dependencies', packet_path, 'prerequisite state drifted')
+        zero_keys = 'schema_version suite_version status epoch epoch_status physical_execution_order selection conclusion owner_protocol_review independent_review_status execution'.split()
+        zero_values = ('d010-pre-epoch-packet-v0.1', 'd010-v0.1-draft', 'draft_unfrozen', None, 'unfrozen', None, None, None, 'none', 'unavailable', {'complete_candidates': 0, 'complete_cross_candidate_cases': 0, 'completed_candidate_cases': 0, 'evidence_status': 'none', 'required_candidate_cases': 40})
         if values(packet, zero_keys) != zero_values:
-            self.add("d010_packet.zero_baseline", packet_path, "0/40 baseline drifted")
-        resources = dict.fromkeys("case_output_bytes case_peak_memory_bytes case_temp_storage_bytes case_wall_seconds".split())
-        resources.update(dict.fromkeys("contract_status host_matrix_status timeout_semantics_status".split(), "unassigned_freeze_blocker"))
-        if packet.get("execution_resource_state") != resources:
-            self.add("d010_packet.resource_state", packet_path, "resource state drifted")
-        expected_bindings = {
-            "case_input_index": {"path": _D010_INDEX, "sha256": _D010_INDEX_RAW_SHA256},
-            "compiler_strategy_suite": {"path": _D010_SUITE, "sha256": _D010_SUITE_RAW_SHA256},
-        }
-        if packet.get("case_input_index_sha256") != _D010_INDEX_CANONICAL_SHA256 or packet.get("input_bindings") != expected_bindings:
-            self.add("d010_packet.input_bindings", packet_path, "input binding drifted")
-        expected_rows = [
-            {"candidate_mapping_status": "absent", "case": case, "coverage_status": "unresolved", "executable_fixture_count": 0, "freeze_blocker": True, "shared_inputs_status": "absent"}
-            for case in case_ids
-        ]
-        index_keys = "case_inputs schema_version suite_version status evidence_status executable_inputs_status owner_protocol_review".split()
-        if values(index, index_keys) != (expected_rows, "d010-pre-epoch-case-input-index-v0.1", "d010-v0.1-draft", "draft_unreviewed", "none", "absent", "none"):
-            self.add("d010_packet.index_contract", index_path, "index zero-state drifted")
-        observed_ids = tuple(row.get("id") for row in candidates if isinstance(row, dict)) if isinstance(candidates, list) else ()
-        observed_cases = tuple(packet["cases"]) if isinstance(packet.get("cases"), list) else ()
-        if tuple((case, candidate) for case in observed_cases for candidate in observed_ids) != tuple((case, candidate) for case in case_ids for candidate in candidate_ids):
-            self.add("d010_packet.identity_order", packet_path, "identity order drifted")
+            self.add('d010_packet.zero_baseline', packet_path, '0/40 baseline drifted')
+        resources = dict.fromkeys('case_output_bytes case_peak_memory_bytes case_temp_storage_bytes case_wall_seconds'.split())
+        resources.update(dict.fromkeys('contract_status host_matrix_status timeout_semantics_status'.split(), 'unassigned_freeze_blocker'))
+        if packet.get('execution_resource_state') != resources:
+            self.add('d010_packet.resource_state', packet_path, 'resource state drifted')
+        expected_bindings = {'case_input_index': {'path': _D010_INDEX, 'sha256': _D010_INDEX_RAW_SHA256}, 'compiler_strategy_suite': {'path': _D010_SUITE, 'sha256': _D010_SUITE_RAW_SHA256}}
+        if packet.get('case_input_index_sha256') != _D010_INDEX_CANONICAL_SHA256 or packet.get('input_bindings') != expected_bindings:
+            self.add('d010_packet.input_bindings', packet_path, 'input binding drifted')
+        expected_rows = [{'candidate_mapping_status': 'absent', 'case': case, 'coverage_status': 'unresolved', 'executable_fixture_count': 0, 'freeze_blocker': True, 'shared_inputs_status': 'absent'} for case in case_ids]
+        index_keys = 'case_inputs schema_version suite_version status evidence_status executable_inputs_status owner_protocol_review'.split()
+        if values(index, index_keys) != (expected_rows, 'd010-pre-epoch-case-input-index-v0.1', 'd010-v0.1-draft', 'draft_unreviewed', 'none', 'absent', 'none'):
+            self.add('d010_packet.index_contract', index_path, 'index zero-state drifted')
+        observed_ids = tuple((row.get('id') for row in candidates if isinstance(row, dict))) if isinstance(candidates, list) else ()
+        observed_cases = tuple(packet['cases']) if isinstance(packet.get('cases'), list) else ()
+        if tuple(((case, candidate) for case in observed_cases for candidate in observed_ids)) != tuple(((case, candidate) for case in case_ids for candidate in candidate_ids)):
+            self.add('d010_packet.identity_order', packet_path, 'identity order drifted')
 
-    def _validated_semantic_bindings(
-        self, laboratory: str
-    ) -> dict[str, dict[str, Any]] | None:
+    def _validated_semantic_bindings(self, laboratory: str) -> dict[str, dict[str, Any]] | None:
         packet_value, binding_code, binding_specs = _SEMANTIC_BINDING_SPECS[laboratory]
         packet_path = self.root / packet_value
-        identity = next(
-            (
-                row
-                for row in DECISION_LABORATORY_SPECS[laboratory]["json_identities"]
-                if row[0] == packet_value
-            ),
-            None,
-        )
+        identity = next((row for row in DECISION_LABORATORY_SPECS[laboratory]['json_identities'] if row[0] == packet_value), None)
         raw = self._read_repository_bytes(packet_path)
         try:
             packet = _load_json_bytes(raw) if raw is not None else None
             canonical = canonical_json_bytes(packet)
         except (DuplicateKeyError, RecursionError, TypeError, ValueError):
             packet = None
-            canonical = b""
-        if (
-            identity is None
-            or raw is None
-            or not isinstance(packet, dict)
-            or raw != canonical + b"\n"
-            or hashlib.sha256(canonical).hexdigest() != identity[3]
-            or hashlib.sha256(raw).hexdigest() != identity[4]
-        ):
-            self.add(
-                binding_code,
-                packet_path,
-                "semantic packet identity drifted",
-            )
+            canonical = b''
+        if identity is None or raw is None or (not isinstance(packet, dict)) or (raw != canonical + b'\n') or (hashlib.sha256(canonical).hexdigest() != identity[3]) or (hashlib.sha256(raw).hexdigest() != identity[4]):
+            self.add(binding_code, packet_path, 'semantic packet identity drifted')
             return None
-
-        bindings = packet.get("semantic_bindings")
+        bindings = packet.get('semantic_bindings')
         if not isinstance(bindings, dict) or set(bindings) != set(binding_specs):
-            self.add(
-                binding_code,
-                packet_path,
-                "semantic-binding inventory drifted",
-            )
+            self.add(binding_code, packet_path, 'semantic-binding inventory drifted')
             return None
         for identifier, specification in binding_specs.items():
             path, scope, start_heading, end_heading = specification
             binding = bindings.get(identifier)
-            if (
-                not isinstance(binding, dict)
-                or set(binding) != _SEMANTIC_BINDING_FIELDS
-                or (
-                    binding.get("path"),
-                    binding.get("scope"),
-                    binding.get("section_start_heading"),
-                    binding.get("section_end_heading"),
-                    binding.get("normalization"),
-                )
-                != (
-                    path,
-                    scope,
-                    start_heading,
-                    end_heading,
-                    _SEMANTIC_NORMALIZATION,
-                )
-                or not isinstance(binding.get("normalized_sha256"), str)
-                or re.fullmatch(r"[0-9a-f]{64}", binding["normalized_sha256"])
-                is None
-            ):
-                self.add(
-                    binding_code,
-                    packet_path,
-                    f"semantic selector drifted: {identifier}",
-                )
+            if not isinstance(binding, dict) or set(binding) != _SEMANTIC_BINDING_FIELDS or (binding.get('path'), binding.get('scope'), binding.get('section_start_heading'), binding.get('section_end_heading'), binding.get('normalization')) != (path, scope, start_heading, end_heading, _SEMANTIC_NORMALIZATION) or (not isinstance(binding.get('normalized_sha256'), str)) or (re.fullmatch('[0-9a-f]{64}', binding['normalized_sha256']) is None):
+                self.add(binding_code, packet_path, f'semantic selector drifted: {identifier}')
                 return None
         return bindings
 
-    def _validate_semantic_documents(
-        self, laboratory: str, bindings: dict[str, dict[str, Any]]
-    ) -> None:
+    def _validate_semantic_documents(self, laboratory: str, bindings: dict[str, dict[str, Any]]) -> None:
         for identifier, specification in _SEMANTIC_BINDING_SPECS[laboratory][2].items():
             path_value, _, _, _ = specification
-            suffix = "register_semantics" if identifier.startswith("decision_") else "roadmap_closure" if identifier.startswith("roadmap_") else "semantic_closure" if identifier.endswith("_suite") else "cross_document_semantics"
-            finding_code = f"{laboratory}_suite.{suffix}"
+            suffix = 'register_semantics' if identifier.startswith('decision_') else 'roadmap_closure' if identifier.startswith('roadmap_') else 'semantic_closure' if identifier.endswith('_suite') else 'cross_document_semantics'
+            finding_code = f'{laboratory}_suite.{suffix}'
             binding = bindings[identifier]
             path = self.root / path_value
             source = self._rt(path)
             if source is None:
-                self.add(finding_code, path, "bound subject is unreadable")
+                self.add(finding_code, path, 'bound subject is unreadable')
                 continue
             try:
-                normalized = normalized_markdown_semantic_subject(
-                    source,
-                    scope=binding["scope"],
-                    section_start_heading=binding["section_start_heading"],
-                    section_end_heading=binding["section_end_heading"],
-                )
+                normalized = normalized_markdown_semantic_subject(source, scope=binding['scope'], section_start_heading=binding['section_start_heading'], section_end_heading=binding['section_end_heading'])
             except ValueError as exc:
-                self.add(finding_code, path, f"selector error: {exc}")
+                self.add(finding_code, path, f'selector error: {exc}')
                 continue
-            if (
-                hashlib.sha256(normalized.encode()).hexdigest()
-                != binding["normalized_sha256"]
-            ):
-                self.add(
-                    finding_code,
-                    path,
-                    "semantic digest drifted",
-                )
+            if hashlib.sha256(normalized.encode()).hexdigest() != binding['normalized_sha256']:
+                self.add(finding_code, path, 'semantic digest drifted')
 
     def _validate_decision_suite(self, laboratory: str) -> None:
         bindings = self._validated_semantic_bindings(laboratory)
@@ -6665,18 +5003,8 @@ class FoundationValidator:
 
     def _validate_change_records(self) -> None:
         specifications = (
-            (
-                self.root / "docs/governance/oeps",
-                "OEP",
-                {"Draft", "Review", "Provisional", "Accepted", "Rejected", "Withdrawn", "Superseded"},
-                {"Standards", "Process", "Informational", "Emergency"},
-            ),
-            (
-                self.root / "docs/governance/adrs",
-                "ADR",
-                {"Proposed", "Accepted", "Rejected", "Superseded"},
-                None,
-            ),
+            (self.root / "docs/governance/oeps", "OEP", {"Draft", "Review", "Provisional", "Accepted", "Rejected", "Withdrawn", "Superseded"}, {"Standards", "Process", "Informational", "Emergency"}),
+            (self.root / "docs/governance/adrs", "ADR", {"Proposed", "Accepted", "Rejected", "Superseded"}, None),
         )
         for directory, prefix, statuses, types in specifications:
             seen: set[str] = set()
@@ -6719,35 +5047,9 @@ class FoundationValidator:
                     self.add("record.type", path, f"invalid {prefix} type {metadata.get('type')!r}")
                 required_keys = {"number", "title", "status"}
                 if prefix == "OEP":
-                    required_keys |= {
-                        "approval-records",
-                        "authors",
-                        "champion",
-                        "created",
-                        "decision-date",
-                        "decision-revision",
-                        "discussion",
-                        "related-adrs",
-                        "related-decisions",
-                        "requires",
-                        "review-authorities",
-                        "superseded-by",
-                        "supersedes",
-                        "type",
-                        "updated",
-                    }
+                    required_keys |= {"approval-records", "authors", "champion", "created", "decision-date", "decision-revision", "discussion", "related-adrs", "related-decisions", "requires", "review-authorities", "superseded-by", "supersedes", "type", "updated"}
                 else:
-                    required_keys |= {
-                        "approval-records",
-                        "date",
-                        "decision-revision",
-                        "owners",
-                        "related-decisions",
-                        "related-oeps",
-                        "reviewers",
-                        "superseded-by",
-                        "supersedes",
-                    }
+                    required_keys |= {"approval-records", "date", "decision-revision", "owners", "related-decisions", "related-oeps", "reviewers", "superseded-by", "supersedes"}
                 missing = sorted(required_keys - metadata.keys())
                 if missing:
                     self.add("record.required", path, f"missing metadata keys: {', '.join(missing)}")
@@ -6777,30 +5079,9 @@ class FoundationValidator:
                     self.add("record.date", path, "date must be an exact ISO 8601 calendar date")
                 if not is_template:
                     required_headings = (
-                        (
-                            "Abstract",
-                            "Motivation",
-                            "Scope and non-goals",
-                            "Specification",
-                            "Alternatives",
-                            "Compatibility and migration",
-                            "Semantic and claim effects",
-                            "TCB, axiom, and proof effects",
-                            "Threat, abuse, and leakage effects",
-                            "Conformance, tests, and evidence",
-                            "Unresolved questions",
-                            "Decision record",
-                        )
+                        ("Abstract", "Motivation", "Scope and non-goals", "Specification", "Alternatives", "Compatibility and migration", "Semantic and claim effects", "TCB, axiom, and proof effects", "Threat, abuse, and leakage effects", "Conformance, tests, and evidence", "Unresolved questions", "Decision record")
                         if prefix == "OEP"
-                        else (
-                            "Context and constraints",
-                            "Options considered",
-                            "Decision",
-                            "Security and assurance impact",
-                            "Consequences and tradeoffs",
-                            "Verification evidence",
-                            "Rollback and revisit triggers",
-                        )
+                        else ("Context and constraints", "Options considered", "Decision", "Security and assurance impact", "Consequences and tradeoffs", "Verification evidence", "Rollback and revisit triggers")
                     )
                     source = markdown_without_fenced_blocks_and_comments(record_source)
                     for heading in required_headings:

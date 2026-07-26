@@ -28,12 +28,28 @@ The frontend checks separate `spec` and `impl` namespaces, accepts only closed
 typed `spec` literals with exact contextual `Int` or `Word[8]`, constructs a
 bounded source-ordered Typed Reference Core, and reference-evaluates it through
 `orangec eval`. The Core is noncanonical and has no proof identity, refinement,
-target, ABI, or leakage meaning. The complete semantic strata in D-004 remain
-unratified, D-003 remains unresolved, and later S3 semantics are incomplete.
+target, ABI, or leakage meaning. D-003 candidate PF-01 is owner-accepted as of
+2026-07-26 but remains formally pending Accepted exact-revision OEP closure.
+The complete semantic strata in D-004 remain unratified, and later S3 semantics
+are incomplete.
 PR #9 merged the S3a implementation and normative records as commit
 `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. That acceptance is scoped
 implementation evidence, not proof of semantic soundness or a stable public
 compatibility promise.
+
+The D-004 input-only laboratory byte-materializes exactly 39 candidate-neutral
+cross-cutting fixture subjects as `materialized_unreviewed`: 14 missing-edge,
+10 identity-substitution, and five each for ambiguity, unsupported behavior,
+and domain exhaustion. The five positive cases and 26 named mutations remain
+definition-only gaps; all five class sufficiency reviews and freeze blockers,
+plus replay repetitions, remain unresolved. D-003 is owner-accepted pending
+exact-revision OEP closure; D-004 owner protocol review is `none`, the D-004
+epoch is unfrozen, and execution remains 0/25 with no mappings, adapters,
+observations, evidence, selection, or conclusion. Canonical parsing, digest
+checks, and structural integrity oracles over opaque suite-only models are not
+candidate executions and establish no Orange semantics, proof, leakage,
+target, cryptographic, or readiness assurance. Orange remains 30% complete by
+binary gate closure.
 
 The D-010 input-only laboratory is planning evidence only. It compares five
 candidate identities across eight zero-fixture cases and remains at 0/40. It
