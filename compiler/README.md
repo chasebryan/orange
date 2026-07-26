@@ -116,6 +116,35 @@ candidate-case runs, no evidence, and no selection. It does not alter compiler
 behavior, ratify a public claim schema, close D-005, or advance the version
 1.0.0 gate count.
 
+## D-006 pre-epoch decision laboratory
+
+The integration tests also contain a standard-library-only, input-only D-006
+laboratory. It strictly parses the draft-unfrozen packet and its seven-row case
+index, binds their canonical identities and the exact raw bytes of the
+unchanged proof-foundation decision suite, and verifies the candidate, case,
+metric, gate, owner-scope, protocol-count, dependency, tool, resource, and
+nonclaim inventories:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
+  --test d006_decision_suite --locked --offline
+```
+
+Every DS-01 through DS-07 row records absent shared inputs and candidate
+mappings, zero executable fixtures, unresolved coverage, and an active freeze
+blocker. The laboratory enumerates the exact 14 Rocq/Lean candidate-case
+identities in memory. That case-major inventory is a canonical serialization,
+not a physical execution order.
+
+D-004 and D-005 acceptance remains absent. Candidate tool versions, dependency
+graphs, D-018 admissions, acquisitions, installations, resources, host and
+timeout policy, adapters, result/replay schema, correction window, materiality
+bands, and owner review remain absent or unassigned. The laboratory launches no
+process, writes no research artifact, freezes no epoch, records 0/14 executions
+and no evidence, and selects or recommends no proof foundation. It authorizes
+no proof-bearing implementation and does not advance the version 1.0.0 gate
+count.
+
 For a local source-install rehearsal, use a fresh private install root:
 
 ```sh
@@ -636,7 +665,9 @@ authority.
 - `crates/orange-compiler/tests/d004_decision_suite.rs`: input-only D-004
   pre-epoch packet, structural-proposal, and balanced-plan checks;
 - `crates/orange-compiler/tests/d005_decision_suite.rs`: draft-only D-005
-  packet, replay-plan, and synthetic adapter-transport checks;
+  packet, transport-identity, and synthetic capture-integrity checks;
+- `crates/orange-compiler/tests/d006_decision_suite.rs`: input-only D-006
+  pre-epoch packet, case-index, and identity-inventory checks;
 - `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
   `lex` behavior;
 - `crates/orangec/tests/s2_conformance.rs`: protected indexed S2 lexical and

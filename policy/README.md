@@ -225,16 +225,23 @@ use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
 likewise exact. It contains the non-product, draft-unfrozen D-004 input packet,
 named-mutation manifest, and unreviewed cross-cutting fixture-proposal manifest
-plus the D-005 execution packet and historical v0.1 negative corpus. The D-004
-proposal manifest defines 39 domain-level structural proposals: 14 missing-edge,
+plus the D-005 execution packet and historical v0.1 negative corpus, and the
+D-006 draft-unfrozen packet and seven-row input-only case index. Every D-006
+case row has zero executable fixtures, unresolved coverage, and an active
+freeze blocker. Its laboratory may verify the closed inputs and enumerate 14
+candidate-case identities in memory, but that inventory is not a physical run
+order and creates no execution, evidence, review, recommendation, or selection.
+The D-004 proposal manifest defines 39 domain-level structural proposals: 14
+missing-edge,
 10 identity-substitution, and five each for ambiguity, unsupported behavior,
 and domain exhaustion. Each class retains zero executable fixtures, unresolved
 coverage, and an active freeze blocker. The manifest contains no candidate
 observation or evidence, verifies no resource ceiling, and does not treat
 candidate-adapter failure as an expected unsupported observation. Replay
 repetition remains unresolved, and the D-004 inventory freezes no evidence
-epoch. Neither inventory contains a candidate result, owner review, accepted
-decision, or release evidence. D-005's protected Rust laboratory may construct
+epoch. None of these input inventories contains a candidate result, owner
+review, accepted decision, or release evidence. D-005's protected Rust
+laboratory may construct
 canonical adapter requests and validate synthetic captured transport envelopes,
 enumerate the exact 192 in-memory transport identities, and bind a closed
 synthetic observation inventory to canonical raw-stream integrity receipts.

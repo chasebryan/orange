@@ -273,6 +273,13 @@ leaves isolation unevaluated, payloads unvalidated, and evidence absent. Missing
 or cross-slot observations fail closed, but no opaque payload comparison,
 candidate result, execution credit, or readiness credit follows.
 
+The D-006 input-only laboratory likewise binds only its draft packet, unchanged
+suite, and seven zero-fixture case blockers, then enumerates 14 in-memory
+candidate-case identities. It admits or installs no proof tool, assigns no
+physical order or execution resources, and leaves D-004/D-005 dependencies,
+result/replay schemas, owner review, selection, and all 14 executions unresolved.
+This preparation is neither S4 evidence nor readiness credit.
+
 ### S5 — Compiler IRs and one output path
 
 Status: pending S3
