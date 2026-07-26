@@ -493,7 +493,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "4e8d2d4fb8e9c9e81758988155dc1a890b1dfbd94992278857973e5fd7b404f6"
+_PHD = "3f45694fb232c0e2f22229d6135cd0442e1d508010cf3ecca9d14265131b8811"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1076,8 +1076,8 @@ DECISION_LABORATORY_SPECS = {
                 "research/decisions/D-009/d009-v0.1-draft-packet.json",
                 "",
                 "parse",
-                "e4b01992905589cf459f0f21d00afc92232736dfeed87571f8d1b93aa4b22598",
-                "7dc35a621a852b0684d198719a3df26d3a404b9e9f8b99173d9900691e7b11e1",
+                "3e2d8efd74f82898759334ef8a0f5b5b4162efc7c867540b1cf2081266f87226",
+                "93632429d758ead243f0931e333d2b00f90b152f7c71c8b8457cac09cb68461c",
                 True,
             ),
             (
@@ -1148,11 +1148,54 @@ _D009_HARD_GATE_STATE_PRECEDENCE = (
     "unresolved",
     "pass",
 )
-_D009_SEMANTIC_DIGESTS = (
-    "e629042056a8dc9dfe6e8553904fdc9d4f32ad767ae5660a2f5fcfacdd29693e",
-    "ea9ef864d5880bbee2f27eca0ecb2b0e43a3fb4f0b7105183d1b0afc817836db",
-    "98b1205923930ce7330b4f14b731c5999671f42457e5bcc857c7bc9d3aca6dc7",
+_D009_SEMANTIC_NORMALIZATION = "markdown-prose-lines-exact-v1"
+_D009_SEMANTIC_BINDING_FIELDS = frozenset(
+    {
+        "normalization",
+        "normalized_sha256",
+        "path",
+        "scope",
+        "section_end_heading",
+        "section_start_heading",
+    }
 )
+_D009_SEMANTIC_BINDING_SPECS = {
+    "decision_register_document": (
+        "docs/DECISIONS.md",
+        "whole_document",
+        None,
+        None,
+        "d009_suite.register_semantics",
+    ),
+    "decision_register_d009": (
+        "docs/DECISIONS.md",
+        "markdown_exact_heading_range",
+        "## D-009 — Solver trust",
+        "## D-010 — Compiler strategy",
+        "d009_suite.register_semantics",
+    ),
+    "roadmap_document": (
+        "docs/ROADMAP.md",
+        "whole_document",
+        None,
+        None,
+        "d009_suite.roadmap_closure",
+    ),
+    "roadmap_s4": (
+        "docs/ROADMAP.md",
+        "markdown_exact_heading_range",
+        "### S4 — Proof and claim boundary",
+        "### S5 — Compiler IRs and one output path",
+        "d009_suite.roadmap_closure",
+    ),
+    "solver_trust_suite": (
+        "docs/SOLVER_TRUST_DECISION_SUITE.md",
+        "whole_document",
+        None,
+        None,
+        "d009_suite.semantic_closure",
+    ),
+}
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
@@ -6327,7 +6370,116 @@ class FoundationValidator:
                 "unsupported/fail/unresolved/pass hard-gate first-match precedence",
             )
 
+    def _validated_d009_semantic_bindings(self) -> dict[str, dict[str, Any]] | None:
+        packet_value = "research/decisions/D-009/d009-v0.1-draft-packet.json"
+        packet_path = self.root / packet_value
+        identity = next(
+            (
+                row
+                for row in DECISION_LABORATORY_SPECS["d009"]["json_identities"]
+                if row[0] == packet_value
+            ),
+            None,
+        )
+        raw = self._read_repository_bytes(packet_path)
+        try:
+            packet = _load_json_bytes(raw) if raw is not None else None
+            canonical = canonical_json_bytes(packet)
+        except (DuplicateKeyError, RecursionError, TypeError, ValueError):
+            packet = None
+            canonical = b""
+        if (
+            identity is None
+            or raw is None
+            or not isinstance(packet, dict)
+            or raw != canonical + b"\n"
+            or hashlib.sha256(canonical).hexdigest() != identity[3]
+            or hashlib.sha256(raw).hexdigest() != identity[4]
+        ):
+            self.add(
+                "d009_suite.semantic_binding",
+                packet_path,
+                "semantic expectations require the exact frozen canonical D-009 packet",
+            )
+            return None
+
+        bindings = packet.get("semantic_bindings")
+        if not isinstance(bindings, dict) or set(bindings) != set(
+            _D009_SEMANTIC_BINDING_SPECS
+        ):
+            self.add(
+                "d009_suite.semantic_binding",
+                packet_path,
+                "packet must contain the exact closed D-009 semantic-binding inventory",
+            )
+            return None
+        for identifier, specification in _D009_SEMANTIC_BINDING_SPECS.items():
+            path, scope, start_heading, end_heading, _ = specification
+            binding = bindings.get(identifier)
+            if (
+                not isinstance(binding, dict)
+                or set(binding) != _D009_SEMANTIC_BINDING_FIELDS
+                or (
+                    binding.get("path"),
+                    binding.get("scope"),
+                    binding.get("section_start_heading"),
+                    binding.get("section_end_heading"),
+                    binding.get("normalization"),
+                )
+                != (
+                    path,
+                    scope,
+                    start_heading,
+                    end_heading,
+                    _D009_SEMANTIC_NORMALIZATION,
+                )
+                or not isinstance(binding.get("normalized_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", binding["normalized_sha256"])
+                is None
+            ):
+                self.add(
+                    "d009_suite.semantic_binding",
+                    packet_path,
+                    f"{identifier} must retain its exact closed selector and normalized identity",
+                )
+                return None
+        return bindings
+
+    def _validate_d009_semantic_documents(
+        self, bindings: dict[str, dict[str, Any]]
+    ) -> None:
+        for identifier, specification in _D009_SEMANTIC_BINDING_SPECS.items():
+            path_value, _, _, _, finding_code = specification
+            binding = bindings[identifier]
+            path = self.root / path_value
+            source = self._rt(path)
+            if source is None:
+                self.add(finding_code, path, "packet-bound semantic subject is unreadable")
+                continue
+            try:
+                normalized = normalized_markdown_semantic_subject(
+                    source,
+                    scope=binding["scope"],
+                    section_start_heading=binding["section_start_heading"],
+                    section_end_heading=binding["section_end_heading"],
+                )
+            except ValueError as exc:
+                self.add(finding_code, path, f"invalid packet-bound selector: {exc}")
+                continue
+            if (
+                hashlib.sha256(normalized.encode()).hexdigest()
+                != binding["normalized_sha256"]
+            ):
+                self.add(
+                    finding_code,
+                    path,
+                    "normalized semantics disagree with the exact frozen D-009 packet binding",
+                )
+
     def _validate_solver_trust_suite(self) -> None:
+        semantic_bindings = self._validated_d009_semantic_bindings()
+        if semantic_bindings is not None:
+            self._validate_d009_semantic_documents(semantic_bindings)
         path = self.root / "docs/SOLVER_TRUST_DECISION_SUITE.md"
         if not self._hf(path):
             return
@@ -6336,12 +6488,6 @@ class FoundationValidator:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
         normalized = re.sub(r"\s+", " ", text)
-        if hashlib.sha256(normalized.encode()).hexdigest() != _D009_SEMANTIC_DIGESTS[0]:
-            self.add(
-                "d009_suite.semantic_closure",
-                path,
-                "normalized D-009 suite semantics must remain exact across artifact reseals",
-            )
         header = text.partition("## Solo-mode disposition")[0]
         statuses = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
         versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
@@ -6464,54 +6610,6 @@ class FoundationValidator:
                 path,
                 "suite must contain exactly one canonical current-execution baseline",
             )
-
-        decisions_path = self.root / "docs/DECISIONS.md"
-        if self._hf(decisions_path):
-            decisions_source = self._rt(decisions_path)
-            if decisions_source is not None:
-                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
-                d009 = markdown_section(decisions_text, "## D-009", heading_level=2, prefix=True)
-                normalized_d009 = re.sub(r"\s+", " ", d009)
-                accepted_oep_binding = (
-                    "An Accepted Orange Enhancement Proposal must then bind that policy "
-                    "to the exact fully validated Git revision."
-                )
-                remaining_oep_text = normalized_d009.replace(accepted_oep_binding, "", 1)
-                if (
-                    normalized_d009.count(accepted_oep_binding) != 1
-                    or re.search(
-                        r"\b(?:Orange Enhancement Proposals?|OEPs?)\b",
-                        remaining_oep_text,
-                    )
-                ):
-                    self.add(
-                        "d009_suite.register_closure_authority",
-                        decisions_path,
-                        "D-009 must name exactly one closure proposal: the exact Accepted "
-                        "OEP binding, with no competing proposal authority",
-                    )
-                if hashlib.sha256(normalized_d009.encode()).hexdigest() != _D009_SEMANTIC_DIGESTS[1]:
-                    self.add(
-                        "d009_suite.register_semantics",
-                        decisions_path,
-                        "normalized D-009 register semantics must remain exact",
-                    )
-        roadmap_path = self.root / "docs/ROADMAP.md"
-        if self._hf(roadmap_path):
-            roadmap_source = self._rt(roadmap_path)
-            if roadmap_source is not None:
-                roadmap_text = markdown_without_fenced_blocks_and_comments(roadmap_source)
-                s4 = re.sub(
-                    r"\s+",
-                    " ",
-                    markdown_section(roadmap_text, "### S4", heading_level=3, prefix=True),
-                )
-                if hashlib.sha256(s4.encode()).hexdigest() != _D009_SEMANTIC_DIGESTS[2]:
-                    self.add(
-                        "d009_suite.roadmap_closure",
-                        roadmap_path,
-                        "normalized S4 proof/claim boundary semantics must remain exact",
-                    )
 
     def _validate_change_records(self) -> None:
         specifications = (
@@ -7272,6 +7370,45 @@ def markdown_section(
     next_heading = re.search(rf"(?m)^#{{1,{heading_level}}}\s+", text[match.end() :])
     end = match.end() + next_heading.start() if next_heading is not None else len(text)
     return text[match.end() : end]
+
+
+def normalized_markdown_semantic_subject(
+    text: str,
+    *,
+    scope: str,
+    section_start_heading: str | None,
+    section_end_heading: str | None,
+) -> str:
+    prose = markdown_without_fenced_blocks_and_comments(text)
+    lines = prose.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if scope == "whole_document":
+        if section_start_heading is not None or section_end_heading is not None:
+            raise ValueError("whole-document binding cannot carry a section selector")
+        subject_lines = lines
+    elif scope == "markdown_exact_heading_range" and isinstance(
+        section_start_heading, str
+    ) and isinstance(section_end_heading, str):
+        start_indexes = [
+            index for index, line in enumerate(lines) if line == section_start_heading
+        ]
+        end_indexes = [
+            index for index, line in enumerate(lines) if line == section_end_heading
+        ]
+        if len(start_indexes) != 1:
+            raise ValueError("range start heading must occur exactly once")
+        if len(end_indexes) != 1:
+            raise ValueError("range end heading must occur exactly once")
+        start, end = start_indexes[0], end_indexes[0]
+        if start >= end:
+            raise ValueError("range headings must occur in start-before-end order")
+        subject_lines = lines[start:end]
+    else:
+        raise ValueError("unknown or incomplete Markdown semantic-binding selector")
+    while subject_lines and not subject_lines[0]:
+        subject_lines.pop(0)
+    while subject_lines and not subject_lines[-1]:
+        subject_lines.pop()
+    return "\n".join(subject_lines) + "\n"
 
 
 def table_rows(section: str, identity_pattern: str, *, allow_backticks: bool = False) -> list[list[str]]:

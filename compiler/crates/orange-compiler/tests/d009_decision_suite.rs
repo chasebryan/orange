@@ -23,6 +23,7 @@ use domain::{
     CASE_INPUT_NONCLAIMS, CASES, COMPARATIVE_LABELS, CONCLUSIONS, HARD_GATE_COUNT,
     HARD_GATE_STATE_PRECEDENCE, HARD_GATE_STATES, INPUT_BINDINGS, InputBindingId, METRICS,
     NONCLAIMS, OWNER_SCOPES, PROTOCOL_COUNTS, PROTOCOL_GAPS, REQUIRED_CANDIDATE_CASES,
+    SEMANTIC_BINDINGS, SEMANTIC_NORMALIZATION,
 };
 use packet::{
     CASE_INPUT_INDEX_CANONICAL_SHA256, PacketErrorKind, canonical_case_input_index_bytes,
@@ -40,8 +41,8 @@ const CASE_INPUT_INDEX: &[u8] =
 const SOLVER_TRUST_SUITE: &[u8] = include_bytes!("../../../../docs/SOLVER_TRUST_DECISION_SUITE.md");
 
 const PACKET_CANONICAL_SHA256: &str =
-    "e4b01992905589cf459f0f21d00afc92232736dfeed87571f8d1b93aa4b22598";
-const PACKET_RAW_SHA256: &str = "7dc35a621a852b0684d198719a3df26d3a404b9e9f8b99173d9900691e7b11e1";
+    "3e2d8efd74f82898759334ef8a0f5b5b4162efc7c867540b1cf2081266f87226";
+const PACKET_RAW_SHA256: &str = "93632429d758ead243f0931e333d2b00f90b152f7c71c8b8457cac09cb68461c";
 const INDEX_RAW_SHA256: &str = "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859";
 
 fn checked_in_replay_inputs() -> ReplayInputs<'static> {
@@ -135,6 +136,8 @@ fn d009_pre_epoch_domain_is_exact_symmetric_and_non_executing() {
     assert_eq!(NONCLAIMS.len(), 13);
     assert_eq!(CASE_INPUT_NONCLAIMS.len(), 6);
     assert_eq!(INPUT_BINDINGS.len(), 2);
+    assert_eq!(SEMANTIC_BINDINGS.len(), 5);
+    assert_eq!(SEMANTIC_NORMALIZATION, "markdown-prose-lines-exact-v1");
     assert_eq!(CANDIDATE_STATES.len(), CANDIDATES.len());
     for (state, candidate) in CANDIDATE_STATES.into_iter().zip(CANDIDATES) {
         assert_eq!(state.candidate, candidate);
@@ -234,8 +237,15 @@ fn draft_packet_is_exact_canonical_self_bound_and_zero_baseline() {
     for binding in INPUT_BINDINGS {
         assert_eq!(packet.input_binding(binding.id), binding);
     }
+    for binding in SEMANTIC_BINDINGS {
+        assert_eq!(packet.semantic_binding(binding.id), binding);
+    }
 
     let root = packet.value().as_object().expect("packet root");
+    assert_eq!(
+        root.get("schema_version").and_then(JsonValue::as_str),
+        Some("d009-pre-epoch-packet-v0.3")
+    );
     let atomic_outcomes = root
         .get("atomic_outcomes")
         .and_then(JsonValue::as_array)
@@ -493,6 +503,26 @@ fn draft_packet_rejects_atomic_outcome_or_gate_precedence_drift() {
         canonical.replace(
             "\"hard_gate_state_precedence\":[\"unsupported\",\"fail\",\"unresolved\",\"pass\"]",
             "\"hard_gate_state_precedence\":[\"unsupported\",\"fail\",\"unresolved\",\"unresolved\"]",
+        ),
+        canonical.replacen(
+            "69c61bb8e6cd7fd745be6d308074497916cd7ecb9b5ee1786461454bec363270",
+            &"0".repeat(64),
+            1,
+        ),
+        canonical.replacen(
+            "markdown-prose-lines-exact-v1",
+            "markdown-prose-lines-exact-v2",
+            1,
+        ),
+        canonical.replacen(
+            "\"scope\":\"whole_document\"",
+            "\"scope\":\"markdown_exact_heading_range\"",
+            1,
+        ),
+        canonical.replacen(
+            "\"section_start_heading\":null",
+            "\"section_start_heading\":\"## D-009 — Solver trust\"",
+            1,
         ),
     ];
     for drift in semantic_drifts {

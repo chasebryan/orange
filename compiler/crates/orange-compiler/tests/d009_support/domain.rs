@@ -2,7 +2,9 @@ use std::fmt;
 
 pub(crate) const REQUIRED_CANDIDATE_CASES: usize = 24;
 pub(crate) const INPUT_BINDING_COUNT: usize = 2;
+pub(crate) const SEMANTIC_BINDING_COUNT: usize = 5;
 pub(crate) const HARD_GATE_COUNT: usize = 8;
+pub(crate) const SEMANTIC_NORMALIZATION: &str = "markdown-prose-lines-exact-v1";
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CandidateId {
@@ -265,5 +267,95 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
         id: InputBindingId::SolverTrustSuite,
         path: "docs/SOLVER_TRUST_DECISION_SUITE.md",
         sha256: "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b",
+    },
+];
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum SemanticBindingId {
+    DecisionRegisterDocument,
+    DecisionRegisterD009,
+    RoadmapDocument,
+    RoadmapS4,
+    SolverTrustSuite,
+}
+
+impl SemanticBindingId {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::DecisionRegisterDocument => "decision_register_document",
+            Self::DecisionRegisterD009 => "decision_register_d009",
+            Self::RoadmapDocument => "roadmap_document",
+            Self::RoadmapS4 => "roadmap_s4",
+            Self::SolverTrustSuite => "solver_trust_suite",
+        }
+    }
+
+    pub(crate) const fn index(self) -> usize {
+        match self {
+            Self::DecisionRegisterDocument => 0,
+            Self::DecisionRegisterD009 => 1,
+            Self::RoadmapDocument => 2,
+            Self::RoadmapS4 => 3,
+            Self::SolverTrustSuite => 4,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SemanticBinding {
+    pub(crate) id: SemanticBindingId,
+    pub(crate) path: &'static str,
+    pub(crate) scope: &'static str,
+    pub(crate) section_end_heading: Option<&'static str>,
+    pub(crate) section_start_heading: Option<&'static str>,
+    pub(crate) normalization: &'static str,
+    pub(crate) normalized_sha256: &'static str,
+}
+
+pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = [
+    SemanticBinding {
+        id: SemanticBindingId::DecisionRegisterDocument,
+        path: "docs/DECISIONS.md",
+        scope: "whole_document",
+        section_end_heading: None,
+        section_start_heading: None,
+        normalization: SEMANTIC_NORMALIZATION,
+        normalized_sha256: "a11de67107972e613231142b00f0a0a013dfff31dcd3ff3c78885ca2b4b362da",
+    },
+    SemanticBinding {
+        id: SemanticBindingId::DecisionRegisterD009,
+        path: "docs/DECISIONS.md",
+        scope: "markdown_exact_heading_range",
+        section_end_heading: Some("## D-010 — Compiler strategy"),
+        section_start_heading: Some("## D-009 — Solver trust"),
+        normalization: SEMANTIC_NORMALIZATION,
+        normalized_sha256: "69c61bb8e6cd7fd745be6d308074497916cd7ecb9b5ee1786461454bec363270",
+    },
+    SemanticBinding {
+        id: SemanticBindingId::RoadmapDocument,
+        path: "docs/ROADMAP.md",
+        scope: "whole_document",
+        section_end_heading: None,
+        section_start_heading: None,
+        normalization: SEMANTIC_NORMALIZATION,
+        normalized_sha256: "89b68d48f425842e216a047306b69823f1232d7d9bfa6c4a92e96cb88abd48a8",
+    },
+    SemanticBinding {
+        id: SemanticBindingId::RoadmapS4,
+        path: "docs/ROADMAP.md",
+        scope: "markdown_exact_heading_range",
+        section_end_heading: Some("### S5 — Compiler IRs and one output path"),
+        section_start_heading: Some("### S4 — Proof and claim boundary"),
+        normalization: SEMANTIC_NORMALIZATION,
+        normalized_sha256: "f8a3ee4beeee6c789a3b4c7b6b0177c32a573788a7f9779b1aea763297288d62",
+    },
+    SemanticBinding {
+        id: SemanticBindingId::SolverTrustSuite,
+        path: "docs/SOLVER_TRUST_DECISION_SUITE.md",
+        scope: "whole_document",
+        section_end_heading: None,
+        section_start_heading: None,
+        normalization: SEMANTIC_NORMALIZATION,
+        normalized_sha256: "c2838efcc963de22141631d58fae4730c131d47d8ea2e79906cf66d0546032d0",
     },
 ];

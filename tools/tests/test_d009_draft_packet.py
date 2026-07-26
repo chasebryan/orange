@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import re
 import shutil
 import tempfile
 import unittest
@@ -27,8 +26,8 @@ INDEX_PATH = RESEARCH_ROOT / "d009-v0.1-case-input-index.json"
 SUITE_PATH = Path("docs/SOLVER_TRUST_DECISION_SUITE.md")
 DECISIONS_PATH = Path("docs/DECISIONS.md")
 ROADMAP_PATH = Path("docs/ROADMAP.md")
-PACKET_CANONICAL_SHA256 = "e4b01992905589cf459f0f21d00afc92232736dfeed87571f8d1b93aa4b22598"
-PACKET_RAW_SHA256 = "7dc35a621a852b0684d198719a3df26d3a404b9e9f8b99173d9900691e7b11e1"
+PACKET_CANONICAL_SHA256 = "3e2d8efd74f82898759334ef8a0f5b5b4162efc7c867540b1cf2081266f87226"
+PACKET_RAW_SHA256 = "93632429d758ead243f0931e333d2b00f90b152f7c71c8b8457cac09cb68461c"
 INDEX_CANONICAL_SHA256 = "2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e"
 INDEX_RAW_SHA256 = "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859"
 SUITE_RAW_SHA256 = "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b"
@@ -130,7 +129,7 @@ class D009DraftPacketTests(unittest.TestCase):
             hashlib.sha256((REPOSITORY_ROOT / SUITE_PATH).read_bytes()).hexdigest(),
             SUITE_RAW_SHA256,
         )
-        self.assertEqual(packet["schema_version"], "d009-pre-epoch-packet-v0.1")
+        self.assertEqual(packet["schema_version"], "d009-pre-epoch-packet-v0.3")
         self.assertEqual(packet["suite_version"], "d009-v0.1-draft")
         self.assertEqual(packet["status"], "draft_unfrozen")
         self.assertIsNone(packet["epoch"])
@@ -180,6 +179,61 @@ class D009DraftPacketTests(unittest.TestCase):
         self.assertEqual(
             packet["hard_gate_state_precedence"],
             ["unsupported", "fail", "unresolved", "pass"],
+        )
+        self.assertEqual(
+            packet["semantic_bindings"],
+            {
+                "decision_register_document": {
+                    "normalization": "markdown-prose-lines-exact-v1",
+                    "normalized_sha256": (
+                        "a11de67107972e613231142b00f0a0a013dfff31dcd3ff3c78885ca2b4b362da"
+                    ),
+                    "path": "docs/DECISIONS.md",
+                    "scope": "whole_document",
+                    "section_end_heading": None,
+                    "section_start_heading": None,
+                },
+                "decision_register_d009": {
+                    "normalization": "markdown-prose-lines-exact-v1",
+                    "normalized_sha256": (
+                        "69c61bb8e6cd7fd745be6d308074497916cd7ecb9b5ee1786461454bec363270"
+                    ),
+                    "path": "docs/DECISIONS.md",
+                    "scope": "markdown_exact_heading_range",
+                    "section_end_heading": "## D-010 — Compiler strategy",
+                    "section_start_heading": "## D-009 — Solver trust",
+                },
+                "roadmap_document": {
+                    "normalization": "markdown-prose-lines-exact-v1",
+                    "normalized_sha256": (
+                        "89b68d48f425842e216a047306b69823f1232d7d9bfa6c4a92e96cb88abd48a8"
+                    ),
+                    "path": "docs/ROADMAP.md",
+                    "scope": "whole_document",
+                    "section_end_heading": None,
+                    "section_start_heading": None,
+                },
+                "roadmap_s4": {
+                    "normalization": "markdown-prose-lines-exact-v1",
+                    "normalized_sha256": (
+                        "f8a3ee4beeee6c789a3b4c7b6b0177c32a573788a7f9779b1aea763297288d62"
+                    ),
+                    "path": "docs/ROADMAP.md",
+                    "scope": "markdown_exact_heading_range",
+                    "section_end_heading": "### S5 — Compiler IRs and one output path",
+                    "section_start_heading": "### S4 — Proof and claim boundary",
+                },
+                "solver_trust_suite": {
+                    "normalization": "markdown-prose-lines-exact-v1",
+                    "normalized_sha256": (
+                        "c2838efcc963de22141631d58fae4730c131d47d8ea2e79906cf66d0546032d0"
+                    ),
+                    "path": "docs/SOLVER_TRUST_DECISION_SUITE.md",
+                    "scope": "whole_document",
+                    "section_end_heading": None,
+                    "section_start_heading": None,
+                },
+            },
         )
         self.assertEqual(len(packet["metrics"]), 16)
         self.assertEqual(len(packet["owner_scopes"]), 8)
@@ -232,6 +286,97 @@ class D009DraftPacketTests(unittest.TestCase):
 
     def test_semantic_suite_and_cross_document_contract_is_clean(self) -> None:
         self.assertEqual(self._semantic_codes(REPOSITORY_ROOT), set())
+
+    def test_semantic_bindings_canonicalize_line_endings_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            for path in (SUITE_PATH, DECISIONS_PATH, ROADMAP_PATH):
+                target = root / path
+                source = target.read_bytes()
+                self.assertNotIn(b"\r", source)
+                target.write_bytes(source.replace(b"\n", b"\r\n"))
+            self.assertEqual(self._semantic_codes(root), set())
+
+    def test_exact_heading_ranges_and_line_structure_reject_selector_bypasses(self) -> None:
+        self._assert_text_mutations(
+            SUITE_PATH,
+            (
+                (
+                    "markdown_hard_break",
+                    "This suite compares three solver-authority policies without inventing candidate\n",
+                    "This suite compares three solver-authority policies without inventing candidate  \n",
+                ),
+            ),
+            "d009_suite.semantic_closure",
+        )
+        self._assert_text_mutations(
+            DECISIONS_PATH,
+            (
+                (
+                    "later_d009_addendum",
+                    "\n## D-010 — Compiler strategy",
+                    "\n## D-009 — Draft closure addendum\n\n"
+                    "A draft proposal may close D-009.\n\n"
+                    "## D-010 — Compiler strategy",
+                ),
+                (
+                    "post_boundary_d009_addendum",
+                    "\n## D-011 — Initial native target envelope",
+                    "\n## D-009 — Draft closure addendum\n\n"
+                    "A draft proposal may close D-009.\n\n"
+                    "## D-011 — Initial native target envelope",
+                ),
+                (
+                    "post_boundary_d009_prose",
+                    "\n## D-011 — Initial native target envelope",
+                    "\nA draft proposal may close D-009.\n\n"
+                    "## D-011 — Initial native target envelope",
+                ),
+                (
+                    "d009_heading_suffix",
+                    "## D-009 — Solver trust",
+                    "## D-009 — Solver trust (complete; drafts may close it)",
+                ),
+                (
+                    "nested_candidate",
+                    "- SP-02, Kernel-only reconstruction:",
+                    "  - SP-02, Kernel-only reconstruction:",
+                ),
+            ),
+            "d009_suite.register_semantics",
+        )
+        self._assert_text_mutations(
+            ROADMAP_PATH,
+            (
+                (
+                    "later_s4_addendum",
+                    "\n### S5 — Compiler IRs and one output path",
+                    "\n### S4 — Completion addendum\n\n"
+                    "This preparation closes S4.\n\n"
+                    "### S5 — Compiler IRs and one output path",
+                ),
+                (
+                    "post_boundary_s4_addendum",
+                    "\n### S6 — Memory, leakage, ABI, and native targets",
+                    "\n### S4 — Completion addendum\n\n"
+                    "This preparation closes S4.\n\n"
+                    "### S6 — Memory, leakage, ABI, and native targets",
+                ),
+                (
+                    "post_boundary_s4_prose",
+                    "\n### S6 — Memory, leakage, ABI, and native targets",
+                    "\nThis preparation closes S4.\n\n"
+                    "### S6 — Memory, leakage, ABI, and native targets",
+                ),
+                (
+                    "s4_heading_suffix",
+                    "### S4 — Proof and claim boundary",
+                    "### S4 — Proof and claim boundary (complete; drafts may close it)",
+                ),
+            ),
+            "d009_suite.roadmap_closure",
+        )
 
     def test_normalized_semantic_seals_reject_unclassified_drift(self) -> None:
         self._assert_text_mutations(
@@ -513,10 +658,30 @@ class D009DraftPacketTests(unittest.TestCase):
             "d009_suite.register_semantics",
         )
 
-    def test_resealed_register_cannot_grant_draft_oep_closure_authority(self) -> None:
+    def test_register_drift_variants_fail_through_the_closed_binding(self) -> None:
+        assertion = "An accepted D-009\npolicy constrains later D-006 and D-007 work"
+        variants = (
+            ("lowercase", "a draft orange enhancement proposal may also close D-009."),
+            ("full_name", "A Draft Orange Enhancement Proposal may also close D-009."),
+            ("oep", "A Draft OEP may also close D-009."),
+            ("dotted_oep", "A Draft O.E.P. may also close D-009."),
+            ("generic", "A draft proposal may also close D-009."),
+            ("passive", "D-009 may also be closed by a draft proposal."),
+            ("safe_negative_unratified_drift", "A Draft OEP cannot close D-009."),
+        )
+        self._assert_text_mutations(
+            DECISIONS_PATH,
+            tuple(
+                (name, assertion, f"{language}\n\n{assertion}")
+                for name, language in variants
+            ),
+            "d009_suite.register_semantics",
+        )
+
+    def test_resealed_document_and_packet_binding_cannot_bypass_packet_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self._copy_lab(root)
+            packet_path, _ = self._copy_lab(root)
             decisions_path = root / DECISIONS_PATH
             source = decisions_path.read_text(encoding="utf-8")
             assertion = "An accepted D-009\npolicy constrains later D-006 and D-007 work"
@@ -530,31 +695,21 @@ class D009DraftPacketTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-
-            decisions_text = validate_foundation.markdown_without_fenced_blocks_and_comments(
-                decisions_path.read_text(encoding="utf-8")
+            normalized_d009 = validate_foundation.normalized_markdown_semantic_subject(
+                decisions_path.read_text(encoding="utf-8"),
+                scope="markdown_exact_heading_range",
+                section_start_heading="## D-009 — Solver trust",
+                section_end_heading="## D-010 — Compiler strategy",
             )
-            normalized_d009 = re.sub(
-                r"\s+",
-                " ",
-                validate_foundation.markdown_section(
-                    decisions_text,
-                    "## D-009",
-                    heading_level=2,
-                    prefix=True,
-                ),
-            )
-            resealed = list(validate_foundation._D009_SEMANTIC_DIGESTS)
-            resealed[1] = hashlib.sha256(normalized_d009.encode()).hexdigest()
-            with mock.patch.object(
-                validate_foundation,
-                "_D009_SEMANTIC_DIGESTS",
-                tuple(resealed),
-            ):
-                codes = self._semantic_codes(root)
+            packet = load_json(packet_path)
+            packet["semantic_bindings"]["decision_register_d009"][
+                "normalized_sha256"
+            ] = hashlib.sha256(normalized_d009.encode()).hexdigest()
+            self._write_canonical(packet_path, packet)
+            codes = self._semantic_codes(root)
 
             self.assertNotIn("d009_suite.register_semantics", codes)
-            self.assertIn("d009_suite.register_closure_authority", codes)
+            self.assertIn("d009_suite.semantic_binding", codes)
 
     def test_roadmap_requires_d009_closure_without_current_readiness_credit(self) -> None:
         self._assert_text_mutations(
@@ -702,6 +857,60 @@ class D009DraftPacketTests(unittest.TestCase):
         for binding in packet["input_bindings"].values():
             bound = REPOSITORY_ROOT / binding["path"]
             self.assertEqual(hashlib.sha256(bound.read_bytes()).hexdigest(), binding["sha256"])
+
+    def test_semantic_binding_inventory_and_selectors_fail_closed(self) -> None:
+        self._assert_mutations(
+            "packet",
+            (
+                (
+                    "normalized_digest",
+                    lambda value: value["semantic_bindings"][
+                        "decision_register_d009"
+                    ].update({"normalized_sha256": "0" * 64}),
+                ),
+                (
+                    "normalization",
+                    lambda value: value["semantic_bindings"]["roadmap_s4"].update(
+                        {"normalization": "markdown-prose-lines-exact-v2"}
+                    ),
+                ),
+                (
+                    "path",
+                    lambda value: value["semantic_bindings"][
+                        "solver_trust_suite"
+                    ].update({"path": "README.md"}),
+                ),
+                (
+                    "scope",
+                    lambda value: value["semantic_bindings"][
+                        "decision_register_d009"
+                    ].update({"scope": "whole_document"}),
+                ),
+                (
+                    "section_start_heading",
+                    lambda value: value["semantic_bindings"]["roadmap_s4"].update(
+                        {"section_start_heading": "### S5 — Compiler IRs and one output path"}
+                    ),
+                ),
+                (
+                    "section_end_heading",
+                    lambda value: value["semantic_bindings"]["roadmap_s4"].update(
+                        {"section_end_heading": "### S6 — Memory, leakage, ABI, and native targets"}
+                    ),
+                ),
+                (
+                    "missing_binding",
+                    lambda value: value["semantic_bindings"].pop("roadmap_s4"),
+                ),
+                (
+                    "extra_field",
+                    lambda value: value["semantic_bindings"][
+                        "decision_register_d009"
+                    ].update({"authority": "draft"}),
+                ),
+            ),
+            "d009_suite.semantic_binding",
+        )
 
     def test_packet_decision_vocabulary_mutations_fail_closed(self) -> None:
         self._assert_mutations(

@@ -24,15 +24,27 @@ same candidate order through TC-08. It is a canonical identity serialization,
 not an authorized physical execution order.
 
 The packet's strict canonical JSON SHA-256, excluding its final line feed, is
-`e4b01992905589cf459f0f21d00afc92232736dfeed87571f8d1b93aa4b22598`;
+`3e2d8efd74f82898759334ef8a0f5b5b4162efc7c867540b1cf2081266f87226`;
 its raw file SHA-256, including the final line feed, is
-`7dc35a621a852b0684d198719a3df26d3a404b9e9f8b99173d9900691e7b11e1`.
+`93632429d758ead243f0931e333d2b00f90b152f7c71c8b8457cac09cb68461c`.
+Its closed packet schema is `d009-pre-epoch-packet-v0.3`; the suite version
+remains `d009-v0.1-draft`, and the existing filename is retained as a stable
+draft locator.
 The case-input index's strict canonical JSON SHA-256 is
 `2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e`;
 its raw file SHA-256, including the final line feed, is
 `c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859`.
 The bound suite's raw SHA-256 is
 `a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b`.
+The packet also closes five normalized semantic subjects under
+`markdown-prose-lines-exact-v1`: the complete suite prose, all decision-register
+prose, all roadmap prose, the exact D-009-to-D-010 heading range, and the exact
+S4-to-S5 heading range. The whole-document bindings prevent competing language
+outside the bounded sections; each bounded range includes its exact start
+heading and requires one exact successor heading. The normalization preserves
+prose line, indentation, and trailing-space structure while canonicalizing line
+endings and the terminal line feed. These bindings do not classify English,
+accept a decision, or create evidence.
 
 The laboratory launches no process, writes no archive, evaluates no solver
 output, parses or checks no LRAT/Alethe/proof artifact, validates no
