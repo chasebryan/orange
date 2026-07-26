@@ -41,8 +41,8 @@ const CASE_INPUT_INDEX: &[u8] =
 const SOLVER_TRUST_SUITE: &[u8] = include_bytes!("../../../../docs/SOLVER_TRUST_DECISION_SUITE.md");
 
 const PACKET_CANONICAL_SHA256: &str =
-    "6c1da1fb28069b3511ef77350b3dcd6ba2759f087837f04155f545319ad3a18b";
-const PACKET_RAW_SHA256: &str = "acaaa774d8a14b19a505a719e38b9793b41883748280be7b3b7115c6266bfcae";
+    "fa1411c83fdb6b57b8100f296ca904d88155ad6aa57bd7f48af62ae90c9ead31";
+const PACKET_RAW_SHA256: &str = "c0ad0227f1f374da8796c6db4866188213be53bd904bbf22b141ee1de6e57171";
 const INDEX_RAW_SHA256: &str = "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859";
 
 fn checked_in_replay_inputs() -> ReplayInputs<'static> {
@@ -505,7 +505,7 @@ fn draft_packet_rejects_atomic_outcome_or_gate_precedence_drift() {
             "\"hard_gate_state_precedence\":[\"unsupported\",\"fail\",\"unresolved\",\"unresolved\"]",
         ),
         canonical.replacen(
-            "69c61bb8e6cd7fd745be6d308074497916cd7ecb9b5ee1786461454bec363270",
+            "bc4bf5fd534a61efdd62e16b57633bea1f5ad8f3224555f310911a3ab26bb41a",
             &"0".repeat(64),
             1,
         ),

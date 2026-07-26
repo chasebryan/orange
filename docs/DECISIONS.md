@@ -140,7 +140,8 @@ SR mapping rows. D-003 is accepted at exact revision
 unfrozen, and D-004 owner protocol review
 remains `none`. The mapping hypotheses create no adapter, execution, evidence,
 review, freeze, recommendation, selection, or conclusion and supply no roadmap
-or readiness credit. Orange remains at 30% by binary gate closure.
+or readiness credit. Orange's 3/10 (30%) binary gate-closure score remains
+unchanged; that mechanical score is not release readiness.
 
 ## D-005 — Public assurance model
 
@@ -363,7 +364,7 @@ backend. It validates no proof, certificate, counterexample, theorem, claim, or
 cache result; freezes no epoch; creates no result or evidence; and leaves
 resources, selection, and conclusion null or unassigned. It adds no solver to
 or removes one from the logical TCB, authorizes no proof-bearing implementation,
-and advances no roadmap gate or readiness percentage.
+and changes no roadmap gate or the 3/10 (30%) binary gate-closure score.
 
 D-009 closes only after D-004 and D-005 are Accepted, all 24 candidate-case
 records are complete under one frozen symmetric epoch, SR-01 through SR-08 are
@@ -439,7 +440,8 @@ adapter, runner, observer, or isolation backend; assigns no physical execution
 order or resource contract; produces no IR, source output, object, certificate,
 result, replay record, evidence, selection, or conclusion; and validates no
 functional, leakage, target, ABI, or final-byte claim. It selects no output path,
-closes no roadmap stage, and advances no readiness percentage.
+closes no roadmap stage, and does not change the 3/10 (30%) binary gate-closure
+score.
 
 D-010 closes only after all five prerequisites are Accepted, all 40
 candidate-case records are complete under one frozen symmetric epoch, CR-01

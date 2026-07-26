@@ -292,7 +292,8 @@ adapter, runner, observer, or isolation backend; assigns no physical order or
 execution resources; validates no proof, certificate, counterexample, theorem,
 claim, or cache result; and records 0/24 executions, no evidence, no selection,
 and no conclusion. This preparation neither changes the logical TCB nor closes
-S4, authorizes solver-backed proof search, or advances readiness beyond 30%.
+S4, authorizes solver-backed proof search, or changes Orange's 3/10 (30%)
+binary gate-closure score; that score is not release readiness.
 
 ### S5 — Compiler IRs and one output path
 

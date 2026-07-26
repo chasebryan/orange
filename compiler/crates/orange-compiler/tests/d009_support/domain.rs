@@ -320,7 +320,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: None,
         section_start_heading: None,
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "e42c8d0a94b5cf4cd151bfc584740e2a846380cfce6394b37f261bf34650d648",
+        normalized_sha256: "c38f7b1d3b3f733a628e0618124e290648298eea8dab2ef89f81c597eb68d177",
     },
     SemanticBinding {
         id: SemanticBindingId::DecisionRegisterD009,
@@ -329,7 +329,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: Some("## D-010 — Compiler strategy"),
         section_start_heading: Some("## D-009 — Solver trust"),
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "69c61bb8e6cd7fd745be6d308074497916cd7ecb9b5ee1786461454bec363270",
+        normalized_sha256: "bc4bf5fd534a61efdd62e16b57633bea1f5ad8f3224555f310911a3ab26bb41a",
     },
     SemanticBinding {
         id: SemanticBindingId::RoadmapDocument,
@@ -338,7 +338,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: None,
         section_start_heading: None,
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "9e0e93db121115250f4f8312fd7d3e95d52f7ffd5aae38492130aeab05909d58",
+        normalized_sha256: "c92c6657068d3a71b8ccb184b408020f5cd44971286b2743e1e4d55dd67125e6",
     },
     SemanticBinding {
         id: SemanticBindingId::RoadmapS4,
@@ -347,7 +347,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: Some("### S5 — Compiler IRs and one output path"),
         section_start_heading: Some("### S4 — Proof and claim boundary"),
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "f8a3ee4beeee6c789a3b4c7b6b0177c32a573788a7f9779b1aea763297288d62",
+        normalized_sha256: "ef9322f7c23467007a4c6d64411c79ba0f3dae856ed49602d9cecdfc9490b096",
     },
     SemanticBinding {
         id: SemanticBindingId::SolverTrustSuite,

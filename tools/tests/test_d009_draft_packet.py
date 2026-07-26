@@ -26,8 +26,8 @@ INDEX_PATH = RESEARCH_ROOT / "d009-v0.1-case-input-index.json"
 SUITE_PATH = Path("docs/SOLVER_TRUST_DECISION_SUITE.md")
 DECISIONS_PATH = Path("docs/DECISIONS.md")
 ROADMAP_PATH = Path("docs/ROADMAP.md")
-PACKET_CANONICAL_SHA256 = "6c1da1fb28069b3511ef77350b3dcd6ba2759f087837f04155f545319ad3a18b"
-PACKET_RAW_SHA256 = "acaaa774d8a14b19a505a719e38b9793b41883748280be7b3b7115c6266bfcae"
+PACKET_CANONICAL_SHA256 = "fa1411c83fdb6b57b8100f296ca904d88155ad6aa57bd7f48af62ae90c9ead31"
+PACKET_RAW_SHA256 = "c0ad0227f1f374da8796c6db4866188213be53bd904bbf22b141ee1de6e57171"
 INDEX_CANONICAL_SHA256 = "2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e"
 INDEX_RAW_SHA256 = "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859"
 SUITE_RAW_SHA256 = "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b"
@@ -186,7 +186,7 @@ class D009DraftPacketTests(unittest.TestCase):
                 "decision_register_document": {
                     "normalization": "markdown-prose-lines-exact-v1",
                     "normalized_sha256": (
-                        "e42c8d0a94b5cf4cd151bfc584740e2a846380cfce6394b37f261bf34650d648"
+                        "c38f7b1d3b3f733a628e0618124e290648298eea8dab2ef89f81c597eb68d177"
                     ),
                     "path": "docs/DECISIONS.md",
                     "scope": "whole_document",
@@ -196,7 +196,7 @@ class D009DraftPacketTests(unittest.TestCase):
                 "decision_register_d009": {
                     "normalization": "markdown-prose-lines-exact-v1",
                     "normalized_sha256": (
-                        "69c61bb8e6cd7fd745be6d308074497916cd7ecb9b5ee1786461454bec363270"
+                        "bc4bf5fd534a61efdd62e16b57633bea1f5ad8f3224555f310911a3ab26bb41a"
                     ),
                     "path": "docs/DECISIONS.md",
                     "scope": "markdown_exact_heading_range",
@@ -206,7 +206,7 @@ class D009DraftPacketTests(unittest.TestCase):
                 "roadmap_document": {
                     "normalization": "markdown-prose-lines-exact-v1",
                     "normalized_sha256": (
-                        "9e0e93db121115250f4f8312fd7d3e95d52f7ffd5aae38492130aeab05909d58"
+                        "c92c6657068d3a71b8ccb184b408020f5cd44971286b2743e1e4d55dd67125e6"
                     ),
                     "path": "docs/ROADMAP.md",
                     "scope": "whole_document",
@@ -216,7 +216,7 @@ class D009DraftPacketTests(unittest.TestCase):
                 "roadmap_s4": {
                     "normalization": "markdown-prose-lines-exact-v1",
                     "normalized_sha256": (
-                        "f8a3ee4beeee6c789a3b4c7b6b0177c32a573788a7f9779b1aea763297288d62"
+                        "ef9322f7c23467007a4c6d64411c79ba0f3dae856ed49602d9cecdfc9490b096"
                     ),
                     "path": "docs/ROADMAP.md",
                     "scope": "markdown_exact_heading_range",
@@ -732,23 +732,31 @@ class D009DraftPacketTests(unittest.TestCase):
                 ),
                 (
                     "claim_readiness_credit",
-                    "or advances readiness beyond 30%.",
-                    "and advances readiness to 31%.",
+                    "or changes Orange's 3/10 (30%)\n"
+                    "binary gate-closure score; that score is not release readiness.",
+                    "and changes Orange's binary gate-closure score to 4/10 (40%).",
                 ),
                 (
                     "append_readiness_credit",
-                    "or advances readiness beyond 30%.",
-                    "or advances readiness beyond 30%. This preparation advances readiness to 31%.",
+                    "or changes Orange's 3/10 (30%)\n"
+                    "binary gate-closure score; that score is not release readiness.",
+                    "or changes Orange's 3/10 (30%) binary gate-closure score; that score "
+                    "is not release readiness. This preparation advances the score to 4/10 (40%).",
                 ),
                 (
                     "append_s4_closure",
-                    "or advances readiness beyond 30%.",
-                    "or advances readiness beyond 30%. This preparation closes S4.",
+                    "or changes Orange's 3/10 (30%)\n"
+                    "binary gate-closure score; that score is not release readiness.",
+                    "or changes Orange's 3/10 (30%) binary gate-closure score; that score "
+                    "is not release readiness. This preparation closes S4.",
                 ),
                 (
                     "append_search_authorization",
-                    "or advances readiness beyond 30%.",
-                    "or advances readiness beyond 30%. This preparation authorizes solver-backed proof search.",
+                    "or changes Orange's 3/10 (30%)\n"
+                    "binary gate-closure score; that score is not release readiness.",
+                    "or changes Orange's 3/10 (30%) binary gate-closure score; that score "
+                    "is not release readiness. This preparation authorizes solver-backed "
+                    "proof search.",
                 ),
             ),
             "d009_suite.roadmap_closure",
