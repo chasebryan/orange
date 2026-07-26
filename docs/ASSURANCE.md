@@ -35,6 +35,11 @@ PR #9 merged the S3a implementation and normative records as commit
 implementation evidence, not proof of semantic soundness or a stable public
 compatibility promise.
 
+The D-010 input-only laboratory is planning evidence only. It compares five
+candidate identities across eight zero-fixture cases and remains at 0/40. It
+selects no compiler strategy, validates no transformation or artifact, and adds
+no compiler, target, leakage, ABI, final-byte, S5, or readiness assurance.
+
 ## 1. Assurance promise
 
 Orange will say exactly what was checked, for which artifact, with which model,
@@ -89,7 +94,7 @@ Assume all of the following:
 | --- | --- | --- |
 | Semantic truth | Ambiguous rules, unsound axiom, kernel bug | Complete normative semantics, small checker, axiom ledger, and implementation-diverse checking; independent logic review is recorded only when available, and its absence limits dependent claims |
 | Source intent | Wrong transcription of a standard, ignored errata | Clause-linked standards provenance, vectors, explicit transcription-review status, and separately exercised owner cross-checks; external cryptographer review is unavailable and not claimed |
-| Compiler correctness | Pass bug, backend drift, printer/assembler mismatch | Semantic IRs, verified passes or checked certificates, differential fuzzing, final-byte validation |
+| Compiler correctness | Pass bug, backend drift, printer/assembler mismatch | Accepted semantics or contracts and checked relations for every compiler boundary included in the exact claim; final-byte validation only when the claim frontier reaches final bytes |
 | Secret confidentiality | Branch/address/timing leakage, diagnostics, stale copies | Secrecy types, named leakage model, erasure obligations, binary analysis, and owner-executable measurements; laboratory evidence is required only for claims whose profile calls for it, and those profiles remain unsupported while it is unavailable |
 | Key and entropy lifecycle | Weak entropy, reuse, cloning, false zeroization | Explicit provider contracts, affine capabilities, misuse-resistant APIs, target-scoped erasure claims |
 | Claim integrity | Evidence substitution, hidden assumption, target confusion | Content addressing, claim closure, canonical formats, fail-closed checking |
@@ -107,8 +112,8 @@ The boundaries are:
   Core;
 - Core to checked claim/proof;
 - proof search to proof checking;
-- each compiler IR transformation;
-- Machine IR to encoded object and linked artifact;
+- each selected compiler-strategy boundary, plus every downstream tool or
+  artifact boundary included in the claim;
 - generated C ABI to foreign caller;
 - Orange artifact to OS/CPU/entropy provider;
 - source repository to release builders, registry, and update client.
@@ -129,7 +134,8 @@ The following are independent:
 5. termination and optionally resource bounds;
 6. source-level leakage noninterference;
 7. target-level leakage preservation;
-8. compiler preservation across exact passes to final artifact bytes;
+8. compiler preservation across exact in-frontier transitions, reaching final
+   artifact bytes only when those bytes are part of the claim;
 9. ABI, layout, serialization, and error-contract correctness;
 10. architectural erasure/zeroization;
 11. game-based cryptographic security and concrete advantage bound;
@@ -216,17 +222,24 @@ the baseline by implication.
 
 ### 4.3 Evidence stack
 
-A target leakage claim requires:
+A target leakage claim whose declared frontier reaches a final object requires:
 
 1. source/CT IR noninterference evidence;
 2. pass-by-pass leakage preservation or checked translation validation;
-3. Machine IR and final-object correspondence;
+3. correspondence between final object bytes and the candidate's accepted final
+   semantics: Machine IR for CP-01 or CP-02, or a checked downstream relation
+   separately frozen and accepted for CP-03, CP-04, or CP-05;
 4. target instruction classification and ABI assumptions;
 5. binary static inspection;
 6. empirical timing testing on named hardware as defense in depth;
 7. specialist laboratory work for release profiles whose stronger claims
    require it; while that work is unavailable, those profiles remain
    `unsupported` rather than blocking unrelated development.
+
+A candidate whose claim frontier ends at Jasmin, C11, or LLVM IR does not inherit
+a downstream target leakage claim; that outcome remains `unsupported` or
+external until a checked relation is separately frozen and accepted to supply
+the missing closure.
 
 Statistical tools can reveal a model or implementation failure; failure to
 detect leakage is not a proof.
@@ -272,10 +285,15 @@ that depended on the affected checker version.
 
 ### 5.3 Compiler
 
-Every stable IR has a syntax/encoding, validator, interpreter or executable
-semantics, and mechanized relation to adjacent IRs.
+These are conditional obligations for the strategy and claim frontier selected
+by D-010; the 0/40 input-only laboratory satisfies none of them.
 
-Compiler validation includes:
+Every in-claim IR has a syntax or encoding, validator, interpreter or executable
+semantics, and an accepted checked relation or exact versioned boundary contract
+to the adjacent in-claim stage.
+
+For the portions included in the selected claim frontier, compiler validation
+includes as applicable:
 
 - property-based generation of well-typed programs;
 - reference-versus-optimized differential execution;
@@ -285,7 +303,8 @@ Compiler validation includes:
 - sanitizer and interpreter lanes for the compiler implementation;
 - target emulation and real-hardware execution;
 - object/relocation/ABI inspection;
-- translation-certificate mutation and rejection;
+- preservation-theorem, translation-certificate, and external-boundary mutation
+  and rejection as applicable;
 - CPU dispatch and fallback testing;
 - performance, code-size, proof-time, and memory regression budgets.
 
@@ -528,6 +547,10 @@ and preserve all unresolved risk. Protected history and required checks provide
 defense in depth; they do not create a second trusted person.
 
 ## 13. Explicit non-claims
+
+Orange currently makes no compiler-strategy, code-generation, preservation,
+backend, target, ABI, leakage, or final-byte claim. A successful export to
+Jasmin, C11, or LLVM IR would not imply a property of downstream native bytes.
 
 The S3a evaluator proves nothing about its own semantic correctness.
 Its typed literals do not imply parameters, operators, calls, implementation

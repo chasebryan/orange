@@ -221,6 +221,10 @@ compiler/crates/orange-compiler/tests/d009_decision_suite.rs
 compiler/crates/orange-compiler/tests/d009_support/domain.rs
 compiler/crates/orange-compiler/tests/d009_support/packet.rs
 compiler/crates/orange-compiler/tests/d009_support/runner.rs
+compiler/crates/orange-compiler/tests/d010_decision_suite.rs
+compiler/crates/orange-compiler/tests/d010_support/domain.rs
+compiler/crates/orange-compiler/tests/d010_support/packet.rs
+compiler/crates/orange-compiler/tests/d010_support/runner.rs
 compiler/crates/orangec/Cargo.toml
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
@@ -272,6 +276,7 @@ docs/REPRODUCIBILITY.md
 docs/USER_JOURNEYS.md
 docs/ARCHITECTURE.md
 docs/ASSURANCE.md
+docs/COMPILER_STRATEGY_DECISION_SUITE.md
 docs/PROJECT_CHARTER.md
 docs/RESEARCH.md
 docs/ROADMAP.md
@@ -309,6 +314,9 @@ research/decisions/D-006/d006-v0.2-draft-packet.json
 research/decisions/D-009/README.md
 research/decisions/D-009/d009-v0.1-case-input-index.json
 research/decisions/D-009/d009-v0.1-draft-packet.json
+research/decisions/D-010/README.md
+research/decisions/D-010/d010-v0.1-case-input-index.json
+research/decisions/D-010/d010-v0.1-draft-packet.json
 schemas/README.md
 schemas/gate0/claim-record-v0.1.schema.json
 schemas/gate0/evidence-manifest-v0.1.schema.json
@@ -324,6 +332,7 @@ tools/tests/test_d004_draft_packet.py
 tools/tests/test_d005_draft_packet.py
 tools/tests/test_d006_draft_packet.py
 tools/tests/test_d009_draft_packet.py
+tools/tests/test_d010_draft_packet.py
 tools/validate_foundation.py
 tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
@@ -429,7 +438,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "c5eac06a6e3779f94bf130226aff2414747ed6dc59550f92e5f0262fa4ad2e0b"
+_RDC = "5dec78628ae2fc7b171cfecf22a5ea6fd1e150da5777debbe5fd316b20816373"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -493,7 +502,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "3f45694fb232c0e2f22229d6135cd0442e1d508010cf3ecca9d14265131b8811"
+_PHD = "1744cdee8ec77b9b5849cddc3ed71d7977e9808eefbd9d139b52a5bfc914f04a"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -823,6 +832,7 @@ GATE0_CODEOWNERS = tuple(
 /DEPENDENCY_POLICY.md @chasebryan
 /RELEASE_POLICY.md @chasebryan
 /docs/ASSURANCE.md @chasebryan
+/docs/COMPILER_STRATEGY_DECISION_SUITE.md @chasebryan
 /docs/DECISIONS.md @chasebryan
 /docs/GATE0_TRACEABILITY.md @chasebryan
 /docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md @chasebryan
@@ -847,6 +857,15 @@ CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md M
 README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
 docs policy research schemas scripts tools""".split()
 )
+_D010_ROOT = "research/decisions/D-010/"
+_D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
+_D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
+_D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
+_D010_PACKET_CANONICAL_SHA256 = "9414cc150679506a8187f0ea47585b24aac469f4bdfd2996748bbaf76e6f6b55"
+_D010_PACKET_RAW_SHA256 = "c4bfa32dfaf046b69ebf4a0b7fa7dcd40aa9a6890d9430c6a70a1b7061163b2a"
+_D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
+_D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
+_D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"
 DECISION_LABORATORY_SPECS = {
     "d004": {
         "finding_prefix": "d004_packet",
@@ -1076,8 +1095,8 @@ DECISION_LABORATORY_SPECS = {
                 "research/decisions/D-009/d009-v0.1-draft-packet.json",
                 "",
                 "parse",
-                "3e2d8efd74f82898759334ef8a0f5b5b4162efc7c867540b1cf2081266f87226",
-                "93632429d758ead243f0931e333d2b00f90b152f7c71c8b8457cac09cb68461c",
+                "1bbc5aaa815765d9a5ba66aa5177136089e8a8e420a9f9cd94b63e0dc464872c",
+                "c2293da629f4e551f5368483cf899082f48bd3fa8a7ead26e84decf953636124",
                 True,
             ),
             (
@@ -1093,6 +1112,18 @@ DECISION_LABORATORY_SPECS = {
             ("research/decisions/D-009/d009-v0.1-case-input-index.json", "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859"),
             ("docs/SOLVER_TRUST_DECISION_SUITE.md", "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b"),
         ),
+        "schema_compatibility": None,
+    },
+    "d010": {
+        "finding_prefix": "d010_packet",
+        "research_root": _D010_ROOT,
+        "inventory": frozenset(_D010_ROOT + name for name in "README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json".split()),
+        "premature": (_D010_ROOT, r"(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])", "premature_artifact"),
+        "json_identities": (
+            (_D010_PACKET, "", "parse", _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True),
+            (_D010_INDEX, "index_", "index_parse", _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True),
+        ),
+        "raw_bindings": ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)),
         "schema_compatibility": None,
     },
 }
@@ -1116,14 +1147,15 @@ DECISION_LABORATORY_INVARIANTS = {
     ),
     "research/decisions/D-006/": (2, 2, True, None),
     "research/decisions/D-009/": (2, 2, True, None),
+    "research/decisions/D-010/": (2, 2, True, None),
 }
-_D009_ATOMIC_OUTCOMES = (
+_ATOMIC_OUTCOMES = (
     "satisfied",
     "not_satisfied",
     "unresolved",
     "unsupported",
 )
-_D009_ATOMIC_OUTCOME_MEANINGS = {
+_ATOMIC_OUTCOME_MEANINGS = {
     "satisfied": (
         "the exact proposition has its complete permitted mandatory closure and no valid "
         "decisive negative result"
@@ -1142,14 +1174,16 @@ _D009_ATOMIC_OUTCOME_MEANINGS = {
         "path for that exact claim and scope"
     ),
 }
-_D009_HARD_GATE_STATE_PRECEDENCE = (
+_HARD_GATE_STATES = ("pass", "fail", "unresolved", "unsupported")
+_HARD_GATE_STATE_PRECEDENCE = (
     "unsupported",
     "fail",
     "unresolved",
     "pass",
 )
-_D009_SEMANTIC_NORMALIZATION = "markdown-prose-lines-exact-v1"
-_D009_SEMANTIC_BINDING_FIELDS = frozenset(
+_SEMANTIC_NORMALIZATION = "markdown-prose-lines-exact-v1"
+_WHOLE_MARKDOWN = ("whole_document", None, None)
+_SEMANTIC_BINDING_FIELDS = frozenset(
     {
         "normalization",
         "normalized_sha256",
@@ -1159,41 +1193,67 @@ _D009_SEMANTIC_BINDING_FIELDS = frozenset(
         "section_start_heading",
     }
 )
-_D009_SEMANTIC_BINDING_SPECS = {
-    "decision_register_document": (
-        "docs/DECISIONS.md",
-        "whole_document",
-        None,
-        None,
-        "d009_suite.register_semantics",
+_SEMANTIC_BINDING_SPECS = {
+    "d009": (
+        "research/decisions/D-009/d009-v0.1-draft-packet.json",
+        "d009_suite.semantic_binding",
+        {
+            "decision_register_document": ("docs/DECISIONS.md", *_WHOLE_MARKDOWN),
+            "decision_register_d009": ("docs/DECISIONS.md", "markdown_exact_heading_range", "## D-009 — Solver trust", "## D-010 — Compiler strategy"),
+            "roadmap_document": ("docs/ROADMAP.md", *_WHOLE_MARKDOWN),
+            "roadmap_s4": ("docs/ROADMAP.md", "markdown_exact_heading_range", "### S4 — Proof and claim boundary", "### S5 — Compiler IRs and one output path"),
+            "solver_trust_suite": ("docs/SOLVER_TRUST_DECISION_SUITE.md", *_WHOLE_MARKDOWN),
+        },
     ),
-    "decision_register_d009": (
-        "docs/DECISIONS.md",
-        "markdown_exact_heading_range",
-        "## D-009 — Solver trust",
-        "## D-010 — Compiler strategy",
-        "d009_suite.register_semantics",
+    "d010": (
+        _D010_PACKET,
+        "d010_suite.semantic_binding",
+        {
+            "architecture_document": ("docs/ARCHITECTURE.md", *_WHOLE_MARKDOWN),
+            "assurance_document": ("docs/ASSURANCE.md", *_WHOLE_MARKDOWN),
+            "compiler_strategy_suite": (_D010_SUITE, *_WHOLE_MARKDOWN),
+            "decision_register_d010": ("docs/DECISIONS.md", "markdown_exact_heading_range", "## D-010 — Compiler strategy", "## D-011 — Initial native target envelope"),
+            "decision_register_document": ("docs/DECISIONS.md", *_WHOLE_MARKDOWN),
+            "research_document": ("docs/RESEARCH.md", *_WHOLE_MARKDOWN),
+            "roadmap_document": ("docs/ROADMAP.md", *_WHOLE_MARKDOWN),
+            "roadmap_s5": ("docs/ROADMAP.md", "markdown_exact_heading_range", "### S5 — Compiler IRs and one output path", "### S6 — Memory, leakage, ABI, and native targets"),
+            "threat_model_document": ("docs/security/THREAT_MODEL.md", *_WHOLE_MARKDOWN),
+            "traceability_document": ("docs/GATE0_TRACEABILITY.md", *_WHOLE_MARKDOWN),
+        },
     ),
-    "roadmap_document": (
-        "docs/ROADMAP.md",
-        "whole_document",
-        None,
-        None,
-        "d009_suite.roadmap_closure",
-    ),
-    "roadmap_s4": (
-        "docs/ROADMAP.md",
-        "markdown_exact_heading_range",
-        "### S4 — Proof and claim boundary",
-        "### S5 — Compiler IRs and one output path",
-        "d009_suite.roadmap_closure",
-    ),
-    "solver_trust_suite": (
+}
+_DECISION_SUITE_SPECS = {
+    "d009": (
         "docs/SOLVER_TRUST_DECISION_SUITE.md",
-        "whole_document",
-        None,
-        None,
-        "d009_suite.semantic_closure",
+        "owner-executable draft under D-023; no solver-trust policy selected",
+        "d009-v0.1-draft", "2026-07-25",
+        (("SP-01", "Checked-artifact portfolio"), ("SP-02", "Kernel-only reconstruction"), ("SP-03", "Direct trusted-solver authority")),
+        "TC", 16, 0, "## 5. Hard gates and anti-gaming rules",
+        "## 7. Owner review scopes", "SR",
+        ("Suite custody and parity", "Checked-artifact candidate", "Kernel-only candidate", "Trusted-solver candidate", "Outcome and authority semantics", "Identity, cache, and trust closure", "Replay, dependency, and isolation", "Comparative disposition"),
+        (
+            "The frozen matrix contains exactly 24 candidate-case runs per evidence epoch: each of the 3 candidates runs each of the 8 cases.",
+            "The exact execution baseline is 0/24 candidate-case runs.",
+            "D-004 and D-005 must be Accepted before D-009 can be Accepted",
+            "D-006 and D-007 are downstream consumers, not D-009 acceptance prerequisites.",
+            "D-006 case DS-04 itself needs the D-009 policy.",
+        ),
+    ),
+    "d010": (
+        _D010_SUITE,
+        "owner-executable draft under D-023; no compiler strategy selected",
+        "d010-v0.1-draft", "2026-07-26",
+        (("CP-01", "Theorem/certificate hybrid direct-native path"), ("CP-02", "Mechanized proof-per-pass direct-native path"), ("CP-03", "Versioned Jasmin backend boundary"), ("CP-04", "Portable C11 interoperability boundary"), ("CP-05", "Versioned LLVM IR interoperability boundary")),
+        "CC", 19, 9, "## 6. Hard gates and anti-gaming rules",
+        "## 8. Owner review scopes", "CR",
+        ("Suite custody and candidate parity", "Hybrid direct-native candidate", "Proof-per-pass direct-native candidate", "Jasmin backend candidate", "Portable C11 candidate", "LLVM IR candidate", "Functional and structural-lowering semantics", "Optimization, leakage, and claim frontier", "Endpoint, object, fallback, and trust closure", "Replay, dependencies, resources, and isolation", "Comparative disposition"),
+        (
+            "The frozen matrix contains exactly 40 candidate-case runs per evidence epoch: each of the 5 candidates runs each of the 8 cases.",
+            "The exact execution baseline is 0/40 candidate-case runs.",
+            "D-003, D-004, D-005, D-006, and D-009 must be Accepted before D-010 can be Accepted.",
+            "D-007, D-011, D-012, and D-013 are downstream decisions, not D-010 acceptance prerequisites.",
+            "no roadmap gate, S5 closure, release authority, compiler capability, or readiness credit follows.",
+        ),
     ),
 }
 ACTION_RE = re.compile(
@@ -2727,10 +2787,12 @@ class FoundationValidator:
         self._validate_semantic_strata_suite()
         self._validate_public_assurance_model_suite()
         self._validate_solver_trust_suite()
+        self._validate_compiler_strategy_suite()
         self._validate_d004_draft_packet()
         self._validate_d005_draft_packet()
         self._validate_d006_draft_packet()
         self._validate_d009_draft_packet()
+        self._validate_d010_draft_packet()
         self._validate_change_records()
         self._validate_repository_templates()
         self._end()
@@ -6050,7 +6112,7 @@ class FoundationValidator:
                 )
                 normalized_dimensions = re.sub(r"\s+", " ", dimensions)
                 if (
-                    "8. compiler preservation across exact passes to final artifact bytes;"
+                    "8. compiler preservation across exact in-frontier transitions, reaching final artifact bytes only when those bytes are part of the claim;"
                     not in normalized_dimensions
                 ):
                     self.add(
@@ -6356,12 +6418,11 @@ class FoundationValidator:
         if not isinstance(packet, dict):
             return
         if (
-            packet.get("atomic_outcomes") != list(_D009_ATOMIC_OUTCOMES)
-            or packet.get("atomic_outcome_meanings") != _D009_ATOMIC_OUTCOME_MEANINGS
-            or packet.get("hard_gate_states")
-            != ["pass", "fail", "unresolved", "unsupported"]
+            packet.get("atomic_outcomes") != list(_ATOMIC_OUTCOMES)
+            or packet.get("atomic_outcome_meanings") != _ATOMIC_OUTCOME_MEANINGS
+            or packet.get("hard_gate_states") != list(_HARD_GATE_STATES)
             or packet.get("hard_gate_state_precedence")
-            != list(_D009_HARD_GATE_STATE_PRECEDENCE)
+            != list(_HARD_GATE_STATE_PRECEDENCE)
         ):
             self.add(
                 "d009_packet.decision_vocabulary",
@@ -6370,13 +6431,79 @@ class FoundationValidator:
                 "unsupported/fail/unresolved/pass hard-gate first-match precedence",
             )
 
-    def _validated_d009_semantic_bindings(self) -> dict[str, dict[str, Any]] | None:
-        packet_value = "research/decisions/D-009/d009-v0.1-draft-packet.json"
+    def _validate_d010_draft_packet(self) -> None:
+        self._validate_decision_laboratory("d010")
+        packet_path = self.root / _D010_PACKET
+        index_path = self.root / _D010_INDEX
+        try:
+            packet = self._load_repository_json(packet_path)
+            index = self._load_repository_json(index_path)
+        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError, TypeError):
+            return
+        if not isinstance(packet, dict) or not isinstance(index, dict):
+            return
+        def values(document: dict[str, Any], keys: Sequence[str]) -> tuple[Any, ...]:
+            return tuple(document.get(key) for key in keys)
+
+        expected_candidates = _DECISION_SUITE_SPECS["d010"][4]
+        candidate_ids = tuple(row[0] for row in expected_candidates)
+        case_ids = tuple(f"CC-{value:02d}" for value in range(1, 9))
+        candidates = packet.get("candidates")
+        candidate_states = packet.get("candidate_states")
+        if (
+            not isinstance(candidates, list)
+            or tuple((row.get("id"), row.get("name")) for row in candidates if isinstance(row, dict)) != expected_candidates
+            or any(not isinstance(row, dict) or set(row) != {"id", "name"} for row in candidates)
+            or not isinstance(candidate_states, list)
+            or candidate_states != [
+                {"adapter_status": "absent", "candidate": candidate, "dependency_admission_status": "absent", "execution_status": "not_performed", "implementation_status": "absent"}
+                for candidate in candidate_ids
+            ]
+            or packet.get("cases") != list(case_ids)
+            or packet.get("metrics") != [f"M-{value:02d}" for value in range(1, 20)]
+            or packet.get("comparative_axes") != [f"AX-{value:02d}" for value in range(1, 10)]
+            or packet.get("owner_scopes") != [f"CR-{value:02d}" for value in range(1, 12)]
+        ):
+            self.add("d010_packet.inventory", packet_path, "D-010 inventory drifted")
+        if values(packet, ("atomic_outcomes", "atomic_outcome_meanings", "hard_gate_states", "hard_gate_state_precedence", "hard_gate_count")) != (list(_ATOMIC_OUTCOMES), _ATOMIC_OUTCOME_MEANINGS, list(_HARD_GATE_STATES), list(_HARD_GATE_STATE_PRECEDENCE), 8):
+            self.add("d010_packet.decision_vocabulary", packet_path, "decision vocabulary drifted")
+        if packet.get("dependency_acceptance") != {decision: False for decision in ("D-003", "D-004", "D-005", "D-006", "D-009")}:
+            self.add("d010_packet.dependencies", packet_path, "prerequisite state drifted")
+        zero_keys = "schema_version suite_version status epoch epoch_status physical_execution_order selection conclusion owner_protocol_review independent_review_status execution".split()
+        zero_values = ("d010-pre-epoch-packet-v0.1", "d010-v0.1-draft", "draft_unfrozen", None, "unfrozen", None, None, None, "none", "unavailable", {"complete_candidates": 0, "complete_cross_candidate_cases": 0, "completed_candidate_cases": 0, "evidence_status": "none", "required_candidate_cases": 40})
+        if values(packet, zero_keys) != zero_values:
+            self.add("d010_packet.zero_baseline", packet_path, "0/40 baseline drifted")
+        resources = dict.fromkeys("case_output_bytes case_peak_memory_bytes case_temp_storage_bytes case_wall_seconds".split())
+        resources.update(dict.fromkeys("contract_status host_matrix_status timeout_semantics_status".split(), "unassigned_freeze_blocker"))
+        if packet.get("execution_resource_state") != resources:
+            self.add("d010_packet.resource_state", packet_path, "resource state drifted")
+        expected_bindings = {
+            "case_input_index": {"path": _D010_INDEX, "sha256": _D010_INDEX_RAW_SHA256},
+            "compiler_strategy_suite": {"path": _D010_SUITE, "sha256": _D010_SUITE_RAW_SHA256},
+        }
+        if packet.get("case_input_index_sha256") != _D010_INDEX_CANONICAL_SHA256 or packet.get("input_bindings") != expected_bindings:
+            self.add("d010_packet.input_bindings", packet_path, "input binding drifted")
+        expected_rows = [
+            {"candidate_mapping_status": "absent", "case": case, "coverage_status": "unresolved", "executable_fixture_count": 0, "freeze_blocker": True, "shared_inputs_status": "absent"}
+            for case in case_ids
+        ]
+        index_keys = "case_inputs schema_version suite_version status evidence_status executable_inputs_status owner_protocol_review".split()
+        if values(index, index_keys) != (expected_rows, "d010-pre-epoch-case-input-index-v0.1", "d010-v0.1-draft", "draft_unreviewed", "none", "absent", "none"):
+            self.add("d010_packet.index_contract", index_path, "index zero-state drifted")
+        observed_ids = tuple(row.get("id") for row in candidates if isinstance(row, dict)) if isinstance(candidates, list) else ()
+        observed_cases = tuple(packet["cases"]) if isinstance(packet.get("cases"), list) else ()
+        if tuple((case, candidate) for case in observed_cases for candidate in observed_ids) != tuple((case, candidate) for case in case_ids for candidate in candidate_ids):
+            self.add("d010_packet.identity_order", packet_path, "identity order drifted")
+
+    def _validated_semantic_bindings(
+        self, laboratory: str
+    ) -> dict[str, dict[str, Any]] | None:
+        packet_value, binding_code, binding_specs = _SEMANTIC_BINDING_SPECS[laboratory]
         packet_path = self.root / packet_value
         identity = next(
             (
                 row
-                for row in DECISION_LABORATORY_SPECS["d009"]["json_identities"]
+                for row in DECISION_LABORATORY_SPECS[laboratory]["json_identities"]
                 if row[0] == packet_value
             ),
             None,
@@ -6397,28 +6524,26 @@ class FoundationValidator:
             or hashlib.sha256(raw).hexdigest() != identity[4]
         ):
             self.add(
-                "d009_suite.semantic_binding",
+                binding_code,
                 packet_path,
-                "semantic expectations require the exact frozen canonical D-009 packet",
+                "semantic packet identity drifted",
             )
             return None
 
         bindings = packet.get("semantic_bindings")
-        if not isinstance(bindings, dict) or set(bindings) != set(
-            _D009_SEMANTIC_BINDING_SPECS
-        ):
+        if not isinstance(bindings, dict) or set(bindings) != set(binding_specs):
             self.add(
-                "d009_suite.semantic_binding",
+                binding_code,
                 packet_path,
-                "packet must contain the exact closed D-009 semantic-binding inventory",
+                "semantic-binding inventory drifted",
             )
             return None
-        for identifier, specification in _D009_SEMANTIC_BINDING_SPECS.items():
-            path, scope, start_heading, end_heading, _ = specification
+        for identifier, specification in binding_specs.items():
+            path, scope, start_heading, end_heading = specification
             binding = bindings.get(identifier)
             if (
                 not isinstance(binding, dict)
-                or set(binding) != _D009_SEMANTIC_BINDING_FIELDS
+                or set(binding) != _SEMANTIC_BINDING_FIELDS
                 or (
                     binding.get("path"),
                     binding.get("scope"),
@@ -6431,30 +6556,32 @@ class FoundationValidator:
                     scope,
                     start_heading,
                     end_heading,
-                    _D009_SEMANTIC_NORMALIZATION,
+                    _SEMANTIC_NORMALIZATION,
                 )
                 or not isinstance(binding.get("normalized_sha256"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", binding["normalized_sha256"])
                 is None
             ):
                 self.add(
-                    "d009_suite.semantic_binding",
+                    binding_code,
                     packet_path,
-                    f"{identifier} must retain its exact closed selector and normalized identity",
+                    f"semantic selector drifted: {identifier}",
                 )
                 return None
         return bindings
 
-    def _validate_d009_semantic_documents(
-        self, bindings: dict[str, dict[str, Any]]
+    def _validate_semantic_documents(
+        self, laboratory: str, bindings: dict[str, dict[str, Any]]
     ) -> None:
-        for identifier, specification in _D009_SEMANTIC_BINDING_SPECS.items():
-            path_value, _, _, _, finding_code = specification
+        for identifier, specification in _SEMANTIC_BINDING_SPECS[laboratory][2].items():
+            path_value, _, _, _ = specification
+            suffix = "register_semantics" if identifier.startswith("decision_") else "roadmap_closure" if identifier.startswith("roadmap_") else "semantic_closure" if identifier.endswith("_suite") else "cross_document_semantics"
+            finding_code = f"{laboratory}_suite.{suffix}"
             binding = bindings[identifier]
             path = self.root / path_value
             source = self._rt(path)
             if source is None:
-                self.add(finding_code, path, "packet-bound semantic subject is unreadable")
+                self.add(finding_code, path, "bound subject is unreadable")
                 continue
             try:
                 normalized = normalized_markdown_semantic_subject(
@@ -6464,7 +6591,7 @@ class FoundationValidator:
                     section_end_heading=binding["section_end_heading"],
                 )
             except ValueError as exc:
-                self.add(finding_code, path, f"invalid packet-bound selector: {exc}")
+                self.add(finding_code, path, f"selector error: {exc}")
                 continue
             if (
                 hashlib.sha256(normalized.encode()).hexdigest()
@@ -6473,143 +6600,68 @@ class FoundationValidator:
                 self.add(
                     finding_code,
                     path,
-                    "normalized semantics disagree with the exact frozen D-009 packet binding",
+                    "semantic digest drifted",
                 )
 
-    def _validate_solver_trust_suite(self) -> None:
-        semantic_bindings = self._validated_d009_semantic_bindings()
-        if semantic_bindings is not None:
-            self._validate_d009_semantic_documents(semantic_bindings)
-        path = self.root / "docs/SOLVER_TRUST_DECISION_SUITE.md"
-        if not self._hf(path):
-            return
-        source = self._rt(path)
+    def _validate_decision_suite(self, laboratory: str) -> None:
+        bindings = self._validated_semantic_bindings(laboratory)
+        if bindings is not None:
+            self._validate_semantic_documents(laboratory, bindings)
+        (path_value, status, version, snapshot, candidates, case_prefix, metric_count,
+         axis_count, gate_heading, review_heading, review_prefix, review_names,
+         assertions) = _DECISION_SUITE_SPECS[laboratory]
+        path = self.root / path_value
+        source = self._rt(path) if self._hf(path) else None
         if source is None:
             return
         text = markdown_without_fenced_blocks_and_comments(source)
         normalized = re.sub(r"\s+", " ", text)
         header = text.partition("## Solo-mode disposition")[0]
-        statuses = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
-        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
-        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
-        if (
-            tuple(re.sub(r"\s+", " ", value) for value in statuses)
-            != ("owner-executable draft under D-023; no solver-trust policy selected",)
-            or versions != ("d009-v0.1-draft",)
-            or snapshots != ("2026-07-25",)
-        ):
-            self.add(
-                "d009_suite.header",
-                path,
-                "suite status, version, and snapshot must retain the exact candidate-neutral D-009 identity",
-            )
-
-        candidate_rows = table_rows(
-            markdown_section(text, "## 2. Candidate parity and frozen inputs"),
-            r"SP-[0-9]{2}",
+        observed_header = (
+            tuple(re.sub(r"\s+", " ", value) for value in re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header)),
+            tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header)),
+            tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header)),
         )
-        expected_candidates = (
-            ("SP-01", "Checked-artifact portfolio"),
-            ("SP-02", "Kernel-only reconstruction"),
-            ("SP-03", "Direct trusted-solver authority"),
-        )
-        if (
-            tuple(tuple(row[:2]) for row in candidate_rows) != expected_candidates
-            or any(len(row) != 4 or row[3] != "0/8 cases" for row in candidate_rows)
-        ):
-            self.add(
-                "d009_suite.candidates",
-                path,
-                "candidate table must retain SP-01 through SP-03 exactly, symmetrically, and at 0/8",
-            )
-
+        prefix = f"{laboratory}_suite"
+        if observed_header != ((status,), (version,), (snapshot,)):
+            self.add(f"{prefix}.header", path, "header drifted")
+        candidate_rows = table_rows(markdown_section(text, "## 2. Candidate parity and frozen inputs"), rf"{candidates[0][0][:-2]}[0-9]{{2}}")
+        if tuple(tuple(row[:2]) for row in candidate_rows) != candidates or any(len(row) != 4 or row[3] != "0/8 cases" for row in candidate_rows):
+            self.add(f"{prefix}.candidates", path, "candidate table drifted")
+        case_ids = tuple(f"{case_prefix}-{index:02d}" for index in range(1, 9))
         cases = markdown_section(text, "## 3. Required decision cases")
-        case_ids = tuple(f"TC-{index:02d}" for index in range(1, 9))
-        if tuple(re.findall(r"(?m)^###\s+(TC-[0-9]{2})\b", cases)) != case_ids:
-            self.add(
-                "d009_suite.case_ids",
-                path,
-                "decision cases must cover TC-01 through TC-08 exactly once in order",
-            )
+        if tuple(re.findall(rf"(?m)^###\s+({case_prefix}-[0-9]{{2}})\b", cases)) != case_ids:
+            self.add(f"{prefix}.case_ids", path, "case IDs drifted")
         for case_id in case_ids:
             body = markdown_section(cases, f"### {case_id}", heading_level=3, prefix=True)
-            for label in (
-                "Question",
-                "Dependencies",
-                "Shared inputs",
-                "Candidate outputs",
-                "Positive checks",
-                "Mutation and negative checks",
-                "Hard acceptance",
-            ):
+            for label in ("Question", "Dependencies", "Shared inputs", "Candidate outputs", "Positive checks", "Mutation and negative checks", "Hard acceptance"):
                 if f"**{label}:**" not in body:
-                    self.add("d009_suite.case_field", path, f"{case_id} is missing {label}")
-
-        metric_rows = table_rows(markdown_section(text, "## 4. Comparable metrics"), r"M-[0-9]{2}")
-        if (
-            tuple(row[0] for row in metric_rows)
-            != tuple(f"M-{index:02d}" for index in range(1, 17))
-            or any(len(row) != 4 for row in metric_rows)
-        ):
-            self.add(
-                "d009_suite.metrics",
-                path,
-                "metrics must cover M-01 through M-16 exactly once with four fields",
-            )
-
-        hard_gate_section = markdown_section(text, "## 5. Hard gates and anti-gaming rules")
-        hard_gates = hard_gate_section.partition("### Frozen decision vocabulary")[0]
-        if re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates) != [
-            str(index) for index in range(1, 9)
-        ]:
-            self.add(
-                "d009_suite.hard_gates",
-                path,
-                "hard gates must remain the ordered non-compensable set 1 through 8",
-            )
-
-        review_rows = table_rows(markdown_section(text, "## 7. Owner review scopes"), r"SR-[0-9]{2}")
-        expected_scopes = (
-            "Suite custody and parity",
-            "Checked-artifact candidate",
-            "Kernel-only candidate",
-            "Trusted-solver candidate",
-            "Outcome and authority semantics",
-            "Identity, cache, and trust closure",
-            "Replay, dependency, and isolation",
-            "Comparative disposition",
-        )
-        if (
-            tuple(row[0] for row in review_rows)
-            != tuple(f"SR-{index:02d}" for index in range(1, 9))
-            or any(len(row) != 3 for row in review_rows)
-            or tuple(row[1] for row in review_rows) != expected_scopes
-        ):
-            self.add(
-                "d009_suite.review_scopes",
-                path,
-                "owner review table must retain the exact ordered SR-01 through SR-08 scopes",
-            )
-
-        for assertion in (
-            "The frozen matrix contains exactly 24 candidate-case runs per evidence epoch: each of the 3 candidates runs each of the 8 cases.",
-            "The exact execution baseline is 0/24 candidate-case runs.",
-            "D-004 and D-005 must be Accepted before D-009 can be Accepted",
-            "D-006 and D-007 are downstream consumers, not D-009 acceptance prerequisites.",
-            "D-006 case DS-04 itself needs the D-009 policy.",
-        ):
+                    self.add(f"{prefix}.case_field", path, f"{case_id} is missing {label}")
+        metrics = table_rows(markdown_section(text, "## 4. Comparable metrics"), r"M-[0-9]{2}")
+        if tuple(row[0] for row in metrics) != tuple(f"M-{index:02d}" for index in range(1, metric_count + 1)) or any(len(row) != 4 for row in metrics):
+            self.add(f"{prefix}.metrics", path, "metrics drifted")
+        if axis_count:
+            axes = table_rows(markdown_section(text, "## 5. Comparative axes"), r"AX-[0-9]{2}")
+            if tuple(row[0] for row in axes) != tuple(f"AX-{index:02d}" for index in range(1, axis_count + 1)) or any(len(row) != 4 for row in axes):
+                self.add(f"{prefix}.comparative_axes", path, "axes drifted")
+        hard_gates = markdown_section(text, gate_heading).partition("### Frozen decision vocabulary")[0]
+        if re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates) != [str(index) for index in range(1, 9)]:
+            self.add(f"{prefix}.hard_gates", path, "hard gates drifted")
+        reviews = table_rows(markdown_section(text, review_heading), rf"{review_prefix}-[0-9]{{2}}")
+        expected_review_ids = tuple(f"{review_prefix}-{index:02d}" for index in range(1, len(review_names) + 1))
+        if tuple(row[0] for row in reviews) != expected_review_ids or tuple(row[1] for row in reviews) != review_names or any(len(row) != 3 for row in reviews):
+            self.add(f"{prefix}.review_scopes", path, "review scopes drifted")
+        for assertion in assertions:
             if assertion not in normalized:
-                self.add(
-                    "d009_suite.protocol",
-                    path,
-                    f"missing candidate-neutral execution or dependency invariant: {assertion}",
-                )
+                self.add(f"{prefix}.protocol", path, f"missing invariant: {assertion}")
         if normalized.count("The exact execution baseline is ") != 1:
-            self.add(
-                "d009_suite.protocol",
-                path,
-                "suite must contain exactly one canonical current-execution baseline",
-            )
+            self.add(f"{prefix}.protocol", path, "baseline count drifted")
+
+    def _validate_solver_trust_suite(self) -> None:
+        self._validate_decision_suite("d009")
+
+    def _validate_compiler_strategy_suite(self) -> None:
+        self._validate_decision_suite("d010")
 
     def _validate_change_records(self) -> None:
         specifications = (

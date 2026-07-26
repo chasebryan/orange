@@ -80,6 +80,7 @@ ratified incrementally before the component or claim that depends on them.
 - [D-005 public-assurance-model decision suite](docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md)
 - [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
 - [D-009 solver-trust decision suite](docs/SOLVER_TRUST_DECISION_SUITE.md)
+- [D-010 compiler-strategy decision suite](docs/COMPILER_STRATEGY_DECISION_SUITE.md)
 - [Decision register](docs/DECISIONS.md)
 - [Normative Orange 2026 lexical and grammar specification](docs/LANGUAGE_2026.md)
 - [Normative Orange 2026 typed-literal semantics](docs/SEMANTICS_2026.md)

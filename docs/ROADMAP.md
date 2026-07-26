@@ -296,15 +296,38 @@ S4, authorizes solver-backed proof search, or advances readiness beyond 30%.
 
 ### S5 — Compiler IRs and one output path
 
-Status: pending S3
+Status: pending the applicable S3 semantics and symmetric execution,
+solo-reviewed comparison, and exact-revision OEP acceptance of D-010
 
-Begin with one bounded output path selected by a decision record. Do not create
-a target matrix before one path is correct and inspectable.
+Begin with one bounded output path selected by the D-010 decision procedure.
+The five candidates are the theorem/certificate hybrid direct-native path,
+mechanized proof-per-pass direct-native path, versioned Jasmin boundary,
+portable C11 boundary, and versioned LLVM IR boundary. C11 and LLVM IR remain
+separate candidates. Do not create a target matrix or inherit a claim past the
+selected boundary before one path is correct, inspectable, and explicitly
+scoped.
 
-Permanent outcomes include semantic IRs, deterministic lowering, validation,
-artifact inspection, exact target assumptions, and differential tests against
-the reference evaluator. A portable C path may be selected for interoperability;
-native assurance requires the stronger target and final-byte obligations.
+Permanent outcomes include the selected path's semantic or versioned boundary,
+deterministic lowering, validators, exact authorities and assumptions,
+reference-semantic differential tests, corruption and substitution rejection,
+and an explicit claim frontier. A native claim must satisfy its stronger target,
+leakage, ABI, and final-byte obligations. An interoperability-only frontier must
+mark downstream compilation and target properties `unsupported` or external
+rather than inheriting them.
+
+The D-010 decision prerequisite requires complete 8/8 records for all five
+candidates (40/40 total) under one frozen symmetric epoch, CR-01 through CR-11
+as `solo-reviewed` owner scopes, one all-hard-gates-pass recommendation, and an
+Accepted exact-revision OEP. Those records select a strategy; they do not by
+themselves implement or close S5.
+
+The current D-010 input-only laboratory binds only its candidate-neutral draft
+packet, unchanged suite, and eight zero-fixture case blockers, then enumerates
+40 case-major, candidate-minor identities in memory. It admits or executes no
+compiler or external tool, assigns no physical order or resources, and records
+0/40 executions, no evidence, no selection, and no conclusion. It creates no
+IR, output, object, certificate, target, ABI, leakage, or final-byte evidence.
+This preparation is neither S5 implementation evidence nor readiness credit.
 
 ### S6 — Memory, leakage, ABI, and native targets
 

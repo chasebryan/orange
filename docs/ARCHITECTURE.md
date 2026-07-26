@@ -24,6 +24,13 @@ meaning. D-003 and D-004 remain unresolved and unratified, and unresolved
 architecture choices continue to gate only the component or claim that depends
 on them.
 
+D-010 also remains unresolved. Compiler descriptions below are candidate
+requirements and claim-boundary obligations, not a selected backend, pass
+policy, output path, or 1.0 assurance route. Sections that describe Machine IR
+and direct object emission apply only to the two direct-native candidates.
+Versioned Jasmin, portable C11, and versioned LLVM IR remain separate external
+boundary candidates.
+
 ## 1. Architecture objective
 
 Orange is a standalone proof-carrying compiler and cryptographic engineering
@@ -41,6 +48,11 @@ honestly serve all of these needs:
 The architectural endpoint is not generated source code. It is a native or
 interoperability artifact plus an evidence graph that states exactly how the
 artifact relates to specifications and claims.
+
+The following lowering diagram depicts the CP-01/CP-02 direct-native candidate
+topology. It is not the selected D-010 topology; CP-03 through CP-05 instead end
+at their exact versioned external boundary unless a checked downstream relation
+is separately frozen and accepted to extend the claim.
 
 ```text
  standards + errata + vectors
@@ -134,14 +146,16 @@ implementation.
 
 ### 2.3 `orange-compile`
 
-The compiler elaborates checked source into the IR family, performs verified
-passes or produces translation certificates for untrusted passes, and emits
-Machine IR plus object-code evidence.
+`orange-compile` is the candidate-neutral compilation boundary. D-010 compares
+two direct-native strategies, a versioned Jasmin boundary, a portable C11
+boundary, and a versioned LLVM IR boundary. No strategy, pass policy, external
+toolchain, or output path is currently selected or implemented.
 
-Rapidly changing search procedures—superoptimization, scheduling, vectorization,
-register allocation—may remain untrusted if the accepted result is validated
-for both functional and leakage refinement. Stable structural passes should be
-proved once.
+For any selected strategy, every transformation and external crossing included
+in a claim must name its semantics or contract, authority, exact input and
+output identities, assumptions, failure behavior, and checked relation. A claim
+ends at its declared frontier. Downstream properties are not inherited from a
+successful export, compiler invocation, test, or object production.
 
 ### 2.4 `orange-lsp`
 
@@ -357,9 +371,10 @@ behavior are excluded unless a separate policy models them.
 
 ### 4.6 Machine IR
 
-Machine IR is ISA- and ABI-specific. It models registers, flags, instructions,
-stack frames, calls, relocations, constants, target features, and exported
-symbols.
+For the CP-01 and CP-02 direct-native candidates, Machine IR is the proposed
+ISA- and ABI-specific final internal boundary. It models registers, flags,
+instructions, stack frames, calls, relocations, constants, target features, and
+exported symbols.
 
 Normative 1.0 target families are proposed as:
 
@@ -552,56 +567,52 @@ The CLI can explain which component invalidated a cached proof.
 
 ## 8. Compiler and binary path
 
-### 8.1 Pass policy
+D-010 has not selected a compiler strategy. The requirements below define the
+symmetric candidate boundaries and the additional obligations triggered by the
+claim frontier each candidate proposes.
 
-Stable canonical passes are mechanized:
+### 8.1 Candidate pass policies
 
-- elaboration validation;
-- ghost erasure;
-- monomorphization;
-- closure elimination where applicable;
-- memory/region lowering;
-- CT IR construction;
-- instruction-semantic lowering.
+| Candidate | Proposed policy boundary |
+| --- | --- |
+| CP-01 | Prove stable structural passes once; require a checked per-artifact functional and leakage certificate for in-frontier optimization, scheduling, vectorization, and allocation results. |
+| CP-02 | Mechanize a reusable preservation theorem for every pass inside the direct-native claim frontier. |
+| CP-03 | Bind an exact versioned Jasmin language boundary and end there unless a checked compiler/toolchain relation is separately frozen and accepted to extend it; retain Jasmin, its applicable theorem, tools, and every claimed downstream assumption in the disclosed closure. |
+| CP-04 | End the Orange compiler claim at deterministic portable C11 output unless a checked C-toolchain relation is separately frozen and accepted to extend it. |
+| CP-05 | End the Orange compiler claim at exact versioned LLVM IR unless a checked LLVM-pipeline relation is separately frozen and accepted to extend it. |
 
-Optimization passes choose one of two acceptable forms:
+No candidate may preserve an earlier claim by assertion. An unchecked,
+mismatched, failed, unavailable, or substituted transition fails the dependent
+claim closed. CP-04 and CP-05 are not one interchangeable “C/LLVM” strategy.
 
-1. a reusable mechanized preservation theorem; or
-2. an untrusted transformer whose output comes with a checked per-artifact
-   functional and leakage translation certificate.
+### 8.2 Direct-native candidate obligations
 
-An unverified pass cannot run in an assurance-preserving pipeline and retain old
-claims.
+If CP-01 or CP-02 is selected and carries a claim to native objects, the path
+must bind and validate:
 
-### 8.2 Direct native path
-
-The primary 1.0 assurance path emits Machine IR and direct native objects for
-the approved targets. It validates:
-
-- instruction bytes against the Machine IR;
+- instruction bytes against the selected final internal semantics;
 - section placement and permissions;
 - constants and tables;
 - relocations and symbol bindings;
 - stack/call ABI behavior;
-- dispatch and CPU-feature selection;
+- dispatch and CPU-feature selection; and
 - final exported symbol digests.
 
-If a system assembler or linker remains in the path, Orange decodes the result
-and checks it rather than merely trusting textual assembly. The link boundary
-and any unchecked loader behavior appear in the TCB report.
+Any assembler, linker, loader, or encoder remaining in that path appears in the
+claim closure or is covered by an accepted checked relation. These obligations
+do not select either direct-native candidate.
 
-### 8.3 Interoperability targets
+### 8.3 External-boundary candidates
 
-| Output | Intended status |
+| Candidate boundary | Required non-claim |
 | --- | --- |
-| Reference interpreter | Exact executable source semantics and test oracle |
-| Portable C11 | Broad review/integration; no generic post-C-compiler leakage claim |
-| Generated Rust crate | Safe wrapper over the stable C ABI, not the canonical crypto backend |
-| Jasmin export | Independent high-assurance cross-check and selected backend research path |
-| Standard Wasm/WASI | Functional portability only unless a named runtime profile adds stronger evidence |
-| LLVM IR | Research/interoperability only unless one exact pipeline has a ratified preservation argument |
+| Versioned Jasmin | Jasmin output or downstream native code is not Orange-native evidence merely because the export succeeded. |
+| Portable C11 | No generic post-C-compiler functional, leakage, ABI, or final-byte claim is inherited. |
+| Versioned LLVM IR | No post-optimization, code-generation, target, leakage, or final-byte claim is inherited without an exact accepted pipeline relation. |
 
-Generated output is never described more strongly than its checked path allows.
+The reference evaluator remains a common differential oracle, not a D-010
+candidate. Generated wrappers and additional outputs are downstream work and do
+not silently select or strengthen a candidate.
 
 ### 8.4 Multi-implementation dispatch
 
@@ -757,7 +768,9 @@ evidence encoding.
 - Counterexamples: decoded from solver/Core values to source spans.
 - Code lenses: run/replay a proof and inspect evidence.
 - Trust view: theorem-to-assumption and target-model graph.
-- IR explorer: source through Spec/Impl Core, CT IR, Machine IR, and bytes.
+- IR explorer: source through the accepted semantic strata and the selected
+  path's applicable internal or external endpoint; decode final bytes only when
+  that path's claim frontier reaches them.
 - Cache explanation: why a proof or build was invalidated.
 
 Diagnostics distinguish parse/type failure, disproved goal, unknown, timeout,
@@ -772,7 +785,8 @@ target assumption.
 - Instrumented native profiles are non-claim-bearing and redact secret values.
 - Claim-bearing builds reject logging, tracing, coverage, and secret-dependent
   assertions in cryptographic kernels.
-- Source maps connect every IR and final instruction to source obligations.
+- Source maps connect every applicable intermediate or endpoint artifact, and
+  any claimed final instruction, to source obligations.
 
 ## 13. Foreign interface
 
@@ -803,10 +817,13 @@ Orange will not create a disposable compiler.
    supported bootstrap and implementation-diverse frontend.
 3. Produce the authoritative extracted checker from the ratified metatheory and
    differential-test it against the Rust checker.
-4. Add each permanent compiler pass with semantics, preservation obligations,
-   interpreters, and conformance cases.
-5. Use Jasmin, SAW, mature libraries, and independent evaluators as oracles while
-   the direct path develops; do not let an oracle become an undocumented TCB.
+4. Add only transformations belonging to the D-010-selected compiler path,
+   with its required semantics, preservation obligations, interpreters, and
+   conformance cases.
+5. Give every admitted external tool or evaluator its D-010-selected role: an
+   exact compiler boundary when its candidate is selected, or a comparison
+   oracle otherwise. Never let an oracle or boundary become an undocumented
+   TCB component.
 6. Self-host only Orange components that naturally fit a crypto-focused
    language. Networking and editor tooling need not be self-hosted.
 7. If any compiler core becomes self-hosted, retain the stage-0 path and require
