@@ -224,25 +224,29 @@ The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
 likewise exact. It contains the non-product, draft-unfrozen D-004 input packet,
-named-mutation manifest, and unreviewed cross-cutting fixture-proposal manifest
-plus the D-005 execution packet and historical v0.1 negative corpus, the D-006
-draft-unfrozen packet and seven-row input-only case index, and the D-009
-draft-unfrozen packet and eight-row input-only case index. Every D-006 and D-009
-case row has zero executable fixtures, unresolved coverage, and an active
-freeze blocker. Their laboratories may verify the closed inputs and enumerate
-14 and 24 candidate-case identities in memory, respectively, but those
-inventories are not physical run orders and create no execution, evidence,
-review, recommendation, or selection.
+named-mutation manifest, unreviewed cross-cutting fixture-proposal manifest, and
+39-subject executable-input catalog; the D-005 execution packet and historical
+v0.1 negative corpus; and the input-only D-006, D-009, and D-010 packets and case
+indexes. Every D-006, D-009, and D-010 case row has zero executable fixtures,
+unresolved coverage, and an active freeze blocker. Their laboratories may
+verify the closed inputs and enumerate 14, 24, and 40 candidate-case identities
+in memory, respectively, but those inventories are not physical run orders and
+create no execution, evidence, review, recommendation, or selection.
+
 The D-004 proposal manifest defines 39 domain-level structural proposals: 14
-missing-edge,
-10 identity-substitution, and five each for ambiguity, unsupported behavior,
-and domain exhaustion. Each class retains zero executable fixtures, unresolved
-coverage, and an active freeze blocker. The manifest contains no candidate
-observation or evidence, verifies no resource ceiling, and does not treat
-candidate-adapter failure as an expected unsupported observation. Replay
-repetition remains unresolved, and the D-004 inventory freezes no evidence
-epoch. None of these input inventories contains a candidate result, owner
-review, accepted decision, or release evidence. D-005's protected Rust
+missing-edge, 10 identity-substitution, and five each for ambiguity,
+unsupported behavior, and domain exhaustion. The separate canonical catalog
+byte-materializes exactly those 39 candidate-neutral subjects as
+`materialized_unreviewed`. Its closed parser, digest checks, and bounded
+structural integrity oracle create no candidate observation or evidence, verify
+no replay ceiling, and do not treat candidate-adapter failure as an expected
+unsupported observation. The five positive case subjects and 26 named-mutation
+subjects remain definition-only gaps; all five class sufficiency reviews and
+freeze blockers remain unresolved; replay repetitions remain unassigned; and
+the D-004 inventory freezes no evidence epoch. D-003 candidate PF-01 is
+owner-accepted pending exact-revision OEP closure, while D-004 owner protocol
+review remains `none`. None of these input inventories contains a candidate
+result, accepted D-004 decision, or release evidence. D-005's protected Rust
 laboratory may construct
 canonical adapter requests and validate synthetic captured transport envelopes,
 enumerate the exact 192 in-memory transport identities, and bind a closed
@@ -255,7 +259,7 @@ The D-009 laboratory likewise retains 0/24 while admitting, acquiring,
 installing, or executing no solver, certificate checker, or proof tool. It
 validates no proof, certificate, counterexample, claim, or cache result and
 does not place any solver inside or outside the logical TCB.
-The D-004 through D-006 and D-009 policy checks share one table-driven identity
+The D-004 through D-006, D-009, and D-010 policy checks share one table-driven identity
 boundary:
 each admitted research tree is exact, JSON is parsed through the bounded strict
 profile, reviewed canonical meanings and raw transports are SHA-256 bound, and
@@ -324,8 +328,10 @@ The admitted
 [`docs/PRODUCT_FORM_DECISION_PACKET.md`](../docs/PRODUCT_FORM_DECISION_PACKET.md)
 and
 [`docs/SEMANTIC_STRATA_DECISION_SUITE.md`](../docs/SEMANTIC_STRATA_DECISION_SUITE.md)
-are structurally validated, non-normative D-003 and D-004 research protocols.
-Their presence does not record owner acceptance, allocate an OEP number, widen
+are structurally validated, non-normative D-003 and D-004 decision records. The
+owner's exact `Accept PF-01` direction and Provisional OEP-0004 now establish
+the D-003 product-form boundary provisionally, but D-003 remains pending
+Accepted exact-revision closure. Their presence does not accept D-004, widen
 the implemented semantics, or authorize S3b.
 
 The living [Orange Book](../docs/THE_ORANGE_BOOK.md) v0.2 remains a

@@ -13,13 +13,16 @@ from tools.validate_foundation import FoundationValidator, canonical_json_bytes,
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RESEARCH_ROOT = Path("research/decisions/D-004")
-PACKET_PATH = RESEARCH_ROOT / "d004-v0.2-draft-packet.json"
+PACKET_PATH = RESEARCH_ROOT / "d004-v0.3-draft-packet.json"
 MANIFEST_PATH = RESEARCH_ROOT / "d004-v0.2-named-mutations.json"
 PROPOSAL_MANIFEST_PATH = (
     RESEARCH_ROOT / "d004-v0.2-cross-cutting-fixture-proposals.json"
 )
 PACKET_CANONICAL_SHA256 = (
-    "95b47374e65ddf88148ca5c5a4ff250288837edea4960bf80ae8009395aba14c"
+    "32cdb43019bba79666b6b0b0e14e789358cce37933dadc1124f07243f09d3ae8"
+)
+PACKET_RAW_SHA256 = (
+    "0784a87e2b2ca82a7c7c7368de0bd9d33cea84aaa1f430540f8fe5e5382967e1"
 )
 MANIFEST_CANONICAL_SHA256 = (
     "970999d998cdc202a6caa4e2f798017416c88211a5b6b8508132a07cc9080c0c"
@@ -29,6 +32,15 @@ PROPOSAL_MANIFEST_CANONICAL_SHA256 = (
 )
 PROPOSAL_MANIFEST_RAW_SHA256 = (
     "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93"
+)
+FIXTURE_CATALOG_PATH = (
+    RESEARCH_ROOT / "d004-v0.3-cross-cutting-executable-fixtures.json"
+)
+FIXTURE_CATALOG_CANONICAL_SHA256 = (
+    "ca08308161244e9541803aa8008dd1624a2101f77da8b656cf0c5deff8a60703"
+)
+FIXTURE_CATALOG_RAW_SHA256 = (
+    "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0"
 )
 
 
@@ -63,6 +75,7 @@ class D004DraftPacketTests(unittest.TestCase):
         packet = load_json(REPOSITORY_ROOT / PACKET_PATH)
         manifest = load_json(REPOSITORY_ROOT / MANIFEST_PATH)
         proposal_manifest = load_json(REPOSITORY_ROOT / PROPOSAL_MANIFEST_PATH)
+        fixture_catalog = load_json(REPOSITORY_ROOT / FIXTURE_CATALOG_PATH)
         self.assertEqual(
             (REPOSITORY_ROOT / PACKET_PATH).read_bytes(),
             canonical_json_bytes(packet) + b"\n",
@@ -82,6 +95,10 @@ class D004DraftPacketTests(unittest.TestCase):
         self.assertEqual(
             hashlib.sha256(canonical_json_bytes(packet)).hexdigest(),
             PACKET_CANONICAL_SHA256,
+        )
+        self.assertEqual(
+            hashlib.sha256((REPOSITORY_ROOT / PACKET_PATH).read_bytes()).hexdigest(),
+            PACKET_RAW_SHA256,
         )
         self.assertEqual(
             hashlib.sha256(canonical_json_bytes(manifest)).hexdigest(),
@@ -106,12 +123,39 @@ class D004DraftPacketTests(unittest.TestCase):
             ).hexdigest(),
             proposal_binding["sha256"],
         )
-        self.assertEqual(packet["schema_version"], "d004-pre-epoch-packet-v0.2")
+        self.assertEqual(
+            packet["cross_cutting_executable_fixture_catalog_sha256"],
+            hashlib.sha256(canonical_json_bytes(fixture_catalog)).hexdigest(),
+        )
+        self.assertEqual(
+            packet["cross_cutting_executable_fixture_catalog_sha256"],
+            FIXTURE_CATALOG_CANONICAL_SHA256,
+        )
+        fixture_binding = packet["input_bindings"][
+            "cross_cutting_executable_fixtures"
+        ]
+        self.assertEqual(fixture_binding["path"], str(FIXTURE_CATALOG_PATH))
+        self.assertEqual(fixture_binding["sha256"], FIXTURE_CATALOG_RAW_SHA256)
+        self.assertEqual(
+            hashlib.sha256(
+                (REPOSITORY_ROOT / FIXTURE_CATALOG_PATH).read_bytes()
+            ).hexdigest(),
+            fixture_binding["sha256"],
+        )
+        self.assertEqual(packet["schema_version"], "d004-pre-epoch-packet-v0.3")
+        self.assertEqual(packet["suite_version"], "d004-v0.3-draft")
         self.assertEqual(packet["status"], "draft_unfrozen")
         self.assertIsNone(packet["epoch"])
         self.assertEqual(packet["epoch_status"], "unfrozen")
-        self.assertEqual(packet["d003_disposition"], "pending")
+        self.assertEqual(
+            packet["d003_disposition"],
+            "owner_accepted_pending_exact_revision_oep_closure",
+        )
         self.assertEqual(packet["owner_protocol_review"], "none")
+        self.assertEqual(
+            packet["fixture_inventory_status"],
+            "cross_cutting_materialized_unreviewed_freeze_blocker",
+        )
         self.assertEqual(
             packet["execution"],
             {
@@ -124,6 +168,16 @@ class D004DraftPacketTests(unittest.TestCase):
         )
         self.assertIsNone(packet["conclusion"])
         self.assertIsNone(packet["selection"])
+        self.assertTrue(
+            {
+                "candidate_mappings",
+                "candidate_adapters",
+                "observed_states",
+                "observation_matches",
+                "case_records",
+                "case_results",
+            }.isdisjoint(packet)
+        )
         self.assertEqual(proposal_manifest["status"], "draft_unreviewed")
         self.assertEqual(
             proposal_manifest["schema_version"],
@@ -175,7 +229,19 @@ class D004DraftPacketTests(unittest.TestCase):
                 "resource-exhaustion",
             ],
         )
-        self.assertEqual(len(packet["protocol_gaps"]), 6)
+        self.assertEqual(
+            packet["protocol_gaps"],
+            [
+                "five positive subjects absent",
+                "26 named-mutation subjects absent",
+                "ambiguity fixture sufficiency review unresolved",
+                "missing-edge fixture sufficiency review unresolved",
+                "identity-substitution fixture sufficiency review unresolved",
+                "unsupported fixture sufficiency review unresolved",
+                "resource-exhaustion fixture sufficiency review unresolved",
+                "replay repetition count unresolved",
+            ],
+        )
 
         validator = FoundationValidator(REPOSITORY_ROOT)
         validator._validate_d004_draft_packet()
@@ -188,15 +254,16 @@ class D004DraftPacketTests(unittest.TestCase):
             [],
         )
 
-    def test_packet_binds_all_twenty_exact_existing_inputs_by_raw_bytes(self) -> None:
+    def test_packet_binds_all_twenty_one_exact_existing_inputs_by_raw_bytes(self) -> None:
         packet = load_json(REPOSITORY_ROOT / PACKET_PATH)
-        self.assertEqual(len(packet["input_bindings"]), 20)
+        self.assertEqual(len(packet["input_bindings"]), 21)
         self.assertEqual(
             set(packet["input_bindings"]),
             {
                 "accepted_s3a_oep",
                 "accepted_s3a_semantics",
                 "accepted_s2_language",
+                "cross_cutting_executable_fixtures",
                 "cross_cutting_fixture_proposals",
                 "decision_suite",
                 "fixture_invalid_duplicate_spec",
@@ -224,6 +291,257 @@ class D004DraftPacketTests(unittest.TestCase):
                     ).hexdigest(),
                     binding["sha256"],
                 )
+
+    def test_v03_fixture_catalog_has_exact_ordered_byte_addressed_input_only_coverage(
+        self,
+    ) -> None:
+        catalog_path = REPOSITORY_ROOT / FIXTURE_CATALOG_PATH
+        proposal_manifest = load_json(REPOSITORY_ROOT / PROPOSAL_MANIFEST_PATH)
+        catalog = load_json(catalog_path)
+        canonical = canonical_json_bytes(catalog)
+        raw = catalog_path.read_bytes()
+        self.assertEqual(raw, canonical + b"\n")
+        self.assertEqual(len(raw), 67_329)
+        self.assertEqual(
+            hashlib.sha256(canonical).hexdigest(),
+            FIXTURE_CATALOG_CANONICAL_SHA256,
+        )
+        self.assertEqual(
+            hashlib.sha256(raw).hexdigest(), FIXTURE_CATALOG_RAW_SHA256
+        )
+        self.assertEqual(
+            set(catalog),
+            {
+                "canonicalization",
+                "class_counts",
+                "evidence_status",
+                "execution_boundary",
+                "fixture_count",
+                "fixtures",
+                "nonclaims",
+                "owner_protocol_review",
+                "proposal_manifest",
+                "schema_version",
+                "status",
+                "suite_version",
+            },
+        )
+        self.assertEqual(
+            catalog["schema_version"],
+            "d004-cross-cutting-executable-fixtures-v0.1",
+        )
+        self.assertEqual(catalog["suite_version"], "d004-v0.3-draft")
+        self.assertEqual(catalog["status"], "draft_unreviewed_input_only")
+        self.assertEqual(catalog["owner_protocol_review"], "none")
+        self.assertEqual(catalog["evidence_status"], "none")
+        self.assertEqual(catalog["fixture_count"], 39)
+        self.assertEqual(
+            catalog["class_counts"],
+            [
+                {"class": "ambiguity", "fixture_count": 5},
+                {"class": "missing-edge", "fixture_count": 14},
+                {"class": "identity-substitution", "fixture_count": 10},
+                {"class": "unsupported", "fixture_count": 5},
+                {"class": "resource-exhaustion", "fixture_count": 5},
+            ],
+        )
+        self.assertEqual(
+            catalog["execution_boundary"],
+            {
+                "candidate_adapter": "not_invoked",
+                "candidate_process": "not_invoked",
+                "candidate_tool": "not_invoked",
+                "network": "not_used",
+                "preflight_output_persistence": "none",
+            },
+        )
+        self.assertEqual(
+            catalog["proposal_manifest"],
+            {
+                "path": str(PROPOSAL_MANIFEST_PATH),
+                "canonical_sha256": PROPOSAL_MANIFEST_CANONICAL_SHA256,
+                "raw_sha256": PROPOSAL_MANIFEST_RAW_SHA256,
+            },
+        )
+
+        fixtures = catalog["fixtures"]
+        proposals = proposal_manifest["proposals"]
+        self.assertEqual(len(fixtures), len(proposals))
+        self.assertEqual(
+            [fixture["proposal_id"] for fixture in fixtures],
+            [proposal["id"] for proposal in proposals],
+        )
+        self.assertEqual(
+            len({fixture["fixture_subject_sha256"] for fixture in fixtures}), 39
+        )
+        relationships = [f"SR-{value:02d}" for value in range(1, 15)]
+        identity_slots = [
+            "packet_identity",
+            "replay_plan_identity",
+            "scheduled_slot_identity",
+            "input_manifest_identity",
+            "candidate_graph_identity",
+            "sr_map_identity",
+            "semantic_endpoint_identity",
+            "parameter_model_identity",
+            "tool_identity",
+            "environment_identity",
+        ]
+
+        def identity(slot: str, variant: str) -> str:
+            return hashlib.sha256(
+                b"d004-fixture-identity-v0.1\0"
+                + slot.encode("ascii")
+                + b"\0"
+                + variant.encode("ascii")
+            ).hexdigest()
+
+        for index, (fixture, proposal) in enumerate(zip(fixtures, proposals)):
+            with self.subTest(proposal=proposal["id"]):
+                self.assertEqual(
+                    set(fixture),
+                    {
+                        "expected_observation",
+                        "fixture_subject",
+                        "fixture_subject_sha256",
+                        "proposal_id",
+                        "proposal_record_sha256",
+                    },
+                )
+                self.assertEqual(
+                    fixture["proposal_record_sha256"],
+                    hashlib.sha256(canonical_json_bytes(proposal)).hexdigest(),
+                )
+                subject = fixture["fixture_subject"]
+                self.assertEqual(
+                    fixture["fixture_subject_sha256"],
+                    hashlib.sha256(canonical_json_bytes(subject)).hexdigest(),
+                )
+                self.assertEqual(
+                    set(subject),
+                    {
+                        "case_scope",
+                        "class",
+                        "layer",
+                        "model",
+                        "mutation_kind",
+                        "proposal_id",
+                        "relationship_scope",
+                        "schema_version",
+                        "target",
+                    },
+                )
+                self.assertEqual(
+                    subject["schema_version"],
+                    "d004-cross-cutting-fixture-subject-v0.1",
+                )
+                for subject_field, proposal_field in (
+                    ("proposal_id", "id"),
+                    ("class", "class"),
+                    ("case_scope", "case_scope"),
+                    ("relationship_scope", "relationship_scope"),
+                    ("layer", "layer"),
+                    ("mutation_kind", "mutation_kind"),
+                    ("target", "target"),
+                ):
+                    self.assertEqual(
+                        subject[subject_field], proposal[proposal_field]
+                    )
+                self.assertEqual(
+                    fixture["expected_observation"],
+                    {
+                        "observation_level": proposal["observation_level"],
+                        "state": proposal["expected_state"],
+                        "required_invalidation": proposal[
+                            "required_invalidation"
+                        ],
+                        "match_rule": proposal["match_rule"],
+                        "capability_credit": "none",
+                    },
+                )
+                self.assertTrue(
+                    {
+                        "loader_status",
+                        "observed_state",
+                        "matched",
+                        "result",
+                    }.isdisjoint(fixture)
+                )
+
+                model = subject["model"]
+                target = proposal["target"]
+                fixture_class = proposal["class"]
+                self.assertEqual(model["kind"], fixture_class)
+                if fixture_class == "missing-edge":
+                    self.assertEqual(model["baseline_relationships"], relationships)
+                    self.assertEqual(
+                        model["mutated_relationships"],
+                        [value for value in relationships if value != target],
+                    )
+                    self.assertEqual(
+                        model["dependent_result"]["required_relationships"],
+                        [target],
+                    )
+                elif fixture_class == "identity-substitution":
+                    self.assertEqual(
+                        [binding["slot"] for binding in model["baseline_bindings"]],
+                        identity_slots,
+                    )
+                    changed = []
+                    for baseline, mutated in zip(
+                        model["baseline_bindings"], model["mutated_bindings"]
+                    ):
+                        slot = baseline["slot"]
+                        self.assertEqual(
+                            baseline["identity_sha256"], identity(slot, "original")
+                        )
+                        if baseline != mutated:
+                            changed.append(slot)
+                            self.assertEqual(
+                                mutated["identity_sha256"],
+                                identity(slot, "substitute"),
+                            )
+                    self.assertEqual(changed, [target])
+                    self.assertEqual(
+                        model["dependent_result"]["required_binding"],
+                        {"slot": target, "identity_sha256": identity(target, "original")},
+                    )
+                elif fixture_class == "ambiguity":
+                    self.assertEqual(model["authority_key"], target)
+                    self.assertEqual(len(model["interpretations"]), 2)
+                    self.assertEqual(
+                        len(
+                            {
+                                interpretation["value"]
+                                for interpretation in model["interpretations"]
+                            }
+                        ),
+                        2,
+                    )
+                    self.assertIs(
+                        model["dependent_result"]["requires_unique_authority"],
+                        True,
+                    )
+                elif fixture_class == "unsupported":
+                    self.assertEqual(model["request"]["operation"], target)
+                    self.assertEqual(
+                        model["support_domain"]["unsupported_operations"],
+                        [target],
+                    )
+                    self.assertNotIn(
+                        target, model["support_domain"]["supported_operations"]
+                    )
+                else:
+                    self.assertEqual(fixture_class, "resource-exhaustion")
+                    self.assertEqual(model["resource_domain"]["limit"], 8)
+                    self.assertEqual(len(model["request"]["work_items"]), 9)
+                    self.assertGreater(
+                        len(model["request"]["work_items"]),
+                        model["resource_domain"]["limit"],
+                    )
+
+        for candidate in ("ST-REL", "ST-UNI", "ST-DUAL", "ST-MIRROR", "ST-HOST"):
+            self.assertNotIn(candidate.encode("ascii"), raw)
 
     def test_lifecycle_owner_and_epoch_freeze_drift_are_rejected(self) -> None:
         mutations = (
@@ -353,6 +671,10 @@ class D004DraftPacketTests(unittest.TestCase):
             (
                 PROPOSAL_MANIFEST_PATH,
                 "d004_packet.proposal_manifest_missing",
+            ),
+            (
+                FIXTURE_CATALOG_PATH,
+                "d004_packet.fixture_catalog_missing",
             ),
         ):
             with self.subTest(path=removed), tempfile.TemporaryDirectory() as directory:
@@ -701,6 +1023,66 @@ class D004DraftPacketTests(unittest.TestCase):
 
             codes = self._codes(root)
             self.assertIn("d004_packet.proposal_manifest_digest", codes)
+            self.assertIn("d004_packet.digest", codes)
+
+    def test_cross_cutting_fixture_catalog_transport_and_duplicate_keys_fail_closed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / FIXTURE_CATALOG_PATH
+            fixture_catalog = load_json(target)
+            target.write_text(
+                json.dumps(fixture_catalog, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            self.assertIn(
+                "d004_packet.fixture_catalog_canonical",
+                self._codes(root),
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_lab(root)
+            target = root / FIXTURE_CATALOG_PATH
+            raw = target.read_bytes()
+            target.write_bytes(
+                raw.replace(
+                    b"{",
+                    b'{"status":"draft_unreviewed_input_only",',
+                    1,
+                )
+            )
+            self.assertIn(
+                "d004_packet.fixture_catalog_parse",
+                self._codes(root),
+            )
+
+    def test_cross_cutting_fixture_catalog_cannot_self_rebind(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            packet_path = self._copy_lab(root)
+            catalog_path = root / FIXTURE_CATALOG_PATH
+            fixture_catalog = load_json(catalog_path)
+            subject = fixture_catalog["fixtures"][0]["fixture_subject"]
+            subject["model"]["mutated_relationships"].append("SR-01")
+            fixture_catalog["fixtures"][0]["fixture_subject_sha256"] = (
+                hashlib.sha256(canonical_json_bytes(subject)).hexdigest()
+            )
+            self._write_canonical(catalog_path, fixture_catalog)
+
+            packet = load_json(packet_path)
+            packet["cross_cutting_executable_fixture_catalog_sha256"] = (
+                hashlib.sha256(canonical_json_bytes(fixture_catalog)).hexdigest()
+            )
+            packet["input_bindings"]["cross_cutting_executable_fixtures"][
+                "sha256"
+            ] = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+            self._write_canonical(packet_path, packet)
+
+            codes = self._codes(root)
+            self.assertIn("d004_packet.fixture_catalog_digest", codes)
             self.assertIn("d004_packet.digest", codes)
 
     def test_noncanonical_json_duplicate_keys_and_floats_are_rejected_not_crashed(self) -> None:

@@ -2,7 +2,7 @@
 
 Status: active proposed-decision ledger
 
-Snapshot: 2026-07-13
+Snapshot: 2026-07-26
 
 This file separates user direction, research recommendations, and ratified
 architecture. A recommendation is not allowed to become a hidden decision by
@@ -11,6 +11,8 @@ being implemented first.
 Statuses:
 
 - `accepted`: ratified and change-controlled;
+- `owner-accepted`: explicit owner disposition provisionally authorizes the
+  boundary while its required exact-revision Accepted record remains pending;
 - `directed`: explicit project direction, with design details still open;
 - `proposed`: recommended answer pending the named gate;
 - `investigate`: alternatives need a reproducible decision suite;
@@ -62,11 +64,11 @@ Change rule: only explicit user/project-governance direction can supersede this.
 
 ## D-003 — Product form
 
-Status: proposed; decide before S2/S3 stabilizes the standalone language and
-Core boundary
+Status: owner-accepted on 2026-07-26; pending Accepted exact-revision OEP
+closure before D-004 or S3b relies on the standalone language and Core boundary
 
-Recommendation: a standalone domain-specific language with its own editioned
-semantics and canonical Core formats.
+Owner-accepted direction: a standalone domain-specific language with its own
+editioned semantics and canonical Core formats.
 
 Alternatives considered:
 
@@ -78,16 +80,24 @@ Rationale: interoperability with those systems is valuable, but delegating the
 surface language and semantics would preserve the polyglot seams Orange is meant
 to make explicit.
 
-Acceptance evidence: complete user journeys, a stable Core boundary, and an
-owner-executable scope and resource analysis. Independent feasibility review is
+Acceptance evidence: four candidates, eight non-compensable hard gates, 8/8
+structurally specified journey mappings with 0/8 complete, an explicit
+private-to-canonical Core migration boundary, and an owner-executable scope and
+resource analysis. This decision evidence establishes neither completed
+journeys nor a stable canonical Core. Independent feasibility review is
 unavailable in solo mode; its absence limits any external feasibility claim but
 does not block proof-neutral frontend work.
 
 The four candidates, eight hard gates, journey coverage, migration boundary,
 resource analysis, and reconsideration rules are specified in the
-[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md). That
-unnumbered research packet recommends the standalone form but records no owner
-acceptance, OEP intake, or implementation authority.
+[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md). The owner
+explicitly accepted candidate PF-01, the standalone Orange product form, on
+2026-07-26. Under [`GOVERNANCE.md`](../GOVERNANCE.md), that explicit acceptance
+provisionally authorizes the product-form boundary, but D-003 remains formally
+pending until
+[OEP-0004](governance/oeps/OEP-0004-standalone-orange-product-form.md)
+becomes Accepted and records the decision at an exact revision. This acceptance
+does not accept D-004 or authorize S3b.
 
 ## D-004 — Semantic strata
 
@@ -114,17 +124,23 @@ specified in the
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md).
 That Draft protocol records 0/25 required candidate-case executions: 0/5
 candidates have complete five-case packets, and 0/5 cases have complete
-cross-candidate execution. It selects no stratum, does not accept D-003, and
-does not authorize S3b.
+cross-candidate execution. It selects no stratum, does not close D-003's
+exact-revision OEP requirement, and does not authorize S3b.
 
-Its input-only pre-epoch laboratory binds the 26 case mutations named explicitly
-by the suite plus 39 unreviewed domain-level structural proposals: 14
-missing-edge, 10 identity-substitution, and five each for ambiguity, unsupported
-behavior, and domain exhaustion. It then plans all 25 candidate-case slots. The
-proposals contain zero executable fixtures and no observation or evidence; all
-five class statuses remain coverage-unresolved freeze blockers, and the replay
-count remains unassigned. The laboratory executes no candidate and creates no
-evidence epoch, result, review, recommendation, or selection.
+Its input-only pre-epoch laboratory now byte-materializes exactly 39
+candidate-neutral cross-cutting fixture subjects under the status
+`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
+each for ambiguity, unsupported behavior, and domain exhaustion. The five
+positive case subjects and all 26 named mutation subjects remain definition-only
+gaps. All five class sufficiency reviews and freeze blockers remain unresolved,
+and replay repetitions remain unresolved and unassigned. Integrity parsing and
+structural oracles over the opaque suite-only bytes are not candidate executions
+and ratify no Orange semantics. D-003 is
+owner-accepted pending exact-revision OEP closure; the D-004 epoch remains
+unfrozen, and D-004 owner protocol review
+remains `none`. With no candidate mappings or adapters, the laboratory creates
+no observation, evidence, result, recommendation, selection, or conclusion and
+advances no roadmap gate or readiness beyond 30%.
 
 ## D-005 — Public assurance model
 

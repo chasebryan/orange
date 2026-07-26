@@ -1,7 +1,7 @@
 use std::fmt;
 
 pub(crate) const REQUIRED_CANDIDATE_CASES: usize = 25;
-pub(crate) const INPUT_BINDING_COUNT: usize = 20;
+pub(crate) const INPUT_BINDING_COUNT: usize = 21;
 pub(crate) const CROSS_CUTTING_PROPOSAL_COUNT: usize = 39;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -355,12 +355,14 @@ pub(crate) const CASE_SCOPED_CROSS_CUTTING_PROPOSALS: [CaseScopedProposalSpec; 1
     },
 ];
 
-pub(crate) const PROTOCOL_GAPS: [&str; 6] = [
-    "ambiguity fixture coverage unresolved",
-    "missing-edge fixture coverage unresolved",
-    "identity-substitution fixture coverage unresolved",
-    "unsupported fixture coverage unresolved",
-    "resource-exhaustion fixture coverage unresolved",
+pub(crate) const PROTOCOL_GAPS: [&str; 8] = [
+    "five positive subjects absent",
+    "26 named-mutation subjects absent",
+    "ambiguity fixture sufficiency review unresolved",
+    "missing-edge fixture sufficiency review unresolved",
+    "identity-substitution fixture sufficiency review unresolved",
+    "unsupported fixture sufficiency review unresolved",
+    "resource-exhaustion fixture sufficiency review unresolved",
     "replay repetition count unresolved",
 ];
 
@@ -368,7 +370,7 @@ pub(crate) const NONCLAIMS: [&str; 6] = [
     "no candidate adapter executed",
     "no D-004 evidence epoch frozen",
     "no semantic-strata candidate selected",
-    "no D-003 disposition inferred",
+    "no D-003 exact-revision OEP closure inferred",
     "no roadmap gate or readiness movement",
     "no S3b implementation authorized",
 ];
@@ -409,6 +411,7 @@ pub(crate) enum InputBindingId {
     ValidIntRadices,
     ValidWord8Boundaries,
     CrossCuttingFixtureProposals,
+    CrossCuttingExecutableFixtures,
 }
 
 impl InputBindingId {
@@ -434,6 +437,7 @@ impl InputBindingId {
             Self::ValidIntRadices => "fixture_valid_int_radices",
             Self::ValidWord8Boundaries => "fixture_valid_word8_boundaries",
             Self::CrossCuttingFixtureProposals => "cross_cutting_fixture_proposals",
+            Self::CrossCuttingExecutableFixtures => "cross_cutting_executable_fixtures",
         }
     }
 
@@ -459,6 +463,7 @@ impl InputBindingId {
             Self::ValidIntRadices => 17,
             Self::ValidWord8Boundaries => 18,
             Self::CrossCuttingFixtureProposals => 19,
+            Self::CrossCuttingExecutableFixtures => 20,
         }
     }
 }
@@ -479,17 +484,17 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::DecisionSuite,
         path: "docs/SEMANTIC_STRATA_DECISION_SUITE.md",
-        sha256: "6bbe26201f46c2ba9cc615646695454ab257973a935ba15862c9b67728ab4957",
+        sha256: "434fbd40aca233f66de0d78675ac7b19ae9ca4694b4a1bb14e4e595c4ff09ee7",
     },
     InputBinding {
         id: InputBindingId::ProductFormDecisionPacket,
         path: "docs/PRODUCT_FORM_DECISION_PACKET.md",
-        sha256: "8fcd7cf378d488bed49ed3cdd3609475d681c7b1e414927c7c761989e67093e9",
+        sha256: "7d6dad961c2bdb21a5e5f23a342964c2d05c03d1943c30e662feb4ac89ea6cfa",
     },
     InputBinding {
         id: InputBindingId::AcceptedS2Language,
         path: "docs/LANGUAGE_2026.md",
-        sha256: "52b6ef45ff5ee5d9f3951b1d6bf0f2e40a1566de623fc01e809a2a6d84d7a082",
+        sha256: "446ea34d8ce17a15a48827c88adddae5613a88d8b9de1caf32eb109804d14cc4",
     },
     InputBinding {
         id: InputBindingId::UserJourneys,
@@ -499,7 +504,7 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
     InputBinding {
         id: InputBindingId::AcceptedS3aSemantics,
         path: "docs/SEMANTICS_2026.md",
-        sha256: "bc429d9f1296aee9376d377f93c013f74ba8b6f7e3cb48eb6410498a0b8a00e7",
+        sha256: "61457ad795354b87bf99185e1e6cc95868bf96088e7b073fa4a7ff1e92664828",
     },
     InputBinding {
         id: InputBindingId::AcceptedS3aOep,
@@ -570,6 +575,11 @@ pub(crate) const INPUT_BINDINGS: [InputBinding; INPUT_BINDING_COUNT] = [
         id: InputBindingId::CrossCuttingFixtureProposals,
         path: "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json",
         sha256: "171c7b88d54fe2bd7ddb4c220adb63f006e07c35391018b914482ace17cf7e93",
+    },
+    InputBinding {
+        id: InputBindingId::CrossCuttingExecutableFixtures,
+        path: "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json",
+        sha256: "268b4065028f1af9c9ec912ae8884c150094189f5d782963f42ed6ed4cca6ce0",
     },
 ];
 

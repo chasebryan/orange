@@ -5277,8 +5277,13 @@ class PlanningTraceHardeningTests(unittest.TestCase):
                 "product_form.candidates",
             ),
             (
-                "The packet has no OEP number, intake",
-                "The packet has an assigned OEP number, intake",
+                "Owner accepted; exact-revision OEP closure pending",
+                "Recommend",
+                "product_form.candidates",
+            ),
+            (
+                "The bootstrap steward assigned OEP-0004.",
+                "No OEP number is assigned.",
                 "product_form.assertion",
             ),
         )
@@ -5346,12 +5351,12 @@ class PlanningTraceHardeningTests(unittest.TestCase):
                 "semantic_strata.header",
             ),
             (
+                "Suite version: `d004-v0.3-draft`",
                 "Suite version: `d004-v0.2-draft`",
-                "Suite version: `d004-v0.1-draft`",
                 "semantic_strata.header",
             ),
             (
-                "Snapshot: 2026-07-25",
+                "Snapshot: 2026-07-26",
                 "Snapshot: 2026-07-13",
                 "semantic_strata.header",
             ),

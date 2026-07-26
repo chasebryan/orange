@@ -37,8 +37,8 @@ const COMPILER_STRATEGY_SUITE: &[u8] =
     include_bytes!("../../../../docs/COMPILER_STRATEGY_DECISION_SUITE.md");
 
 const PACKET_CANONICAL_SHA256: &str =
-    "9414cc150679506a8187f0ea47585b24aac469f4bdfd2996748bbaf76e6f6b55";
-const PACKET_RAW_SHA256: &str = "c4bfa32dfaf046b69ebf4a0b7fa7dcd40aa9a6890d9430c6a70a1b7061163b2a";
+    "58ba55f90d63fcf2ce51585d51ea29bbaed375ed703d5c3d9cd7508571c232d2";
+const PACKET_RAW_SHA256: &str = "bee863a6204b5bb13bf91226ed23d9a1c0a36480b3eb15468e1c64f8e904bd8e";
 const INDEX_RAW_SHA256: &str = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670";
 const SUITE_RAW_SHA256: &str = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73";
 
@@ -56,7 +56,7 @@ const PACKET_NONCLAIMS: [&str; 10] = [
 ];
 
 const PROTOCOL_GAPS: [&str; 14] = [
-    "D-003 acceptance absent",
+    "D-003 Accepted exact-revision OEP closure absent",
     "D-004 acceptance absent",
     "D-005 acceptance absent",
     "D-006 acceptance absent",

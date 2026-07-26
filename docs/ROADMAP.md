@@ -2,7 +2,7 @@
 
 Status: directed active roadmap under D-023 and OEP-0001
 
-Snapshot: 2026-07-25
+Snapshot: 2026-07-26
 
 Orange is developed by one owner. This roadmap assumes no contributors,
 independent reviewers, auditors, laboratories, partner organizations, or
@@ -365,24 +365,36 @@ local and hosted evidence recorded.
 
 Before S3b expands the Typed Reference Core with pure expressions or calls:
 
-1. decide D-003, the product form that constrains the language and evaluator;
+1. close owner-accepted D-003 by promoting
+   [OEP-0004](governance/oeps/OEP-0004-standalone-orange-product-form.md) to
+   Accepted at the exact reviewed revision for the PF-01 standalone product
+   form;
 2. decide D-004, the complete semantic strata and Core relationships; and
 3. authorize the bounded S3b surface through an OEP with explicit conformance,
    resource, compatibility, threat, and non-claim boundaries.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
-The unapproved
-[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md) and the
-conditional
+The owner-accepted
+[D-003 product-form decision packet](PRODUCT_FORM_DECISION_PACKET.md), still
+pending exact-revision OEP closure, and the conditional
 [D-004 semantic-strata decision suite](SEMANTIC_STRATA_DECISION_SUITE.md)
-define the owner-executable research that may run ahead. Neither packet decides
-its subject or authorizes S3b. The D-004 input-only pre-epoch laboratory binds
-the named case mutations and 39 unreviewed, domain-level structural proposal
-definitions before it plans the symmetric 25-slot matrix. Every fixture class
-still has zero executable fixtures, unresolved coverage, and an active freeze
-blocker; replay repetition remains unassigned. The catalog freezes no epoch,
-creates no evidence, and advances no roadmap gate or readiness percentage.
+define the owner-executable records and research that may run ahead. Explicit
+acceptance on 2026-07-26 provisionally authorizes D-003 candidate PF-01 under
+[`GOVERNANCE.md`](../GOVERNANCE.md), but it does not accept D-004 or authorize
+S3b. The D-004 input-only pre-epoch laboratory binds
+exactly 39 candidate-neutral cross-cutting fixture subjects as
+`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
+each for ambiguity, unsupported behavior, and domain exhaustion. The five
+positive case subjects and 26 named mutation subjects remain definition-only
+gaps. Sufficiency review and the freeze blocker for every cross-cutting class
+remain unresolved, as do replay repetitions. D-003 is owner-accepted pending
+exact-revision OEP closure; D-004 owner protocol review is `none`; the D-004
+epoch is unfrozen; and no candidate mapping or adapter exists. Integrity
+parsing and structural oracles over the opaque suite-only inputs are not
+candidate executions and ratify no semantics. The laboratory remains at 0/25
+with no observation, evidence, result, selection, or conclusion; S3 remains
+open and Orange remains 30% complete by binary gate closure.
 
 ## 7. Quality and claim metrics
 

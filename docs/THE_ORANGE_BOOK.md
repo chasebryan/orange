@@ -230,7 +230,8 @@ accepted S3a grammar adds closed typed-literal specifications:
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
-the D-003/D-004 architecture decisions remain open.
+the D-004 architecture decision remain open. D-003 candidate PF-01 is
+owner-accepted pending exact-revision OEP closure.
 
 ```orange
 edition 2026;
@@ -542,7 +543,7 @@ Chapter names may change as the normative design changes.
 | --- | --- | --- | --- |
 | I — Why Orange | 1. The Seams Are the System | Drafted in v0.1 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Planned | Product form and semantic strata remain proposed |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Planned | Product form owner-accepted pending exact-revision OEP closure; semantic strata remain proposed |
 | II — Meaning and Trust | 4. From Surface Text to Meaning | Planned | Accepted typed-literal Core and evaluator exist; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Planned | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Planned | Leakage baseline and target models remain unsettled |

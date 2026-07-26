@@ -10,11 +10,12 @@ toolchain, implementing a candidate adapter, or creating a candidate result.
 
 Every CC-01 through CC-08 index row records absent shared inputs, absent
 candidate mappings, zero executable fixtures, unresolved coverage, and an
-active freeze blocker. The packet likewise records that D-003, D-004, D-005,
-D-006, and D-009 acceptance is absent. D-007, D-011, D-012, and D-013 remain
-downstream decisions; bounded suite-only models may eventually exercise their
-interfaces without accepting or predetermining them. Any external tool used in
-measured work requires its applicable D-018 admission first.
+active freeze blocker. The packet likewise records that D-003 Accepted
+exact-revision OEP closure is absent and that D-004, D-005, D-006, and D-009
+acceptance is absent. D-007, D-011, D-012, and D-013 remain downstream
+decisions; bounded suite-only models may eventually exercise their interfaces
+without accepting or predetermining them. Any external tool used in measured
+work requires its applicable D-018 admission first.
 
 The standard-library Rust laboratory may strictly parse these bytes, verify the
 raw bindings to the index and unchanged
@@ -25,9 +26,9 @@ candidate order through CC-08. It is a canonical identity serialization, not an
 authorized physical execution order.
 
 The packet's strict canonical JSON SHA-256, excluding its final line feed, is
-`9414cc150679506a8187f0ea47585b24aac469f4bdfd2996748bbaf76e6f6b55`;
+`58ba55f90d63fcf2ce51585d51ea29bbaed375ed703d5c3d9cd7508571c232d2`;
 its raw file SHA-256, including the final line feed, is
-`c4bfa32dfaf046b69ebf4a0b7fa7dcd40aa9a6890d9430c6a70a1b7061163b2a`.
+`bee863a6204b5bb13bf91226ed23d9a1c0a36480b3eb15468e1c64f8e904bd8e`.
 Its closed packet schema is `d010-pre-epoch-packet-v0.1`, and the suite version
 is `d010-v0.1-draft`. The case-input index's strict canonical JSON SHA-256 is
 `4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209`;

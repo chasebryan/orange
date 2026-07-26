@@ -3,9 +3,9 @@
 Status: draft owner-executable decision protocol; no semantic-strata candidate
 selected
 
-Suite version: `d004-v0.2-draft`
+Suite version: `d004-v0.3-draft`
 
-Snapshot: 2026-07-25
+Snapshot: 2026-07-26
 
 ## 1. Authority and decision boundary
 
@@ -15,10 +15,13 @@ semantic roles and Core relationships into symmetric cases, typed crossings,
 hard gates, resource rules, and an inconclusive outcome. It is decision
 research, not a normative language specification.
 
-D-003 remains proposed and its product-form decision packet remains unapproved.
-D-004 therefore may collect conditional research, but it cannot be accepted
-before the owner accepts or otherwise disposes of D-003. This suite does not
-accept D-003 or authorize S3b implementation.
+On 2026-07-26 the owner explicitly accepted D-003 candidate PF-01, the
+standalone Orange product form. That acceptance provisionally authorizes the
+product-form boundary under [`GOVERNANCE.md`](../GOVERNANCE.md), but D-003
+remains formally pending until an Accepted OEP binds the decision to an exact
+revision. D-004 may collect conditional research, but it cannot be accepted
+before that exact-revision D-003 closure. This suite does not accept D-004 or
+authorize S3b implementation.
 
 The currently accepted semantic boundary remains
 [`SEMANTICS_2026.md`](SEMANTICS_2026.md). Its Typed Reference Core is an
@@ -77,6 +80,16 @@ The candidate packet freezes:
 - an input manifest covering every byte, path, mode, and expected observation;
 - a correction window that applies equally to all candidates; and
 - a variance log in which any changed premise creates a new evidence epoch.
+
+The current pre-epoch laboratory has byte-materialized exactly 39
+candidate-neutral cross-cutting fixture subjects: 14 missing-edge subjects, 10
+identity-substitution subjects, and five subjects each for ambiguity,
+unsupported behavior, and domain exhaustion. Their status is
+`materialized_unreviewed`. They are opaque suite-only models with fixed
+identities and expected domain states, not accepted Orange syntax, semantics,
+Core members, relations, or candidate observations. The five positive case
+subjects and all 26 named mutation subjects remain definition-only gaps, and no
+candidate mapping or adapter exists.
 
 ## 3. Proposed role map
 
@@ -180,6 +193,11 @@ The frozen matrix therefore contains exactly 25 required candidate-case
 executions per evidence epoch: each of the 5 candidates runs each of the 5
 cases. A case has complete cross-candidate execution only when all five of its
 candidate-specific records exist in the same epoch.
+
+The prose below still defines, rather than materializes, the five positive case
+subjects and 26 named mutation subjects. Byte materialization of the separate
+39-subject cross-cutting corpus does not make any SC-01-through-SC-05 case
+executable for a candidate, because candidate mappings and adapters are absent.
 
 ### SC-01 — SHA-like word code
 
@@ -417,21 +435,32 @@ for results that do not yet exist.
 
 The repository may carry an exact input-only pre-epoch laboratory before that
 freeze. Its `draft_unfrozen` packet may bind this suite, the accepted S3a
-baseline, the 26 mutations named explicitly by SC-01 through SC-05, an
-unreviewed structural proposal manifest, and a deterministic 25-slot
-candidate-case plan. That manifest defines 39 domain-level structural
-proposals: 14 missing-edge, 10 identity-substitution, and five each for
-ambiguity, unsupported behavior, and domain exhaustion. Each class status
-records zero executable fixtures, unresolved coverage, and an active freeze
-blocker. The records are unreviewed definitions only; they supply no executable
-fixture bytes, concrete candidate observations, result, evidence, or capability
-credit. In particular, candidate-adapter inability cannot satisfy an
-unsupported proposal, and a domain-exhaustion proposal neither exercises a
-replay ceiling nor converts replay-level failure into a matching observation.
-The manifest assigns no replay count. All five cross-cutting fixture classes
-therefore remain unresolved freeze blockers, not omissions that an adapter may
-fill privately. The laboratory executes no adapter, creates no result or review
-record, freezes no evidence epoch, and selects no candidate.
+baseline, the 26 mutations named explicitly by SC-01 through SC-05, the
+unreviewed structural proposal manifest, the exactly 39 corresponding
+candidate-neutral byte-materialized subjects, and a deterministic 25-slot
+candidate-case identity plan. The 39 subjects remain
+`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
+each for ambiguity, unsupported behavior, and domain exhaustion. They carry
+fixed bytes and expected domain states only. They contain no candidate mapping,
+adapter output, observed state, comparison result, case verdict, evidence, or
+capability credit.
+
+The five positive case subjects and all 26 named mutation subjects remain
+definition-only gaps. Sufficiency review for each of the five cross-cutting
+classes remains unresolved, every class retains an active freeze blocker, and
+replay repetitions remain unresolved and unassigned. Candidate-adapter
+inability cannot satisfy an unsupported subject, and a domain-exhaustion
+subject neither exercises a replay ceiling nor converts replay-level failure
+into a matching observation.
+
+Canonical parsing, digest verification, bounded structural checks, and
+deterministic integrity-oracle evaluation of these opaque subjects are
+repository-integrity operations, not candidate-case executions. They ratify no
+Orange semantics and create no domain observation or decision evidence. The
+laboratory executes no candidate adapter, creates no result or review record,
+freezes no evidence epoch, and selects no candidate. D-003 is owner-accepted
+pending exact-revision OEP closure; `owner_protocol_review` remains `none` for
+D-004, and the D-004 epoch remains unfrozen.
 
 Each candidate receives at most 24 owner-hours for its first complete case
 packet and one four-owner-hour correction window. Time accounting is elapsed
@@ -509,15 +538,22 @@ Execution evidence is currently 0/25 required candidate-case executions: 0/5
 candidates have complete five-case packets, and 0/5 cases have complete
 cross-candidate execution.
 
+The 39 byte-materialized cross-cutting subjects do not change that baseline.
+No candidate mapping, adapter, observation, evidence, selection, or conclusion
+exists, and materialization supplies no roadmap or readiness credit.
+
 ## 9. Current handoff
 
-The next authorized actions are to obtain owner intake and disposition for
-D-003, review this conditional D-004 protocol, and resolve the pre-epoch
-laboratory's explicit protocol gaps before freezing an evidence epoch. Running
-the later frozen suite then produces decision evidence; it still does not
-implement S3b.
+The next authorized actions are to close owner-accepted D-003 through an
+Accepted exact-revision OEP, then review this conditional D-004 protocol and the
+sufficiency of all five cross-cutting classes, materialize the five positive
+and 26 named-mutation subjects, assign replay repetitions, and resolve the
+remaining pre-epoch gaps symmetrically before freezing an evidence epoch.
+Running the later frozen suite then produces decision evidence; it still does
+not implement S3b.
 
 Until those actions occur, D-004 remains proposed, the architecture role map
 remains a recommendation, the S3a Typed Reference Core remains the only
 implemented semantic boundary, and no proof, native-code, leakage,
 cryptographic, compatibility, release, or production-readiness claim follows.
+Orange remains 30% complete toward 1.0.0 by binary gate closure.

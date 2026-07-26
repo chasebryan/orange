@@ -20,9 +20,26 @@ incomplete.
 
 The Typed Reference Core has no canonical encoding, proof identity, refinement
 relation, target, ABI, package or release identity, cryptographic, or leakage
-meaning. D-003 and D-004 remain unresolved and unratified, and unresolved
+meaning. D-003 candidate PF-01 is owner-accepted as of 2026-07-26 and
+provisionally authorizes the standalone product-form boundary under
+[`GOVERNANCE.md`](../GOVERNANCE.md), but D-003 remains formally pending an
+Accepted exact-revision OEP. D-004 remains unresolved and unratified, and open
 architecture choices continue to gate only the component or claim that depends
 on them.
+
+The D-004 pre-epoch laboratory now byte-materializes exactly 39
+candidate-neutral cross-cutting fixture subjects as
+`materialized_unreviewed`: 14 missing-edge, 10 identity-substitution, and five
+each for ambiguity, unsupported behavior, and domain exhaustion. They are
+opaque suite-only inputs for later symmetric comparison, not members of the
+accepted language or Core family. The five positive cases and 26 named
+mutations remain definition-only; all five class sufficiency reviews and freeze
+blockers plus replay repetitions remain unresolved. D-003 is owner-accepted
+pending exact-revision OEP closure; D-004 owner review is `none`, the D-004
+epoch is unfrozen, and no candidate mapping, adapter, evidence, selection, or
+conclusion exists. Integrity parsing and structural oracles are not candidate
+executions and ratify no semantic boundary. D-004 remains at 0/25 and Orange at
+30% readiness by binary gate closure.
 
 D-010 also remains unresolved. Compiler descriptions below are candidate
 requirements and claim-boundary obligations, not a selected backend, pass
