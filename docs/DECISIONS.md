@@ -274,11 +274,35 @@ only components that depend on them.
 
 Status: proposed; decide before S4 admits solver-backed proof search
 
-Recommendation: solvers are untrusted search/counterexample engines in
-claim-closing mode. Successful automated claims require checked certificates or
-Orange proof terms.
+Dependency order: D-004 and D-005 must each be Accepted before D-009 can be
+Accepted. D-006 and D-007 are downstream consumers rather than D-009
+acceptance prerequisites. Requiring either first would create a cycle because
+D-006 case DS-04 itself depends on the D-009 solver-trust policy.
 
-Initial portfolio:
+Decision question: whether claim-closing automation requires a checked
+artifact, requires reconstruction as an Orange proof term, or may rely on an
+exact admitted solver as direct logical authority.
+
+Candidates:
+
+- SP-01, Checked-artifact portfolio: untrusted search with claim-closing
+  authority only after an accepted certificate or Orange proof term;
+- SP-02, Kernel-only reconstruction: solver output may guide reconstruction,
+  but only a kernel-accepted Orange proof term can satisfy a claim; and
+- SP-03, Direct trusted-solver authority: an exact admitted
+  solver/version/fragment may decide directly and is explicitly part of the
+  logical TCB.
+
+No candidate is selected, preferred, or authorized for claim-bearing product
+work by this register. The owner-executable
+[`d009-v0.1-draft`](SOLVER_TRUST_DECISION_SUITE.md) compares all three policies
+across eight symmetric cases: profile/outcome separation, LRAT-family checked
+artifacts, validated counterexamples, reflective procedures, supported SMT
+proof formats and external evidence, fail-closed automation outcomes, complete
+identity/cache/TCB closure, and solo-mode replay and maintenance. The frozen
+matrix contains 24 candidate-case runs and no weighted aggregate score.
+
+Candidate-neutral comparison inputs include:
 
 - verified bit-blasting plus LRAT-family SAT certificates;
 - reflective algebra/range procedures;
@@ -286,12 +310,57 @@ Initial portfolio:
   fragments only;
 - external EasyCrypt/SSProve evidence labeled as external until reconstructed.
 
-Timeout, `unknown`, missing proof output, resource exhaustion, or a trusted/
-unsupported certificate step leaves the claim outcome `unresolved` and records
-the exact diagnostic reason.
+The four D-005 atomic claim outcomes retain their exact-claim-and-scope meanings
+throughout the comparison. `satisfied` requires complete candidate-permitted
+mandatory authority closure for the exact proposition and no valid decisive
+negative result. `not_satisfied` requires permitted, identity-bound negative
+evidence that establishes the exact proposition false or violated within its
+scope; absence or incompleteness alone is not `not_satisfied`. `unresolved`
+means a well-formed, supported claim still has an unknown,
+incomplete, conflicting, or exhausted required decision; timeout, `unknown`,
+missing proof output, resource exhaustion, crash, malformed output, checker
+failure, or an unsupported supplied proof step remains `unresolved` when the
+candidate still offers a permitted authority path for that claim and scope.
+`unsupported` means the candidate's declared policy or support envelope offers
+no permitted evaluation or authority path for the exact claim and scope. One
+unsupported artifact format, rule, or certificate step does not by itself make
+the claim `unsupported`. Every non-success records its exact diagnostic reason.
+No profile, cache, or summary may collapse or upgrade these outcomes.
 
-Acceptance evidence: negative tests prove every failure mode fails closed and
-no solver executable is in the native logical TCB.
+Acceptance evidence must prove every failure mode fails closed and every
+claim-closing authority is represented honestly. SP-01 and SP-02 must show that
+no solver executable has undeclared logical authority; SP-03 must expose the
+exact direct-authority solver in the logical TCB and may never present its
+direct result as a checked certificate or kernel proof. These are symmetric
+candidate obligations, not a recommendation.
+
+Current execution evidence is 0/24 candidate-case runs. The input-only
+pre-epoch laboratory binds the unchanged suite and an eight-row case-input
+index whose TC-01 through TC-08 rows retain absent shared inputs and candidate
+mappings, zero executable fixtures, unresolved coverage, and active freeze
+blockers. It enumerates the exact case-major, candidate-minor 24-slot identity
+inventory in memory but assigns no physical execution order.
+
+The laboratory admits, acquires, installs, or executes no solver, proof
+assistant, certificate checker, adapter, runner, observer, or isolation
+backend. It validates no proof, certificate, counterexample, theorem, claim, or
+cache result; freezes no epoch; creates no result or evidence; and leaves
+resources, selection, and conclusion null or unassigned. It adds no solver to
+or removes one from the logical TCB, authorizes no proof-bearing implementation,
+and advances no roadmap gate or readiness percentage.
+
+D-009 closes only after D-004 and D-005 are Accepted, all 24 candidate-case
+records are complete under one frozen symmetric epoch, SR-01 through SR-08 are
+complete and `solo-reviewed`, and the deterministic decision procedure yields
+one `recommend_*` conclusion naming a candidate whose eight hard gates all
+`pass`. `tie` or `inconclusive` leaves D-009 open. An Accepted Orange
+Enhancement Proposal must then bind that policy to the exact fully validated
+Git revision. Its `decision-revision` is exactly 40 lowercase hexadecimal
+characters, its review authority is `Orange Project Owner`, and an approval
+record contains the literal `solo-reviewed`. Owner acceptance is a governance
+disposition, never independent review or technical proof. An accepted D-009
+policy constrains later D-006 and D-007 work but does not supply their
+foundation, Proof IR, checker, or implementation evidence.
 
 ## D-010 — Compiler strategy
 

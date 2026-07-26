@@ -217,6 +217,10 @@ compiler/crates/orange-compiler/tests/d006_decision_suite.rs
 compiler/crates/orange-compiler/tests/d006_support/domain.rs
 compiler/crates/orange-compiler/tests/d006_support/packet.rs
 compiler/crates/orange-compiler/tests/d006_support/runner.rs
+compiler/crates/orange-compiler/tests/d009_decision_suite.rs
+compiler/crates/orange-compiler/tests/d009_support/domain.rs
+compiler/crates/orange-compiler/tests/d009_support/packet.rs
+compiler/crates/orange-compiler/tests/d009_support/runner.rs
 compiler/crates/orangec/Cargo.toml
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
@@ -263,6 +267,7 @@ docs/LANGUAGE_2026.md
 docs/PRODUCT_FORM_DECISION_PACKET.md
 docs/PROOF_FOUNDATION_DECISION_SUITE.md
 docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md
+docs/SOLVER_TRUST_DECISION_SUITE.md
 docs/REPRODUCIBILITY.md
 docs/USER_JOURNEYS.md
 docs/ARCHITECTURE.md
@@ -301,6 +306,9 @@ research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject
 research/decisions/D-006/README.md
 research/decisions/D-006/d006-v0.2-case-input-index.json
 research/decisions/D-006/d006-v0.2-draft-packet.json
+research/decisions/D-009/README.md
+research/decisions/D-009/d009-v0.1-case-input-index.json
+research/decisions/D-009/d009-v0.1-draft-packet.json
 schemas/README.md
 schemas/gate0/claim-record-v0.1.schema.json
 schemas/gate0/evidence-manifest-v0.1.schema.json
@@ -315,6 +323,7 @@ tools/fs_sandbox.c
 tools/tests/test_d004_draft_packet.py
 tools/tests/test_d005_draft_packet.py
 tools/tests/test_d006_draft_packet.py
+tools/tests/test_d009_draft_packet.py
 tools/validate_foundation.py
 tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
@@ -420,7 +429,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "b5a54e4b6aeb19a66216482c7b380951b80e935fccd2e80af424633ae1d6aabb"
+_RDC = "c5eac06a6e3779f94bf130226aff2414747ed6dc59550f92e5f0262fa4ad2e0b"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -484,7 +493,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "26cb5481e52649f088cd4451724fdaa19e0bfac65863340a198710e0865ce9c1"
+_PHD = "551e2586e90d6d2224c71ed2f48a5e9fc3e9d7d2f551eec7004d46a52492f826"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -818,6 +827,7 @@ GATE0_CODEOWNERS = tuple(
 /docs/GATE0_TRACEABILITY.md @chasebryan
 /docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md @chasebryan
 /docs/PROOF_FOUNDATION_DECISION_SUITE.md @chasebryan
+/docs/SOLVER_TRUST_DECISION_SUITE.md @chasebryan
 /docs/USER_JOURNEYS.md @chasebryan
 /docs/governance/ @chasebryan
 /docs/security/ @chasebryan
@@ -1049,6 +1059,42 @@ DECISION_LABORATORY_SPECS = {
         ),
         "schema_compatibility": None,
     },
+    "d009": {
+        "finding_prefix": "d009_packet",
+        "research_root": "research/decisions/D-009/",
+        "inventory": frozenset(
+            "research/decisions/D-009/" + name
+            for name in "README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json".split()
+        ),
+        "premature": (
+            "research/decisions/D-009/",
+            r"(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])",
+            "premature_artifact",
+        ),
+        "json_identities": (
+            (
+                "research/decisions/D-009/d009-v0.1-draft-packet.json",
+                "",
+                "parse",
+                "e4b01992905589cf459f0f21d00afc92232736dfeed87571f8d1b93aa4b22598",
+                "7dc35a621a852b0684d198719a3df26d3a404b9e9f8b99173d9900691e7b11e1",
+                True,
+            ),
+            (
+                "research/decisions/D-009/d009-v0.1-case-input-index.json",
+                "index_",
+                "index_parse",
+                "2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e",
+                "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859",
+                True,
+            ),
+        ),
+        "raw_bindings": (
+            ("research/decisions/D-009/d009-v0.1-case-input-index.json", "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859"),
+            ("docs/SOLVER_TRUST_DECISION_SUITE.md", "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b"),
+        ),
+        "schema_compatibility": None,
+    },
 }
 DECISION_LABORATORY_INVARIANTS = {
     "research/decisions/D-004/": (3, 20, True, None),
@@ -1069,7 +1115,44 @@ DECISION_LABORATORY_INVARIANTS = {
         ),
     ),
     "research/decisions/D-006/": (2, 2, True, None),
+    "research/decisions/D-009/": (2, 2, True, None),
 }
+_D009_ATOMIC_OUTCOMES = (
+    "satisfied",
+    "not_satisfied",
+    "unresolved",
+    "unsupported",
+)
+_D009_ATOMIC_OUTCOME_MEANINGS = {
+    "satisfied": (
+        "the exact proposition has its complete permitted mandatory closure and no valid "
+        "decisive negative result"
+    ),
+    "not_satisfied": (
+        "permitted, identity-bound negative evidence establishes that the exact proposition "
+        "is false or violated within its scope; absence or incompleteness alone is not "
+        "not_satisfied"
+    ),
+    "unresolved": (
+        "the claim is well-formed and within the declared support model, but a required "
+        "decision remains unknown, incomplete, conflicting, or exhausted"
+    ),
+    "unsupported": (
+        "the declared policy or support envelope offers no permitted evaluation or authority "
+        "path for that exact claim and scope"
+    ),
+}
+_D009_HARD_GATE_STATE_PRECEDENCE = (
+    "unsupported",
+    "fail",
+    "unresolved",
+    "pass",
+)
+_D009_SEMANTIC_DIGESTS = (
+    "e629042056a8dc9dfe6e8553904fdc9d4f32ad767ae5660a2f5fcfacdd29693e",
+    "ea9ef864d5880bbee2f27eca0ecb2b0e43a3fb4f0b7105183d1b0afc817836db",
+    "98b1205923930ce7330b4f14b731c5999671f42457e5bcc857c7bc9d3aca6dc7",
+)
 ACTION_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s*([^\s@#]+)@([^\s#]+)"
     r"(?:\s+#\s*([^\s]+)(?:\s+.*)?)?\s*$"
@@ -2600,9 +2683,11 @@ class FoundationValidator:
         self._validate_product_form_decision_packet()
         self._validate_semantic_strata_suite()
         self._validate_public_assurance_model_suite()
+        self._validate_solver_trust_suite()
         self._validate_d004_draft_packet()
         self._validate_d005_draft_packet()
         self._validate_d006_draft_packet()
+        self._validate_d009_draft_packet()
         self._validate_change_records()
         self._validate_repository_templates()
         self._end()
@@ -5898,9 +5983,9 @@ class FoundationValidator:
                 )
                 normalized_s4 = re.sub(r"\s+", " ", s4)
                 for assertion in (
-                    "Status: pending symmetric execution and exact-revision OEP acceptance of both D-005 and D-006 plus their dependent decisions",
+                    "Status: pending symmetric execution and exact-revision OEP acceptance of D-005, D-006, and D-009 plus their dependent decisions",
                     "a selected public-assurance architecture through the symmetric D-005 suite and an Accepted exact-revision OEP, with ten separate claim families, four exact atomic outcomes, complete evidence/TCB closure, and no aggregate upgrade;",
-                    "all four D-005 candidates have complete 8/8 case records and both D-006 candidates have complete 7/7 case records under their frozen epochs.",
+                    "all four D-005 candidates have complete 8/8 case records and both D-006 candidates have complete 7/7 case records, and all three D-009 candidates have complete 8/8 case records (24/24 total) under their frozen epochs.",
                     "unavailable authorities, stale evidence, and aggregate summaries never satisfy or upgrade an atomic claim.",
                 ):
                     if assertion not in normalized_s4:
@@ -6215,6 +6300,200 @@ class FoundationValidator:
 
     def _validate_d006_draft_packet(self) -> None:
         self._validate_decision_laboratory("d006")
+
+    def _validate_d009_draft_packet(self) -> None:
+        self._validate_decision_laboratory("d009")
+        path = self.root / "research/decisions/D-009/d009-v0.1-draft-packet.json"
+        if not self._hf(path):
+            return
+        try:
+            packet = self._load_repository_json(path)
+        except (DuplicateKeyError, OSError, UnicodeDecodeError, ValueError, TypeError):
+            return
+        if not isinstance(packet, dict):
+            return
+        if (
+            packet.get("atomic_outcomes") != list(_D009_ATOMIC_OUTCOMES)
+            or packet.get("atomic_outcome_meanings") != _D009_ATOMIC_OUTCOME_MEANINGS
+            or packet.get("hard_gate_states")
+            != ["pass", "fail", "unresolved", "unsupported"]
+            or packet.get("hard_gate_state_precedence")
+            != list(_D009_HARD_GATE_STATE_PRECEDENCE)
+        ):
+            self.add(
+                "d009_packet.decision_vocabulary",
+                path,
+                "packet must retain the exact D-005 atomic outcome meanings and the "
+                "unsupported/fail/unresolved/pass hard-gate first-match precedence",
+            )
+
+    def _validate_solver_trust_suite(self) -> None:
+        path = self.root / "docs/SOLVER_TRUST_DECISION_SUITE.md"
+        if not self._hf(path):
+            return
+        source = self._rt(path)
+        if source is None:
+            return
+        text = markdown_without_fenced_blocks_and_comments(source)
+        normalized = re.sub(r"\s+", " ", text)
+        if hashlib.sha256(normalized.encode()).hexdigest() != _D009_SEMANTIC_DIGESTS[0]:
+            self.add(
+                "d009_suite.semantic_closure",
+                path,
+                "normalized D-009 suite semantics must remain exact across artifact reseals",
+            )
+        header = text.partition("## Solo-mode disposition")[0]
+        statuses = tuple(re.findall(r"(?ms)^Status:\s+(.+?)(?=\n\n)", header))
+        versions = tuple(re.findall(r"(?m)^Suite version: `([^`]+)`$", header))
+        snapshots = tuple(re.findall(r"(?m)^Snapshot: ([0-9]{4}-[0-9]{2}-[0-9]{2})$", header))
+        if (
+            tuple(re.sub(r"\s+", " ", value) for value in statuses)
+            != ("owner-executable draft under D-023; no solver-trust policy selected",)
+            or versions != ("d009-v0.1-draft",)
+            or snapshots != ("2026-07-25",)
+        ):
+            self.add(
+                "d009_suite.header",
+                path,
+                "suite status, version, and snapshot must retain the exact candidate-neutral D-009 identity",
+            )
+
+        candidate_rows = table_rows(
+            markdown_section(text, "## 2. Candidate parity and frozen inputs"),
+            r"SP-[0-9]{2}",
+        )
+        expected_candidates = (
+            ("SP-01", "Checked-artifact portfolio"),
+            ("SP-02", "Kernel-only reconstruction"),
+            ("SP-03", "Direct trusted-solver authority"),
+        )
+        if (
+            tuple(tuple(row[:2]) for row in candidate_rows) != expected_candidates
+            or any(len(row) != 4 or row[3] != "0/8 cases" for row in candidate_rows)
+        ):
+            self.add(
+                "d009_suite.candidates",
+                path,
+                "candidate table must retain SP-01 through SP-03 exactly, symmetrically, and at 0/8",
+            )
+
+        cases = markdown_section(text, "## 3. Required decision cases")
+        case_ids = tuple(f"TC-{index:02d}" for index in range(1, 9))
+        if tuple(re.findall(r"(?m)^###\s+(TC-[0-9]{2})\b", cases)) != case_ids:
+            self.add(
+                "d009_suite.case_ids",
+                path,
+                "decision cases must cover TC-01 through TC-08 exactly once in order",
+            )
+        for case_id in case_ids:
+            body = markdown_section(cases, f"### {case_id}", heading_level=3, prefix=True)
+            for label in (
+                "Question",
+                "Dependencies",
+                "Shared inputs",
+                "Candidate outputs",
+                "Positive checks",
+                "Mutation and negative checks",
+                "Hard acceptance",
+            ):
+                if f"**{label}:**" not in body:
+                    self.add("d009_suite.case_field", path, f"{case_id} is missing {label}")
+
+        metric_rows = table_rows(markdown_section(text, "## 4. Comparable metrics"), r"M-[0-9]{2}")
+        if (
+            tuple(row[0] for row in metric_rows)
+            != tuple(f"M-{index:02d}" for index in range(1, 17))
+            or any(len(row) != 4 for row in metric_rows)
+        ):
+            self.add(
+                "d009_suite.metrics",
+                path,
+                "metrics must cover M-01 through M-16 exactly once with four fields",
+            )
+
+        hard_gate_section = markdown_section(text, "## 5. Hard gates and anti-gaming rules")
+        hard_gates = hard_gate_section.partition("### Frozen decision vocabulary")[0]
+        if re.findall(r"(?m)^([1-9][0-9]*)\.\s", hard_gates) != [
+            str(index) for index in range(1, 9)
+        ]:
+            self.add(
+                "d009_suite.hard_gates",
+                path,
+                "hard gates must remain the ordered non-compensable set 1 through 8",
+            )
+
+        review_rows = table_rows(markdown_section(text, "## 7. Owner review scopes"), r"SR-[0-9]{2}")
+        expected_scopes = (
+            "Suite custody and parity",
+            "Checked-artifact candidate",
+            "Kernel-only candidate",
+            "Trusted-solver candidate",
+            "Outcome and authority semantics",
+            "Identity, cache, and trust closure",
+            "Replay, dependency, and isolation",
+            "Comparative disposition",
+        )
+        if (
+            tuple(row[0] for row in review_rows)
+            != tuple(f"SR-{index:02d}" for index in range(1, 9))
+            or any(len(row) != 3 for row in review_rows)
+            or tuple(row[1] for row in review_rows) != expected_scopes
+        ):
+            self.add(
+                "d009_suite.review_scopes",
+                path,
+                "owner review table must retain the exact ordered SR-01 through SR-08 scopes",
+            )
+
+        for assertion in (
+            "The frozen matrix contains exactly 24 candidate-case runs per evidence epoch: each of the 3 candidates runs each of the 8 cases.",
+            "The exact execution baseline is 0/24 candidate-case runs.",
+            "D-004 and D-005 must be Accepted before D-009 can be Accepted",
+            "D-006 and D-007 are downstream consumers, not D-009 acceptance prerequisites.",
+            "D-006 case DS-04 itself needs the D-009 policy.",
+        ):
+            if assertion not in normalized:
+                self.add(
+                    "d009_suite.protocol",
+                    path,
+                    f"missing candidate-neutral execution or dependency invariant: {assertion}",
+                )
+        if normalized.count("The exact execution baseline is ") != 1:
+            self.add(
+                "d009_suite.protocol",
+                path,
+                "suite must contain exactly one canonical current-execution baseline",
+            )
+
+        decisions_path = self.root / "docs/DECISIONS.md"
+        if self._hf(decisions_path):
+            decisions_source = self._rt(decisions_path)
+            if decisions_source is not None:
+                decisions_text = markdown_without_fenced_blocks_and_comments(decisions_source)
+                d009 = markdown_section(decisions_text, "## D-009", heading_level=2, prefix=True)
+                normalized_d009 = re.sub(r"\s+", " ", d009)
+                if hashlib.sha256(normalized_d009.encode()).hexdigest() != _D009_SEMANTIC_DIGESTS[1]:
+                    self.add(
+                        "d009_suite.register_semantics",
+                        decisions_path,
+                        "normalized D-009 register semantics must remain exact",
+                    )
+        roadmap_path = self.root / "docs/ROADMAP.md"
+        if self._hf(roadmap_path):
+            roadmap_source = self._rt(roadmap_path)
+            if roadmap_source is not None:
+                roadmap_text = markdown_without_fenced_blocks_and_comments(roadmap_source)
+                s4 = re.sub(
+                    r"\s+",
+                    " ",
+                    markdown_section(roadmap_text, "### S4", heading_level=3, prefix=True),
+                )
+                if hashlib.sha256(s4.encode()).hexdigest() != _D009_SEMANTIC_DIGESTS[2]:
+                    self.add(
+                        "d009_suite.roadmap_closure",
+                        roadmap_path,
+                        "normalized S4 proof/claim boundary semantics must remain exact",
+                    )
 
     def _validate_change_records(self) -> None:
         specifications = (

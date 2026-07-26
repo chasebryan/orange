@@ -145,6 +145,37 @@ and no evidence, and selects or recommends no proof foundation. It authorizes
 no proof-bearing implementation and does not advance the version 1.0.0 gate
 count.
 
+## D-009 pre-epoch decision laboratory
+
+The integration tests also contain a standard-library-only, input-only D-009
+solver-trust laboratory. It strictly parses the draft-unfrozen packet and its
+eight-row case index, binds their canonical identities and the exact raw bytes
+of the unchanged solver-trust decision suite, and verifies the candidate,
+case, metric, gate, owner-scope, protocol-count, dependency, candidate-state,
+resource, and nonclaim inventories:
+
+```sh
+cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
+  --test d009_decision_suite --locked --offline
+```
+
+Every TC-01 through TC-08 row records absent shared inputs and candidate
+mappings, zero executable fixtures, unresolved coverage, and an active freeze
+blocker. The laboratory enumerates exactly 24 candidate-case identities for
+the checked-artifact, kernel-only, and direct trusted-solver strategies. That
+case-major inventory is a deterministic in-memory serialization, not a
+physical execution order.
+
+The required decision dependencies remain unaccepted. Candidate
+implementations, dependency admissions, adapters, resources, host and timeout
+policy, result/replay schema, correction window, materiality bands, and owner
+review remain absent or unassigned. The laboratory launches no process or
+solver, writes no file or research artifact, adds no crate or dependency,
+freezes no epoch, records 0/24 executions and no evidence, and produces or
+checks no solver result, certificate, or proof. It selects or recommends no
+solver-trust policy, authorizes no claim-closing credit, and does not advance
+the version 1.0.0 gate count.
+
 For a local source-install rehearsal, use a fresh private install root:
 
 ```sh
