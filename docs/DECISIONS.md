@@ -364,31 +364,76 @@ foundation, Proof IR, checker, or implementation evidence.
 
 ## D-010 — Compiler strategy
 
-Status: proposed; decide the IR strategy before S5 and each final pass policy
-before that pass can carry a preservation claim
+Status: investigate; decide through one frozen symmetric comparison before S5
+selects an output path or any compiler boundary carries a preservation claim
 
-Recommendation: hybrid verified compilation and translation validation.
+Acceptance prerequisites: D-003, D-004, D-005, D-006, and D-009 must each be
+Accepted before D-010 can be Accepted. D-007, D-011, D-012, and D-013 are
+downstream decisions, not D-010 acceptance prerequisites. The suite must model
+their proof-format, target, leakage, and ABI boundaries without accepting or
+implementing them. Any external compiler, proof tool, target tool, or runtime
+must receive the applicable D-018 admission before measured execution.
 
-- Prove stable structural passes once.
-- Let optimizers, schedulers, vectorizers, and allocators search outside the TCB
-  only when each accepted result carries a checked functional and leakage
-  certificate.
-- Build an Orange Machine IR and direct supported native-object path.
-- Decode and validate final bytes, sections, relocations, constants, and symbols.
+Decision question: which bounded compiler strategy gives Orange the strongest
+owner-executable and accurately scoped preservation path without laundering an
+external compiler, shrinking a promised native frontier, or treating an
+unverified last mile as proved?
 
-Alternatives:
+The five candidates are symmetric:
 
-- permanently target Jasmin;
-- target C/LLVM and stop the claim there;
-- prove every optimization implementation.
+- CP-01 — theorem/certificate hybrid direct-native path;
+- CP-02 — mechanized proof-per-pass direct-native path;
+- CP-03 — versioned Jasmin backend boundary;
+- CP-04 — portable C11 interoperability boundary; and
+- CP-05 — versioned LLVM IR interoperability boundary.
 
-Rationale: the hybrid preserves a small assurance boundary without freezing
-performance research. Jasmin/SAW/mature libraries remain valuable independent
-oracles and interoperability targets.
+CP-04 and CP-05 are separate candidates. A C source boundary and an LLVM IR
+boundary have different semantics, toolchains, undefined-behavior surfaces,
+target assumptions, replay identities, and downstream claim frontiers; results
+from either may not be reused for the other.
 
-Acceptance evidence: one end-to-end target case whose final object passes both
-functional and leakage preservation, including a deliberately corrupted object
-that is rejected.
+The
+[D-010 compiler-strategy decision suite](COMPILER_STRATEGY_DECISION_SUITE.md)
+compares every candidate across the same eight cases:
+
+- CC-01 — freeze the pipeline, authorities, and claim frontier;
+- CC-02 — preserve functional semantics through structural lowering;
+- CC-03 — handle optimization, scheduling, vectorization, and allocation;
+- CC-04 — preserve one named leakage model;
+- CC-05 — exercise the endpoint and, when claimed, the final-object last mile;
+- CC-06 — fail closed under corruption, substitution, failure, and fallback;
+- CC-07 — bind replay identities and compare against the reference semantics; and
+- CC-08 — measure solo auditability, maintenance, and resource use.
+
+The suite defines M-01 through M-19, AX-01 through AX-09, eight non-compensable
+hard gates, CR-01 through CR-11, the four atomic claim outcomes within each
+candidate-case record, and one
+deterministic total conclusion procedure. A claim-level
+`unsupported` result beyond an intentionally frozen claim frontier can be
+correct when the candidate makes no claim beyond that boundary. It is not a gate
+waiver. A direct-native candidate may not shrink its promised native frontier to
+relabel missing final-byte evidence as unsupported.
+
+Current execution evidence is 0/40 candidate-case runs. The input-only
+pre-epoch laboratory binds its candidate-neutral draft packet, unchanged suite,
+and eight zero-fixture case blockers, then enumerates the exact case-major,
+candidate-minor 40-slot identity inventory in memory. It admits, acquires,
+installs, or executes no compiler, proof tool, assembler, linker, target runtime,
+adapter, runner, observer, or isolation backend; assigns no physical execution
+order or resource contract; produces no IR, source output, object, certificate,
+result, replay record, evidence, selection, or conclusion; and validates no
+functional, leakage, target, ABI, or final-byte claim. It selects no output path,
+closes no roadmap stage, and advances no readiness percentage.
+
+D-010 closes only after all five prerequisites are Accepted, all 40
+candidate-case records are complete under one frozen symmetric epoch, CR-01
+through CR-11 are complete and `solo-reviewed`, and the deterministic procedure
+yields exactly one `recommend_*` conclusion naming a candidate whose eight hard
+gates all `pass`. `tie` or `inconclusive` leaves D-010 open. An Accepted Orange
+Enhancement Proposal must then bind the selected strategy and exact claim
+frontier to the fully validated Git revision. Owner acceptance is a governance
+disposition, never independent review, compiler correctness proof, leakage
+proof, or implementation evidence.
 
 ## D-011 — Initial native target envelope
 

@@ -4862,7 +4862,8 @@ class PlanningTraceHardeningTests(unittest.TestCase):
             ),
             (
                 "ASSURANCE.md",
-                "8. compiler preservation across exact passes to final artifact bytes;",
+                "8. compiler preservation across exact in-frontier transitions, reaching final\n"
+                "   artifact bytes only when those bytes are part of the claim;",
                 "8. compiler preservation is part of functional refinement;",
                 "assurance_model.explanatory_consistency",
             ),

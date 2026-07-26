@@ -99,7 +99,8 @@ different. Orange must model at least:
 - termination, memory safety, initialization, and arithmetic safety;
 - leakage noninterference under a named observation model;
 - preservation through each compiler transformation;
-- correspondence between final encoded object bytes and the machine IR;
+- correspondence between final encoded object bytes and the accepted final
+  semantics for the selected compiler path;
 - cryptographic security in a computational or other stated model;
 - empirical evidence such as differential, fuzz, and timing tests.
 
@@ -293,9 +294,10 @@ normative core.
 Disadvantages: largest engineering and formalization cost; requires deliberate
 scope control and years of compiler/proof work.
 
-Decision: recommended. The user explicitly chose the long route to the end
-product rather than a disposable prototype, so the plan should budget this cost
-instead of hiding it.
+Research disposition: retain this as a product-form input, not a D-010 compiler
+selection. “Proof-carrying” requires an explicit checked claim frontier but does
+not choose between the two direct-native candidates or the versioned Jasmin,
+portable C11, and versioned LLVM IR boundaries.
 
 ## 6. Recommended differentiation
 
@@ -313,8 +315,12 @@ Orange should compete on the following combined capabilities:
    observation trace, compiler, target features, and platform assumptions.
 5. **Certificate-first automation.** Solvers improve ergonomics without becoming
    invisible authorities.
-6. **Checked last mile.** The supported path continues through optimized Machine
-   IR and object encoding, instead of stopping at generated C.
+6. **Checked claim frontier.** Every supported compiler claim ends at an
+   explicitly checked boundary. A claim that reaches native output continues to
+   exact final bytes; a Jasmin, C11, or LLVM IR boundary labels downstream
+   compilation and target properties external or unsupported unless a checked
+   downstream relation is separately frozen and accepted to extend that exact
+   frontier.
 7. **Generated interoperability.** C headers, Rust bindings, ACVP adapters,
    vectors, documentation, and CBOM entries derive from the same package.
 8. **Offline replay.** A release proof bundle contains or content-addresses all
@@ -328,25 +334,28 @@ Subject to the ratification gates in [DECISIONS.md](DECISIONS.md):
 
 - Use Rust for the untrusted but production-quality driver, parser services,
   package tooling, diagnostics, LSP, and host integration.
-- Use Rocq for the normative core semantics, metatheory, claim checker, and
-  verified compiler transformations; extract the authoritative checker and
-  verified passes for distribution.
+- If selected by D-006 and applicable to the accepted D-010 strategy, use the
+  chosen proof foundation for compiler metatheory and preservation evidence;
+  the research preference for Rocq selects neither decision.
 - Define a canonical, deterministic, versioned Orange Core serialization so an
   independent checker never needs to trust transient compiler memory objects.
 - Use proof-producing SAT/SMT only for formats Orange checks. Keep external
   EasyCrypt/SSProve bridges first-class and disclose their exact trusted base.
-- Build Orange’s own formally specified Machine IR and native lowering for the
-  1.0 targets. Use Jasmin, SAW, CompCert research variants, and mature crypto
-  libraries as differential oracles and interoperability paths, not as an
-  undocumented permanent backend.
-- Emit a reference C representation for review and integration, explicitly
-  without inheriting the full native assurance claim unless a separate checked
-  path establishes it.
+- Compare five separate D-010 candidates: theorem/certificate hybrid
+  direct-native, mechanized proof-per-pass direct-native, versioned Jasmin,
+  portable C11, and versioned LLVM IR.
+- Keep C11 and LLVM IR separate. Each external boundary binds its own semantics,
+  toolchain, undefined-behavior surface, target assumptions, replay identities,
+  and claim frontier.
+- Require a direct-native candidate to carry any promised functional and
+  leakage preservation through exact final bytes. Require every external
+  boundary candidate to disclose, rather than inherit, downstream claims.
 
-The choice of Rocq is pragmatic rather than ideological: the closest verified
-crypto compiler and synthesis work already lives in that ecosystem. Orange’s
-surface language and proof artifacts remain its own, so the foundation can be
-reassessed before the core-format stability gate.
+The research preference for Rocq is pragmatic rather than ideological and
+remains subject to D-006. It neither accepts D-006 nor selects a D-010 compiler
+strategy. The closest verified crypto compiler and synthesis work already lives
+in that ecosystem. Orange’s surface language and proof artifacts remain its
+own, so the foundation can be reassessed before the core-format stability gate.
 
 ## 8. Source index
 
