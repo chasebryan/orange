@@ -62,6 +62,47 @@ def _load_d004_helper_functions() -> tuple[Any, Any]:
     _validate_d004_result_contract_source_helper,
 ) = _load_d004_helper_functions()
 
+_D004_REVIEWED_PROTOCOL_HELPER_RAW_SHA256 = (
+    "18ee7ad6cbf9036ecf66ad09bd3392543db528c70e5d3c8de291328f925f3747"
+)
+
+
+def _load_d004_reviewed_protocol_helper() -> Any:
+    validator_path = Path(__file__).resolve(strict=True)
+    helper_entry = validator_path.with_name("d004_reviewed_protocol.py")
+    if helper_entry.is_symlink():
+        raise RuntimeError("D-004 reviewed-protocol helper must not be a symbolic link")
+    helper_path = helper_entry.resolve(strict=True)
+    if helper_path.parent != validator_path.parent:
+        raise RuntimeError(
+            "D-004 reviewed-protocol helper must resolve beside the foundation validator"
+        )
+    if not helper_path.is_file() or helper_path.stat().st_nlink != 1:
+        raise RuntimeError(
+            "D-004 reviewed-protocol helper must be one regular single-link file"
+        )
+    if (
+        hashlib.sha256(helper_path.read_bytes()).hexdigest()
+        != _D004_REVIEWED_PROTOCOL_HELPER_RAW_SHA256
+    ):
+        raise RuntimeError("D-004 reviewed-protocol helper raw SHA-256 identity drifted")
+    specification = importlib.util.spec_from_file_location(
+        "_orange_d004_reviewed_protocol", helper_path
+    )
+    if specification is None or specification.loader is None:
+        raise RuntimeError("cannot create the closed D-004 reviewed-protocol import")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    validator = getattr(module, "validate_d004_reviewed_protocol", None)
+    if not callable(validator):
+        raise RuntimeError(
+            "D-004 reviewed-protocol helper does not expose its exact validator surface"
+        )
+    return validator
+
+
+_validate_d004_reviewed_protocol_helper = _load_d004_reviewed_protocol_helper()
+
 
 POLICY_PATH = Path("policy/gate0-repository-policy.json")
 MAKEFILE_CONTRACT_PATH = Path("policy/makefile-entrypoint-contract-v0.1.json")
@@ -247,7 +288,10 @@ compiler/crates/orange-compiler/tests/d004_support/domain.rs
 compiler/crates/orange-compiler/tests/d004_support/fixtures.rs
 compiler/crates/orange-compiler/tests/d004_support/packet.rs
 compiler/crates/orange-compiler/tests/d004_support/result_contract.rs
+compiler/crates/orange-compiler/tests/d004_support/reviewed_protocol.rs
+compiler/crates/orange-compiler/tests/d004_support/reviewed_result_contract.rs
 compiler/crates/orange-compiler/tests/d004_support/runner.rs
+compiler/crates/orange-compiler/tests/d004_support/schedule.rs
 compiler/crates/orange-compiler/tests/d005_decision_suite.rs
 compiler/crates/orange-compiler/tests/d005_support/adapter.rs
 compiler/crates/orange-compiler/tests/d005_support/capture.rs
@@ -348,6 +392,9 @@ research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json
 research/decisions/D-004/d004-v0.4-case-subjects.json
 research/decisions/D-004/d004-v0.5-candidate-mappings.json
 research/decisions/D-004/d004-v0.5-draft-packet.json
+research/decisions/D-004/d004-v0.6/protocol/d004-pre-01-owner-record.json
+research/decisions/D-004/d004-v0.6/protocol/reviewed-protocol.json
+research/decisions/D-004/d004-v0.6/protocol/reviewed-replay-plan.json
 research/decisions/D-005/README.md
 research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json
@@ -377,8 +424,10 @@ scripts/ci/check-external-links
 scripts/ci/install-actionlint
 scripts/ci/install-lychee
 tools/d004_candidate_mappings.py
+tools/d004_reviewed_protocol.py
 tools/fs_sandbox.c
 tools/tests/test_d004_draft_packet.py
+tools/tests/test_d004_reviewed_protocol.py
 tools/tests/test_d005_draft_packet.py
 tools/tests/test_d006_draft_packet.py
 tools/tests/test_d009_draft_packet.py
@@ -559,7 +608,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "5540723b4351b3a952c83faca3c34cd5e6260d8405837c27a8072e29c97e9817"
+_PHD = "891a530086fa81a5bcc92de944b007f215a1f384d24aeed13cf44bf92291c638"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -918,8 +967,8 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "ae6c8fc6e433d3cbb895aebf95667711d442efa348e241c0059e72a489bcac9b"
-_D010_PACKET_RAW_SHA256 = "647ed6e554a0440c7345e52ff8263aba9d2cb19e444e5956203595c0461d6f6e"
+_D010_PACKET_CANONICAL_SHA256 = "14962f66ada4ca34e18e5711b0993da3868f139bf39cfd50e37433b56ca68304"
+_D010_PACKET_RAW_SHA256 = "67b0d49b3cd085130328670d4df229372ee4cf906e3e55abe12dcf91534d52aa"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"
@@ -950,7 +999,34 @@ _D004_CANDIDATE_MAPPING_CATALOG_SUBJECT_SHA256 = (
 _D004_SUITE_RAW_SHA256 = (
     "64abe8290955f889e28f8bb9ce7653a26ef71a624286aef900d4dbfc3b7eb117"
 )
-DECISION_LABORATORY_SPECS = {'d005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', 'fa1411c83fdb6b57b8100f296ca904d88155ad6aa57bd7f48af62ae90c9ead31', 'c0ad0227f1f374da8796c6db4866188213be53bd904bbf22b141ee1de6e57171', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
+_D004_OWNER_RECORD = (
+    "research/decisions/D-004/d004-v0.6/protocol/d004-pre-01-owner-record.json"
+)
+_D004_OWNER_RECORD_CANONICAL_SHA256 = (
+    "587c3ad11bf6e0d3dddc02cd7ba53896f54f8e08ec59ed1ece286e13fe9b0c9d"
+)
+_D004_OWNER_RECORD_RAW_SHA256 = (
+    "cbdfa3e07245a6843100a6b17860ea5dcec39f7f341b194faeee91e2ae585f3c"
+)
+_D004_REVIEWED_PROTOCOL = (
+    "research/decisions/D-004/d004-v0.6/protocol/reviewed-protocol.json"
+)
+_D004_REVIEWED_PROTOCOL_CANONICAL_SHA256 = (
+    "c67c17bdf68eb0619ec7698dd2807912251a0556931fa79b6838a9d5c6a9bd98"
+)
+_D004_REVIEWED_PROTOCOL_RAW_SHA256 = (
+    "1111889b47edf24e88926bf8fa6770cf84ebcd1abb1d7dc2687dc42e0135fb53"
+)
+_D004_REVIEWED_REPLAY_PLAN = (
+    "research/decisions/D-004/d004-v0.6/protocol/reviewed-replay-plan.json"
+)
+_D004_REVIEWED_REPLAY_PLAN_CANONICAL_SHA256 = (
+    "a18084768cd05f6fcffdea724e330c0c81c5caac7816213156f4f9967fc5cb1b"
+)
+_D004_REVIEWED_REPLAY_PLAN_RAW_SHA256 = (
+    "45632f796c7c08d26e668b277ccaff5679ccb82857732c3b8beead66198a3eb7"
+)
+DECISION_LABORATORY_SPECS = {'d005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', 'f95adf14aebe4232b7ca59b7a33302522901571416f4d182a1239a6f3504e0be', 'd16f3f325e372e76e39eaa69d1d8183506a268d99502f6786b840816abf42a14', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
 DECISION_LABORATORY_SPECS["d004"] = {
     "finding_prefix": "d004_packet",
     "research_root": "research/decisions/D-004/",
@@ -963,11 +1039,14 @@ DECISION_LABORATORY_SPECS["d004"] = {
             "research/decisions/D-004/d004-v0.4-case-subjects.json",
             _D004_CANDIDATE_MAPPING_CATALOG,
             "research/decisions/D-004/d004-v0.5-draft-packet.json",
+            _D004_OWNER_RECORD,
+            _D004_REVIEWED_PROTOCOL,
+            _D004_REVIEWED_REPLAY_PLAN,
         }
     ),
     "premature": (
         "research/decisions/D-004/",
-        r"(?:^|[/_.-])(?:results?|reviews?|decisions?|epochs?)(?:$|[/_.-])",
+        r"(?:^|[/_.-])(?:results?|evidence|epochs?|owner-reviews|decisions?)(?:$|[/_.-])",
         "premature_artifact",
     ),
     "json_identities": (
@@ -1019,6 +1098,30 @@ DECISION_LABORATORY_SPECS["d004"] = {
             _D004_CANDIDATE_MAPPING_CATALOG_RAW_SHA256,
             True,
         ),
+        (
+            _D004_OWNER_RECORD,
+            "owner_record_",
+            "owner_record_missing",
+            _D004_OWNER_RECORD_CANONICAL_SHA256,
+            _D004_OWNER_RECORD_RAW_SHA256,
+            True,
+        ),
+        (
+            _D004_REVIEWED_PROTOCOL,
+            "reviewed_protocol_",
+            "reviewed_protocol_missing",
+            _D004_REVIEWED_PROTOCOL_CANONICAL_SHA256,
+            _D004_REVIEWED_PROTOCOL_RAW_SHA256,
+            True,
+        ),
+        (
+            _D004_REVIEWED_REPLAY_PLAN,
+            "reviewed_replay_plan_",
+            "reviewed_replay_plan_missing",
+            _D004_REVIEWED_REPLAY_PLAN_CANONICAL_SHA256,
+            _D004_REVIEWED_REPLAY_PLAN_RAW_SHA256,
+            True,
+        ),
     ),
     "raw_bindings": (
         ("docs/LANGUAGE_2026.md", "35981310cbe1e1ae61c889b4005b2610d0077e6a615a5e032b0ca9a5860b328a"),
@@ -1048,6 +1151,13 @@ DECISION_LABORATORY_SPECS["d004"] = {
     "schema_compatibility": None,
 }
 DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
+DECISION_LABORATORY_INVARIANTS["research/decisions/D-004/"] = (
+    9,
+    23,
+    True,
+    None,
+)
+
 _ATOMIC_OUTCOMES = (
     "satisfied",
     "not_satisfied",
@@ -4921,7 +5031,7 @@ class FoundationValidator:
         for path in self.repository_files:
             value = relative(path, self.root)
             if value.startswith(str(scan_root)) and pattern.search(value[len(str(scan_root)):].lower()):
-                fail(str(premature_code), path, 'input-only decision research cannot contain premature execution, result, replay, review, epoch, or decision artifacts')
+                fail(str(premature_code), path, 'decision research contains an artifact forbidden by its closed lifecycle')
         declared_bindings: set[tuple[str, str]] = set()
         identity_closure_valid = True
 
@@ -5030,6 +5140,7 @@ class FoundationValidator:
     def _validate_d004_draft_packet(self) -> None:
         self._validate_d004_candidate_mapping_catalog()
         self._validate_d004_result_contract_source()
+        _validate_d004_reviewed_protocol_helper(self)
         self._validate_decision_laboratory("d004")
         packet_path = self.root / "research/decisions/D-004/d004-v0.5-draft-packet.json"
         catalog_path = self.root / "research/decisions/D-004/d004-v0.4-case-subjects.json"

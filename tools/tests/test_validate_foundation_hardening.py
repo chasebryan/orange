@@ -5527,10 +5527,10 @@ class PlanningTraceHardeningTests(unittest.TestCase):
             shutil.copyfile(source_root / "docs/DECISIONS.md", decisions)
             text = decisions.read_text(encoding="utf-8")
             mutated = text.replace(
-                "cross-candidate execution. It selects no stratum and",
-                "cross-candidate execution.\n\n"
+                "bytes are the historical D004-PRE-01 review subjects and remain unchanged.",
+                "bytes are the historical D004-PRE-01 review subjects and remain unchanged.\n\n"
                 "That Draft protocol records 25/25 required candidate-case "
-                "executions.\n\nIt selects no stratum and",
+                "executions.",
                 1,
             )
             self.assertNotEqual(mutated, text)

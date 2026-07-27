@@ -1,7 +1,16 @@
 # D-004 pre-epoch decision laboratory
 
-Status: `draft_unfrozen`; no D-004 evidence epoch, protocol review, candidate
-execution, result, conclusion, or semantic-strata selection exists here.
+Status: `reviewed_not_executable`; D004-PRE-01 is `solo-reviewed`, but no
+D-004 evidence epoch, candidate execution, result, conclusion, or
+semantic-strata selection exists here. The v0.6 implementation closure is
+`provisional_pending_exact_merged_revision`.
+
+On 2026-07-26 the Orange Project Owner accepted D004-PRE-01 at exact review-
+subject revision `7d09a27369649855ce987c76315271b0d34a20ef`. That direction
+authorizes the reviewed `d004-v0.6-reviewed-protocol` tranche and work on its
+remaining executable-freeze prerequisites. It does not accept D-004, select or
+prefer a candidate, freeze or authorize an evidence epoch, authorize S3b, or
+change roadmap, release, or readiness status.
 
 On 2026-07-26 the owner accepted D-003 candidate PF-01. Accepted OEP-0004 binds
 that disposition to exact revision
@@ -9,9 +18,20 @@ that disposition to exact revision
 it as `accepted_exact_revision_oep_closure` without inferring any D-004
 disposition.
 
-This exact seven-file inventory is an input-only D-004 laboratory:
+The v0.5 packet, catalogs, manifests, and the exact bytes of
+[`SEMANTIC_STRATA_DECISION_SUITE.md`](../../../docs/SEMANTIC_STRATA_DECISION_SUITE.md)
+at the review-subject revision are immutable historical review subjects. Their
+embedded `draft_unreviewed_input_only`, unresolved, and
+`owner_protocol_review: none` fields describe that v0.5 snapshot and are not
+rewritten. The v0.6
+protocol records the later owner disposition as a content-addressed overlay.
+Because the direction preceded that overlay's commit identity, its implementation
+closure remains provisional until the validated bytes are available at an exact
+merged revision.
 
-- `d004-v0.5-draft-packet.json` is the only current packet;
+The v0.5 input-only laboratory consists of:
+
+- `d004-v0.5-draft-packet.json` is the immutable base packet;
 - `d004-v0.2-named-mutations.json` preserves the 26 named mutation
   definitions;
 - `d004-v0.4-case-subjects.json` byte-materializes the five positive and 26
@@ -23,7 +43,31 @@ This exact seven-file inventory is an input-only D-004 laboratory:
 - `d004-v0.5-candidate-mappings.json` carries five unreviewed structural
   candidate graph proposals and 70 unresolved SR mapping rows as authenticated
   input-only data under schema `d004-candidate-mapping-catalog-v0.1`; and
-- this README states the lifecycle and non-claim boundary.
+- this README states the current lifecycle and non-claim boundary.
+
+The successor tranche adds exactly three reviewed, uninstantiated protocol
+artifacts under `d004-v0.6/protocol/`:
+
+- `d004-pre-01-owner-record.json` records the `solo-reviewed` owner direction
+  and exact review subjects;
+- `reviewed-protocol.json` closes the seven protocol-review gaps while retaining
+  an unfrozen null epoch and zero evidence; and
+- `reviewed-replay-plan.json` expands the 25 logical candidate-case units into
+  the reviewed repetition-major order of 75 planned executions without
+  assigning an epoch, packet identity, executable manifests, or result credit.
+
+Their raw-file/canonical-subject SHA-256 pairs are:
+
+- owner record:
+  `cbdfa3e07245a6843100a6b17860ea5dcec39f7f341b194faeee91e2ae585f3c` /
+  `587c3ad11bf6e0d3dddc02cd7ba53896f54f8e08ec59ed1ece286e13fe9b0c9d`;
+- reviewed protocol:
+  `1111889b47edf24e88926bf8fa6770cf84ebcd1abb1d7dc2687dc42e0135fb53` /
+  `c67c17bdf68eb0619ec7698dd2807912251a0556931fa79b6838a9d5c6a9bd98`;
+  and
+- reviewed replay plan:
+  `45632f796c7c08d26e668b277ccaff5679ccb82857732c3b8beead66198a3eb7` /
+  `a18084768cd05f6fcffdea724e330c0c81c5caac7816213156f4f9967fc5cb1b`.
 
 The v0.5 packet binds 23 exact raw inputs: the current suite, product-form
 packet, accepted S2 and S3a premises, journey identities, S3a conformance
@@ -67,18 +111,20 @@ adapter, process, tool, compiler path, or network. Suite-domain unsupported is
 not candidate-adapter inability, and suite-domain exhaustion does not exercise
 a replay ceiling.
 
-All 73 case and cross-cutting subjects are now materialized as candidate-neutral
-suite-only inputs. Sufficiency review remains unresolved separately for
-ambiguity, missing-edge, identity-substitution, unsupported, and
-resource-exhaustion fixtures. Replay repetitions also remain unresolved. All
-five cross-cutting classes therefore remain freeze blockers despite their
-materialized bytes.
+All 73 case and cross-cutting subjects remain candidate-neutral suite-only
+inputs. D004-PRE-01 finds the 5 ambiguity, 14 missing-edge, 13 identity-
+substitution, 5 unsupported, and 5 resource-exhaustion subjects reviewed and
+sufficient solely for bounded suite coverage. This disposition creates no
+candidate capability or evidence credit and does not turn their historical
+source catalogs into accepted Orange semantics.
 
-The candidate-mapping catalog adds one unreviewed structural graph proposal for
-each of the five candidates and one unresolved row for every candidate and
-SR-01-through-SR-14 pair, for 70 rows total. Authentication establishes only
-the identity and closed structure of these input hypotheses. No adapter,
-execution, evidence, review, freeze, selection, or readiness credit follows.
+The candidate-mapping catalog contains one historical structural graph proposal
+for each of the five candidates and one row for every candidate and
+SR-01-through-SR-14 pair, for 70 rows total. D004-PRE-01 reviews all five graphs
+and 70 rows only as symmetric, falsifiable test hypotheses. Their semantic
+status remains unaccepted and conformance remains unresolved until execution;
+no adapter, execution, evidence, freeze, selection, or readiness credit
+follows.
 Its catalog-subject SHA-256 is
 `e3b790857ee21a0c651995919aaadb9bf59b05367a8dce99bab6afb6e7d2543f`;
 its canonical SHA-256 is
@@ -94,19 +140,25 @@ mapping catalog into five exact graph/map identity rows; future result fields
 must resolve those catalogs and cannot broaden their outcomes. It also defines a
 10-field scheduled-slot preimage contract and necessary-and-sufficient verdict
 conditions, including checked resource bounds and SR dependency joins. The
-25-slot identity plan exists, but no concrete slot preimage or digest is
-available until the epoch, packet identity, and replay-plan identity are frozen.
-This synthetic
-contract accepts no populated records, launches no process or adapter, and
-persists nothing. It approves no schema, assigns no replay cardinality, and
-does not ratify the separate mapping proposals or supply an adapter. Its epoch
-remains null and unfrozen, owner protocol review remains `none`, execution
-remains 0/25 with evidence `none`, and selection and conclusion remain null. It
-creates no execution or evidence; both `roadmap_gate_credit` and
-`readiness_credit` remain `none`.
+25-slot identity plan exists. The reviewed replay policy now requires exactly
+three deterministic repetitions per unit, a fresh empty candidate-specific
+cache per execution, and equality of the specified deterministic fields. The
+reviewed replay plan therefore contains 75 ordered but uninstantiated execution
+rows. No concrete scheduled-execution digest is available until an epoch,
+packet identity, and executable manifests are frozen. This synthetic contract
+accepts no populated records, launches no process or adapter, and persists
+nothing. Its epoch remains null and unfrozen, execution is unauthorized,
+execution evidence remains 0 completed of 25 required candidate-case units and
+0 of 75 result records, and selection and conclusion remain null. Both
+`roadmap_gate_credit` and `readiness_credit` remain `none`.
 
-The deterministic 5-candidate by 5-case Latin schedule is still only an
-identity plan. Canonical execution remains 0/25, complete candidates remain
-0/5, complete cross-candidate cases remain 0/5, evidence is `none`, and both
-selection and conclusion are null. These files do not accept D-004, freeze an
-epoch, authorize S3b, close a roadmap gate, or change Orange's readiness.
+The deterministic 5-candidate by 5-case Latin schedule and its three reviewed
+repetitions remain a plan, not an executable epoch. Candidate adapters, closed
+request and response schemas, semantic endpoints, parameter bindings, exact
+tools and transitive dependencies, deterministic environment and input
+manifests, an enforcing isolation launcher, normalization and resource
+measurement, result/evidence parsers, an exact execution-subject revision, and
+a separate owner freeze record remain absent. Canonical evidence remains
+0/25/0: zero completed candidate-case units, 25 required units, and zero result
+records. D-004 remains proposed, S3b remains blocked, and Orange's binary
+gate-closure score remains 3 of 10 (30%).

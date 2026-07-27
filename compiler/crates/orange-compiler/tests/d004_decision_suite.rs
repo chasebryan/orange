@@ -18,8 +18,14 @@ mod fixtures;
 mod packet;
 #[path = "d004_support/result_contract.rs"]
 mod result_contract;
+#[path = "d004_support/reviewed_protocol.rs"]
+mod reviewed_protocol;
+#[path = "d004_support/reviewed_result_contract.rs"]
+mod reviewed_result_contract;
 #[path = "d004_support/runner.rs"]
 mod runner;
+#[path = "d004_support/schedule.rs"]
+mod schedule;
 #[path = "d005_support/sha256.rs"]
 mod sha256;
 #[path = "d005_support/strict_json.rs"]
@@ -45,7 +51,7 @@ use cases::MUTATIONS;
 use domain::{
     BUDGETS, CANDIDATES, CASE_SCOPED_CROSS_CUTTING_PROPOSALS, CASE_VERDICTS, CASES,
     CROSS_CUTTING_PROPOSAL_CLASS_STATUSES, CROSS_CUTTING_PROPOSAL_COUNT,
-    CROSS_CUTTING_PROPOSAL_NONCLAIMS, DOMAIN_OBSERVATION_STATES, HARD_GATES,
+    CROSS_CUTTING_PROPOSAL_NONCLAIMS, CandidateId, CaseId, DOMAIN_OBSERVATION_STATES, HARD_GATES,
     IDENTITY_SUBSTITUTION_PROPOSALS, INPUT_BINDINGS, InputBindingId, MISSING_EDGE_PROPOSAL_IDS,
     NONCLAIMS, PROTOCOL_GAPS, RELATIONSHIPS, REQUIRED_CANDIDATE_CASES, SOURCE_ROLES,
     UNRESOLVED_CROSS_CUTTING_FIXTURE_CLASSES,
@@ -76,7 +82,25 @@ use result_contract::{
     SR_APPLICABILITY_STATES, SR_CONFORMANCE_STATES, SUBJECT_ORACLE_FIELDS,
     canonical_draft_result_contract_descriptor_bytes, parse_draft_result_contract_descriptor,
 };
+use reviewed_protocol::{
+    AUTHORIZATION_SUBJECT_REVISION, DETERMINISTIC_EQUALITY_FIELDS, EPOCH_FREEZE_BLOCKERS,
+    EXECUTION_IDENTITY_PREIMAGE_FIELDS, FORBIDDEN_AGGREGATION,
+    OWNER_RECORD_CANONICAL_IDENTITY_SHA256, OWNER_RECORD_RAW_SHA256,
+    REVIEWED_PROTOCOL_CANONICAL_IDENTITY_SHA256, REVIEWED_PROTOCOL_RAW_SHA256,
+    REVIEWED_REPLAY_PLAN_CANONICAL_IDENTITY_SHA256, REVIEWED_REPLAY_PLAN_RAW_SHA256,
+    ReviewedProtocolErrorKind, VARIABLE_RESOURCE_FIELDS, parse_owner_protocol_record,
+    parse_reviewed_protocol, parse_reviewed_replay_plan,
+};
+use reviewed_result_contract::{
+    RepetitionClosureErrorKind, RepetitionRecordSummary, ReviewedResultContractErrorKind,
+    canonical_reviewed_result_contract_descriptor_bytes, parse_reviewed_result_contract_descriptor,
+    validate_repetition_closure,
+};
 use runner::{ReplayError, ReplayInputs};
+use schedule::{
+    REQUIRED_EXECUTION_RECORDS, REQUIRED_REPETITIONS_PER_SLOT, latin_base_schedule,
+    repetition_major_execution_schedule,
+};
 use strict_json::{JsonErrorKind, JsonValue};
 
 const CHECKED_IN_PACKET: &[u8] =
@@ -93,6 +117,15 @@ const CASE_SUBJECTS: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.4-case-subjects.json");
 const CANDIDATE_MAPPINGS: &[u8] =
     include_bytes!("../../../../research/decisions/D-004/d004-v0.5-candidate-mappings.json");
+const D004_PRE_01_OWNER_RECORD: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/d004-v0.6/protocol/d004-pre-01-owner-record.json"
+);
+const REVIEWED_PROTOCOL: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/d004-v0.6/protocol/reviewed-protocol.json"
+);
+const REVIEWED_REPLAY_PLAN: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/d004-v0.6/protocol/reviewed-replay-plan.json"
+);
 const DECISION_SUITE: &[u8] = include_bytes!("../../../../docs/SEMANTIC_STRATA_DECISION_SUITE.md");
 const PRODUCT_FORM_DECISION_PACKET: &[u8] =
     include_bytes!("../../../../docs/PRODUCT_FORM_DECISION_PACKET.md");
@@ -180,6 +213,20 @@ fn checked_in_catalogs() -> (CaseSubjectCatalog, FixtureCatalog, CandidateMappin
         fixture_catalog,
         candidate_mapping_catalog,
     )
+}
+
+fn checked_in_reviewed_protocol() -> (
+    reviewed_protocol::OwnerProtocolRecord,
+    reviewed_protocol::ReviewedProtocol,
+    reviewed_protocol::ReviewedReplayPlan,
+) {
+    let owner = parse_owner_protocol_record(D004_PRE_01_OWNER_RECORD)
+        .expect("checked-in D004-PRE-01 owner record");
+    let protocol =
+        parse_reviewed_protocol(REVIEWED_PROTOCOL, &owner).expect("checked-in reviewed protocol");
+    let plan = parse_reviewed_replay_plan(REVIEWED_REPLAY_PLAN, &owner, &protocol)
+        .expect("checked-in reviewed replay plan");
+    (owner, protocol, plan)
 }
 
 fn canonical_json_file_bytes(value: &JsonValue) -> Vec<u8> {
@@ -2755,39 +2802,522 @@ fn replay_schedule_is_balanced_latin_deterministic_and_still_zero_of_25() {
 }
 
 #[test]
-fn d004_research_tree_is_exactly_seven_input_only_files() {
+fn reviewed_protocol_artifacts_are_exact_canonical_bound_and_still_pre_epoch() {
+    let (owner, protocol, plan) = checked_in_reviewed_protocol();
+
+    assert_eq!(
+        owner.canonical_bytes(),
+        D004_PRE_01_OWNER_RECORD
+            .strip_suffix(b"\n")
+            .expect("owner transport LF")
+    );
+    assert_eq!(owner.digest_hex(), OWNER_RECORD_CANONICAL_IDENTITY_SHA256);
+    assert_eq!(
+        protocol.canonical_bytes(),
+        REVIEWED_PROTOCOL
+            .strip_suffix(b"\n")
+            .expect("protocol transport LF")
+    );
+    assert_eq!(
+        protocol.digest_hex(),
+        REVIEWED_PROTOCOL_CANONICAL_IDENTITY_SHA256
+    );
+    assert_eq!(
+        plan.canonical_bytes(),
+        REVIEWED_REPLAY_PLAN
+            .strip_suffix(b"\n")
+            .expect("replay transport LF")
+    );
+    assert_eq!(
+        plan.digest_hex(),
+        REVIEWED_REPLAY_PLAN_CANONICAL_IDENTITY_SHA256
+    );
+    assert!(!protocol.execution_authorized());
+    assert_eq!(protocol.replay_repetitions(), REQUIRED_REPETITIONS_PER_SLOT);
+
+    let owner_root = json_object(owner.value());
+    assert_eq!(
+        owner_root
+            .get("authorization_subject_revision")
+            .and_then(JsonValue::as_str),
+        Some(AUTHORIZATION_SUBJECT_REVISION)
+    );
+    let authority = json_object(owner_root.get("authority").expect("owner authority"));
+    assert_eq!(
+        authority.get("review_label").and_then(JsonValue::as_str),
+        Some("solo-reviewed")
+    );
+    assert_eq!(
+        authority
+            .get("independent_review")
+            .and_then(JsonValue::as_str),
+        Some("unavailable")
+    );
+
+    let protocol_root = json_object(protocol.value());
+    assert_eq!(protocol_root.get("epoch"), Some(&JsonValue::Null));
+    assert_eq!(
+        protocol_root
+            .get("epoch_status")
+            .and_then(JsonValue::as_str),
+        Some("unfrozen")
+    );
+    assert_eq!(
+        protocol_root.get("execution_authorized"),
+        Some(&JsonValue::Bool(false))
+    );
+    assert!(json_array(protocol_root.get("protocol_gaps").expect("closed gaps")).is_empty());
+    assert_eq!(
+        json_array(
+            protocol_root
+                .get("epoch_freeze_blockers")
+                .expect("freeze blockers")
+        ),
+        &EPOCH_FREEZE_BLOCKERS.map(|value| JsonValue::String(value.to_owned()))
+    );
+    let execution = json_object(protocol_root.get("execution").expect("execution state"));
+    assert_eq!(
+        execution
+            .get("required_candidate_cases")
+            .and_then(JsonValue::as_integer),
+        Some(25)
+    );
+    assert_eq!(
+        execution
+            .get("required_execution_records")
+            .and_then(JsonValue::as_integer),
+        Some(75)
+    );
+    assert_eq!(
+        execution
+            .get("result_record_count")
+            .and_then(JsonValue::as_integer),
+        Some(0)
+    );
+
+    let bindings = json_object(protocol_root.get("bindings").expect("protocol bindings"));
+    let owner_binding = json_object(bindings.get("owner_record").expect("owner binding"));
+    assert_eq!(
+        owner_binding.get("raw_sha256").and_then(JsonValue::as_str),
+        Some(OWNER_RECORD_RAW_SHA256)
+    );
+    assert_eq!(
+        owner_binding
+            .get("canonical_sha256")
+            .and_then(JsonValue::as_str),
+        Some(OWNER_RECORD_CANONICAL_IDENTITY_SHA256)
+    );
+    let plan_root = json_object(plan.value());
+    let protocol_binding = json_object(plan_root.get("protocol").expect("protocol binding"));
+    assert_eq!(
+        protocol_binding
+            .get("raw_sha256")
+            .and_then(JsonValue::as_str),
+        Some(REVIEWED_PROTOCOL_RAW_SHA256)
+    );
+    assert_eq!(
+        protocol_binding
+            .get("canonical_sha256")
+            .and_then(JsonValue::as_str),
+        Some(REVIEWED_PROTOCOL_CANONICAL_IDENTITY_SHA256)
+    );
+
+    let replay = json_object(
+        protocol_root
+            .get("replay_contract")
+            .expect("replay contract"),
+    );
+    assert_eq!(
+        json_array(
+            replay
+                .get("execution_identity_preimage_fields")
+                .expect("execution identity preimage")
+        ),
+        &EXECUTION_IDENTITY_PREIMAGE_FIELDS.map(|value| JsonValue::String(value.to_owned()))
+    );
+    let mut expected_equality = DETERMINISTIC_EQUALITY_FIELDS
+        .map(|value| JsonValue::String(value.to_owned()))
+        .to_vec();
+    expected_equality.push(JsonValue::String(
+        "measured_resources_stdout_bytes_and_stderr_bytes".to_owned(),
+    ));
+    assert_eq!(
+        json_array(
+            replay
+                .get("deterministic_equality_fields")
+                .expect("deterministic equality fields")
+        ),
+        expected_equality
+    );
+    assert_eq!(
+        json_array(
+            replay
+                .get("variable_fields_within_frozen_bounds")
+                .expect("variable resource fields")
+        ),
+        &VARIABLE_RESOURCE_FIELDS.map(|value| JsonValue::String(value.to_owned()))
+    );
+    assert_eq!(
+        json_array(
+            replay
+                .get("forbidden_aggregation")
+                .expect("forbidden aggregation")
+        ),
+        &FORBIDDEN_AGGREGATION.map(|value| JsonValue::String(value.to_owned()))
+    );
+}
+
+#[test]
+fn reviewed_replay_plan_is_three_complete_latin_traversals_in_physical_order() {
+    let (_, _, plan) = checked_in_reviewed_protocol();
+    let logical = latin_base_schedule();
+    let expected = repetition_major_execution_schedule();
+    assert_eq!(logical.len(), REQUIRED_CANDIDATE_CASES);
+    assert_eq!(plan.schedule(), expected);
+    assert_eq!(plan.schedule().len(), REQUIRED_EXECUTION_RECORDS);
+
+    let coordinates = plan
+        .schedule()
+        .iter()
+        .map(|execution| {
+            (
+                execution.repetition,
+                execution.logical_slot_ordinal,
+                execution.candidate,
+                execution.case,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(coordinates.len(), REQUIRED_EXECUTION_RECORDS);
+
+    for (repetition_index, traversal) in plan
+        .schedule()
+        .chunks_exact(REQUIRED_CANDIDATE_CASES)
+        .enumerate()
+    {
+        assert_eq!(traversal.len(), REQUIRED_CANDIDATE_CASES);
+        for (slot_index, execution) in traversal.iter().enumerate() {
+            assert_eq!(
+                execution.execution_ordinal,
+                repetition_index * 25 + slot_index + 1
+            );
+            assert_eq!(execution.repetition, repetition_index + 1);
+            assert_eq!(execution.logical_slot_ordinal, slot_index + 1);
+            assert_eq!(execution.logical_slot(), logical[slot_index]);
+        }
+        assert_eq!(
+            traversal
+                .iter()
+                .map(|execution| (execution.candidate, execution.case))
+                .collect::<BTreeSet<_>>()
+                .len(),
+            REQUIRED_CANDIDATE_CASES
+        );
+        for round in traversal.chunks_exact(CANDIDATES.len()) {
+            assert_eq!(
+                round
+                    .iter()
+                    .map(|execution| execution.candidate)
+                    .collect::<BTreeSet<_>>(),
+                CANDIDATES.into_iter().collect()
+            );
+            assert_eq!(
+                round
+                    .iter()
+                    .map(|execution| execution.case)
+                    .collect::<BTreeSet<_>>(),
+                CASES.into_iter().collect()
+            );
+        }
+    }
+}
+
+#[test]
+fn reviewed_protocol_parsers_fail_closed_on_encoding_identity_or_schedule_drift() {
+    let (owner, protocol, _) = checked_in_reviewed_protocol();
+
+    let mut noncanonical = D004_PRE_01_OWNER_RECORD.to_vec();
+    noncanonical.push(b'\n');
+    assert_eq!(
+        parse_owner_protocol_record(&noncanonical)
+            .expect_err("owner transport whitespace")
+            .kind,
+        ReviewedProtocolErrorKind::NonCanonical
+    );
+
+    let substituted_revision = std::str::from_utf8(D004_PRE_01_OWNER_RECORD)
+        .expect("owner UTF-8")
+        .replace(AUTHORIZATION_SUBJECT_REVISION, &"0".repeat(40));
+    assert_eq!(
+        parse_owner_protocol_record(substituted_revision.as_bytes())
+            .expect_err("authorization revision substitution")
+            .kind,
+        ReviewedProtocolErrorKind::DigestMismatch
+    );
+
+    let reopened_gap = std::str::from_utf8(REVIEWED_PROTOCOL)
+        .expect("protocol UTF-8")
+        .replace("\"protocol_gaps\":[]", "\"protocol_gaps\":[\"reopened\"]");
+    assert_eq!(
+        parse_reviewed_protocol(reopened_gap.as_bytes(), &owner)
+            .expect_err("reviewed gap drift")
+            .kind,
+        ReviewedProtocolErrorKind::DigestMismatch
+    );
+
+    let reordered_plan = std::str::from_utf8(REVIEWED_REPLAY_PLAN)
+        .expect("plan UTF-8")
+        .replacen("\"execution_ordinal\":1", "\"execution_ordinal\":2", 1);
+    assert_eq!(
+        parse_reviewed_replay_plan(reordered_plan.as_bytes(), &owner, &protocol)
+            .expect_err("schedule substitution")
+            .kind,
+        ReviewedProtocolErrorKind::DigestMismatch
+    );
+
+    assert_eq!(
+        parse_owner_protocol_record(b"{\"x\":1,\"x\":2}")
+            .expect_err("duplicate owner key")
+            .kind,
+        ReviewedProtocolErrorKind::Json(JsonErrorKind::DuplicateKey)
+    );
+}
+
+#[test]
+fn reviewed_result_descriptor_is_closed_zero_state_and_bound_to_protocol_and_plan() {
+    let (_, protocol, plan) = checked_in_reviewed_protocol();
+    let bytes = canonical_reviewed_result_contract_descriptor_bytes(&protocol, &plan);
+    let descriptor = parse_reviewed_result_contract_descriptor(&bytes, &protocol, &plan)
+        .expect("reviewed result descriptor");
+    assert_eq!(descriptor.canonical_bytes(), bytes);
+    assert_eq!(descriptor.digest_hex().len(), 64);
+    assert_eq!(descriptor.result_record_count(), 0);
+    assert!(!descriptor.execution_authorized());
+
+    let value = strict_json::parse(&bytes).expect("descriptor JSON");
+    let root = json_object(&value);
+    assert_eq!(root.get("epoch"), Some(&JsonValue::Null));
+    assert_eq!(
+        root.get("protocol_raw_sha256").and_then(JsonValue::as_str),
+        Some(REVIEWED_PROTOCOL_RAW_SHA256)
+    );
+    assert_eq!(
+        root.get("replay_plan_raw_sha256")
+            .and_then(JsonValue::as_str),
+        Some(REVIEWED_REPLAY_PLAN_RAW_SHA256)
+    );
+    assert!(json_array(root.get("result_records").expect("result records")).is_empty());
+
+    let mut populated = value.clone();
+    json_array_mut(
+        json_object_mut(&mut populated)
+            .get_mut("result_records")
+            .expect("result records"),
+    )
+    .push(JsonValue::Object(BTreeMap::new()));
+    assert_eq!(
+        parse_reviewed_result_contract_descriptor(
+            &strict_json::canonical_bytes(&populated),
+            &protocol,
+            &plan,
+        )
+        .expect_err("premature result record")
+        .kind,
+        ReviewedResultContractErrorKind::SchemaMismatch
+    );
+
+    let mut noncanonical = bytes;
+    noncanonical.push(b'\n');
+    assert_eq!(
+        parse_reviewed_result_contract_descriptor(&noncanonical, &protocol, &plan)
+            .expect_err("descriptor transport whitespace")
+            .kind,
+        ReviewedResultContractErrorKind::NonCanonical
+    );
+}
+
+fn reviewed_repetition_records() -> Vec<RepetitionRecordSummary> {
+    (1..=REQUIRED_REPETITIONS_PER_SLOT)
+        .map(|repetition| RepetitionRecordSummary {
+            logical_slot_ordinal: 1,
+            candidate: CandidateId::Rel,
+            case: CaseId::Sc01,
+            repetition,
+            independently_passed: true,
+            deterministic_fields_sha256: "a".repeat(64),
+            stdout_bytes: 1_024,
+            stderr_bytes: 0,
+            wall_milliseconds: 1_000 + u64::try_from(repetition).expect("repetition"),
+            peak_memory_bytes: 16_384 * u64::try_from(repetition).expect("repetition"),
+            temp_storage_bytes: 4_096 * u64::try_from(repetition).expect("repetition"),
+        })
+        .collect()
+}
+
+#[test]
+fn repetition_closure_requires_three_independent_equal_passes_but_allows_bounded_resource_variance()
+{
+    let canonical = reviewed_repetition_records();
+    let closure = validate_repetition_closure(&canonical).expect("three-repeat closure");
+    assert_eq!(closure.logical_slot_ordinal(), 1);
+    assert_eq!(closure.candidate(), CandidateId::Rel);
+    assert_eq!(closure.case(), CaseId::Sc01);
+    assert_eq!(closure.deterministic_fields_sha256(), "a".repeat(64));
+
+    let mut missing = reviewed_repetition_records();
+    missing.pop();
+    assert_eq!(
+        validate_repetition_closure(&missing)
+            .expect_err("missing repetition")
+            .kind,
+        RepetitionClosureErrorKind::Cardinality
+    );
+
+    let mut reordered = reviewed_repetition_records();
+    reordered.swap(0, 1);
+    assert_eq!(
+        validate_repetition_closure(&reordered)
+            .expect_err("reordered repetitions")
+            .kind,
+        RepetitionClosureErrorKind::RepetitionOrder
+    );
+
+    let mut cross_slot = reviewed_repetition_records();
+    cross_slot[1].candidate = CandidateId::Uni;
+    assert_eq!(
+        validate_repetition_closure(&cross_slot)
+            .expect_err("cross-slot repetition")
+            .kind,
+        RepetitionClosureErrorKind::CoordinateMismatch
+    );
+
+    let mut substituted_schedule_coordinate = reviewed_repetition_records();
+    for record in &mut substituted_schedule_coordinate {
+        record.candidate = CandidateId::Uni;
+        record.case = CaseId::Sc05;
+    }
+    assert_eq!(
+        validate_repetition_closure(&substituted_schedule_coordinate)
+            .expect_err("coordinate substituted against reviewed schedule")
+            .kind,
+        RepetitionClosureErrorKind::CoordinateMismatch
+    );
+
+    let mut failed = reviewed_repetition_records();
+    failed[2].independently_passed = false;
+    assert_eq!(
+        validate_repetition_closure(&failed)
+            .expect_err("one failed repetition")
+            .kind,
+        RepetitionClosureErrorKind::IndependentFailure
+    );
+
+    for mutate in [
+        |records: &mut Vec<RepetitionRecordSummary>| {
+            records[1].deterministic_fields_sha256 = "b".repeat(64);
+        },
+        |records: &mut Vec<RepetitionRecordSummary>| {
+            records[1].stdout_bytes += 1;
+        },
+    ] {
+        let mut unequal = reviewed_repetition_records();
+        mutate(&mut unequal);
+        assert_eq!(
+            validate_repetition_closure(&unequal)
+                .expect_err("deterministic variance")
+                .kind,
+            RepetitionClosureErrorKind::DeterministicMismatch
+        );
+    }
+
+    let mut invalid_digest = reviewed_repetition_records();
+    invalid_digest[0].deterministic_fields_sha256 = "A".repeat(64);
+    assert_eq!(
+        validate_repetition_closure(&invalid_digest)
+            .expect_err("non-lowercase digest")
+            .kind,
+        RepetitionClosureErrorKind::InvalidDigest
+    );
+
+    let mut over_limit = reviewed_repetition_records();
+    over_limit[1].wall_milliseconds =
+        u64::try_from(BUDGETS.case_wall_seconds).expect("seconds") * 1_000 + 1;
+    assert_eq!(
+        validate_repetition_closure(&over_limit)
+            .expect_err("resource ceiling")
+            .kind,
+        RepetitionClosureErrorKind::ResourceLimit
+    );
+
+    let mut overflow = reviewed_repetition_records();
+    for record in &mut overflow {
+        record.stdout_bytes = u64::MAX;
+        record.stderr_bytes = 1;
+    }
+    assert_eq!(
+        validate_repetition_closure(&overflow)
+            .expect_err("output checked-add overflow")
+            .kind,
+        RepetitionClosureErrorKind::OutputSizeOverflow
+    );
+}
+
+#[test]
+fn d004_research_tree_preserves_v05_inputs_and_exact_reviewed_protocol_overlay() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../research/decisions/D-004");
     let observed = fs::read_dir(&root)
         .expect("D-004 research directory")
         .map(|entry| {
             let entry = entry.expect("research entry");
-            assert!(entry.file_type().expect("entry type").is_file());
-            entry
-                .file_name()
-                .into_string()
-                .expect("UTF-8 research filename")
+            (
+                entry
+                    .file_name()
+                    .into_string()
+                    .expect("UTF-8 research filename"),
+                entry.file_type().expect("entry type").is_dir(),
+            )
         })
         .collect::<BTreeSet<_>>();
     assert_eq!(
         observed,
         BTreeSet::from([
-            "README.md".to_owned(),
-            "d004-v0.2-cross-cutting-fixture-proposals.json".to_owned(),
-            "d004-v0.2-named-mutations.json".to_owned(),
-            "d004-v0.3-cross-cutting-executable-fixtures.json".to_owned(),
-            "d004-v0.4-case-subjects.json".to_owned(),
-            "d004-v0.5-draft-packet.json".to_owned(),
-            "d004-v0.5-candidate-mappings.json".to_owned(),
+            ("README.md".to_owned(), false),
+            (
+                "d004-v0.2-cross-cutting-fixture-proposals.json".to_owned(),
+                false
+            ),
+            ("d004-v0.2-named-mutations.json".to_owned(), false),
+            (
+                "d004-v0.3-cross-cutting-executable-fixtures.json".to_owned(),
+                false
+            ),
+            ("d004-v0.4-case-subjects.json".to_owned(), false),
+            ("d004-v0.5-draft-packet.json".to_owned(), false),
+            ("d004-v0.5-candidate-mappings.json".to_owned(), false),
+            ("d004-v0.6".to_owned(), true),
         ])
     );
-    for forbidden in [
-        "results",
-        "review",
-        "reviews",
-        "decision",
-        "epoch",
-        "candidates",
-    ] {
-        assert!(!observed.iter().any(|name| name.contains(forbidden)));
+    let protocol_root = root.join("d004-v0.6/protocol");
+    let protocol_files = fs::read_dir(protocol_root)
+        .expect("reviewed protocol directory")
+        .map(|entry| {
+            let entry = entry.expect("protocol entry");
+            assert!(entry.file_type().expect("protocol entry type").is_file());
+            entry
+                .file_name()
+                .into_string()
+                .expect("UTF-8 protocol file")
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        protocol_files,
+        BTreeSet::from([
+            "d004-pre-01-owner-record.json".to_owned(),
+            "reviewed-protocol.json".to_owned(),
+            "reviewed-replay-plan.json".to_owned(),
+        ])
+    );
+    for forbidden in ["results", "evidence", "candidates", "epoch.json"] {
+        assert!(!protocol_files.iter().any(|name| name.contains(forbidden)));
     }
 }

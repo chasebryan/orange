@@ -223,11 +223,10 @@ a shutdown retry.
 The tree remains closed by default. Permanent files and conformance instances
 use an exact static inventory; correctly named OEP and ADR records may be added
 outside it and receive structural validation. The admitted `research` tree is
-likewise exact. It contains the non-product, draft-unfrozen D-004 input packet,
-named-mutation manifest, five-positive/26-mutation case-subject catalog,
-unreviewed cross-cutting fixture-proposal manifest, and 42-subject
-executable-input catalog, plus the five-graph/70-row unreviewed candidate-mapping
-catalog; the D-005 execution packet and historical
+likewise exact. It contains the immutable non-product D-004 v0.5 input packet,
+manifests, subject catalogs, and five-graph/70-row mapping catalog plus the
+separate reviewed-not-executable v0.6 owner record, protocol, and replay plan;
+the D-005 execution packet and historical
 v0.1 negative corpus; and the input-only D-006, D-009, and D-010 packets and case
 indexes. Every D-006, D-009, and D-010 case row has zero executable fixtures,
 unresolved coverage, and an active freeze blocker. Their laboratories may
@@ -240,32 +239,45 @@ missing-edge, 13 identity-substitution, and five each for ambiguity,
 unsupported behavior, and domain exhaustion. Its separate canonical catalog,
 together with the case-subject catalog's five positive and 26 named-mutation
 subjects, byte-materializes exactly 73 candidate-neutral suite-only inputs as
-`draft_unreviewed_input_only`. Their closed parsers, digest checks, and bounded
-structural integrity oracles create no candidate observation or evidence,
-verify no replay ceiling, and do not treat candidate-adapter failure as an
-expected unsupported observation. All five class sufficiency reviews and
-freeze blockers remain unresolved; replay repetitions remain unassigned; and
-the D-004 inventory freezes no evidence epoch. Its separate authenticated
-input-only mapping catalog contains five unreviewed structural candidate graph
-proposals and 70 unresolved SR mapping rows. Those hypotheses create no adapter,
-execution, evidence, review, freeze, selection, or readiness credit. Its
-protected Rust laboratory
+the immutable v0.5 `draft_unreviewed_input_only` review subject. Its exact
+bound suite document is immutable for the same reason. Their closed parsers,
+digest checks, and bounded structural integrity oracles create no candidate
+observation or evidence, verify no replay ceiling, and do not treat candidate-
+adapter failure as an expected unsupported observation.
+
+At exact review-subject revision
+`7d09a27369649855ce987c76315271b0d34a20ef`, D004-PRE-01 was accepted as
+`solo-reviewed`. The v0.6 overlay finds 5 ambiguity, 14 missing-edge, 13
+identity-substitution, 5 unsupported, and 5 resource-exhaustion subjects
+sufficient only for bounded suite coverage. It reviews all five candidate
+graphs and 70 SR mapping rows only as symmetric, falsifiable test hypotheses;
+they remain unaccepted as Orange semantics and create no capability or evidence
+credit. Its protected Rust laboratory
 also generates and strictly re-parses a closed, in-memory future result/replay
 descriptor. The descriptor derives an exact 73-row observation oracle from the
 authenticated case and cross-cutting subject catalogs, binds the exact
 26-mutation inventory and 25-slot identity plan, and enumerates all 31 top-level
 future case-record fields plus their nested shapes. Its 10-field scheduled-slot
-preimage contract creates no concrete preimage or digest before the epoch,
-packet identity, and replay-plan identity are frozen. The descriptor also closes
-digest joins, checked resource and SR-dependent verdict rules, replay failure
-states, and empty result, observation, verdict, review, and evidence
-collections. It exposes no launcher, adapter, or persistence API; owner
-protocol review remains `none`, execution remains 0/25, and both
-`roadmap_gate_credit` and `readiness_credit` remain `none`. D-003 candidate PF-01 is
-accepted through OEP-0004 at exact revision
-`a82a5cec2ee4359dc2fe66171f17c93146747333`, while D-004 owner protocol review
-remains `none`. None of these input inventories contains a candidate
-result, accepted D-004 decision, or release evidence. D-005's protected Rust
+preimage contract creates no concrete scheduled-execution digest before the
+epoch, packet identity, and executable manifests are frozen. The reviewed plan
+assigns exactly three deterministic repetitions to each of 25 candidate-case
+units, for 75 planned executions in repetition-major order, with a fresh empty
+candidate-specific cache per execution and deterministic equality requirements.
+The acceptance covers the immutable review subjects; because it preceded the
+v0.6 implementation's commit identity, implementation closure remains
+`provisional_pending_exact_merged_revision` until an exact merged revision is
+recorded.
+The descriptor also closes digest joins, checked resource and SR-dependent
+verdict rules, replay failure states, and empty result, observation, verdict,
+review, and evidence collections.
+
+The reviewed protocol exposes no launcher, adapter, or persistence API. Its
+epoch is null and unfrozen, execution is unauthorized, evidence remains zero
+completed of 25 required units and 0 of 75 result records, and both
+`roadmap_gate_credit` and `readiness_credit` remain `none`. None of these
+inventories contains a candidate result, accepted D-004 decision, or release
+evidence; D-004 remains proposed, S3b remains blocked, and the 3-of-10 (30%)
+binary gate-closure score is unchanged. D-005's protected Rust
 laboratory may construct
 canonical adapter requests and validate synthetic captured transport envelopes,
 enumerate the exact 192 in-memory transport identities, and bind a closed

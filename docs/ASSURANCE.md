@@ -38,22 +38,33 @@ PR #9 merged the S3a implementation and normative records as commit
 implementation evidence, not proof of semantic soundness or a stable public
 compatibility promise.
 
-The D-004 input-only laboratory byte-materializes exactly 73 candidate-neutral
-suite-only subjects as `draft_unreviewed_input_only`: five positive case
-subjects, all 26 named mutations, 14 missing-edge subjects, 13
-identity-substitution subjects, and five each for ambiguity, unsupported
-behavior, and domain exhaustion. All five class sufficiency reviews and freeze
-blockers, plus replay repetitions, remain unresolved. D-003 is accepted at exact revision
-`a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner protocol review is
-`none`, the D-004
-epoch is unfrozen, and execution remains 0/25. A separate authenticated
-input-only catalog contains five unreviewed candidate graph hypotheses and 70
-unresolved relationship mappings, with no adapters, observations, evidence,
-selection, or conclusion. Canonical parsing, digest checks, and structural
-integrity oracles over opaque suite-only models are not candidate executions
-and establish no Orange semantics, proof, leakage, target, cryptographic, or
-readiness assurance. Orange's binary gate-closure score remains 3/10 (30%);
-that mechanical score is not release readiness.
+The immutable D-004 v0.5 review subject byte-materializes exactly 73 candidate-
+neutral suite-only subjects and binds the exact historical
+[`SEMANTIC_STRATA_DECISION_SUITE.md`](SEMANTIC_STRATA_DECISION_SUITE.md) bytes.
+Its `draft_unreviewed_input_only` fields remain unchanged. On 2026-07-26 the
+owner accepted D004-PRE-01 as `solo-reviewed` at exact review-subject revision
+`7d09a27369649855ce987c76315271b0d34a20ef`. The successor
+`d004-v0.6-reviewed-protocol` finds 5 ambiguity, 14 missing-edge, 13 identity-
+substitution, 5 unsupported, and 5 resource-exhaustion subjects sufficient only
+for bounded suite coverage. It reviews five candidate graphs and 70 SR mappings
+only as symmetric, falsifiable test hypotheses; none is accepted Orange
+semantics or evidence of capability.
+
+The acceptance covers those immutable review subjects. The v0.6 implementation
+closure remains `provisional_pending_exact_merged_revision` until the validated
+overlay is present at an exact merged revision.
+
+The reviewed replay plan assigns three deterministic repetitions to each of 25
+candidate-case units, for 75 planned executions with a fresh empty candidate-
+specific cache per execution and deterministic equality requirements. It is not
+an executable evidence epoch: adapters and executable manifests remain absent,
+the epoch is null and unfrozen, execution is unauthorized, and evidence remains
+zero completed of 25 required units and 0 of 75 result records. Selection and
+conclusion remain null. Canonical parsing, digest checks, and structural oracles
+establish no Orange semantics, proof, leakage, target, cryptographic, or
+readiness assurance. D-004 remains proposed, S3b remains blocked, and Orange's
+binary gate-closure score remains 3 of 10 (30%); that mechanical score is not
+release readiness.
 
 The D-010 input-only laboratory is planning evidence only. It compares five
 candidate identities across eight zero-fixture cases and remains at 0/40. It
