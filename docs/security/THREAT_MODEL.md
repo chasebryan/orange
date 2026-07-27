@@ -70,21 +70,29 @@ compiler, leakage, package, release, and update boundaries. Those future threats
 are recorded now as design requirements, not as claims that mitigations have
 been implemented.
 
-The D-004 pre-epoch laboratory byte-materializes exactly 73 candidate-neutral
-suite-only subjects as `draft_unreviewed_input_only`: five positive case
-subjects, all 26 named mutations, 14 missing-edge subjects, 13
-identity-substitution subjects, and five each for ambiguity, unsupported
-behavior, and domain exhaustion. The bytes are fixed research inputs: bounded
+The immutable D-004 v0.5 review subject byte-materializes exactly 73 candidate-
+neutral suite-only subjects and binds the exact historical semantic-strata suite
+bytes. Its `draft_unreviewed_input_only` fields remain unchanged. Bounded
 integrity parsing and structural oracles do not execute a candidate or ratify
-Orange semantics. All five class sufficiency reviews and freeze blockers plus
-replay repetitions remain unresolved. D-003 candidate PF-01 is accepted through
-OEP-0004 at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`.
-D-004 owner review is `none`, the D-004 epoch is unfrozen, and execution remains
-0/25. A separate authenticated input-only catalog contains five unreviewed
-candidate graph hypotheses and 70 unresolved relationship mappings, with no
-adapters, observations, evidence, selection, or conclusion. Materialization
-closes no S3 or readiness gate. Orange's binary gate-closure score remains 3/10
-(30%); that mechanical score is not release readiness.
+Orange semantics. On 2026-07-26 the owner accepted D004-PRE-01 as
+`solo-reviewed` at exact review-subject revision
+`7d09a27369649855ce987c76315271b0d34a20ef`.
+
+That acceptance covers the immutable review subjects. The resulting v0.6
+implementation closure remains `provisional_pending_exact_merged_revision`
+until the validated overlay is available at an exact merged revision.
+
+The `d004-v0.6-reviewed-protocol` overlay finds the five fixture classes
+sufficient only for bounded suite coverage (5 ambiguity, 14 missing-edge, 13
+identity-substitution, 5 unsupported, and 5 resource-exhaustion). Its five
+candidate graphs and 70 SR mappings are reviewed only as symmetric, falsifiable
+test hypotheses, not accepted Orange semantics or capability evidence. The
+reviewed replay plan assigns three deterministic repetitions to each of 25
+candidate-case units, for 75 planned executions, but remains uninstantiated.
+The epoch is null and unfrozen, execution is unauthorized, and evidence is zero
+completed of 25 required units and 0 of 75 result records. D-004 remains
+proposed, S3b remains blocked, and Orange's binary gate-closure score remains 3
+of 10 (30%); that mechanical score is not release readiness.
 
 The D-010 laboratory currently binds only five candidate identities and eight
 zero-fixture case blockers, for 0/40 execution. It executes no compiler or tool,
@@ -245,7 +253,7 @@ that the owner holds all roles and that independent ownership is unavailable.
 | CMP-002 | Foundation policy and evidence records | Historical Gate 0 inputs plus current solo-bootstrap records | Planning, decisions, threat/control records, provisional schemas, and conformance fixtures. Historical Gate 0 material is retained as an input under the current capability-local model. See [`README.md`](../../README.md), [`docs/DECISIONS.md`](../DECISIONS.md), and [`schemas/README.md`](../../schemas/README.md). |
 | CMP-003 | Repository CI | Current on `main` with exact acceptance and post-acceptance evidence | Repository-owned policy, dependency-review, link, workflow-metadata-audit, and Scorecard workflows are under [`.github/workflows/`](../../.github/workflows/). PR #9 and exact merged revision `6c0bd3021cf2df603e08808e4660724ca1e2b2a5` retain the accepted S3a evidence. The later PR #11 head passed Required CI `29292600483`, Dependency Review `29292600471`, and CodeQL `29292598799`; exact merged revision `23352bcde976b86890db28ea4d375a31e6354bca` passed push Required CI `29292740885`, Workflow Online Audit `29292740874`, External Links `29292740884`, Scorecard `29292740941`, and dynamic CodeQL `29292740478`. Required CI covered policy `0.2.6`, 92 Rust tests including the documentation test, 103 Python tests, and zero foundation-validator findings. Ruleset `18810248` requires the exact Required CI and Dependency Review app-bound contexts. These executions do not demonstrate semantic soundness, vulnerability absence, independent review, scheduled or manual-dispatch event behavior, or refreshed hosted settings. |
 | CMP-004 | Orange driver and language services | S3a current on `main` | Rust source map, byte spans, lexer, bounded parser, syntax tree, diagnostics, and `orangec check`/`eval`/`lex`. The merged implementation includes declaration-kind namespace checks, exact `Int`/`Word[8]` typed literals, noncanonical Typed Reference Core construction, and deterministic evaluation; no calls, operators, typed `impl`, LSP, proof, refinement, or code generation exists. |
-| CMP-005 | Orange semantic and evidence system | Future beyond current S3a, with input-only D-004 research bytes | Planned canonical Core family, claims, Proof IR, proof search, and authoritative offline checker. The Typed Reference Core in CMP-004 has no canonical encoding, proof identity, or relationship to this future family. D-004 carries exactly 73 `draft_unreviewed_input_only` suite-only subjects and 70 unreviewed candidate-by-relationship mapping hypotheses, but no accepted semantics or mapping, adapter, execution, or evidence. |
+| CMP-005 | Orange semantic and evidence system | Future beyond current S3a, with reviewed-not-executable D-004 research inputs | Planned canonical Core family, claims, Proof IR, proof search, and authoritative offline checker. The Typed Reference Core in CMP-004 has no canonical encoding, proof identity, or relationship to this future family. D004-PRE-01 reviews the immutable 73-subject v0.5 corpus as sufficient only for bounded suite coverage and the five graphs/70 mappings only as symmetric, falsifiable test hypotheses. The v0.6 plan remains unfrozen and unauthorized at 0/25 units and 0/75 result records; it supplies no accepted semantics, mapping conformance, adapter, execution, or evidence. |
 | CMP-006 | Orange compiler and output boundary | Future | Five D-010 candidates are under input-only comparison: two direct-native paths, versioned Jasmin, portable C11, and versioned LLVM IR. No strategy, lowering, code-generation stage, external compiler, target, artifact, or evidence exists. |
 | CMP-007 | Package, registry, build, and release system | Future | Planned immutable dependency resolution, registry, hermetic builds, provenance, signing, publication, updates, and recovery. No implementation exists. |
 | CMP-008 | Standards and cryptography corpus | Future | Planned standards/errata provenance, vectors, packages, proofs, tests, and external-validation records. No implementation exists. |
@@ -349,7 +357,7 @@ compliance evidence.
 | CTL-019 | GitHub CodeQL default setup analyzes the current Actions, Python, and Rust surfaces and preserves alert lifecycle state | PR #11 CodeQL `29292598799` succeeded before merge, and dynamic CodeQL `29292740478` succeeded at exact revision `23352bcde976b86890db28ea4d375a31e6354bca`. Actions `1474500928`=`0/23`, Python `1474500920`=`0/50`, and Rust `1474500915`=`0/27`, all without analysis warnings. The open alert readback contained only Scorecard posture alerts #4-#10 and no open CodeQL alerts. | Coverage is limited to the named revision, languages, configured rules, queries, and platform executions. Zero configured-query results and no open CodeQL alerts do not prove vulnerability absence. No CodeQL threshold or independent analysis exists. |
 | CTL-020 | The dependency-free Rust compiler frontend forbids unsafe code; caps source bytes, tokens, syntax nodes, parser events, emitted diagnostics, and recovery depth; sanitizes diagnostic control text; and exercises source, span, lexer, parser, diagnostic, and CLI behavior with malformed-input, Unicode, line-ending, resource, repeatability, and exact external black-box conformance tests. | Policy `0.2.6`, 92 Rust tests including the documentation test, 103 Python tests, parser source, exact budget bindings, and the external corpus were recorded at subject revision `23352bcde976b86890db28ea4d375a31e6354bca`; PR Required CI `29292600483` and post-merge Required CI `29292740885` succeeded with zero foundation-validator findings | Tests do not establish parser correctness, semantic soundness, proof, code-generation, cryptographic, leakage, or production correctness; the Rust toolchain, host, algorithmic behavior inside the budgets, and sole-owner review remain trusted or residual risks. |
 | CTL-021 | D-026, Accepted OEP-0003, and [`SEMANTICS_2026.md`](../SEMANTICS_2026.md) constrain S3a to same-kind namespace uniqueness, exact contextual `Int`/`Word[8]` typed literals, fail-closed semantic/Core/integer/evaluation budgets, a noncanonical source-ordered Typed Reference Core, and deterministic compiler-phase-transactional evaluation output. Compiler-phase errors precede emission, while detected transport failures return failure; an unretractable prefix already accepted by the output stream is a failed, nonaccepted result. | Accepted implementation evidence remains bound to exact merged revision `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. Later exact revision `23352bcde976b86890db28ea4d375a31e6354bca` adds the external black-box corpus and draft D-003/D-004 research protocols; policy `0.2.6`, 92 Rust tests including the documentation test, 103 Python tests, and zero foundation-validator findings passed PR Required CI `29292600483`, followed by post-merge Required CI `29292740885`. | Shared specification/implementation mistakes, integer decoding and formatting defects, allocation or host failure within budgets, and sole-owner review remain. The later evidence does not alter S3a acceptance, accept D-003/D-004, authorize S3b, or establish semantic proof, independent review, refinement, code generation, leakage, ABI, cryptographic correctness, external certification, or product-release readiness. |
-| CTL-022 | The D-004 input-only laboratory content-identifies exactly 73 candidate-neutral suite-only subjects and five unreviewed graph proposals with 70 candidate-by-relationship mapping rows, and permits only bounded canonical parsing, digest checks, and structural integrity-oracle evaluation. No candidate adapter or execution exists. | Current pre-epoch input materialization only; `draft_unreviewed_input_only`, owner review `none`, epoch unfrozen, and 0/25 candidate-case executions | Integrity checks can detect malformed or substituted repository inputs but prove neither fixture sufficiency nor semantic correctness. Shared modeling mistakes, parser/oracle defects, sole-owner bias, and future adapter behavior remain; no observation, evidence, selection, S3 closure, or readiness credit follows. |
+| CTL-022 | The D-004 laboratory preserves the immutable v0.5 review subject and overlays the D004-PRE-01 `solo-reviewed` fixture, mapping-hypothesis, and three-repetition policy without changing historical bytes. It permits only bounded canonical parsing, digest checks, structural integrity-oracle evaluation, and reviewed schedule construction. | Owner direction bound to review-subject revision `7d09a27369649855ce987c76315271b0d34a20ef`; reviewed-not-executable v0.6 implementation closure remains provisional pending an exact merged revision; epoch null and unfrozen, execution unauthorized, 0/25 candidate-case units, and 0/75 result records | Integrity checks and protocol review can establish input identity, bounded suite-coverage sufficiency, and symmetric test intent, but not semantic correctness or candidate capability. Shared modeling mistakes, parser/oracle defects, sole-owner bias, absent adapters/isolation/manifests, and future execution behavior remain; no observation, evidence, selection, S3 closure, or readiness credit follows. |
 
 ## Entry points and attack surfaces
 

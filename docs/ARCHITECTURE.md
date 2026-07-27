@@ -27,23 +27,36 @@ unratified, and open
 architecture choices continue to gate only the component or claim that depends
 on them.
 
-The D-004 pre-epoch laboratory now byte-materializes exactly 73
-candidate-neutral suite-only subjects as `draft_unreviewed_input_only`: five
-positive case subjects, all 26 named mutations, 14 missing-edge subjects, 13
-identity-substitution subjects, and five each for ambiguity, unsupported
-behavior, and domain exhaustion. They are fixed inputs for later symmetric
-comparison, not members of the accepted language or Core family. All five
-class sufficiency reviews and freeze blockers plus replay repetitions remain
-unresolved. D-003 is accepted at exact
-revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner review is
-`none`, the D-004
-epoch is unfrozen, and a separate authenticated input-only catalog contains
-five unreviewed structural candidate graph proposals and 70 unresolved SR
-mapping rows. Those hypotheses create no adapter, execution, evidence, review,
-freeze, selection, conclusion, or readiness credit. Integrity parsing and
-structural oracles ratify no semantic boundary. D-004 remains at 0/25 and Orange
-at 3/10 binary gate closure (30%); that mechanical score is not release
-readiness.
+The immutable D-004 v0.5 review subject byte-materializes exactly 73 candidate-
+neutral suite-only subjects: five positive cases, all 26 named mutations, 14
+missing-edge subjects, 13 identity-substitution subjects, and five each for
+ambiguity, unsupported behavior, and domain exhaustion. Its bound
+[`SEMANTIC_STRATA_DECISION_SUITE.md`](SEMANTIC_STRATA_DECISION_SUITE.md) bytes
+and historical `draft_unreviewed_input_only` fields remain unchanged.
+
+On 2026-07-26 the owner accepted D004-PRE-01 as `solo-reviewed` at exact
+review-subject revision `7d09a27369649855ce987c76315271b0d34a20ef`.
+The `d004-v0.6-reviewed-protocol` overlay finds the five fixture classes
+sufficient only for bounded suite coverage (5 ambiguity, 14 missing-edge, 13
+identity-substitution, 5 unsupported, and 5 resource-exhaustion) and reviews
+all five candidate graphs and 70 SR rows only as symmetric, falsifiable test
+hypotheses. They are not accepted Orange semantics and create no capability or
+evidence credit.
+
+That acceptance covers the immutable review subjects. The resulting overlay's
+implementation closure remains `provisional_pending_exact_merged_revision`
+until its validated bytes are available at an exact merged revision.
+
+The reviewed replay plan assigns three deterministic repetitions to each of 25
+candidate-case units, or 75 planned executions, but remains uninstantiated.
+Candidate adapters, executable manifests, enforcing isolation, result parsers,
+an exact execution-subject revision, and a separate owner freeze record remain
+absent. The epoch is null and unfrozen, execution is unauthorized, evidence is
+zero completed of 25 required units and 0 of 75 result records, and selection
+and conclusion remain null. Integrity parsing and structural oracles ratify no
+semantic boundary. D-004 remains proposed, S3b remains blocked, and Orange
+remains at 3 of 10 binary gate closure (30%); that mechanical score is not
+release readiness.
 
 D-010 also remains unresolved. Compiler descriptions below are candidate
 requirements and claim-boundary obligations, not a selected backend, pass

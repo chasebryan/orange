@@ -41,15 +41,17 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance
 ## D-004 pre-epoch decision laboratory
 
 The `orange-compiler` integration tests contain a standard-library-only,
-non-product D-004 laboratory. It strictly parses and canonicalizes an
-input-only `draft_unfrozen` packet, binds the conditional suite and accepted
-S3a baseline by SHA-256, preserves the 5-candidate by 5-case matrix, 14 required
-relationships, 10 hard gates, and 26 mutations named explicitly by the suite,
-binds a closed catalog with five positive and 26 named-mutation subjects plus
-42 unreviewed domain-level structural proposals and their corresponding
-candidate-neutral byte-materialized subjects, authenticates five unreviewed
-structural candidate graph proposals and 70 unresolved SR mapping rows, and
-prepares one deterministic balanced 25-slot identity plan:
+non-product D-004 laboratory. Its v0.5 parser still authenticates the immutable
+`draft_unfrozen` review subject byte for byte. A separate
+`d004-v0.6-reviewed-protocol` layer records the `solo-reviewed` D004-PRE-01
+disposition at exact review-subject revision
+`7d09a27369649855ce987c76315271b0d34a20ef`. It preserves the 5-candidate by
+5-case matrix, 14 required relationships, 10 hard gates, 26 named mutations,
+73 candidate-neutral suite subjects, and five-graph/70-row mapping catalog:
+
+The acceptance covers those immutable review subjects. The resulting v0.6
+implementation closure remains `provisional_pending_exact_merged_revision`
+until the validated overlay is available at an exact merged revision.
 
 ```sh
 cargo test --manifest-path compiler/Cargo.toml -p orange-compiler \
@@ -60,18 +62,22 @@ The proposal manifest names 14 missing-edge, 13 identity-substitution, and five
 each of ambiguity, unsupported-behavior, and domain-exhaustion proposals. The
 three added identity targets bind the model, dependency manifest, and positive
 subject. The cross-cutting and case-subject catalogs byte-materialize exactly
-73 suite-only subjects under `draft_unreviewed_input_only`. Closed parsers
-authenticate the ordered proposal and named-mutation joins, case baselines, and
-per-subject identities, then bounded structural integrity oracles check the
-fixed models in memory. Those checks are not candidate executions and create no
-candidate observation, result, evidence, verdict, or capability credit. All
-five class sufficiency reviews and freeze blockers remain unresolved. Candidate-adapter
-failure cannot satisfy an unsupported subject, domain exhaustion verifies no
-replay ceiling, and replay repetitions remain unassigned. The separate
-`d004-v0.5-candidate-mappings.json` catalog uses schema
-`d004-candidate-mapping-catalog-v0.1`; its five graphs and 70 SR rows are
-authenticated input-only hypotheses, not reviewed mapping conformance. The
-laboratory also checks a closed, in-memory future-schema descriptor that
+73 suite-only subjects under the immutable v0.5
+`draft_unreviewed_input_only` snapshot. Closed parsers authenticate the ordered
+proposal and named-mutation joins, case baselines, and per-subject identities,
+then bounded structural integrity oracles check the fixed models in memory.
+Those checks are not candidate executions and create no candidate observation,
+result, evidence, verdict, or capability credit.
+
+D004-PRE-01 finds the five fixture classes reviewed and sufficient only for
+bounded suite coverage: 5 ambiguity, 14 missing-edge, 13 identity-substitution,
+5 unsupported, and 5 resource-exhaustion subjects. It reviews the five
+candidate graphs and 70 SR rows only as symmetric, falsifiable test hypotheses;
+their semantic status remains unaccepted and their conformance remains
+unresolved until execution. Candidate-adapter failure cannot satisfy an
+unsupported subject, and domain exhaustion verifies no replay ceiling.
+
+The laboratory also checks a closed, in-memory future-schema descriptor that
 enumerates all 31 top-level future case-record fields, their nested shapes, and
 their cross-field invariants. It binds both authenticated subject catalogs into
 an exact 73-row observation oracle and the candidate-mapping catalog into five
@@ -79,18 +85,21 @@ exact graph/map identity rows, so a future result cannot supply or broaden its
 own allowed outcomes or substitute another mapping. The descriptor defines a
 10-field scheduled-slot preimage contract and fail-closed verdict conditions,
 including checked resource bounds and SR dependency joins. The 25-slot identity
-plan exists, but no concrete slot preimage or digest is available until the
-epoch, packet identity, and replay-plan identity are frozen.
+plan is expanded in repetition-major order to exactly three planned executions
+per unit, or 75 reviewed schedule rows. Each repetition requires a fresh empty
+candidate-specific cache and equality of the specified deterministic fields.
+No concrete scheduled-execution digest exists until the epoch, packet identity,
+and executable manifests are frozen.
+
 This synthetic contract accepts no populated records, launches no process or
-adapter, and persists nothing. It approves no schema, assigns no replay
-cardinality, and neither ratifies the separate mapping proposals nor supplies
-an adapter. The epoch remains null and unfrozen, owner protocol review remains
-`none`, execution remains 0/25 with evidence `none`, and selection and
-conclusion remain null. No adapter, execution, evidence, review, freeze,
-selection, or readiness credit follows from mapping authentication. D-003
-acceptance does not accept D-004, alter compiler behavior, authorize S3b, or
-grant roadmap or version 1.0.0 readiness credit; both `roadmap_gate_credit` and
-`readiness_credit` remain `none`.
+adapter, and persists nothing. Candidate adapters, closed payload schemas,
+exact executable and dependency manifests, enforcing isolation, result parsers,
+an execution-subject revision, and a separate owner freeze record remain
+absent. The epoch is null and unfrozen, execution is unauthorized, and evidence
+remains zero completed of 25 required candidate-case units and 0 of 75 result
+records. Selection and conclusion remain null. D-004 remains proposed, S3b
+remains blocked, both `roadmap_gate_credit` and `readiness_credit` remain
+`none`, and Orange's 3-of-10 (30%) binary gate-closure score is unchanged.
 
 ## D-005 decision laboratory
 
@@ -714,17 +723,17 @@ disabled modules do not qualify. This is an exact evidence map, not a claim that
 a named test exhausts its rule. Policy validation binds the production
 constants to the specification, while injected-limit unit tests exercise exact
 semantic-event, Core-node, and evaluation accounting and fail-closed behavior
-at reachable boundaries. This indexed mapping does not complete S3 and adds no source
-construct, semantic rule, canonical Core identity, proof, target, claim, or S3b
-authority.
+at reachable boundaries. This indexed mapping does not complete S3 and adds no
+source construct, semantic rule, canonical Core identity, proof, target, claim,
+or S3b authority.
 
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
   syntax-tree, parser, semantic, Core, and evaluator library;
-- `crates/orange-compiler/tests/d004_decision_suite.rs`: input-only D-004
-  pre-epoch packet, subject-catalog, balanced-plan, and future result-contract
-  checks;
+- `crates/orange-compiler/tests/d004_decision_suite.rs`: historical input-only
+  and v0.6 reviewed-not-executable D-004 protocol, subject-catalog, exact
+  75-record replay-plan, and future result-contract checks;
 - `crates/orange-compiler/tests/d005_decision_suite.rs`: draft-only D-005
   packet, transport-identity, and synthetic capture-integrity checks;
 - `crates/orange-compiler/tests/d006_decision_suite.rs`: input-only D-006

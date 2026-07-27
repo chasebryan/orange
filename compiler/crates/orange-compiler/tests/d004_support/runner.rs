@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use super::candidate_mappings::{CandidateMappingErrorKind, parse_candidate_mapping_catalog};
 use super::case_subjects::{CaseSubjectErrorKind, parse_case_subject_catalog};
 use super::domain::{
-    CANDIDATES, CASES, CandidateId, CaseId, INPUT_BINDING_COUNT, INPUT_BINDINGS, InputBindingId,
-    NONCLAIMS, REQUIRED_CANDIDATE_CASES,
+    CandidateId, CaseId, INPUT_BINDING_COUNT, INPUT_BINDINGS, InputBindingId, NONCLAIMS,
+    REQUIRED_CANDIDATE_CASES,
 };
 use super::fixtures::{FixtureErrorKind, parse_fixture_catalog};
 use super::packet::{
@@ -16,17 +16,10 @@ use super::packet::{
     mutation_manifest_digest_hex, parse_cross_cutting_fixture_proposal_manifest,
     parse_mutation_manifest,
 };
+pub(crate) use super::schedule::PlannedExecution;
+use super::schedule::latin_base_schedule;
 use super::sha256;
 use super::strict_json::{self, JsonValue};
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct PlannedExecution {
-    pub(crate) ordinal: usize,
-    pub(crate) round: usize,
-    pub(crate) position: usize,
-    pub(crate) candidate: CandidateId,
-    pub(crate) case: CaseId,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ReplayInputs<'a> {
@@ -248,20 +241,7 @@ pub(crate) fn prepare_replay(
         });
     }
 
-    let mut schedule = Vec::with_capacity(REQUIRED_CANDIDATE_CASES);
-    for round in 0..CANDIDATES.len() {
-        for position in 0..CANDIDATES.len() {
-            let candidate = CANDIDATES[(round + position) % CANDIDATES.len()];
-            let case = CASES[(2 * round + position) % CASES.len()];
-            schedule.push(PlannedExecution {
-                ordinal: schedule.len() + 1,
-                round: round + 1,
-                position: position + 1,
-                candidate,
-                case,
-            });
-        }
-    }
+    let schedule = latin_base_schedule();
     Ok(ReplayPlan {
         packet_sha256: packet.digest_hex(),
         schedule,

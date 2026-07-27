@@ -381,21 +381,29 @@ The accepted
 define the owner-executable records and research that may run ahead. Explicit
 acceptance on 2026-07-26 and Accepted OEP-0004 bind D-003 candidate PF-01 to
 exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`, but they do not
-accept D-004 or authorize S3b. The D-004 input-only pre-epoch laboratory binds
-exactly 73 candidate-neutral suite-only subjects as
-`draft_unreviewed_input_only`: five positive case subjects, all 26 named
-mutation subjects, 14 missing-edge subjects, 13 identity-substitution subjects,
-and five each for ambiguity, unsupported behavior, and domain exhaustion.
-Sufficiency review and the freeze blocker for every cross-cutting class remain
-unresolved, as do replay repetitions. D-003 is accepted at exact
-revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 owner protocol
-review is `none`; the D-004
-epoch is unfrozen. A separate authenticated input-only catalog contains five
-unreviewed structural candidate graph proposals and 70 unresolved SR mapping
-rows. Those hypotheses create no adapter, execution, evidence, review, freeze,
-result, selection, conclusion, or readiness credit. Integrity parsing and
-structural oracles ratify no semantics; the laboratory remains at 0/25, S3
-remains open, and Orange remains 30% complete by binary gate closure.
+accept D-004 or authorize S3b. The immutable D-004 v0.5 review subject binds
+exactly 73 candidate-neutral suite-only subjects and the exact historical suite
+bytes; its `draft_unreviewed_input_only` fields remain unchanged. On 2026-07-26
+the owner accepted D004-PRE-01 as `solo-reviewed` at exact review-subject
+revision `7d09a27369649855ce987c76315271b0d34a20ef`.
+
+That acceptance covers the immutable review subjects. The successor overlay's
+implementation closure remains `provisional_pending_exact_merged_revision`
+until its validated bytes are available at an exact merged revision.
+
+The successor `d004-v0.6-reviewed-protocol` finds 5 ambiguity, 14 missing-edge,
+13 identity-substitution, 5 unsupported, and 5 resource-exhaustion subjects
+sufficient only for bounded suite coverage. It reviews all five candidate
+graphs and 70 SR mappings only as symmetric, falsifiable test hypotheses, not
+accepted Orange semantics or capability evidence. The reviewed replay plan
+assigns three deterministic repetitions to each of 25 candidate-case units, for
+75 planned executions. It remains uninstantiated: candidate adapters,
+executable manifests, enforcing isolation, result parsers, an exact execution-
+subject revision, and a separate owner freeze record are absent. The epoch is
+null and unfrozen, execution is unauthorized, evidence is zero completed of 25
+required units and 0 of 75 result records, and selection and conclusion remain
+null. D-004 remains proposed, S3 remains incomplete, S3b remains blocked, and
+Orange remains 30% complete by its unchanged 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
 

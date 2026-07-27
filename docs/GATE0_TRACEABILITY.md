@@ -144,21 +144,29 @@ The preserved Gate 0 closure ledger was:
 | F-13 | NIST ACVP-compatible vector exchange and standards provenance metadata | W5 and W7; standards working group and Cryptography Review Board | F-12; D-005 claim model; D-014 package/evidence model; D-015 corpus; D-016 validation/certification posture; source-rights decision under D-018 | `N/C/A/X`: clause- and errata-linked provenance records, exact source/vector digests and rights, ACVP adapters, round-trip cases, external status records, and laboratory evidence when claimed | Every admitted source and vector has stable identity, digest, locator, rights, and review; adapter round trips preserve the applicable schema and semantics; Gate 4 vectors pass; public wording never calls local replay an ACVP/CAVP certificate or Orange FIPS validated | `proposed`; `blocked` | Gate 4 | `mapped` |
 | F-14 | Reproducible, signed releases for supported hosts | W6 and W7; Release Engineering, PSIRT, and Assurance and TCB Board | All preceding features; D-008 implementation languages; D-011 host/target envelope; D-014 package model; D-019 release authority; D-020 supply-chain target; D-021 bootstrap policy; D-022 funded support policy | `N/M/C/A/X/O`: hermetic build closure, two independent rebuild attestations, signatures and transparency records, SBOM/CBOM, provenance and proof bundles, audits, and release/revocation/recovery drills | At Gate 7 two independently administered builders reproduce each supported artifact; network-disabled build and offline verification bind source, claims, SBOM/CBOM, provenance, proofs, and signatures; all stop-ship findings are closed; rollback, freeze, compromise, revocation, and disaster-recovery drills pass with multi-role sign-off | `proposed`; `blocked` | Gate 7 | `mapped` |
 
-D-004 input materialization is separate from feature or gate completion.
-Exactly 73 candidate-neutral suite-only subjects are byte-materialized as
-`draft_unreviewed_input_only`: five positive case subjects, all 26 named
-mutations, 14 missing-edge subjects, 13 identity-substitution subjects, and five
-each for ambiguity, unsupported behavior, and domain exhaustion. All five
-class sufficiency reviews and freeze blockers plus replay repetitions remain
-unresolved. D-003 candidate PF-01 is accepted through OEP-0004 at exact
-revision `a82a5cec2ee4359dc2fe66171f17c93146747333`. D-004 owner review is
-`none`, the D-004 epoch is unfrozen, and five unreviewed input-only candidate
-graph hypotheses with 70 unresolved relationship mappings exist without
-adapters, observations, evidence, selection, or conclusion.
-Integrity parsing and structural oracles over opaque suite-only models are not
-candidate executions and satisfy none of the F-01, F-03, F-04, or F-06 exit
-evidence. D-004 remains at 0/25 and S3 remains open. The binary gate-closure
-score remains 3/10 (30%); that mechanical score is not release readiness.
+D-004 protocol review remains separate from feature or gate completion. Its
+immutable v0.5 review subject contains exactly 73 candidate-neutral suite-only
+subjects and the exact bound semantic-strata suite bytes; the historical
+`draft_unreviewed_input_only` fields remain unchanged. On 2026-07-26 the owner
+accepted D004-PRE-01 as `solo-reviewed` at exact review-subject revision
+`7d09a27369649855ce987c76315271b0d34a20ef`.
+
+That acceptance covers the immutable review subjects. The successor overlay's
+implementation closure remains `provisional_pending_exact_merged_revision`
+until its validated bytes are available at an exact merged revision.
+
+The successor `d004-v0.6-reviewed-protocol` finds 5 ambiguity, 14 missing-edge,
+13 identity-substitution, 5 unsupported, and 5 resource-exhaustion subjects
+sufficient only for bounded suite coverage. Its five candidate graphs and 70
+SR mappings are reviewed only as symmetric, falsifiable test hypotheses, not
+accepted semantics or capability evidence. The reviewed replay plan assigns
+three deterministic repetitions to each of 25 candidate-case units, for 75
+planned executions, but remains uninstantiated. The epoch is null and unfrozen,
+execution is unauthorized, and evidence is zero completed of 25 required units
+and 0 of 75 result records. Integrity parsing and structural oracles satisfy
+none of the F-01, F-03, F-04, or F-06 exit evidence. D-004 remains proposed,
+S3 remains incomplete, S3b remains blocked, and the binary gate-closure score remains 3 of 10
+(30%); that mechanical score is not release readiness.
 
 D-010 candidate identity is separate from feature completion. Its two
 direct-native candidates, versioned Jasmin boundary, portable C11 boundary, and
