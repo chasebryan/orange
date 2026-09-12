@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
 
       - name: Audit workflow source and upstream metadata
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99 # v0.6.3
         with:
           advanced-security: false
           annotations: false
