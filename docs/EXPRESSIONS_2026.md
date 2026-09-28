@@ -182,10 +182,12 @@ In an expression:
   `impl`, or to no function is an error (`ORC0212`).
 - a call must supply exactly one argument per parameter (`ORC0213`).
 
-The **call graph** has one edge from each typed `spec` to each typed `spec` its
-body calls. It must be acyclic. A function that reaches itself through calls,
-directly or through others, is an error (`ORC0217`). Recursion is not part of
-Orange 2026, so every accepted program terminates.
+The **call graph** has one edge for each call that semantic analysis examines
+and that names a typed `spec`, even when the call is also wrong in another way,
+such as a type mismatch or a wrong argument count. It must be acyclic. A
+function that reaches itself through calls, directly or through others, is an
+error (`ORC0217`). Recursion is not part of Orange 2026, so every accepted
+program terminates.
 
 ## 7. Types
 
@@ -284,8 +286,9 @@ decides which diagnostics fall within the S3a budget of 100:
    result type, and the body expression.
 2. After every function: call cycles, in the order of a depth-first search that
    starts from each unvisited function in ID order and follows each function's
-   calls in Core postorder. A call that reaches a function still on the search
-   path closes a cycle and is reported once, at that call, naming the cycle.
+   calls in body postorder, a call's arguments before the call. A call that
+   reaches a function still on the search path closes a cycle and is reported
+   once, at that call, naming the cycle.
 
 Within one body, each node is examined before its operands, and operands left
 to right. A node that is wrong in itself stops there, and its operands are not

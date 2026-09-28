@@ -477,6 +477,11 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/semantics.rs",
+        test: "call_cycles_are_reported_through_calls_with_other_errors",
+        rules: &["S3B-CYCLE-01"],
+    },
+    TestEvidence {
+        source_path: "src/semantics.rs",
         test: "long_call_cycles_have_bounded_messages",
         rules: &["S3B-CYCLE-01"],
     },

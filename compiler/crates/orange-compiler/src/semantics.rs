@@ -232,7 +232,7 @@ impl Signature {
     }
 }
 
-/// One checked call from a typed `spec` to a typed `spec`.
+/// One examined call from a typed `spec` to a typed `spec`.
 struct CallEdge {
     caller: CoreFunctionId,
     callee: CoreFunctionId,
@@ -887,6 +887,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         // An unresolved callee type was reported at the callee's declaration.
         if !signature.is_complete() {
+            self.record_call_edge(context, signature, expression.span, output);
             return false;
         }
         if signature.parameters.len() != call.arguments.len() {
@@ -911,6 +912,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .with_note("every parameter receives exactly one argument"),
                 );
             }
+            self.record_call_edge(context, signature, expression.span, output);
             return false;
         }
         let Some(result_type) = signature.result_type else {
@@ -944,18 +946,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return false;
             }
         }
-        if !result_matches || !arguments_checked {
+        if !self.record_call_edge(context, signature, expression.span, output)
+            || !result_matches
+            || !arguments_checked
+        {
             return false;
         }
-        if !(self.reserve_call_edge_slot)(output.call_edges) {
-            self.resource_limit(expression.span, "call graph storage allocation failed");
-            return false;
-        }
-        output.call_edges.push(CallEdge {
-            caller: context.id,
-            callee: signature.id,
-            span: expression.span,
-        });
         let Ok(arguments) = u32::try_from(call.arguments.len()) else {
             self.resource_limit(
                 expression.span,
@@ -972,6 +968,28 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 arguments,
             },
         )
+    }
+
+    /// Adds the call graph edge for an examined call to a typed `spec`. The
+    /// edge does not depend on the call's types, so a cycle is reported even
+    /// through a call that is also wrong. Returns whether the edge was stored.
+    fn record_call_edge(
+        &mut self,
+        context: &BodyContext<'ast>,
+        callee: &Signature,
+        span: Span,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        if !(self.reserve_call_edge_slot)(output.call_edges) {
+            self.resource_limit(span, "call graph storage allocation failed");
+            return false;
+        }
+        output.call_edges.push(CallEdge {
+            caller: context.id,
+            callee: callee.id,
+            span,
+        });
+        true
     }
 
     fn unary_is_defined(&mut self, unary: &UnaryExpression, expected: CoreType) -> bool {
@@ -3835,6 +3853,61 @@ mod tests {
         assert_eq!(
             diagnostic.notes(),
             ["a `spec` may not depend on itself; recursion is not part of Orange 2026"]
+        );
+    }
+
+    #[test]
+    fn call_cycles_are_reported_through_calls_with_other_errors() {
+        let (fixture, result) = rejected(concat!(
+            "  spec a() -> Int { b() }\n",
+            "  spec b() -> Word[8] { a() }\n",
+            "  spec count() -> Int { arity(1) }\n",
+            "  spec arity() -> Int { count() }\n",
+            "  spec wide(x: Word[12]) -> Int { narrow() }\n",
+            "  spec narrow() -> Int { wide(1) }\n",
+            "  spec typed(x: Word[8]) -> Int { typed(256) }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .filter(|(code, _, _)| *code == DiagnosticCode::CallCycle)
+                .collect::<Vec<_>>(),
+            [
+                (
+                    DiagnosticCode::CallCycle,
+                    "a()",
+                    String::from("call cycle `a` -> `b` -> `a`")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "count()",
+                    String::from("call cycle `count` -> `arity` -> `count`")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "wide(1)",
+                    String::from("call cycle `wide` -> `narrow` -> `wide`")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "typed(256)",
+                    String::from("`typed` calls itself")
+                ),
+            ]
+        );
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .filter(|(code, _)| *code != DiagnosticCode::CallCycle)
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::TypeMismatch, "b()"),
+                (DiagnosticCode::TypeMismatch, "a()"),
+                (DiagnosticCode::ArgumentCountMismatch, "arity(1)"),
+                (DiagnosticCode::UnsupportedWordWidth, "12"),
+                (DiagnosticCode::WordLiteralOutOfRange, "256"),
+            ]
         );
     }
 
