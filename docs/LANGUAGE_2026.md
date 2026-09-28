@@ -40,6 +40,11 @@ unresolved.
 > The S3d slice proposed in [`ARRAYS_2026.md`](ARRAYS_2026.md) under OEP-0007,
 > also in review, builds on S3c with fixed-length array types `T^n`, array
 > literals, and literal indices. It also adds no token and no reserved word.
+>
+> The S3e slice proposed in [`LOOPS_2026.md`](LOOPS_2026.md) under OEP-0008,
+> also in review, builds on S3d with bounded loops, computed indices, updates,
+> and fill literals. It adds no token and no reserved word either: `for`, `in`,
+> and `with` are recognized by position.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

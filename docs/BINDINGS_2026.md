@@ -24,7 +24,9 @@ language meaning. It accepts no D-004 candidate.
 > [!NOTE]
 > [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, extends this
 > document with fixed-length arrays, so that one function can return a whole
-> quarter round. Every source this document accepts keeps its meaning under it.
+> quarter round, and [`LOOPS_2026.md`](LOOPS_2026.md), proposed under
+> OEP-0008, adds bounded loops, so that ten double rounds are one expression.
+> Every source this document accepts keeps its meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

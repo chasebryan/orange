@@ -20,6 +20,12 @@ requires OEP-0006. At that point it replaces the S3c clauses listed in section
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`LOOPS_2026.md`](LOOPS_2026.md), proposed under OEP-0008, extends this
+> document with bounded loops, indices computed from loop indices, updates of
+> one element, and fill literals, which lift the absence of loops described in
+> section 12. Every source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

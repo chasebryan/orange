@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b, S3c,
-and S3d proposed under OEP-0005, OEP-0006, and OEP-0007, in owner review
+S3d, and S3e proposed under OEP-0005 through OEP-0008, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -21,8 +21,12 @@ under OEP-0006, adds typed `let` bindings and explicit `as` conversions among
 those five types. The S3d slice, proposed in
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md) and in owner review under
 OEP-0007, adds fixed-length arrays `T^n` of those types, array literals, and
-literal indices. All four lower to a noncanonical Typed Reference Core and are
-reference-evaluated. Loops, control flow, typed `impl`, proof checking,
+literal indices. The S3e slice, proposed in
+[`docs/LOOPS_2026.md`](../docs/LOOPS_2026.md) and in owner review under
+OEP-0008, adds loops over literal ranges, indices computed from loop indices and
+proved in range before evaluation, updates of one element, and fill literals.
+All five lower to a noncanonical Typed Reference Core and are
+reference-evaluated. Unbounded loops, branches, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -116,9 +120,9 @@ and conclusion remain null. The v0.8 harness in `tools/d004_v08_run.py` adds
 SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
-unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b, S3c, and
-S3d are implemented and await owner review under OEP-0005, OEP-0006, and
-OEP-0007, both `roadmap_gate_credit` and `readiness_credit` remain `none`, and
+unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b, S3c,
+S3d, and S3e are implemented and await owner review under OEP-0005 through
+OEP-0008, both `roadmap_gate_credit` and `readiness_credit` remain `none`, and
 Orange's 3-of-10 (30%) binary gate-closure score is unchanged.
 
 ## D-005 decision laboratory
@@ -579,25 +583,31 @@ declared_type   = parsed_type ("^" INTEGER)? ;
 parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
-                | conversion ;
+                | conversion | update ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
 shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
 conversion      = prefixed "as" parsed_type ;
+update          = prefixed "with" "[" expression "]" "=" expression ;
 prefixed        = literal | ("-" | "~") prefixed | primary ;
 literal         = "-"? INTEGER ;
 primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array ;
+                | array | fill | loop ;
 call            = IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
-index           = "[" INTEGER "]" ;
+index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
+fill            = "[" expression ";" INTEGER "]" ;
+loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
+                  "with" IDENTIFIER ":" declared_type "=" expression
+                  "{" expression "}" ;
 ```
 
-`let` and `as` are contextual: they are ordinary names everywhere except where
-a binding or a conversion begins. For example:
+`let`, `as`, `for`, `in`, and `with` are contextual: they are ordinary names
+everywhere except where a binding, a conversion, a loop, or an update begins.
+For example:
 
 ```orange
 edition 2026;
@@ -615,6 +625,10 @@ module demo {
     low | ((b[1] as Word[16]) << 8)
   }
   spec pair() -> Word[16]^2 { [load_le16([0x34, 0x12]), 0xbeef] }
+  spec reverse(x: Word[8]^4) -> Word[8]^4 {
+    for i in 0..4 with r: Word[8]^4 = [0; 4] { r with [i] = x[3 - i] }
+  }
+  spec backwards() -> Word[8]^4 { reverse([1, 2, 3, 4]) }
 }
 ```
 
@@ -632,8 +646,11 @@ bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
 and `*` wrap because that is their meaning, while a literal must already fit
 and never coerces, truncates, or wraps. Shift and rotation amounts are
 unsigned literals from 0 through n - 1. Names are the enclosing function's
-parameters, calls name typed `spec` functions of the same module, and the call
-graph must be acyclic. Duplicate names are syntactically valid, then semantic
+parameters and earlier bindings, and in a loop's step its index and
+accumulator; calls name typed `spec` functions of the same module, and the call
+graph must be acyclic. A loop runs over literal bounds with
+0 ≤ a < b ≤ 65536, and every index is an integer literal or an expression of
+literals and loop indices whose every value is proved in range. Duplicate names are syntactically valid, then semantic
 analysis rejects a duplicate within the same declaration-kind namespace or
 parameter list. Empty declarations have no value, and a typed `impl` remains a
 syntax error.
@@ -659,15 +676,17 @@ demo::answer: Int = 42
 demo::mask: Word[8] = 0xff
 demo::sample: Word[32] = 0xce20b47e
 demo::pair: Word[16]^2 = [0x1234, 0xbeef]
+demo::backwards: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b,
-S3c, and S3d rules, limits, and non-claims are in
+S3c, S3d, and S3e rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
-[`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md), and
-[`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md). None of them defines
-loops, control flow, effects, proof meaning, implementation refinement,
+[`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
+[`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md), and
+[`docs/LOOPS_2026.md`](../docs/LOOPS_2026.md). None of them defines
+unbounded loops, branches, effects, proof meaning, implementation refinement,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
 standard's example value is not thereby a verified transcription of that
@@ -871,6 +890,29 @@ boundaries with generated sources. This corpus establishes the tested behavior
 of one implementation; it does not accept OEP-0007, prove the rules sound, or
 complete S3.
 
+## S3e loop conformance
+
+`fixtures/s3e/` contains an exact seven-file corpus for the proposed S3e
+behavior: three fixtures must evaluate successfully and four must fail closed.
+The accepted fixtures cover loops over `Int`, words, and arrays, nested loops,
+indices computed from loop indices, updates, fill literals, the longest
+admitted loop, `for`, `in`, and `with` used as ordinary names, the whole
+SHA-256 hash of both FIPS 180-4 examples ("abc" and the two-block message),
+and the ChaCha20 encryption of the "sunscreen" plaintext of RFC 8439 section
+2.4.2. The rejected fixtures cover loop syntax, bounds, names, scopes and
+types, indices that are not static or not in range, and updates and fills of
+the wrong kind, length, or element.
+
+`crates/orangec/tests/s3e_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3d runner. It parses the 18-rule S3e index in
+`docs/LOOPS_2026.md`, binds every rule to named CLI, generated-CLI,
+parser-unit, or unit tests declared exactly once at their harness locations,
+and pins the 65536 loop bound at its exact boundary with generated sources,
+together with two nested maximal loops that analysis admits and the evaluation
+step budget stops. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0008, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -894,10 +936,13 @@ complete S3.
   rule-index, and binding-limit runner;
 - `crates/orangec/tests/s3d_conformance.rs`: exact repeatable S3d corpus,
   rule-index, and element- and length-limit runner;
+- `crates/orangec/tests/s3e_conformance.rs`: exact repeatable S3e corpus,
+  rule-index, and loop-bound runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
 - `fixtures/s3b/`: exact five-positive/nine-negative S3b CLI fixture corpus;
 - `fixtures/s3c/`: exact five-positive/five-negative S3c CLI fixture corpus;
+- `fixtures/s3d/`: exact three-positive/five-negative S3d CLI fixture corpus;
   and
-- `fixtures/s3d/`: exact three-positive/five-negative S3d CLI fixture corpus.
+- `fixtures/s3e/`: exact three-positive/four-negative S3e CLI fixture corpus.

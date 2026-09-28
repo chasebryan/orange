@@ -79,8 +79,8 @@ unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. The epoch records execution behavior only; a passing
 record is not an assurance claim. Canonical parsing, digest checks, and
 structural oracles establish no Orange semantics, proof, leakage, target,
-cryptographic, or readiness assurance. D-004 remains proposed, S3b, S3c, and S3d
-are implemented and await owner review under OEP-0005, OEP-0006, and OEP-0007,
+cryptographic, or readiness assurance. D-004 remains proposed, S3b, S3c, S3d,
+and S3e are implemented and await owner review under OEP-0005 through OEP-0008,
 and Orange's binary gate-closure score remains 3 of 10 (30%); that mechanical
 score is not release readiness.
 
