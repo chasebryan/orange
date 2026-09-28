@@ -643,11 +643,7 @@ impl Magnitude {
         let [b0, b1, b2, b3, b4, b5, b6, b7] = value.to_le_bytes();
         let low = u32::from_le_bytes([b0, b1, b2, b3]);
         let high = u32::from_le_bytes([b4, b5, b6, b7]);
-        let length = if high != 0 {
-            2
-        } else {
-            usize::from(low != 0)
-        };
+        let length = if high != 0 { 2 } else { usize::from(low != 0) };
         let mut limbs = Vec::new();
         if length != 0 && !reserve_limbs(&mut limbs, length) {
             return None;

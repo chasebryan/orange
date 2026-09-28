@@ -310,10 +310,7 @@ impl<'ast> BodyContext<'ast> {
             .bindings
             .split_at_checked(self.binding_types.len())
             .unwrap_or((self.bindings, &[]));
-        if let Some(index) = visible
-            .iter()
-            .position(|binding| binding.name.text == name)
-        {
+        if let Some(index) = visible.iter().position(|binding| binding.name.text == name) {
             return NameResolution::Binding(index);
         }
         later
@@ -758,7 +755,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             if self.halted {
                 return None;
             }
-            context.binding_types.push(checked.as_ref().map(|checked| checked.ty));
+            context
+                .binding_types
+                .push(checked.as_ref().map(|checked| checked.ty));
             if let Some(CheckedBinding {
                 ty,
                 nodes: Some(nodes),
@@ -1068,19 +1067,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             name.span,
         )
         .with_label("unknown name");
-        diagnostic = if first_declaration(scope.declarations, FunctionKind::Spec, &name.text)
-            .is_some()
-        {
-            diagnostic.with_note(format!(
-                "to call the function `{spelling}`, write `{spelling}()` with its arguments"
-            ))
-        } else if has_bindings {
-            diagnostic.with_note(
-                "a bare name in a `spec` body refers to one of its parameters or bindings",
-            )
-        } else {
-            diagnostic.with_note("a bare name in a `spec` body refers to one of its parameters")
-        };
+        diagnostic =
+            if first_declaration(scope.declarations, FunctionKind::Spec, &name.text).is_some() {
+                diagnostic.with_note(format!(
+                    "to call the function `{spelling}`, write `{spelling}()` with its arguments"
+                ))
+            } else if has_bindings {
+                diagnostic.with_note(
+                    "a bare name in a `spec` body refers to one of its parameters or bindings",
+                )
+            } else {
+                diagnostic.with_note("a bare name in a `spec` body refers to one of its parameters")
+            };
         self.diagnostics.push(diagnostic);
     }
 
@@ -1632,21 +1630,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             // node, one node per parameter type, and its expression nodes;
             // each binding contributes one binding node, one type node, and
             // its expression nodes.
-            let node_count = pending_function
-                .locals
-                .iter()
-                .fold(
-                    pending_function
-                        .parameters
-                        .len()
-                        .saturating_add(pending_function.nodes.len())
-                        .saturating_add(2),
-                    |count, local| {
-                        count
-                            .saturating_add(local.value.nodes.len())
-                            .saturating_add(2)
-                    },
-                );
+            let node_count = pending_function.locals.iter().fold(
+                pending_function
+                    .parameters
+                    .len()
+                    .saturating_add(pending_function.nodes.len())
+                    .saturating_add(2),
+                |count, local| {
+                    count
+                        .saturating_add(local.value.nodes.len())
+                        .saturating_add(2)
+                },
+            );
             for _ in 0..node_count {
                 if !self.record_core_node(pending_function.span) {
                     return None;
@@ -4826,5 +4821,496 @@ mod tests {
             );
             assert_eq!(diagnostic.label(), detail);
         }
+    }
+
+    #[test]
+    fn bindings_and_conversions_build_typed_core_in_source_order() {
+        let (fixture, core) = accepted(concat!(
+            "  spec load16(lo: Word[8], hi: Word[8]) -> Word[16] {\n",
+            "    let wide: Word[16] = lo as Word[16];\n",
+            "    let high: Word[16] = (hi as Word[16]) << 8;\n",
+            "    wide | high\n",
+            "  }\n",
+            "  spec square(x: Word[32]) -> Int { let n: Int = x as Int; n * n }\n",
+            "  spec plain() -> Int { 1 }\n",
+        ));
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        let load = &core.functions[0];
+        assert_eq!(
+            load.locals
+                .iter()
+                .map(|local| (
+                    local.name(),
+                    fixture.source().slice(local.span()).unwrap(),
+                    fixture.source().slice(local.name_span()).unwrap(),
+                    local.ty()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "wide",
+                    "let wide: Word[16] = lo as Word[16];",
+                    "wide",
+                    CoreType::Word16
+                ),
+                (
+                    "high",
+                    "let high: Word[16] = (hi as Word[16]) << 8;",
+                    "high",
+                    CoreType::Word16
+                ),
+            ]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, &load.locals[0].value),
+            owned(&[
+                ("parameter 0", "lo", CoreType::Word8),
+                ("convert from Word[8]", "lo as Word[16]", CoreType::Word16),
+            ])
+        );
+        assert_eq!(
+            expression_nodes(&fixture, &load.locals[1].value),
+            owned(&[
+                ("parameter 1", "hi", CoreType::Word8),
+                ("convert from Word[8]", "hi as Word[16]", CoreType::Word16),
+                ("shift << 8", "(hi as Word[16]) << 8", CoreType::Word16),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, load),
+            owned(&[
+                ("local 0", "wide", CoreType::Word16),
+                ("local 1", "high", CoreType::Word16),
+                ("infix |", "wide | high", CoreType::Word16),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[1]),
+            owned(&[
+                ("local 0", "n", CoreType::Int),
+                ("local 0", "n", CoreType::Int),
+                ("infix *", "n * n", CoreType::Int),
+            ])
+        );
+        assert!(core.functions[2].locals.is_empty());
+    }
+
+    #[test]
+    fn a_conversion_operand_has_the_type_of_its_first_typed_leaf() {
+        let (fixture, core) = accepted(concat!(
+            "  spec k() -> Word[8] { 7 }\n",
+            "  spec a(x: Word[8]) -> Int { (x + 1) as Int }\n",
+            "  spec b(x: Word[8]) -> Int { (1 + x) as Int }\n",
+            "  spec c(x: Word[32]) -> Word[8] { ((x << 3) ^ 0xff) as Word[8] }\n",
+            "  spec d() -> Word[64] { k() as Word[64] }\n",
+            "  spec e(x: Word[8]) -> Int { ((x as Word[64]) * 3) as Int }\n",
+            "  spec f(x: Int) -> Int { -x as Int }\n",
+            "  spec g(x: Word[16]) -> Word[16] { ~x as Word[16] }\n",
+        ));
+        let conversions = core
+            .functions
+            .iter()
+            .map(|function| {
+                let root = function.body.root().unwrap();
+                let CoreNodeKind::Convert { from } = root.kind else {
+                    return None;
+                };
+                Some((
+                    function.name.as_str(),
+                    from,
+                    root.ty,
+                    fixture.source().slice(root.span).unwrap(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            conversions,
+            [
+                None,
+                Some(("a", CoreType::Word8, CoreType::Int, "(x + 1) as Int")),
+                Some(("b", CoreType::Word8, CoreType::Int, "(1 + x) as Int")),
+                Some((
+                    "c",
+                    CoreType::Word32,
+                    CoreType::Word8,
+                    "((x << 3) ^ 0xff) as Word[8]"
+                )),
+                Some(("d", CoreType::Word8, CoreType::Word64, "k() as Word[64]")),
+                Some((
+                    "e",
+                    CoreType::Word64,
+                    CoreType::Int,
+                    "((x as Word[64]) * 3) as Int"
+                )),
+                Some(("f", CoreType::Int, CoreType::Int, "-x as Int")),
+                Some(("g", CoreType::Word16, CoreType::Word16, "~x as Word[16]")),
+            ]
+        );
+        // The literal takes the leaf's type.
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[2])[0],
+            (String::from("literal 0x01"), "1", CoreType::Word8)
+        );
+    }
+
+    #[test]
+    fn binding_names_are_unique_and_in_scope_only_after_their_binding() {
+        let (fixture, result) = rejected(concat!(
+            "  spec dup(x: Int) -> Int { let x: Int = 1; let t: Int = x; let t: Int = 2; t }\n",
+            "  spec early() -> Int { let a: Int = b; let b: Int = b; b }\n",
+            "  spec unknown(x: Int) -> Int { let a: Int = x; c }\n",
+            "  spec function_name() -> Int { let a: Int = 1; early }\n",
+            "  spec typed(x: Word[8]) -> Word[32] { let t: Word[8] = x; t }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "x",
+                    String::from("duplicate binding `x`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "t",
+                    String::from("duplicate binding `t`")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "b",
+                    String::from("`b` is used before it is bound")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "b",
+                    String::from("`b` is used before it is bound")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "c",
+                    String::from("`c` is not a parameter or binding of `unknown`")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "early",
+                    String::from("`early` is not a parameter or binding of `function_name`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "t",
+                    String::from("`t` has type `Word[8]`, but `Word[32]` is required here")
+                ),
+            ]
+        );
+        let secondary = |index: usize| {
+            let [secondary] = result.diagnostics[index].secondary_spans() else {
+                panic!("diagnostic {index} must cite one earlier span");
+            };
+            (
+                fixture.source().slice(secondary.span()).unwrap(),
+                secondary.label(),
+                secondary.span().start() < result.diagnostics[index].primary_span().start(),
+            )
+        };
+        assert_eq!(secondary(0), ("x", "the parameter is here", true));
+        assert_eq!(secondary(1), ("t", "the first binding is here", true));
+        assert_eq!(secondary(2), ("b", "the binding is here", false));
+        assert_eq!(secondary(3), ("b", "the binding is here", true));
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.notes()[0].as_str())
+                .collect::<Vec<_>>(),
+            [
+                "each parameter and binding of a function has its own name; \
+                 Orange has no shadowing",
+                "each parameter and binding of a function has its own name; \
+                 Orange has no shadowing",
+                "a binding is in scope after its own `;`, for the bindings that follow it \
+                 and the result",
+                "a binding is in scope after its own `;`, for the bindings that follow it \
+                 and the result",
+                "a bare name in a `spec` body refers to one of its parameters or bindings",
+                "to call the function `early`, write `early()` with its arguments",
+                "Orange has no implicit conversions between types",
+            ]
+        );
+    }
+
+    #[test]
+    fn conversion_errors_are_reported_once_in_checking_order() {
+        let (fixture, result) = rejected(concat!(
+            "  spec untyped() -> Word[8] { (1 + 2) as Word[8] }\n",
+            "  spec shifted() -> Int { (1 << 3) as Int }\n",
+            "  spec mismatch(x: Word[32]) -> Word[8] { x as Word[16] }\n",
+            "  spec target(x: Word[32]) -> Word[8] { x as Word[12] }\n",
+            "  spec unknown() -> Int { (y + 1) as Int }\n",
+            "  spec range(x: Word[8]) -> Int { (x + 256) as Int }\n",
+            "  spec both(x: Word[8]) -> Word[8] { (x + y) as Word[16] }\n",
+            "  spec callee() -> Int { missing() as Int }\n",
+            "  spec untyped_binding() -> Int { let q: Bool = 1; q as Int }\n",
+            "  spec inner(x: Word[8]) -> Int { (x as Word[7]) as Int }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UntypedConversionOperand,
+                    "(1 + 2)",
+                    String::from("the operand of `as` has no type of its own")
+                ),
+                (
+                    DiagnosticCode::UntypedConversionOperand,
+                    "(1 << 3)",
+                    String::from("the operand of `as` has no type of its own")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "Word[16]",
+                    String::from(
+                        "this conversion gives `Word[16]`, but `Word[8]` is required here"
+                    )
+                ),
+                (
+                    DiagnosticCode::UnsupportedWordWidth,
+                    "12",
+                    String::from("`Word` width must be exactly 8, 16, 32, or 64")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "y",
+                    String::from("`y` is not a parameter of `unknown`")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "256",
+                    String::from("literal is outside the range of `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "Word[16]",
+                    String::from(
+                        "this conversion gives `Word[16]`, but `Word[8]` is required here"
+                    )
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "y",
+                    String::from("`y` is not a parameter of `both`")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    "missing",
+                    String::from("no typed `spec` function named `missing` in this module")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Bool",
+                    String::from("unsupported binding type `Bool`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedWordWidth,
+                    "7",
+                    String::from("`Word` width must be exactly 8, 16, 32, or 64")
+                ),
+            ]
+        );
+        assert_eq!(
+            result.diagnostics[0].notes(),
+            [
+                "write the literal where its type is required, or give it a type with a `let` \
+              binding"
+            ]
+        );
+        assert_eq!(
+            result.diagnostics[2].notes(),
+            ["`as` gives exactly the type written after it"]
+        );
+    }
+
+    #[test]
+    fn calls_inside_bindings_and_conversions_join_the_call_graph() {
+        let (fixture, result) = rejected(concat!(
+            "  spec a() -> Int { let t: Int = b(); t }\n",
+            "  spec b() -> Int { c() as Int }\n",
+            "  spec c() -> Word[8] { (a() as Word[8]) + 1 }\n",
+            "  spec d() -> Int { let q: Word[8] = e(); q as Int }\n",
+            "  spec e() -> Word[16] { d() as Word[16] }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "e()",
+                    String::from("`e` returns `Word[16]`, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "a()",
+                    String::from("call cycle `a` -> `b` -> `c` -> `a`")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "d()",
+                    String::from("call cycle `d` -> `e` -> `d`")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn binding_and_conversion_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2), the parameter's uniqueness check, name,
+        // and width (3), the result name (1); the binding's uniqueness check
+        // and type name (2), `as` and its target name (2), and `x` (1); and
+        // the result `n` (1): 12 analysis events. Core is the module, one
+        // function node, one result-type node, one parameter-type node, the
+        // body node `n`, one binding node, one binding-type node, and the
+        // binding's nodes `x` and `as`: 9 nodes, each one more event.
+        let fixture = module("  spec f(x: Word[8]) -> Int { let n: Int = x as Int; n }\n");
+        let (events, nodes) = (21, 9);
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert!(exact.core.is_some());
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label);
+        }
+    }
+
+    #[test]
+    fn binding_storage_failures_return_no_partial_core() {
+        let fixture = module("  spec f(x: Int) -> Int { let t: Int = x; t }\n");
+        let name_failure = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_name = |_, _| false;
+            analyzer.run()
+        };
+        let node_failure = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_node_slot = |_| false;
+            analyzer.run()
+        };
+        for (run, detail, source) in [
+            (
+                &name_failure as &dyn Fn() -> AnalysisResult,
+                "typed Core name storage allocation failed",
+                "t",
+            ),
+            (
+                &node_failure,
+                "typed Core expression storage allocation failed",
+                "x",
+            ),
+        ] {
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            let diagnostic = &first.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+            assert_eq!(
+                fixture.source().slice(diagnostic.primary_span()),
+                Some(source)
+            );
+            assert_eq!(diagnostic.label(), detail);
+        }
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_bindings_and_conversions() {
+        let text = "edition 2026; module values { \
+                    spec value(x: Word[8]) -> Int { let t: Int = x as Int; t } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        let foreign = match &second.ast.module.functions[0].body {
+            FunctionBody::Typed(body) => body,
+            FunctionBody::Empty => unreachable!(),
+        };
+        let foreign_binding = &foreign.bindings[0];
+        let ExpressionKind::Conversion(foreign_conversion) = &foreign_binding.value.kind else {
+            unreachable!();
+        };
+        fn conversion_mut(ast: &mut SyntaxTree) -> &mut ConversionExpression {
+            match &mut typed_body_mut(ast).bindings[0].value.kind {
+                ExpressionKind::Conversion(conversion) => conversion,
+                _ => unreachable!(),
+            }
+        }
+        let mutations: [&dyn Fn(&mut SyntaxTree); 8] = [
+            &|ast| typed_body_mut(ast).bindings[0].span = foreign_binding.span,
+            &|ast| typed_body_mut(ast).bindings[0].name.span = foreign_binding.name.span,
+            &|ast| typed_body_mut(ast).bindings[0].ty.span = foreign_binding.ty.span,
+            &|ast| typed_body_mut(ast).bindings[0].ty.name.span = foreign_binding.ty.name.span,
+            &|ast| typed_body_mut(ast).bindings[0].value.span = foreign_binding.value.span,
+            &|ast| conversion_mut(ast).keyword_span = foreign_conversion.keyword_span,
+            &|ast| conversion_mut(ast).target.span = foreign_conversion.target.span,
+            &|ast| conversion_mut(ast).operand.span = foreign_conversion.operand.span,
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
+    }
+
+    #[test]
+    fn let_and_as_are_ordinary_names_in_semantics() {
+        let (fixture, core) = accepted(concat!(
+            "  spec let(as: Int) -> Int { let let: Int = as; let as2: Int = let; let + as2 }\n",
+            "  spec as(let: Word[8]) -> Int { (let) as Int }\n",
+        ));
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[0]),
+            [
+                (String::from("local 0"), "let", CoreType::Int),
+                (String::from("local 1"), "as2", CoreType::Int),
+                (String::from("infix +"), "let + as2", CoreType::Int),
+            ]
+        );
+        assert_eq!(core.functions[1].name, "as");
     }
 }

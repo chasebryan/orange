@@ -1547,6 +1547,24 @@ mod tests {
                 "  spec f(x: Int) -> Int { x + x }\n  spec i() -> Int { f(7) }\n",
                 6,
             ),
+            // A binding costs its value's steps; each read of it costs one.
+            (
+                "  spec i() -> Int { let a: Int = 1; let b: Int = a + a; b }\n",
+                6,
+            ),
+            // Every conversion costs one step.
+            (
+                "  spec w() -> Word[8] { let a: Word[32] = 0x1ff; a as Word[8] }\n",
+                3,
+            ),
+            (
+                "  spec i() -> Int { let a: Word[64] = 0xffffffffffffffff; (a as Int) * 2 }\n",
+                7,
+            ),
+            (
+                "  spec w() -> Word[8] { let n: Int = -18446744073709551617; n as Word[8] }\n",
+                3,
+            ),
         ] {
             let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
             let exact = evaluate_with_limit(&core, steps);
@@ -1649,7 +1667,7 @@ mod tests {
     /// whose stack is far smaller than a default thread's, unoptimized.
     #[test]
     fn deepest_accepted_sources_fit_in_one_mebibyte_of_stack() {
-        use crate::parser::{MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING};
+        use crate::parser::{MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING};
         let nested = |prefix: &str, core: &str, suffix: &str| {
             format!(
                 "{}{core}{}",
@@ -1666,6 +1684,14 @@ mod tests {
             nested("x ^ (", "x", ")"),
             format!("x{}", " ^ x".repeat(MAX_EXPRESSION_HEIGHT - 1)),
             format!("(x{})", " + x".repeat(MAX_EXPRESSION_HEIGHT - 2)),
+            nested("(", "x", " as Word[32])"),
+            nested("g(", "x", " as Word[32])"),
+            format!(
+                "{}x",
+                (0..MAX_BINDINGS_PER_BODY)
+                    .map(|index| format!("let v{index}: Word[32] = {};", nested("(", "x", ")")))
+                    .collect::<String>()
+            ),
         ];
         let sources = bodies
             .iter()
@@ -1690,5 +1716,159 @@ mod tests {
             })
             .unwrap();
         assert_eq!(worker.join().unwrap(), vec![Some(1); bodies.len()]);
+    }
+
+    #[test]
+    fn conversions_match_a_wide_reference_for_every_type_pair() {
+        let modulus = |bits: u32| 1_i128 << bits;
+        let mut sources: Vec<(String, i128)> = [
+            0,
+            1,
+            -1,
+            255,
+            256,
+            -256,
+            65_535,
+            1 << 32,
+            -(1 << 32) - 1,
+            i128::from(u64::MAX),
+            i128::from(u64::MAX) + 1,
+            -i128::from(u64::MAX) - 1,
+            (1 << 100) + 0x1234_5678,
+            i128::MAX,
+            -i128::MAX,
+        ]
+        .into_iter()
+        .map(|value| (String::from("Int"), value))
+        .collect();
+        for (name, bits) in WORDS {
+            for value in word_corpus(bits) {
+                sources.push((String::from(name), i128::try_from(value).unwrap()));
+            }
+        }
+        let targets = [("Int", None), ("Word[8]", Some(8)), ("Word[16]", Some(16))]
+            .into_iter()
+            .chain([("Word[32]", Some(32)), ("Word[64]", Some(64))]);
+        let targets = targets.collect::<Vec<_>>();
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        for (index, (from, value)) in sources.iter().enumerate() {
+            for (target_index, (to, bits)) in targets.iter().enumerate() {
+                let literal = if from == "Int" {
+                    value.to_string()
+                } else {
+                    format!("{value:#x}")
+                };
+                let name = format!("c{index}_{target_index}");
+                members.push_str(&format!(
+                    "  spec {name}() -> {to} {{ let v: {from} = {literal}; v as {to} }}\n"
+                ));
+                let rendered = match bits {
+                    None => value.to_string(),
+                    Some(bits) => render_word(
+                        *bits,
+                        u128::try_from(value.rem_euclid(modulus(*bits))).unwrap(),
+                    ),
+                };
+                expected.push(format!("{name} = {rendered}"));
+            }
+        }
+        assert_eq!(values_of(&members), expected);
+    }
+
+    #[test]
+    fn bindings_are_evaluated_once_in_order_and_read_from_their_slots() {
+        let members = concat!(
+            "  spec f(x: Word[32], y: Word[32]) -> Word[32] {\n",
+            "    let a: Word[32] = x + y;\n",
+            "    let b: Word[32] = a ^ x;\n",
+            "    let c: Word[32] = g(b, a);\n",
+            "    (a | b) + c\n",
+            "  }\n",
+            "  spec g(p: Word[32], q: Word[32]) -> Word[32] {\n",
+            "    let r: Word[32] = p - q;\n",
+            "    r <<< 5\n",
+            "  }\n",
+            "  spec run() -> Word[32] { f(0x01234567, 0x89abcdef) }\n",
+            "  spec nested() -> Int { let n: Int = 3; let m: Int = h(n * n) + n; m }\n",
+            "  spec h(k: Int) -> Int { let twice: Int = k + k; twice * twice }\n",
+        );
+        let (x, y) = (0x0123_4567_u32, 0x89ab_cdef_u32);
+        let a = x.wrapping_add(y);
+        let b = a ^ x;
+        let c = b.wrapping_sub(a).rotate_left(5);
+        let result = (a | b).wrapping_add(c);
+        assert_eq!(
+            values_of(members),
+            [
+                format!("run = {}", render_word(32, u128::from(result))),
+                String::from("nested = 327"),
+            ]
+        );
+    }
+
+    #[test]
+    fn inconsistent_locals_and_conversions_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec f() -> Word[8] { let t: Word[8] = 1; t }\n",
+            "  spec g() -> Word[8] { let n: Int = 1; n as Word[8] }\n",
+            "}\n"
+        ));
+        let mutations: [fn(&mut CoreModule); 4] = [
+            // The body reads a binding that does not exist.
+            |core| core.functions[0].locals.clear(),
+            // A binding reads its own slot.
+            |core| core.functions[0].locals[0].value.nodes[0].kind = CoreNodeKind::Local(0),
+            // A conversion claims an operand of the wrong kind.
+            |core| {
+                core.functions[1].body.nodes[1].kind = CoreNodeKind::Convert {
+                    from: CoreType::Word8,
+                };
+            },
+            // A binding leaves no value behind.
+            |core| core.functions[0].locals[0].value.nodes.clear(),
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn word_to_int_conversion_allocation_failure_returns_no_values() {
+        let core = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec i() -> Int { let w: Word[64] = 0xffffffffffffffff; w as Int }\n",
+            "}\n"
+        ));
+        let reservations = Reservations {
+            value_limbs: |_, _| false,
+            ..Reservations::DEFAULT
+        };
+        let result = evaluate_with_reservations(
+            &core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            reservations,
+        );
+        assert!(result.values().is_none());
+        assert_eq!(result.diagnostics().len(), 1);
+        assert_eq!(
+            result.diagnostics()[0].message(),
+            "reference evaluation result allocation failed"
+        );
+        assert_eq!(
+            result.diagnostics()[0].label(),
+            "exact integer storage could not be reserved"
+        );
     }
 }

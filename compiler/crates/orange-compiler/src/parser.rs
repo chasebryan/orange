@@ -3557,6 +3557,7 @@ mod tests {
             (format!("({tall})"), "("),
             (format!("g({tall})"), "g"),
             (format!("~{tall}"), "~"),
+            (format!("{tall} as Int"), "as"),
         ] {
             assert_resource_limited(&body, &message, at);
         }
@@ -3668,6 +3669,325 @@ mod tests {
     }
 
     #[test]
+    fn builds_bindings_and_conversions_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec pack(a: Word[8], b: Word[8]) -> Word[32] { ",
+            "let wide: Word[32] = a as Word[32]; ",
+            "let t: Word[32] = (wide << 8) | (b as Word[32]); ",
+            "t } ",
+            "spec plain() -> Int { 1 } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let FunctionBody::Typed(body) = &ast.module.functions[0].body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(
+            source.slice(body.span),
+            Some(concat!(
+                "-> Word[32] { let wide: Word[32] = a as Word[32]; ",
+                "let t: Word[32] = (wide << 8) | (b as Word[32]); t }"
+            ))
+        );
+        assert_eq!(body.bindings().len(), 2);
+        let wide = &body.bindings()[0];
+        assert_eq!(
+            source.slice(wide.span()),
+            Some("let wide: Word[32] = a as Word[32];")
+        );
+        assert_eq!(wide.name().text, "wide");
+        assert_eq!(source.slice(wide.name().span), Some("wide"));
+        assert_eq!(source.slice(wide.ty().span), Some("Word[32]"));
+        assert_eq!(source.slice(wide.value().span), Some("a as Word[32]"));
+        let ExpressionKind::Conversion(conversion) = &wide.value().kind else {
+            panic!("expected a conversion");
+        };
+        assert_eq!(source.slice(conversion.keyword_span()), Some("as"));
+        assert_eq!(source.slice(conversion.operand().span), Some("a"));
+        assert_eq!(source.slice(conversion.target().span), Some("Word[32]"));
+        assert_eq!(conversion.target().name.text, "Word");
+        assert_eq!(
+            conversion
+                .target()
+                .width_span
+                .and_then(|span| source.slice(span)),
+            Some("32")
+        );
+
+        let t = &body.bindings()[1];
+        assert_eq!(
+            source.slice(t.span()),
+            Some("let t: Word[32] = (wide << 8) | (b as Word[32]);")
+        );
+        assert_eq!(
+            shape(source, t.value()),
+            "([(wide << 8)] | [(b as Word[32])])"
+        );
+        assert_eq!(shape(source, body.expression()), "t");
+        assert_eq!(source.slice(body.expression().span), Some("t"));
+
+        let FunctionBody::Typed(plain) = &ast.module.functions[1].body else {
+            panic!("expected a typed body");
+        };
+        assert!(plain.bindings().is_empty());
+    }
+
+    #[test]
+    fn conversions_apply_to_one_complete_operand() {
+        let cases = [
+            ("a as Int", "(a as Int)"),
+            ("a as Word", "(a as Word)"),
+            ("-a as Int", "((-a) as Int)"),
+            ("~a as Word[8]", "((~a) as Word[8])"),
+            ("-1 as Word[8]", "(-1 as Word[8])"),
+            ("g(a) as Int", "(g(a) as Int)"),
+            ("(a + b) as Word[8]", "([(a + b)] as Word[8])"),
+            ("(a as Int) as Word[8]", "([(a as Int)] as Word[8])"),
+            ("(a as Word[64]) + b", "([(a as Word[64])] + b)"),
+            ("a ^ (b as Word[32])", "(a ^ [(b as Word[32])])"),
+            ("g(a as Int, b as Int)", "g((a as Int), (b as Int))"),
+            ("(a as Word[32]) << 8", "([(a as Word[32])] << 8)"),
+        ];
+        for (body, expected) in cases {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+            assert_eq!(source.slice(expression.span), Some(body), "{body:?}");
+        }
+        // A conversion is one level above its operand.
+        let (_, expression) = body_expression(&spec_source("a as Int"));
+        assert_eq!(tree_height(&expression), 2);
+    }
+
+    #[test]
+    fn let_and_as_remain_ordinary_names() {
+        let cases = [
+            ("let", "let"),
+            ("as", "as"),
+            ("let + as", "(let + as)"),
+            ("let(as)", "let(as)"),
+            ("as as Int", "(as as Int)"),
+            // `let` before a name always starts a binding, so a conversion
+            // of a name `let` groups it.
+            ("(let) as Int", "([let] as Int)"),
+            ("g(let, as)", "g(let, as)"),
+        ];
+        for (body, expected) in cases {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+        }
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec let(as: Int) -> Int { let let: Int = as; let as2: Int = let; let(as2) } ",
+            "}"
+        );
+        let (sources, _, parsed) = parse_text(text);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let function = &parsed.ast.unwrap().module.functions[0];
+        assert_eq!(function.name.text, "let");
+        let FunctionBody::Typed(body) = &function.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(
+            body.bindings()
+                .iter()
+                .map(|binding| (binding.name().text.as_str(), shape(source, binding.value())))
+                .collect::<Vec<_>>(),
+            [("let", String::from("as")), ("as2", String::from("let"))]
+        );
+        assert_eq!(shape(source, body.expression()), "let(as2)");
+    }
+
+    #[test]
+    fn requires_parentheses_around_conversions_with_one_diagnostic() {
+        let cases = [
+            ("a as Int as Word[8]", 9, "as", "as"),
+            ("a as Word[32] + b", 14, "+", "as"),
+            ("a + b as Int", 6, "as", "+"),
+            ("a * b as Int", 6, "as", "*"),
+            ("a ^ b as Int", 6, "as", "^"),
+            ("a << 1 as Int", 7, "as", "<<"),
+            ("a >>> 1 as Int", 8, "as", ">>>"),
+            ("a as Int << 1", 9, "<<", "as"),
+            ("g(a as Int + b)", 11, "+", "as"),
+            ("(a + b as Int)", 7, "as", "+"),
+        ];
+        for (body, offset, ungrouped, previous) in cases {
+            let text = spec_source(body);
+            let (sources, lexed, parsed) = parse_text(&text);
+            let source = sources.iter().next().unwrap();
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "{body:?}");
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{body:?}: {:?}",
+                parsed.diagnostics
+            );
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::UngroupedOperators);
+            assert_eq!(
+                diagnostic.message(),
+                format!("`{ungrouped}` follows `{previous}` without grouping parentheses"),
+                "{body:?}"
+            );
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(ungrouped));
+            let expected = text.find(body).unwrap() + offset;
+            assert_eq!(
+                diagnostic.primary_span().start(),
+                TextOffset::new(u32::try_from(expected).unwrap()),
+                "{body:?}"
+            );
+            assert_eq!(
+                diagnostic.notes(),
+                [
+                    "`as` converts exactly one operand; parenthesize the conversion or the \
+                  expression it converts"
+                ],
+                "{body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_bindings_with_exact_messages() {
+        let cases = [
+            ("let a = 1; a", "expected `:` and the binding's type"),
+            (
+                "let a: = 1; a",
+                "expected an identifier for the binding type",
+            ),
+            ("let a: Int 1; a", "expected `=` after the binding's type"),
+            ("let a: Int = ; a", "expected an expression"),
+            (
+                "let a: Int = 1 a",
+                "expected `;` after the bound expression",
+            ),
+            (
+                "let a: Int = 1;",
+                "expected a result expression after the last binding",
+            ),
+            (
+                "let a: Int = 1; let b: Int = a;",
+                "expected a result expression after the last binding",
+            ),
+            ("a; a", "expected `}` after the body expression"),
+            (
+                "let a: Int = 1; a; a",
+                "expected `}` after the body expression",
+            ),
+            (
+                "a let b: Int = 1; b",
+                "expected `}` after the body expression",
+            ),
+            (
+                "let a: Int = let b: Int = 1; a",
+                "expected `;` after the bound expression",
+            ),
+            (
+                "let 1: Int = 1; a",
+                "expected `}` after the body expression",
+            ),
+        ];
+        for (body, message) in cases {
+            let text = format!("edition 2026; module m {{ spec f() -> Int {{ {body} }} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+            assert!(
+                parsed
+                    .diagnostics
+                    .iter()
+                    .all(|diagnostic| diagnostic.code() == DiagnosticCode::ExpectedSyntax),
+                "{body:?}: {:?}",
+                parsed.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn bounds_bindings_per_body() {
+        let bindings = |count: usize| {
+            (0..count)
+                .map(|index| format!("let v{index}: Int = {index}; "))
+                .collect::<String>()
+        };
+        let source_with = |count: usize| {
+            format!(
+                "edition 2026; module m {{ spec f() -> Int {{ {}0 }} }}",
+                bindings(count)
+            )
+        };
+        let (_, _, parsed) = parse_text(&source_with(MAX_BINDINGS_PER_BODY));
+        assert!(parsed.diagnostics.is_empty());
+        let FunctionBody::Typed(body) = &parsed.ast.unwrap().module.functions[0].body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(body.bindings().len(), MAX_BINDINGS_PER_BODY);
+
+        let (sources, _, parsed) = parse_text(&source_with(MAX_BINDINGS_PER_BODY + 1));
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        let diagnostic = &parsed.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            format!("typed body declares more than {MAX_BINDINGS_PER_BODY} bindings")
+        );
+        assert_eq!(
+            source.slice(diagnostic.primary_span()),
+            Some(format!("let v{MAX_BINDINGS_PER_BODY}: Int = {MAX_BINDINGS_PER_BODY};").as_str())
+        );
+    }
+
+    #[test]
+    fn binding_reservation_failure_returns_no_partial_ast() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add(
+                "test.or",
+                "edition 2026; module m { spec f(x: Int) -> Int { let t: Int = x; t } }",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let run = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_binding_slot = |_| false;
+            parser.run()
+        };
+        let first = run();
+        assert_eq!(first, run());
+        assert!(first.ast.is_none());
+        assert_eq!(first.diagnostics.len(), 1);
+        let diagnostic = &first.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "parser could not allocate binding storage"
+        );
+        assert_eq!(
+            source.slice(diagnostic.primary_span()),
+            Some("let t: Int = x;")
+        );
+    }
+
+    #[test]
     fn expression_parsing_is_repeatable_and_malformed_expressions_never_panic() {
         let bodies = [
             "(((((",
@@ -3683,6 +4003,11 @@ mod tests {
             ",,,,",
             "a -> b",
             "a :: b",
+            "a as",
+            "as as as as",
+            "let let let",
+            "let a: Int = let a: Int = a;",
+            "(a as Word[32] as",
         ];
         for body in bodies {
             let mut sources = SourceMap::new();
