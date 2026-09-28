@@ -30,6 +30,12 @@ unresolved.
 > this document accepts is still accepted. Until OEP-0005 is accepted,
 > this document remains the accepted syntax boundary; on acceptance, the
 > clauses listed in section 16 of that proposal are replaced.
+>
+> The S3c slice proposed in [`BINDINGS_2026.md`](BINDINGS_2026.md) under
+> OEP-0006, also in review, builds on S3b with `let` bindings and `as`
+> conversions. It adds no token and no reserved word: `let` and `as` keep
+> their meaning as identifiers everywhere except in the two positions it
+> defines.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

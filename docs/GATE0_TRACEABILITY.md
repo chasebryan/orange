@@ -172,10 +172,9 @@ hosts owned by the open D-006 and D-011 decisions are unsupported. Evidence is
 contributor-produced and unreviewed. The suite cannot separate the four passing
 candidates, so selection and conclusion remain null. Integrity parsing and
 structural oracles satisfy none of the F-01, F-03, F-04, or F-06 exit evidence.
-D-004 remains proposed, S3 remains incomplete, S3b is implemented and awaits
-owner review under OEP-0005, and the binary gate-closure score remains 3 of 10
-(30%); that mechanical score is not
-release readiness.
+D-004 remains proposed, S3 remains incomplete, S3b and S3c are implemented and
+await owner review under OEP-0005 and OEP-0006, and the binary gate-closure
+score remains 3 of 10 (30%); that mechanical score is not release readiness.
 
 D-010 candidate identity is separate from feature completion. Its two
 direct-native candidates, versioned Jasmin boundary, portable C11 boundary, and

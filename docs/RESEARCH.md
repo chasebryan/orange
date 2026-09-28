@@ -188,8 +188,9 @@ relationships it delegates to hosts owned by the open D-006 and D-011 decisions
 are unsupported. Evidence is 20 closed of 25 required units and 75 of 75 result
 records, contributor-produced and unreviewed. The suite cannot separate the
 four passing candidates, so selection and conclusion remain null. D-004 remains
-proposed, S3b is implemented and awaits owner review under OEP-0005, and
-Orange's binary gate-closure score remains 3 of 10 (30%); that mechanical score is not release readiness.
+proposed, S3b and S3c are implemented and await owner review under OEP-0005 and
+OEP-0006, and Orange's binary gate-closure score remains 3 of 10 (30%); that
+mechanical score is not release readiness.
 
 ### 4.5 End-to-end proof still needs interoperability
 
