@@ -1982,6 +1982,26 @@ mod tests {
                 "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; t[1] ^ t[0] }\n",
                 9,
             ),
+            // A loop costs one step and one more per iteration, plus its
+            // initial value's and every step's; an index or accumulator
+            // read costs one step, as does a selection.
+            (
+                "  spec f() -> Int { for i in 0..3 with s: Int = 0 { s } }\n",
+                8,
+            ),
+            (
+                "  spec f() -> Word[8] { for i in 5..6 with s: Word[8] = 1 { s } }\n",
+                4,
+            ),
+            (
+                "  spec f() -> Word[8] { let t: Word[8]^2 = [1, 2]; \
+                 for i in 0..2 with s: Word[8] = 0 { s ^ t[i] } }\n",
+                18,
+            ),
+            // An update or fill of n elements costs n steps beyond its
+            // operands'.
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 11),
+            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 5),
         ] {
             let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
             let exact = evaluate_with_limit(&core, steps);
@@ -2497,6 +2517,215 @@ mod tests {
             );
             assert_eq!(diagnostic.label(), label);
             assert_eq!(diagnostic.primary_span(), core.functions[0].name_span);
+        }
+    }
+
+    #[test]
+    fn loops_updates_and_fills_evaluate_in_index_order() {
+        let members = concat!(
+            "  spec sum() -> Int { for i in 0..10 with s: Int = 0 { s + i } }\n",
+            "  spec product() -> Int { for i in 3..5 with p: Int = 1 { p * i } }\n",
+            "  spec grid() -> Int {\n",
+            "    for i in 0..3 with s: Int = 0 { for j in 0..4 with t: Int = s { t + i * j } }\n",
+            "  }\n",
+            "  spec reversed(x: Word[8]^4) -> Word[8]^4 {\n",
+            "    for i in 0..4 with r: Word[8]^4 = x { r with [i] = x[3 - i] }\n",
+            "  }\n",
+            "  spec reverse() -> Word[8]^4 { reversed([1, 2, 3, 4]) }\n",
+            "  spec filled() -> Word[16]^3 { [0xbeef; 3] }\n",
+            "  spec updated() -> Int^3 { ([1, 2, 3] with [0] = -1) with [2] = 5 }\n",
+            "  spec inner(x: Int) -> Int { for j in 0..3 with t: Int = x { t + j } }\n",
+            "  spec outer() -> Int { for i in 0..2 with s: Int = 0 { inner(s) + i } }\n",
+            "  spec bound() -> Int { let k: Int = 5; for i in 0..3 with s: Int = k { s + k * i } }\n",
+            "  spec bound_twice() -> Int { let a: Int = for i in 0..3 with s: Int = 0 { s + i }; a * 2 }\n",
+            "  spec longest() -> Word[32] { for i in 0..65536 with s: Word[32] = 0 { s + 1 } }\n",
+            "  spec last() -> Int { for i in 65535..65536 with s: Int = 0 { i } }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "sum = 45",
+                "product = 12",
+                "grid = 18",
+                "reverse = [0x04, 0x03, 0x02, 0x01]",
+                "filled = [0xbeef, 0xbeef, 0xbeef]",
+                "updated = [-1, 2, 5]",
+                "outer = 7",
+                "bound = 20",
+                "bound_twice = 6",
+                "longest = 0x00010000",
+                "last = 65535",
+            ]
+        );
+    }
+
+    #[test]
+    fn loop_frames_do_not_count_toward_the_call_depth() {
+        let mut members = String::new();
+        for index in 0..MAX_CALL_DEPTH - 1 {
+            members.push_str(&format!(
+                "  spec f{index}() -> Int {{ for i in 0..1 with s: Int = 0 {{ f{}() }} }}\n",
+                index + 1
+            ));
+        }
+        members.push_str(&format!(
+            "  spec f{}() -> Int {{ 7 }}\n",
+            MAX_CALL_DEPTH - 1
+        ));
+        let values = values_of(&members);
+        assert_eq!(values.len(), MAX_CALL_DEPTH);
+        assert!(values.iter().all(|value| value.ends_with(" = 7")));
+    }
+
+    #[test]
+    fn inconsistent_loops_updates_and_fills_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec sum() -> Int { for i in 0..3 with s: Int = 0 { s + i } }\n",
+            "  spec pick() -> Word[8] {\n",
+            "    let t: Word[8]^2 = [1, 2];\n",
+            "    for i in 0..2 with s: Word[8] = 0 { s ^ t[i] }\n",
+            "  }\n",
+            "  spec up() -> Word[8]^2 { [1, 2] with [1] = 3 }\n",
+            "  spec fill() -> Word[8]^2 { [4; 2] }\n",
+            "}\n"
+        ));
+        assert_eq!(base.functions[0].loops[0].step.nodes.len(), 3);
+        assert_eq!(base.functions[1].loops[0].step.nodes.len(), 5);
+        let mutations: [fn(&mut CoreModule); 16] = [
+            // A loop has no iterations.
+            |core| core.functions[0].loops[0].start = 3,
+            // A loop's bounds are reversed.
+            |core| {
+                core.functions[0].loops[0].start = 2;
+                core.functions[0].loops[0].end = 1;
+            },
+            // A loop has a different type than its node.
+            |core| core.functions[0].loops[0].ty = CoreType::Word8,
+            // A loop node names a loop the function lacks.
+            |core| core.functions[0].body.nodes[1].kind = CoreNodeKind::Fold(1),
+            // A loop claims an enclosing loop that is not active.
+            |core| core.functions[0].loops[0].scope = vec![0, 0],
+            // A loop's scope does not end with the loop itself.
+            |core| core.functions[0].loops[0].scope = vec![1],
+            // An index is read outside its loop.
+            |core| core.functions[0].body.nodes[0].kind = CoreNodeKind::LoopIndex(0),
+            // An accumulator is read outside its loop.
+            |core| core.functions[0].body.nodes[0].kind = CoreNodeKind::Accumulator(0),
+            // An accumulator read claims a different type.
+            |core| core.functions[0].loops[0].step.nodes[0].ty = CoreType::Word8,
+            // A step leaves no value behind.
+            |core| core.functions[0].loops[0].step.nodes.clear(),
+            // A step reads a binding that is not in scope.
+            |core| core.functions[1].loops[0].visible_locals = 0,
+            // A loop runs past the end of the array it selects from.
+            |core| core.functions[1].loops[0].end = 3,
+            // A selection claims a different element type.
+            |core| core.functions[1].loops[0].step.nodes[3].ty = CoreType::Word16,
+            // An update stores a value that does not fit its element type.
+            |core| {
+                core.functions[2].body.nodes[4].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x103));
+            },
+            // An update has a scalar type.
+            |core| core.functions[2].body.nodes[5].ty = CoreType::Word8,
+            // A fill repeats a value that does not fit its element type.
+            |core| {
+                core.functions[3].body.nodes[0].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x104));
+            },
+        ];
+        assert_eq!(base.functions[2].body.nodes[5].kind, CoreNodeKind::Update);
+        assert_eq!(base.functions[3].body.nodes[1].kind, CoreNodeKind::Fill);
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    thread_local! {
+        static ARRAY_RESERVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Refuses the second array reservation of the current evaluation.
+    fn refuse_second_array(elements: &mut Vec<Value>, count: usize) -> bool {
+        let calls = ARRAY_RESERVATIONS.with(|calls| {
+            calls.set(calls.get() + 1);
+            calls.get()
+        });
+        calls != 2 && elements.try_reserve_exact(count).is_ok()
+    }
+
+    #[test]
+    fn loop_update_and_fill_reservation_failures_return_no_values() {
+        for (members, reservations, label) in [
+            // The loop's frame is the only frame after the root's.
+            (
+                "  spec f() -> Word[8] { for i in 0..2 with s: Word[8] = 1 { s } }\n",
+                Reservations {
+                    frames: |frames, count| {
+                        frames.is_empty() && frames.try_reserve_exact(count).is_ok()
+                    },
+                    ..Reservations::DEFAULT
+                },
+                "evaluation call stack could not be reserved",
+            ),
+            // The index 0 needs no storage; the index 1 does.
+            (
+                "  spec f() -> Int { for i in 0..2 with s: Int = 0 { i } }\n",
+                Reservations {
+                    value_limbs: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "exact integer storage could not be reserved",
+            ),
+            // The fill is the first array and the update the second.
+            (
+                "  spec f() -> Word[8]^2 { [4; 2] with [1] = 3 }\n",
+                Reservations {
+                    array: refuse_second_array,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+            (
+                "  spec f() -> Word[8]^2 { [4; 2] }\n",
+                Reservations {
+                    array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+        ] {
+            let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+            let run = || {
+                ARRAY_RESERVATIONS.with(|calls| calls.set(0));
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run(), "{members}");
+            assert!(first.values().is_none(), "{members}");
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label, "{members}");
         }
     }
 

@@ -6906,4 +6906,597 @@ mod tests {
             );
         }
     }
+
+    /// Renders a function's loops as `(index, accumulator, type, range,
+    /// visible bindings, scope)`.
+    fn loop_headers(
+        function: &CoreFunction,
+    ) -> Vec<(String, String, CoreType, String, u32, Vec<u32>)> {
+        function
+            .loops
+            .iter()
+            .map(|r#loop| {
+                (
+                    r#loop.index_name().to_owned(),
+                    r#loop.accumulator_name().to_owned(),
+                    r#loop.ty(),
+                    format!("{}..{}", r#loop.start(), r#loop.end()),
+                    r#loop.visible_locals(),
+                    r#loop.scope().to_vec(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn loops_updates_fills_and_selections_build_typed_core_in_postorder() {
+        let (fixture, core) = accepted(concat!(
+            "  spec sum(x: Int^4) -> Int { for i in 0..4 with s: Int = 0 { s + x[i] } }\n",
+            "  spec odd(x: Word[8]^8) -> Word[8]^4 {\n",
+            "    for i in 0..4 with s: Word[8]^4 = [0; 4] { s with [i] = x[2 * i + 1] }\n",
+            "  }\n",
+            "  spec grid() -> Int {\n",
+            "    let base: Int = 10;\n",
+            "    for i in 0..2 with a: Int = base { for j in 0..3 with b: Int = a { b + i * j } }\n",
+            "  }\n",
+            "  spec first() -> Int {\n",
+            "    for i in 0..2 with a: Int = for j in 5..7 with b: Int = 0 { b + j } { a + i }\n",
+            "  }\n",
+        ));
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        let ints = array_of(CoreType::Int, 4);
+        let bytes = array_of(CoreType::Word8, 8);
+        let half = array_of(CoreType::Word8, 4);
+
+        let sum = &core.functions[0];
+        assert_eq!(
+            core_nodes(&fixture, sum),
+            owned(&[
+                ("literal 0", "0", CoreType::Int),
+                (
+                    "loop #0",
+                    "for i in 0..4 with s: Int = 0 { s + x[i] }",
+                    CoreType::Int
+                ),
+            ])
+        );
+        assert_eq!(
+            loop_headers(sum),
+            [(
+                String::from("i"),
+                String::from("s"),
+                CoreType::Int,
+                String::from("0..4"),
+                0,
+                vec![0]
+            )]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, sum.loops[0].step()),
+            owned(&[
+                ("accumulator of loop #0", "s", CoreType::Int),
+                ("parameter 0", "x", ints),
+                ("index of loop #0", "i", CoreType::Int),
+                ("select", "x[i]", CoreType::Int),
+                ("infix +", "s + x[i]", CoreType::Int),
+            ])
+        );
+
+        let odd = &core.functions[1];
+        assert_eq!(
+            core_nodes(&fixture, odd)
+                .into_iter()
+                .map(|(operation, _, ty)| (operation, ty))
+                .collect::<Vec<_>>(),
+            [
+                (String::from("literal 0x00"), CoreType::Word8),
+                (String::from("fill"), half),
+                (String::from("loop #0"), half),
+            ]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, odd.loops[0].step()),
+            owned(&[
+                ("accumulator of loop #0", "s", half),
+                ("index of loop #0", "i", CoreType::Int),
+                ("parameter 0", "x", bytes),
+                ("literal 2", "2", CoreType::Int),
+                ("index of loop #0", "i", CoreType::Int),
+                ("infix *", "2 * i", CoreType::Int),
+                ("literal 1", "1", CoreType::Int),
+                ("infix +", "2 * i + 1", CoreType::Int),
+                ("select", "x[2 * i + 1]", CoreType::Word8),
+                ("update", "s with [i] = x[2 * i + 1]", half),
+            ])
+        );
+
+        // Loops are numbered in source order of their `for` keywords; a step
+        // sees the bindings in scope and every enclosing loop.
+        let grid = &core.functions[2];
+        assert_eq!(
+            loop_headers(grid),
+            [
+                (
+                    String::from("i"),
+                    String::from("a"),
+                    CoreType::Int,
+                    String::from("0..2"),
+                    1,
+                    vec![0]
+                ),
+                (
+                    String::from("j"),
+                    String::from("b"),
+                    CoreType::Int,
+                    String::from("0..3"),
+                    1,
+                    vec![0, 1]
+                ),
+            ]
+        );
+        assert_eq!(
+            core_nodes(&fixture, grid)
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["local 0", "loop #0"]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, grid.loops[0].step())
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["accumulator of loop #0", "loop #1"]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, grid.loops[1].step())
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            [
+                "accumulator of loop #1",
+                "index of loop #0",
+                "index of loop #1",
+                "infix *",
+                "infix +"
+            ]
+        );
+
+        // A loop in an initial value is not inside the outer loop's scope.
+        let first = &core.functions[3];
+        assert_eq!(
+            loop_headers(first)
+                .into_iter()
+                .map(|(index, _, _, range, _, scope)| (index, range, scope))
+                .collect::<Vec<_>>(),
+            [
+                (String::from("i"), String::from("0..2"), vec![0]),
+                (String::from("j"), String::from("5..7"), vec![1]),
+            ]
+        );
+        assert_eq!(
+            core_nodes(&fixture, first)
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["literal 0", "loop #1", "loop #0"]
+        );
+    }
+
+    #[test]
+    fn index_ranges_follow_interval_arithmetic_over_loop_ranges() {
+        let accepted_indices = [
+            "x[i - 1]",
+            "x[4 - i]",
+            "x[-i + 4]",
+            "x[i * -1 + 4]",
+            "x[(i - 1) * 1]",
+            "x[0x3]",
+        ];
+        for index in accepted_indices {
+            accepted(&format!(
+                "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 {{ s ^ {index} }} }}\n"
+            ));
+        }
+        // Each bound is computed separately, so `i - i` runs from -3 through
+        // 3 over 1..5 though its value is always 0, and `(i - 3) * (i - 3)`
+        // runs from -2 through 4 over 1..5.
+        for (index, message) in [
+            (
+                "x[i]",
+                "this index runs from 1 through 4, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[i - 2]",
+                "this index runs from -1 through 2, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[i - i]",
+                "this index runs from -3 through 3, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[i + 3 - i]",
+                "this index runs from 0 through 6, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[(i - 3) * (i - 3)]",
+                "this index runs from -2 through 4, out of range for `Word[8]^4`",
+            ),
+            ("x[-1 + 5]", "index 4 is out of range for `Word[8]^4`"),
+            (
+                "x[i + 0x1_0000_0000_0000_0000]",
+                "this index is out of range for `Word[8]^4`",
+            ),
+        ] {
+            let (fixture, result) = rejected(&format!(
+                "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 {{ s ^ {index} }} }}\n"
+            ));
+            assert_eq!(
+                result.diagnostics.len(),
+                1,
+                "{index}: {:?}",
+                result.diagnostics
+            );
+            let diagnostic = &result.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::IndexOutOfRange,
+                "{index}"
+            );
+            assert_eq!(diagnostic.message(), message, "{index}");
+            assert_eq!(diagnostic.label(), "indices run from 0 through 3");
+            assert_eq!(
+                Some(format!(
+                    "x[{}]",
+                    fixture.source().slice(diagnostic.primary_span()).unwrap()
+                )),
+                Some(index.to_owned())
+            );
+        }
+        let (_, result) = rejected(
+            "  spec f(x: Word[8]^4) -> Word[8] { for i in 0..4 with s: Word[8] = 0 { s ^ x[i - 5] } }\n",
+        );
+        assert_eq!(
+            result.diagnostics[0].message(),
+            "this index runs from -5 through -2, out of range for `Word[8]^4`"
+        );
+    }
+
+    #[test]
+    fn loop_update_and_fill_errors_are_reported_once_in_checking_order() {
+        let (fixture, result) = rejected(concat!(
+            "  spec variable(x: Word[8]^4, i: Int) -> Word[8] { x[i + 1] }\n",
+            "  spec call(x: Word[8]^4) -> Word[8] { x[width(x)] }\n",
+            "  spec width(x: Word[8]^4) -> Int { 4 }\n",
+            "  spec empty() -> Int { for i in 3..3 with s: Int = 0 { s } }\n",
+            "  spec long() -> Int { for i in 0..65537 with s: Int = 0 { s } }\n",
+            "  spec longest() -> Int { for i in 65535..65536 with s: Int = 0 { s + i } }\n",
+            "  spec same(x: Int) -> Int { for x in 0..2 with s: Int = 0 { s } }\n",
+            "  spec twin() -> Int { for i in 0..2 with i: Int = 0 { i } }\n",
+            "  spec inner() -> Int { for i in 0..2 with s: Int = 0 { for j in 0..2 with s: Int = 0 { s } } }\n",
+            "  spec typed() -> Word[8] { for i in 0..2 with s: Int = 0 { s } }\n",
+            "  spec scalar(x: Word[8]) -> Word[8] { x with [0] = 1 }\n",
+            "  spec gives(x: Word[8]^2) -> Word[8] { x with [0] = 1 }\n",
+            "  spec value(x: Word[8]^2) -> Word[8]^2 { x with [0] = 256 }\n",
+            "  spec short() -> Word[8]^4 { [0; 3] }\n",
+            "  spec none() -> Word[8]^4 { [0; 0] }\n",
+            "  spec fill() -> Int { [0; 2] }\n",
+            "  spec outside() -> Int { let a: Int = for i in 0..2 with s: Int = 0 { s + i }; s }\n",
+            "  spec whole(x: Word[8]^2) -> Word[8]^2 { for i in 0..2 with s: Word[8]^2 = x { s + x } }\n",
+            "  spec store(x: Word[8]^2) -> Word[8]^2 { for i in 0..3 with s: Word[8]^2 = x { s with [i] = 0 } }\n",
+            "  spec step(x: Word[8]^2) -> Word[8]^2 { for i in 0..2 with s: Word[8]^2 = x { i } }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::NonStaticIndex,
+                    "i",
+                    String::from("an index may use only integer literals and loop indices")
+                ),
+                (
+                    DiagnosticCode::NonStaticIndex,
+                    "width(x)",
+                    String::from("an index may use only integer literals and loop indices")
+                ),
+                (
+                    DiagnosticCode::InvalidLoopRange,
+                    "3",
+                    String::from("the loop range 3..3 is empty")
+                ),
+                (
+                    DiagnosticCode::InvalidLoopRange,
+                    "65537",
+                    String::from("a loop bound must be at most 65536")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "x",
+                    String::from("duplicate name `x`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "i",
+                    String::from("duplicate name `i`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "s",
+                    String::from("duplicate name `s`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "for i in 0..2 with s: Int = 0 { s }",
+                    String::from("this loop has type `Int`, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::NotAnArray,
+                    "x",
+                    String::from("only an array can be updated, but this has type `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x with [0] = 1",
+                    String::from("an update gives an array, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "256",
+                    String::from("literal is outside the range of `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[0; 3]",
+                    String::from("this array has 3 elements, but `Word[8]^4` has 4")
+                ),
+                (
+                    DiagnosticCode::UnsupportedArrayLength,
+                    "0",
+                    String::from("an array length must be a decimal integer from 1 through 256")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "[0; 2]",
+                    String::from("an array literal cannot have type `Int`")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "s",
+                    String::from("`s` is not a parameter or binding of `outside`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "+",
+                    String::from("`+` is not defined for `Word[8]^2`")
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "i",
+                    String::from("this index runs from 0 through 2, out of range for `Word[8]^2`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "i",
+                    String::from("`i` has type `Int`, but `Word[8]^2` is required here")
+                ),
+            ]
+        );
+        let secondary = |index: usize| {
+            result.diagnostics[index]
+                .secondary_spans()
+                .iter()
+                .map(|secondary| {
+                    (
+                        fixture.source().slice(secondary.span()).unwrap(),
+                        secondary.label().to_owned(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(secondary(4), [("x", String::from("the parameter is here"))]);
+        assert_eq!(
+            secondary(5),
+            [("i", String::from("the loop index is here"))]
+        );
+        assert_eq!(
+            secondary(6),
+            [("s", String::from("the accumulator is here"))]
+        );
+        assert_eq!(result.diagnostics[0].notes(), [STATIC_INDEX_NOTE]);
+    }
+
+    #[test]
+    fn loop_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); the parameter's uniqueness check,
+        // name, width, and length (4); the result's name and width (2); the
+        // loop (1); the bound `0` (prefix, no significant digit: 1) and the
+        // bound `2` (prefix and one digit: 2); the two loop-name checks (2);
+        // the accumulator type's name and width (2); the initial literal
+        // `0` (literal and prefix: 2); and the step's `^`, `s`, the index
+        // `x[i]`, its base `x`, and its index `i` (5): 23 analysis events.
+        // Core is the module, one function node, one result-type node, one
+        // parameter-type node, the body nodes `0` and the loop, one loop
+        // node, one accumulator-type node, and the step nodes `s`, `x`, `i`,
+        // the selection, and `^`: 13 nodes, each one more event.
+        let fixture = module(
+            "  spec f(x: Word[8]^2) -> Word[8] { for i in 0..2 with s: Word[8] = 0 { s ^ x[i] } }\n",
+        );
+        let (events, nodes) = (36, 13);
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert!(exact.core.is_some());
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label);
+        }
+        // An update is one event, and a fill two: the literal and its length.
+        let fixture = module("  spec f(x: Word[8]^2) -> Word[8]^2 { [0; 2] with [1] = x[0] }\n");
+        // Lookup and installation (2); the parameter (4); the result (3); the
+        // update (1); the fill and its length (2); the element `0` (2); the
+        // index `1` (literal, prefix, and one digit: 3); the value's index,
+        // its prefix and digit-free `0`, and its base (3): 20 events, and
+        // the module, function, result, parameter, `0`, fill, `1`, `x`,
+        // `x[0]`, and the update: 10 nodes.
+        let exact = fixture.analyze_with(Limits {
+            events: 30,
+            nodes: 10,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        let short = fixture.analyze_with(Limits {
+            events: 29,
+            nodes: 10,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(
+            short.diagnostics[0].label(),
+            "semantic event budget exhausted"
+        );
+        // A loop bound decodes against the significant-bit limit before its
+        // range is checked.
+        let fixture = module(&format!(
+            "  spec f() -> Int {{ for i in 0..0x{} with s: Int = 0 {{ s }} }}\n",
+            "f".repeat(4097)
+        ));
+        let result = fixture.analyze();
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::IntegerMagnitudeLimit
+        );
+    }
+
+    #[test]
+    fn loop_step_storage_failures_return_no_partial_core() {
+        let fixture =
+            module("  spec f(x: Int) -> Int { for i in 0..2 with s: Int = x { s + i } }\n");
+        let first = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_node_slot =
+                |nodes| nodes.len() < 2 && nodes.try_reserve(1).is_ok();
+            analyzer.run()
+        };
+        let result = first();
+        assert_eq!(result, first());
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(
+            fixture.source().slice(diagnostic.primary_span()),
+            Some("s + i")
+        );
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_loops_updates_and_fills() {
+        let text = "edition 2026; module values { \
+                    spec value(x: Word[8]^2) -> Word[8]^2 { \
+                    for i in 0..2 with s: Word[8]^2 = [0; 2] { s with [i] = x[i] } } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        fn loop_of(ast: &SyntaxTree) -> &LoopExpression {
+            let FunctionBody::Typed(body) = &ast.module.functions[0].body else {
+                unreachable!();
+            };
+            let ExpressionKind::Loop(r#loop) = &body.expression.kind else {
+                unreachable!();
+            };
+            r#loop
+        }
+        fn loop_mut(ast: &mut SyntaxTree) -> &mut LoopExpression {
+            let ExpressionKind::Loop(r#loop) = &mut typed_body_mut(ast).expression.kind else {
+                unreachable!();
+            };
+            r#loop
+        }
+        fn update_mut(ast: &mut SyntaxTree) -> &mut UpdateExpression {
+            match &mut loop_mut(ast).step.kind {
+                ExpressionKind::Update(update) => update,
+                _ => unreachable!(),
+            }
+        }
+        fn fill_mut(ast: &mut SyntaxTree) -> &mut FillExpression {
+            match &mut loop_mut(ast).init.kind {
+                ExpressionKind::Fill(fill) => fill,
+                _ => unreachable!(),
+            }
+        }
+        let foreign = loop_of(&second.ast).clone();
+        let ExpressionKind::Update(foreign_update) = &foreign.step.kind else {
+            unreachable!();
+        };
+        let ExpressionKind::Fill(foreign_fill) = &foreign.init.kind else {
+            unreachable!();
+        };
+        let ExpressionKind::Index(foreign_index) = &foreign_update.value.kind else {
+            unreachable!();
+        };
+        type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
+        let mutations: Vec<Mutation<'_>> = vec![
+            Box::new(|ast| loop_mut(ast).keyword_span = foreign.keyword_span),
+            Box::new(|ast| loop_mut(ast).index.span = foreign.index.span),
+            Box::new(|ast| loop_mut(ast).start_span = foreign.start_span),
+            Box::new(|ast| loop_mut(ast).end_span = foreign.end_span),
+            Box::new(|ast| loop_mut(ast).accumulator.span = foreign.accumulator.span),
+            Box::new(|ast| loop_mut(ast).ty.length_span = foreign.ty.length_span),
+            Box::new(|ast| update_mut(ast).keyword_span = foreign_update.keyword_span),
+            Box::new(|ast| update_mut(ast).index.span = foreign_update.index.span),
+            Box::new(|ast| fill_mut(ast).length_span = foreign_fill.length_span),
+            Box::new(|ast| fill_mut(ast).element.span = foreign_fill.element.span),
+            Box::new(|ast| {
+                let ExpressionKind::Index(index) = &mut update_mut(ast).value.kind else {
+                    unreachable!();
+                };
+                index.index.span = foreign_index.index.span;
+            }),
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
+    }
 }

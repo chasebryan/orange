@@ -975,7 +975,7 @@ fn s3b_expression_nesting_limit_is_exact_for_every_opener() {
         assert!(
             stderr.contains(
                 "expression nesting exceeds the 64-level limit \
-                 for groups, calls, arrays, and prefix operators"
+                 for groups, calls, arrays, indices, loops, updates, and prefix operators"
             ),
             "{name}:\n{stderr}"
         );

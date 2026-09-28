@@ -1903,13 +1903,13 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             )
             .with_label("ungrouped operator")
             .with_note(match (previous, ungrouped) {
+                (_, Joiner::With) | (Joiner::With, _) => {
+                    "`with` updates exactly one array; parenthesize the update or the \
+                     expression it updates"
+                }
                 (Joiner::As, _) | (_, Joiner::As) => {
                     "`as` converts exactly one operand; parenthesize the conversion or the \
                      expression it converts"
-                }
-                (Joiner::With, _) | (_, Joiner::With) => {
-                    "`with` updates exactly one array; parenthesize the update or the \
-                     expression it updates"
                 }
                 (Joiner::Binary(previous), Joiner::Binary(ungrouped))
                     if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() =>
@@ -2045,7 +2045,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         self.resource_limit_at(
             format!(
                 "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-                 for groups, calls, arrays, and prefix operators"
+                 for groups, calls, arrays, indices, loops, updates, and prefix operators"
             ),
             span,
         );
@@ -2170,7 +2170,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             );
             return None;
         } else {
-            let inner = self.open_level(level)?;
+            let inner = level.saturating_add(1);
+            if inner > MAX_EXPRESSION_NESTING {
+                self.nesting_limit(left_bracket);
+                return None;
+            }
             self.parse_expression(inner)?
         };
         if self.current_kind() != TokenKind::RightBracket {
@@ -4145,11 +4149,22 @@ mod tests {
     fn bounds_expression_nesting_for_every_opener() {
         let message = format!(
             "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-             for groups, calls, arrays, and prefix operators"
+             for groups, calls, arrays, indices, loops, updates, and prefix operators"
         );
         type Form = (&'static str, fn(usize) -> String, &'static str);
-        let forms: [Form; 7] = [
+        let forms: [Form; 10] = [
             ("groups", |count| nested("(", count, "a", ")"), "("),
+            (
+                "loops",
+                |count| nested("for i in 0..1 with s: Int = 0 { ", count, "a", " }"),
+                "for",
+            ),
+            (
+                "updates",
+                |count| nested("a with [0] = ", count, "a", ""),
+                "with",
+            ),
+            ("indices", |count| nested("a[", count, "a", "]"), "["),
             ("arrays", |count| nested("[", count, "a", "]"), "["),
             (
                 "indexed calls",
@@ -4890,6 +4905,247 @@ mod tests {
             "parser could not allocate array storage"
         );
         assert_eq!(source.slice(diagnostic.primary_span()), Some("x"));
+    }
+
+    #[test]
+    fn builds_loops_updates_fills_and_expression_indices_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec schedule(m: Word[32]^16) -> Word[32]^64 { ",
+            "let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] ",
+            "{ w with [t] = m[t] }; ",
+            "for t in 16..0x40 with w: Word[32]^64 = head ",
+            "{ w with [t] = w[t - 2] + w[2 * t - 16] } } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let FunctionBody::Typed(body) = &ast.module.functions[0].body else {
+            panic!("expected a typed body");
+        };
+
+        let head = body.bindings()[0].value();
+        assert_eq!(
+            source.slice(head.span),
+            Some("for t in 0..16 with w: Word[32]^64 = [0; 64] { w with [t] = m[t] }")
+        );
+        let ExpressionKind::Loop(first) = &head.kind else {
+            panic!("expected a loop");
+        };
+        assert_eq!(source.slice(first.keyword_span()), Some("for"));
+        assert_eq!(first.index().text, "t");
+        assert_eq!(source.slice(first.index().span), Some("t"));
+        assert_eq!(source.slice(first.start_span()), Some("0"));
+        assert_eq!(source.slice(first.end_span()), Some("16"));
+        assert_eq!(first.accumulator().text, "w");
+        assert_eq!(source.slice(first.ty().span), Some("Word[32]^64"));
+        assert_eq!(source.slice(first.init().span), Some("[0; 64]"));
+        let ExpressionKind::Fill(fill) = &first.init().kind else {
+            panic!("expected a fill literal");
+        };
+        assert_eq!(source.slice(fill.element().span), Some("0"));
+        assert_eq!(source.slice(fill.length_span()), Some("64"));
+        assert_eq!(source.slice(first.step().span), Some("w with [t] = m[t]"));
+        let ExpressionKind::Update(update) = &first.step().kind else {
+            panic!("expected an update");
+        };
+        assert_eq!(source.slice(update.keyword_span()), Some("with"));
+        assert_eq!(source.slice(update.base().span), Some("w"));
+        assert_eq!(source.slice(update.index().span), Some("t"));
+        assert_eq!(source.slice(update.value().span), Some("m[t]"));
+        let ExpressionKind::Index(index) = &update.value().kind else {
+            panic!("expected an index");
+        };
+        assert!(!index.is_literal());
+        assert_eq!(source.slice(index.index_span()), Some("t"));
+        assert_eq!(
+            shape(source, head),
+            "(for t in 0..16 with w: Word[32]^64 = {0; 64} { (w with [t] = m[t]) })"
+        );
+        // A loop is one level above the taller of its initial value and step.
+        assert_eq!(tree_height(head), 4);
+
+        let result = body.expression();
+        assert_eq!(
+            shape(source, result),
+            "(for t in 16..0x40 with w: Word[32]^64 = head \
+             { (w with [t] = (w[(t - 2)] + w[((2 * t) - 16)])) })"
+        );
+        let ExpressionKind::Loop(second) = &result.kind else {
+            panic!("expected a loop");
+        };
+        assert_eq!(source.slice(second.end_span()), Some("0x40"));
+        // An update's value extends as far as an expression can.
+        let ExpressionKind::Update(update) = &second.step().kind else {
+            panic!("expected an update");
+        };
+        assert_eq!(
+            source.slice(update.value().span),
+            Some("w[t - 2] + w[2 * t - 16]")
+        );
+        assert_eq!(tree_height(result), 7);
+
+        // A literal index keeps its S3d form.
+        let (sources, expression) = body_expression(&spec_source("g(a)[3]"));
+        let source = sources.iter().next().unwrap();
+        let ExpressionKind::Index(index) = &expression.kind else {
+            panic!("expected an index");
+        };
+        assert!(index.is_literal());
+        assert_eq!(source.slice(index.index_span()), Some("3"));
+        assert_eq!(tree_height(&expression), 3);
+        for body in ["a[-3]", "a[(3)]", "a[3 + 0]"] {
+            let (_, expression) = body_expression(&spec_source(body));
+            let ExpressionKind::Index(index) = &expression.kind else {
+                panic!("expected an index in {body:?}");
+            };
+            assert!(!index.is_literal(), "{body:?}");
+        }
+    }
+
+    #[test]
+    fn loop_and_update_words_are_recognized_only_by_position() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec f(for: Int, in: Int) -> Int { for + in } ",
+            "spec g(with: Word[8]^2) -> Word[8]^2 { with with [0] = with[1] } ",
+            "spec h(x: Int) -> Int { for(x) } ",
+            "spec for(x: Int) -> Int { x } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let shapes = ast.module.functions[..3]
+            .iter()
+            .map(|function| {
+                let FunctionBody::Typed(body) = &function.body else {
+                    panic!("expected a typed body");
+                };
+                shape(source, body.expression())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            shapes,
+            ["(for + in)", "(with with [0] = with[1])", "for(x)"]
+        );
+
+        // `with` updates only when `[` follows it.
+        let (_, lexed, parsed) = parse_text(&spec_source("a with b"));
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            "expected `}` after the body expression"
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_loops_updates_and_fills_with_exact_messages() {
+        let cases = [
+            (
+                "for i 0..2 with s: Int = 0 { s }",
+                "expected `in` after the loop index",
+            ),
+            (
+                "for i in a..2 with s: Int = 0 { s }",
+                "expected the loop's first bound",
+            ),
+            (
+                "for i in -1..2 with s: Int = 0 { s }",
+                "expected the loop's first bound",
+            ),
+            (
+                "for i in 0 2 with s: Int = 0 { s }",
+                "expected `..` between the loop's bounds",
+            ),
+            (
+                "for i in 0..b with s: Int = 0 { s }",
+                "expected the loop's second bound",
+            ),
+            (
+                "for i in 0..2 { s }",
+                "expected `with` and the loop's accumulator",
+            ),
+            (
+                "for i in 0..2 with s = 0 { s }",
+                "expected `:` and the accumulator's type",
+            ),
+            (
+                "for i in 0..2 with s: Int { s }",
+                "expected `=` after the accumulator's type",
+            ),
+            (
+                "for i in 0..2 with s: Int = 0 s",
+                "expected `{` before the loop's step",
+            ),
+            (
+                "for i in 0..2 with s: Int = 0 { s, }",
+                "expected `}` after the loop's step",
+            ),
+            (
+                "for i in 0..2 with s: Int = 0 { let t: Int = s; t }",
+                "expected `}` after the loop's step",
+            ),
+            (
+                "for 1 in 0..2 with s: Int = 0 { s }",
+                "expected `}` after the body expression",
+            ),
+            ("a with [0] 1", "expected `=` after the updated index"),
+            ("a with [0 = 1", "expected `]` after the index"),
+            ("a with [] = 1", "expected an expression"),
+            ("[0; n]", "expected an array length after `;`"),
+            ("[0; 4, 1]", "expected `]` after the array length"),
+            ("[1, 2; 4]", "expected `,` or `]` after the array element"),
+        ];
+        for (body, message) in cases {
+            let text = spec_source(body);
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+        }
+
+        // An update, like a conversion, needs parentheses among operators.
+        for (body, message) in [
+            (
+                "a + b with [0] = 1",
+                "`with` follows `+` without grouping parentheses",
+            ),
+            (
+                "a as Word[8] with [0] = 1",
+                "`with` follows `as` without grouping parentheses",
+            ),
+        ] {
+            let (_, _, parsed) = parse_text(&spec_source(body));
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(diagnostic.code(), DiagnosticCode::UngroupedOperators);
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+            assert_eq!(
+                diagnostic.notes(),
+                [
+                    "`with` updates exactly one array; parenthesize the update or the \
+                  expression it updates"
+                ]
+            );
+        }
+        let (_, parsed) = {
+            let (sources, _, parsed) = parse_text(&spec_source("(a + b) with [0] = 1 + 2"));
+            (sources, parsed)
+        };
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     }
 
     #[test]
