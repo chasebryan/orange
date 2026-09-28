@@ -4386,6 +4386,8 @@ mod tests {
                     CoreNodeKind::Shift { operator, amount } => {
                         format!("shift {} {amount}", operator.as_str())
                     }
+                    CoreNodeKind::Array { elements } => format!("array of {elements}"),
+                    CoreNodeKind::Index { index } => format!("index {index}"),
                 };
                 (
                     operation,
@@ -4970,7 +4972,7 @@ mod tests {
             ));
             let highest = TYPES
                 .into_iter()
-                .find(|candidate| candidate.as_str() == ty)
+                .find(|candidate| candidate.to_string() == ty)
                 .and_then(CoreType::word_bits)
                 .unwrap()
                 - 1;

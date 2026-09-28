@@ -3345,6 +3345,20 @@ mod tests {
                 shape(source, &conversion.operand),
                 source.slice(conversion.target.span).unwrap()
             ),
+            ExpressionKind::Array(array) => format!(
+                "{{{}}}",
+                array
+                    .elements
+                    .iter()
+                    .map(|element| shape(source, element))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            ExpressionKind::Index(index) => format!(
+                "{}[{}]",
+                shape(source, &index.base),
+                source.slice(index.index_span).unwrap()
+            ),
         }
     }
 
@@ -3358,6 +3372,10 @@ mod tests {
             }
             ExpressionKind::Parenthesized(inner) => tree_height(inner),
             ExpressionKind::Conversion(conversion) => tree_height(&conversion.operand),
+            ExpressionKind::Array(array) => {
+                array.elements.iter().map(tree_height).max().unwrap_or(0)
+            }
+            ExpressionKind::Index(index) => tree_height(&index.base),
         }
     }
 

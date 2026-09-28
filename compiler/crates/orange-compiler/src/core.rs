@@ -1147,7 +1147,7 @@ mod tests {
     #[test]
     fn core_type_inventory_and_display_are_exact() {
         assert_eq!(
-            CoreType::ALL,
+            CoreType::SCALARS,
             &[
                 CoreType::Int,
                 CoreType::Word8,
@@ -1157,24 +1157,80 @@ mod tests {
             ]
         );
         assert_eq!(
-            CoreType::ALL
+            CoreType::SCALARS
                 .iter()
-                .map(|result_type| result_type.as_str())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["Int", "Word[8]", "Word[16]", "Word[32]", "Word[64]"]
         );
-        for ty in CoreType::ALL {
+        for ty in CoreType::SCALARS {
             assert_eq!(
                 ty.word_bits().and_then(CoreType::word_of_width),
                 (*ty != CoreType::Int).then_some(*ty)
             );
+            assert!(ty.is_scalar());
+            assert_eq!(ty.as_array(), None);
         }
         assert_eq!(CoreType::word_of_width(12), None);
-        assert!(
-            CoreType::ALL
-                .iter()
-                .all(|result_type| result_type.to_string() == result_type.as_str())
+    }
+
+    #[test]
+    fn array_types_hold_one_to_256_scalars_and_display_as_powers() {
+        for element in CoreType::SCALARS {
+            for length in [1, 2, 16, MAX_ARRAY_LENGTH] {
+                let array = ArrayType::new(*element, length).unwrap();
+                assert_eq!(array.element(), *element);
+                assert_eq!(array.length(), length);
+                let ty = CoreType::Array(array);
+                assert!(!ty.is_scalar());
+                assert_eq!(ty.as_array(), Some(array));
+                assert_eq!(ty.word_bits(), None);
+                assert_eq!(ty.to_string(), format!("{element}^{length}"));
+            }
+            assert_eq!(ArrayType::new(*element, 0), None);
+            assert_eq!(ArrayType::new(*element, MAX_ARRAY_LENGTH + 1), None);
+            assert_eq!(ArrayType::new(*element, u32::MAX), None);
+        }
+        let array = CoreType::Array(ArrayType::new(CoreType::Word32, 4).unwrap());
+        assert_eq!(ArrayType::new(array, 2), None);
+        assert_eq!(array.to_string(), "Word[32]^4");
+    }
+
+    #[test]
+    fn array_values_require_their_exact_length_and_element_type() {
+        let ty = ArrayType::new(CoreType::Word8, 2).unwrap();
+        let array =
+            CoreArray::new(ty, vec![CoreValue::Word8(0x0f), CoreValue::Word8(0xf0)]).unwrap();
+        assert_eq!(array.ty(), ty);
+        assert_eq!(array.elements().len(), 2);
+        let value = CoreValue::Array(array);
+        assert_eq!(value.ty(), CoreType::Array(ty));
+        assert_eq!(value.to_string(), "[0x0f, 0xf0]");
+        assert_eq!(value.word_as_u64(), None);
+        assert_eq!(CoreValue::word_from_u64(CoreType::Array(ty), 1), None);
+
+        assert_eq!(CoreArray::new(ty, vec![CoreValue::Word8(1)]), None);
+        assert_eq!(
+            CoreArray::new(ty, vec![CoreValue::Word8(1), CoreValue::Word16(1)]),
+            None
         );
+        let integers = ArrayType::new(CoreType::Int, 3).unwrap();
+        let negative = ExactInteger::new(
+            true,
+            Magnitude::from_u64(7, |limbs, count| limbs.try_reserve_exact(count).is_ok()).unwrap(),
+        );
+        let value = CoreValue::Array(
+            CoreArray::new(
+                integers,
+                vec![
+                    CoreValue::Int(ExactInteger::new(false, Magnitude::zero())),
+                    CoreValue::Int(negative),
+                    CoreValue::Int(ExactInteger::new(false, Magnitude::zero())),
+                ],
+            )
+            .unwrap(),
+        );
+        assert_eq!(value.to_string(), "[0, -7, 0]");
     }
 
     #[test]
@@ -1338,7 +1394,8 @@ mod tests {
                         | CoreValue::Word8(_)
                         | CoreValue::Word16(_)
                         | CoreValue::Word32(_)
-                        | CoreValue::Word64(_),
+                        | CoreValue::Word64(_)
+                        | CoreValue::Array(_),
                     )
                     | CoreNodeKind::Parameter(_)
                     | CoreNodeKind::Local(_)
@@ -1346,14 +1403,17 @@ mod tests {
                     | CoreNodeKind::Unary(_)
                     | CoreNodeKind::Binary(_)
                     | CoreNodeKind::Shift { .. }
-                    | CoreNodeKind::Convert { .. } => {}
+                    | CoreNodeKind::Convert { .. }
+                    | CoreNodeKind::Array { .. }
+                    | CoreNodeKind::Index { .. } => {}
                 }
                 match ty {
                     CoreType::Int
                     | CoreType::Word8
                     | CoreType::Word16
                     | CoreType::Word32
-                    | CoreType::Word64 => {}
+                    | CoreType::Word64
+                    | CoreType::Array(_) => {}
                 }
             }
         }
