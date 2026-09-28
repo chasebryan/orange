@@ -652,7 +652,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "7fdbdbe49d46d20fc5b232e56979f23bf6938c67789fcff9187b3098737595db"
+_PHD = "c3e9ef928c58fc0e3cdfa0ff18b4fd88636dd076c1655fda91a7c7a90423f090"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1181,7 +1181,7 @@ DECISION_LABORATORY_SPECS["d004"] = {
         *((_D004_V08 + n, f"v08_{l}_", f"v08_{l}_missing", c, r, True) for n, l, c, r in (
             ("case-subjects.json", "catalog", "bbe14dca3b7d60f38df9357491a49ea75581c932e9b1d680f7783a4ea35b8d7f", "ecbb05bc18f0c35e7dd11083184702f6492bfdaa80d3351b69bfdc994c7cd125"),
             ("adapter-bundle.json", "bundle", "d756959e3258d5ac86cb416e5993fc2f90119867a600170af7b69abe4dadd02c", "e4dca7aa537403c76be925aaa8d9bdec54725071c7ca39ca250be3e8e88ca3ba"),
-            ("protocol/suite-overlay.json", "overlay", "51fcf4aabafc6ae25fff4d8285a44e0fc19521edb1972b20c97d84d242cc27fb", "e303b083e2ccdd953ee983312604f45f443806e25d8d55e4eda15f2b4571d856"),
+            ("protocol/suite-overlay.json", "overlay", "b86e791fd1a49624816ab0fcb63ed633819cb66f3e2ca70955a6cfe6bbc28618", "658e899497fd1b2860f63a43039123facf56a1ff99f7b34273eefbfc427c2806"),
             ("run/archive-index.json", "index", "46ac175b8d413b62749468b03663e7f1860559ca97896185a45208f3c409c2e5", "65e6e54e55d1c48ebcdae9e67f7a930997211020c418eb4b6c9d5a43b2060ab7"),
             ("run/adapter-outputs.json", "outputs", "31e999d72ffd86c6150d76fa83e4a86e15829a86f1018eed98adc74aad301f72", "dfe92803340451f6aaf47c8dd679469a1f7dcf7460720915df27a1d0ab9987a2"),
         )),

@@ -515,8 +515,15 @@ DISTINGUISHING_RULES = {
     "dominance_only": ("dominance", tuple(name for name, _, _ in MEASURES)),
 }
 # The owner's choice, recorded before any v0.8 epoch exists. prepare refuses
-# while it is None; changing it starts a new epoch.
-OWNER_RULE_CHOICE: dict[str, str] | None = {"rule": "isolation_first", "date": "2026-09-28", "source": "project thread decision card", "text": "Isolation first"}
+# while it is None; changing it starts a new epoch. The context says what the
+# owner could see when choosing, since the measures are deterministic.
+OWNER_RULE_CHOICE: dict[str, str] | None = {
+    "rule": "isolation_first",
+    "date": "2026-09-28",
+    "source": "project thread decision card",
+    "text": "Isolation first",
+    "context": "The card showed the candidate each rule was predicted to select, and a local dry run with this rule had already reproduced those measures and recommend_st_rel. The choice was made before this suite's first epoch was prepared, not before its outcome could be known.",
+}
 
 
 def apply_rule(rule_id: str, measures: dict[str, dict[str, int]]) -> dict[str, Any]:
@@ -658,12 +665,12 @@ def bundle_document(suite: Suite) -> dict[str, Any]:
 
 
 AMENDMENTS = (
-    ("AM-01 to AM-08", "Carry over unchanged from the v0.7 prerequisites overlay, which this overlay binds."),
+    ("AM-01 to AM-08", "Carry over from the v0.7 prerequisites overlay, which this overlay binds, with two replacements. AM-09 replaces AM-02's 75 scheduled identities with 105. AM-13 replaces AM-07's first sentence, since this suite binds one distinguishing rule; AM-07's second sentence still holds, so a rule written after an epoch's results exist applies only to a later epoch."),
     ("AM-09", "Two cases join SC-01 to SC-05: SC-06, semantic evolution, and SC-07, within-authority relabeling. The epoch runs 5 candidates, 7 cases and 3 repetitions, 105 executions, in a rotation schedule where every candidate meets every case once per repetition."),
     ("AM-10", "A construct class belongs to the authority root of the member that holds its facet: a view or an interface never owns a construct class apart from its parent. This follows each candidate's section 2 architecture statement."),
     ("AM-11", "A required crossing, other than SR-06 and SR-12, whose two sides share an authority root needs a named discrimination judgment. The judgments are derived from the graph and counted; a row that only asserts inspectability does not satisfy SS-G03."),
     ("AM-12", "SC-06 and SC-07 record five measures. Each is a count, fewer is better, and none is weighted against another."),
-    ("AM-13", "The owner records one non-compensable distinguishing rule over the measures before prepare. The epoch packet binds it, and the summary reports what it selects among candidates that close all seven cases. That result is not a D-004 recommendation under suite section 8 until the owner disposes the hard gates this run does not evaluate."),
+    ("AM-13", "The owner records one non-compensable distinguishing rule over the measures before prepare. The epoch packet binds it, and the summary reports what it selects among candidates that close all seven cases; if any of them lacks a complete measure set, the result is inconclusive. That result is not a D-004 recommendation under suite section 8 until the owner disposes the hard gates this run does not evaluate."),
 )
 
 
@@ -671,7 +678,15 @@ def overlay_document(suite: Suite, bundle_raw: bytes, v07_bundle_raw: bytes, v07
     rule = None
     if OWNER_RULE_CHOICE is not None:
         kind, order = DISTINGUISHING_RULES[OWNER_RULE_CHOICE["rule"]]
-        rule = {"id": OWNER_RULE_CHOICE["rule"], "kind": kind, "order": list(order), "chosen": OWNER_RULE_CHOICE["date"], "source": OWNER_RULE_CHOICE["source"], "text": OWNER_RULE_CHOICE["text"]}
+        rule = {
+            "id": OWNER_RULE_CHOICE["rule"],
+            "kind": kind,
+            "order": list(order),
+            "chosen": OWNER_RULE_CHOICE["date"],
+            "source": OWNER_RULE_CHOICE["source"],
+            "text": OWNER_RULE_CHOICE["text"],
+            "context": OWNER_RULE_CHOICE["context"],
+        }
     return {
         "schema_version": "d004-suite-overlay-v0.1",
         "protocol_version": "d004-v0.8-suite",
@@ -1308,6 +1323,7 @@ def validate_response(contract: dict[str, Any], stdout: bytes, stderr: bytes, re
             _check(normalized[field] == observation[field], f"normalized {field} disagrees")
         _check(normalized["observation_level"] == "domain", "observation level drift")
         _check(isinstance(normalized["decision"], dict) and "category" in normalized["decision"], "normalized decision is malformed")
+        _check(isinstance(normalized["values"], dict), "normalized values is not an object")
     identifiers = [observation["id"] for observation in observations]
     rows_by_relationship = response["sr_conformance"]
     _check(isinstance(rows_by_relationship, list) and [item.get("relationship") for item in rows_by_relationship] == list(RELATIONSHIPS), "SR rows are not SR-01 through SR-14")
@@ -1539,22 +1555,31 @@ def build_record(ctx: EpochContext, row: dict[str, Any], state: dict[str, Any], 
             "input_manifest_sha256": digest(ctx.suite.manifests[case]),
             "expected_output_manifest_sha256": digest(output_manifest),
         },
-        "measures": positive_measures(response, observations) if case in V08_CASES else None,
+        "measures": positive_measures(response, observations, case) if case in V08_CASES else None,
         "owner_labels": OWNER_LABELS,
     }
     assert tuple(record) == RECORD_FIELDS
     return record
 
 
-def positive_measures(response: dict[str, Any] | None, observations: list[dict[str, Any]]) -> dict[str, int] | None:
-    """The measures an SC-06 or SC-07 positive observation reports, when it matched."""
+def positive_measures(response: dict[str, Any] | None, observations: list[dict[str, Any]], case: str) -> dict[str, int] | None:
+    """The measures an SC-06 or SC-07 positive observation reports, when it matched and names exactly its own case's measures."""
     if response is None or not observations or observations[0]["comparison"] != "matched":
         return None
-    measures = response["observations"][0]["normalized_observation"]["values"].get("measures")
-    names = {name for name, _, _ in MEASURES}
-    if not isinstance(measures, dict) or not set(measures) <= names or not all(type(value) is int and value >= 0 for value in measures.values()):
+    values = response["observations"][0]["normalized_observation"]["values"]
+    measures = values.get("measures") if isinstance(values, dict) else None
+    names = {name for name, measured_in, _ in MEASURES if measured_in == case}
+    if not isinstance(measures, dict) or set(measures) != names or not all(type(value) is int and value >= 0 for value in measures.values()):
         return None
     return measures
+
+
+def rule_result(rule_id: str, measures: dict[str, dict[str, int]], unmeasured: list[str]) -> dict[str, Any]:
+    """Apply the rule; a complete candidate without a full measure set makes the result inconclusive."""
+    result = apply_rule(rule_id, measures)
+    if unmeasured:
+        result.update(remaining=[], result="inconclusive")
+    return {**result, "unmeasured": unmeasured}
 
 
 def replay_contract_holds(ctx: EpochContext) -> bool:
@@ -1756,6 +1781,7 @@ def summarize(ctx: EpochContext, records: list[dict[str, Any]]) -> tuple[list[di
     closed = {(item["candidate"], item["case"]) for item in slots if item["closure"] == "closed"}
     complete = [candidate for candidate in CANDIDATES if all((candidate, case) in closed for case in CASES)]
     measures: dict[str, dict[str, int]] = {}
+    unmeasured: list[str] = []
     for candidate in complete:
         merged: dict[str, int] = {}
         for item in records:
@@ -1763,9 +1789,11 @@ def summarize(ctx: EpochContext, records: list[dict[str, Any]]) -> tuple[list[di
                 merged.update(item["measures"])
         if set(merged) == {name for name, _, _ in MEASURES}:
             measures[candidate] = dict(sorted(merged.items()))
+        else:
+            unmeasured.append(candidate)
     rule = ctx.packet["selection"]["distinguishing_rule"]
     summary = {
-        "schema_version": "d004-run-summary-v0.2",
+        "schema_version": "d004-run-summary-v0.3",
         "epoch": ctx.packet["epoch"],
         "packet_sha256": ctx.packet_sha256,
         "execution": {
@@ -1779,7 +1807,7 @@ def summarize(ctx: EpochContext, records: list[dict[str, Any]]) -> tuple[list[di
         "slots": slots,
         "measures": measures,
         "distinguishing_rule_result": {
-            **apply_rule(rule["id"], measures),
+            **rule_result(rule["id"], measures, unmeasured),
             "scope": "candidates that close all seven cases; SS-G05 and the SS-G03 structure only",
             "standing": "not a D-004 recommendation under suite section 8 until the owner disposes every candidate and every hard gate",
         } if rule else None,

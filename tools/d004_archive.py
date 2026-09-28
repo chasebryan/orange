@@ -1,7 +1,7 @@
 """Committed form of the D-004 run archives (research-only).
 
 ``tools/d004_run.py execute`` (v0.7) and ``tools/d004_v08_run.py execute``
-(v0.8) write archives of about 13.5 MB and 17 MB. Most of each can be
+(v0.8) write archives of about 13.5 MB and 15.6 MB. Most of each can be
 re-derived from the repository: the requests, candidate models and input
 manifests come from the suite, the replay plan and the scheduled identities
 come from the packet, and every case record, repetition closure and the

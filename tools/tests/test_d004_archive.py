@@ -81,6 +81,25 @@ class D004V08ArchiveTests(unittest.TestCase):
         self.assertEqual({slot["candidate"] for slot in failed}, {"ST-HOST"})
         result = summary["distinguishing_rule_result"]
         self.assertEqual((result["rule"], result["result"]), ("isolation_first", "recommend_st_rel"))
+        self.assertEqual((result["compared"], result["unmeasured"]), (["ST-DUAL", "ST-MIRROR", "ST-REL", "ST-UNI"], []))
+
+    def test_a_complete_candidate_without_measures_leaves_the_rule_inconclusive(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="d004-archive-test-") as scratch:
+            root = Path(scratch) / "archive"
+            archive.unpack(REPOSITORY08, REPOSITORY08.raw(V08.index_path), REPOSITORY08.raw(V08.outputs_path), root, V08)
+            ctx = run08.EpochContext(root, REPOSITORY08)
+            records = [
+                run08.canonical_document((root / "executions" / f"{row['execution_ordinal']:03d}" / "record.json").read_bytes())
+                for row in ctx.schedule
+            ]
+            for record in records:
+                if (record["candidate"], record["case"]) == ("ST-REL", "SC-07"):
+                    record["measures"] = None
+            _, summary = run08.summarize(ctx, records)
+        self.assertEqual(summary["execution"]["complete_candidates"], 4)
+        self.assertNotIn("ST-REL", summary["measures"])
+        result = summary["distinguishing_rule_result"]
+        self.assertEqual((result["remaining"], result["result"], result["unmeasured"]), ([], "inconclusive", ["ST-REL"]))
 
 
 if __name__ == "__main__":

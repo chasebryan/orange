@@ -379,8 +379,8 @@ The raw-file/canonical SHA-256 pairs are:
   `e4dca7aa537403c76be925aaa8d9bdec54725071c7ca39ca250be3e8e88ca3ba` /
   `d756959e3258d5ac86cb416e5993fc2f90119867a600170af7b69abe4dadd02c`; and
 - v0.8 suite overlay:
-  `e303b083e2ccdd953ee983312604f45f443806e25d8d55e4eda15f2b4571d856` /
-  `51fcf4aabafc6ae25fff4d8285a44e0fc19521edb1972b20c97d84d242cc27fb`.
+  `658e899497fd1b2860f63a43039123facf56a1ff99f7b34273eefbfc427c2806` /
+  `b86e791fd1a49624816ab0fcb63ed633819cb66f3e2ca70955a6cfe6bbc28618`.
 
 On 2026-09-28 the owner chose isolation first: fewest isolation obligations,
 then fewest re-identified subject classes, then fewest discrimination

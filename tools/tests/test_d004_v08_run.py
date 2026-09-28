@@ -52,13 +52,13 @@ def _positive(case: str) -> dict[str, object]:
     return subject
 
 
-def _request(candidate: str, subjects: list[dict[str, object]], case: str) -> bytes:
+def _request(candidate: str, subjects: list[dict[str, object]], case: str, model: dict[str, object] | None = None) -> bytes:
     return adapter.canonical_bytes(
         {
             "schema_version": adapter.REQUEST_SCHEMA,
             "suite_version": adapter.SUITE_VERSION,
             "execution": _execution(candidate, case),
-            "candidate_model": SUITE.models[candidate],
+            "candidate_model": model or SUITE.models[candidate],
             "subjects": [
                 {
                     "subject_id": subject["id"],
@@ -70,6 +70,21 @@ def _request(candidate: str, subjects: list[dict[str, object]], case: str) -> by
             ],
         }
     ) + b"\n"
+
+
+def _rows(subjects: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {
+            "source_catalog": "case_subject_catalog",
+            "subject": subject,
+            "oracle": {
+                "subject_id": subject["id"],
+                "subject_sha256": adapter.digest(subject),
+                "relationship_scope": list(subject["relationship_scope"]),
+            },
+        }
+        for subject in subjects
+    ]
 
 
 def _observe(candidate: str, subject: dict[str, object], case: str) -> dict[str, object]:
@@ -106,6 +121,23 @@ class D004V08AdapterTests(unittest.TestCase):
         self.assertEqual(values["measures"]["isolation_obligations"], len(values["evolution"][0]["obligations"]))
         self.assertLess(values["measures"]["isolation_obligations"], full["normalized_observation"]["values"]["measures"]["isolation_obligations"])
 
+    def test_only_a_change_that_reaches_a_protected_class_needs_isolation(self) -> None:
+        subject = _positive("SC-06")
+        expected = {"ST-REL": (0, 0, 6), "ST-MIRROR": (0, 0, 7), "ST-DUAL": (4, 0, 28), "ST-UNI": (10, 6, 36)}
+        for candidate, counts in expected.items():
+            measures = _observe(candidate, subject, "SC-06")["normalized_observation"]["values"]["measures"]
+            with self.subTest(candidate=candidate):
+                self.assertEqual((measures["isolation_obligations"], measures["spec_isolation_obligations"], measures["reidentified_classes"]), counts)
+        # E1 changes the target operation class. ST-REL confines it to its
+        # machine IR member; ST-UNI's single calculus also owns Spec Core.
+        narrowed = copy.deepcopy(subject)
+        narrowed["model"]["changes"] = [item for item in narrowed["model"]["changes"] if item["id"] == "E1"]
+        split = _observe("ST-REL", narrowed, "SC-06")["normalized_observation"]["values"]
+        self.assertEqual([len(item["reidentified"]) for item in split["evolution"]], [1])
+        self.assertEqual((split["measures"]["isolation_obligations"], split["measures"]["spec_isolation_obligations"]), (0, 0))
+        shared = _observe("ST-UNI", narrowed, "SC-06")["normalized_observation"]["values"]["measures"]
+        self.assertEqual((shared["isolation_obligations"], shared["spec_isolation_obligations"]), (2, 2))
+
     def test_an_unowned_construct_is_rejected(self) -> None:
         subject = _positive("SC-06")
         subject["model"]["changes"][0]["facet"] = "synthetic_unheld_facet"
@@ -124,6 +156,18 @@ class D004V08AdapterTests(unittest.TestCase):
         observation = _observe("ST-UNI", subject, "SC-07")
         self.assertEqual(observation["observed_state"], "rejected")
         self.assertEqual(_category(observation), "probe_does_not_match_crossing")
+
+    def test_a_within_authority_crossing_without_a_named_judgment_fails(self) -> None:
+        # The derived models always name these judgments; strip them to reach the check.
+        stripped = copy.deepcopy(SUITE.models["ST-UNI"])
+        stripped["model"]["discrimination_judgments"] = []
+        stripped["model_sha256"] = adapter.digest(stripped["model"])
+        subject = _positive("SC-07")
+        with mock.patch.object(adapter, "derive_candidate_model", return_value=stripped):
+            response = json.loads(adapter.run_request(_request("ST-UNI", [subject], "SC-07", stripped), "f" * 64))
+        observation = response["observations"][0]
+        self.assertEqual(observation["observed_state"], "rejected")
+        self.assertEqual(_category(observation), "undiscriminated_within_authority_crossing")
 
     def test_mutation_breaks_the_bound_fact(self) -> None:
         positive = _positive("SC-06")
@@ -236,13 +280,38 @@ class D004V08RunnerTests(unittest.TestCase):
         self.assertEqual(run.apply_rule("isolation_first", tied)["result"], "inconclusive")
 
     def test_measures_are_read_only_from_a_matched_positive(self) -> None:
-        response = {"observations": [{"normalized_observation": {"values": {"measures": {"semantic_definitions": 2}}}}]}
-        self.assertEqual(run.positive_measures(response, [{"comparison": "matched"}]), {"semantic_definitions": 2})
-        self.assertIsNone(run.positive_measures(response, [{"comparison": "mismatched"}]))
-        self.assertIsNone(run.positive_measures(None, [{"comparison": "matched"}]))
-        for bad in ({"unknown_measure": 1}, {"semantic_definitions": -1}, {"semantic_definitions": True}):
+        sc06 = {"isolation_obligations": 0, "spec_isolation_obligations": 0, "reidentified_classes": 6, "semantic_definitions": 5}
+        response = {"observations": [{"normalized_observation": {"values": {"measures": dict(sc06)}}}]}
+        matched = [{"comparison": "matched"}]
+        self.assertEqual(run.positive_measures(response, matched, "SC-06"), sc06)
+        self.assertIsNone(run.positive_measures(response, matched, "SC-07"))
+        self.assertIsNone(run.positive_measures(response, [{"comparison": "mismatched"}], "SC-06"))
+        self.assertIsNone(run.positive_measures(None, matched, "SC-06"))
+        for bad in (sc06 | {"unknown_measure": 1}, sc06 | {"semantic_definitions": -1}, sc06 | {"semantic_definitions": True}, {"semantic_definitions": 5}):
             response["observations"][0]["normalized_observation"]["values"]["measures"] = bad
-            self.assertIsNone(run.positive_measures(response, [{"comparison": "matched"}]))
+            self.assertIsNone(run.positive_measures(response, matched, "SC-06"))
+        response["observations"][0]["normalized_observation"]["values"] = []
+        self.assertIsNone(run.positive_measures(response, matched, "SC-06"))
+
+    def test_a_complete_candidate_without_measures_makes_the_rule_inconclusive(self) -> None:
+        names = [name for name, _, _ in run.MEASURES]
+        measures = {"ST-A": dict.fromkeys(names, 0), "ST-B": dict.fromkeys(names, 1)}
+        self.assertEqual(run.rule_result("isolation_first", measures, [])["result"], "recommend_st_a")
+        result = run.rule_result("isolation_first", measures, ["ST-C"])
+        self.assertEqual((result["remaining"], result["result"], result["unmeasured"]), ([], "inconclusive", ["ST-C"]))
+
+    def test_response_validator_requires_an_object_of_values(self) -> None:
+        subject = _positive("SC-06")
+        request = _request("ST-REL", [subject], "SC-06")
+        stdout = adapter.run_request(request, "f" * 64)
+        contract, rows, model = adapter.adapter_contract(), _rows([subject]), SUITE.models["ST-REL"]
+        run.validate_response(contract, stdout, b"", request, rows, model)
+        value = json.loads(stdout)
+        normalized = value["observations"][0]["normalized_observation"]
+        normalized["values"] = []
+        value["observations"][0]["normalized_observation_sha256"] = run.digest(normalized)
+        with self.assertRaisesRegex(run.PayloadError, "normalized values is not an object"):
+            run.validate_response(contract, run.canonical_file(value), b"", request, rows, model)
 
 
 if __name__ == "__main__":
