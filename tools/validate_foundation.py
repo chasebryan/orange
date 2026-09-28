@@ -345,6 +345,7 @@ compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
 compiler/crates/orangec/tests/s2_conformance.rs
 compiler/crates/orangec/tests/s3a_conformance.rs
+compiler/crates/orangec/tests/s3b_conformance.rs
 compiler/fixtures/hello.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
 compiler/fixtures/s3a/invalid-int-magnitude.or
@@ -356,6 +357,20 @@ compiler/fixtures/s3a/invalid-word-width.or
 compiler/fixtures/s3a/valid-empty-mixed.or
 compiler/fixtures/s3a/valid-int-radices.or
 compiler/fixtures/s3a/valid-word8-boundaries.or
+compiler/fixtures/s3b/invalid-call-cycles.or
+compiler/fixtures/s3b/invalid-diagnostic-order.or
+compiler/fixtures/s3b/invalid-names-and-calls.or
+compiler/fixtures/s3b/invalid-parameter-syntax.or
+compiler/fixtures/s3b/invalid-shift-amounts.or
+compiler/fixtures/s3b/invalid-types-and-operators.or
+compiler/fixtures/s3b/invalid-ungrouped-operators.or
+compiler/fixtures/s3b/invalid-word-literals.or
+compiler/fixtures/s3b/invalid-word-widths.or
+compiler/fixtures/s3b/valid-calls-and-grouping.or
+compiler/fixtures/s3b/valid-chacha20-quarter-round.or
+compiler/fixtures/s3b/valid-int-arithmetic.or
+compiler/fixtures/s3b/valid-sha256-functions.or
+compiler/fixtures/s3b/valid-word-arithmetic.or
 compiler/fixtures/typed-answer.or
 DEPENDENCY_POLICY.md
 GOVERNANCE.md
@@ -396,6 +411,7 @@ docs/PROJECT_CHARTER.md
 docs/RESEARCH.md
 docs/ROADMAP.md
 docs/SEMANTIC_STRATA_DECISION_SUITE.md
+docs/EXPRESSIONS_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
 docs/governance/adrs/ADR-0000-template.md
