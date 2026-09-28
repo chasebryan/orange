@@ -4,14 +4,16 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode, CoreNodeKind,
-    CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Magnitude,
+    ArrayType, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode,
+    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS,
+    Magnitude,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
-    BinaryExpression, BinaryOperator, Binding, CallExpression, ConversionExpression, Expression,
-    ExpressionKind, FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IntegerLiteral,
-    Parameter, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
+    ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
+    ConversionExpression, Expression, ExpressionKind, FunctionBody, FunctionDeclaration,
+    FunctionKind, Identifier, IndexExpression, IntegerLiteral, MAX_ARRAY_ELEMENTS, Parameter,
+    SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
 };
 use crate::source::{SourceFile, Span};
 
@@ -29,10 +31,14 @@ pub const MAX_SEMANTIC_EVENTS_PER_SOURCE: usize = 1_048_576;
 /// Maximum significant bits retained for one exact mathematical integer.
 pub const MAX_INTEGER_BITS: usize = 16_384;
 const _: () = assert!(MAX_INTEGER_BITS == MAX_EXACT_INTEGER_BITS);
+// An array literal can spell every admitted array type and no longer one.
+const _: () = assert!(MAX_ARRAY_ELEMENTS == 256 && MAX_ARRAY_LENGTH == 256);
 
 const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
 const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
 const ADMITTED_TYPES: &str = "`Int`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
+const ARRAY_OPERATOR_NOTE: &str =
+    "operators apply to `Int` and word values; apply them to elements, such as `x[0]`";
 
 /// The complete result of semantic analysis.
 ///
@@ -98,7 +104,10 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
     let source_id = source.id();
     let belongs = |span: Span| span.source() == source_id;
     let type_belongs = |ty: &TypeSyntax| {
-        belongs(ty.span) && belongs(ty.name.span) && ty.width_span.is_none_or(belongs)
+        belongs(ty.span)
+            && belongs(ty.name.span)
+            && ty.width_span.is_none_or(belongs)
+            && ty.length_span.is_none_or(belongs)
     };
 
     belongs(ast.span)
@@ -161,7 +170,15 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && belongs(target.span)
                     && belongs(target.name.span)
                     && target.width_span.is_none_or(belongs)
+                    && target.length_span.is_none_or(belongs)
                     && expression_belongs(&conversion.operand, belongs)
+            }
+            ExpressionKind::Array(array) => array
+                .elements
+                .iter()
+                .all(|element| expression_belongs(element, belongs)),
+            ExpressionKind::Index(index) => {
+                belongs(index.index_span) && expression_belongs(&index.base, belongs)
             }
         }
 }
@@ -329,19 +346,22 @@ impl<'ast> BodyContext<'ast> {
     }
 }
 
-/// Returns the first name, call, or conversion of `expression`, from left to
-/// right, outside call arguments and shift amounts.
+/// Returns the first name, call, conversion, index, or array literal of
+/// `expression`, from left to right, outside call arguments and shift amounts.
 ///
 /// Every operator gives its result the type of its operands, and a shift or
 /// rotation amount is a literal, so this leaf's type is the type of the whole
 /// expression. Literals take their type from their context and are skipped.
+/// An array literal ends the search so that a conversion can reject it.
 /// Parser-established expression height bounds this recursion.
 fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
     match &expression.kind {
         ExpressionKind::Literal(_) => None,
-        ExpressionKind::Name(_) | ExpressionKind::Call(_) | ExpressionKind::Conversion(_) => {
-            Some(expression)
-        }
+        ExpressionKind::Name(_)
+        | ExpressionKind::Call(_)
+        | ExpressionKind::Conversion(_)
+        | ExpressionKind::Index(_)
+        | ExpressionKind::Array(_) => Some(expression),
         ExpressionKind::Parenthesized(inner) => first_typed_leaf(inner),
         ExpressionKind::Unary(unary) => first_typed_leaf(&unary.operand),
         ExpressionKind::Binary(binary) => {
@@ -406,10 +426,36 @@ enum TypeClass {
     Resolved(CoreType),
     MissingWordWidth,
     UnsupportedWordWidth(Span),
+    UnsupportedArrayLength(Span),
     Unsupported,
 }
 
 fn classify_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
+    let scalar = classify_scalar_type(source, syntax);
+    match (scalar, syntax.length_span) {
+        (TypeClass::Resolved(element), Some(length_span)) => array_length(source, length_span)
+            .and_then(|length| ArrayType::new(element, length))
+            .map_or(TypeClass::UnsupportedArrayLength(length_span), |array| {
+                TypeClass::Resolved(CoreType::Array(array))
+            }),
+        (scalar, _) => scalar,
+    }
+}
+
+/// Decodes an array length written as a decimal integer with no leading
+/// zero and no underscore, as word widths are written.
+fn array_length(source: &SourceFile, span: Span) -> Option<u32> {
+    let spelling = source.slice(span)?;
+    let canonical = !spelling.is_empty()
+        && !spelling.starts_with('0')
+        && spelling.bytes().all(|byte| byte.is_ascii_digit());
+    if !canonical || spelling.len() > 3 {
+        return None;
+    }
+    spelling.parse().ok()
+}
+
+fn classify_scalar_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
     match (syntax.name.text.as_str(), syntax.width_span) {
         ("Int", None) => TypeClass::Resolved(CoreType::Int),
         ("Word", Some(width_span)) => {
@@ -440,7 +486,7 @@ fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
 
 fn word_maximum(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int => None,
+        CoreType::Int | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -881,6 +927,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         }
         match &expression.kind {
+            ExpressionKind::Literal(literal) if !expected.is_scalar() => {
+                if self.event(literal.span) {
+                    self.report_scalar_for_array(expression.span, "an integer literal", expected);
+                }
+                false
+            }
             ExpressionKind::Literal(literal) => {
                 // Literals keep the S3a accounting: one literal event followed
                 // by prefix and significant-digit events.
@@ -934,6 +986,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     return false;
                 }
                 self.check_conversion(expression, conversion, expected, context, scope, output)
+            }
+            ExpressionKind::Array(array) => {
+                if !self.event(expression.span) {
+                    return false;
+                }
+                self.check_array(expression, array, expected, context, scope, output)
+            }
+            ExpressionKind::Index(index) => {
+                if !self.event(index.index_span) {
+                    return false;
+                }
+                self.check_index(expression, index, expected, context, scope, output)
             }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
@@ -1019,6 +1083,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if actual != expected {
             if self.begin_report(name.span) {
                 let spelling = identifier_spelling_for_diagnostic(&name.text);
+                let note = if actual.as_array().map(ArrayType::element) == Some(expected) {
+                    format!("select one element with an index, such as `{spelling}[0]`")
+                } else {
+                    String::from("Orange has no implicit conversions between types")
+                };
                 self.diagnostics.push(
                     Diagnostic::error(
                         DiagnosticCode::TypeMismatch,
@@ -1028,7 +1097,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         name.span,
                     )
                     .with_label(format!("expected `{expected}`"))
-                    .with_note("Orange has no implicit conversions between types"),
+                    .with_note(note),
                 );
             }
             return false;
@@ -1138,7 +1207,27 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         };
-        let Some(from) = self.leaf_type(leaf, context, scope) else {
+        let from = self.leaf_type(leaf, context, scope);
+        if matches!(leaf.kind, ExpressionKind::Array(_))
+            || from.is_some_and(|from| !from.is_scalar())
+        {
+            let span = conversion.keyword_span;
+            if self.begin_report(span) {
+                let operand =
+                    from.map_or_else(|| String::from("an array"), |from| format!("`{from}`"));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::UnsupportedOperator,
+                        format!("`as` is not defined for {operand}"),
+                        span,
+                    )
+                    .with_label("`as` converts one `Int` or word value")
+                    .with_note("convert each element, such as `x[0] as Int`"),
+                );
+            }
+            return false;
+        }
+        let Some(from) = from else {
             // The leaf's own check reports why it has no type. That check
             // stops before comparing with the type passed here.
             self.check_expression(leaf, expected, context, scope, output);
@@ -1174,11 +1263,206 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .result_type
             }
             ExpressionKind::Conversion(conversion) => silent_type(self.source, &conversion.target),
+            ExpressionKind::Index(index) => self
+                .leaf_type(&index.base, context, scope)?
+                .as_array()
+                .map(ArrayType::element),
             ExpressionKind::Literal(_)
             | ExpressionKind::Unary(_)
             | ExpressionKind::Binary(_)
-            | ExpressionKind::Parenthesized(_) => None,
+            | ExpressionKind::Parenthesized(_)
+            | ExpressionKind::Array(_) => None,
         }
+    }
+
+    /// Checks an array literal against `expected`, which must be an array
+    /// type of the same length; each element is checked against its element
+    /// type.
+    fn check_array(
+        &mut self,
+        expression: &'ast Expression,
+        array: &'ast ArrayExpression,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Some(array_type) = expected.as_array() else {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!("an array literal cannot have type `{expected}`"),
+                        expression.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("an array literal is written where an array type `T^n` is required"),
+                );
+            }
+            return false;
+        };
+        let supplied = array.elements.len();
+        let length_matches = usize::try_from(array_type.length()).ok() == Some(supplied);
+        if !length_matches && self.begin_report(expression.span) {
+            let length = array_type.length();
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::ArrayLengthMismatch,
+                    format!(
+                        "this array has {supplied} {}, but `{expected}` has {length}",
+                        if supplied == 1 { "element" } else { "elements" },
+                    ),
+                    expression.span,
+                )
+                .with_label(format!(
+                    "expected {length} {}",
+                    if length == 1 { "element" } else { "elements" }
+                ))
+                .with_note("an array literal lists every element of its type exactly once"),
+            );
+        }
+        let mut elements_checked = true;
+        for element in &array.elements {
+            elements_checked &=
+                self.check_expression(element, array_type.element(), context, scope, output);
+            if self.halted {
+                return false;
+            }
+        }
+        if !length_matches || !elements_checked {
+            return false;
+        }
+        let Ok(elements) = u32::try_from(supplied) else {
+            self.resource_limit(
+                expression.span,
+                "array element count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        self.push_node(
+            output,
+            expression.span,
+            expected,
+            CoreNodeKind::Array { elements },
+        )
+    }
+
+    /// Checks `base[INDEX]` against `expected`.
+    ///
+    /// The base's type is found without reporting, as a conversion operand's
+    /// is. It must be an array, the index must be below its length, and its
+    /// element type must be `expected`; the base is then checked against its
+    /// own type, so errors inside it are still reported.
+    fn check_index(
+        &mut self,
+        expression: &'ast Expression,
+        index: &'ast IndexExpression,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Some(base_type) = self.leaf_type(&index.base, context, scope) else {
+            // The base's own check reports why it has no type and stops
+            // before comparing with the type passed here.
+            self.check_expression(&index.base, expected, context, scope, output);
+            return false;
+        };
+        let Some(array_type) = base_type.as_array() else {
+            if self.begin_report(index.base.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::NotAnArray,
+                        format!("only an array can be indexed, but this has type `{base_type}`"),
+                        index.base.span,
+                    )
+                    .with_label(format!("`{base_type}` has no elements"))
+                    .with_note("an index selects one element of a value of type `T^n`"),
+                );
+            }
+            self.check_expression(&index.base, base_type, context, scope, output);
+            return false;
+        };
+        let position = self.check_index_literal(index, array_type);
+        let element = array_type.element();
+        let element_matches = element == expected;
+        if !element_matches && self.begin_report(expression.span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!("this element has type `{element}`, but `{expected}` is required here"),
+                    expression.span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("Orange has no implicit conversions between types"),
+            );
+        }
+        let base = self.check_expression(&index.base, base_type, context, scope, output);
+        match position {
+            Some(position) if base && element_matches => self.push_node(
+                output,
+                expression.span,
+                expected,
+                CoreNodeKind::Index { index: position },
+            ),
+            _ => false,
+        }
+    }
+
+    /// Decodes an index literal and checks it against the array's length.
+    fn check_index_literal(&mut self, index: &IndexExpression, array: ArrayType) -> Option<u32> {
+        let literal = IntegerLiteral {
+            span: index.index_span,
+            magnitude_span: index.index_span,
+            negative: false,
+        };
+        let magnitude = self.parse_magnitude(&literal, self.limits.integer_bits)?;
+        let length = array.length();
+        let decoded = magnitude
+            .to_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value < length);
+        if decoded.is_none() && self.begin_report(index.index_span) {
+            let highest = length.saturating_sub(1);
+            let spelling = self
+                .source
+                .slice(index.index_span)
+                .map_or_else(String::new, |spelling| {
+                    identifier_spelling_for_diagnostic(spelling).to_string()
+                });
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::IndexOutOfRange,
+                    format!(
+                        "index `{spelling}` is out of range for `{}`",
+                        CoreType::Array(array)
+                    ),
+                    index.index_span,
+                )
+                .with_label(format!("indices run from 0 through {highest}"))
+                .with_note(
+                    "an index is a fixed literal; variable indices are not part of Orange 2026",
+                ),
+            );
+        }
+        decoded
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_scalar_for_array(&mut self, span: Span, what: &str, expected: CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeMismatch,
+                format!("{what} cannot have type `{expected}`"),
+                span,
+            )
+            .with_label(format!("expected `{expected}`"))
+            .with_note("an array value is written `[e0, e1, ...]`, one element per index"),
+        );
     }
 
     fn check_call(
@@ -1341,11 +1625,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn unary_is_defined(&mut self, unary: &UnaryExpression, expected: CoreType) -> bool {
         let defined = match unary.operator {
             UnaryOperator::Negate => expected == CoreType::Int,
-            UnaryOperator::Complement => expected != CoreType::Int,
+            UnaryOperator::Complement => expected.word_bits().is_some(),
         };
         if !defined && self.begin_report(unary.operator_span) {
             let operator = unary.operator.as_str();
             let note = match (unary.operator, expected.word_bits()) {
+                _ if !expected.is_scalar() => String::from(ARRAY_OPERATOR_NOTE),
                 (UnaryOperator::Negate, Some(bits)) => {
                     format!("write `0 - x` for negation modulo 2^{bits}")
                 }
@@ -1366,14 +1651,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     fn binary_is_defined(&mut self, binary: &BinaryExpression, expected: CoreType) -> bool {
         let defined = match binary.operator {
-            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => true,
+            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => {
+                expected.is_scalar()
+            }
             BinaryOperator::And
             | BinaryOperator::Or
             | BinaryOperator::Xor
             | BinaryOperator::ShiftLeft
             | BinaryOperator::ShiftRight
             | BinaryOperator::RotateLeft
-            | BinaryOperator::RotateRight => expected != CoreType::Int,
+            | BinaryOperator::RotateRight => expected.word_bits().is_some(),
         };
         if !defined && self.begin_report(binary.operator_span) {
             let operator = binary.operator.as_str();
@@ -1384,7 +1671,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     binary.operator_span,
                 )
                 .with_label(format!("`{expected}` is required here"))
-                .with_note(if binary.operator.is_shift_or_rotation() {
+                .with_note(if !expected.is_scalar() {
+                    ARRAY_OPERATOR_NOTE
+                } else if binary.operator.is_shift_or_rotation() {
                     "shifts and rotations apply only to `Word[n]` values"
                 } else {
                     "bitwise operators apply only to `Word[n]` values"
@@ -1684,8 +1973,32 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         {
             return None;
         }
+        if let Some(length_span) = syntax.length_span
+            && !self.event(length_span)
+        {
+            return None;
+        }
         match classify_type(self.source, syntax) {
             TypeClass::Resolved(ty) => Some(ty),
+            TypeClass::UnsupportedArrayLength(length_span) => {
+                if self.begin_report(length_span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::UnsupportedArrayLength,
+                            format!(
+                                "an array length must be a decimal integer from 1 through \
+                                 {MAX_ARRAY_LENGTH}"
+                            ),
+                            length_span,
+                        )
+                        .with_label("unsupported array length")
+                        .with_note(
+                            "write the length in decimal without leading zeros, as in `Word[32]^16`",
+                        ),
+                    );
+                }
+                None
+            }
             TypeClass::UnsupportedWordWidth(width_span) => {
                 if self.begin_report(width_span) {
                     self.diagnostics.push(

@@ -2,8 +2,9 @@
 //!
 //! The crate currently owns source identity and spans, edition selection,
 //! deterministic diagnostics, lexical analysis, bounded parsing, typed semantic
-//! analysis with calls, pure expressions, bindings, and conversions, Core
-//! construction, and deterministic reference evaluation.
+//! analysis with calls, pure expressions, bindings, conversions, and
+//! fixed-length arrays, Core construction, and deterministic reference
+//! evaluation.
 
 pub mod core;
 pub mod diagnostic;
@@ -15,8 +16,8 @@ pub mod semantics;
 pub mod source;
 
 pub use core::{
-    CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode, CoreNodeKind,
-    CoreType, CoreValue, ExactInteger,
+    ArrayType, CoreArray, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule,
+    CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
 pub use edition::{Edition, ParseEditionError};
@@ -28,13 +29,14 @@ pub use lexer::{
     Token, TokenKind, lex,
 };
 pub use parser::{
-    BinaryExpression, BinaryOperator, Binding, CallExpression, ConversionExpression,
-    EditionDeclaration, Expression, ExpressionKind, FunctionBody, FunctionDeclaration,
-    FunctionKind, Identifier, IntegerLiteral, MAX_ARGUMENTS_PER_CALL, MAX_BINDINGS_PER_BODY,
-    MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING, MAX_PARAMETERS_PER_FUNCTION,
-    MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE, MAX_RECOVERY_DELIMITER_DEPTH,
-    MAX_SYNTAX_NODES_PER_SOURCE, ModuleDeclaration, Parameter, ParseResult, SyntaxTree, TypeSyntax,
-    TypedBody, UnaryExpression, UnaryOperator, parse,
+    ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
+    ConversionExpression, EditionDeclaration, Expression, ExpressionKind, FunctionBody,
+    FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral,
+    MAX_ARGUMENTS_PER_CALL, MAX_ARRAY_ELEMENTS, MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT,
+    MAX_EXPRESSION_NESTING, MAX_PARAMETERS_PER_FUNCTION, MAX_PARSE_DIAGNOSTICS_PER_SOURCE,
+    MAX_PARSE_EVENTS_PER_SOURCE, MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE,
+    ModuleDeclaration, Parameter, ParseResult, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression,
+    UnaryOperator, parse,
 };
 pub use semantics::{
     AnalysisResult, MAX_CORE_NODES_PER_SOURCE, MAX_INTEGER_BITS,

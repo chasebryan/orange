@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::core::{
-    CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType,
-    CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS,
+    ArrayType, CoreArray, CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode,
+    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, UnaryOperator};
@@ -162,6 +162,8 @@ struct Reservations {
     diagnostics: fn(&mut Vec<Diagnostic>, usize) -> bool,
     stack: fn(&mut Vec<Value>, usize) -> bool,
     frames: fn(&mut Vec<Frame<'_>>, usize) -> bool,
+    array: fn(&mut Vec<Value>, usize) -> bool,
+    result_array: fn(&mut Vec<CoreValue>, usize) -> bool,
 }
 
 impl Reservations {
@@ -171,7 +173,17 @@ impl Reservations {
         diagnostics: reserve_diagnostics,
         stack: reserve_stack,
         frames: reserve_frames,
+        array: reserve_array,
+        result_array: reserve_result_array,
     };
+}
+
+fn reserve_array(elements: &mut Vec<Value>, count: usize) -> bool {
+    elements.try_reserve_exact(count).is_ok()
+}
+
+fn reserve_result_array(elements: &mut Vec<CoreValue>, count: usize) -> bool {
+    elements.try_reserve_exact(count).is_ok()
 }
 
 fn reserve_name(name: &mut String, bytes: usize) -> bool {
@@ -194,12 +206,13 @@ fn reserve_frames(frames: &mut Vec<Frame<'_>>, count: usize) -> bool {
     frames.try_reserve(count).is_ok()
 }
 
-/// A runtime value. Exact integers are shared so that loading a literal or
-/// parameter never copies its digits.
+/// A runtime value. Exact integers and arrays are shared so that loading a
+/// literal, parameter, or binding never copies their contents.
 #[derive(Clone, Debug)]
 enum Value {
     Int(Rc<ExactInteger>),
     Word(u64),
+    Array(Rc<Vec<Value>>),
 }
 
 /// One active function evaluation.
@@ -254,7 +267,7 @@ fn digits(value: &ExactInteger) -> usize {
 
 fn word_mask(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int => None,
+        CoreType::Int | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -340,15 +353,48 @@ impl<'core> Machine<'core> {
     fn pop_int(&mut self) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Int(value) => Ok(value),
-            Value::Word(_) => Err(Stop::InconsistentCore),
+            Value::Word(_) | Value::Array(_) => Err(Stop::InconsistentCore),
         }
     }
 
     fn pop_word(&mut self) -> Result<u64, Stop> {
         match self.pop()? {
             Value::Word(value) => Ok(value),
-            Value::Int(_) => Err(Stop::InconsistentCore),
+            Value::Int(_) | Value::Array(_) => Err(Stop::InconsistentCore),
         }
+    }
+
+    /// Replaces the top `length` values of the current expression with one
+    /// array of type `ty` holding them in order.
+    fn build_array(&mut self, ty: ArrayType, length: usize, floor: usize) -> Result<Value, Stop> {
+        if usize::try_from(ty.length()).ok() != Some(length) {
+            return Err(Stop::InconsistentCore);
+        }
+        let start = self
+            .stack
+            .len()
+            .checked_sub(length)
+            .filter(|start| *start >= floor)
+            .ok_or(Stop::InconsistentCore)?;
+        let mut elements = Vec::new();
+        if !(self.reservations.array)(&mut elements, length) {
+            return Err(Stop::Allocation(
+                "evaluation array storage could not be reserved",
+            ));
+        }
+        let word = word_mask(ty.element());
+        for element in self.stack.drain(start..) {
+            let consistent = match (&element, word) {
+                (Value::Int(_), None) => true,
+                (Value::Word(value), Some(mask)) => (*value & !mask) == 0,
+                _ => false,
+            };
+            if !consistent {
+                return Err(Stop::InconsistentCore);
+            }
+            elements.push(element);
+        }
+        Ok(Value::Array(Rc::new(elements)))
     }
 
     fn checked_int(&self, value: ExactInteger, span: Span) -> Result<Value, Stop> {
@@ -587,6 +633,37 @@ impl<'core> Machine<'core> {
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(Value::Word(shifted))
             }
+            CoreNodeKind::Array { elements } => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(*elements).map_err(|_| Stop::InconsistentCore)?;
+                // One step per element; an array has at least one.
+                self.charge(length.max(1))?;
+                // Elements are intermediate values above the arguments and
+                // the bindings already evaluated.
+                let floor = base
+                    .checked_add(function.parameters.len())
+                    .and_then(|floor| floor.checked_add(part))
+                    .ok_or(Stop::InconsistentCore)?;
+                let array = self.build_array(ty, length, floor)?;
+                self.push(array)
+            }
+            CoreNodeKind::Index { index } => {
+                self.charge(1)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
+                let element = array.get(index).cloned().ok_or(Stop::InconsistentCore)?;
+                let consistent = match (&element, word_mask(node.ty)) {
+                    (Value::Int(_), None) => node.ty == CoreType::Int,
+                    (Value::Word(_), Some(_)) => true,
+                    _ => false,
+                };
+                if !consistent {
+                    return Err(Stop::InconsistentCore);
+                }
+                self.push(element)
+            }
             CoreNodeKind::Convert { from } => {
                 self.charge(1)?;
                 let value = match (word_mask(*from), word_mask(node.ty)) {
@@ -684,29 +761,12 @@ fn evaluate_with_reservations(
             );
         }
         name.push_str(&function.name);
-        let value = match value {
-            Value::Int(value) => match value.try_clone_with_reservation(reservations.value_limbs) {
-                Some(value) => CoreValue::Int(value),
-                None => {
-                    return allocation_failure(
-                        diagnostics,
-                        function.name_span,
-                        "evaluated exact integer storage could not be reserved",
-                    );
-                }
-            },
-            Value::Word(value) => {
-                let Some(value) = CoreValue::word_from_u64(function.result_type, value) else {
-                    return stopped(
-                        diagnostics,
-                        function,
-                        Stop::InconsistentCore,
-                        step_limit,
-                        false,
-                    );
-                };
-                value
+        let value = match result_value(value, function.result_type, reservations) {
+            Ok(value) => value,
+            Err(Stop::Allocation(label)) => {
+                return allocation_failure(diagnostics, function.name_span, label);
             }
+            Err(stop) => return stopped(diagnostics, function, stop, step_limit, false),
         };
         let module = Arc::clone(shared_module.get_or_insert_with(|| Arc::from(core.name.as_str())));
         values.push(EvaluatedFunction {
@@ -719,6 +779,56 @@ fn evaluate_with_reservations(
     EvaluationResult {
         values: Some(values),
         diagnostics,
+    }
+}
+
+/// Copies an evaluated value of type `ty` out of the machine's shared storage.
+fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Result<CoreValue, Stop> {
+    match (value, ty) {
+        (Value::Int(value), CoreType::Int) => value
+            .try_clone_with_reservation(reservations.value_limbs)
+            .map(CoreValue::Int)
+            .ok_or(Stop::Allocation(
+                "evaluated exact integer storage could not be reserved",
+            )),
+        (Value::Word(value), ty) => {
+            CoreValue::word_from_u64(ty, value).ok_or(Stop::InconsistentCore)
+        }
+        (Value::Array(array), CoreType::Array(array_type)) => {
+            let mut elements = Vec::new();
+            if !(reservations.result_array)(&mut elements, array.len()) {
+                return Err(Stop::Allocation(
+                    "evaluated array storage could not be reserved",
+                ));
+            }
+            for element in array.iter() {
+                elements.push(result_element(element, array_type.element(), reservations)?);
+            }
+            CoreArray::new(array_type, elements)
+                .map(CoreValue::Array)
+                .ok_or(Stop::InconsistentCore)
+        }
+        _ => Err(Stop::InconsistentCore),
+    }
+}
+
+/// Copies one scalar array element; arrays have no array elements.
+fn result_element(
+    element: &Value,
+    ty: CoreType,
+    reservations: Reservations,
+) -> Result<CoreValue, Stop> {
+    match (element, ty) {
+        (Value::Int(value), CoreType::Int) => value
+            .try_clone_with_reservation(reservations.value_limbs)
+            .map(CoreValue::Int)
+            .ok_or(Stop::Allocation(
+                "evaluated exact integer storage could not be reserved",
+            )),
+        (Value::Word(value), ty) => {
+            CoreValue::word_from_u64(ty, *value).ok_or(Stop::InconsistentCore)
+        }
+        _ => Err(Stop::InconsistentCore),
     }
 }
 

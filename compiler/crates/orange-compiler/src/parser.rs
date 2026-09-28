@@ -41,6 +41,10 @@ pub const MAX_ARGUMENTS_PER_CALL: usize = 256;
 /// Maximum `let` bindings in one typed body.
 pub const MAX_BINDINGS_PER_BODY: usize = 256;
 
+/// Maximum elements written in one array literal, which is also the longest
+/// admitted array type.
+pub const MAX_ARRAY_ELEMENTS: usize = 256;
+
 /// A complete minimal Orange source file.
 ///
 /// Parsed nodes are read-only outside this crate so later stages can rely on
@@ -384,6 +388,49 @@ pub enum ExpressionKind {
     /// An explicit conversion `operand as Type`, boxed so that it does not
     /// enlarge every expression.
     Conversion(Box<ConversionExpression>),
+    /// An array literal `[e0, e1, ...]`, boxed like a conversion.
+    Array(Box<ArrayExpression>),
+    /// One element `base[INDEX]` of an array, selected by a literal index.
+    Index(Box<IndexExpression>),
+}
+
+/// An array literal `[e0, e1, ...]` with at least one element.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArrayExpression {
+    /// Elements in source order.
+    pub(crate) elements: Vec<Expression>,
+}
+
+impl ArrayExpression {
+    /// Returns the elements in source order.
+    #[must_use]
+    pub fn elements(&self) -> &[Expression] {
+        &self.elements
+    }
+}
+
+/// An element selection `base[INDEX]`, where `base` is a name or a call and
+/// `INDEX` is an unsigned integer token.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IndexExpression {
+    /// The indexed name or call.
+    pub(crate) base: Expression,
+    /// Exact extent of the index's integer token, excluding brackets.
+    pub(crate) index_span: Span,
+}
+
+impl IndexExpression {
+    /// Returns the indexed name or call.
+    #[must_use]
+    pub fn base(&self) -> &Expression {
+        &self.base
+    }
+
+    /// Returns the exact extent of the index's integer token.
+    #[must_use]
+    pub const fn index_span(&self) -> Span {
+        self.index_span
+    }
 }
 
 /// An explicit conversion `operand as Type`.
@@ -616,22 +663,32 @@ impl BinaryOperator {
     }
 }
 
-/// A syntactic type name with an optional integer width argument.
+/// A syntactic type name with an optional integer width argument and an
+/// optional array length, as in `Word[32]^16`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeSyntax {
-    /// Full type extent, including `[WIDTH]` when present.
+    /// Full type extent, including `[WIDTH]` and `^LENGTH` when present.
     pub(crate) span: Span,
     /// Exact type-name spelling and span.
     pub(crate) name: Identifier,
     /// Exact span of the width integer, excluding brackets.
     pub(crate) width_span: Option<Span>,
+    /// Exact span of the array length integer, excluding `^`.
+    pub(crate) length_span: Option<Span>,
 }
 
 impl TypeSyntax {
-    /// Returns the full type extent, including `[WIDTH]` when present.
+    /// Returns the full type extent, including `[WIDTH]` and `^LENGTH` when
+    /// present.
     #[must_use]
     pub const fn span(&self) -> Span {
         self.span
+    }
+
+    /// Returns the exact span of the array length integer, excluding `^`.
+    #[must_use]
+    pub const fn length_span(&self) -> Option<Span> {
+        self.length_span
     }
 
     /// Returns the exact type-name spelling and span.
@@ -1355,7 +1412,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             );
             return None;
         }
-        let ty = self.parse_type_syntax("parameter type")?;
+        let ty = self.parse_type_syntax("parameter type", true)?;
         let span = self.join(name.span, ty.span);
         self.record_node().then_some(Parameter { span, name, ty })
     }
@@ -1390,7 +1447,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
 
     fn parse_typed_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
         let arrow = self.bump();
-        let result_type = self.parse_type_syntax("result type");
+        let result_type = self.parse_type_syntax("result type", true);
         if result_type.is_none()
             && !matches!(
                 self.current_kind(),
@@ -1524,7 +1581,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`:` and the binding's type",
             "every binding states its type, as in `let t: Word[32] = x + y;`",
         )?;
-        let ty = self.parse_type_syntax("binding type")?;
+        let ty = self.parse_type_syntax("binding type", true)?;
         self.expect(
             TokenKind::Equal,
             "`=` after the binding's type",
@@ -1696,7 +1753,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         (operand, operand_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
         let keyword_span = self.bump()?.span;
-        let target = self.parse_type_syntax("conversion type")?;
+        let target = self.parse_type_syntax("conversion type", false)?;
         let height = self.node_height(operand_height, keyword_span)?;
         let span = self.join(operand.span, target.span);
         self.record_node().then_some((
@@ -1819,24 +1876,139 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         match self.current_kind() {
             TokenKind::Integer => self.parse_literal_expression(),
             TokenKind::Identifier if self.next_kind() == TokenKind::LeftParen => {
-                self.parse_call(level)
+                let call = self.parse_call(level)?;
+                self.parse_index_suffix(call)
             }
-            TokenKind::Identifier => self.parse_name_expression(),
+            TokenKind::Identifier => {
+                let name = self.parse_name_expression()?;
+                self.parse_index_suffix(name)
+            }
             TokenKind::LeftParen => {
                 let inner = self.open_level(level)?;
                 let left_paren = self.bump()?.span;
                 let group = self.parse_expression(inner)?;
                 self.finish_group(left_paren, group)
             }
+            TokenKind::LeftBracket => self.parse_array(level),
             _ => {
                 self.expected(
                     "an expression",
-                    "an expression is an integer literal, a parameter, a call, a prefix \
+                    "an expression is an integer literal, a name, a call, an array, a prefix \
                      operator, or a parenthesized expression",
                 );
                 None
             }
         }
+    }
+
+    /// Parses an optional `[INDEX]` after a name or a call.
+    #[inline(never)]
+    fn parse_index_suffix(
+        &mut self,
+        (base, base_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        if self.current_kind() != TokenKind::LeftBracket {
+            return Some((base, base_height));
+        }
+        let left_bracket = self.bump()?.span;
+        if self.current_kind() != TokenKind::Integer {
+            self.expected(
+                "an integer index after `[`",
+                "an array element is selected by an unsigned integer literal, such as `x[0]`",
+            );
+            return None;
+        }
+        let index_span = self.bump()?.span;
+        if self.current_kind() != TokenKind::RightBracket {
+            self.expected(
+                "`]` after the index",
+                "an array element is selected by an unsigned integer literal, such as `x[0]`",
+            );
+            return None;
+        }
+        let right_bracket = self.bump()?.span;
+        if self.current_kind() == TokenKind::LeftBracket {
+            self.expected(
+                "an operator or the end of the expression",
+                "an array element is an `Int` or a word, so it cannot be indexed again",
+            );
+            return None;
+        }
+        let height = self.node_height(base_height, left_bracket)?;
+        let span = self.join(base.span, right_bracket);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Index(Box::new(IndexExpression { base, index_span })),
+            },
+            height,
+        ))
+    }
+
+    /// Parses an array literal `[e0, e1, ...]` with at least one element and
+    /// an optional trailing comma.
+    fn parse_array(&mut self, level: usize) -> Option<(Expression, usize)> {
+        let inner = self.open_level(level)?;
+        let left_bracket = self.bump()?.span;
+        let mut elements = Vec::new();
+        let mut element_height = 0_usize;
+        loop {
+            if self.current_kind() == TokenKind::RightBracket {
+                if !elements.is_empty() {
+                    break;
+                }
+                self.expected(
+                    "an array element",
+                    "an array has at least one element; Orange 2026 has no empty arrays",
+                );
+                return None;
+            }
+            let element = self.parse_expression(inner)?;
+            element_height = element_height.max(element.1);
+            if !self.push_element(&mut elements, element.0) {
+                return None;
+            }
+            match self.current_kind() {
+                TokenKind::Comma => {
+                    self.bump()?;
+                }
+                TokenKind::RightBracket => break,
+                _ => {
+                    self.expected(
+                        "`,` or `]` after the array element",
+                        "array elements are separated by commas",
+                    );
+                    return None;
+                }
+            }
+        }
+        let right_bracket = self.bump()?.span;
+        let height = self.node_height(element_height, left_bracket)?;
+        let span = self.join(left_bracket, right_bracket);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Array(Box::new(ArrayExpression { elements })),
+            },
+            height,
+        ))
+    }
+
+    #[inline(never)]
+    fn push_element(&mut self, elements: &mut Vec<Expression>, element: Expression) -> bool {
+        if elements.len() >= MAX_ARRAY_ELEMENTS {
+            self.resource_limit_at(
+                format!("array literal has more than {MAX_ARRAY_ELEMENTS} elements"),
+                element.span,
+            );
+            return false;
+        }
+        if !(self.reserve_argument_slot)(elements) {
+            self.resource_limit_at("parser could not allocate array storage", element.span);
+            return false;
+        }
+        elements.push(element);
+        true
     }
 
     #[inline(never)]
@@ -1946,7 +2118,10 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         true
     }
 
-    fn parse_type_syntax(&mut self, role: &str) -> Option<TypeSyntax> {
+    /// Parses `Name`, `Name[WIDTH]`, and, when `array` is set, either one
+    /// followed by `^LENGTH`. A conversion target is never an array, so a `^`
+    /// after it stays an operator.
+    fn parse_type_syntax(&mut self, role: &str, array: bool) -> Option<TypeSyntax> {
         let name = self.parse_identifier(role)?;
         let mut end = name.span;
         let mut width_span = None;
@@ -1993,10 +2168,34 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
         }
 
+        let mut length_span = None;
+        if array && self.current_kind() == TokenKind::Caret {
+            self.bump();
+            if self.current_kind() != TokenKind::Integer {
+                self.expected(
+                    "an integer length after `^`",
+                    "an array type is written `Type^LENGTH`, such as `Word[32]^16`",
+                );
+                return None;
+            }
+            let length = self.bump()?;
+            end = length.span;
+            length_span = Some(length.span);
+            if self.current_kind() == TokenKind::Caret {
+                self.expected(
+                    "the end of the type after its array length",
+                    "an array's elements are `Int` or words; arrays of arrays are not part of \
+                     Orange 2026",
+                );
+                return None;
+            }
+        }
+
         self.record_node().then_some(TypeSyntax {
             span: self.join(name.span, end),
             name,
             width_span,
+            length_span,
         })
     }
 
