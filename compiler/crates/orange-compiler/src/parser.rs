@@ -390,8 +390,15 @@ pub enum ExpressionKind {
     Conversion(Box<ConversionExpression>),
     /// An array literal `[e0, e1, ...]`, boxed like a conversion.
     Array(Box<ArrayExpression>),
-    /// One element `base[INDEX]` of an array, selected by a literal index.
+    /// An array literal `[e; n]` of `n` copies of one element.
+    Fill(Box<FillExpression>),
+    /// One element `base[index]` of an array.
     Index(Box<IndexExpression>),
+    /// A copy of an array with one element replaced:
+    /// `base with [index] = value`.
+    Update(Box<UpdateExpression>),
+    /// A bounded loop `for i in a..b with s: T = init { step }`.
+    Loop(Box<LoopExpression>),
 }
 
 /// An array literal `[e0, e1, ...]` with at least one element.
@@ -409,14 +416,40 @@ impl ArrayExpression {
     }
 }
 
-/// An element selection `base[INDEX]`, where `base` is a name or a call and
-/// `INDEX` is an unsigned integer token.
+/// An array literal `[element; n]` of `n` copies of one element.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FillExpression {
+    /// The repeated element.
+    pub(crate) element: Expression,
+    /// Exact extent of the length's integer token.
+    pub(crate) length_span: Span,
+}
+
+impl FillExpression {
+    /// Returns the repeated element.
+    #[must_use]
+    pub fn element(&self) -> &Expression {
+        &self.element
+    }
+
+    /// Returns the exact extent of the length's integer token.
+    #[must_use]
+    pub const fn length_span(&self) -> Span {
+        self.length_span
+    }
+}
+
+/// An element selection `base[index]`, where `base` is a name or a call.
+///
+/// An index written as one unsigned integer token is a literal index, as in
+/// S3d; any other index is an expression that semantic analysis must prove
+/// in range.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IndexExpression {
     /// The indexed name or call.
     pub(crate) base: Expression,
-    /// Exact extent of the index's integer token, excluding brackets.
-    pub(crate) index_span: Span,
+    /// The index, excluding brackets.
+    pub(crate) index: Expression,
 }
 
 impl IndexExpression {
@@ -426,10 +459,142 @@ impl IndexExpression {
         &self.base
     }
 
-    /// Returns the exact extent of the index's integer token.
+    /// Returns the index, excluding brackets.
+    #[must_use]
+    pub fn index(&self) -> &Expression {
+        &self.index
+    }
+
+    /// Returns the exact extent of the index, excluding brackets.
     #[must_use]
     pub const fn index_span(&self) -> Span {
-        self.index_span
+        self.index.span
+    }
+
+    /// Returns whether the index is one unsigned integer token.
+    #[must_use]
+    pub const fn is_literal(&self) -> bool {
+        matches!(
+            &self.index.kind,
+            ExpressionKind::Literal(IntegerLiteral {
+                negative: false,
+                ..
+            })
+        )
+    }
+}
+
+/// A functional update `base with [index] = value`: the array `base` with
+/// the element at `index` replaced by `value`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateExpression {
+    /// The updated array.
+    pub(crate) base: Expression,
+    /// Exact extent of the `with` keyword.
+    pub(crate) keyword_span: Span,
+    /// The replaced element's index, excluding brackets.
+    pub(crate) index: Expression,
+    /// The new element.
+    pub(crate) value: Expression,
+}
+
+impl UpdateExpression {
+    /// Returns the updated array.
+    #[must_use]
+    pub fn base(&self) -> &Expression {
+        &self.base
+    }
+
+    /// Returns the exact extent of the `with` keyword.
+    #[must_use]
+    pub const fn keyword_span(&self) -> Span {
+        self.keyword_span
+    }
+
+    /// Returns the replaced element's index.
+    #[must_use]
+    pub fn index(&self) -> &Expression {
+        &self.index
+    }
+
+    /// Returns the new element.
+    #[must_use]
+    pub fn value(&self) -> &Expression {
+        &self.value
+    }
+}
+
+/// A bounded loop `for i in a..b with s: T = init { step }`.
+///
+/// The loop's value is `s` after `step` has been applied once for each `i`
+/// from `a` up to, but not including, `b`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoopExpression {
+    /// Exact extent of the `for` keyword.
+    pub(crate) keyword_span: Span,
+    /// The loop index.
+    pub(crate) index: Identifier,
+    /// Exact extent of the first bound's integer token.
+    pub(crate) start_span: Span,
+    /// Exact extent of the second bound's integer token.
+    pub(crate) end_span: Span,
+    /// The accumulator.
+    pub(crate) accumulator: Identifier,
+    /// Syntactic accumulator type; semantic analysis resolves its meaning.
+    pub(crate) ty: TypeSyntax,
+    /// The accumulator's initial value.
+    pub(crate) init: Expression,
+    /// The step, which gives the accumulator's next value.
+    pub(crate) step: Expression,
+}
+
+impl LoopExpression {
+    /// Returns the exact extent of the `for` keyword.
+    #[must_use]
+    pub const fn keyword_span(&self) -> Span {
+        self.keyword_span
+    }
+
+    /// Returns the loop index.
+    #[must_use]
+    pub const fn index(&self) -> &Identifier {
+        &self.index
+    }
+
+    /// Returns the exact extent of the first bound.
+    #[must_use]
+    pub const fn start_span(&self) -> Span {
+        self.start_span
+    }
+
+    /// Returns the exact extent of the second bound.
+    #[must_use]
+    pub const fn end_span(&self) -> Span {
+        self.end_span
+    }
+
+    /// Returns the accumulator.
+    #[must_use]
+    pub const fn accumulator(&self) -> &Identifier {
+        &self.accumulator
+    }
+
+    /// Returns the syntactic accumulator type.
+    #[must_use]
+    pub const fn ty(&self) -> &TypeSyntax {
+        &self.ty
+    }
+
+    /// Returns the accumulator's initial value.
+    #[must_use]
+    pub fn init(&self) -> &Expression {
+        &self.init
+    }
+
+    /// Returns the step.
+    #[must_use]
+    pub fn step(&self) -> &Expression {
+        &self.step
     }
 }
 
@@ -885,12 +1050,15 @@ impl Limits {
 const BODY_SHAPE_NOTE: &str =
     "a typed `spec` body holds `let` bindings, if any, and then one result expression";
 
+const LOOP_SHAPE_NOTE: &str = "a loop is written `for i in 0..n with s: Type = start { step }`";
+
 /// Something that continues an expression after an operand: a binary
-/// operator or the conversion keyword `as`.
+/// operator, the conversion keyword `as`, or the update keyword `with`.
 #[derive(Clone, Copy)]
 enum Joiner {
     Binary(BinaryOperator),
     As,
+    With,
 }
 
 impl Joiner {
@@ -898,6 +1066,7 @@ impl Joiner {
         match self {
             Self::Binary(operator) => operator.as_str(),
             Self::As => "as",
+            Self::With => "with",
         }
     }
 }
@@ -1623,9 +1792,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let mut expression = self.parse_unary(level)?;
         let previous = match self.current_joiner() {
             None => return Some(expression),
-            Some(Joiner::As) => {
-                expression = self.parse_conversion(expression)?;
-                Joiner::As
+            Some(joiner @ (Joiner::As | Joiner::With)) => {
+                expression = self.parse_postfix(joiner, expression, level)?;
+                joiner
             }
             Some(Joiner::Binary(
                 group @ (BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply),
@@ -1699,7 +1868,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                         let operand = self.parse_unary(level)?;
                         self.binary_node(expression, operator, operator_span, operand)?
                     }
-                    Joiner::As => self.parse_conversion(expression)?,
+                    Joiner::As | Joiner::With => self.parse_postfix(joiner, expression, level)?,
                 };
             }
         }
@@ -1709,6 +1878,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn current_joiner(&self) -> Option<Joiner> {
         if self.current_is_word("as") {
             return Some(Joiner::As);
+        }
+        // `with` is recognized by position, as `as` is: it updates an array
+        // only when `[` follows it, which no operand allows.
+        if self.current_is_word("with") && self.next_kind() == TokenKind::LeftBracket {
+            return Some(Joiner::With);
         }
         BinaryOperator::from_token(self.current_kind()).map(Joiner::Binary)
     }
@@ -1733,6 +1907,10 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     "`as` converts exactly one operand; parenthesize the conversion or the \
                      expression it converts"
                 }
+                (Joiner::With, _) | (_, Joiner::With) => {
+                    "`with` updates exactly one array; parenthesize the update or the \
+                     expression it updates"
+                }
                 (Joiner::Binary(previous), Joiner::Binary(ungrouped))
                     if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() =>
                 {
@@ -1744,6 +1922,22 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 }
             })
         });
+    }
+
+    /// Parses the conversion or update that `joiner` starts after a
+    /// complete operand. One call site per joiner position keeps the frame
+    /// of [`Self::parse_expression`], which recurses, small.
+    #[inline(never)]
+    fn parse_postfix(
+        &mut self,
+        joiner: Joiner,
+        operand: (Expression, usize),
+        level: usize,
+    ) -> Option<(Expression, usize)> {
+        match joiner {
+            Joiner::With => self.parse_update(operand, level),
+            Joiner::As | Joiner::Binary(_) => self.parse_conversion(operand),
+        }
     }
 
     /// Parses `as Type` after a complete operand.
@@ -1763,6 +1957,49 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     operand,
                     keyword_span,
                     target,
+                })),
+            },
+            height,
+        ))
+    }
+
+    /// Parses `with [index] = value` after a complete operand. The value
+    /// extends as far as an expression can, so an update ends its operator
+    /// chain.
+    #[inline(never)]
+    fn parse_update(
+        &mut self,
+        (base, base_height): (Expression, usize),
+        level: usize,
+    ) -> Option<(Expression, usize)> {
+        let inner = self.open_level(level)?;
+        let keyword_span = self.bump()?.span;
+        self.bump()?;
+        let (index, index_height) = self.parse_expression(inner)?;
+        self.expect(
+            TokenKind::RightBracket,
+            "`]` after the index",
+            "an update is written `x with [i] = value`",
+        )?;
+        self.expect(
+            TokenKind::Equal,
+            "`=` after the updated index",
+            "an update is written `x with [i] = value`",
+        )?;
+        let (value, value_height) = self.parse_expression(inner)?;
+        let height = self.node_height(
+            base_height.max(index_height).max(value_height),
+            keyword_span,
+        )?;
+        let span = self.join(base.span, value.span);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Update(Box::new(UpdateExpression {
+                    base,
+                    keyword_span,
+                    index,
+                    value,
                 })),
             },
             height,
@@ -1875,13 +2112,20 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn parse_primary(&mut self, level: usize) -> Option<(Expression, usize)> {
         match self.current_kind() {
             TokenKind::Integer => self.parse_literal_expression(),
+            // `for` is recognized by position, as `let` is: it starts a loop
+            // only when an identifier follows it, which no expression allows.
+            TokenKind::Identifier
+                if self.current_is_word("for") && self.next_kind() == TokenKind::Identifier =>
+            {
+                self.parse_loop(level)
+            }
             TokenKind::Identifier if self.next_kind() == TokenKind::LeftParen => {
                 let call = self.parse_call(level)?;
-                self.parse_index_suffix(call)
+                self.parse_index_suffix(call, level)
             }
             TokenKind::Identifier => {
                 let name = self.parse_name_expression()?;
-                self.parse_index_suffix(name)
+                self.parse_index_suffix(name, level)
             }
             TokenKind::LeftParen => {
                 let inner = self.open_level(level)?;
@@ -1893,36 +2137,46 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             _ => {
                 self.expected(
                     "an expression",
-                    "an expression is an integer literal, a name, a call, an array, a prefix \
-                     operator, or a parenthesized expression",
+                    "an expression is an integer literal, a name, a call, an array, a loop, a \
+                     prefix operator, or a parenthesized expression",
                 );
                 None
             }
         }
     }
 
-    /// Parses an optional `[INDEX]` after a name or a call.
+    /// Parses an optional `[index]` after a name or a call.
+    ///
+    /// An index that is one integer token opens no nesting level, exactly as
+    /// in S3d; any other index is an expression one level deeper.
     #[inline(never)]
     fn parse_index_suffix(
         &mut self,
         (base, base_height): (Expression, usize),
+        level: usize,
     ) -> Option<(Expression, usize)> {
         if self.current_kind() != TokenKind::LeftBracket {
             return Some((base, base_height));
         }
         let left_bracket = self.bump()?.span;
-        if self.current_kind() != TokenKind::Integer {
+        let (index, index_height) = if self.current_kind() == TokenKind::Integer
+            && self.next_kind() == TokenKind::RightBracket
+        {
+            self.parse_literal_expression()?
+        } else if self.current_kind() == TokenKind::RightBracket {
             self.expected(
-                "an integer index after `[`",
-                "an array element is selected by an unsigned integer literal, such as `x[0]`",
+                "an index after `[`",
+                "an array element is selected by an index, such as `x[0]` or `x[i + 1]`",
             );
             return None;
-        }
-        let index_span = self.bump()?.span;
+        } else {
+            let inner = self.open_level(level)?;
+            self.parse_expression(inner)?
+        };
         if self.current_kind() != TokenKind::RightBracket {
             self.expected(
                 "`]` after the index",
-                "an array element is selected by an unsigned integer literal, such as `x[0]`",
+                "an array element is selected by an index, such as `x[0]` or `x[i + 1]`",
             );
             return None;
         }
@@ -1934,12 +2188,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             );
             return None;
         }
-        let height = self.node_height(base_height, left_bracket)?;
+        let height = self.node_height(base_height.max(index_height), left_bracket)?;
         let span = self.join(base.span, right_bracket);
         self.record_node().then_some((
             Expression {
                 span,
-                kind: ExpressionKind::Index(Box::new(IndexExpression { base, index_span })),
+                kind: ExpressionKind::Index(Box::new(IndexExpression { base, index })),
             },
             height,
         ))
@@ -1964,6 +2218,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 return None;
             }
             let element = self.parse_expression(inner)?;
+            if elements.is_empty() && self.current_kind() == TokenKind::Semicolon {
+                return self.finish_fill(left_bracket, element);
+            }
             element_height = element_height.max(element.1);
             if !self.push_element(&mut elements, element.0) {
                 return None;
@@ -1989,6 +2246,152 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             Expression {
                 span,
                 kind: ExpressionKind::Array(Box::new(ArrayExpression { elements })),
+            },
+            height,
+        ))
+    }
+
+    /// Parses `; n]` after the element of a fill literal `[element; n]`.
+    #[inline(never)]
+    fn finish_fill(
+        &mut self,
+        left_bracket: Span,
+        (element, element_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        self.bump()?;
+        let length_span = self
+            .expect(
+                TokenKind::Integer,
+                "an array length after `;`",
+                "`[e; n]` is the array of n copies of e, such as `[0; 64]`",
+            )?
+            .span;
+        let right_bracket = self
+            .expect(
+                TokenKind::RightBracket,
+                "`]` after the array length",
+                "`[e; n]` is the array of n copies of e, such as `[0; 64]`",
+            )?
+            .span;
+        let height = self.node_height(element_height, left_bracket)?;
+        let span = self.join(left_bracket, right_bracket);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Fill(Box::new(FillExpression {
+                    element,
+                    length_span,
+                })),
+            },
+            height,
+        ))
+    }
+
+    /// Parses `for i in a..b with s: Type = init { step }`.
+    ///
+    /// The initial value and the step are one nesting level deeper than the
+    /// loop. Only this function's small frame stays on the stack while they
+    /// are parsed; the header and the node are built by helpers.
+    fn parse_loop(&mut self, level: usize) -> Option<(Expression, usize)> {
+        let inner = self.open_level(level)?;
+        let header = self.parse_loop_header()?;
+        let init = self.parse_expression(inner)?;
+        self.expect(
+            TokenKind::LeftBrace,
+            "`{` before the loop's step",
+            LOOP_SHAPE_NOTE,
+        )?;
+        let step = self.parse_expression(inner)?;
+        self.finish_loop(header, init, step)
+    }
+
+    /// Parses a loop from `for` through the `=` before its initial value.
+    #[inline(never)]
+    fn parse_loop_header(&mut self) -> Option<Box<LoopExpression>> {
+        let keyword_span = self.bump()?.span;
+        let index = self.parse_identifier("loop index")?;
+        if !self.current_is_word("in") {
+            self.expected("`in` after the loop index", LOOP_SHAPE_NOTE);
+            return None;
+        }
+        self.bump()?;
+        let start_span = self
+            .expect(
+                TokenKind::Integer,
+                "the loop's first bound",
+                LOOP_SHAPE_NOTE,
+            )?
+            .span;
+        self.expect(
+            TokenKind::DotDot,
+            "`..` between the loop's bounds",
+            LOOP_SHAPE_NOTE,
+        )?;
+        let end_span = self
+            .expect(
+                TokenKind::Integer,
+                "the loop's second bound",
+                LOOP_SHAPE_NOTE,
+            )?
+            .span;
+        if !self.current_is_word("with") {
+            self.expected("`with` and the loop's accumulator", LOOP_SHAPE_NOTE);
+            return None;
+        }
+        self.bump()?;
+        let accumulator = self.parse_identifier("accumulator")?;
+        self.expect(
+            TokenKind::Colon,
+            "`:` and the accumulator's type",
+            "every accumulator states its type, as in `with s: Word[32]^16 = x`",
+        )?;
+        let ty = self.parse_type_syntax("accumulator type", true)?;
+        self.expect(
+            TokenKind::Equal,
+            "`=` after the accumulator's type",
+            LOOP_SHAPE_NOTE,
+        )?;
+        // The initial value and the step are placeholders until parsed.
+        let placeholder = Expression {
+            span: keyword_span,
+            kind: ExpressionKind::Name(index.clone()),
+        };
+        Some(Box::new(LoopExpression {
+            keyword_span,
+            index,
+            start_span,
+            end_span,
+            accumulator,
+            ty,
+            init: placeholder.clone(),
+            step: placeholder,
+        }))
+    }
+
+    /// Completes a loop after its step: the closing `}`, the tree height,
+    /// and the node.
+    #[inline(never)]
+    fn finish_loop(
+        &mut self,
+        mut header: Box<LoopExpression>,
+        (init, init_height): (Expression, usize),
+        (step, step_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let right_brace = self
+            .expect(
+                TokenKind::RightBrace,
+                "`}` after the loop's step",
+                "a loop's step is one expression that gives the accumulator's next value",
+            )?
+            .span;
+        let height = self.node_height(init_height.max(step_height), header.keyword_span)?;
+        let span = self.join(header.keyword_span, right_brace);
+        header.init = init;
+        header.step = step;
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Loop(header),
             },
             height,
         ))
@@ -3354,10 +3757,31 @@ mod tests {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            ExpressionKind::Fill(fill) => format!(
+                "{{{}; {}}}",
+                shape(source, &fill.element),
+                source.slice(fill.length_span).unwrap()
+            ),
             ExpressionKind::Index(index) => format!(
                 "{}[{}]",
                 shape(source, &index.base),
-                source.slice(index.index_span).unwrap()
+                shape(source, &index.index)
+            ),
+            ExpressionKind::Update(update) => format!(
+                "({} with [{}] = {})",
+                shape(source, &update.base),
+                shape(source, &update.index),
+                shape(source, &update.value)
+            ),
+            ExpressionKind::Loop(r#loop) => format!(
+                "(for {} in {}..{} with {}: {} = {} {{ {} }})",
+                r#loop.index.text,
+                source.slice(r#loop.start_span).unwrap(),
+                source.slice(r#loop.end_span).unwrap(),
+                r#loop.accumulator.text,
+                source.slice(r#loop.ty.span).unwrap(),
+                shape(source, &r#loop.init),
+                shape(source, &r#loop.step)
             ),
         }
     }
@@ -3375,7 +3799,14 @@ mod tests {
             ExpressionKind::Array(array) => {
                 array.elements.iter().map(tree_height).max().unwrap_or(0)
             }
-            ExpressionKind::Index(index) => tree_height(&index.base),
+            ExpressionKind::Fill(fill) => tree_height(&fill.element),
+            ExpressionKind::Index(index) => tree_height(&index.base).max(tree_height(&index.index)),
+            ExpressionKind::Update(update) => tree_height(&update.base)
+                .max(tree_height(&update.index))
+                .max(tree_height(&update.value)),
+            ExpressionKind::Loop(r#loop) => {
+                tree_height(&r#loop.init).max(tree_height(&r#loop.step))
+            }
         }
     }
 
@@ -4346,10 +4777,9 @@ mod tests {
             ("[a b]", "expected `,` or `]` after the array element"),
             ("[a,, b]", "expected an expression"),
             ("[a", "expected `,` or `]` after the array element"),
-            ("a[]", "expected an integer index after `[`"),
-            ("a[b]", "expected an integer index after `[`"),
-            ("a[-1]", "expected an integer index after `[`"),
-            ("a[0 + 1]", "expected `]` after the index"),
+            ("a[]", "expected an index after `[`"),
+            ("a[b c]", "expected `]` after the index"),
+            ("a[0 + 1", "expected `]` after the index"),
             ("a[0, 1]", "expected `]` after the index"),
             ("a[0", "expected `]` after the index"),
             (

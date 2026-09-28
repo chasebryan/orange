@@ -91,6 +91,9 @@ pub struct CoreFunction {
     pub(crate) locals: Vec<CoreLocal>,
     /// Statically checked body.
     pub(crate) body: CoreExpression,
+    /// Loops of the bindings and the body, numbered in source order of
+    /// their `for` keywords.
+    pub(crate) loops: Vec<CoreLoop>,
 }
 
 impl CoreFunction {
@@ -140,6 +143,101 @@ impl CoreFunction {
     #[must_use]
     pub const fn body(&self) -> &CoreExpression {
         &self.body
+    }
+
+    /// Returns the loops of the bindings and the body, numbered in source
+    /// order of their `for` keywords.
+    #[must_use]
+    pub fn loops(&self) -> &[CoreLoop] {
+        &self.loops
+    }
+}
+
+/// Highest admitted loop bound.
+pub const MAX_LOOP_BOUND: u32 = 65_536;
+
+/// One bounded loop `for i in start..end with s: T = init { step }`.
+///
+/// The loop's `Fold` node takes the initial value from its operand subtree;
+/// the step is a separate expression evaluated once for each index from
+/// `start` up to, but not including, `end`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreLoop {
+    /// Full source extent of the loop, from `for` through `}`.
+    pub(crate) span: Span,
+    /// Exact ASCII name of the loop index.
+    pub(crate) index_name: String,
+    /// Exact ASCII name of the accumulator.
+    pub(crate) accumulator_name: String,
+    /// Declared type of the accumulator and of the loop.
+    pub(crate) ty: CoreType,
+    /// First index.
+    pub(crate) start: u32,
+    /// One past the last index; greater than `start`.
+    pub(crate) end: u32,
+    /// The number of the function's bindings in scope in the step.
+    pub(crate) visible_locals: u32,
+    /// The loops whose index and accumulator are in scope in the step,
+    /// outermost first, ending with this loop.
+    pub(crate) scope: Vec<u32>,
+    /// Statically checked step.
+    pub(crate) step: CoreExpression,
+}
+
+impl CoreLoop {
+    /// Returns the full source extent of the loop.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact ASCII name of the loop index.
+    #[must_use]
+    pub fn index_name(&self) -> &str {
+        &self.index_name
+    }
+
+    /// Returns the exact ASCII name of the accumulator.
+    #[must_use]
+    pub fn accumulator_name(&self) -> &str {
+        &self.accumulator_name
+    }
+
+    /// Returns the declared type of the accumulator and of the loop.
+    #[must_use]
+    pub const fn ty(&self) -> CoreType {
+        self.ty
+    }
+
+    /// Returns the first index.
+    #[must_use]
+    pub const fn start(&self) -> u32 {
+        self.start
+    }
+
+    /// Returns one past the last index.
+    #[must_use]
+    pub const fn end(&self) -> u32 {
+        self.end
+    }
+
+    /// Returns the number of the function's bindings in scope in the step.
+    #[must_use]
+    pub const fn visible_locals(&self) -> u32 {
+        self.visible_locals
+    }
+
+    /// Returns the loops in scope in the step, outermost first, ending with
+    /// this loop.
+    #[must_use]
+    pub fn scope(&self) -> &[u32] {
+        &self.scope
+    }
+
+    /// Returns the statically checked step.
+    #[must_use]
+    pub const fn step(&self) -> &CoreExpression {
+        &self.step
     }
 }
 
@@ -312,6 +410,21 @@ pub enum CoreNodeKind {
         /// The zero-based index, less than the operand's length.
         index: u32,
     },
+    /// The element of an array operand subtree at the index given by an
+    /// `Int` operand subtree, which analysis proved below the length.
+    Select,
+    /// A copy of an array operand subtree with the element at the index of
+    /// an `Int` operand subtree replaced by a third operand subtree.
+    Update,
+    /// An array of this node's type holding copies of one element subtree.
+    Fill,
+    /// The final accumulator of the function's loop at this index, whose
+    /// initial value is the one operand subtree.
+    Fold(u32),
+    /// The current index of the enclosing loop at this index, as an `Int`.
+    LoopIndex(u32),
+    /// The current accumulator of the enclosing loop at this index.
+    Accumulator(u32),
 }
 
 /// Types admitted by the typed expression fragment: `Int`, the four word
@@ -623,6 +736,19 @@ impl ExactInteger {
         reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
     ) -> Option<Self> {
         Some(Self::new(false, Magnitude::from_u64(value, reserve_limbs)?))
+    }
+
+    /// Returns this integer when its magnitude has at most 63 bits.
+    pub(crate) fn to_i64(&self) -> Option<i64> {
+        if self.magnitude_bits() > 63 {
+            return None;
+        }
+        let magnitude = i64::try_from(self.magnitude.low_u64()).ok()?;
+        Some(if self.negative {
+            magnitude.checked_neg()?
+        } else {
+            magnitude
+        })
     }
 
     /// Returns this integer modulo 2^64, as its representative from 0
@@ -1268,6 +1394,7 @@ mod tests {
                         ))),
                     }],
                 },
+                loops: Vec::new(),
             },
             CoreFunction {
                 id: CoreFunctionId::from_index(1).unwrap(),
@@ -1305,6 +1432,7 @@ mod tests {
                         kind: CoreNodeKind::Literal(CoreValue::Word8(8)),
                     }],
                 },
+                loops: Vec::new(),
             },
         ];
         let module = CoreModule {
@@ -1372,6 +1500,7 @@ mod tests {
                 result_type: _,
                 locals,
                 body,
+                loops,
             } = function;
             let local_values = locals.into_iter().map(|local| {
                 let CoreLocal {
@@ -1383,8 +1512,23 @@ mod tests {
                 } = local;
                 value
             });
+            let loop_steps = loops.into_iter().map(|r#loop| {
+                let CoreLoop {
+                    span: _,
+                    index_name: _,
+                    accumulator_name: _,
+                    ty: _,
+                    start: _,
+                    end: _,
+                    visible_locals: _,
+                    scope: _,
+                    step,
+                } = r#loop;
+                step
+            });
             for node in local_values
                 .chain(std::iter::once(body))
+                .chain(loop_steps)
                 .flat_map(|expression| expression.nodes)
             {
                 let CoreNode { span: _, ty, kind } = node;
@@ -1405,7 +1549,13 @@ mod tests {
                     | CoreNodeKind::Shift { .. }
                     | CoreNodeKind::Convert { .. }
                     | CoreNodeKind::Array { .. }
-                    | CoreNodeKind::Index { .. } => {}
+                    | CoreNodeKind::Index { .. }
+                    | CoreNodeKind::Select
+                    | CoreNodeKind::Update
+                    | CoreNodeKind::Fill
+                    | CoreNodeKind::Fold(_)
+                    | CoreNodeKind::LoopIndex(_)
+                    | CoreNodeKind::Accumulator(_) => {}
                 }
                 match ty {
                     CoreType::Int

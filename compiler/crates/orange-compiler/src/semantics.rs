@@ -4,16 +4,17 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    ArrayType, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode,
-    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS,
-    Magnitude,
+    ArrayType, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreLoop, CoreModule,
+    CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH,
+    MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, Magnitude,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
     ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
-    ConversionExpression, Expression, ExpressionKind, FunctionBody, FunctionDeclaration,
-    FunctionKind, Identifier, IndexExpression, IntegerLiteral, MAX_ARRAY_ELEMENTS, Parameter,
-    SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
+    ConversionExpression, Expression, ExpressionKind, FillExpression, FunctionBody,
+    FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral, LoopExpression,
+    MAX_ARRAY_ELEMENTS, Parameter, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression,
+    UnaryOperator, UpdateExpression,
 };
 use crate::source::{SourceFile, Span};
 
@@ -39,6 +40,8 @@ const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
 const ADMITTED_TYPES: &str = "`Int`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
 const ARRAY_OPERATOR_NOTE: &str =
     "operators apply to `Int` and word values; apply them to elements, such as `x[0]`";
+const STATIC_INDEX_NOTE: &str = "an index is built from integer literals and loop indices with \
+     `+`, `-`, and `*`, so that every index is known to be in range when the program is checked";
 
 /// The complete result of semantic analysis.
 ///
@@ -177,8 +180,32 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                 .elements
                 .iter()
                 .all(|element| expression_belongs(element, belongs)),
+            ExpressionKind::Fill(fill) => {
+                belongs(fill.length_span) && expression_belongs(&fill.element, belongs)
+            }
             ExpressionKind::Index(index) => {
-                belongs(index.index_span) && expression_belongs(&index.base, belongs)
+                expression_belongs(&index.index, belongs)
+                    && expression_belongs(&index.base, belongs)
+            }
+            ExpressionKind::Update(update) => {
+                belongs(update.keyword_span)
+                    && expression_belongs(&update.base, belongs)
+                    && expression_belongs(&update.index, belongs)
+                    && expression_belongs(&update.value, belongs)
+            }
+            ExpressionKind::Loop(r#loop) => {
+                let ty = &r#loop.ty;
+                belongs(r#loop.keyword_span)
+                    && belongs(r#loop.index.span)
+                    && belongs(r#loop.start_span)
+                    && belongs(r#loop.end_span)
+                    && belongs(r#loop.accumulator.span)
+                    && belongs(ty.span)
+                    && belongs(ty.name.span)
+                    && ty.width_span.is_none_or(belongs)
+                    && ty.length_span.is_none_or(belongs)
+                    && expression_belongs(&r#loop.init, belongs)
+                    && expression_belongs(&r#loop.step, belongs)
             }
         }
 }
@@ -249,6 +276,7 @@ struct PendingFunction {
     result_type: CoreType,
     locals: Vec<CoreLocal>,
     nodes: Vec<CoreNode>,
+    loops: Vec<CoreLoop>,
 }
 
 /// The silently resolved signature of one typed `spec`, used to check calls
@@ -294,6 +322,21 @@ struct BodyContext<'ast> {
     bindings: &'ast [Binding],
     /// Types of the bindings in scope: exactly the first `binding_types.len()`.
     binding_types: Vec<Option<CoreType>>,
+    /// Loops whose step is being checked, outermost first.
+    loop_scopes: Vec<LoopScope<'ast>>,
+    /// Checked loops of the function, by number. A loop's number is taken
+    /// when its check starts, and its entry is filled once it is well formed.
+    loops: Vec<Option<CoreLoop>>,
+}
+
+/// A loop whose index and accumulator are in scope.
+struct LoopScope<'ast> {
+    id: u32,
+    index: &'ast Identifier,
+    accumulator: &'ast Identifier,
+    ty: CoreType,
+    start: u32,
+    end: u32,
 }
 
 /// A binding whose type resolved.
@@ -307,6 +350,10 @@ struct CheckedBinding {
 enum NameResolution<'ast> {
     Parameter(usize),
     Binding(usize),
+    /// The index of the loop scope at this position.
+    LoopIndex(usize),
+    /// The accumulator of the loop scope at this position.
+    Accumulator(usize),
     /// A binding of this body whose scope has not started.
     LaterBinding(&'ast Binding),
     Unknown,
@@ -330,6 +377,14 @@ impl<'ast> BodyContext<'ast> {
         if let Some(index) = visible.iter().position(|binding| binding.name.text == name) {
             return NameResolution::Binding(index);
         }
+        for (position, scope) in self.loop_scopes.iter().enumerate().rev() {
+            if scope.index.text == name {
+                return NameResolution::LoopIndex(position);
+            }
+            if scope.accumulator.text == name {
+                return NameResolution::Accumulator(position);
+            }
+        }
         later
             .iter()
             .find(|binding| binding.name.text == name)
@@ -341,8 +396,40 @@ impl<'ast> BodyContext<'ast> {
         match self.resolve(name) {
             NameResolution::Parameter(index) => self.parameter_types.get(index).copied().flatten(),
             NameResolution::Binding(index) => self.binding_types.get(index).copied().flatten(),
+            NameResolution::LoopIndex(_) => Some(CoreType::Int),
+            NameResolution::Accumulator(position) => {
+                self.loop_scopes.get(position).map(|scope| scope.ty)
+            }
             NameResolution::LaterBinding(_) | NameResolution::Unknown => None,
         }
+    }
+
+    /// Returns the earlier declaration of `name` among the parameters, the
+    /// bindings in scope, and the loop names in scope, if any.
+    fn earlier_name(&self, name: &str) -> Option<(Span, &'static str)> {
+        if let Some(parameter) = self
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name.text == name)
+        {
+            return Some((parameter.name.span, "the parameter is here"));
+        }
+        if let Some(binding) = self
+            .bindings
+            .get(..self.binding_types.len())
+            .and_then(|visible| visible.iter().find(|binding| binding.name.text == name))
+        {
+            return Some((binding.name.span, "the binding is here"));
+        }
+        self.loop_scopes.iter().find_map(|scope| {
+            if scope.index.text == name {
+                Some((scope.index.span, "the loop index is here"))
+            } else if scope.accumulator.text == name {
+                Some((scope.accumulator.span, "the accumulator is here"))
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -361,8 +448,12 @@ fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
         | ExpressionKind::Call(_)
         | ExpressionKind::Conversion(_)
         | ExpressionKind::Index(_)
-        | ExpressionKind::Array(_) => Some(expression),
+        | ExpressionKind::Array(_)
+        | ExpressionKind::Fill(_)
+        | ExpressionKind::Loop(_) => Some(expression),
         ExpressionKind::Parenthesized(inner) => first_typed_leaf(inner),
+        // An update has the type of the array it updates.
+        ExpressionKind::Update(update) => first_typed_leaf(&update.base),
         ExpressionKind::Unary(unary) => first_typed_leaf(&unary.operand),
         ExpressionKind::Binary(binary) => {
             let left = first_typed_leaf(&binary.left);
@@ -480,6 +571,72 @@ fn classify_scalar_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
 fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
     match classify_type(source, syntax) {
         TypeClass::Resolved(ty) => Some(ty),
+        _ => None,
+    }
+}
+
+/// Decodes an integer literal whose magnitude fits in 63 bits, without
+/// events or diagnostics; the literal was already checked as an `Int`.
+fn small_literal(source: &SourceFile, literal: &IntegerLiteral) -> Option<i128> {
+    let spelling = source.slice(literal.magnitude_span)?;
+    let (radix, digits) = if let Some(digits) = spelling
+        .strip_prefix("0b")
+        .or_else(|| spelling.strip_prefix("0B"))
+    {
+        (2, digits)
+    } else if let Some(digits) = spelling
+        .strip_prefix("0x")
+        .or_else(|| spelling.strip_prefix("0X"))
+    {
+        (16, digits)
+    } else {
+        (10, spelling)
+    };
+    let mut value = 0_i128;
+    for character in digits.chars().filter(|character| *character != '_') {
+        let digit = character.to_digit(radix)?;
+        value = value
+            .checked_mul(i128::from(radix))?
+            .checked_add(i128::from(digit))?;
+        if value > i128::from(i64::MAX) {
+            return None;
+        }
+    }
+    Some(if literal.negative {
+        value.checked_neg()?
+    } else {
+        value
+    })
+}
+
+/// Returns the range of `left operator right` for the ranges of its
+/// operands, or `None` when a bound exceeds the 128-bit range.
+fn combine_ranges(
+    operator: BinaryOperator,
+    (left_low, left_high): (i128, i128),
+    (right_low, right_high): (i128, i128),
+) -> Option<(i128, i128)> {
+    match operator {
+        BinaryOperator::Add => Some((
+            left_low.checked_add(right_low)?,
+            left_high.checked_add(right_high)?,
+        )),
+        BinaryOperator::Subtract => Some((
+            left_low.checked_sub(right_high)?,
+            left_high.checked_sub(right_low)?,
+        )),
+        BinaryOperator::Multiply => {
+            let products = [
+                left_low.checked_mul(right_low)?,
+                left_low.checked_mul(right_high)?,
+                left_high.checked_mul(right_low)?,
+                left_high.checked_mul(right_high)?,
+            ];
+            Some((
+                products.iter().copied().min()?,
+                products.iter().copied().max()?,
+            ))
+        }
         _ => None,
     }
 }
@@ -646,6 +803,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     parameter_types: Vec::new(),
                     bindings: &body.bindings,
                     binding_types: Vec::new(),
+                    loop_scopes: Vec::new(),
+                    loops: Vec::new(),
                 };
                 let scope = ModuleScope {
                     declarations: &declarations,
@@ -797,7 +956,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let mut bindings_checked = true;
         for (index, binding) in body.bindings.iter().enumerate() {
-            let checked = self.check_binding(function, body, index, &context, scope, call_edges);
+            let checked =
+                self.check_binding(function, body, index, &mut context, scope, call_edges);
             if self.halted {
                 return None;
             }
@@ -825,12 +985,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             nodes: Vec::new(),
             call_edges,
         };
-        let checked =
-            self.check_expression(&body.expression, result_type, &context, scope, &mut output);
+        let checked = self.check_expression(
+            &body.expression,
+            result_type,
+            &mut context,
+            scope,
+            &mut output,
+        );
         if !checked || !bindings_checked || self.halted {
             return None;
         }
         let nodes = output.nodes;
+        // Every loop of a well-formed function is well formed.
+        let loops = context.loops.into_iter().collect::<Option<Vec<_>>>()?;
         let parameters = context
             .parameter_types
             .iter()
@@ -845,6 +1012,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             result_type,
             locals,
             nodes,
+            loops,
         })
     }
 
@@ -859,7 +1027,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         function: &'ast FunctionDeclaration,
         body: &'ast TypedBody,
         index: usize,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         call_edges: &mut Vec<CallEdge>,
     ) -> Option<CheckedBinding> {
@@ -919,7 +1087,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -993,11 +1161,30 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 self.check_array(expression, array, expected, context, scope, output)
             }
+            ExpressionKind::Fill(fill) => {
+                // One event for the literal and one for its length token.
+                if !self.event(expression.span) || !self.event(fill.length_span) {
+                    return false;
+                }
+                self.check_fill(expression, fill, expected, context, scope, output)
+            }
             ExpressionKind::Index(index) => {
-                if !self.event(index.index_span) {
+                if !self.event(index.index_span()) {
                     return false;
                 }
                 self.check_index(expression, index, expected, context, scope, output)
+            }
+            ExpressionKind::Update(update) => {
+                if !self.event(update.keyword_span) {
+                    return false;
+                }
+                self.check_update(expression, update, expected, context, scope, output)
+            }
+            ExpressionKind::Loop(r#loop) => {
+                if !self.event(r#loop.keyword_span) {
+                    return false;
+                }
+                self.check_loop(expression, r#loop, expected, context, scope, output)
             }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
@@ -1051,6 +1238,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 context.binding_types.get(index).copied(),
                 u32::try_from(index).map(CoreNodeKind::Local),
             ),
+            NameResolution::LoopIndex(position) => match context.loop_scopes.get(position) {
+                Some(scope) => (
+                    Some(Some(CoreType::Int)),
+                    Ok(CoreNodeKind::LoopIndex(scope.id)),
+                ),
+                None => (None, Ok(CoreNodeKind::LoopIndex(0))),
+            },
+            NameResolution::Accumulator(position) => match context.loop_scopes.get(position) {
+                Some(scope) => (
+                    Some(Some(scope.ty)),
+                    Ok(CoreNodeKind::Accumulator(scope.id)),
+                ),
+                None => (None, Ok(CoreNodeKind::Accumulator(0))),
+            },
             NameResolution::LaterBinding(binding) => {
                 if self.begin_report(name.span) {
                     let spelling = identifier_spelling_for_diagnostic(&name.text);
@@ -1161,7 +1362,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         conversion: &'ast ConversionExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1267,11 +1468,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .leaf_type(&index.base, context, scope)?
                 .as_array()
                 .map(ArrayType::element),
+            ExpressionKind::Loop(r#loop) => silent_type(self.source, &r#loop.ty),
+            ExpressionKind::Update(update) => {
+                self.leaf_type(first_typed_leaf(&update.base)?, context, scope)
+            }
             ExpressionKind::Literal(_)
             | ExpressionKind::Unary(_)
             | ExpressionKind::Binary(_)
             | ExpressionKind::Parenthesized(_)
-            | ExpressionKind::Array(_) => None,
+            | ExpressionKind::Array(_)
+            | ExpressionKind::Fill(_) => None,
         }
     }
 
@@ -1283,7 +1489,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         array: &'ast ArrayExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1358,7 +1564,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         index: &'ast IndexExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1383,7 +1589,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             self.check_expression(&index.base, base_type, context, scope, output);
             return false;
         };
-        let position = self.check_index_literal(index, array_type);
+        let literal = index.is_literal();
+        let position = if literal {
+            self.check_index_literal(index, array_type)
+        } else {
+            None
+        };
         let element = array_type.element();
         let element_matches = element == expected;
         if !element_matches && self.begin_report(expression.span) {
@@ -1398,6 +1609,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             );
         }
         let base = self.check_expression(&index.base, base_type, context, scope, output);
+        if !literal {
+            let in_range =
+                self.check_static_index(&index.index, array_type, context, scope, output);
+            return in_range
+                && base
+                && element_matches
+                && self.push_node(output, expression.span, expected, CoreNodeKind::Select);
+        }
         match position {
             Some(position) if base && element_matches => self.push_node(
                 output,
@@ -1409,11 +1628,436 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
+    /// Checks an index expression as an `Int`, then proves it in range for
+    /// `array` from the ranges of its literals and loop indices.
+    fn check_static_index(
+        &mut self,
+        index: &'ast Expression,
+        array: ArrayType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        if !self.check_expression(index, CoreType::Int, context, scope, output) {
+            return false;
+        }
+        let length = array.length();
+        let range = match self.static_range(index, context) {
+            Ok(range) => range,
+            Err(span) => {
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::NonStaticIndex,
+                            "an index may use only integer literals and loop indices",
+                            span,
+                        )
+                        .with_label("not known when the program is checked")
+                        .with_note(STATIC_INDEX_NOTE),
+                    );
+                }
+                return false;
+            }
+        };
+        let in_range = range.is_some_and(|(low, high)| low >= 0 && high < i128::from(length));
+        if !in_range && self.begin_report(index.span) {
+            let highest = length.saturating_sub(1);
+            let array = CoreType::Array(array);
+            let message = match range {
+                Some((low, high)) if low == high => {
+                    format!("index {low} is out of range for `{array}`")
+                }
+                Some((low, high)) => {
+                    format!("this index runs from {low} through {high}, out of range for `{array}`")
+                }
+                None => format!("this index is out of range for `{array}`"),
+            };
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, index.span)
+                    .with_label(format!("indices run from 0 through {highest}"))
+                    .with_note(
+                        "every value an index can take, over every loop index in it, must \
+                         select an element",
+                    ),
+            );
+        }
+        in_range
+    }
+
+    /// Returns the least and greatest values of a well-typed index built
+    /// from literals, loop indices, parentheses, negation, `+`, `-`, and
+    /// `*`, or `None` when a bound exceeds the 128-bit range. Anything else
+    /// is returned as the span of the first such part.
+    ///
+    /// Parser-established expression height bounds this recursion.
+    fn static_range(
+        &self,
+        index: &Expression,
+        context: &BodyContext<'ast>,
+    ) -> Result<Option<(i128, i128)>, Span> {
+        match &index.kind {
+            ExpressionKind::Literal(literal) => {
+                Ok(small_literal(self.source, literal).map(|value| (value, value)))
+            }
+            ExpressionKind::Parenthesized(inner) => self.static_range(inner, context),
+            ExpressionKind::Name(name) => match context.resolve(&name.text) {
+                NameResolution::LoopIndex(position) => {
+                    let scope = context.loop_scopes.get(position).ok_or(name.span)?;
+                    Ok(Some((
+                        i128::from(scope.start),
+                        i128::from(scope.end).saturating_sub(1),
+                    )))
+                }
+                _ => Err(name.span),
+            },
+            ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => Ok(self
+                .static_range(&unary.operand, context)?
+                .and_then(|(low, high)| Some((high.checked_neg()?, low.checked_neg()?)))),
+            ExpressionKind::Binary(binary)
+                if matches!(
+                    binary.operator,
+                    BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
+                ) =>
+            {
+                let left = self.static_range(&binary.left, context)?;
+                let right = self.static_range(&binary.right, context)?;
+                Ok(left
+                    .zip(right)
+                    .and_then(|(left, right)| combine_ranges(binary.operator, left, right)))
+            }
+            _ => Err(index.span),
+        }
+    }
+
+    /// Checks `base with [index] = value` against `expected`, which must be
+    /// the base's array type.
+    fn check_update(
+        &mut self,
+        expression: &'ast Expression,
+        update: &'ast UpdateExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let base_type =
+            first_typed_leaf(&update.base).and_then(|leaf| self.leaf_type(leaf, context, scope));
+        if let Some(base_type) = base_type
+            && base_type.is_scalar()
+        {
+            if self.begin_report(update.base.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::NotAnArray,
+                        format!("only an array can be updated, but this has type `{base_type}`"),
+                        update.base.span,
+                    )
+                    .with_label(format!("`{base_type}` has no elements"))
+                    .with_note("`x with [i] = v` is the array `x` with one element replaced"),
+                );
+            }
+            self.check_expression(&update.base, base_type, context, scope, output);
+            return false;
+        }
+        let Some(array) = expected.as_array() else {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!("an update gives an array, but `{expected}` is required here"),
+                        expression.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("`x with [i] = v` is the array `x` with one element replaced"),
+                );
+            }
+            return false;
+        };
+        let base = self.check_expression(&update.base, expected, context, scope, output);
+        if self.halted {
+            return false;
+        }
+        let index = self.check_static_index(&update.index, array, context, scope, output);
+        if self.halted {
+            return false;
+        }
+        let value = self.check_expression(&update.value, array.element(), context, scope, output);
+        base && index
+            && value
+            && self.push_node(output, expression.span, expected, CoreNodeKind::Update)
+    }
+
+    /// Checks `[element; n]` against `expected`, which must be an array type
+    /// of length n.
+    fn check_fill(
+        &mut self,
+        expression: &'ast Expression,
+        fill: &'ast FillExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Some(array) = expected.as_array() else {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!("an array literal cannot have type `{expected}`"),
+                        expression.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("an array literal is written where an array type `T^n` is required"),
+                );
+            }
+            return false;
+        };
+        let length = array_length(self.source, fill.length_span)
+            .filter(|length| (1..=MAX_ARRAY_LENGTH).contains(length));
+        match length {
+            None => self.report_unsupported_array_length(fill.length_span),
+            Some(length) if length != array.length() => {
+                if self.begin_report(expression.span) {
+                    let expected_length = array.length();
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::ArrayLengthMismatch,
+                            format!(
+                                "this array has {length} {}, but `{expected}` has {expected_length}",
+                                if length == 1 { "element" } else { "elements" },
+                            ),
+                            expression.span,
+                        )
+                        .with_label(format!(
+                            "expected {expected_length} {}",
+                            if expected_length == 1 {
+                                "element"
+                            } else {
+                                "elements"
+                            }
+                        ))
+                        .with_note("`[e; n]` is the array of n copies of e"),
+                    );
+                }
+            }
+            Some(_) => {}
+        }
+        let element = self.check_expression(&fill.element, array.element(), context, scope, output);
+        element
+            && length == Some(array.length())
+            && self.push_node(output, expression.span, expected, CoreNodeKind::Fill)
+    }
+
+    /// Checks `for i in a..b with s: T = init { step }` against `expected`.
+    ///
+    /// The loop takes its number before its initial value is checked, so
+    /// loops are numbered in source order of their `for` keywords. The step
+    /// is checked with the index and the accumulator in scope and becomes
+    /// the loop's own Core expression.
+    fn check_loop(
+        &mut self,
+        expression: &'ast Expression,
+        r#loop: &'ast LoopExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let bounds = self.check_loop_bounds(r#loop);
+        if self.halted {
+            return false;
+        }
+        let mut names_unique = true;
+        for (name, sibling) in [
+            (&r#loop.index, None),
+            (&r#loop.accumulator, Some(&r#loop.index)),
+        ] {
+            // One event for each loop name's uniqueness check.
+            if !self.event(name.span) {
+                return false;
+            }
+            let earlier = context.earlier_name(&name.text).or_else(|| {
+                sibling
+                    .filter(|sibling| sibling.text == name.text)
+                    .map(|sibling| (sibling.span, "the loop index is here"))
+            });
+            if let Some((earlier_span, earlier_label)) = earlier {
+                names_unique = false;
+                if self.begin_report(name.span) {
+                    let spelling = identifier_spelling_for_diagnostic(&name.text);
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::DuplicateBinding,
+                            format!("duplicate name `{spelling}`"),
+                            name.span,
+                        )
+                        .with_label("this name repeats a name in scope")
+                        .with_secondary_span(earlier_span, earlier_label)
+                        .with_note(
+                            "each parameter, binding, loop index, and accumulator in scope has \
+                             its own name; Orange has no shadowing",
+                        ),
+                    );
+                }
+            }
+        }
+        let Some(ty) = self.analyze_type(&r#loop.ty, "accumulator type") else {
+            return false;
+        };
+        let type_matches = ty == expected;
+        if !type_matches && self.begin_report(expression.span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!("this loop has type `{ty}`, but `{expected}` is required here"),
+                    expression.span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("a loop's value is its accumulator after the last step"),
+            );
+        }
+        let Ok(id) = u32::try_from(context.loops.len()) else {
+            self.resource_limit(
+                expression.span,
+                "loop count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        if context.loops.try_reserve(1).is_err() {
+            self.resource_limit(expression.span, "loop storage allocation failed");
+            return false;
+        }
+        context.loops.push(None);
+        let init = self.check_expression(&r#loop.init, ty, context, scope, output);
+        let Some((start, end)) = bounds else {
+            return false;
+        };
+        if self.halted {
+            return false;
+        }
+        if context.loop_scopes.try_reserve(1).is_err() {
+            self.resource_limit(expression.span, "loop scope allocation failed");
+            return false;
+        }
+        context.loop_scopes.push(LoopScope {
+            id,
+            index: &r#loop.index,
+            accumulator: &r#loop.accumulator,
+            ty,
+            start,
+            end,
+        });
+        let mut step_output = BodyOutput {
+            nodes: Vec::new(),
+            call_edges: &mut *output.call_edges,
+        };
+        let step = self.check_expression(&r#loop.step, ty, context, scope, &mut step_output);
+        let step_nodes = step_output.nodes;
+        let mut loop_scope = Vec::new();
+        let scope_reserved = loop_scope
+            .try_reserve_exact(context.loop_scopes.len())
+            .is_ok();
+        loop_scope.extend(context.loop_scopes.iter().map(|scope| scope.id));
+        context.loop_scopes.pop();
+        if !scope_reserved {
+            self.resource_limit(expression.span, "loop scope allocation failed");
+            return false;
+        }
+        if !(init && step && names_unique && type_matches) || self.halted {
+            return false;
+        }
+        let Ok(visible_locals) = u32::try_from(context.binding_types.len()) else {
+            self.resource_limit(
+                expression.span,
+                "binding count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        let Some(index_name) = self.copy_core_name(&r#loop.index.text, r#loop.index.span) else {
+            return false;
+        };
+        let Some(accumulator_name) =
+            self.copy_core_name(&r#loop.accumulator.text, r#loop.accumulator.span)
+        else {
+            return false;
+        };
+        let Some(entry) = usize::try_from(id)
+            .ok()
+            .and_then(|id| context.loops.get_mut(id))
+        else {
+            self.resource_limit(expression.span, "semantic loop table is inconsistent");
+            return false;
+        };
+        *entry = Some(CoreLoop {
+            span: expression.span,
+            index_name,
+            accumulator_name,
+            ty,
+            start,
+            end,
+            visible_locals,
+            scope: loop_scope,
+            step: CoreExpression { nodes: step_nodes },
+        });
+        self.push_node(output, expression.span, expected, CoreNodeKind::Fold(id))
+    }
+
+    /// Decodes a loop's bounds and checks that they form a nonempty range
+    /// within 0 through [`MAX_LOOP_BOUND`].
+    fn check_loop_bounds(&mut self, r#loop: &LoopExpression) -> Option<(u32, u32)> {
+        let start = self.loop_bound(r#loop.start_span)?;
+        let end = self.loop_bound(r#loop.end_span)?;
+        let limit = u64::from(MAX_LOOP_BOUND);
+        let (span, message, label) = if start > limit || end > limit {
+            let span = if start > limit {
+                r#loop.start_span
+            } else {
+                r#loop.end_span
+            };
+            (
+                span,
+                format!("a loop bound must be at most {MAX_LOOP_BOUND}"),
+                "loop bound too large",
+            )
+        } else if start >= end {
+            (
+                r#loop.end_span,
+                format!("the loop range {start}..{end} is empty"),
+                "a loop runs at least once",
+            )
+        } else {
+            return Some((u32::try_from(start).ok()?, u32::try_from(end).ok()?));
+        };
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::InvalidLoopRange, message, span)
+                    .with_label(label)
+                    .with_note(
+                        "a loop `for i in a..b` runs once for each i from a up to b - 1, with \
+                         a < b <= 65536",
+                    ),
+            );
+        }
+        None
+    }
+
+    /// Decodes one loop bound. A bound above the u64 range decodes as the
+    /// u64 maximum, which is too large.
+    fn loop_bound(&mut self, span: Span) -> Option<u64> {
+        let literal = IntegerLiteral {
+            span,
+            magnitude_span: span,
+            negative: false,
+        };
+        let magnitude = self.parse_magnitude(&literal, self.limits.integer_bits)?;
+        Some(magnitude.to_u64().unwrap_or(u64::MAX))
+    }
+
     /// Decodes an index literal and checks it against the array's length.
     fn check_index_literal(&mut self, index: &IndexExpression, array: ArrayType) -> Option<u32> {
         let literal = IntegerLiteral {
-            span: index.index_span,
-            magnitude_span: index.index_span,
+            span: index.index_span(),
+            magnitude_span: index.index_span(),
             negative: false,
         };
         let magnitude = self.parse_magnitude(&literal, self.limits.integer_bits)?;
@@ -1422,11 +2066,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .to_u64()
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value < length);
-        if decoded.is_none() && self.begin_report(index.index_span) {
+        if decoded.is_none() && self.begin_report(index.index_span()) {
             let highest = length.saturating_sub(1);
             let spelling = self
                 .source
-                .slice(index.index_span)
+                .slice(index.index_span())
                 .map_or_else(String::new, |spelling| {
                     identifier_spelling_for_diagnostic(spelling).to_string()
                 });
@@ -1437,12 +2081,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         "index `{spelling}` is out of range for `{}`",
                         CoreType::Array(array)
                     ),
-                    index.index_span,
+                    index.index_span(),
                 )
                 .with_label(format!("indices run from 0 through {highest}"))
-                .with_note(
-                    "an index is a fixed literal; variable indices are not part of Orange 2026",
-                ),
+                .with_note("a literal index must be less than the array's length"),
             );
         }
         decoded
@@ -1470,7 +2112,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         call: &'ast CallExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1919,6 +2561,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             // node, one node per parameter type, and its expression nodes;
             // each binding contributes one binding node, one type node, and
             // its expression nodes.
+            // Each loop contributes one loop node, one accumulator-type
+            // node, and its step's nodes.
             let node_count = pending_function.locals.iter().fold(
                 pending_function
                     .parameters
@@ -1931,6 +2575,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .saturating_add(2)
                 },
             );
+            let node_count = pending_function
+                .loops
+                .iter()
+                .fold(node_count, |count, r#loop| {
+                    count
+                        .saturating_add(r#loop.step.nodes.len())
+                        .saturating_add(2)
+                });
             for _ in 0..node_count {
                 if !self.record_core_node(pending_function.span) {
                     return None;
@@ -1954,6 +2606,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 body: CoreExpression {
                     nodes: pending_function.nodes,
                 },
+                loops: pending_function.loops,
             });
         }
         Some(CoreModule {
@@ -1981,22 +2634,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         match classify_type(self.source, syntax) {
             TypeClass::Resolved(ty) => Some(ty),
             TypeClass::UnsupportedArrayLength(length_span) => {
-                if self.begin_report(length_span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedArrayLength,
-                            format!(
-                                "an array length must be a decimal integer from 1 through \
-                                 {MAX_ARRAY_LENGTH}"
-                            ),
-                            length_span,
-                        )
-                        .with_label("unsupported array length")
-                        .with_note(
-                            "write the length in decimal without leading zeros, as in `Word[32]^16`",
-                        ),
-                    );
-                }
+                self.report_unsupported_array_length(length_span);
                 None
             }
             TypeClass::UnsupportedWordWidth(width_span) => {
@@ -2045,6 +2683,27 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 None
             }
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_unsupported_array_length(&mut self, span: Span) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedArrayLength,
+                    format!(
+                        "an array length must be a decimal integer from 1 through \
+                         {MAX_ARRAY_LENGTH}"
+                    ),
+                    span,
+                )
+                .with_label("unsupported array length")
+                .with_note(
+                    "write the length in decimal without leading zeros, as in `Word[32]^16`",
+                ),
+            );
         }
     }
 
@@ -4388,6 +5047,12 @@ mod tests {
                     }
                     CoreNodeKind::Array { elements } => format!("array of {elements}"),
                     CoreNodeKind::Index { index } => format!("index {index}"),
+                    CoreNodeKind::Select => String::from("select"),
+                    CoreNodeKind::Update => String::from("update"),
+                    CoreNodeKind::Fill => String::from("fill"),
+                    CoreNodeKind::Fold(id) => format!("loop #{id}"),
+                    CoreNodeKind::LoopIndex(id) => format!("index of loop #{id}"),
+                    CoreNodeKind::Accumulator(id) => format!("accumulator of loop #{id}"),
                 };
                 (
                     operation,
@@ -5993,7 +6658,7 @@ mod tests {
         );
         assert_eq!(
             notes(5),
-            ["an index is a fixed literal; variable indices are not part of Orange 2026"]
+            ["a literal index must be less than the array's length"]
         );
         assert_eq!(result.diagnostics[7].label(), "`Word[8]` has no elements");
         assert_eq!(
@@ -6223,7 +6888,7 @@ mod tests {
                 };
                 array.elements[1].span = foreign_array.elements[1].span;
             },
-            &|ast| index_mut(ast).index_span = foreign_index.index_span,
+            &|ast| index_mut(ast).index.span = foreign_index.index.span,
             &|ast| index_mut(ast).base.span = foreign_index.base.span,
         ];
         assert!(analyze(first.source(), &first.ast).core.is_some());
