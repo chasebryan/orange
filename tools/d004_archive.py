@@ -1,11 +1,12 @@
-"""Committed form of the D-004 run archive (research-only).
+"""Committed form of the D-004 run archives (research-only).
 
-``tools/d004_run.py execute`` writes an archive of about 13.5 MB. Most of it
-can be re-derived from the repository: the requests, candidate models and
-input manifests come from the suite, the replay plan and the 75 scheduled
-identities come from the packet, and every case record, repetition closure and
-the summary come from each execution's archived outputs. The committed form
-keeps only what cannot be re-derived:
+``tools/d004_run.py execute`` (v0.7) and ``tools/d004_v08_run.py execute``
+(v0.8) write archives of about 13.5 MB and 17 MB. Most of each can be
+re-derived from the repository: the requests, candidate models and input
+manifests come from the suite, the replay plan and the scheduled identities
+come from the packet, and every case record, repetition closure and the
+summary come from each execution's archived outputs. The committed form keeps
+only what cannot be re-derived:
 
 * ``archive-index.json``: the epoch packet, the three host captures, the
   provenance note, and each execution's state, measurements, diagnostics and
@@ -14,11 +15,12 @@ keeps only what cannot be re-derived:
 * ``adapter-outputs.json``: each distinct adapter output, keyed by its raw
   SHA-256.
 
-``pack EPOCH`` reduces a prepared and executed archive under the harness's
-``ARCHIVE_ROOT`` to this form. ``unpack`` rebuilds the archive byte for byte
-into a new temporary directory with the run harness's own functions and fails
-unless the rebuilt archive manifest has the recorded digest. ``check``
-unpacks the committed form and runs the harness's ``verify`` over the result.
+``pack VERSION EPOCH`` reduces a prepared and executed archive under the
+harness's ``ARCHIVE_ROOT`` to this form. ``unpack VERSION`` rebuilds the
+archive byte for byte into a new temporary directory with that version's run
+harness and fails unless the rebuilt archive manifest has the recorded digest.
+``check [VERSION]`` unpacks each committed form and runs its harness's
+``verify`` over the result. VERSION is ``v0.7`` or ``v0.8``.
 """
 
 from __future__ import annotations
@@ -26,16 +28,44 @@ from __future__ import annotations
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, NamedTuple
 
 try:
     from tools import d004_run as run
+    from tools import d004_v08_run as run08
 except ImportError:  # run as a script from the tools directory
     import d004_run as run  # type: ignore[no-redef]
+    import d004_v08_run as run08  # type: ignore[no-redef]
 
-PACK_ROOT = "research/decisions/D-004/d004-v0.7/run"
-INDEX_PATH = f"{PACK_ROOT}/archive-index.json"
-OUTPUTS_PATH = f"{PACK_ROOT}/adapter-outputs.json"
+
+class Layout(NamedTuple):
+    """Where one suite version's committed run lives and how its archive is laid out."""
+
+    run: ModuleType
+    pack_root: str
+    slots: int
+    ordinal_width: int
+    staged_adapter: str
+
+    @property
+    def index_path(self) -> str:
+        return f"{self.pack_root}/archive-index.json"
+
+    @property
+    def outputs_path(self) -> str:
+        return f"{self.pack_root}/adapter-outputs.json"
+
+
+LAYOUTS = {
+    "v0.7": Layout(run, "research/decisions/D-004/d004-v0.7/run", 25, 2, "tool/d004_adapter.py"),
+    "v0.8": Layout(run08, "research/decisions/D-004/d004-v0.8/run", run08.SLOTS, 3, run08.STAGED_ADAPTER),
+}
+V07 = LAYOUTS["v0.7"]
+PACK_ROOT = V07.pack_root
+INDEX_PATH = V07.index_path
+OUTPUTS_PATH = V07.outputs_path
+RUN_ERRORS = (run.RunError, run08.RunError)
 INDEX_SCHEMA = "d004-archive-index-v0.1"
 OUTPUTS_SCHEMA = "d004-adapter-outputs-v0.1"
 HOST_CAPTURES = (
@@ -46,14 +76,14 @@ HOST_CAPTURES = (
 EXECUTION_FIELDS = ("execution_ordinal", "execution_state", "measured_resources", "diagnostics", "stdout_sha256", "stderr_sha256")
 
 
-def _encode_output(data: bytes) -> dict[str, Any]:
+def _encode_output(data: bytes, run: ModuleType) -> dict[str, Any]:
     try:
         return {"canonical_json": run.canonical_document(data)}
     except (UnicodeError, ValueError):
         return {"utf8": data.decode("utf-8")}
 
 
-def _decode_output(item: Any) -> bytes:
+def _decode_output(item: Any, run: ModuleType) -> bytes:
     if isinstance(item, dict) and set(item) == {"canonical_json"}:
         return run.canonical_file(item["canonical_json"])
     if isinstance(item, dict) and set(item) == {"utf8"} and isinstance(item["utf8"], str):
@@ -61,8 +91,9 @@ def _decode_output(item: Any) -> bytes:
     raise run.RunError("adapter output entry is not closed")
 
 
-def pack(repository: run.Repository, archive: Path) -> tuple[bytes, bytes]:
+def pack(repository: Any, archive: Path, layout: Layout = V07) -> tuple[bytes, bytes]:
     """Reduce a verified archive to its committed form, then prove the round trip."""
+    run = layout.run
     errors = run.command_verify(repository, archive)
     if errors:
         raise run.RunError(f"archive does not verify: {errors[:3]}")
@@ -70,13 +101,13 @@ def pack(repository: run.Repository, archive: Path) -> tuple[bytes, bytes]:
     outputs: dict[str, Any] = {}
     executions = []
     for row in ctx.schedule:
-        directory = archive / "executions" / f"{row['execution_ordinal']:02d}"
+        directory = archive / "executions" / f"{row['execution_ordinal']:0{layout.ordinal_width}d}"
         record = run.canonical_document((directory / "record.json").read_bytes())
         streams = {}
         for name in ("stdout", "stderr"):
             data = (directory / name).read_bytes()
             streams[name] = run.sha256(data)
-            outputs[streams[name]] = _encode_output(data)
+            outputs[streams[name]] = _encode_output(data, run)
         executions.append(
             {
                 "execution_ordinal": row["execution_ordinal"],
@@ -100,12 +131,13 @@ def pack(repository: run.Repository, archive: Path) -> tuple[bytes, bytes]:
     }
     packed = run.canonical_file(index), run.canonical_file({"schema_version": OUTPUTS_SCHEMA, "outputs": outputs})
     with tempfile.TemporaryDirectory(prefix="d004-pack-") as scratch:
-        unpack(repository, *packed, Path(scratch) / "archive")
+        unpack(repository, *packed, Path(scratch) / "archive", layout)
     return packed
 
 
-def unpack(repository: run.Repository, index_raw: bytes, outputs_raw: bytes, target: Path) -> dict[str, Any]:
+def unpack(repository: Any, index_raw: bytes, outputs_raw: bytes, target: Path, layout: Layout = V07) -> dict[str, Any]:
     """Rebuild the full archive from its committed form; return the summary."""
+    run = layout.run
     if target.exists():
         raise run.RunError("unpack target already exists")
     try:
@@ -142,9 +174,9 @@ def unpack(repository: run.Repository, index_raw: bytes, outputs_raw: bytes, tar
         run._write(epoch / "models" / f"{candidate}.json", run.canonical_file(suite.models[candidate]))
     for case in run.CASES:
         run._write(epoch / "inputs" / f"{case}.json", run.canonical_file(suite.manifests[case]))
-    for row in schedule[:25]:
+    for row in schedule[: layout.slots]:
         run._write(epoch / "requests" / f"slot-{row['logical_slot_ordinal']:02d}.json", run.canonical_file(run.request_document(suite, packet, plan, row)))
-    run._write(target / "tool" / "d004_adapter.py", adapter_raw)
+    run._write(target / layout.staged_adapter, adapter_raw)
     run._write(target / "provenance.json", run.canonical_file(index["provenance"]))
     ctx = run.EpochContext(target, repository)
     executions = index["executions"]
@@ -156,11 +188,11 @@ def unpack(repository: run.Repository, index_raw: bytes, outputs_raw: bytes, tar
             raise run.RunError(f"execution {row['execution_ordinal']} entry is not closed")
         streams = {}
         for name in ("stdout", "stderr"):
-            data = _decode_output(outputs.get(item[f"{name}_sha256"]))
+            data = _decode_output(outputs.get(item[f"{name}_sha256"]), run)
             if run.sha256(data) != item[f"{name}_sha256"]:
                 raise run.RunError(f"execution {row['execution_ordinal']} {name} digest mismatch")
             streams[name] = data
-        directory = target / "executions" / f"{row['execution_ordinal']:02d}"
+        directory = target / "executions" / f"{row['execution_ordinal']:0{layout.ordinal_width}d}"
         run._write(directory / "stdout", streams["stdout"])
         run._write(directory / "stderr", streams["stderr"])
         record = run.build_record(ctx, row, item["execution_state"], item["measured_resources"], streams["stdout"], streams["stderr"])
@@ -180,40 +212,53 @@ def unpack(repository: run.Repository, index_raw: bytes, outputs_raw: bytes, tar
     return summary
 
 
-def check(repository: run.Repository) -> list[str]:
-    """Unpack the committed form into a scratch directory and verify it."""
+def check(repository: Any, layout: Layout = V07) -> list[str]:
+    """Unpack one committed form into a scratch directory and verify it."""
+    run = layout.run
     with tempfile.TemporaryDirectory(prefix="d004-unpack-") as scratch:
         target = Path(scratch) / "archive"
         try:
-            unpack(repository, repository.raw(INDEX_PATH), repository.raw(OUTPUTS_PATH), target)
+            unpack(repository, repository.raw(layout.index_path), repository.raw(layout.outputs_path), target, layout)
         except (OSError, run.RunError) as exc:
             return [str(exc)]
         return run.command_verify(repository, target)
 
 
+def committed_layouts(root: Path) -> list[Layout]:
+    """Every layout whose committed form is present, oldest first."""
+    return [layout for layout in LAYOUTS.values() if (root / layout.index_path).is_file()]
+
+
 def main(argv: list[str]) -> int:
-    repository = run.Repository(Path(__file__).resolve().parents[1])
+    root = Path(__file__).resolve().parents[1]
     command = argv[1] if len(argv) > 1 else ""
+    # VERSION is only ever compared with the fixed layout names, so a
+    # command-line argument never becomes part of a filesystem path.
+    layout = LAYOUTS.get(argv[2]) if len(argv) > 2 else None
     try:
-        if command == "pack" and len(argv) == 3:
-            index_raw, outputs_raw = pack(repository, run.existing_archive(run.ARCHIVE_ROOT, argv[2]))
-            run._write(repository.root / INDEX_PATH, index_raw)
-            run._write(repository.root / OUTPUTS_PATH, outputs_raw)
+        if command == "pack" and len(argv) == 4 and layout is not None:
+            repository = layout.run.Repository(root)
+            index_raw, outputs_raw = pack(repository, layout.run.existing_archive(layout.run.ARCHIVE_ROOT, argv[3]), layout)
+            layout.run._write(root / layout.index_path, index_raw)
+            layout.run._write(root / layout.outputs_path, outputs_raw)
             return 0
-        if command == "unpack" and len(argv) == 2:
+        if command == "unpack" and len(argv) == 3 and layout is not None:
+            repository = layout.run.Repository(root)
             target = Path(tempfile.mkdtemp(prefix="d004-unpack-")) / "archive"
-            unpack(repository, repository.raw(INDEX_PATH), repository.raw(OUTPUTS_PATH), target)
+            unpack(repository, repository.raw(layout.index_path), repository.raw(layout.outputs_path), target, layout)
             sys.stdout.write(f"{target}\n")
             return 0
-        if command == "check" and len(argv) == 2:
-            errors = check(repository)
+        if command == "check" and (len(argv) == 2 or (len(argv) == 3 and layout is not None)):
+            errors = []
+            for item in [layout] if layout is not None else committed_layouts(root):
+                errors += check(item.run.Repository(root), item)
             for error in errors:
                 sys.stderr.write(error + "\n")
             return 1 if errors else 0
-    except run.RunError as exc:
+    except RUN_ERRORS as exc:
         sys.stderr.write(f"d004 archive invalid: {exc}\n")
         return 2
-    sys.stderr.write("usage: d004_archive.py pack EPOCH | unpack | check\n")
+    sys.stderr.write("usage: d004_archive.py pack VERSION EPOCH | unpack VERSION | check [VERSION]\n")
     return 64
 
 

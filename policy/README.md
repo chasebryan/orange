@@ -194,10 +194,10 @@ and final file component is opened with no-follow flags; the final open is also
 nonblocking before its descriptor metadata is compared with the preflight
 snapshot. After each read, the descriptor and its component-relative directory
 entry must still match that snapshot. Preflight caps ordinary text files at
-256 KiB (`256 * 1024` bytes), the validator itself at 384 KiB
-(`384 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
-the generated and hash-pinned D-004 run adapter outputs at 2 MiB
-(`2 * 1024 * 1024` bytes), and the complete repository at 16 MiB (`16 * 1024 * 1024` bytes). Returned
+256 KiB (`256 * 1024` bytes), the validator itself at 448 KiB
+(`448 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
+each committed D-004 run's generated and hash-pinned adapter outputs at 2 MiB
+(`2 * 1024 * 1024` bytes), and the complete repository at 24 MiB (`24 * 1024 * 1024` bytes). Returned
 payload bytes consume the aggregate read allowance as soon as they enter the
 bounded reader; each read uses at most one additional byte only to detect
 overflow. A later snapshot or representation rejection cannot refund already

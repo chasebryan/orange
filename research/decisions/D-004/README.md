@@ -3,9 +3,11 @@
 Status: `run_recorded_review_pending`. The v0.7 tranche builds every epoch
 prerequisite the reviewed protocol listed as absent, and epoch
 `d004-e-4aaf8a83a01693d543c4` has run all 75 scheduled executions. Its results
-are contributor-produced and unreviewed. No conclusion or semantic-strata
-selection exists. D004-PRE-01 remains `solo-reviewed`, and the v0.6
-implementation closure is `provisional_pending_exact_merged_revision`.
+are contributor-produced and unreviewed. The v0.8 suite, which adds cases and
+measures that can separate the candidates v0.7 could not, is built and has not
+run. No conclusion or semantic-strata selection exists. D004-PRE-01 remains
+`solo-reviewed`, and the v0.6 implementation closure is
+`provisional_pending_exact_merged_revision`.
 
 On 2026-07-26 the Orange Project Owner accepted D004-PRE-01 at exact review-
 subject revision `7d09a27369649855ce987c76315271b0d34a20ef`. That direction
@@ -310,3 +312,77 @@ without touching D-004. No digest in the packet, the protocol, the bundle, the
 overlay or the committed run changes, and the v0.7 epoch identity is unchanged,
 because the run harness never read these files. The suite document stays bound
 at its live path, because it is this laboratory's own record.
+
+## v0.8 suite
+
+The v0.7 run could not separate ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR. Their
+v0.5 graphs differ only in how they group semantic members: which members
+exist, which members are views of a parent, and which crossings stay inside one
+authority. On 2026-09-28 the owner chose to build a successor suite that can
+tell them apart. The v0.8 tranche adds that suite. It is contributor-produced
+and is not an owner record.
+
+v0.8 keeps SC-01 to SC-05 and adds two cases:
+
+- **SC-06, semantic evolution.** Four suite-fixed changes: a new target
+  operation class (E1), a revised memory model (E2), a revised sampling model
+  (E3), and a revised proof-evidence interface (E4). Each change re-identifies
+  every subject class under the member that owns the changed construct. Where
+  a change reaches a class that a suite section 4 invariant protects (Spec Core
+  for E1 to E3, runtime subjects for E4), the candidate must carry an open
+  isolation obligation.
+- **SC-07, within-authority relabeling.** For SR-07 to SR-11, a probe presents
+  a subject from one side of the crossing as the other. It must be rejected at
+  a member boundary or by a named discrimination judgment. A crossing inside
+  one authority with no named judgment fails the case.
+
+A construct belongs to the member that holds its facet, and ownership is the
+authority root of that member. A crossing whose two sides share one semantic
+authority root needs a discrimination judgment, except SR-06 and SR-12, which
+stay inside one authority for every candidate. The adapter derives both from
+each candidate's reviewed graph.
+
+SC-06 and SC-07 record five measures, all counts where fewer is better:
+isolation obligations, the part of them that protects Spec Core, re-identified
+subject classes, discrimination judgments, and independent semantic
+definitions. Pass or fail alone is not expected to separate the four
+candidates, because each can meet both cases. Suite section 8 allows a
+non-compensable distinguishing rule recorded before results exist. The v0.8
+overlay offers four such rules: isolation first, fewest definitions first,
+spec isolation first, and dominance only. `prepare` refuses until the overlay
+records the owner's choice, and the epoch packet binds it.
+
+- [`tools/d004_v08_adapter.py`](../../../tools/d004_v08_adapter.py) and
+  [`tools/d004_v08_run.py`](../../../tools/d004_v08_run.py) extend the v0.7
+  adapter and harness in new files, so the v0.7 run keeps verifying from its
+  own bytes. The schedule is a 5 by 7 rotation, run three times for 105
+  executions.
+- `d004-v0.8/case-subjects.json` holds the SC-06 and SC-07 positive subjects
+  and seven named mutations.
+- `d004-v0.8/adapter-bundle.json` publishes the adapter contract, the new
+  rules and computations, each candidate's judgments and definitions, the
+  measures and the distinguishing rules.
+- `d004-v0.8/protocol/suite-overlay.json` binds the v0.7 bundle and overlay,
+  adds amendments AM-09 to AM-13, and records the owner's distinguishing rule
+  once it is chosen.
+
+All three regenerate byte for byte (`python3 tools/d004_v08_run.py check`).
+The raw-file/canonical SHA-256 pairs are:
+
+- v0.8 case subjects:
+  `ecbb05bc18f0c35e7dd11083184702f6492bfdaa80d3351b69bfdc994c7cd125` /
+  `bbe14dca3b7d60f38df9357491a49ea75581c932e9b1d680f7783a4ea35b8d7f`;
+- v0.8 adapter bundle:
+  `e4dca7aa537403c76be925aaa8d9bdec54725071c7ca39ca250be3e8e88ca3ba` /
+  `d756959e3258d5ac86cb416e5993fc2f90119867a600170af7b69abe4dadd02c`; and
+- v0.8 suite overlay:
+  `e303b083e2ccdd953ee983312604f45f443806e25d8d55e4eda15f2b4571d856` /
+  `51fcf4aabafc6ae25fff4d8285a44e0fc19521edb1972b20c97d84d242cc27fb`.
+
+On 2026-09-28 the owner chose isolation first: fewest isolation obligations,
+then fewest re-identified subject classes, then fewest discrimination
+judgments, then fewest semantic definitions. The overlay records that choice,
+so every v0.8 epoch packet binds it. Before the choice, a local trial of the
+harness with a placeholder rule ran all 105 executions and verified. That trial
+is not a D-004 epoch. No v0.8 epoch has run yet, so no v0.8 evidence,
+conclusion or selection exists.

@@ -205,11 +205,11 @@ SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _JM = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
-GATE0_MAXIMUM_VALIDATOR_BYTES = 384 * 1024
+GATE0_MAXIMUM_VALIDATOR_BYTES = 448 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_RUN_OUTPUTS_BYTES = 2 * 1024 * 1024
-GATE0_RUN_OUTPUTS_PATH = "research/decisions/D-004/d004-v0.7/run/adapter-outputs.json"
-GATE0_MAXIMUM_REPOSITORY_BYTES = 16 * 1024 * 1024
+GATE0_RUN_OUTPUTS_PATHS = tuple(f"research/decisions/D-004/d004-v0.{v}/run/adapter-outputs.json" for v in (7, 8))
+GATE0_MAXIMUM_REPOSITORY_BYTES = 24 * 1024 * 1024
 GATE0_GIT_EXECUTABLE = "/usr/bin/git"
 GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
@@ -426,6 +426,9 @@ research/decisions/D-004/d004-v0.7/adapter-bundle.json
 research/decisions/D-004/d004-v0.7/protocol/prerequisites-overlay.json
 research/decisions/D-004/d004-v0.7/run/adapter-outputs.json
 research/decisions/D-004/d004-v0.7/run/archive-index.json
+research/decisions/D-004/d004-v0.8/adapter-bundle.json
+research/decisions/D-004/d004-v0.8/case-subjects.json
+research/decisions/D-004/d004-v0.8/protocol/suite-overlay.json
 research/decisions/D-005/README.md
 research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json
 research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json
@@ -459,11 +462,14 @@ tools/d004_archive.py
 tools/d004_candidate_mappings.py
 tools/d004_reviewed_protocol.py
 tools/d004_run.py
+tools/d004_v08_adapter.py
+tools/d004_v08_run.py
 tools/fs_sandbox.c
 tools/tests/test_d004_archive.py
 tools/tests/test_d004_draft_packet.py
 tools/tests/test_d004_reviewed_protocol.py
 tools/tests/test_d004_run.py
+tools/tests/test_d004_v08_run.py
 tools/tests/test_d005_draft_packet.py
 tools/tests/test_d006_draft_packet.py
 tools/tests/test_d009_draft_packet.py
@@ -644,7 +650,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "36f49d8fc3dea79cdc85965cceeaa1ef3ba2bacacfb050d6a895a0abe8c9e777"
+_PHD = "e3c8c4350e870e696ee3ea6831f975eb19b9b7f0df1823c6aa6dfbfc46028af8"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -948,10 +954,10 @@ _MLM = {
 _PM = {
     "policy/README.md": {
         "ordinary text files at\n256 KiB (`256 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
-        "validator itself at 384 KiB\n(`384 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
+        "validator itself at 448 KiB\n(`448 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
         "binary files at 2 MiB (`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_BINARY_FILE_BYTES,
         "adapter outputs at 2 MiB\n(`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_RUN_OUTPUTS_BYTES,
-        "repository at 16 MiB (`16 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
+        "repository at 24 MiB (`24 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
         "at most 512 files": GATE0_MAXIMUM_REPOSITORY_FILES,
         "at most 1,024 bytes per raw path": GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
         "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata": GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES,
@@ -1065,6 +1071,7 @@ _D004_REVIEWED_REPLAY_PLAN_RAW_SHA256 = (
 )
 DECISION_LABORATORY_SPECS = {'d005': {'finding_prefix': 'd005_packet', 'research_root': 'research/decisions/D-005/', 'inventory': frozenset(('research/decisions/D-005/' + name for name in 'README.md d005-v0.1/epochs/0001/protocol/epoch.json d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json'.split())), 'premature': ('research/decisions/D-005/d005-v0.1/epochs/0001/', '(?:^|/)(?:candidates|cross-candidate|same-owner-replays|owner-reviews|decision)(?:/|$)', 'premature_results'), 'json_identities': (('research/decisions/D-005/d005-v0.1/epochs/0001/protocol/epoch.json', '', 'missing', '731428229b4f77cd7e684e2a5cae51bdfd277898aaab60852b843d3183dbc194', '5ea15c4f2e6db865e2be9c9fea2a77465ffcf131abfd8356faa6923b3e1ad46b', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', 'legacy_', 'legacy_missing', '8c51fe8c337564cf5925c16c127aa440eab2a25bc8ae1ad6dba7b4f11c3e6cbf', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'legacy_', 'legacy_missing', 'cf513a32f23e4cace22f123f1e14a87f3cb656b6753e7c3a8ca4ee85781d5531', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'legacy_', 'legacy_missing', '35b08f290a5615bedc7391900201df36d18606d78ae1868a746403d83181c8df', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', 'legacy_', 'legacy_missing', '9a3c267a92c689fc92ba1d05e792260317a7343345f7e35edadd99cd623e7a9d', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', 'legacy_', 'legacy_missing', '75b77808aae7831567265f6650f827c90f25d15b75fa76cd33dc9a377a2dfd4e', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', 'legacy_', 'legacy_missing', '96b931de6f468349f706ffa5952b944ac45308f688f67f8737e9a9e88a91dd98', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900', False), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'legacy_', 'legacy_missing', 'e1828b5c7b3bb31d6344bdc4de0507ea8347ddea0c2518366bfe49207ebef1e3', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9', False)), 'raw_bindings': (('docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md', 'e906ec0de790f5ed3b4e4fcb87bc550a7a2048ec5c16b100e58cf1a13a27b18f'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/legacy-v0.1-mutations.json', '2bae9af1e102fe4a9233c78599a3b14a7ca1796f0c0fdfaa17539a998ff01b4d'), ('schemas/gate0/claim-record-v0.1.schema.json', 'a287dde9ddf114da30af61d050aa96406f23e480d62e0f796d66943489579131'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-as-functional-refinement.json', 'c7f059bfe531e123b7b6a395eb99f391b832ea72c0b08f320e73e63cc452b27e'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/checked-test-masks-failed-kernel-proof.json', 'ae7bc9a88680bd3fa08c1f34b9fb558de1833f5c2cd710d3d423ed35873bedad'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json', '6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/owner-test-as-external-validation.json', '795ca7571d0e9df9f88ab7a2a8cad201c5e45bdb36206f3df12e7adf2098f9a5'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json', '5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900'), ('research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json', 'ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9')), 'schema_compatibility': ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))}, 'd006': {'finding_prefix': 'd006_packet', 'research_root': 'research/decisions/D-006/', 'inventory': frozenset(('research/decisions/D-006/' + name for name in 'README.md d006-v0.2-case-input-index.json d006-v0.2-draft-packet.json'.split())), 'premature': ('research/decisions/D-006/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-006/d006-v0.2-draft-packet.json', '', 'parse', 'b56ad768c4584bdd00da4d4e85af642757b877dd5dc5ae438560ba4a486d9d21', '210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff', True), ('research/decisions/D-006/d006-v0.2-case-input-index.json', 'index_', 'index_parse', '1118fe42a6d7111f50e40a88f0fe7b7fe4b9248b9335e0643b200fa983294ca0', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136', True)), 'raw_bindings': (('research/decisions/D-006/d006-v0.2-case-input-index.json', '1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136'), ('docs/PROOF_FOUNDATION_DECISION_SUITE.md', '6b1aa32784dd31d40bdaca4c6f3b62b8721a909ab3415051aa5a8e7994f0254b')), 'schema_compatibility': None}, 'd009': {'finding_prefix': 'd009_packet', 'research_root': 'research/decisions/D-009/', 'inventory': frozenset(('research/decisions/D-009/' + name for name in 'README.md d009-v0.1-case-input-index.json d009-v0.1-draft-packet.json'.split())), 'premature': ('research/decisions/D-009/', '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': (('research/decisions/D-009/d009-v0.1-draft-packet.json', '', 'parse', 'a0c527aedb3a031ccca55f7c11d34e25f056e0b54f831e1420bd6519278c8f3c', '49466c6a8894cee04470128031bb012b2ecac7af8b6abc097a286a8395c4eed5', True), ('research/decisions/D-009/d009-v0.1-case-input-index.json', 'index_', 'index_parse', '2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859', True)), 'raw_bindings': (('research/decisions/D-009/d009-v0.1-case-input-index.json', 'c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859'), ('docs/SOLVER_TRUST_DECISION_SUITE.md', 'a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b')), 'schema_compatibility': None}, 'd010': {'finding_prefix': 'd010_packet', 'research_root': _D010_ROOT, 'inventory': frozenset((_D010_ROOT + name for name in 'README.md d010-v0.1-case-input-index.json d010-v0.1-draft-packet.json'.split())), 'premature': (_D010_ROOT, '(?:^|[/_.-])(?:epochs?|candidates?|results?|replays?|reviews?|decisions?)(?:$|[/_.-])', 'premature_artifact'), 'json_identities': ((_D010_PACKET, '', 'parse', _D010_PACKET_CANONICAL_SHA256, _D010_PACKET_RAW_SHA256, True), (_D010_INDEX, 'index_', 'index_parse', _D010_INDEX_CANONICAL_SHA256, _D010_INDEX_RAW_SHA256, True)), 'raw_bindings': ((_D010_INDEX, _D010_INDEX_RAW_SHA256), (_D010_SUITE, _D010_SUITE_RAW_SHA256)), 'schema_compatibility': None}}
 _D004_V07 = "research/decisions/D-004/d004-v0.7/"
+_D004_V08 = "research/decisions/D-004/d004-v0.8/"
 DECISION_LABORATORY_SPECS["d004"] = {
     "finding_prefix": "d004_packet",
     "research_root": "research/decisions/D-004/",
@@ -1084,6 +1091,7 @@ DECISION_LABORATORY_SPECS["d004"] = {
             _D004_V07 + "protocol/prerequisites-overlay.json",
             _D004_V07 + "run/archive-index.json",
             _D004_V07 + "run/adapter-outputs.json",
+            *(_D004_V08 + name for name in ("case-subjects.json", "adapter-bundle.json", "protocol/suite-overlay.json")),
         }
     ),
     "premature": (
@@ -1168,6 +1176,11 @@ DECISION_LABORATORY_SPECS["d004"] = {
         (_D004_V07 + "protocol/prerequisites-overlay.json", "prerequisite_overlay_", "prerequisite_overlay_missing", "a2e1830b840a3ac2e46332ddd2fda9675ec09bc7d1acc4bdb5cddef61289da59", "ddb999ef447d4864cab3bbe79a2e09799c21824a5d8076464ccfd556e1e7bee4", True),
         (_D004_V07 + "run/archive-index.json", "run_index_", "run_index_missing", "716d1132e73edfb06f06e6f134ade9220a83d98d1c6ee780803d54e8fe5427f6", "e142ad7e177c6b4a6d507176c60151175a82464c912ac3d222de3c0ffe9f0af0", True),
         (_D004_V07 + "run/adapter-outputs.json", "run_outputs_", "run_outputs_missing", "aec7e3bc5ed42dfb66e9cb014215ab750f0d95dedaca88b0c7ce1d5c5c162995", "e14031975071c0b6777a3dcd4bc40621b70f9ff16ea40f8d695c043e41c8774b", True),
+        *((_D004_V08 + n, f"v08_{l}_", f"v08_{l}_missing", c, r, True) for n, l, c, r in (
+            ("case-subjects.json", "catalog", "bbe14dca3b7d60f38df9357491a49ea75581c932e9b1d680f7783a4ea35b8d7f", "ecbb05bc18f0c35e7dd11083184702f6492bfdaa80d3351b69bfdc994c7cd125"),
+            ("adapter-bundle.json", "bundle", "d756959e3258d5ac86cb416e5993fc2f90119867a600170af7b69abe4dadd02c", "e4dca7aa537403c76be925aaa8d9bdec54725071c7ca39ca250be3e8e88ca3ba"),
+            ("protocol/suite-overlay.json", "overlay", "51fcf4aabafc6ae25fff4d8285a44e0fc19521edb1972b20c97d84d242cc27fb", "e303b083e2ccdd953ee983312604f45f443806e25d8d55e4eda15f2b4571d856"),
+        )),
     ),
     "raw_bindings": (
         ("docs/LANGUAGE_2026.md", "35981310cbe1e1ae61c889b4005b2610d0077e6a615a5e032b0ca9a5860b328a"),
@@ -1204,7 +1217,7 @@ MINIMUM_REQUIRED_PATHS |= {_D004_BASE + p for p in _D004_REBOUND}
 DECISION_LABORATORY_SPECS["d004"]["inventory"] |= {_D004_BASE + p for p in _D004_REBOUND}
 DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-004/"] = (
-    13,
+    16,
     23,
     True,
     None,
@@ -2451,7 +2464,7 @@ class FoundationValidator:
     def _fl(self, path: Path) -> int:
         if relative(path, self.root) == "tools/validate_foundation.py":
             return GATE0_MAXIMUM_VALIDATOR_BYTES
-        if relative(path, self.root) == GATE0_RUN_OUTPUTS_PATH:
+        if relative(path, self.root) in GATE0_RUN_OUTPUTS_PATHS:
             return GATE0_MAXIMUM_RUN_OUTPUTS_BYTES
         if path.suffix.lower() in BINARY_SUFFIXES:
             return GATE0_MAXIMUM_BINARY_FILE_BYTES
