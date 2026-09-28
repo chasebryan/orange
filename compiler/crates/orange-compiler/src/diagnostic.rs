@@ -853,6 +853,63 @@ mod tests {
     }
 
     #[test]
+    fn right_truncated_excerpts_bound_trailing_context_and_clip_the_caret() {
+        fn render_window(text: &str, start: u32, end: u32) -> String {
+            let mut sources = SourceMap::new();
+            let id = sources.add("window.or", text.to_owned()).unwrap();
+            let source = sources.get(id).unwrap();
+            let span = source
+                .span(TextOffset::new(start), TextOffset::new(end))
+                .unwrap();
+            let diagnostic = Diagnostic::error(
+                DiagnosticCode::UnexpectedCharacter,
+                "unexpected character '@'",
+                span,
+            );
+            render_diagnostics(&sources, &[diagnostic])
+        }
+
+        let header = concat!(
+            "error[ORC0001]: unexpected character '@'\n",
+            " --> window.or:1:41\n",
+            "  |\n",
+        );
+        let caret = format!("  | {}^\n", " ".repeat(40));
+
+        let exact = format!("{}@{}\n", "a".repeat(40), "a".repeat(79));
+        assert_eq!(
+            render_window(&exact, 40, 41),
+            format!("{header}1 | {}@{}\n{caret}", "a".repeat(40), "a".repeat(79))
+        );
+
+        let truncated = format!("{}@{}\n", "a".repeat(40), "a".repeat(80));
+        assert_eq!(
+            render_window(&truncated, 40, 41),
+            format!(
+                "{header}1 | {}@{} ...\n{caret}",
+                "a".repeat(40),
+                "a".repeat(79)
+            )
+        );
+
+        let clipped = format!("@{}\n", "a".repeat(200));
+        assert_eq!(
+            render_window(&clipped, 0, 201),
+            format!(
+                concat!(
+                    "error[ORC0001]: unexpected character '@'\n",
+                    " --> window.or:1:1\n",
+                    "  |\n",
+                    "1 | @{} ...\n",
+                    "  | {}\n",
+                ),
+                "a".repeat(79),
+                "^".repeat(80)
+            )
+        );
+    }
+
+    #[test]
     fn inconsistent_excerpt_line_views_fail_closed() {
         let mut sources = SourceMap::new();
         let id = sources.add("mismatch.or", "ab").unwrap();
