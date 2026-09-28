@@ -306,7 +306,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         self.assertEqual(GATE0_MAXIMUM_TEXT_FILE_BYTES, 256 * 1024)
         self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 384 * 1024)
         self.assertEqual(GATE0_MAXIMUM_BINARY_FILE_BYTES, 2 * 1024 * 1024)
-        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 12 * 1024 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 16 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_FILES, 512)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_PATH_BYTES, 1024)
         self.assertEqual(GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES, 1024 * 1024)

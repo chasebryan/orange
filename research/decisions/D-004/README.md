@@ -1,9 +1,10 @@
 # D-004 pre-epoch decision laboratory
 
-Status: `reviewed_not_executable`; D004-PRE-01 is `solo-reviewed`, but no
-D-004 evidence epoch, candidate execution, result, conclusion, or
-semantic-strata selection exists here. The v0.6 implementation closure is
-`provisional_pending_exact_merged_revision`.
+Status: `prerequisites_built_run_pending`. The v0.7 tranche builds every
+epoch prerequisite the reviewed protocol listed as absent. No D-004 evidence
+epoch, candidate execution, result, conclusion, or semantic-strata selection
+exists here yet. D004-PRE-01 remains `solo-reviewed`, and the v0.6
+implementation closure is `provisional_pending_exact_merged_revision`.
 
 On 2026-07-26 the Orange Project Owner accepted D004-PRE-01 at exact review-
 subject revision `7d09a27369649855ce987c76315271b0d34a20ef`. That direction
@@ -152,13 +153,53 @@ execution evidence remains 0 completed of 25 required candidate-case units and
 0 of 75 result records, and selection and conclusion remain null. Both
 `roadmap_gate_credit` and `readiness_credit` remain `none`.
 
-The deterministic 5-candidate by 5-case Latin schedule and its three reviewed
-repetitions remain a plan, not an executable epoch. Candidate adapters, closed
-request and response schemas, semantic endpoints, parameter bindings, exact
-tools and transitive dependencies, deterministic environment and input
-manifests, an enforcing isolation launcher, normalization and resource
-measurement, result/evidence parsers, an exact execution-subject revision, and
-a separate owner freeze record remain absent. Canonical evidence remains
-0/25/0: zero completed candidate-case units, 25 required units, and zero result
-records. D-004 remains proposed, S3b remains blocked, and Orange's binary
-gate-closure score remains 3 of 10 (30%).
+## v0.7 run prerequisites
+
+On 2026-09-28 the owner directed that development never waits on a freeze
+unless the owner asks for one, and that older repository rules are not the
+standard for current Orange work. The owner then chose to run D-004 after the
+prerequisites are built. The v0.7 tranche follows those directions. It is
+contributor-produced and is not an owner record.
+
+- [`tools/d004_adapter.py`](../../../tools/d004_adapter.py) is one
+  candidate-neutral adapter for all five candidates. It derives each
+  candidate's semantic model, endpoint inventory and parameter bindings from
+  that candidate's reviewed graph, evaluates suite subjects at the candidate's
+  own crossings, and never receives an oracle row or declared expectation.
+  Slots owned by open decisions stay symbolic; a crossing delegated to a host
+  whose identity is still open reports `unsupported`.
+- [`tools/d004_run.py`](../../../tools/d004_run.py) captures the host tool,
+  dependency and environment manifests, derives a content-addressed epoch,
+  and runs each execution under user, mount, IPC, UTS, PID and network
+  namespaces, `setpriv`, the repository Landlock sandbox, and per-execution
+  memory and pids cgroups. It writes closed case records and parses records,
+  repetition closures, correction records and the archive manifest.
+- `d004-v0.7/adapter-bundle.json` publishes the adapter contract, rule table,
+  slot bindings, candidate-model digests, per-case input manifests, the record
+  contract and the archive layout.
+- `d004-v0.7/protocol/prerequisites-overlay.json` records how each of the nine
+  reviewed epoch blockers is now met and eight amendments to the reviewed
+  protocol.
+
+The amendments replace the separate owner freeze record with a mechanical
+epoch identity, derive the packet, replay plan and 75 scheduled identities
+before the first execution, reconcile the record fields, keep adapter requests
+identical across repetitions, label records contributor-produced and
+unreviewed, treat any adapter or runner change as a shared change that starts
+a new epoch, forbid a tie-break rule written after results exist from choosing
+in the same epoch, and fail the epoch closed when the process-tree meter
+cannot report a measurement.
+
+The raw-file/canonical SHA-256 pairs are:
+
+- adapter bundle:
+  `a50ecf2b365df6e361fa4c592fc04451df8e53dd5c76c09e7a45cf67a2491f11` /
+  `e9b5c9943fe0f62b5b54ea77f5c6b2f1822ed5ea9d4b1a887baa3b8e57a3669a`; and
+- prerequisites overlay:
+  `f980ecbf4c1c9b4661db91ef307dff3381c440217526796e0d28107509aaa848` /
+  `e6b9ca6a1a618b2b0d6f8ba98d0bac7a528273dff6e00aebb0f37e53eba30a9f`.
+
+Canonical evidence remains 0/25/0 until an epoch runs: zero completed
+candidate-case units, 25 required units, and zero result records. D-004
+remains proposed, S3b remains blocked, and Orange's binary gate-closure score
+remains 3 of 10 (30%).

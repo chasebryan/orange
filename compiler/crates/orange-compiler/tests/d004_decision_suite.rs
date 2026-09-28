@@ -3295,6 +3295,7 @@ fn d004_research_tree_preserves_v05_inputs_and_exact_reviewed_protocol_overlay()
             ("d004-v0.5-draft-packet.json".to_owned(), false),
             ("d004-v0.5-candidate-mappings.json".to_owned(), false),
             ("d004-v0.6".to_owned(), true),
+            ("d004-v0.7".to_owned(), true),
         ])
     );
     let protocol_root = root.join("d004-v0.6/protocol");

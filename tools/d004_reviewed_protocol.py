@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -474,6 +475,33 @@ def _expected_schedule() -> list[dict[str, int | str]]:
                 }
             )
     return physical
+
+
+# The v0.7 run harness is pinned here so the foundation validator reaches it
+# through this already-pinned helper.
+_D004_RUN_HELPER_RAW_SHA256 = (
+    "e5c6d73db20f97b94f02927e57e6cb908c88d07dd417e895b405ef331dd63c06"
+)
+
+
+def _load_d004_run_helper() -> Any:
+    helper_path = Path(__file__).resolve(strict=True).with_name("d004_run.py")
+    if helper_path.is_symlink() or not helper_path.is_file() or helper_path.stat().st_nlink != 1:
+        raise RuntimeError("D-004 run helper must be one regular single-link file")
+    if hashlib.sha256(helper_path.read_bytes()).hexdigest() != _D004_RUN_HELPER_RAW_SHA256:
+        raise RuntimeError("D-004 run helper raw SHA-256 identity drifted")
+    specification = importlib.util.spec_from_file_location("_orange_d004_run", helper_path)
+    if specification is None or specification.loader is None:
+        raise RuntimeError("cannot create the closed D-004 run helper import")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    validator = getattr(module, "validate_d004_prerequisites", None)
+    if not callable(validator):
+        raise RuntimeError("D-004 run helper does not expose its validator surface")
+    return validator
+
+
+_validate_d004_prerequisites = _load_d004_run_helper()
 
 
 def validate_d004_reviewed_protocol(validator: Any) -> None:
@@ -1015,3 +1043,5 @@ def validate_d004_reviewed_protocol(validator: Any) -> None:
                 path,
                 "reviewed pre-epoch artifacts cannot persist result, evidence, or readiness fields",
             )
+
+    _validate_d004_prerequisites(validator)
