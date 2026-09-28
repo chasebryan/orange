@@ -3,7 +3,7 @@
 Status: current direct-dependency inventory and gap record; not a reproducible-
 build claim or legal approval
 
-Inventory amendment: 2026-07-25
+Inventory amendment: 2026-09-28
 
 Hosted execution snapshot: 2026-07-11
 
@@ -146,11 +146,11 @@ identities.
 | Component and use | Enforced Action revision | Upstream license and provenance | Runtime and unresolved closure |
 | --- | --- | --- | --- |
 | [`actions/checkout`](https://github.com/actions/checkout/tree/3d3c42e5aac5ba805825da76410c181273ba90b1), used by all workflows | `3d3c42e5aac5ba805825da76410c181273ba90b1` (`v7.0.1`) | [MIT at the selected revision](https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE); the [verified upstream release](https://github.com/actions/checkout/releases/tag/v7.0.1) and Git repository are the provenance locators | Bundled JavaScript runs on GitHub-provided Node 24 and invokes ambient Git; v7.0.1 narrows ref trimming to ASCII whitespace, avoids the unsafe-PR check for default inputs, escapes values passed to `git config --unset`, and updates bundled dependencies; neither the Node/Git runtime nor the transitive bundle is independently fixed here |
-| [`DavidAnson/markdownlint-cli2-action`](https://github.com/DavidAnson/markdownlint-cli2-action/tree/8de2aa07cae85fd17c0b35642db70cf5495f1d25), used by required CI | `8de2aa07cae85fd17c0b35642db70cf5495f1d25` (`v24.0.0`) | [MIT at the selected revision](https://github.com/DavidAnson/markdownlint-cli2-action/blob/8de2aa07cae85fd17c0b35642db70cf5495f1d25/LICENSE); its [exact package manifest](https://github.com/DavidAnson/markdownlint-cli2-action/blob/8de2aa07cae85fd17c0b35642db70cf5495f1d25/package.json) names `@actions/core` 3.0.1 and `markdownlint-cli2` 0.23.0 | Bundled JavaScript runs on GitHub-provided Node 24; the repository does not independently hash, archive, or inventory the bundled transitive graph |
-| [`zizmorcore/zizmor-action`](https://github.com/zizmorcore/zizmor-action/tree/192e21d79ab29983730a13d1382995c2307fbcaa), used by required CI and the online audit | `192e21d79ab29983730a13d1382995c2307fbcaa` (`v0.5.7`) | [MIT at the selected revision](https://github.com/zizmorcore/zizmor-action/blob/192e21d79ab29983730a13d1382995c2307fbcaa/LICENSE); the selected revision's [version map](https://github.com/zizmorcore/zizmor-action/blob/192e21d79ab29983730a13d1382995c2307fbcaa/support/versions) supplies the runtime image digest | Composite Bash Action requiring ambient Docker; Orange selects zizmor 1.26.1, whose image digest is recorded in section 4 |
+| [`DavidAnson/markdownlint-cli2-action`](https://github.com/DavidAnson/markdownlint-cli2-action/tree/21c1be1b93ad9ed58fa840aacc3f279cde2a72ff), used by required CI | `21c1be1b93ad9ed58fa840aacc3f279cde2a72ff` (`v24.2.0`) | [MIT at the selected revision](https://github.com/DavidAnson/markdownlint-cli2-action/blob/21c1be1b93ad9ed58fa840aacc3f279cde2a72ff/LICENSE); its [exact package manifest](https://github.com/DavidAnson/markdownlint-cli2-action/blob/21c1be1b93ad9ed58fa840aacc3f279cde2a72ff/package.json) names `@actions/core` 3.0.1 and `markdownlint-cli2` 0.23.2 | Bundled JavaScript runs on GitHub-provided Node 24; the repository does not independently hash, archive, or inventory the bundled transitive graph |
+| [`zizmorcore/zizmor-action`](https://github.com/zizmorcore/zizmor-action/tree/cc914d7f3750a2d13d75c7f184a1060aa0e9d482), used by required CI and the online audit | `cc914d7f3750a2d13d75c7f184a1060aa0e9d482` (`v0.6.4`) | [MIT at the selected revision](https://github.com/zizmorcore/zizmor-action/blob/cc914d7f3750a2d13d75c7f184a1060aa0e9d482/LICENSE); the selected revision's [version map](https://github.com/zizmorcore/zizmor-action/blob/cc914d7f3750a2d13d75c7f184a1060aa0e9d482/support/versions) supplies the runtime image digest | Composite Bash Action requiring ambient Docker; Orange selects zizmor 1.26.1, whose image digest is recorded in section 4 |
 | [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action/tree/a1d282b36b6f3519aa1f3fc636f609c47dddb294), used by dependency review | `a1d282b36b6f3519aa1f3fc636f609c47dddb294` (`v5.0.0`) | [MIT at the selected revision](https://github.com/actions/dependency-review-action/blob/a1d282b36b6f3519aa1f3fc636f609c47dddb294/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and consumes current GitHub dependency data; neither the bundle closure nor API response is archived here |
 | [`actions/upload-artifact`](https://github.com/actions/upload-artifact/tree/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a), used by Scorecard | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` (`v7.0.1`) | [MIT at the selected revision](https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the mutable hosted artifact service; service implementation and storage are not reproducible inputs |
-| [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/99df26d4f13ea111d4ec1a7dddef6063f76b97e9), used by Scorecard | `99df26d4f13ea111d4ec1a7dddef6063f76b97e9` (`v4.37.0`) | [MIT at the selected revision](https://github.com/github/codeql-action/blob/99df26d4f13ea111d4ec1a7dddef6063f76b97e9/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the hosted code-scanning service; neither service behavior nor the transitive bundle is fixed here |
+| [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/1c5b675653bb5c22dbe9b12b556ec555138e09fd), used by Scorecard | `1c5b675653bb5c22dbe9b12b556ec555138e09fd` (`v4.38.1`) | [MIT at the selected revision](https://github.com/github/codeql-action/blob/1c5b675653bb5c22dbe9b12b556ec555138e09fd/LICENSE); upstream Git repository is the provenance locator | Bundled JavaScript runs on GitHub-provided Node 24 and writes to the hosted code-scanning service; neither service behavior nor the transitive bundle is fixed here |
 
 The owner admits Checkout v7.0.1 as a direct replacement for v7.0.0. The need
 is its narrower handling of untrusted pull-request, ref, and Git-configuration
@@ -163,9 +163,32 @@ explicit gap. A runtime regression rolls back the pin together with its
 validator contract and reviewed digests. A compromise or end-of-life event
 fails affected workflows closed until the owner admits another exact revision.
 
+The owner admits three further direct replacements that Dependabot pull
+requests #180, #187, and #188 surfaced. markdownlint-cli2-action v24.2.0
+replaces v24.0.0 with an unchanged descriptor, license, and `@actions/core`
+3.0.1; its bundle moves to `markdownlint-cli2` 0.23.2 and markdownlint 0.41.1,
+which report no issue across the repository's Markdown under the unchanged
+configuration. zizmor-action v0.6.4 replaces v0.5.7 with an unchanged license;
+it pulls the digest-selected image before running it, still maps zizmor 1.26.1
+to the digest recorded in section 5, still rejects an unknown version, and adds
+a `collect` input whose default passes `--collect=default`, the value zizmor
+1.26.1 already applies when the flag is absent. CodeQL `upload-sarif` v4.38.1
+replaces v4.37.0 with an unchanged descriptor, inputs, license, and Node 24
+entry points; v4.38.2 was deferred because it only moves the default CodeQL
+bundle, which `upload-sarif` does not use, and it was published inside the
+seven-day cooldown. The need is to stay on each upstream's maintained release
+line; retaining the earlier revisions was rejected because none of the
+replacements changes Orange's inputs, while drift makes each later update
+larger. The direct Action graph, permissions, network access, runtime class,
+removal path, and Orange claim/TCB classification are unchanged; the bundled
+transitive graphs remain an explicit gap. A runtime regression rolls back the
+affected pin together with its validator contract and reviewed digests. A
+compromise or end-of-life event fails affected workflows closed until the
+owner admits another exact revision.
+
 The pinned zizmor composite Action also declares
 `github/codeql-action/upload-sarif` at revision
-`8aad20d150bbac5944a9f9d289da16a4b0d87c1e` (`v4.36.2`). Both Orange usages set
+`cdf488f595d80d6e07e03d4674febd5ab45fa938` (`v4.37.9`). Both Orange usages set
 `advanced-security: false`, so that conditional step is not executed. It remains
 part of the upstream descriptor and therefore part of the source-review surface.
 
