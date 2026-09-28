@@ -1,0 +1,10 @@
+// S3a conformance: Word[8] uses exact unsigned boundaries and fixed-width display.
+edition 2026;
+module s3a_word8_boundaries {
+  spec zero() -> Word[8] { 0 }
+  spec empty() {}
+  impl empty() {}
+  spec one() -> Word[8] { 1 }
+  spec below_high() -> Word[8] { 254 }
+  spec high() -> Word[8] { 0xff }
+}

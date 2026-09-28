@@ -1,0 +1,8 @@
+// S3a rejection: a declaration-kind namespace cannot contain duplicate names.
+edition 2026;
+module s3a_invalid_duplicate_spec {
+  spec same_spec() {}
+  spec same_spec() -> Int { 1 }
+  impl same_impl() {}
+  impl same_impl() {}
+}

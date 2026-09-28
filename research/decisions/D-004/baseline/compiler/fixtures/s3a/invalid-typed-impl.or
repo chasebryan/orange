@@ -1,0 +1,5 @@
+// S3a rejection: typed implementation bodies have no accepted syntax.
+edition 2026;
+module s3a_invalid_typed_impl {
+  impl value() -> Int { 1 }
+}

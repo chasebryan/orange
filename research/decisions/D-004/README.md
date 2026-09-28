@@ -284,3 +284,22 @@ their bound inputs starts a new epoch; this one stays reproducible only from
 these bytes. D-004 remains proposed pending owner review of these results,
 S3b remains blocked, and Orange's binary gate-closure score remains 3 of 10
 (30%).
+
+## Stored S3a inputs
+
+The v0.5 packet binds 17 inputs outside this laboratory by path and raw
+SHA-256: the S2 and S3a language and semantics documents, OEP-0003, the product
+form packet, the user journeys, the S3a conformance runner and its eleven
+fixtures. Those files are live parts of the language and change as later slices
+land. So that D-004 records what it measured without pinning the live
+specification, byte-identical copies of those 17 files are stored under
+`baseline/`, at the same relative paths the packet names. On 2026-09-28 the
+owner chose this over keeping the live files pinned.
+
+The foundation validator checks each packet binding against its stored copy,
+and the Rust laboratory embeds the copies. The live files keep only their
+ordinary Gate 0 protected digests, so S3b and later slices can amend them
+without touching D-004. No digest in the packet, the protocol, the bundle, the
+overlay or the committed run changes, and the v0.7 epoch identity is unchanged,
+because the run harness never read these files. The suite document stays bound
+at its live path, because it is this laboratory's own record.

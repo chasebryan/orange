@@ -619,7 +619,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "08f6c9e44b457f87e8cee0f7c2ebcc93aad42190d36c5bbac16fffb6b8c2086d"
+_PHD = "cf6356ff1fa4131f37673f7ff5ed977b77612c9b029d99da6bfeb6a2f87877db"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1171,6 +1171,12 @@ DECISION_LABORATORY_SPECS["d004"] = {
     ),
     "schema_compatibility": None,
 }
+# D-004 reads the S3a inputs it measured from stored copies, so the live files stay editable.
+# The copies are digest-bound, so lifecycle-name and link checks skip them.
+_D004_BASE = "research/decisions/D-004/baseline/"
+_D004_REBOUND = {p for p, _ in DECISION_LABORATORY_SPECS["d004"]["raw_bindings"] if not p.startswith(("research/", "docs/SEMANTIC_STRATA"))}
+MINIMUM_REQUIRED_PATHS |= {_D004_BASE + p for p in _D004_REBOUND}
+DECISION_LABORATORY_SPECS["d004"]["inventory"] |= {_D004_BASE + p for p in _D004_REBOUND}
 DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-004/"] = (
     13,
@@ -3806,7 +3812,7 @@ class FoundationValidator:
                 inventory_directories.add("/".join(parts[:depth]))
 
         anchor_cache: dict[str, set[str]] = {}
-        for path in (path for path in self.repository_files if path.suffix.lower() == ".md"):
+        for path in (path for path in self.repository_files if path.suffix.lower() == ".md" and not relative(path, self.root).startswith(_D004_BASE)):
             text = self._rt(path)
             if text is None:
                 continue
@@ -5053,7 +5059,7 @@ class FoundationValidator:
         pattern = re.compile(str(premature_pattern))
         for path in self.repository_files:
             value = relative(path, self.root)
-            if value.startswith(str(scan_root)) and pattern.search(value[len(str(scan_root)):].lower()):
+            if value.startswith(str(scan_root)) and not value.startswith(_D004_BASE) and pattern.search(value[len(str(scan_root)):].lower()):
                 fail(str(premature_code), path, 'decision research contains an artifact forbidden by its closed lifecycle')
         declared_bindings: set[tuple[str, str]] = set()
         identity_closure_valid = True
@@ -5110,7 +5116,7 @@ class FoundationValidator:
         if identity_closure_valid and declared_bindings != set(specification['raw_bindings']):
             fail('binding_inventory', self.root / research_root, 'raw binding rows must exactly cover every path and SHA-256 identity declared by the reviewed decision-laboratory JSON')
         for value, expected_digest in specification['raw_bindings']:
-            path = self.root / str(value)
+            path = self.root / (_D004_BASE + value if value in _D004_REBOUND else str(value))
             raw = self._read_repository_bytes(path)
             if raw is None or hashlib.sha256(raw).hexdigest() != expected_digest:
                 fail('input_digest', path, 'externally bound decision-laboratory input disagrees with its reviewed raw SHA-256 identity')

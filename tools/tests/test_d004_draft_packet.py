@@ -2158,8 +2158,11 @@ class D004DraftPacketTests(unittest.TestCase):
             target = self._copy_lab(root)
             packet = load_json(target)
             binding = packet["input_bindings"]["accepted_s3a_semantics"]
-            bound_path = root / binding["path"]
-            bound_path.write_bytes(bound_path.read_bytes() + b"\n")
+            live_path = root / binding["path"]
+            live_path.write_bytes(live_path.read_bytes() + b"\n")
+            self.assertNotIn("d004_packet.input_digest", self._codes(root))
+            stored_path = root / RESEARCH_ROOT / "baseline" / binding["path"]
+            stored_path.write_bytes(stored_path.read_bytes() + b"\n")
             self.assertIn("d004_packet.input_digest", self._codes(root))
 
     def test_result_and_evidence_artifacts_cannot_enter_the_pre_epoch_lab(self) -> None:

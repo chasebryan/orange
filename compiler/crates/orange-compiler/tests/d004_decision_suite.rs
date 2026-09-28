@@ -127,30 +127,54 @@ const REVIEWED_REPLAY_PLAN: &[u8] = include_bytes!(
     "../../../../research/decisions/D-004/d004-v0.6/protocol/reviewed-replay-plan.json"
 );
 const DECISION_SUITE: &[u8] = include_bytes!("../../../../docs/SEMANTIC_STRATA_DECISION_SUITE.md");
-const PRODUCT_FORM_DECISION_PACKET: &[u8] =
-    include_bytes!("../../../../docs/PRODUCT_FORM_DECISION_PACKET.md");
-const ACCEPTED_S2_LANGUAGE: &[u8] = include_bytes!("../../../../docs/LANGUAGE_2026.md");
-const USER_JOURNEYS: &[u8] = include_bytes!("../../../../docs/USER_JOURNEYS.md");
-const ACCEPTED_S3A_SEMANTICS: &[u8] = include_bytes!("../../../../docs/SEMANTICS_2026.md");
-const ACCEPTED_S3A_OEP: &[u8] =
-    include_bytes!("../../../../docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md");
-const S3A_CONFORMANCE_RUNNER: &[u8] = include_bytes!("../../orangec/tests/s3a_conformance.rs");
-const PERMANENT_S3A_FIXTURE: &[u8] = include_bytes!("../../../fixtures/typed-answer.or");
-const INVALID_DUPLICATE_SPEC: &[u8] =
-    include_bytes!("../../../fixtures/s3a/invalid-duplicate-spec.or");
-const INVALID_INT_MAGNITUDE: &[u8] =
-    include_bytes!("../../../fixtures/s3a/invalid-int-magnitude.or");
-const INVALID_NEGATIVE_WORD: &[u8] =
-    include_bytes!("../../../fixtures/s3a/invalid-negative-word.or");
-const INVALID_TYPED_IMPL: &[u8] = include_bytes!("../../../fixtures/s3a/invalid-typed-impl.or");
-const INVALID_UNSUPPORTED_TYPE: &[u8] =
-    include_bytes!("../../../fixtures/s3a/invalid-unsupported-type.or");
-const INVALID_WORD_RANGE: &[u8] = include_bytes!("../../../fixtures/s3a/invalid-word-range.or");
-const INVALID_WORD_WIDTH: &[u8] = include_bytes!("../../../fixtures/s3a/invalid-word-width.or");
-const VALID_EMPTY_MIXED: &[u8] = include_bytes!("../../../fixtures/s3a/valid-empty-mixed.or");
-const VALID_INT_RADICES: &[u8] = include_bytes!("../../../fixtures/s3a/valid-int-radices.or");
-const VALID_WORD8_BOUNDARIES: &[u8] =
-    include_bytes!("../../../fixtures/s3a/valid-word8-boundaries.or");
+const PRODUCT_FORM_DECISION_PACKET: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/docs/PRODUCT_FORM_DECISION_PACKET.md"
+);
+const ACCEPTED_S2_LANGUAGE: &[u8] =
+    include_bytes!("../../../../research/decisions/D-004/baseline/docs/LANGUAGE_2026.md");
+const USER_JOURNEYS: &[u8] =
+    include_bytes!("../../../../research/decisions/D-004/baseline/docs/USER_JOURNEYS.md");
+const ACCEPTED_S3A_SEMANTICS: &[u8] =
+    include_bytes!("../../../../research/decisions/D-004/baseline/docs/SEMANTICS_2026.md");
+const ACCEPTED_S3A_OEP: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md"
+);
+const S3A_CONFORMANCE_RUNNER: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/crates/orangec/tests/s3a_conformance.rs"
+);
+const PERMANENT_S3A_FIXTURE: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/typed-answer.or"
+);
+const INVALID_DUPLICATE_SPEC: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/invalid-duplicate-spec.or"
+);
+const INVALID_INT_MAGNITUDE: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/invalid-int-magnitude.or"
+);
+const INVALID_NEGATIVE_WORD: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/invalid-negative-word.or"
+);
+const INVALID_TYPED_IMPL: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/invalid-typed-impl.or"
+);
+const INVALID_UNSUPPORTED_TYPE: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/invalid-unsupported-type.or"
+);
+const INVALID_WORD_RANGE: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/invalid-word-range.or"
+);
+const INVALID_WORD_WIDTH: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/invalid-word-width.or"
+);
+const VALID_EMPTY_MIXED: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/valid-empty-mixed.or"
+);
+const VALID_INT_RADICES: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/valid-int-radices.or"
+);
+const VALID_WORD8_BOUNDARIES: &[u8] = include_bytes!(
+    "../../../../research/decisions/D-004/baseline/compiler/fixtures/s3a/valid-word8-boundaries.or"
+);
 const RESULT_CONTRACT_DESCRIPTOR_SHA256: &str =
     "58773e8ce29e8726a8a85203ff7e2a4b1a03f8c02bfbcd7f6056f34fe53a2f29";
 
@@ -3295,6 +3319,7 @@ fn d004_research_tree_preserves_v05_inputs_and_exact_reviewed_protocol_overlay()
             ("d004-v0.5-draft-packet.json".to_owned(), false),
             ("d004-v0.5-candidate-mappings.json".to_owned(), false),
             ("d004-v0.6".to_owned(), true),
+            ("baseline".to_owned(), true),
             ("d004-v0.7".to_owned(), true),
         ])
     );
