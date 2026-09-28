@@ -60,7 +60,7 @@ specific cache per execution and deterministic equality requirements. The v0.7
 tranche built the adapter, closed payload schemas, executable manifests,
 enforcing isolation and result parsers, and replaced the separate owner freeze
 record with a content-addressed epoch identity. Epoch
-`d004-e-eefa7ffe75b0a9765894` ran all 75 executions on 2026-09-28. ST-REL,
+`d004-e-b2b129e87916beb23d3e` ran all 75 executions on 2026-09-28. ST-REL,
 ST-UNI, ST-DUAL, and ST-MIRROR each passed all five cases with byte-identical
 repetitions; ST-HOST failed all five because six relationships it delegates to
 hosts owned by the open D-006 and D-011 decisions are unsupported. Evidence is

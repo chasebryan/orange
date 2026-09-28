@@ -203,14 +203,14 @@ The raw-file/canonical SHA-256 pairs are:
 
 ## v0.7 epoch run
 
-Epoch `d004-e-eefa7ffe75b0a9765894` was prepared and run on 2026-09-28 from
-source revision `571c5bd1ffad65f304d8171bfe4f68d382598575`. Its packet binds
+Epoch `d004-e-b2b129e87916beb23d3e` was prepared and run on 2026-09-28 from
+source revision `93502f483b6ffab33857bf4ce64610df4cab81b3`. Its packet binds
 the bundle, the overlay, run harness raw SHA-256
-`e5c6d73db20f97b94f02927e57e6cb908c88d07dd417e895b405ef331dd63c06`, the host
+`005dbc26a64bf0f24b77e2fc044fafd7ec44b99c14798370477c57e934623c81`, the host
 tool, dependency and environment manifests, all five candidate models and all
 five input manifests. All 75 executions ran once each in the reviewed physical
 order under the enforcing launcher. Every execution exited normally within the
-ceilings: wall time 84 to 141 ms, peak memory 11.3 to 12.0 MB for the whole
+ceilings: wall time 74 to 142 ms, peak memory 11.1 to 11.9 MB for the whole
 process tree, no temporary storage, and no stderr output.
 
 | Candidate | Cases passed | Closed units |
@@ -250,16 +250,25 @@ The runner's archive is about 13.5 MB. Its committed form under
 captures, each execution's state, measurements and diagnostics, and the 25
 distinct adapter outputs. [`tools/d004_archive.py`](../../../tools/d004_archive.py)
 rebuilds the full archive byte for byte and checks it against archive-manifest
-SHA-256 `eb96d805127067c628c62b82cf37059566c303320fc6e2c626f709625e700a49`,
+SHA-256 `14eea69d349f62f1d9495e5e83dbcb0f59a3a63a8596f6eb5f338b7b301718ed`,
 then re-runs the harness's `verify` over it. The raw-file/canonical SHA-256
 pairs are:
 
 - archive index:
-  `727bf100a25058d36cea864e16ce60c18c48ac6df93a78cf382e429c6ebef018` /
-  `e87d6a4c1abbcc238fc8de8997ec58e0a783b7a543a70523384e4c28880af03c`; and
+  `69da0cc3d0c4f06ece17cf2d0dfe6c8883b26da9293ee0f5ee21891fd7a87956` /
+  `df393554e0c3d83f11997dd027914400535063125f814a9af036f3d09fafcb21`; and
 - adapter outputs:
-  `f2dbb78822c426818adf849c1d8d92213719bfd9d930553df967748081f0f92c` /
-  `3b3bbb52a158a401ce88b73f49d0e4b7852a1b09a4ff435886a8749cd9f1affa`.
+  `962140ebc54233c0c1214b0746643c95929ce6f4344542f5b8c35cfb92bd3b62` /
+  `0cd5af9a9b7c327c0b4de8856b11d9ebb9be187d9793a583de9fd1da9d54d7d2`.
+
+An earlier epoch, `d004-e-eefa7ffe75b0a9765894`, ran the same schedule from
+revision `571c5bd1ffad65f304d8171bfe4f68d382598575` and produced the same
+verdicts, closures, mismatches and unsatisfied relationships in every slot.
+It was superseded before any review because a code-scanning fix changed how
+the adapter and the run harness accept command-line paths, and any change to
+those bytes starts a new epoch. Its archive-manifest SHA-256 was
+`eb96d805127067c628c62b82cf37059566c303320fc6e2c626f709625e700a49`; its
+archive is not committed.
 
 Any later change to the adapter, the run harness, the bundle, the overlay or
 their bound inputs starts a new epoch; this one stays reproducible only from

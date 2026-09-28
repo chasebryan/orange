@@ -275,7 +275,7 @@ review, and evidence collections.
 The reviewed protocol exposes no launcher, adapter, or persistence API; the
 v0.7 run harness supplies them, and Gate 0 protects the adapter, the harness,
 the archive tool, the bundle, the overlay and the committed run archive under
-`d004-v0.7/run/`. Epoch `d004-e-eefa7ffe75b0a9765894` records 20 closed of 25
+`d004-v0.7/run/`. Epoch `d004-e-b2b129e87916beb23d3e` records 20 closed of 25
 required units and 75 of 75 result records, contributor-produced and
 unreviewed, and both `roadmap_gate_credit` and `readiness_credit` remain
 `none`. None of these inventories contains an accepted D-004 decision or
