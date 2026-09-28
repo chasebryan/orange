@@ -1644,6 +1644,23 @@ mod tests {
     }
 
     #[test]
+    fn exact_integers_convert_to_i64_only_within_63_bits() {
+        let corpus = exact_corpus();
+        for &value in &corpus {
+            let expected = i64::try_from(value).ok().filter(|value| *value != i64::MIN);
+            assert_eq!(exact(value).to_i64(), expected, "{value}");
+        }
+        for value in [0, 1, -1, i128::from(i64::MAX), -i128::from(i64::MAX)] {
+            assert_eq!(exact(value).to_i64().map(i128::from), Some(value));
+        }
+        // The magnitude of -2^63 has 64 bits, so it is refused like 2^63.
+        for value in [i128::from(i64::MIN), 1 << 63, 1 << 64] {
+            assert_eq!(exact(value).to_i64(), None, "{value}");
+        }
+        assert_eq!(MAX_LOOP_BOUND, 1 << 16);
+    }
+
+    #[test]
     fn multi_limb_arithmetic_is_exact() {
         let power = |bits: usize| {
             let mut value = exact(1);

@@ -5175,6 +5175,15 @@ mod tests {
             "[a,[b,[c,",
             "a[0][0][0]",
             "[][][]",
+            "for for for",
+            "for i in 0..",
+            "for i in 0..1 with s: Int = for",
+            "for i in 0..2 with s: Int = 0 { s",
+            "with with with [",
+            "x with [ ] = 1",
+            "x with [0] = x with [",
+            "[0; [0; [0;",
+            "a[i + [a[i -",
         ];
         for body in bodies {
             let mut sources = SourceMap::new();

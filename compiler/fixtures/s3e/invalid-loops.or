@@ -1,0 +1,15 @@
+// S3e rejection: a loop runs over a nonempty literal range within 0 through
+// 65536, its index and accumulator are new names seen only in its step, and
+// its type is the type required where it stands.
+edition 2026;
+module loops {
+  spec empty() -> Int { for i in 3..3 with s: Int = 0 { s } }
+  spec backwards() -> Int { for i in 4..2 with s: Int = 0 { s } }
+  spec too_long() -> Int { for i in 0..65537 with s: Int = 0 { s } }
+  spec same(x: Int) -> Int { for x in 0..2 with s: Int = 0 { s } }
+  spec twin() -> Int { for i in 0..2 with i: Int = 0 { i } }
+  spec typed() -> Word[8] { for i in 0..2 with s: Int = 0 { s } }
+  spec before() -> Int { for i in 0..2 with s: Int = i { s } }
+  spec after() -> Int { let a: Int = for i in 0..2 with s: Int = 0 { s + i }; s }
+  spec whole(x: Word[8]^2) -> Word[8]^2 { for i in 0..2 with s: Word[8]^2 = x { s + x } }
+}
