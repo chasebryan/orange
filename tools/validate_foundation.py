@@ -608,7 +608,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "891a530086fa81a5bcc92de944b007f215a1f384d24aeed13cf44bf92291c638"
+_PHD = "967ec40ee7e1d285f71c6e037f0666588bfa7eab106d1258e3e7f2f0c81ba8ab"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -4455,7 +4455,7 @@ class FoundationValidator:
                     self.add("workflow.ci_gate_contract", path, f"{job_name}/{step_name} must match its reviewed fail-closed command")
             ci_tools = {
                 "Lint Markdown": '''      - name: Lint Markdown
-        uses: DavidAnson/markdownlint-cli2-action@8de2aa07cae85fd17c0b35642db70cf5495f1d25
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff
         with:
           globs: |
             **/*.md
@@ -4466,7 +4466,7 @@ class FoundationValidator:
         run: |
           "$RUNNER_TEMP/actionlint/actionlint" -color''',
                 "Audit GitHub Actions security": '''      - name: Audit GitHub Actions security
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482
         with:
           advanced-security: false
           annotations: false
@@ -4549,7 +4549,7 @@ class FoundationValidator:
           retention-days: 14''',
                 "Upload result to code scanning": '''      - name: Upload result to code scanning
         if: ${{ always() && hashFiles('results.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
         with:
           sarif_file: results.sarif''',
             }
@@ -4568,7 +4568,7 @@ class FoundationValidator:
         elif n == _O:
             block = yaml_without_comments("\n".join(steps.get("Audit workflow source and upstream metadata", [])))
             expected = '''      - name: Audit workflow source and upstream metadata
-        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482
         with:
           advanced-security: false
           annotations: false
