@@ -1,5 +1,6 @@
 /* Tabula: a writing table for Orange.
-   Two themes, Ink (dark) and Paper (light), share one set of tokens. */
+   Four themes share one set of tokens: Ink (dark), Paper (light), Tokyo
+   (a deep blue night), and Corporate (black, greys, white, and navy). */
 
 :root {
   --font-ui: "Inter", "Söhne", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -88,6 +89,106 @@
   color-scheme: light;
 }
 
+[data-theme="tokyo"] {
+  --bg: #1a1b26;
+  --bg-2: #16161e;
+  --bg-3: #1f2335;
+  --bg-4: #292e42;
+  --line: #232433;
+  --line-2: #3b4261;
+  --text: #c0caf5;
+  --text-2: #a9b1d6;
+  --text-3: #7780a8;
+  --accent: #7aa2f7;
+  --accent-2: #9bb8fa;
+  --accent-ink: #11121a;
+  --accent-soft: rgba(122, 162, 247, .14);
+  --selection: rgba(122, 162, 247, .26);
+  --current-line: rgba(41, 46, 66, .45);
+  --error: #f7768e;
+  --warning: #e0af68;
+  --ok: #9ece6a;
+  --shadow: 0 18px 50px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
+  --syn-keyword: #bb9af7;
+  --syn-spec: #ff9e64;
+  --syn-impl: #7aa2f7;
+  --syn-game: #9d7cd8;
+  --syn-proof: #9ece6a;
+  --syn-claim: #73daca;
+  --syn-type: #2ac3de;
+  --syn-number: #e0af68;
+  --syn-string: #c3e88d;
+  --syn-comment: #636da6;
+  --syn-punct: #7982a9;
+  --syn-op: #89ddff;
+  --syn-decl: #c0caf5;
+  --syn-module: #c0caf5;
+  color-scheme: dark;
+}
+
+[data-theme="corporate"] {
+  --bg: #ffffff;
+  --bg-2: #f1f3f5;
+  --bg-3: #e6e9ed;
+  --bg-4: #d9dde2;
+  --line: #d8dce1;
+  --line-2: #c2c8cf;
+  --text: #0d1117;
+  --text-2: #3d4652;
+  --text-3: #636d79;
+  --accent: #1f4e8c;
+  --accent-2: #163d70;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(31, 78, 140, .1);
+  --selection: rgba(31, 78, 140, .18);
+  --current-line: rgba(13, 17, 23, .035);
+  --error: #b42318;
+  --warning: #8a6100;
+  --ok: #2d6a4f;
+  --signal: #b42318;
+  --shadow: 0 18px 50px rgba(13, 17, 23, .16), 0 2px 6px rgba(13, 17, 23, .08);
+  --syn-keyword: #1f4e8c;
+  --syn-spec: #0b4f9c;
+  --syn-impl: #3f6f9f;
+  --syn-game: #56598f;
+  --syn-proof: #3b6b5a;
+  --syn-claim: #7a6424;
+  --syn-type: #2f6f86;
+  --syn-number: #0e5cad;
+  --syn-string: #52606d;
+  --syn-comment: #737d89;
+  --syn-punct: #858e99;
+  --syn-op: #3d4652;
+  --syn-decl: #000000;
+  --syn-module: #000000;
+  color-scheme: light;
+}
+
+/* Corporate frames the light work area in black: the title bar, the left
+   edge, and the status bar carry their own dark tokens. */
+:root[data-theme="corporate"] .titlebar,
+:root[data-theme="corporate"] .rail,
+:root[data-theme="corporate"] .statusbar,
+.theme-preview[data-theme="corporate"] .pv-chrome {
+  --bg-2: #0d1014;
+  --bg-3: #1c2129;
+  --bg-4: #262c35;
+  --line: #1f242b;
+  --line-2: #343b45;
+  --text: #eef1f4;
+  --text-2: #b4bcc6;
+  --text-3: #8b95a3;
+  --accent: #7aa7e0;
+  --accent-2: #9bbde8;
+  --accent-ink: #0d1014;
+  --accent-soft: rgba(122, 167, 224, .16);
+  --error: #f0736a;
+  --warning: #e0b050;
+  --ok: #6fbf8e;
+  color-scheme: dark;
+}
+:root[data-theme="corporate"] .titlebar { box-shadow: inset 0 2px 0 var(--signal); }
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
@@ -137,6 +238,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   gap: 18px;
   padding: 0 12px 0 12px;
   background: var(--bg-2);
+  color: var(--text);
   border-bottom: 1px solid var(--line);
   min-width: 0;
 }
@@ -930,6 +1032,57 @@ body.dragging-h { cursor: row-resize; user-select: none; }
 .dialog dd { margin: 0; font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
 select.field { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%); background-position: calc(100% - 16px) 13px, calc(100% - 11px) 13px; background-size: 5px 5px; background-repeat: no-repeat; }
 
+/* ---------- Theme picker ---------- */
+
+.theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.theme-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s var(--ease), background .15s var(--ease);
+}
+.theme-choice:hover { border-color: var(--line-2); }
+.theme-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.theme-choice.selected { border-color: var(--accent); background: var(--accent-soft); }
+.theme-name { margin-top: 6px; padding: 0 2px; font-weight: 600; }
+.theme-choice.selected .theme-name::after { content: " ✓"; color: var(--accent); }
+.theme-note { padding: 0 2px; color: var(--text-3); font-size: 12px; line-height: 1.45; }
+
+.theme-preview {
+  display: grid;
+  grid-template-rows: 13px minmax(0, 1fr) 7px;
+  height: 116px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: 9.5px/1.55 var(--font-mono);
+}
+.theme-preview i { display: block; }
+.pv-chrome { background: var(--bg-2); }
+.pv-bar { display: flex; align-items: center; gap: 5px; padding: 0 6px; border-bottom: 1px solid var(--line); }
+.theme-preview[data-theme="corporate"] .pv-bar { box-shadow: inset 0 1.5px 0 var(--signal); }
+.pv-mark { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); }
+.pv-title { width: 34px; height: 3px; border-radius: 2px; background: var(--text-3); }
+.pv-body { display: grid; grid-template-columns: 13px 40px minmax(0, 1fr); min-height: 0; }
+.pv-rail { display: grid; align-content: start; justify-items: center; gap: 5px; padding-top: 6px; border-right: 1px solid var(--line); }
+.pv-rail i { width: 5px; height: 5px; border-radius: 1.5px; background: var(--text-3); }
+.pv-rail i.pv-on { background: var(--accent); }
+.pv-side { display: grid; align-content: start; gap: 4px; padding: 6px 5px; background: var(--bg-2); border-right: 1px solid var(--line); }
+.pv-side i { height: 4px; border-radius: 2px; background: var(--line-2); }
+.pv-side i.pv-on { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.pv-code { padding: 5px 8px; overflow: hidden; white-space: pre; }
+.pv-status { display: flex; align-items: center; padding: 0 6px; border-top: 1px solid var(--line); }
+.pv-ok { width: 4px; height: 4px; border-radius: 50%; background: var(--ok); }
+
 .tooltip {
   position: fixed;
   z-index: 60;
@@ -980,6 +1133,7 @@ select.field { appearance: none; background-image: linear-gradient(45deg, transp
   .phases { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .assurance { grid-template-columns: minmax(0, 1fr); }
   .welcome-actions { grid-template-columns: 1fr; }
+  .theme-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

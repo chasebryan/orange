@@ -63,9 +63,18 @@ double click on an edge puts it back.
 | Results panel | Problems, Values, Evidence, and Tokens for the file in front. |
 | Notebook | Your notes, on the right. |
 
-The sun and moon button at the bottom left switches between the dark Ink theme
-and the light Paper theme. The information button shows where this session's
-files, compiler, and Library are.
+The palette button at the bottom left opens the theme picker. Click a theme to
+use it at once; Tabula remembers the choice on this computer.
+
+| Theme | Look |
+| --- | --- |
+| Dark | Tabula's own dark theme, with Orange accents. It is the default unless your system asks for light. |
+| Light | Warm paper tones for daylight. It is the default when your system asks for light. |
+| Tokyo | A deep blue night, after the Tokyo Night colours. |
+| Corporate | A black frame around a white page, in greys and navy blue. Red is kept for errors and one thin line at the top. |
+
+The information button shows where this session's files, compiler, and Library
+are.
 
 ## Files
 

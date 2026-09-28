@@ -33,6 +33,14 @@ const store = {
   },
 };
 
+// The ids stay "ink" and "paper" so earlier choices still load.
+const THEMES = [
+  { id: "ink", name: "Dark", note: "Tabula's own dark theme, with Orange accents." },
+  { id: "paper", name: "Light", note: "Warm paper tones for daylight." },
+  { id: "tokyo", name: "Tokyo", note: "A deep blue night, after the Tokyo Night colours." },
+  { id: "corporate", name: "Corporate", note: "Black, greys, white, and navy blue, with red kept for errors." },
+];
+
 async function copyText(text, what = "Copied") {
   try {
     await navigator.clipboard.writeText(text);
@@ -196,13 +204,58 @@ function showDisconnected(reason) {
 // ---------- Theme and layout ----------
 
 function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  store.set("theme", theme);
-  const toggle = document.getElementById("theme-toggle");
-  if (toggle) {
-    toggle.replaceChildren(icon(theme === "ink" ? "sun" : "moon"));
-    toggle.title = theme === "ink" ? "Use the light theme" : "Use the dark theme";
-  }
+  const known = THEMES.some((entry) => entry.id === theme) ? theme : "ink";
+  document.documentElement.dataset.theme = known;
+  store.set("theme", known);
+}
+
+// A small picture of Tabula in one theme: title bar, left edge, side
+// panel, and a few lines of Orange in that theme's colours.
+function themePreview(theme) {
+  const t = (kind, text) => h("span", { class: kind, text });
+  return h("div", { class: "theme-preview", dataset: { theme }, "aria-hidden": "true" },
+    h("div", { class: "pv-bar pv-chrome" }, h("i", { class: "pv-mark" }), h("i", { class: "pv-title" })),
+    h("div", { class: "pv-body" },
+      h("div", { class: "pv-rail pv-chrome" }, h("i", { class: "pv-on" }), h("i"), h("i")),
+      h("div", { class: "pv-side" }, h("i", { class: "pv-on" }), h("i"), h("i"), h("i")),
+      h("div", { class: "pv-code" },
+        h("div", {}, t("t-keyword", "module"), " ", t("t-module", "round"), " ", t("t-punct", "{")),
+        h("div", {}, "  ", t("t-comment", "// the key mask")),
+        h("div", {}, "  ", t("t-spec", "spec"), " ", t("t-decl", "mask"), t("t-punct", "()"), " ", t("t-op", "->"), " ", t("t-type", "Word"), t("t-punct", "["), t("t-number", "8"), t("t-punct", "]")),
+        h("div", {}, "    ", t("t-number", "0x5a")),
+        h("div", {}, "  ", t("t-impl", "impl"), " ", t("t-decl", "mask_fast"), t("t-punct", "() {}")),
+      ),
+    ),
+    h("div", { class: "pv-status pv-chrome" }, h("i", { class: "pv-ok" })),
+  );
+}
+
+function showThemes() {
+  const cards = THEMES.map((theme) => h("button", {
+    class: "theme-choice",
+    type: "button",
+    dataset: { choice: theme.id },
+    onclick: () => { applyTheme(theme.id); mark(); },
+  },
+  themePreview(theme.id),
+  h("span", { class: "theme-name", text: theme.name }),
+  h("span", { class: "theme-note", text: theme.note })));
+  const mark = () => {
+    for (const card of cards) {
+      const on = card.dataset.choice === document.documentElement.dataset.theme;
+      card.classList.toggle("selected", on);
+      card.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+  };
+  mark();
+  dialog({
+    title: "Theme",
+    content: h("div", {},
+      h("p", { text: "Click a theme to use it. Tabula remembers the choice on this computer." }),
+      h("div", { class: "theme-grid" }, cards)),
+    actions: [{ label: "Done", value: true, kind: "primary" }],
+    wide: true,
+  });
 }
 
 function restoreLayout() {
@@ -352,9 +405,8 @@ function buildRail() {
     onclick: () => toggleNotebook(),
   }, icon("notebook")));
   els.rail.append(h("div", { class: "rail-spacer" }));
-  els.rail.append(h("button", { class: "rail-btn", type: "button", id: "theme-toggle", onclick: () => applyTheme(document.documentElement.dataset.theme === "ink" ? "paper" : "ink") }));
+  els.rail.append(h("button", { class: "rail-btn", type: "button", title: "Theme", "aria-label": "Theme", onclick: () => showThemes() }, icon("palette")));
   els.rail.append(h("button", { class: "rail-btn", type: "button", title: "About Tabula", "aria-label": "About Tabula", onclick: () => showAbout() }, icon("info")));
-  applyTheme(document.documentElement.dataset.theme);
   updateRail();
 }
 
