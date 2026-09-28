@@ -397,12 +397,17 @@ sufficient only for bounded suite coverage. It reviews all five candidate
 graphs and 70 SR mappings only as symmetric, falsifiable test hypotheses, not
 accepted Orange semantics or capability evidence. The reviewed replay plan
 assigns three deterministic repetitions to each of 25 candidate-case units, for
-75 planned executions. It remains uninstantiated: candidate adapters,
-executable manifests, enforcing isolation, result parsers, an exact execution-
-subject revision, and a separate owner freeze record are absent. The epoch is
-null and unfrozen, execution is unauthorized, evidence is zero completed of 25
-required units and 0 of 75 result records, and selection and conclusion remain
-null. D-004 remains proposed, S3 remains incomplete, S3b remains blocked, and
+75 planned executions. The v0.7 tranche built the adapter, closed payload
+schemas, executable manifests, enforcing isolation and result parsers, and
+replaced the separate owner freeze record with a content-addressed epoch
+identity. Epoch `d004-e-4aaf8a83a01693d543c4` ran all 75 executions on
+2026-09-28. ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR each passed all five cases
+with byte-identical repetitions; ST-HOST failed all five because six
+relationships it delegates to hosts owned by the open D-006 and D-011 decisions
+are unsupported. Evidence is 20 closed of 25 required units and 75 of 75 result
+records, contributor-produced and unreviewed. The suite cannot separate the
+four passing candidates, so selection and conclusion remain null. D-004 remains
+proposed pending owner review, S3 remains incomplete, S3b remains blocked, and
 Orange remains 30% complete by its unchanged 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
