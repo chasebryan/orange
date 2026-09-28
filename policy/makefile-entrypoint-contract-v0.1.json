@@ -76,6 +76,11 @@
         "/usr/bin/cmp --silent -- \"$$expected_stdout\" \"$$eval_stdout\"",
         "source-installed orangec eval stdout differs",
         "run_cargo cargo test --manifest-path \"$$manifest\" --workspace --doc --locked --offline",
+        "tabula_manifest=\"$$cargo_home/check-src/tabula/Cargo.toml\"",
+        "run_cargo cargo fmt --manifest-path \"$$tabula_manifest\" -- --check",
+        "run_cargo cargo clippy --manifest-path \"$$tabula_manifest\" --all-targets --locked --offline -- -D warnings",
+        "run_cargo cargo clippy --manifest-path \"$$tabula_manifest\" --lib --bins --locked --offline -- -D warnings -D clippy::arithmetic_side_effects -D clippy::as_conversions -D clippy::string_slice -D clippy::indexing_slicing -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic",
+        "run_cargo /usr/bin/env TABULA_TEST_ORANGEC=\"$$artifact_a\" cargo test --manifest-path \"$$tabula_manifest\" --all-targets --locked --offline",
         "verify_capture_identity; \\\n\tcopy_compiler_source \"$$cargo_home/check-reference\"",
         "tested_roots=(\"$$cargo_home/check-src\" \"$$cargo_home/repro-a\" \"$$repro_home_b/deep/src\")",
         "done < \"$$repro_source_paths\"; \\\n\tverify_capture_identity"

@@ -9,7 +9,10 @@ typed-reference evaluator and continues to fail closed on unknown source,
 unexpected binaries, untracked executable paths, unratified license files,
 unapproved dependencies, and workflow drift. The validator parses every
 admitted Cargo manifest and the lock graph; only the workspace-local `orangec`
-to `orange-compiler` path dependency is allowed. Product implementation is
+to `orange-compiler` path dependency is allowed. Tabula, the Orange workbench
+in `tabula/`, is admitted as its own Cargo workspace with no dependencies; the
+gate formats, lints, and tests it next to the compiler, and its end-to-end tests
+drive the release `orangec` that the gate builds. Product implementation is
 allowed; product releases and third-party pull requests are not.
 
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX
@@ -196,7 +199,7 @@ snapshot. After each read, the descriptor and its component-relative directory
 entry must still match that snapshot. Preflight caps ordinary text files at
 256 KiB (`256 * 1024` bytes), the validator itself at 384 KiB
 (`384 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
-and the complete repository at 12 MiB (`12 * 1024 * 1024` bytes). Returned
+and the complete repository at 16 MiB (`16 * 1024 * 1024` bytes). Returned
 payload bytes consume the aggregate read allowance as soon as they enter the
 bounded reader; each read uses at most one additional byte only to detect
 overflow. A later snapshot or representation rejection cannot refund already
