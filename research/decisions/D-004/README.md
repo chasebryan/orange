@@ -391,13 +391,20 @@ then fewest re-identified subject classes, then fewest discrimination
 judgments, then fewest semantic definitions. The overlay records that choice,
 so every v0.8 epoch packet binds it. The choice was not blind. The measures are
 deterministic functions of the candidate graphs and the suite, and the decision
-card showed the candidate each rule was predicted to select. Before the owner
-chose, a local trial of the harness, with the isolation-first rule marked as a
-dry run, ran all 105 executions, verified and reproduced those predictions.
-That trial is not a D-004 epoch. The overlay's rule record states this context.
-So the rule was bound before any v0.8 epoch ran, but it was chosen with its
-outcome known, and it is not a preregistration made in ignorance of the
-result.
+card, posted at 10:14 UTC, showed the candidate each rule was predicted to
+select. The contributor who built the suite recommended isolation first on that
+card, giving as reasons that evidence has to survive frequent new targets, that
+the suite's invariants are about isolation, and that the rule matches the
+earlier ST-REL research recommendation. At about 10:27 UTC a local trial of the
+harness, `d004-e-f23ea422b328ad18e04a`, ran all 105 executions with the
+isolation-first rule marked as a dry run, verified, and reproduced those
+predictions; its archive-manifest SHA-256 was
+`fbcd6067f32a28367ba58fa5d29377cb51d933d2155764afc0b9c17eedac7850`. That trial
+is not a D-004 epoch, and its archive is not committed. The owner chose at
+11:01 UTC. The overlay's rule record states this context. So the rule was bound
+before any v0.8 epoch ran, but it was chosen with its outcome known, on a
+recommendation that matched the existing research favorite, and it is not a
+preregistration made in ignorance of the result.
 
 ## v0.8 epoch run
 
@@ -447,11 +454,11 @@ re-identifies six subject classes to ST-MIRROR's seven, so the rule leaves
 ST-REL (`recommend_st_rel`). Fewest definitions first would have left ST-UNI,
 spec isolation first would have left ST-DUAL, and dominance only would have
 removed only ST-MIRROR, leaving ST-REL, ST-UNI and ST-DUAL inconclusive. The
-owner chose knowing this, as the v0.8 suite section records. The summary
-scopes this result to the
-candidates that close all seven cases and to SS-G05 and the SS-G03 structure
-only. It is not a D-004 recommendation under suite section 8 until the owner
-disposes every candidate and every hard gate, so `selection` stays null.
+owner chose knowing this, as the "v0.8 suite" section above records. The
+summary scopes this result to the candidates that close all seven cases and to
+SS-G05 and the SS-G03 structure only. It is not a D-004 recommendation under
+suite section 8 until the owner disposes every candidate and every hard gate,
+so `selection` stays null.
 
 The runner's archive is about 15.6 MB. Its committed form under
 `d004-v0.8/run/` keeps the same parts as v0.7's, and
@@ -469,15 +476,16 @@ re-runs the v0.8 harness's `verify`. The raw-file/canonical SHA-256 pairs are:
 
 Two earlier v0.8 epochs ran the same schedule and produced the same verdicts,
 closures, measures and rule result in every slot. Both were superseded before
-any review:
+any owner review:
 
 - `d004-e-afadaff4cbc1bb294d3e` ran before the v0.8 harness gained the host
-  re-check. Its archive-manifest SHA-256 was
+  re-check, and no review had seen it. Its archive-manifest SHA-256 was
   `6851937e0a6826657436b5dc523291c08790bed56f955d2e60245dfcd4b3ce74`.
 - `d004-e-1b3a184e9895cc149b09` ran from revision
-  `f39d181775ae2992479e0857083c3d7e02a172c1`. The fix after it makes the
-  overlay name what AM-09 and AM-13 replace in AM-02 and AM-07 and record the
-  context of the owner's choice. It also makes the harness read each case's
+  `f39d181775ae2992479e0857083c3d7e02a172c1`. A contributor review of that
+  run found the gaps the next fix closes. The fix makes the overlay name what
+  AM-09 and AM-13 replace in AM-02 and AM-07 and record the context of the
+  owner's choice. It also makes the harness read each case's
   measures strictly and report the rule result as inconclusive when a
   candidate that closes every case lacks a full measure set. Its
   archive-manifest SHA-256 was
