@@ -1808,7 +1808,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         self.resource_limit_at(
             format!(
                 "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-                 for groups, calls, and prefix operators"
+                 for groups, calls, arrays, and prefix operators"
             ),
             span,
         );
@@ -3714,11 +3714,17 @@ mod tests {
     fn bounds_expression_nesting_for_every_opener() {
         let message = format!(
             "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-             for groups, calls, and prefix operators"
+             for groups, calls, arrays, and prefix operators"
         );
         type Form = (&'static str, fn(usize) -> String, &'static str);
-        let forms: [Form; 5] = [
+        let forms: [Form; 7] = [
             ("groups", |count| nested("(", count, "a", ")"), "("),
+            ("arrays", |count| nested("[", count, "a", "]"), "["),
+            (
+                "indexed calls",
+                |count| nested("g(", count, "a", ")[0]"),
+                "g",
+            ),
             ("complements", |count| nested("~", count, "a", ""), "~"),
             ("negations", |count| nested("-", count, "a", ""), "-"),
             ("calls", |count| nested("g(", count, "a", ")"), "g"),
@@ -4208,6 +4214,255 @@ mod tests {
     }
 
     #[test]
+    fn builds_array_types_literals_and_indices_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec rows(x: Word[32]^16, n: Int^2) -> Word[32]^4 { ",
+            "let r: Word[8]^2 = [n[1] as Word[8], 0x0f,]; ",
+            "[x[0], x[15] ^ g(x)[3], x[1], (x[2])] } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let function = &ast.module.functions[0];
+
+        let x = &function.parameters[0].ty;
+        assert_eq!(source.slice(x.span), Some("Word[32]^16"));
+        assert_eq!(x.width_span.and_then(|span| source.slice(span)), Some("32"));
+        assert_eq!(
+            x.length_span().and_then(|span| source.slice(span)),
+            Some("16")
+        );
+        let n = &function.parameters[1].ty;
+        assert_eq!(source.slice(n.span), Some("Int^2"));
+        assert_eq!(n.width_span, None);
+        assert_eq!(
+            n.length_span().and_then(|span| source.slice(span)),
+            Some("2")
+        );
+
+        let FunctionBody::Typed(body) = &function.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(source.slice(body.result_type.span), Some("Word[32]^4"));
+        let binding = &body.bindings()[0];
+        assert_eq!(source.slice(binding.ty().span), Some("Word[8]^2"));
+        assert_eq!(
+            source.slice(binding.value().span),
+            Some("[n[1] as Word[8], 0x0f,]")
+        );
+        let ExpressionKind::Array(literal) = &binding.value().kind else {
+            panic!("expected an array literal");
+        };
+        assert_eq!(literal.elements().len(), 2);
+        assert_eq!(shape(source, binding.value()), "{(n[1] as Word[8]), 0x0f}");
+
+        let result = body.expression();
+        assert_eq!(
+            source.slice(result.span),
+            Some("[x[0], x[15] ^ g(x)[3], x[1], (x[2])]")
+        );
+        assert_eq!(
+            shape(source, result),
+            "{x[0], (x[15] ^ g(x)[3]), x[1], [x[2]]}"
+        );
+        let ExpressionKind::Array(literal) = &result.kind else {
+            panic!("expected an array literal");
+        };
+        let ExpressionKind::Binary(xor) = &literal.elements()[1].kind else {
+            panic!("expected `^`");
+        };
+        let ExpressionKind::Index(index) = &xor.right.kind else {
+            panic!("expected an index");
+        };
+        assert_eq!(source.slice(xor.right.span), Some("g(x)[3]"));
+        assert_eq!(source.slice(index.base().span), Some("g(x)"));
+        assert_eq!(source.slice(index.index_span()), Some("3"));
+        // An array is one level above its tallest element, and an index one
+        // level above its base.
+        assert_eq!(tree_height(result), 5);
+        assert_eq!(tree_height(&literal.elements()[0]), 2);
+    }
+
+    #[test]
+    fn array_types_parse_only_where_a_type_is_declared() {
+        // A conversion target is never an array, so `^` after it is the
+        // operator, which needs grouping.
+        let text = spec_source("a as Word[32] ^ b");
+        let (_, _, parsed) = parse_text(&text);
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+        assert_eq!(
+            parsed.diagnostics[0].code(),
+            DiagnosticCode::UngroupedOperators
+        );
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            "`^` follows `as` without grouping parentheses"
+        );
+        // A parenthesized conversion is an ordinary `^` operand.
+        let (sources, expression) = body_expression(&spec_source("(a as Word[32]) ^ b"));
+        let source = sources.iter().next().unwrap();
+        assert_eq!(shape(source, &expression), "([(a as Word[32])] ^ b)");
+        // Every length spelling parses; the analyzer decides which resolve.
+        for length in ["1", "256", "257", "0", "007", "0x10", "1_0"] {
+            let text = format!(
+                "edition 2026; module m {{ spec f(x: Int^{length}) -> Word[8]^{length} {{ \
+                 let t: Word[16]^{length} = x; t }} }}"
+            );
+            let (sources, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{length}");
+            assert!(
+                parsed.diagnostics.is_empty(),
+                "{length}: {:?}",
+                parsed.diagnostics
+            );
+            let source = sources.iter().next().unwrap();
+            let function = &parsed.ast.unwrap().module.functions[0];
+            let FunctionBody::Typed(body) = &function.body else {
+                panic!("expected a typed body");
+            };
+            for ty in [
+                &function.parameters[0].ty,
+                &body.result_type,
+                body.bindings()[0].ty(),
+            ] {
+                assert_eq!(
+                    ty.length_span().and_then(|span| source.slice(span)),
+                    Some(length)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_arrays_with_exact_messages() {
+        let cases = [
+            ("[]", "expected an array element"),
+            ("[,]", "expected an expression"),
+            ("[a b]", "expected `,` or `]` after the array element"),
+            ("[a,, b]", "expected an expression"),
+            ("[a", "expected `,` or `]` after the array element"),
+            ("a[]", "expected an integer index after `[`"),
+            ("a[b]", "expected an integer index after `[`"),
+            ("a[-1]", "expected an integer index after `[`"),
+            ("a[0 + 1]", "expected `]` after the index"),
+            ("a[0, 1]", "expected `]` after the index"),
+            ("a[0", "expected `]` after the index"),
+            (
+                "a[0][1]",
+                "expected an operator or the end of the expression",
+            ),
+            ("(a)[0]", "expected `}` after the body expression"),
+            ("[a][0]", "expected `}` after the body expression"),
+            ("1[0]", "expected `}` after the body expression"),
+        ];
+        for (body, message) in cases {
+            let text = spec_source(body);
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+        }
+
+        let types = [
+            ("Word[8]^", "expected an integer length after `^`"),
+            ("Word[8]^n", "expected an integer length after `^`"),
+            ("Int^(2)", "expected an integer length after `^`"),
+            (
+                "Word[8]^2^2",
+                "expected the end of the type after its array length",
+            ),
+        ];
+        for (ty, message) in types {
+            for text in [
+                format!("edition 2026; module m {{ spec f(x: {ty}) -> Int {{ 1 }} }}"),
+                format!("edition 2026; module m {{ spec f() -> {ty} {{ 1 }} }}"),
+                format!("edition 2026; module m {{ spec f() -> Int {{ let t: {ty} = 1; 1 }} }}"),
+            ] {
+                let (_, lexed, parsed) = parse_text(&text);
+                assert!(lexed.diagnostics().is_empty(), "{text:?}");
+                assert!(parsed.ast.is_none(), "accepted {text:?}");
+                let diagnostic = parsed.diagnostics.first().unwrap();
+                assert_eq!(diagnostic.code(), DiagnosticCode::ExpectedSyntax);
+                assert_eq!(diagnostic.message(), message, "{text:?}");
+            }
+        }
+        let text = "edition 2026; module m { spec f() -> Word[8]^2^2 { [1, 2] } }";
+        let (_, _, parsed) = parse_text(text);
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+        assert_eq!(
+            parsed.diagnostics[0].notes(),
+            [
+                "an array's elements are `Int` or words; arrays of arrays are not part of Orange \
+              2026"
+            ]
+        );
+    }
+
+    #[test]
+    fn bounds_elements_per_array_literal() {
+        let literal = |count: usize| {
+            format!(
+                "[{}]",
+                (0..count)
+                    .map(|index| format!("e{index}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        let (_, expression) = body_expression(&spec_source(&literal(MAX_ARRAY_ELEMENTS)));
+        let ExpressionKind::Array(array) = &expression.kind else {
+            panic!("expected an array literal");
+        };
+        assert_eq!(array.elements().len(), MAX_ARRAY_ELEMENTS);
+        assert_eq!(tree_height(&expression), 2);
+        assert_resource_limited(
+            &literal(MAX_ARRAY_ELEMENTS + 1),
+            &format!("array literal has more than {MAX_ARRAY_ELEMENTS} elements"),
+            &format!("e{MAX_ARRAY_ELEMENTS}"),
+        );
+    }
+
+    #[test]
+    fn array_reservation_failure_returns_no_partial_ast() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add(
+                "test.or",
+                "edition 2026; module m { spec f(x: Int) -> Int^2 { [x, x] } }",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let run = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_argument_slot = |_| false;
+            parser.run()
+        };
+        let first = run();
+        assert_eq!(first, run());
+        assert!(first.ast.is_none());
+        assert_eq!(first.diagnostics.len(), 1);
+        let diagnostic = &first.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "parser could not allocate array storage"
+        );
+        assert_eq!(source.slice(diagnostic.primary_span()), Some("x"));
+    }
+
+    #[test]
     fn expression_parsing_is_repeatable_and_malformed_expressions_never_panic() {
         let bodies = [
             "(((((",
@@ -4228,6 +4483,12 @@ mod tests {
             "let let let",
             "let a: Int = let a: Int = a;",
             "(a as Word[32] as",
+            "[[[[[",
+            "]]]]]",
+            "a[a[a[",
+            "[a,[b,[c,",
+            "a[0][0][0]",
+            "[][][]",
         ];
         for body in bodies {
             let mut sources = SourceMap::new();

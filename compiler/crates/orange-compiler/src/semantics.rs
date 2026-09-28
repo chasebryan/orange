@@ -5700,4 +5700,545 @@ mod tests {
         );
         assert_eq!(core.functions[1].name, "as");
     }
+
+    fn array_of(element: CoreType, length: u32) -> CoreType {
+        CoreType::Array(ArrayType::new(element, length).unwrap())
+    }
+
+    #[test]
+    fn arrays_and_indices_build_typed_core_in_postorder() {
+        let (fixture, core) = accepted(concat!(
+            "  spec rot(x: Word[32]^4) -> Word[32]^4 { [x[1], x[2], x[3], x[0]] }\n",
+            "  spec pick(x: Word[32]^4) -> Word[32] { rot(x)[3] ^ x[0x0] }\n",
+            "  spec pair() -> Int^2 { let p: Int^2 = [1, -2,]; p }\n",
+            "  spec first() -> Int { pair()[0] }\n",
+        ));
+        let words = array_of(CoreType::Word32, 4);
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            core.functions
+                .iter()
+                .map(|function| (function.parameters.clone(), function.result_type))
+                .collect::<Vec<_>>(),
+            [
+                (vec![words], words),
+                (vec![words], CoreType::Word32),
+                (vec![], array_of(CoreType::Int, 2)),
+                (vec![], CoreType::Int),
+            ]
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[0]),
+            owned(&[
+                ("parameter 0", "x", words),
+                ("index 1", "x[1]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 2", "x[2]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 3", "x[3]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 0", "x[0]", CoreType::Word32),
+                ("array of 4", "[x[1], x[2], x[3], x[0]]", words),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[1]),
+            owned(&[
+                ("parameter 0", "x", words),
+                ("call #0 with 1", "rot(x)", words),
+                ("index 3", "rot(x)[3]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 0", "x[0x0]", CoreType::Word32),
+                ("infix ^", "rot(x)[3] ^ x[0x0]", CoreType::Word32),
+            ])
+        );
+        let pair = &core.functions[2];
+        assert_eq!(pair.locals[0].ty(), array_of(CoreType::Int, 2));
+        assert_eq!(
+            expression_nodes(&fixture, &pair.locals[0].value),
+            owned(&[
+                ("literal 1", "1", CoreType::Int),
+                ("literal -2", "-2", CoreType::Int),
+                ("array of 2", "[1, -2,]", array_of(CoreType::Int, 2)),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, pair),
+            owned(&[("local 0", "p", array_of(CoreType::Int, 2))])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[3]),
+            owned(&[
+                ("call #2 with 0", "pair()", array_of(CoreType::Int, 2)),
+                ("index 0", "pair()[0]", CoreType::Int),
+            ])
+        );
+    }
+
+    #[test]
+    fn array_lengths_resolve_only_as_exact_decimals_from_1_through_256() {
+        for (length, resolved) in [
+            ("1", Some(1)),
+            ("2", Some(2)),
+            ("16", Some(16)),
+            ("255", Some(255)),
+            ("256", Some(256)),
+            ("0", None),
+            ("257", None),
+            ("1000", None),
+            ("01", None),
+            ("007", None),
+            ("0x10", None),
+            ("0b1", None),
+            ("1_6", None),
+            ("99999999999999999999", None),
+        ] {
+            let members = format!("  spec f(x: Word[8]^{length}) -> Word[8] {{ 1 }}\n");
+            let fixture = module(&members);
+            let result = fixture.analyze();
+            match resolved {
+                Some(resolved) => {
+                    assert_eq!(result.diagnostics, [], "{length}");
+                    assert_eq!(
+                        result.core.unwrap().functions[0].parameters,
+                        [array_of(CoreType::Word8, resolved)]
+                    );
+                }
+                None => {
+                    assert!(result.core.is_none(), "{length}");
+                    assert_eq!(
+                        reported(&fixture, &result),
+                        [(
+                            DiagnosticCode::UnsupportedArrayLength,
+                            length,
+                            String::from(
+                                "an array length must be a decimal integer from 1 through 256"
+                            )
+                        )],
+                        "{length}"
+                    );
+                    assert_eq!(
+                        result.diagnostics[0].notes(),
+                        ["write the length in decimal without leading zeros, as in `Word[32]^16`"]
+                    );
+                }
+            }
+        }
+        // The element type is resolved first; an unresolved element type is
+        // reported alone.
+        let (fixture, result) = rejected(concat!(
+            "  spec a(x: Bool^4) -> Int { 1 }\n",
+            "  spec b(x: Word^4) -> Int { 1 }\n",
+            "  spec c(x: Word[7]^0) -> Int { 1 }\n",
+            "  spec d() -> Int^0 { [1] }\n",
+            "  spec e() -> Int { let t: Word[8]^300 = [1]; 1 }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Bool^4",
+                    String::from("unsupported parameter type `Bool`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedWordWidth,
+                    "Word",
+                    String::from("`Word` requires an exact width of 8, 16, 32, or 64")
+                ),
+                (
+                    DiagnosticCode::UnsupportedWordWidth,
+                    "7",
+                    String::from("`Word` width must be exactly 8, 16, 32, or 64")
+                ),
+                (
+                    DiagnosticCode::UnsupportedArrayLength,
+                    "0",
+                    String::from("an array length must be a decimal integer from 1 through 256")
+                ),
+                (
+                    DiagnosticCode::UnsupportedArrayLength,
+                    "300",
+                    String::from("an array length must be a decimal integer from 1 through 256")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn array_errors_are_reported_once_in_checking_order() {
+        let (fixture, result) = rejected(concat!(
+            "  spec count(x: Word[8]) -> Word[8]^3 { [x, x] }\n",
+            "  spec one(x: Word[8]) -> Word[8]^2 { [x] }\n",
+            "  spec element(x: Word[8]) -> Word[8]^2 { [x, 256] }\n",
+            "  spec both() -> Word[8]^2 { [y, 1, 2] }\n",
+            "  spec range(x: Word[8]^4) -> Word[8] { x[4] }\n",
+            "  spec huge(x: Word[8]^4) -> Word[8] { x[99999999999999999999] }\n",
+            "  spec scalar(x: Word[8]) -> Word[8] { x[0] }\n",
+            "  spec mismatch(x: Word[8]^4) -> Word[16] { x[0] }\n",
+            "  spec mismatch_range(x: Word[8]^4) -> Word[16] { x[9] }\n",
+            "  spec unknown() -> Word[8] { z[0] }\n",
+            "  spec whole(x: Word[8]^4) -> Word[8] { x }\n",
+            "  spec other(x: Word[8]^4) -> Word[16] { x }\n",
+            "  spec literal() -> Word[8]^4 { 1 }\n",
+            "  spec array_for_scalar() -> Int { [1] }\n",
+            "  spec nested() -> Int^1 { [[1]] }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[x, x]",
+                    String::from("this array has 2 elements, but `Word[8]^3` has 3")
+                ),
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[x]",
+                    String::from("this array has 1 element, but `Word[8]^2` has 2")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "256",
+                    String::from("literal is outside the range of `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[y, 1, 2]",
+                    String::from("this array has 3 elements, but `Word[8]^2` has 2")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "y",
+                    String::from("`y` is not a parameter of `both`")
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "4",
+                    String::from("index `4` is out of range for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "99999999999999999999",
+                    String::from("index `99999999999999999999` is out of range for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::NotAnArray,
+                    "x",
+                    String::from("only an array can be indexed, but this has type `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x[0]",
+                    String::from(
+                        "this element has type `Word[8]`, but `Word[16]` is required here"
+                    )
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "9",
+                    String::from("index `9` is out of range for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x[9]",
+                    String::from(
+                        "this element has type `Word[8]`, but `Word[16]` is required here"
+                    )
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "z",
+                    String::from("`z` is not a parameter of `unknown`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x",
+                    String::from("`x` has type `Word[8]^4`, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x",
+                    String::from("`x` has type `Word[8]^4`, but `Word[16]` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "1",
+                    String::from("an integer literal cannot have type `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "[1]",
+                    String::from("an array literal cannot have type `Int`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "[1]",
+                    String::from("an array literal cannot have type `Int`")
+                ),
+            ]
+        );
+        let notes = |index: usize| result.diagnostics[index].notes().to_vec();
+        assert_eq!(
+            notes(0),
+            ["an array literal lists every element of its type exactly once"]
+        );
+        assert_eq!(
+            result.diagnostics[5].label(),
+            "indices run from 0 through 3"
+        );
+        assert_eq!(
+            notes(5),
+            ["an index is a fixed literal; variable indices are not part of Orange 2026"]
+        );
+        assert_eq!(result.diagnostics[7].label(), "`Word[8]` has no elements");
+        assert_eq!(
+            notes(12),
+            ["select one element with an index, such as `x[0]`"]
+        );
+        assert_eq!(
+            notes(13),
+            ["Orange has no implicit conversions between types"]
+        );
+        assert_eq!(
+            notes(14),
+            ["an array value is written `[e0, e1, ...]`, one element per index"]
+        );
+        assert_eq!(
+            notes(15),
+            ["an array literal is written where an array type `T^n` is required"]
+        );
+    }
+
+    #[test]
+    fn operators_and_conversions_apply_to_elements_not_arrays() {
+        let (fixture, result) = rejected(concat!(
+            "  spec add(x: Word[8]^4) -> Word[8]^4 { x + x }\n",
+            "  spec xor(x: Word[8]^4) -> Word[8]^4 { x ^ x }\n",
+            "  spec rot(x: Word[8]^4) -> Word[8]^4 { x <<< 1 }\n",
+            "  spec not(x: Word[8]^4) -> Word[8]^4 { ~x }\n",
+            "  spec neg(x: Int^4) -> Int^4 { -x }\n",
+            "  spec convert(x: Word[8]^4) -> Int { x as Int }\n",
+            "  spec convert_call() -> Word[8] { rows() as Word[8] }\n",
+            "  spec convert_literal() -> Int { [1] as Int }\n",
+            "  spec rows() -> Word[8]^2 { [1, 2] }\n",
+        ));
+        let note = String::from(ARRAY_OPERATOR_NOTE);
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "+",
+                    String::from("`+` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "^",
+                    String::from("`^` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "<<<",
+                    String::from("`<<<` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "~",
+                    String::from("prefix `~` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "-",
+                    String::from("prefix `-` is not defined for `Int^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for `Word[8]^2`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for an array")
+                ),
+            ]
+        );
+        for diagnostic in &result.diagnostics[..5] {
+            assert_eq!(diagnostic.notes(), [note.as_str()]);
+        }
+        for diagnostic in &result.diagnostics[5..] {
+            assert_eq!(
+                diagnostic.notes(),
+                ["convert each element, such as `x[0] as Int`"]
+            );
+        }
+        // Operators on elements and conversions of elements are ordinary.
+        let (fixture, core) = accepted(concat!(
+            "  spec mix(x: Word[8]^2, n: Int^2) -> Int {\n",
+            "    ((x[0] ^ ~x[1]) as Int) + -n[1] * ((x[1] <<< 3) as Int)\n",
+            "  }\n",
+        ));
+        let operations = core_nodes(&fixture, &core.functions[0])
+            .into_iter()
+            .map(|(operation, _, _)| operation)
+            .collect::<Vec<_>>();
+        assert!(
+            operations.contains(&String::from("index 1")),
+            "{operations:?}"
+        );
+    }
+
+    #[test]
+    fn array_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); the parameter's uniqueness check,
+        // name, width, and length (4); the result's name, width, and length
+        // (3); the array literal (1); the index `[1]`, its prefix and one
+        // significant digit, and its base `x` (4); and the literal `0x05`,
+        // its prefix, and one significant digit (3): 17 analysis events.
+        // Core is the module, one function node, one result-type node, one
+        // parameter-type node, and the body nodes `x`, `x[1]`, `0x05`, and
+        // the array: 8 nodes, each one more event.
+        let fixture = module("  spec f(x: Word[8]^2) -> Word[8]^2 { [x[1], 0x05] }\n");
+        let (events, nodes) = (25, 8);
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert!(exact.core.is_some());
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label);
+        }
+        // An index literal decodes against the significant-bit limit before
+        // its range is checked.
+        let fixture = module(&format!(
+            "  spec f(x: Word[8]^2) -> Word[8] {{ x[0x{}] }}\n",
+            "f".repeat(4097)
+        ));
+        let result = fixture.analyze();
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::IntegerMagnitudeLimit
+        );
+    }
+
+    #[test]
+    fn array_storage_failures_return_no_partial_core() {
+        let fixture = module("  spec f(x: Int) -> Int^2 { [x, x] }\n");
+        let first = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_node_slot =
+                |nodes| nodes.len() < 2 && nodes.try_reserve(1).is_ok();
+            analyzer.run()
+        };
+        let result = first();
+        assert_eq!(result, first());
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(
+            fixture.source().slice(diagnostic.primary_span()),
+            Some("[x, x]")
+        );
+        assert_eq!(
+            diagnostic.label(),
+            "typed Core expression storage allocation failed"
+        );
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_arrays_and_indices() {
+        let text = "edition 2026; module values { \
+                    spec value(x: Word[8]^2) -> Word[8]^2 { [x[1], x[0]] } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        let foreign_function = &second.ast.module.functions[0];
+        let foreign = match &foreign_function.body {
+            FunctionBody::Typed(body) => body,
+            FunctionBody::Empty => unreachable!(),
+        };
+        let ExpressionKind::Array(foreign_array) = &foreign.expression.kind else {
+            unreachable!();
+        };
+        let ExpressionKind::Index(foreign_index) = &foreign_array.elements[0].kind else {
+            unreachable!();
+        };
+        let foreign_length = foreign_function.parameters[0].ty.length_span;
+        let foreign_result_length = foreign.result_type.length_span;
+        fn index_mut(ast: &mut SyntaxTree) -> &mut IndexExpression {
+            let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
+                unreachable!();
+            };
+            match &mut array.elements[0].kind {
+                ExpressionKind::Index(index) => index,
+                _ => unreachable!(),
+            }
+        }
+        let mutations: [&dyn Fn(&mut SyntaxTree); 6] = [
+            &|ast| ast.module.functions[0].parameters[0].ty.length_span = foreign_length,
+            &|ast| typed_body_mut(ast).result_type.length_span = foreign_result_length,
+            &|ast| typed_body_mut(ast).expression.span = foreign.expression.span,
+            &|ast| {
+                let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
+                    unreachable!();
+                };
+                array.elements[1].span = foreign_array.elements[1].span;
+            },
+            &|ast| index_mut(ast).index_span = foreign_index.index_span,
+            &|ast| index_mut(ast).base.span = foreign_index.base.span,
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
+    }
 }

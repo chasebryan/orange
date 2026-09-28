@@ -212,7 +212,14 @@ fn reserve_frames(frames: &mut Vec<Frame<'_>>, count: usize) -> bool {
 enum Value {
     Int(Rc<ExactInteger>),
     Word(u64),
-    Array(Rc<Vec<Value>>),
+    Array(Rc<ArrayValue>),
+}
+
+/// An array value with the type it was built at.
+#[derive(Debug)]
+struct ArrayValue {
+    ty: ArrayType,
+    elements: Vec<Value>,
 }
 
 /// One active function evaluation.
@@ -394,7 +401,7 @@ impl<'core> Machine<'core> {
             }
             elements.push(element);
         }
-        Ok(Value::Array(Rc::new(elements)))
+        Ok(Value::Array(Rc::new(ArrayValue { ty, elements })))
     }
 
     fn checked_int(&self, value: ExactInteger, span: Span) -> Result<Value, Stop> {
@@ -652,16 +659,15 @@ impl<'core> Machine<'core> {
                 let Value::Array(array) = self.pop()? else {
                     return Err(Stop::InconsistentCore);
                 };
-                let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
-                let element = array.get(index).cloned().ok_or(Stop::InconsistentCore)?;
-                let consistent = match (&element, word_mask(node.ty)) {
-                    (Value::Int(_), None) => node.ty == CoreType::Int,
-                    (Value::Word(_), Some(_)) => true,
-                    _ => false,
-                };
-                if !consistent {
+                if array.ty.element() != node.ty {
                     return Err(Stop::InconsistentCore);
                 }
+                let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
+                let element = array
+                    .elements
+                    .get(index)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
                 self.push(element)
             }
             CoreNodeKind::Convert { from } => {
@@ -794,14 +800,14 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
         (Value::Word(value), ty) => {
             CoreValue::word_from_u64(ty, value).ok_or(Stop::InconsistentCore)
         }
-        (Value::Array(array), CoreType::Array(array_type)) => {
+        (Value::Array(array), CoreType::Array(array_type)) if array.ty == array_type => {
             let mut elements = Vec::new();
-            if !(reservations.result_array)(&mut elements, array.len()) {
+            if !(reservations.result_array)(&mut elements, array.elements.len()) {
                 return Err(Stop::Allocation(
                     "evaluated array storage could not be reserved",
                 ));
             }
-            for element in array.iter() {
+            for element in &array.elements {
                 elements.push(result_element(element, array_type.element(), reservations)?);
             }
             CoreArray::new(array_type, elements)
@@ -1675,6 +1681,14 @@ mod tests {
                 "  spec w() -> Word[8] { let n: Int = -18446744073709551617; n as Word[8] }\n",
                 3,
             ),
+            // An array of n elements costs its elements' steps and n more;
+            // every index costs one step.
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] }\n", 6),
+            ("  spec a() -> Int^1 { [-(1)] }\n", 4),
+            (
+                "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; t[1] ^ t[0] }\n",
+                9,
+            ),
         ] {
             let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
             let exact = evaluate_with_limit(&core, steps);
@@ -1797,6 +1811,16 @@ mod tests {
             nested("(", "x", " as Word[32])"),
             nested("g(", "x", " as Word[32])"),
             format!(
+                "{}x{}",
+                "h([".repeat(MAX_EXPRESSION_NESTING / 2),
+                "])[0]".repeat(MAX_EXPRESSION_NESTING / 2)
+            ),
+            format!(
+                "h([{}x{}])[0]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 2),
+                ")".repeat(MAX_EXPRESSION_NESTING - 2)
+            ),
+            format!(
                 "{}x",
                 (0..MAX_BINDINGS_PER_BODY)
                     .map(|index| format!("let v{index}: Word[32] = {};", nested("(", "x", ")")))
@@ -1808,6 +1832,7 @@ mod tests {
             .map(|body| {
                 format!(
                     "edition 2026; module m {{\n  spec g(x: Word[32]) -> Word[32] {{ x }}\n  \
+                     spec h(x: Word[32]^1) -> Word[32]^1 {{ x }}\n  \
                      spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
                      spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
                 )
@@ -1979,6 +2004,213 @@ mod tests {
         assert_eq!(
             result.diagnostics()[0].label(),
             "exact integer storage could not be reserved"
+        );
+    }
+
+    #[test]
+    fn arrays_evaluate_in_index_order_and_display_every_element() {
+        let members = concat!(
+            "  spec rows() -> Word[8]^4 { [1, 0x20, 0xff, 7] }\n",
+            "  spec pick() -> Word[8] { rows()[2] ^ rows()[0] }\n",
+            "  spec ints() -> Int^2 { let p: Int^2 = [-5, 18446744073709551616]; [p[1], p[0]] }\n",
+            "  spec rev(x: Word[32]^3) -> Word[32]^3 { [x[2], x[1], x[0]] }\n",
+            "  spec run() -> Word[32]^3 { rev([1, 2, rev([7, 8, 9])[0]]) }\n",
+            "  spec one() -> Word[64]^1 { [0xffffffffffffffff] }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "rows = [0x01, 0x20, 0xff, 0x07]",
+                "pick = 0xfe",
+                "ints = [18446744073709551616, -5]",
+                "run = [0x00000009, 0x00000002, 0x00000001]",
+                "one = [0xffffffffffffffff]",
+            ]
+        );
+        // Every admitted length evaluates, and elements keep their order.
+        let long = (0..256)
+            .map(|index| format!("{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let members = format!(
+            "  spec all() -> Word[8]^256 {{ [{long}] }}\n  \
+             spec last() -> Word[8] {{ all()[255] }}\n"
+        );
+        let values = values_of(&members);
+        assert_eq!(values[1], "last = 0xff");
+        let expected = (0..256)
+            .map(|index| render_word(8, index))
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(values[0], format!("all = [{expected}]"));
+    }
+
+    #[test]
+    fn chacha20_quarter_round_on_an_array_matches_rfc_8439() {
+        // RFC 8439 section 2.1.1, with the state as one `Word[32]^4`.
+        let members = concat!(
+            "  spec quarter_round(s: Word[32]^4) -> Word[32]^4 {\n",
+            "    let a1: Word[32] = s[0] + s[1];\n",
+            "    let d1: Word[32] = (s[3] ^ a1) <<< 16;\n",
+            "    let c1: Word[32] = s[2] + d1;\n",
+            "    let b1: Word[32] = (s[1] ^ c1) <<< 12;\n",
+            "    let a2: Word[32] = a1 + b1;\n",
+            "    let d2: Word[32] = (d1 ^ a2) <<< 8;\n",
+            "    let c2: Word[32] = c1 + d2;\n",
+            "    let b2: Word[32] = (b1 ^ c2) <<< 7;\n",
+            "    [a2, b2, c2, d2]\n",
+            "  }\n",
+            "  spec test_vector() -> Word[32]^4 {\n",
+            "    quarter_round([0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567])\n",
+            "  }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            ["test_vector = [0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb]"]
+        );
+    }
+
+    #[test]
+    fn inconsistent_arrays_and_indices_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec rows() -> Word[8]^2 { [1, 2] }\n",
+            "  spec pick() -> Word[8] { rows()[1] }\n",
+            "  spec wrap(x: Word[8]) -> Word[8]^1 { [x] }\n",
+            "  spec run() -> Word[8]^1 { wrap(3) }\n",
+            "}\n"
+        ));
+        fn words(length: u32) -> CoreType {
+            CoreType::Array(ArrayType::new(CoreType::Word8, length).unwrap())
+        }
+        let mutations: [fn(&mut CoreModule); 9] = [
+            // An array claims more elements than its type has.
+            |core| core.functions[0].body.nodes[2].kind = CoreNodeKind::Array { elements: 3 },
+            // An array claims fewer elements than were computed.
+            |core| core.functions[0].body.nodes[2].kind = CoreNodeKind::Array { elements: 1 },
+            // An array node has a scalar type.
+            |core| core.functions[0].body.nodes[2].ty = CoreType::Word8,
+            // An element does not fit the element type.
+            |core| {
+                core.functions[0].body.nodes[0].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x100));
+            },
+            // An index is past the end.
+            |core| core.functions[1].body.nodes[1].kind = CoreNodeKind::Index { index: 2 },
+            // An index has a type other than the element type.
+            |core| core.functions[1].body.nodes[1].ty = CoreType::Word16,
+            // An index is applied to a scalar.
+            |core| {
+                core.functions[1].body.nodes[0].kind = CoreNodeKind::Literal(CoreValue::Word8(1));
+            },
+            // An array takes its element from the caller's arguments.
+            |core| {
+                core.functions[2].body.nodes.remove(0);
+            },
+            // A result has a different array type than its value.
+            |core| core.functions[0].result_type = words(1),
+        ];
+        assert_eq!(base.functions[0].result_type, words(2));
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn array_storage_reservation_failures_return_no_values() {
+        let core = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec rows() -> Int^2 { [1, 2] }\n",
+            "}\n"
+        ));
+        for (reservations, label) in [
+            (
+                Reservations {
+                    array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+            (
+                Reservations {
+                    result_array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluated array storage could not be reserved",
+            ),
+            (
+                Reservations {
+                    value_limbs: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluated exact integer storage could not be reserved",
+            ),
+        ] {
+            let run = || {
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.values().is_none());
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label);
+            assert_eq!(diagnostic.primary_span(), core.functions[0].name_span);
+        }
+    }
+
+    /// Nested array literals are rejected at the second level, but the whole
+    /// pipeline still walks all of them within 1 MiB of stack.
+    #[test]
+    fn deeply_nested_rejected_arrays_fit_in_one_mebibyte_of_stack() {
+        use crate::parser::MAX_EXPRESSION_NESTING;
+        let text = format!(
+            "edition 2026; module m {{ spec f(x: Word[32]) -> Word[32]^1 {{ {}x{} }} }}\n",
+            "[".repeat(MAX_EXPRESSION_NESTING),
+            "]".repeat(MAX_EXPRESSION_NESTING)
+        );
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                let mut sources = SourceMap::new();
+                let id = sources.add("evaluate.or", text).unwrap();
+                let source = sources.get(id).unwrap();
+                let lexed = lex(source, Edition::E2026);
+                let parsed = parse(source, &lexed);
+                assert_eq!(parsed.diagnostics(), []);
+                let analyzed = analyze(source, parsed.ast().unwrap());
+                analyzed
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| (diagnostic.code(), diagnostic.message().to_owned()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        assert_eq!(
+            worker.join().unwrap(),
+            [(
+                DiagnosticCode::TypeMismatch,
+                String::from("an array literal cannot have type `Word[32]`")
+            )]
         );
     }
 }
