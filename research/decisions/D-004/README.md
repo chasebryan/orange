@@ -2,7 +2,7 @@
 
 Status: `run_recorded_review_pending`. The v0.7 tranche builds every epoch
 prerequisite the reviewed protocol listed as absent, and epoch
-`d004-e-eefa7ffe75b0a9765894` has run all 75 scheduled executions. Its results
+`d004-e-d1458087bc013d1e734f` has run all 75 scheduled executions. Its results
 are contributor-produced and unreviewed. No conclusion or semantic-strata
 selection exists. D004-PRE-01 remains `solo-reviewed`, and the v0.6
 implementation closure is `provisional_pending_exact_merged_revision`.

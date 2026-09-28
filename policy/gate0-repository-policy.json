@@ -431,7 +431,7 @@
     "docs/security/THREAT_MODEL.md": "1fb7947c03dfa48dd24f85f6edc86d9d3eb549fae3e4001868fbdbea68b0d6ad",
     "policy/README.md": "52a1bed1c1fe3bc37496cf9309d27ae5f9050deb73c86437f1425c14f719167b",
     "policy/makefile-entrypoint-contract-v0.1.json": "370e0954ca798d4ba4eb04d71a223167c530ce5f41c4b5a0ddf7e3a34c0fb19f",
-    "research/decisions/D-004/README.md": "0fd34d97007c0f5434cd4646fbadfeb9c137627c53ed0210c74b4d4a6a91ca71",
+    "research/decisions/D-004/README.md": "870feeec19950cc11e526553d7045419f77989e4769a9dd2ce23ae2f6fc41c32",
     "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json": "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481",
     "research/decisions/D-004/d004-v0.2-named-mutations.json": "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54",
     "research/decisions/D-004/d004-v0.3-cross-cutting-executable-fixtures.json": "5fea65960c47818243d41076dd96a6cab2dbd6d4038fd354a3f5ba30a12622ae",
