@@ -1,0 +1,10 @@
+// S3d rejection: an index must be below the array's length, only an array
+// can be indexed, and an element has exactly its element type.
+edition 2026;
+module indices {
+  spec past_end(x: Word[32]^16) -> Word[32] { x[16] }
+  spec scalar(x: Word[32]) -> Word[32] { x[0] }
+  spec element_type(x: Word[8]^4) -> Word[32] { x[0] }
+  spec whole_array(x: Word[8]^4) -> Word[8] { x }
+  spec unknown() -> Int { y[0] }
+}

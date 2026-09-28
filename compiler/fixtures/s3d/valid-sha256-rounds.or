@@ -1,0 +1,47 @@
+// S3d conformance: SHA-256 of FIPS 180-4 section 6.2.2 on the one-block
+// message "abc", with the working variables as one `Word[32]^8`. The first
+// two rounds and the first schedule words match the example values of the
+// NIST "abc" worked example.
+edition 2026;
+module sha256 {
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    (x & y) ^ (x & z) ^ (y & z)
+  }
+
+  spec initial_hash() -> Word[32]^8 {
+    [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+  }
+
+  // The padded message block of "abc": 0x61 0x62 0x63, a one bit, zeros,
+  // and the 64-bit length 24.
+  spec abc_block() -> Word[32]^16 {
+    [
+      0x61626380, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0x00000018,
+    ]
+  }
+
+  spec schedule(w: Word[32]^16) -> Word[32]^2 {
+    let w16: Word[32] = small_sigma1(w[14]) + w[9] + small_sigma0(w[1]) + w[0];
+    let w17: Word[32] = small_sigma1(w[15]) + w[10] + small_sigma0(w[2]) + w[1];
+    [w16, w17]
+  }
+
+  spec round(s: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+    let t1: Word[32] = s[7] + big_sigma1(s[4]) + ch(s[4], s[5], s[6]) + k + w;
+    let t2: Word[32] = big_sigma0(s[0]) + maj(s[0], s[1], s[2]);
+    [t1 + t2, s[0], s[1], s[2], s[3] + t1, s[4], s[5], s[6]]
+  }
+
+  spec w16_w17() -> Word[32]^2 { schedule(abc_block()) }
+  spec after_round0() -> Word[32]^8 { round(initial_hash(), 0x428a2f98, abc_block()[0]) }
+  spec after_round1() -> Word[32]^8 { round(after_round0(), 0x71374491, abc_block()[1]) }
+}
