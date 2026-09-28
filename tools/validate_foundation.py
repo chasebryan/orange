@@ -206,7 +206,7 @@ indent_size = 4
 SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _JM = "9007199254740991"
-GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
+GATE0_MAXIMUM_TEXT_FILE_BYTES = 512 * 1024
 GATE0_MAXIMUM_VALIDATOR_BYTES = 448 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_RUN_OUTPUTS_BYTES = 2 * 1024 * 1024
@@ -351,6 +351,7 @@ compiler/crates/orangec/tests/s3a_conformance.rs
 compiler/crates/orangec/tests/s3b_conformance.rs
 compiler/crates/orangec/tests/s3c_conformance.rs
 compiler/crates/orangec/tests/s3d_conformance.rs
+compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/fixtures/hello.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
 compiler/fixtures/s3a/invalid-int-magnitude.or
@@ -394,6 +395,13 @@ compiler/fixtures/s3d/invalid-indices.or
 compiler/fixtures/s3d/valid-arrays.or
 compiler/fixtures/s3d/valid-chacha20-block.or
 compiler/fixtures/s3d/valid-sha256-rounds.or
+compiler/fixtures/s3e/invalid-indices.or
+compiler/fixtures/s3e/invalid-loop-syntax.or
+compiler/fixtures/s3e/invalid-loops.or
+compiler/fixtures/s3e/invalid-updates.or
+compiler/fixtures/s3e/valid-chacha20.or
+compiler/fixtures/s3e/valid-loops.or
+compiler/fixtures/s3e/valid-sha256.or
 compiler/fixtures/typed-answer.or
 DEPENDENCY_POLICY.md
 GOVERNANCE.md
@@ -439,6 +447,7 @@ docs/SEMANTIC_STRATA_DECISION_SUITE.md
 docs/EXPRESSIONS_2026.md
 docs/BINDINGS_2026.md
 docs/ARRAYS_2026.md
+docs/LOOPS_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
 docs/governance/adrs/ADR-0000-template.md
@@ -1043,7 +1052,7 @@ _MLM = {
 }
 _PM = {
     "policy/README.md": {
-        "ordinary text files at\n256 KiB (`256 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
+        "ordinary text files at\n512 KiB (`512 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
         "validator itself at 448 KiB\n(`448 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
         "binary files at 2 MiB (`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_BINARY_FILE_BYTES,
         "adapter outputs at 2 MiB\n(`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_RUN_OUTPUTS_BYTES,

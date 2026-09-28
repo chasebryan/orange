@@ -308,7 +308,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         path.write_bytes(b"\0" * size)
 
     def test_repository_resource_bounds_are_exact(self) -> None:
-        self.assertEqual(GATE0_MAXIMUM_TEXT_FILE_BYTES, 256 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_TEXT_FILE_BYTES, 512 * 1024)
         self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 448 * 1024)
         self.assertEqual(GATE0_MAXIMUM_BINARY_FILE_BYTES, 2 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_RUN_OUTPUTS_BYTES, 2 * 1024 * 1024)

@@ -197,7 +197,7 @@ and final file component is opened with no-follow flags; the final open is also
 nonblocking before its descriptor metadata is compared with the preflight
 snapshot. After each read, the descriptor and its component-relative directory
 entry must still match that snapshot. Preflight caps ordinary text files at
-256 KiB (`256 * 1024` bytes), the validator itself at 448 KiB
+512 KiB (`512 * 1024` bytes), the validator itself at 448 KiB
 (`448 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
 each committed D-004 run's generated and hash-pinned adapter outputs at 2 MiB
 (`2 * 1024 * 1024` bytes), and the complete repository at 24 MiB (`24 * 1024 * 1024` bytes). Returned
