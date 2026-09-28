@@ -116,6 +116,7 @@ RECORD_FIELDS = (
     "unsupported_features", "candidate_graph", "sr_conformance_map", "case_verdict",
     "verdict_conditions", "byte_manifest", "replay", "owner_labels",
 )
+CONTEXT_FIELDS = ("premises", "assumptions", "trusted_components")
 IDENTITY_FIELDS = (
     "scheduled_slot_sha256", "scheduled_execution_sha256", "input_manifest_sha256",
     "model_sha256", "tool_sha256", "dependency_manifest_sha256", "environment_sha256",
@@ -1173,7 +1174,7 @@ def validate_response(contract: dict[str, Any], stdout: bytes, stderr: bytes, re
         _check(item["conformance_state"] in contract["sr_conformance_states"], "unknown conformance state")
         expected = [f"obs-{row['oracle']['subject_id']}" for row in rows if relationship in row["oracle"]["relationship_scope"]]
         _check(item["dependent_observation_ids"] == expected, "SR dependencies are not derived from subject scopes")
-    for name in ("premises", "assumptions", "trusted_components"):
+    for name in CONTEXT_FIELDS:
         entries = response[name]
         _check(isinstance(entries, list), f"{name} is not a list")
         seen = set()
@@ -1375,9 +1376,7 @@ def build_record(ctx: EpochContext, row: dict[str, Any], state: dict[str, Any], 
         "execution_state": state,
         "observations": observations,
         "log_manifest": {"manifest_sha256": digest(log_entries), "entries": log_entries},
-        "premises": response["premises"] if response else [],
-        "assumptions": response["assumptions"] if response else [],
-        "trusted_components": response["trusted_components"] if response else [],
+        **{name: response[name] if response else [] for name in CONTEXT_FIELDS},
         "unsupported_features": response["unsupported_features"] if response else [],
         "candidate_graph": candidate_graph,
         "sr_conformance_map": sr_rows,
