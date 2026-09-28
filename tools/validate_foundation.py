@@ -108,7 +108,7 @@ POLICY_PATH = Path("policy/gate0-repository-policy.json")
 MAKEFILE_CONTRACT_PATH = Path("policy/makefile-entrypoint-contract-v0.1.json")
 VALIDATOR_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
-ORANGE_BOOK_VERSION = "0.3"
+ORANGE_BOOK_VERSION = "0.4"
 ORANGE_BOOK_MINIMUM_CHAPTER_WORDS = 1_200
 ORANGE_BOOK_CHAPTERS = tuple(
     f"## Chapter {number}: {title}"
