@@ -1,0 +1,10 @@
+// S3c rejection: a conversion names its target type, that type must be the
+// one required, and its operand must have a type of its own.
+edition 2026;
+module conversions {
+  spec untyped() -> Word[8] { (1 + 2) as Word[8] }
+  spec wrong_target(x: Word[32]) -> Word[8] { x as Word[16] }
+  spec bad_width(x: Word[32]) -> Word[8] { x as Word[12] }
+  spec unconverted(x: Word[8]) -> Word[32] { let y: Word[32] = x; y }
+  spec unknown_operand() -> Int { (z + 1) as Int }
+}

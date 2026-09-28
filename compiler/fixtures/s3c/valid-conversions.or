@@ -1,0 +1,23 @@
+// S3c conformance: `as` takes the operand's integer value and, for a word
+// type, its residue modulo 2^n. Nothing else changes, and nothing is implicit.
+edition 2026;
+module conversions {
+  spec wrap_negative() -> Word[8] { let n: Int = -1; n as Word[8] }
+  spec wrap_large() -> Word[16] { let n: Int = 65_537; n as Word[16] }
+  spec wrap_far_negative() -> Word[64] {
+    let n: Int = -340282366920938463463374607431768211457;
+    n as Word[64]
+  }
+  spec unsigned_value() -> Int { let w: Word[64] = 0xffff_ffff_ffff_ffff; w as Int }
+  spec exact_after_conversion() -> Int {
+    let w: Word[64] = 0xffff_ffff_ffff_ffff;
+    (w as Int) * (w as Int)
+  }
+  spec widen() -> Word[64] { let b: Word[8] = 0xff; b as Word[64] }
+  spec narrow() -> Word[16] { let w: Word[64] = 0x0123_4567_89ab_cdef; w as Word[16] }
+  spec identity() -> Word[32] { let w: Word[32] = 0x6a09_e667; w as Word[32] }
+  spec reduce_sum(x: Word[8], y: Word[8]) -> Int { (x as Int) + (y as Int) }
+  spec carry() -> Int { reduce_sum(0xff, 0x01) }
+  spec ring_sum() -> Word[8] { let x: Word[8] = 0xff; x + 1 }
+  spec literal_takes_the_leaf_type() -> Int { let x: Word[8] = 0xf0; (x + 0x20) as Int }
+}

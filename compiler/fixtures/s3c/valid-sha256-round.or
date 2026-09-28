@@ -1,0 +1,51 @@
+// S3c conformance: SHA-256 round t = 0 and the first message words of the
+// FIPS 180-4 "abc" example, with the working variables and temporaries of
+// section 6.2.2 named as the standard names them. The message words are
+// assembled from bytes in big-endian order, as section 3.1 requires.
+edition 2026;
+module sha256 {
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+  spec choose(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec majority(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    (x & y) ^ (x & z) ^ (y & z)
+  }
+
+  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    let high: Word[32] = ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16);
+    let low: Word[32] = ((b2 as Word[32]) << 8) | (b3 as Word[32]);
+    high | low
+  }
+
+  // The padded message "abc": the bytes 0x61, 0x62, 0x63, the bit 1 as 0x80,
+  // zeroes, and the length in bits as a 64-bit big-endian integer.
+  spec w0() -> Word[32] { load_be32(0x61, 0x62, 0x63, 0x80) }
+  spec w15() -> Word[32] {
+    let length: Word[64] = 24;
+    length as Word[32]
+  }
+  spec w17() -> Word[32] { small_sigma1(w15()) }
+
+  spec round0_a() -> Word[32] {
+    let a: Word[32] = 0x6a09e667;
+    let b: Word[32] = 0xbb67ae85;
+    let c: Word[32] = 0x3c6ef372;
+    let e: Word[32] = 0x510e527f;
+    let f: Word[32] = 0x9b05688c;
+    let g: Word[32] = 0x1f83d9ab;
+    let h: Word[32] = 0x5be0cd19;
+    let t1: Word[32] = h + big_sigma1(e) + choose(e, f, g) + 0x428a2f98 + w0();
+    let t2: Word[32] = big_sigma0(a) + majority(a, b, c);
+    t1 + t2
+  }
+
+  spec round0_e() -> Word[32] {
+    let d: Word[32] = 0xa54ff53a;
+    let e: Word[32] = 0x510e527f;
+    let t1: Word[32] =
+      0x5be0cd19 + big_sigma1(e) + choose(e, 0x9b05688c, 0x1f83d9ab) + 0x428a2f98 + w0();
+    d + t1
+  }
+}

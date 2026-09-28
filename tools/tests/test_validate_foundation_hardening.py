@@ -2804,7 +2804,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
     def test_repository_resource_documentation_drift_is_rejected(self) -> None:
         for old, new in (
             ("256 KiB (`256 * 1024` bytes)", "255 KiB (`255 * 1024` bytes)"),
-            ("384 KiB\n(`384 * 1024` bytes)", "383 KiB\n(`383 * 1024` bytes)"),
+            ("448 KiB\n(`448 * 1024` bytes)", "447 KiB\n(`447 * 1024` bytes)"),
             ("2 MiB (`2 * 1024 * 1024` bytes)", "1 MiB (`1 * 1024 * 1024` bytes)"),
             ("16 MiB (`16 * 1024 * 1024` bytes)", "15 MiB (`15 * 1024 * 1024` bytes)"),
             ("at most 512 files", "at most 511 files"),
