@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.124",
+  "policy_version": "0.2.125",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -343,7 +343,7 @@
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "4c885f6ac2c85f68cb2cc3e15de3bfae9793690831cc260347c4501410ac2cf5",
-    "README.md": "fdbe079c36630747139c92a1dafbcabdebcefb4e54d6d0a82ca7abc11cbcc711",
+    "README.md": "9e382512d49436dbdf64c9feaeb4d5f28d0c287b7faddbe85f5385b51a5348a7",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
@@ -470,8 +470,8 @@
     "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
     "tools/tests/test_d009_draft_packet.py": "75e7e143a38394282cb927ba3f9d2fe22e657dd039ca36ab8d8dc76bfc181135",
     "tools/tests/test_d010_draft_packet.py": "45698f5c3addbcabdcd0f37adb1fbf423bce38fd45f9e5824e480071f2073702",
-    "tools/tests/test_validate_foundation.py": "787bef99d209f323f2391614a1aefb1d70ece077b568278ddd8b21cff378b0fe",
-    "tools/tests/test_validate_foundation_hardening.py": "dbe929f2de01587461004e71cd28ac9bb5066f755f2ad5e15150785c7e0c1021"
+    "tools/tests/test_validate_foundation.py": "5bb3cc585165476832c10c436763dd2bb65561287f5c5f913e6654a7355a1c7f",
+    "tools/tests/test_validate_foundation_hardening.py": "49470aeb3f81e5b766a74f48d6ac45f05dd860b9806ffe6c5efc3a0749475bc9"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
