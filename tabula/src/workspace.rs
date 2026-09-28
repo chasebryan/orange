@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::json::Json;
-use crate::paths::{self, PathError, RelativePath};
+use crate::paths::{self, EntryKind, PathError, RelativePath};
 
 /// Largest Orange source Tabula reads or writes, matching `orangec`'s
 /// per-source limit.
@@ -99,7 +99,7 @@ impl Workspace {
             return Err(PathError::Invalid("source is larger than 16 MiB"));
         }
         let target = paths::resolve_for_write(&self.root, &path)?;
-        let exists = fs::symlink_metadata(&target).is_ok();
+        let exists = paths::entry_kind(&target)? != EntryKind::Missing;
         if create && exists {
             return Err(PathError::Exists);
         }
@@ -157,20 +157,21 @@ impl Workspace {
         let from_path = RelativePath::parse(from)?;
         let to_path = RelativePath::parse(to)?;
         let source = paths::resolve_existing(&self.root, &from_path)?;
-        let metadata = fs::symlink_metadata(&source)?;
-        if metadata.is_file()
+        let kind = paths::entry_kind(&source)?;
+        if kind == EntryKind::File
             && !(from_path.has_suffix(ORANGE_SUFFIX) && to_path.has_suffix(ORANGE_SUFFIX))
         {
             return Err(PathError::Invalid("Orange sources must end in .or"));
         }
-        if !metadata.is_file() && !metadata.is_dir() {
+        if kind != EntryKind::File && kind != EntryKind::Dir {
             return Err(PathError::Invalid("only files and folders can be renamed"));
         }
         let target = paths::resolve_for_write(&self.root, &to_path)?;
-        if fs::symlink_metadata(&target).is_ok() && !paths::same_entry(&source, &target) {
+        if paths::entry_kind(&target)? != EntryKind::Missing && !paths::same_entry(&source, &target)
+        {
             return Err(PathError::Exists);
         }
-        if metadata.is_dir() && target.starts_with(&source) {
+        if kind == EntryKind::Dir && target.starts_with(&source) {
             return Err(PathError::Invalid("a folder cannot move inside itself"));
         }
         fs::rename(&source, &target).map_err(PathError::Io)
@@ -184,8 +185,7 @@ impl Workspace {
     pub fn delete(&self, raw: &str) -> Result<String, PathError> {
         let path = RelativePath::parse(raw)?;
         let source = paths::resolve_existing(&self.root, &path)?;
-        let metadata = fs::symlink_metadata(&source)?;
-        if metadata.is_file() && !path.has_suffix(ORANGE_SUFFIX) {
+        if paths::entry_kind(&source)? == EntryKind::File && !path.has_suffix(ORANGE_SUFFIX) {
             return Err(PathError::Invalid(
                 "only Orange sources can be deleted here",
             ));
@@ -202,7 +202,7 @@ impl Workspace {
                 format!("{stamp}-{attempt}-{}", path.file_name())
             };
             let target = trash.join(&name);
-            if fs::symlink_metadata(&target).is_err() {
+            if matches!(paths::entry_kind(&target), Ok(EntryKind::Missing)) {
                 fs::rename(&source, &target)?;
                 return Ok(format!(".tabula/trash/{name}"));
             }
@@ -263,26 +263,20 @@ pub fn trash_dir(root: &Path) -> Result<PathBuf, PathError> {
 }
 
 fn ensure_real_dir(path: &Path) -> Result<(), PathError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => Ok(()),
-        Ok(_) => Err(PathError::Invalid(
-            "Tabula's private folder is not a plain folder",
-        )),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => match fs::create_dir(path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                let metadata = fs::symlink_metadata(path)?;
-                if metadata.is_dir() && !metadata.file_type().is_symlink() {
-                    Ok(())
-                } else {
-                    Err(PathError::Invalid(
-                        "Tabula's private folder is not a plain folder",
-                    ))
-                }
-            }
-            Err(error) => Err(PathError::Io(error)),
+    let kind = match paths::entry_kind(path)? {
+        EntryKind::Missing => match fs::create_dir(path) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => paths::entry_kind(path)?,
+            Err(error) => return Err(PathError::Io(error)),
         },
-        Err(error) => Err(PathError::Io(error)),
+        kind => kind,
+    };
+    if kind == EntryKind::Dir {
+        Ok(())
+    } else {
+        Err(PathError::Invalid(
+            "Tabula's private folder is not a plain folder",
+        ))
     }
 }
 
@@ -292,9 +286,14 @@ fn ensure_real_dir(path: &Path) -> Result<(), PathError> {
 ///
 /// Returns an error when the file is not regular, too large, or not UTF-8.
 pub fn read_text(path: &Path, limit: usize) -> Result<String, PathError> {
-    let file = fs::File::open(path)?;
-    if !file.metadata()?.is_file() {
-        return Err(PathError::Invalid("not a regular file"));
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) => return Err(PathError::from(error)),
+    };
+    match file.metadata() {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => return Err(PathError::Invalid("not a regular file")),
+        Err(error) => return Err(PathError::from(error)),
     }
     let mut bytes = Vec::new();
     let cap = u64::try_from(limit).map_or(u64::MAX, |value| value.saturating_add(1));
@@ -333,8 +332,10 @@ fn walk(
             continue;
         };
         if file_type.is_dir() {
-            if !SKIPPED_FOLDERS.contains(&name.as_str()) {
-                folders.push((name, entry.path()));
+            if !SKIPPED_FOLDERS.contains(&name.as_str())
+                && let Ok(path) = paths::confine(dir, &entry.path())
+            {
+                folders.push((name, path));
             }
         } else if file_type.is_file()
             && RelativePath::parse(&name).is_ok_and(|path| path.has_suffix(ORANGE_SUFFIX))
@@ -425,10 +426,7 @@ mod tests {
     use std::fs;
 
     fn workspace(name: &str) -> Workspace {
-        let root = std::env::temp_dir().join(format!("tabula-ws-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        Workspace::open(&root).unwrap()
+        Workspace::open(&crate::test_dir(&format!("workspace-{name}"))).unwrap()
     }
 
     #[test]

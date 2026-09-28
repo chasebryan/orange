@@ -202,7 +202,8 @@ Tabula is built to be safe to leave running on a shared machine.
   symbolic links. Every write replaces the file in one step, so a crash never
   leaves half a file.
 - Documents and notes are rendered by building page elements directly, so text
-  can never become script. Raw HTML in Markdown is shown as text.
+  can never become script. Raw HTML in Markdown is shown as text, and links
+  leave Tabula only for `https:`, `http:`, and `mailto:` addresses.
 - `orangec` runs with an empty environment, a 20-second time limit, and a cap
   on its output.
 

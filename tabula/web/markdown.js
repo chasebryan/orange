@@ -420,6 +420,24 @@ function parseLink(text, k) {
   return { label: text.slice(k + 1, j), href, title, end: m + 1 };
 }
 
+// Rebuilds a web or mail link behind a fixed scheme, so a document can
+// never produce a `javascript:` or other active link.
+function externalHref(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const rest = url.href.slice(url.protocol.length);
+  switch (url.protocol) {
+    case "https:": return `https:${rest}`;
+    case "http:": return `http:${rest}`;
+    case "mailto:": return `mailto:${rest}`;
+    default: return null;
+  }
+}
+
 function renderLink(link, state) {
   const target = state.context.link ? state.context.link(link.href) : { kind: /^(https?:|mailto:)/i.test(link.href) ? "external" : "none" };
   const label = link.plain ? document.createTextNode(link.label) : inline(link.label, { ...state, inLink: true });
@@ -429,7 +447,8 @@ function renderLink(link, state) {
   }
   const a = el("a", target.kind === "cite" ? "cite" : null, label);
   if (target.kind === "external") {
-    a.href = link.href;
+    const href = externalHref(link.href);
+    if (href) a.href = href;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
   } else {

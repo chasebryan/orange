@@ -48,7 +48,9 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("tabula-e2e-{name}-{}", std::process::id()));
+        // Cargo's per-target scratch folder, fixed at build time.
+        let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("tabula-e2e-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("ciphers")).unwrap();
         fs::write(

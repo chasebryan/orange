@@ -534,10 +534,7 @@ mod tests {
     use std::fs;
 
     fn server(name: &str) -> (Server, std::path::PathBuf) {
-        let root =
-            std::env::temp_dir().join(format!("tabula-server-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        let root = crate::test_dir(&format!("server-{name}"));
         let server = Server::bind(Options {
             workspace: root.clone(),
             port: 0,

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::json::Json;
-use crate::paths::{self, PathError};
+use crate::paths::{self, EntryKind, PathError};
 use crate::workspace::{private_dir, read_text, trash_dir};
 
 /// Largest note Tabula stores.
@@ -46,14 +46,11 @@ impl Notebook {
     }
 
     fn existing_dir(&self) -> Option<PathBuf> {
-        let dir = self.workspace_root.join(".tabula").join("notes");
-        let metadata = fs::symlink_metadata(&dir).ok()?;
-        let parent = fs::symlink_metadata(self.workspace_root.join(".tabula")).ok()?;
-        (metadata.is_dir()
-            && !metadata.file_type().is_symlink()
-            && parent.is_dir()
-            && !parent.file_type().is_symlink())
-        .then_some(dir)
+        let parent = self.workspace_root.join(".tabula");
+        let dir = parent.join("notes");
+        let real = matches!(paths::entry_kind(&parent), Ok(EntryKind::Dir))
+            && matches!(paths::entry_kind(&dir), Ok(EntryKind::Dir));
+        real.then_some(dir)
     }
 
     /// Lists notes, most recently changed first, with their citations.
@@ -85,7 +82,9 @@ impl Notebook {
                     .and_then(|metadata| metadata.modified().ok())
                     .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                     .map_or(0, |elapsed| elapsed.as_secs());
-                let text = read_text(&entry.path(), MAX_NOTE_BYTES).unwrap_or_default();
+                let text = paths::confine(&dir, &entry.path())
+                    .and_then(|path| read_text(&path, MAX_NOTE_BYTES))
+                    .unwrap_or_default();
                 let title = note_title(&text).unwrap_or(name).to_owned();
                 let citations = citations(&text)
                     .into_iter()
@@ -130,10 +129,7 @@ impl Notebook {
         validate_name(name)?;
         let dir = self.existing_dir().ok_or(PathError::NotFound)?;
         let path = dir.join(format!("{name}.md"));
-        let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_file() {
-            return Err(PathError::Invalid("note is not a regular file"));
-        }
+        require_note_file(&path)?;
         read_text(&path, MAX_NOTE_BYTES)
     }
 
@@ -150,10 +146,7 @@ impl Notebook {
         }
         let dir = self.dir()?;
         let path = dir.join(format!("{name}.md"));
-        let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_file() {
-            return Err(PathError::Invalid("note is not a regular file"));
-        }
+        require_note_file(&path)?;
         paths::write_atomically(&path, text.as_bytes()).map_err(PathError::Io)
     }
 
@@ -209,13 +202,12 @@ impl Notebook {
         let dir = self.existing_dir().ok_or(PathError::NotFound)?;
         let source = dir.join(format!("{from}.md"));
         let target = dir.join(format!("{to}.md"));
-        if !fs::symlink_metadata(&source)?.is_file() {
-            return Err(PathError::Invalid("note is not a regular file"));
-        }
+        require_note_file(&source)?;
         if from == to {
             return Ok(());
         }
-        if fs::symlink_metadata(&target).is_ok() && !paths::same_entry(&source, &target) {
+        if paths::entry_kind(&target)? != EntryKind::Missing && !paths::same_entry(&source, &target)
+        {
             return Err(PathError::Exists);
         }
         fs::rename(&source, &target).map_err(PathError::Io)
@@ -230,9 +222,7 @@ impl Notebook {
         validate_name(name)?;
         let dir = self.existing_dir().ok_or(PathError::NotFound)?;
         let source = dir.join(format!("{name}.md"));
-        if !fs::symlink_metadata(&source)?.is_file() {
-            return Err(PathError::Invalid("note is not a regular file"));
-        }
+        require_note_file(&source)?;
         let trash = trash_dir(&self.workspace_root)?;
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -240,13 +230,24 @@ impl Notebook {
         let mut attempt = 0_u32;
         loop {
             let target = trash.join(format!("{stamp}-{attempt}-note-{name}.md"));
-            if fs::symlink_metadata(&target).is_err() {
+            if matches!(paths::entry_kind(&target), Ok(EntryKind::Missing)) {
                 return fs::rename(&source, &target).map_err(PathError::Io);
             }
             attempt = attempt.saturating_add(1);
             if attempt > 1000 {
                 return Err(PathError::Exists);
             }
+        }
+    }
+}
+
+/// Requires `path` to be a regular note file, not a link or a folder.
+fn require_note_file(path: &Path) -> Result<(), PathError> {
+    match paths::entry_kind(path)? {
+        EntryKind::File => Ok(()),
+        EntryKind::Missing => Err(PathError::NotFound),
+        EntryKind::Dir | EntryKind::Link | EntryKind::Other => {
+            Err(PathError::Invalid("note is not a regular file"))
         }
     }
 }
@@ -323,10 +324,7 @@ mod tests {
     use std::fs;
 
     fn notebook(name: &str) -> (Notebook, std::path::PathBuf) {
-        let root = std::env::temp_dir().join(format!("tabula-notes-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        let root = fs::canonicalize(root).unwrap();
+        let root = fs::canonicalize(crate::test_dir(&format!("notes-{name}"))).unwrap();
         (Notebook::new(&root), root)
     }
 

@@ -368,8 +368,20 @@ export class Editor {
 function tokenClass(token, text) {
   switch (token.kind) {
     case "ws": case "plain": return "";
-    case "stratum": return `t-stratum t-${text.slice(token.start, token.end)}`;
+    case "stratum": return stratumClass(text.slice(token.start, token.end));
     default: return `t-${token.kind}`;
+  }
+}
+
+// Class names come from this fixed list, never from the source text itself.
+function stratumClass(word) {
+  switch (word) {
+    case "spec": return "t-stratum t-spec";
+    case "impl": return "t-stratum t-impl";
+    case "game": return "t-stratum t-game";
+    case "proof": return "t-stratum t-proof";
+    case "claim": return "t-stratum t-claim";
+    default: return "t-stratum";
   }
 }
 

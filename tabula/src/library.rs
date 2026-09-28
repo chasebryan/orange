@@ -240,14 +240,18 @@ impl Library {
             .map(|(_, media_type)| *media_type)
             .ok_or(PathError::Invalid("the Library serves images only"))?;
         let resolved = paths::resolve_existing(&self.root, &path)?;
-        let metadata = fs::metadata(&resolved)?;
-        if !metadata.is_file() {
-            return Err(PathError::Invalid("not a regular file"));
-        }
-        if metadata.len() > u64::try_from(MAX_ASSET_BYTES).unwrap_or(u64::MAX) {
+        let length = match fs::metadata(&resolved) {
+            Ok(metadata) if metadata.is_file() => metadata.len(),
+            Ok(_) => return Err(PathError::Invalid("not a regular file")),
+            Err(error) => return Err(PathError::from(error)),
+        };
+        if length > u64::try_from(MAX_ASSET_BYTES).unwrap_or(u64::MAX) {
             return Err(PathError::Invalid("image is too large"));
         }
-        Ok((fs::read(resolved)?, media_type))
+        match fs::read(resolved) {
+            Ok(bytes) => Ok((bytes, media_type)),
+            Err(error) => Err(PathError::from(error)),
+        }
     }
 
     /// Searches the catalog's documents for `query`, case-insensitively.
@@ -361,8 +365,7 @@ mod tests {
     use std::fs;
 
     fn checkout(name: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!("tabula-lib-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let root = crate::test_dir(&format!("library-{name}"));
         fs::create_dir_all(root.join("docs/images")).unwrap();
         fs::create_dir_all(root.join("compiler")).unwrap();
         fs::create_dir_all(root.join(".git")).unwrap();
@@ -382,8 +385,7 @@ mod tests {
 
     #[test]
     fn requires_the_book_to_open() {
-        let root = std::env::temp_dir().join(format!("tabula-lib-none-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+        let root = crate::test_dir("library-none");
         assert!(Library::open(&root).is_none());
         let checkout = checkout("open");
         let nested = checkout.join("examples/deep");

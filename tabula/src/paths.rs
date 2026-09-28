@@ -177,15 +177,90 @@ fn validate_segment(segment: &str) -> Result<(), PathError> {
     Ok(())
 }
 
+/// What a path names, without following a final symbolic link.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntryKind {
+    /// Nothing exists there.
+    Missing,
+    /// A regular file.
+    File,
+    /// A directory.
+    Dir,
+    /// A symbolic link.
+    Link,
+    /// Anything else, such as a socket or a device.
+    Other,
+}
+
+/// Looks at what `path` names without following a final symbolic link.
+///
+/// The answer is a plain [`EntryKind`] built from the metadata, never the
+/// metadata itself, so nothing read from the filesystem flows back into a
+/// path.
+///
+/// # Errors
+///
+/// Returns [`PathError::Io`] when the entry cannot be inspected.
+pub fn entry_kind(path: &Path) -> Result<EntryKind, PathError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            let kind = metadata.file_type();
+            Ok(if kind.is_symlink() {
+                EntryKind::Link
+            } else if kind.is_dir() {
+                EntryKind::Dir
+            } else if kind.is_file() {
+                EntryKind::File
+            } else {
+                EntryKind::Other
+            })
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(EntryKind::Missing),
+        Err(error) => Err(PathError::Io(error)),
+    }
+}
+
+/// Whether `path` is a directory, following symbolic links.
+fn is_directory(path: &Path) -> Result<bool, PathError> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => Ok(true),
+        Ok(_) => Ok(false),
+        Err(error) => Err(PathError::from(error)),
+    }
+}
+
 /// Canonicalizes `root`, which must be an existing directory.
 ///
 /// # Errors
 ///
 /// Returns an error when `root` cannot be resolved or is not a directory.
 pub fn canonical_root(root: &Path) -> Result<PathBuf, PathError> {
-    let canonical = fs::canonicalize(root)?;
-    if !fs::metadata(&canonical)?.is_dir() {
+    let canonical = match fs::canonicalize(root) {
+        Ok(canonical) => canonical,
+        Err(error) => return Err(PathError::from(error)),
+    };
+    if !is_directory(&canonical)? {
         return Err(PathError::Invalid("root is not a directory"));
+    }
+    Ok(canonical)
+}
+
+/// Canonicalizes `path` and returns it only if it lies strictly inside the
+/// canonical `root`. Symbolic links are followed, so a link that leads out
+/// of `root` is refused.
+///
+/// # Errors
+///
+/// Returns [`PathError::NotFound`] if nothing exists there, or
+/// [`PathError::Invalid`] if the entry resolves outside `root` or to `root`
+/// itself.
+pub fn confine(root: &Path, path: &Path) -> Result<PathBuf, PathError> {
+    let canonical = match fs::canonicalize(path) {
+        Ok(canonical) => canonical,
+        Err(error) => return Err(PathError::from(error)),
+    };
+    if !canonical.starts_with(root) || canonical == root {
+        return Err(PathError::Invalid("path leads outside the workspace"));
     }
     Ok(canonical)
 }
@@ -198,18 +273,12 @@ pub fn canonical_root(root: &Path) -> Result<PathBuf, PathError> {
 /// Returns [`PathError::NotFound`] if nothing exists there, or
 /// [`PathError::Invalid`] if the entry resolves outside `root`.
 pub fn resolve_existing(root: &Path, path: &RelativePath) -> Result<PathBuf, PathError> {
-    let joined = path.join_onto(root);
-    let canonical = fs::canonicalize(&joined)?;
-    let inside = canonical
-        .strip_prefix(root)
-        .map_err(|_| PathError::Invalid("path leads outside the workspace"))?;
-    let mut components = inside.components().peekable();
-    if components.peek().is_none() {
-        return Err(PathError::Invalid("path names the root itself"));
-    }
-    let visible = components.all(|component| match component {
-        Component::Normal(name) => !name.to_string_lossy().starts_with('.'),
-        _ => false,
+    let canonical = confine(root, &path.join_onto(root))?;
+    let visible = canonical.strip_prefix(root).is_ok_and(|inside| {
+        inside.components().all(|component| match component {
+            Component::Normal(name) => !name.to_string_lossy().starts_with('.'),
+            _ => false,
+        })
     });
     if !visible {
         return Err(PathError::Invalid("path leads to a hidden entry"));
@@ -231,18 +300,16 @@ pub fn resolve_for_write(root: &Path, path: &RelativePath) -> Result<PathBuf, Pa
         Some(parent) => resolve_existing(root, &parent)?,
         None => root.to_path_buf(),
     };
-    if !fs::metadata(&parent)?.is_dir() {
+    if !is_directory(&parent)? {
         return Err(PathError::Invalid("parent is not a folder"));
     }
     let target = parent.join(path.file_name());
-    match fs::symlink_metadata(&target) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(PathError::Invalid(
+    match entry_kind(&target)? {
+        EntryKind::Link => Err(PathError::Invalid(
             "refusing to write through a symbolic link",
         )),
-        Ok(metadata) if metadata.is_dir() => Err(PathError::Invalid("a folder has that name")),
-        Ok(_) => Ok(target),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(target),
-        Err(error) => Err(PathError::Io(error)),
+        EntryKind::Dir => Err(PathError::Invalid("a folder has that name")),
+        EntryKind::Missing | EntryKind::File | EntryKind::Other => Ok(target),
     }
 }
 
@@ -313,14 +380,14 @@ pub fn write_atomically(target: &Path, bytes: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{PathError, RelativePath, canonical_root, resolve_existing, resolve_for_write};
+    use super::{
+        EntryKind, PathError, RelativePath, canonical_root, confine, entry_kind, resolve_existing,
+        resolve_for_write,
+    };
     use std::fs;
 
     fn temp_root(name: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!("tabula-paths-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        canonical_root(&root).unwrap()
+        canonical_root(&crate::test_dir(&format!("paths-{name}"))).unwrap()
     }
 
     #[test]
@@ -389,6 +456,24 @@ mod tests {
             resolve_for_write(&root, &RelativePath::parse("nowhere/new.or").unwrap()),
             Err(PathError::NotFound)
         ));
+        assert_eq!(entry_kind(&root.join("src")).unwrap(), EntryKind::Dir);
+        assert_eq!(
+            entry_kind(&root.join("src/demo.or")).unwrap(),
+            EntryKind::File
+        );
+        assert_eq!(
+            entry_kind(&root.join("nothing")).unwrap(),
+            EntryKind::Missing
+        );
+        assert_eq!(
+            confine(&root, &root.join("src/../src/demo.or")).unwrap(),
+            root.join("src/demo.or")
+        );
+        assert!(matches!(confine(&root, &root), Err(PathError::Invalid(_))));
+        assert!(matches!(
+            confine(&root, &root.join("src/..")),
+            Err(PathError::Invalid(_))
+        ));
 
         #[cfg(unix)]
         {
@@ -396,6 +481,11 @@ mod tests {
             fs::write(outside.join("secret.or"), "secret").unwrap();
             std::os::unix::fs::symlink(outside.join("secret.or"), root.join("link.or")).unwrap();
             std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+            assert_eq!(entry_kind(&root.join("link.or")).unwrap(), EntryKind::Link);
+            assert!(matches!(
+                confine(&root, &root.join("escape/secret.or")),
+                Err(PathError::Invalid(_))
+            ));
             assert!(matches!(
                 resolve_existing(&root, &RelativePath::parse("link.or").unwrap()),
                 Err(PathError::Invalid(_))
