@@ -21,6 +21,15 @@ typed-literal slice only. Orange remains pre-alpha and later S3 semantics remain
 incomplete. D-003 candidate PF-01 is accepted through OEP-0004 at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 
+> [!NOTE]
+> The compiler also implements the S3b pure-expression slice proposed in
+> [`EXPRESSIONS_2026.md`](EXPRESSIONS_2026.md) under OEP-0005, which is in the
+> owner's review and not accepted. S3b accepts every source this document
+> accepts, with the same values and output bytes, and additionally admits
+> parameters, calls, operators, `Word[16]`, `Word[32]`, and `Word[64]`. Until
+> OEP-0005 is accepted, this document remains the accepted S3a boundary; on
+> acceptance, the clauses listed in section 16 of that proposal are replaced.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. Scope and phase boundary

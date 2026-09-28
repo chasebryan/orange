@@ -22,6 +22,15 @@ remains incomplete. D-003 candidate PF-01 is accepted through OEP-0004 at exact
 revision `a82a5cec2ee4359dc2fe66171f17c93146747333`, while D-004 remains
 unresolved.
 
+> [!NOTE]
+> The compiler also implements the S3b expression grammar proposed in
+> [`EXPRESSIONS_2026.md`](EXPRESSIONS_2026.md) under OEP-0005, which is in the
+> owner's review and not accepted. It adds parameters, calls, prefix and binary
+> operators, and the single tokens `<<`, `>>`, `<<<`, and `>>>`. Every source
+> this document accepts is still accepted. Until OEP-0005 is accepted,
+> this document remains the accepted syntax boundary; on acceptance, the
+> clauses listed in section 16 of that proposal are replaced.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. Source representation
