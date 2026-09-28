@@ -30,10 +30,10 @@ pub use lexer::{
 pub use parser::{
     BinaryExpression, BinaryOperator, CallExpression, EditionDeclaration, Expression,
     ExpressionKind, FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IntegerLiteral,
-    MAX_ARGUMENTS_PER_CALL, MAX_EXPRESSION_DEPTH, MAX_PARAMETERS_PER_FUNCTION,
-    MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE, MAX_RECOVERY_DELIMITER_DEPTH,
-    MAX_SYNTAX_NODES_PER_SOURCE, ModuleDeclaration, Parameter, ParseResult, SyntaxTree, TypeSyntax,
-    TypedBody, UnaryExpression, UnaryOperator, parse,
+    MAX_ARGUMENTS_PER_CALL, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING,
+    MAX_PARAMETERS_PER_FUNCTION, MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE,
+    MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE, ModuleDeclaration, Parameter,
+    ParseResult, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator, parse,
 };
 pub use semantics::{
     AnalysisResult, MAX_CORE_NODES_PER_SOURCE, MAX_INTEGER_BITS,

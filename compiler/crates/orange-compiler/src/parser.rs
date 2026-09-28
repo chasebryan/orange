@@ -18,9 +18,19 @@ pub const MAX_PARSE_EVENTS_PER_SOURCE: usize = 1_048_576;
 /// Maximum delimiter nesting inspected while recovering from malformed syntax.
 pub const MAX_RECOVERY_DELIMITER_DEPTH: usize = 64;
 
-/// Maximum height of one expression tree, counting every operator,
-/// parenthesis, and call as one level above its deepest operand.
-pub const MAX_EXPRESSION_DEPTH: usize = 256;
+/// Maximum groups, call argument lists, and prefix operators enclosing any
+/// one subexpression.
+///
+/// This bounds the parser's recursion. Like C's minimum of 63 nested
+/// parenthesized expressions, it is far beyond what readable source needs.
+pub const MAX_EXPRESSION_NESTING: usize = 64;
+
+/// Maximum height of one expression tree, counting every operator, group,
+/// and call as one level above its tallest operand.
+///
+/// Long operator chains grow a tree's height without nesting, so this bounds
+/// every later traversal separately from [`MAX_EXPRESSION_NESTING`].
+pub const MAX_EXPRESSION_HEIGHT: usize = 256;
 
 /// Maximum parameters declared by one function.
 pub const MAX_PARAMETERS_PER_FUNCTION: usize = 64;
@@ -282,7 +292,7 @@ impl TypedBody {
 
 /// One syntactic expression and its exact source extent.
 ///
-/// Expression trees are at most [`MAX_EXPRESSION_DEPTH`] levels high, so
+/// Expression trees are at most [`MAX_EXPRESSION_HEIGHT`] levels high, so
 /// every later traversal is bounded by the parser.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Expression {
@@ -743,7 +753,6 @@ struct Parser<'source, 'tokens> {
     events: usize,
     halted: bool,
     limits: Limits,
-    last_binary_operator: Option<BinaryOperator>,
     reserve_function_slot: fn(&mut Vec<FunctionDeclaration>) -> bool,
     reserve_parameter_slot: fn(&mut Vec<Parameter>) -> bool,
     reserve_argument_slot: fn(&mut Vec<Expression>) -> bool,
@@ -785,7 +794,6 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             events: 0,
             halted: false,
             limits,
-            last_binary_operator: None,
             reserve_function_slot,
             reserve_parameter_slot,
             reserve_argument_slot,
@@ -1304,7 +1312,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             ],
         );
         let expression = if left_brace.is_some() {
-            self.parse_expression(1).map(|(expression, _)| expression)
+            self.parse_expression(0).map(|(expression, _)| expression)
         } else {
             None
         };
@@ -1361,113 +1369,118 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses one expression whose root sits `depth` levels below the body.
+    /// Parses one expression enclosed by `level` groups, call argument
+    /// lists, and prefix operators.
     ///
-    /// Returns the expression and its height. The first binary operator after
-    /// the first operand selects the expression's form; operators from another
-    /// group must be parenthesized.
-    fn parse_expression(&mut self, depth: usize) -> Option<(Expression, usize)> {
-        if depth > MAX_EXPRESSION_DEPTH {
-            self.resource_limit(format!(
-                "expression nesting exceeds the {MAX_EXPRESSION_DEPTH}-level limit"
-            ));
+    /// Returns the expression and its tree height. The first binary operator
+    /// after the first operand selects the expression's operator group;
+    /// operators from another group must be parenthesized.
+    ///
+    /// Recursion happens only where a new nesting level opens, and every
+    /// opener checks [`MAX_EXPRESSION_NESTING`] first, so the parser's stack
+    /// use is bounded independently of expression length. Operator chains are
+    /// parsed by loops.
+    fn parse_expression(&mut self, level: usize) -> Option<(Expression, usize)> {
+        if level > MAX_EXPRESSION_NESTING {
+            self.nesting_limit(self.current_span());
             return None;
         }
-        let first = self.parse_unary(depth)?;
-        let Some(operator) = BinaryOperator::from_token(self.current_kind()) else {
-            return Some(first);
+        let mut expression = self.parse_unary(level)?;
+        let Some(group) = BinaryOperator::from_token(self.current_kind()) else {
+            return Some(expression);
         };
-        let mut expression = match operator {
+        let mut previous = group;
+        match group {
             BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => {
-                self.parse_arithmetic(first, depth)?
+                // `*` binds tighter than `+` and `-`; each is left-associative.
+                // `sum` holds the completed terms and the additive operator
+                // awaiting the current product.
+                let mut sum: Option<((Expression, usize), BinaryOperator, Span)> = None;
+                loop {
+                    let operator = match self.current_kind() {
+                        TokenKind::Star => BinaryOperator::Multiply,
+                        TokenKind::Plus => BinaryOperator::Add,
+                        TokenKind::Minus => BinaryOperator::Subtract,
+                        _ => break,
+                    };
+                    previous = operator;
+                    let operator_span = self.bump()?.span;
+                    let operand = self.parse_unary(level)?;
+                    if operator == BinaryOperator::Multiply {
+                        expression =
+                            self.binary_node(expression, operator, operator_span, operand)?;
+                    } else {
+                        let term = match sum.take() {
+                            Some((left, pending, pending_span)) => {
+                                self.binary_node(left, pending, pending_span, expression)?
+                            }
+                            None => expression,
+                        };
+                        sum = Some((term, operator, operator_span));
+                        expression = operand;
+                    }
+                }
+                if let Some((left, pending, pending_span)) = sum {
+                    expression = self.binary_node(left, pending, pending_span, expression)?;
+                }
             }
             BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Xor => {
-                let mut left = first;
-                while self.current_kind() == operator.token_kind() {
-                    left = self.parse_binary_tail(left, operator, depth)?;
+                while self.current_kind() == group.token_kind() {
+                    let operator_span = self.bump()?.span;
+                    let operand = self.parse_unary(level)?;
+                    expression = self.binary_node(expression, group, operator_span, operand)?;
                 }
-                left
             }
             BinaryOperator::ShiftLeft
             | BinaryOperator::ShiftRight
             | BinaryOperator::RotateLeft
-            | BinaryOperator::RotateRight => self.parse_binary_tail(first, operator, depth)?,
-        };
+            | BinaryOperator::RotateRight => {
+                let operator_span = self.bump()?.span;
+                let amount = self.parse_unary(level)?;
+                expression = self.binary_node(expression, group, operator_span, amount)?;
+            }
+        }
 
         if let Some(ungrouped) = BinaryOperator::from_token(self.current_kind()) {
-            let span = self.current_span();
-            let previous = self.last_binary_operator.unwrap_or(operator);
-            self.report_lazy(span, || {
-                Diagnostic::error(
-                    DiagnosticCode::UngroupedOperators,
-                    format!(
-                        "`{}` follows `{}` without grouping parentheses",
-                        ungrouped.as_str(),
-                        previous.as_str()
-                    ),
-                    span,
-                )
-                .with_label("ungrouped operator")
-                .with_note(
-                    if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() {
-                        "a shift or rotation takes exactly two operands; parenthesize one of them"
-                    } else {
-                        "operators from different groups have no relative precedence in Orange; \
-                     parenthesize the part that applies first"
-                    },
-                )
-            });
+            self.report_ungrouped(ungrouped, previous);
             // Continue through the remaining operators so that one ungrouped
             // expression produces one diagnostic and parsing stays aligned.
-            while let Some(next) = BinaryOperator::from_token(self.current_kind()) {
-                expression = self.parse_binary_tail(expression, next, depth)?;
+            while let Some(operator) = BinaryOperator::from_token(self.current_kind()) {
+                let operator_span = self.bump()?.span;
+                let operand = self.parse_unary(level)?;
+                expression = self.binary_node(expression, operator, operator_span, operand)?;
             }
         }
         Some(expression)
     }
 
-    fn parse_arithmetic(
-        &mut self,
-        first: (Expression, usize),
-        depth: usize,
-    ) -> Option<(Expression, usize)> {
-        let mut sum = self.parse_product_tail(first, depth)?;
-        loop {
-            let operator = match self.current_kind() {
-                TokenKind::Plus => BinaryOperator::Add,
-                TokenKind::Minus => BinaryOperator::Subtract,
-                _ => return Some(sum),
-            };
-            let operator_token = self.bump()?;
-            let operand = self.parse_unary(depth)?;
-            let product = self.parse_product_tail(operand, depth)?;
-            sum = self.binary_node(sum, operator, operator_token.span, product)?;
-        }
+    #[cold]
+    #[inline(never)]
+    fn report_ungrouped(&mut self, ungrouped: BinaryOperator, previous: BinaryOperator) {
+        let span = self.current_span();
+        self.report_lazy(span, || {
+            Diagnostic::error(
+                DiagnosticCode::UngroupedOperators,
+                format!(
+                    "`{}` follows `{}` without grouping parentheses",
+                    ungrouped.as_str(),
+                    previous.as_str()
+                ),
+                span,
+            )
+            .with_label("ungrouped operator")
+            .with_note(
+                if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() {
+                    "a shift or rotation takes exactly two operands; parenthesize one of them"
+                } else {
+                    "operators from different groups have no relative precedence in Orange; \
+                     parenthesize the part that applies first"
+                },
+            )
+        });
     }
 
-    fn parse_product_tail(
-        &mut self,
-        first: (Expression, usize),
-        depth: usize,
-    ) -> Option<(Expression, usize)> {
-        let mut product = first;
-        while self.current_kind() == TokenKind::Star {
-            product = self.parse_binary_tail(product, BinaryOperator::Multiply, depth)?;
-        }
-        Some(product)
-    }
-
-    fn parse_binary_tail(
-        &mut self,
-        left: (Expression, usize),
-        operator: BinaryOperator,
-        depth: usize,
-    ) -> Option<(Expression, usize)> {
-        let operator_token = self.bump()?;
-        let right = self.parse_unary(depth)?;
-        self.binary_node(left, operator, operator_token.span, right)
-    }
-
+    #[inline(never)]
     fn binary_node(
         &mut self,
         (left, left_height): (Expression, usize),
@@ -1475,7 +1488,6 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         operator_span: Span,
         (right, right_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
-        self.last_binary_operator = Some(operator);
         let height = self.node_height(left_height.max(right_height), operator_span)?;
         let span = self.join(left.span, right.span);
         self.record_node().then_some((
@@ -1494,50 +1506,76 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
 
     fn node_height(&mut self, child_height: usize, span: Span) -> Option<usize> {
         let height = child_height.saturating_add(1);
-        if height > MAX_EXPRESSION_DEPTH {
-            self.resource_limit_at(
-                format!("expression nesting exceeds the {MAX_EXPRESSION_DEPTH}-level limit"),
-                span,
-            );
+        if height > MAX_EXPRESSION_HEIGHT {
+            self.height_limit(span);
             return None;
         }
         Some(height)
     }
 
-    fn parse_unary(&mut self, depth: usize) -> Option<(Expression, usize)> {
+    #[cold]
+    #[inline(never)]
+    fn nesting_limit(&mut self, span: Span) {
+        self.resource_limit_at(
+            format!(
+                "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
+                 for groups, calls, and prefix operators"
+            ),
+            span,
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn height_limit(&mut self, span: Span) {
+        self.resource_limit_at(
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit"),
+            span,
+        );
+    }
+
+    /// Opens one nesting level at the current token, or reports the limit.
+    fn open_level(&mut self, level: usize) -> Option<usize> {
+        let inner = level.saturating_add(1);
+        if inner > MAX_EXPRESSION_NESTING {
+            self.nesting_limit(self.current_span());
+            return None;
+        }
+        Some(inner)
+    }
+
+    fn parse_unary(&mut self, level: usize) -> Option<(Expression, usize)> {
         let operator = match self.current_kind() {
+            // A sign written directly before an integer token is part of the
+            // literal, exactly as in the S3a typed-literal body.
             TokenKind::Minus if self.next_kind() == TokenKind::Integer => {
-                // A sign written directly before an integer token is part of
-                // the literal, exactly as in the S3a typed-literal body.
-                let literal = self.parse_integer_literal()?;
-                return Some((
-                    Expression {
-                        span: literal.span,
-                        kind: ExpressionKind::Literal(literal),
-                    },
-                    1,
-                ));
+                return self.parse_literal_expression();
             }
             TokenKind::Minus => UnaryOperator::Negate,
             TokenKind::Tilde => UnaryOperator::Complement,
-            _ => return self.parse_primary(depth),
+            _ => return self.parse_primary(level),
         };
-        if depth >= MAX_EXPRESSION_DEPTH {
-            self.resource_limit(format!(
-                "expression nesting exceeds the {MAX_EXPRESSION_DEPTH}-level limit"
-            ));
-            return None;
-        }
-        let operator_token = self.bump()?;
-        let (operand, operand_height) = self.parse_unary(depth.saturating_add(1))?;
-        let height = self.node_height(operand_height, operator_token.span)?;
-        let span = self.join(operator_token.span, operand.span);
+        let inner = self.open_level(level)?;
+        let operator_span = self.bump()?.span;
+        let operand = self.parse_unary(inner)?;
+        self.unary_node(operator, operator_span, operand)
+    }
+
+    #[inline(never)]
+    fn unary_node(
+        &mut self,
+        operator: UnaryOperator,
+        operator_span: Span,
+        (operand, operand_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let height = self.node_height(operand_height, operator_span)?;
+        let span = self.join(operator_span, operand.span);
         self.record_node().then_some((
             Expression {
                 span,
                 kind: ExpressionKind::Unary(UnaryExpression {
                     operator,
-                    operator_span: operator_token.span,
+                    operator_span,
                     operand: Box::new(operand),
                 }),
             },
@@ -1545,54 +1583,18 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         ))
     }
 
-    fn parse_primary(&mut self, depth: usize) -> Option<(Expression, usize)> {
+    fn parse_primary(&mut self, level: usize) -> Option<(Expression, usize)> {
         match self.current_kind() {
-            TokenKind::Integer => {
-                let literal = self.parse_integer_literal()?;
-                Some((
-                    Expression {
-                        span: literal.span,
-                        kind: ExpressionKind::Literal(literal),
-                    },
-                    1,
-                ))
-            }
+            TokenKind::Integer => self.parse_literal_expression(),
             TokenKind::Identifier if self.next_kind() == TokenKind::LeftParen => {
-                self.parse_call(depth)
+                self.parse_call(level)
             }
-            TokenKind::Identifier => {
-                let name = self.parse_identifier("parameter")?;
-                Some((
-                    Expression {
-                        span: name.span,
-                        kind: ExpressionKind::Name(name),
-                    },
-                    1,
-                ))
-            }
+            TokenKind::Identifier => self.parse_name_expression(),
             TokenKind::LeftParen => {
-                let left_paren = self.bump()?;
-                let (inner, inner_height) = self.parse_expression(depth.saturating_add(1))?;
-                let right_paren = self.consume_or_recover(
-                    TokenKind::RightParen,
-                    "`)` to close the group",
-                    "every `(` in an expression needs a matching `)`",
-                    &[
-                        TokenKind::RightBrace,
-                        TokenKind::KwSpec,
-                        TokenKind::KwImpl,
-                        TokenKind::Eof,
-                    ],
-                )?;
-                let height = self.node_height(inner_height, left_paren.span)?;
-                let span = self.join(left_paren.span, right_paren.span);
-                self.record_node().then_some((
-                    Expression {
-                        span,
-                        kind: ExpressionKind::Parenthesized(Box::new(inner)),
-                    },
-                    height,
-                ))
+                let inner = self.open_level(level)?;
+                let left_paren = self.bump()?.span;
+                let group = self.parse_expression(inner)?;
+                self.finish_group(left_paren, group)
             }
             _ => {
                 self.expected(
@@ -1605,26 +1607,70 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    fn parse_call(&mut self, depth: usize) -> Option<(Expression, usize)> {
+    #[inline(never)]
+    fn parse_literal_expression(&mut self) -> Option<(Expression, usize)> {
+        let literal = self.parse_integer_literal()?;
+        Some((
+            Expression {
+                span: literal.span,
+                kind: ExpressionKind::Literal(literal),
+            },
+            1,
+        ))
+    }
+
+    #[inline(never)]
+    fn parse_name_expression(&mut self) -> Option<(Expression, usize)> {
+        let name = self.parse_identifier("parameter")?;
+        Some((
+            Expression {
+                span: name.span,
+                kind: ExpressionKind::Name(name),
+            },
+            1,
+        ))
+    }
+
+    #[inline(never)]
+    fn finish_group(
+        &mut self,
+        left_paren: Span,
+        (inner, inner_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let right_paren = self.consume_or_recover(
+            TokenKind::RightParen,
+            "`)` to close the group",
+            "every `(` in an expression needs a matching `)`",
+            &[
+                TokenKind::RightBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::Eof,
+            ],
+        )?;
+        let height = self.node_height(inner_height, left_paren)?;
+        let span = self.join(left_paren, right_paren.span);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Parenthesized(Box::new(inner)),
+            },
+            height,
+        ))
+    }
+
+    fn parse_call(&mut self, level: usize) -> Option<(Expression, usize)> {
+        let inner = self.open_level(level)?;
         let callee = self.parse_identifier("called function")?;
         self.bump()?;
         let mut arguments = Vec::new();
         let mut argument_height = 0_usize;
         while self.current_kind() != TokenKind::RightParen {
-            let (argument, height) = self.parse_expression(depth.saturating_add(1))?;
-            if arguments.len() >= MAX_ARGUMENTS_PER_CALL {
-                self.resource_limit_at(
-                    format!("call supplies more than {MAX_ARGUMENTS_PER_CALL} arguments"),
-                    argument.span,
-                );
+            let argument = self.parse_expression(inner)?;
+            argument_height = argument_height.max(argument.1);
+            if !self.push_argument(&mut arguments, argument.0) {
                 return None;
             }
-            if !(self.reserve_argument_slot)(&mut arguments) {
-                self.resource_limit_at("parser could not allocate argument storage", argument.span);
-                return None;
-            }
-            argument_height = argument_height.max(height);
-            arguments.push(argument);
             match self.current_kind() {
                 TokenKind::Comma => {
                     self.bump()?;
@@ -1649,6 +1695,23 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             },
             height,
         ))
+    }
+
+    #[inline(never)]
+    fn push_argument(&mut self, arguments: &mut Vec<Expression>, argument: Expression) -> bool {
+        if arguments.len() >= MAX_ARGUMENTS_PER_CALL {
+            self.resource_limit_at(
+                format!("call supplies more than {MAX_ARGUMENTS_PER_CALL} arguments"),
+                argument.span,
+            );
+            return false;
+        }
+        if !(self.reserve_argument_slot)(arguments) {
+            self.resource_limit_at("parser could not allocate argument storage", argument.span);
+            return false;
+        }
+        arguments.push(argument);
+        true
     }
 
     fn parse_type_syntax(&mut self, role: &str) -> Option<TypeSyntax> {
@@ -2732,6 +2795,646 @@ mod tests {
                 parsed.diagnostics[0].code(),
                 DiagnosticCode::ParserResourceLimit
             );
+        }
+    }
+
+    #[test]
+    fn operator_inventories_spellings_and_tokens_are_exact() {
+        assert_eq!(
+            UnaryOperator::ALL
+                .iter()
+                .map(|operator| operator.as_str())
+                .collect::<Vec<_>>(),
+            ["-", "~"]
+        );
+        assert_eq!(
+            BinaryOperator::ALL
+                .iter()
+                .map(|operator| operator.as_str())
+                .collect::<Vec<_>>(),
+            ["+", "-", "*", "&", "|", "^", "<<", ">>", "<<<", ">>>"]
+        );
+        for operator in BinaryOperator::ALL {
+            assert_eq!(
+                BinaryOperator::from_token(operator.token_kind()),
+                Some(*operator)
+            );
+            assert_eq!(
+                operator.is_shift_or_rotation(),
+                operator.as_str().starts_with("<<") || operator.as_str().starts_with(">>"),
+                "{operator:?}"
+            );
+        }
+        for kind in [
+            TokenKind::Tilde,
+            TokenKind::Arrow,
+            TokenKind::Comma,
+            TokenKind::LeftParen,
+            TokenKind::Identifier,
+            TokenKind::Integer,
+        ] {
+            assert_eq!(BinaryOperator::from_token(kind), None, "{kind:?}");
+        }
+    }
+
+    /// Wraps `body` in a four-parameter `Word[32]` spec named `f`.
+    fn spec_source(body: &str) -> String {
+        format!(
+            "edition 2026; module m {{ \
+             spec f(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {{ {body} }} }}"
+        )
+    }
+
+    fn body_expression(text: &str) -> (SourceMap, Expression) {
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty(), "{text:?}");
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{text:?}: {:?}",
+            parsed.diagnostics
+        );
+        let function = parsed.ast.unwrap().module.functions.pop().unwrap();
+        let FunctionBody::Typed(body) = function.body else {
+            panic!("expected a typed body in {text:?}");
+        };
+        (sources, body.expression)
+    }
+
+    /// Renders an expression tree with explicit structure: binary and unary
+    /// nodes in parentheses, source groups in brackets, and literals exactly
+    /// as spelled.
+    fn shape(source: &SourceFile, expression: &Expression) -> String {
+        match &expression.kind {
+            ExpressionKind::Literal(literal) => source.slice(literal.span).unwrap().to_owned(),
+            ExpressionKind::Name(name) => name.text.clone(),
+            ExpressionKind::Call(call) => format!(
+                "{}({})",
+                call.callee.text,
+                call.arguments
+                    .iter()
+                    .map(|argument| shape(source, argument))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            ExpressionKind::Unary(unary) => format!(
+                "({}{})",
+                unary.operator.as_str(),
+                shape(source, &unary.operand)
+            ),
+            ExpressionKind::Binary(binary) => format!(
+                "({} {} {})",
+                shape(source, &binary.left),
+                binary.operator.as_str(),
+                shape(source, &binary.right)
+            ),
+            ExpressionKind::Parenthesized(inner) => format!("[{}]", shape(source, inner)),
+        }
+    }
+
+    fn tree_height(expression: &Expression) -> usize {
+        1 + match &expression.kind {
+            ExpressionKind::Literal(_) | ExpressionKind::Name(_) => 0,
+            ExpressionKind::Call(call) => call.arguments.iter().map(tree_height).max().unwrap_or(0),
+            ExpressionKind::Unary(unary) => tree_height(&unary.operand),
+            ExpressionKind::Binary(binary) => {
+                tree_height(&binary.left).max(tree_height(&binary.right))
+            }
+            ExpressionKind::Parenthesized(inner) => tree_height(inner),
+        }
+    }
+
+    #[test]
+    fn builds_parameters_calls_and_operators_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module sha { ",
+            "spec big_sigma0(x: Word[32]) -> Word[32] ",
+            "{ (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) } ",
+            "spec apply(x: Word[32], y: Int,) -> Word[32] { big_sigma0(~x) } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+
+        let sigma = &ast.module.functions[0];
+        assert_eq!(sigma.parameters.len(), 1);
+        assert_eq!(source.slice(sigma.parameters[0].span), Some("x: Word[32]"));
+        assert_eq!(sigma.parameters[0].name.text, "x");
+        assert_eq!(source.slice(sigma.parameters[0].ty.span), Some("Word[32]"));
+        let FunctionBody::Typed(body) = &sigma.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(
+            source.slice(body.span),
+            Some("-> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }")
+        );
+        assert_eq!(
+            source.slice(body.expression.span),
+            Some("(x >>> 2) ^ (x >>> 13) ^ (x >>> 22)")
+        );
+        assert_eq!(
+            shape(source, &body.expression),
+            "(([(x >>> 2)] ^ [(x >>> 13)]) ^ [(x >>> 22)])"
+        );
+        let ExpressionKind::Binary(outer) = &body.expression.kind else {
+            panic!("expected a binary root");
+        };
+        assert_eq!(outer.operator, BinaryOperator::Xor);
+        assert_eq!(source.slice(outer.operator_span), Some("^"));
+        assert_eq!(
+            outer.operator_span.start(),
+            TextOffset::new(u32::try_from(text.rfind('^').unwrap()).unwrap())
+        );
+        assert_eq!(
+            source.slice(outer.left.span),
+            Some("(x >>> 2) ^ (x >>> 13)")
+        );
+        assert_eq!(source.slice(outer.right.span), Some("(x >>> 22)"));
+        let ExpressionKind::Parenthesized(group) = &outer.right.kind else {
+            panic!("expected a parenthesized right operand");
+        };
+        assert_eq!(source.slice(group.span), Some("x >>> 22"));
+        let ExpressionKind::Binary(rotation) = &group.kind else {
+            panic!("expected a rotation");
+        };
+        assert_eq!(rotation.operator, BinaryOperator::RotateRight);
+        assert_eq!(source.slice(rotation.operator_span), Some(">>>"));
+
+        let apply = &ast.module.functions[1];
+        assert_eq!(
+            apply
+                .parameters
+                .iter()
+                .map(|parameter| (
+                    parameter.name.text.as_str(),
+                    source.slice(parameter.ty.span).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [("x", "Word[32]"), ("y", "Int")]
+        );
+        let FunctionBody::Typed(apply_body) = &apply.body else {
+            panic!("expected a typed body");
+        };
+        let ExpressionKind::Call(call) = &apply_body.expression.kind else {
+            panic!("expected a call");
+        };
+        assert_eq!(call.callee.text, "big_sigma0");
+        assert_eq!(source.slice(call.callee.span), Some("big_sigma0"));
+        assert_eq!(
+            source.slice(apply_body.expression.span),
+            Some("big_sigma0(~x)")
+        );
+        assert_eq!(call.arguments.len(), 1);
+        let ExpressionKind::Unary(complement) = &call.arguments[0].kind else {
+            panic!("expected a complement argument");
+        };
+        assert_eq!(complement.operator, UnaryOperator::Complement);
+        assert_eq!(source.slice(complement.operator_span), Some("~"));
+        assert_eq!(source.slice(call.arguments[0].span), Some("~x"));
+    }
+
+    #[test]
+    fn groups_arithmetic_by_precedence_and_every_operator_leftward() {
+        let cases = [
+            ("a + b * c - d", "((a + (b * c)) - d)"),
+            ("a * b + c", "((a * b) + c)"),
+            ("a * b * c", "((a * b) * c)"),
+            ("a - b - c", "((a - b) - c)"),
+            ("a - b + c * d * a", "((a - b) + ((c * d) * a))"),
+            ("a ^ b ^ c", "((a ^ b) ^ c)"),
+            ("a & b & c & d", "(((a & b) & c) & d)"),
+            ("a | b | c", "((a | b) | c)"),
+            ("(a ^ b) & c", "([(a ^ b)] & c)"),
+            ("a & (b | c)", "(a & [(b | c)])"),
+            ("(a + b) * c", "([(a + b)] * c)"),
+            ("a << 3", "(a << 3)"),
+            ("a >> 0x1f", "(a >> 0x1f)"),
+            ("a <<< 7", "(a <<< 7)"),
+            ("a >>> 1_0", "(a >>> 1_0)"),
+            ("(a <<< 7) ^ b", "([(a <<< 7)] ^ b)"),
+            ("a << (1 + 2)", "(a << [(1 + 2)])"),
+            ("~a & b", "((~a) & b)"),
+            ("-a * b", "((-a) * b)"),
+            ("-1 * a", "(-1 * a)"),
+            ("- 1", "- 1"),
+            ("a - -1", "(a - -1)"),
+            ("a -1", "(a - 1)"),
+            ("a - - b", "(a - (-b))"),
+            ("- -a", "(-(-a))"),
+            ("~~a", "(~(~a))"),
+            ("-(a)", "(-[a])"),
+            ("((a))", "[[a]]"),
+            ("g()", "g()"),
+            ("g(a, b + 1, h())", "g(a, (b + 1), h())"),
+            ("g(a, b,)", "g(a, b)"),
+            ("g(h(i(a)))", "g(h(i(a)))"),
+            ("g(a ^ b, (c))", "g((a ^ b), [c])"),
+            ("g(a) * g(b) + 1", "((g(a) * g(b)) + 1)"),
+            ("0", "0"),
+            ("a", "a"),
+        ];
+        for (body, expected) in cases {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+            assert_eq!(source.slice(expression.span), Some(body), "{body:?}");
+        }
+    }
+
+    #[test]
+    fn requires_parentheses_between_operator_groups_with_one_diagnostic() {
+        let cases = [
+            ("a ^ b & c", 6, "&", "^", false),
+            ("a & b ^ c", 6, "^", "&", false),
+            ("a | b & c", 6, "&", "|", false),
+            ("a + b ^ c", 6, "^", "+", false),
+            ("a * b & c", 6, "&", "*", false),
+            ("a & b + c", 6, "+", "&", false),
+            ("a & b * c", 6, "*", "&", false),
+            ("a + b * c | d", 10, "|", "*", false),
+            ("a >>> 1 + b", 8, "+", ">>>", false),
+            ("a ^ b << 1", 6, "<<", "^", false),
+            ("a << 1 << 2", 7, "<<", "<<", true),
+            ("a <<< 1 >>> 2", 8, ">>>", "<<<", true),
+            ("a >> 1 << 2", 7, "<<", ">>", true),
+            ("a ^ b & c | d + a", 6, "&", "^", false),
+            ("g(a ^ b & c)", 8, "&", "^", false),
+            ("(a ^ b & c)", 7, "&", "^", false),
+        ];
+        for (body, offset, ungrouped, previous, both_shifts) in cases {
+            let text = spec_source(body);
+            let (sources, lexed, parsed) = parse_text(&text);
+            let source = sources.iter().next().unwrap();
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "{body:?}");
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{body:?}: {:?}",
+                parsed.diagnostics
+            );
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::UngroupedOperators,
+                "{body:?}"
+            );
+            assert_eq!(
+                diagnostic.message(),
+                format!("`{ungrouped}` follows `{previous}` without grouping parentheses"),
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.label(), "ungrouped operator");
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(ungrouped));
+            let expected = text.find(body).unwrap() + offset;
+            assert_eq!(
+                diagnostic.primary_span().start(),
+                TextOffset::new(u32::try_from(expected).unwrap()),
+                "{body:?}"
+            );
+            assert_eq!(
+                diagnostic.notes(),
+                [if both_shifts {
+                    "a shift or rotation takes exactly two operands; parenthesize one of them"
+                } else {
+                    "operators from different groups have no relative precedence in Orange; \
+                     parenthesize the part that applies first"
+                }],
+                "{body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ungrouped_operators_do_not_cascade_across_functions() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec f(a: Word[8], b: Word[8]) -> Word[8] { a ^ b & a | b } ",
+            "spec g(a: Word[8], b: Word[8]) -> Word[8] { a + b ^ a } ",
+            "spec h(a: Word[8]) -> Word[8] { (a ^ a) & a } ",
+            "}"
+        );
+        let (sources, _, parsed) = parse_text(text);
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.code(),
+                    source.slice(diagnostic.primary_span()).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::UngroupedOperators, "&"),
+                (DiagnosticCode::UngroupedOperators, "^"),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_parameters_calls_and_expressions() {
+        let cases = [
+            "spec f(a) -> Int { a }",
+            "spec f(a:) -> Int { a }",
+            "spec f(: Int) -> Int { 1 }",
+            "spec f(a Int) -> Int { a }",
+            "spec f(a: Int b: Int) -> Int { a }",
+            "spec f(a: Int,,) -> Int { a }",
+            "spec f(,) -> Int { 1 }",
+            "spec f(a: Word[]) -> Int { 1 }",
+            "spec f(spec: Int) -> Int { 1 }",
+            "spec f(a: Int) {}",
+            "spec f(a: Int) { a }",
+            "impl f(a: Int) {}",
+            "spec f() -> Int { g(1 2) }",
+            "spec f() -> Int { g(,) }",
+            "spec f() -> Int { g(1,,) }",
+            "spec f() -> Int { g( }",
+            "spec f() -> Int { g(1 }",
+            "spec f() -> Int { (1 }",
+            "spec f() -> Int { () }",
+            "spec f() -> Int { 1 + }",
+            "spec f() -> Int { * 1 }",
+            "spec f() -> Int { ~ }",
+            "spec f() -> Int { - }",
+            "spec f() -> Int { a b }",
+            "spec f() -> Int { 1 (2) }",
+            "spec f() -> Int { g h() }",
+            "spec f() -> Int { 1 ~ 2 }",
+            "spec f() -> Int { 1 } }",
+            "spec f() -> Int { 1 + 2 -> }",
+            "spec f() -> Int { proof(1) }",
+            "spec f() -> Int { claim }",
+        ];
+        for member in cases {
+            let text = format!("edition 2026; module m {{ {member} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{member:?}");
+            assert!(parsed.ast.is_none(), "accepted {member:?}");
+            assert!(!parsed.diagnostics.is_empty(), "{member:?}");
+            assert!(
+                parsed.diagnostics.iter().all(|diagnostic| diagnostic.code()
+                    == DiagnosticCode::ExpectedSyntax
+                    || diagnostic.code() == DiagnosticCode::TrailingSyntax),
+                "{member:?}: {:?}",
+                parsed.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn parameters_are_rejected_on_impl_and_untyped_spec_forms() {
+        let (sources, _, parsed) = parse_text(concat!(
+            "edition 2026; module m { ",
+            "impl f(a: Int) {} ",
+            "spec g(b: Int) {} ",
+            "spec ok() -> Int { 1 } ",
+            "}"
+        ));
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.message(),
+                    source.slice(diagnostic.primary_span()).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("`impl` functions have an empty parameter list", "a: Int"),
+                ("expected `->` after the parameter list", "{"),
+            ]
+        );
+    }
+
+    fn nested(prefix: &str, count: usize, core: &str, suffix: &str) -> String {
+        format!("{}{core}{}", prefix.repeat(count), suffix.repeat(count))
+    }
+
+    fn assert_resource_limited(body: &str, message: &str, at: &str) {
+        let text = spec_source(body);
+        let (sources, lexed, parsed) = parse_text(&text);
+        let source = sources.iter().next().unwrap();
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+        let diagnostic = &parsed.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+        assert_eq!(diagnostic.message(), message);
+        assert_eq!(
+            source.slice(diagnostic.primary_span()),
+            Some(at),
+            "{body:?}"
+        );
+    }
+
+    #[test]
+    fn bounds_expression_nesting_for_every_opener() {
+        let message = format!(
+            "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
+             for groups, calls, and prefix operators"
+        );
+        let forms: [(&str, fn(usize) -> String, &str); 5] = [
+            ("groups", |count| nested("(", count, "a", ")"), "("),
+            ("complements", |count| nested("~", count, "a", ""), "~"),
+            ("negations", |count| nested("-", count, "a", ""), "-"),
+            ("calls", |count| nested("g(", count, "a", ")"), "g"),
+            (
+                "operands",
+                |count| nested("a + a * (", count, "a", ")"),
+                "(",
+            ),
+        ];
+        for (name, build, opener) in forms {
+            let (_, expression) = body_expression(&spec_source(&build(MAX_EXPRESSION_NESTING)));
+            assert!(tree_height(&expression) > MAX_EXPRESSION_NESTING, "{name}");
+            assert_resource_limited(&build(MAX_EXPRESSION_NESTING + 1), &message, opener);
+        }
+
+        // Every opener draws on one budget.
+        let mixed = |groups: usize, complements: usize| {
+            nested("(", groups, &nested("~", complements, "a", ""), ")")
+        };
+        let (_, expression) = body_expression(&spec_source(&mixed(32, 32)));
+        assert_eq!(tree_height(&expression), 65);
+        assert_resource_limited(&mixed(32, 33), &message, "~");
+        assert_resource_limited(&mixed(33, 32), &message, "~");
+
+        // Sibling groups do not nest.
+        let siblings = vec![nested("(", MAX_EXPRESSION_NESTING, "a", ")"); 4].join(" ^ ");
+        let (_, expression) = body_expression(&spec_source(&siblings));
+        assert_eq!(tree_height(&expression), MAX_EXPRESSION_NESTING + 4);
+
+        // Wide calls are not deep.
+        let wide = format!("g({})", vec!["a"; MAX_ARGUMENTS_PER_CALL].join(", "));
+        let (_, expression) = body_expression(&spec_source(&wide));
+        assert_eq!(tree_height(&expression), 2);
+    }
+
+    #[test]
+    fn bounds_expression_tree_height_for_operator_chains() {
+        let message =
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
+        let chains: [(&str, &str); 4] =
+            [(" ^ a", "^"), (" + a", "+"), (" * a", "*"), (" - 1", "-")];
+        for (link, operator) in chains {
+            let chain = |count: usize| format!("a{}", link.repeat(count));
+            let (_, expression) = body_expression(&spec_source(&chain(MAX_EXPRESSION_HEIGHT - 1)));
+            assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT, "{link:?}");
+            assert_resource_limited(&chain(MAX_EXPRESSION_HEIGHT), &message, operator);
+        }
+
+        // A tall operand raises the height of every node above it.
+        let tall = format!("(a{})", " ^ a".repeat(MAX_EXPRESSION_HEIGHT - 2));
+        let (_, expression) = body_expression(&spec_source(&tall));
+        assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
+        for (body, at) in [
+            (format!("a | {tall}"), "|"),
+            (format!("{tall} * a"), "*"),
+            (format!("({tall})"), "("),
+            (format!("g({tall})"), "g"),
+            (format!("~{tall}"), "~"),
+        ] {
+            assert_resource_limited(&body, &message, at);
+        }
+    }
+
+    #[test]
+    fn bounds_parameters_per_function_and_arguments_per_call() {
+        let parameters = |count: usize| {
+            (0..count)
+                .map(|index| format!("p{index}: Int"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let accepted = format!(
+            "edition 2026; module m {{ spec f({}) -> Int {{ 1 }} }}",
+            parameters(MAX_PARAMETERS_PER_FUNCTION)
+        );
+        let (_, _, parsed) = parse_text(&accepted);
+        assert!(parsed.diagnostics.is_empty());
+        assert_eq!(
+            parsed.ast.unwrap().module.functions[0].parameters.len(),
+            MAX_PARAMETERS_PER_FUNCTION
+        );
+
+        let rejected = format!(
+            "edition 2026; module m {{ spec f({}) -> Int {{ 1 }} }}",
+            parameters(MAX_PARAMETERS_PER_FUNCTION + 1)
+        );
+        let (sources, _, parsed) = parse_text(&rejected);
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(
+            parsed.diagnostics[0].code(),
+            DiagnosticCode::ParserResourceLimit
+        );
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            format!("function declares more than {MAX_PARAMETERS_PER_FUNCTION} parameters")
+        );
+        assert_eq!(
+            source.slice(parsed.diagnostics[0].primary_span()),
+            Some(format!("p{MAX_PARAMETERS_PER_FUNCTION}: Int").as_str())
+        );
+
+        let call = |count: usize| spec_source(&format!("g({})", vec!["1"; count].join(", ")));
+        let (_, expression) = body_expression(&call(MAX_ARGUMENTS_PER_CALL));
+        let ExpressionKind::Call(parsed_call) = expression.kind else {
+            panic!("expected a call");
+        };
+        assert_eq!(parsed_call.arguments.len(), MAX_ARGUMENTS_PER_CALL);
+
+        let (_, _, parsed) = parse_text(&call(MAX_ARGUMENTS_PER_CALL + 1));
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(
+            parsed.diagnostics[0].code(),
+            DiagnosticCode::ParserResourceLimit
+        );
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            format!("call supplies more than {MAX_ARGUMENTS_PER_CALL} arguments")
+        );
+    }
+
+    #[test]
+    fn parameter_and_argument_reservation_failures_return_no_partial_ast() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add(
+                "test.or",
+                "edition 2026; module m { spec f(x: Int) -> Int { g(x) } }",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+
+        let parameter_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_parameter_slot = |_| false;
+            parser.run()
+        };
+        let argument_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_argument_slot = |_| false;
+            parser.run()
+        };
+        for (run, message, span) in [
+            (
+                &parameter_failure as &dyn Fn() -> ParseResult,
+                "parser could not allocate parameter storage",
+                "x: Int",
+            ),
+            (
+                &argument_failure,
+                "parser could not allocate argument storage",
+                "x",
+            ),
+        ] {
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.ast.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            let diagnostic = &first.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+            assert_eq!(diagnostic.message(), message);
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(span));
+        }
+    }
+
+    #[test]
+    fn expression_parsing_is_repeatable_and_malformed_expressions_never_panic() {
+        let bodies = [
+            "(((((",
+            ")))))",
+            "a ^ ^ b",
+            "a <<<< 1",
+            "a >>>> 1",
+            "g(((a, b), c)",
+            "~-~-~-",
+            "a + b ^ c & d | e << 1 >>> 2",
+            "g(g(g(g(g(",
+            "1 2 3 4",
+            ",,,,",
+            "a -> b",
+            "a :: b",
+        ];
+        for body in bodies {
+            let mut sources = SourceMap::new();
+            let id = sources.add("test.or", spec_source(body)).unwrap();
+            let source = sources.get(id).unwrap();
+            let lexed = lex(source, Edition::E2026);
+            let first = parse(source, &lexed);
+            assert_eq!(first, parse(source, &lexed), "{body:?}");
+            assert!(first.ast.is_none(), "{body:?}");
         }
     }
 }
