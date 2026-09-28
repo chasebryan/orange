@@ -1,0 +1,9 @@
+// S3b rejection: parameters are written `name: Type` on typed `spec`
+// functions only.
+edition 2026;
+module parameters {
+  spec missing_colon(x Int) -> Int { x }
+  impl with_parameter(x: Int) {}
+  spec untyped_with_parameter(x: Int) {}
+  spec fine(x: Int) -> Int { x }
+}

@@ -1,0 +1,13 @@
+// S3b conformance: Int arithmetic is exact, with no width and no wrapping.
+edition 2026;
+module integers {
+  spec square(x: Int) -> Int { x * x }
+  spec two_to_the_128() -> Int { square(square(square(square(square(square(square(2))))))) }
+  spec signs() -> Int { -(3 - 10) * -4 }
+  spec precedence() -> Int { 2 + 3 * 4 - 5 }
+  spec grouping() -> Int { (2 + 3) * (4 - 5) }
+  spec crossing_zero() -> Int { 1 - 18446744073709551617 }
+  spec negative_zero() -> Int { -(5 - 5) }
+  // The Curve25519 field prime, 2^255 - 19.
+  spec p25519() -> Int { two_to_the_128() * 0x8000_0000_0000_0000_0000_0000_0000_0000 - 19 }
+}

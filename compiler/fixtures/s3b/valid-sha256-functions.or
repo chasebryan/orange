@@ -1,0 +1,40 @@
+// S3b conformance: the SHA-256 functions of FIPS 180-4 section 4.1.2, checked
+// against round t = 0 of the FIPS "abc" example.
+edition 2026;
+module sha256 {
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+
+  spec choose(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    (x & y) ^ (~x & z)
+  }
+
+  spec majority(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    (x & y) ^ (x & z) ^ (y & z)
+  }
+
+  spec t1(
+    e: Word[32], f: Word[32], g: Word[32], h: Word[32],
+    k: Word[32], w: Word[32],
+  ) -> Word[32] {
+    h + big_sigma1(e) + choose(e, f, g) + k + w
+  }
+
+  spec t2(a: Word[32], b: Word[32], c: Word[32]) -> Word[32] {
+    big_sigma0(a) + majority(a, b, c)
+  }
+
+  // Round 0 of "abc": the initial hash value H(0), K0 = 0x428a2f98, and
+  // W0 = 0x61626380, the first message word after padding.
+  spec round0_t1() -> Word[32] {
+    t1(0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19, 0x428a2f98, 0x61626380)
+  }
+  spec round0_a() -> Word[32] { round0_t1() + t2(0x6a09e667, 0xbb67ae85, 0x3c6ef372) }
+  spec round0_e() -> Word[32] { 0xa54ff53a + round0_t1() }
+
+  spec sigma0_of_h0() -> Word[32] { big_sigma0(0x6a09e667) }
+  spec schedule_sigma0() -> Word[32] { small_sigma0(0x61626380) }
+  spec schedule_sigma1() -> Word[32] { small_sigma1(0x61626380) }
+}

@@ -916,6 +916,23 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let Some(result_type) = signature.result_type else {
             return false;
         };
+        // A result-type mismatch is reported at the call before its arguments
+        // are checked; arguments are checked against the callee's parameter
+        // types, so their errors are independent and are still reported.
+        let result_matches = result_type == expected;
+        if !result_matches && self.begin_report(expression.span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!(
+                        "`{spelling}` returns `{result_type}`, but `{expected}` is required here"
+                    ),
+                    expression.span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("Orange has no implicit conversions between types"),
+            );
+        }
         let mut arguments_checked = true;
         for (argument, parameter_type) in call.arguments.iter().zip(&signature.parameters) {
             let Some(parameter_type) = *parameter_type else {
@@ -927,23 +944,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return false;
             }
         }
-        if result_type != expected {
-            if self.begin_report(expression.span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::TypeMismatch,
-                        format!(
-                            "`{spelling}` returns `{result_type}`, but `{expected}` is required here"
-                        ),
-                        expression.span,
-                    )
-                    .with_label(format!("expected `{expected}`"))
-                    .with_note("Orange has no implicit conversions between types"),
-                );
-            }
-            return false;
-        }
-        if !arguments_checked {
+        if !result_matches || !arguments_checked {
             return false;
         }
         if !(self.reserve_call_edge_slot)(output.call_edges) {
@@ -3952,6 +3953,7 @@ mod tests {
             "  spec e() -> Word[8] { int() }\n",
             "  spec f(w: Word[16]) -> Word[8] { one(w) }\n",
             "  spec g() -> Int { two(1, one(2)) }\n",
+            "  spec h() -> Int { one(256) }\n",
         ));
         assert_eq!(
             reported(&fixture, &result),
@@ -3990,6 +3992,16 @@ mod tests {
                     DiagnosticCode::TypeMismatch,
                     "one(2)",
                     String::from("`one` returns `Word[8]`, but `Int` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "one(256)",
+                    String::from("`one` returns `Word[8]`, but `Int` is required here")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "256",
+                    String::from("literal is outside the range of `Word[8]`")
                 ),
             ]
         );
