@@ -3240,7 +3240,8 @@ mod tests {
             "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
              for groups, calls, and prefix operators"
         );
-        let forms: [(&str, fn(usize) -> String, &str); 5] = [
+        type Form = (&'static str, fn(usize) -> String, &'static str);
+        let forms: [Form; 5] = [
             ("groups", |count| nested("(", count, "a", ")"), "("),
             ("complements", |count| nested("~", count, "a", ""), "~"),
             ("negations", |count| nested("-", count, "a", ""), "-"),

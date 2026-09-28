@@ -1077,4 +1077,529 @@ mod tests {
         let values = result.values().unwrap();
         assert!(Arc::ptr_eq(&values[0].module, &values[1].module));
     }
+
+    /// Evaluates `members` in a module named `m` and renders every value.
+    fn values_of(members: &str) -> Vec<String> {
+        let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+        let result = evaluate(&core);
+        assert_eq!(result.diagnostics(), [], "{members}");
+        assert_eq!(result, evaluate(&core));
+        result
+            .values()
+            .unwrap()
+            .iter()
+            .map(|value| format!("{} = {}", value.name(), value.value()))
+            .collect()
+    }
+
+    const WORDS: [(&str, u32); 4] = [
+        ("Word[8]", 8),
+        ("Word[16]", 16),
+        ("Word[32]", 32),
+        ("Word[64]", 64),
+    ];
+
+    fn render_word(bits: u32, value: u128) -> String {
+        let digits = usize::try_from(bits / 4).unwrap();
+        format!("0x{value:0digits$x}")
+    }
+
+    /// Edge values and a deterministic xorshift stream for one width.
+    fn word_corpus(bits: u32) -> Vec<u128> {
+        let modulus = 1_u128 << bits;
+        let mut values = vec![
+            0,
+            1,
+            2,
+            modulus - 1,
+            modulus - 2,
+            modulus >> 1,
+            (modulus >> 1) - 1,
+        ];
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64 ^ u64::from(bits);
+        for _ in 0..9 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            values.push(u128::from(state) % modulus);
+        }
+        values
+    }
+
+    #[test]
+    fn word_operators_match_a_wide_reference_at_every_width() {
+        for (ty, bits) in WORDS {
+            let modulus = 1_u128 << bits;
+            let corpus = word_corpus(bits);
+            let mut members = String::new();
+            let mut expected = Vec::new();
+            for (index, (&left, &right)) in corpus.iter().zip(corpus.iter().rev()).enumerate() {
+                let cases = [
+                    ("+", (left + right) % modulus),
+                    ("-", (left + modulus - right) % modulus),
+                    ("*", (left * right) % modulus),
+                    ("&", left & right),
+                    ("|", left | right),
+                    ("^", left ^ right),
+                ];
+                for (operator_index, (operator, value)) in cases.into_iter().enumerate() {
+                    let name = format!("op{index}_{operator_index}");
+                    members.push_str(&format!(
+                        "  spec {name}() -> {ty} {{ {left} {operator} 0x{right:x} }}\n"
+                    ));
+                    expected.push(format!("{name} = {}", render_word(bits, value)));
+                }
+                let name = format!("not{index}");
+                members.push_str(&format!("  spec {name}() -> {ty} {{ ~{left} }}\n"));
+                expected.push(format!(
+                    "{name} = {}",
+                    render_word(bits, (modulus - 1) ^ left)
+                ));
+            }
+            assert_eq!(values_of(&members), expected, "{ty}");
+        }
+    }
+
+    #[test]
+    fn shifts_and_rotations_match_the_reference_for_every_amount() {
+        for (ty, bits) in WORDS {
+            let modulus = 1_u128 << bits;
+            let mask = modulus - 1;
+            let rotate_left = |value: u128, amount: u32| {
+                ((value << amount) | (value >> ((bits - amount) % bits))) & mask
+            };
+            let mut members = String::new();
+            let mut expected = Vec::new();
+            for value in [mask, 0x81 % modulus, word_corpus(bits)[9]] {
+                for amount in 0..bits {
+                    let cases = [
+                        ("<<", (value << amount) & mask),
+                        (">>", value >> amount),
+                        ("<<<", rotate_left(value, amount)),
+                        (">>>", rotate_left(value, (bits - amount) % bits)),
+                    ];
+                    for (operator_index, (operator, result)) in cases.into_iter().enumerate() {
+                        let name = format!("s{}_{amount}_{operator_index}", members.len());
+                        members.push_str(&format!(
+                            "  spec {name}() -> {ty} {{ {value} {operator} {amount} }}\n"
+                        ));
+                        expected.push(format!("{name} = {}", render_word(bits, result)));
+                    }
+                }
+            }
+            assert_eq!(values_of(&members), expected, "{ty}");
+        }
+    }
+
+    #[test]
+    fn sha256_round_zero_matches_the_fips_example() {
+        // FIPS 180-4 example "abc": after round t = 0, a = 5d6aebcd and
+        // e = fa2a4622, from the initial hash value, K0, and W0 = 61626380.
+        let values = values_of(concat!(
+            "  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }\n",
+            "  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }\n",
+            "  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }\n",
+            "  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }\n",
+            "  spec choose(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {\n",
+            "    (x & y) ^ (~x & z)\n",
+            "  }\n",
+            "  spec majority(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {\n",
+            "    (x & y) ^ (x & z) ^ (y & z)\n",
+            "  }\n",
+            "  spec t1(e: Word[32], f: Word[32], g: Word[32], h: Word[32], k: Word[32], w: Word[32])\n",
+            "    -> Word[32] { h + big_sigma1(e) + choose(e, f, g) + k + w }\n",
+            "  spec t2(a: Word[32], b: Word[32], c: Word[32]) -> Word[32] {\n",
+            "    big_sigma0(a) + majority(a, b, c)\n",
+            "  }\n",
+            "  spec sigma0_of_a() -> Word[32] { big_sigma0(0x6a09e667) }\n",
+            "  spec sigma1_of_e() -> Word[32] { big_sigma1(0x510e527f) }\n",
+            "  spec schedule0() -> Word[32] { small_sigma0(0x61626380) }\n",
+            "  spec schedule1() -> Word[32] { small_sigma1(0x61626380) }\n",
+            "  spec ch() -> Word[32] { choose(0x510e527f, 0x9b05688c, 0x1f83d9ab) }\n",
+            "  spec maj() -> Word[32] { majority(0x6a09e667, 0xbb67ae85, 0x3c6ef372) }\n",
+            "  spec round0_a() -> Word[32] {\n",
+            "    t1(0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19, 0x428a2f98, 0x61626380)\n",
+            "      + t2(0x6a09e667, 0xbb67ae85, 0x3c6ef372)\n",
+            "  }\n",
+            "  spec round0_e() -> Word[32] {\n",
+            "    0xa54ff53a + t1(0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19, 0x428a2f98, 0x61626380)\n",
+            "  }\n",
+        ));
+        assert_eq!(
+            values,
+            [
+                "sigma0_of_a = 0xce20b47e",
+                "sigma1_of_e = 0x3587272b",
+                "schedule0 = 0x940e90ef",
+                "schedule1 = 0x7da86405",
+                "ch = 0x1f85c98c",
+                "maj = 0x3a6fe667",
+                "round0_a = 0x5d6aebcd",
+                "round0_e = 0xfa2a4622",
+            ]
+        );
+    }
+
+    #[test]
+    fn chacha20_quarter_round_matches_rfc_8439() {
+        // RFC 8439 section 2.1.1, one intermediate value per function.
+        let values = values_of(concat!(
+            "  spec a1(a: Word[32], b: Word[32]) -> Word[32] { a + b }\n",
+            "  spec d1(a: Word[32], b: Word[32], d: Word[32]) -> Word[32] {\n",
+            "    (d ^ a1(a, b)) <<< 16\n",
+            "  }\n",
+            "  spec c1(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {\n",
+            "    c + d1(a, b, d)\n",
+            "  }\n",
+            "  spec b1(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {\n",
+            "    (b ^ c1(a, b, c, d)) <<< 12\n",
+            "  }\n",
+            "  spec a2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {\n",
+            "    a1(a, b) + b1(a, b, c, d)\n",
+            "  }\n",
+            "  spec d2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {\n",
+            "    (d1(a, b, d) ^ a2(a, b, c, d)) <<< 8\n",
+            "  }\n",
+            "  spec c2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {\n",
+            "    c1(a, b, c, d) + d2(a, b, c, d)\n",
+            "  }\n",
+            "  spec b2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {\n",
+            "    (b1(a, b, c, d) ^ c2(a, b, c, d)) <<< 7\n",
+            "  }\n",
+            "  spec a() -> Word[32] { a2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }\n",
+            "  spec b() -> Word[32] { b2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }\n",
+            "  spec c() -> Word[32] { c2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }\n",
+            "  spec d() -> Word[32] { d2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }\n",
+        ));
+        assert_eq!(
+            values,
+            [
+                "a = 0xea2a92f4",
+                "b = 0xcb1cf8ce",
+                "c = 0x4581472e",
+                "d = 0x5881c4bb"
+            ]
+        );
+    }
+
+    #[test]
+    fn int_arithmetic_is_exact_through_calls() {
+        let values = values_of(concat!(
+            "  spec square(x: Int) -> Int { x * x }\n",
+            "  spec two_to_128() -> Int { 18446744073709551616 * 18446744073709551616 }\n",
+            "  spec tower() -> Int { square(square(12345678901234567890)) }\n",
+            "  spec signs() -> Int { -(3 - 10) * -4 }\n",
+            "  spec zero() -> Int { 5 - 5 + -0 * -7 }\n",
+            "  spec crossing() -> Int { 1 - 18446744073709551617 + 18446744073709551616 }\n",
+            "  spec negate_zero() -> Int { -(0 * -1) }\n",
+        ));
+        assert_eq!(
+            values,
+            [
+                "two_to_128 = 340282366920938463463374607431768211456",
+                "tower = 23230572289118153328333583928030329684079829544396666111742077337982514410000",
+                "signs = -28",
+                "zero = 0",
+                "crossing = 0",
+                "negate_zero = 0",
+            ]
+        );
+    }
+
+    fn analyzed(text: &str) -> (SourceMap, CoreModule) {
+        let mut sources = SourceMap::new();
+        let id = sources.add("evaluate.or", text).unwrap();
+        let core = {
+            let source = sources.get(id).unwrap();
+            let lexed = lex(source, Edition::E2026);
+            let parsed = parse(source, &lexed);
+            assert_eq!(parsed.diagnostics(), []);
+            let analyzed = analyze(source, parsed.ast().unwrap());
+            assert_eq!(analyzed.diagnostics(), []);
+            analyzed.into_core().unwrap()
+        };
+        (sources, core)
+    }
+
+    /// Evaluates `members` expecting one diagnostic, and returns it with the
+    /// source text its primary span covers.
+    fn single_failure(members: &str, step_limit: usize) -> (Diagnostic, String, CoreModule) {
+        let text = format!("edition 2026; module m {{\n{members}}}\n");
+        let (sources, core) = analyzed(&text);
+        let result = evaluate_with_limit(&core, step_limit);
+        assert_eq!(result, evaluate_with_limit(&core, step_limit));
+        assert!(result.values().is_none());
+        let [diagnostic] = result.diagnostics() else {
+            panic!(
+                "expected exactly one diagnostic: {:?}",
+                result.diagnostics()
+            );
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        let covered = sources
+            .iter()
+            .next()
+            .unwrap()
+            .slice(diagnostic.primary_span())
+            .unwrap()
+            .to_owned();
+        (diagnostic.clone(), covered, core)
+    }
+
+    #[test]
+    fn int_results_are_bounded_by_the_significant_bit_limit() {
+        // Thirteen squarings of 2 give 2^8192, and (2^8192 - 1)(2^8192 + 1) is
+        // 2^16384 - 1: exactly the 16,384-bit limit.
+        let squarings = |count: usize| format!("{}2{}", "s(".repeat(count), ")".repeat(count));
+        let tower = squarings(13);
+        let at_limit = format!("({tower} - 1) * ({tower} + 1)");
+        let square = "  spec s(x: Int) -> Int { x * x }\n";
+        let values = values_of(&format!(
+            "{square}  spec at_limit() -> Int {{ {at_limit} }}\n  spec negative() -> Int {{ -({at_limit}) }}\n"
+        ));
+        assert_eq!(values.len(), 2);
+
+        for (body, responsible) in [
+            (format!("{at_limit} + 1"), None),
+            (squarings(14), Some("x * x")),
+            (format!("-({at_limit}) - 1"), None),
+        ] {
+            let (diagnostic, covered, core) = single_failure(
+                &format!("{square}  spec over() -> Int {{ {body} }}\n"),
+                MAX_EVALUATION_STEPS_PER_SOURCE,
+            );
+            assert_eq!(
+                diagnostic.message(),
+                "exact integer result exceeds the 16384-significant-bit limit"
+            );
+            assert_eq!(covered, responsible.unwrap_or(&body));
+            let [function] = diagnostic.secondary_spans() else {
+                panic!("the bit limit must cite the evaluated function");
+            };
+            assert_eq!(function.span(), core.functions[1].name_span);
+        }
+    }
+
+    #[test]
+    fn only_parameterless_functions_are_evaluated_and_reported() {
+        assert_eq!(
+            values_of(concat!(
+                "  spec double(x: Word[16]) -> Word[16] { x + x }\n",
+                "  spec four() -> Word[16] { double(double(1)) }\n",
+                "  spec unused(x: Int) -> Int { x }\n",
+                "  spec legacy() {}\n",
+                "  impl legacy() {}\n",
+            )),
+            ["four = 0x0004"]
+        );
+        assert_eq!(
+            values_of("  spec only(x: Int) -> Int { x }\n"),
+            Vec::<String>::new()
+        );
+    }
+
+    fn call_chain(length: usize) -> String {
+        let mut members = String::new();
+        for index in 0..length {
+            members.push_str(&format!(
+                "  spec f{index}() -> Int {{ f{}() }}\n",
+                index + 1
+            ));
+        }
+        members.push_str(&format!("  spec f{length}() -> Int {{ 7 }}\n"));
+        members
+    }
+
+    #[test]
+    fn call_depth_counts_the_evaluated_function_as_the_first_frame() {
+        let values = values_of(&call_chain(MAX_CALL_DEPTH - 1));
+        assert_eq!(values.len(), MAX_CALL_DEPTH);
+        assert!(values.iter().all(|value| value.ends_with(" = 7")));
+
+        let (diagnostic, covered, core) =
+            single_failure(&call_chain(MAX_CALL_DEPTH), MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation call depth limit exceeded"
+        );
+        assert_eq!(covered, format!("f{MAX_CALL_DEPTH}()"));
+        assert_eq!(diagnostic.label(), "this call exceeds the depth limit");
+        let [function] = diagnostic.secondary_spans() else {
+            panic!("the depth limit must cite the evaluated function");
+        };
+        assert_eq!(function.span(), core.functions[0].name_span);
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                "at most 256 nested calls are permitted",
+                "no partial value set is returned"
+            ]
+        );
+    }
+
+    #[test]
+    fn steps_follow_the_normative_cost_table() {
+        // Word: every literal, operator, shift, and call costs one step, and
+        // parameter loads cost one step each.
+        // Int: negation costs 1 + d, addition and subtraction 1 + max(d1, d2),
+        // and multiplication 1 + d1 * d2, where d counts 32-bit limbs.
+        for (members, steps) in [
+            ("  spec w() -> Word[8] { (1 + 2) ^ ~3 }\n", 6),
+            ("  spec w() -> Word[32] { (1 <<< 3) >> 1 }\n", 3),
+            (
+                "  spec f(x: Word[8]) -> Word[8] { x + x }\n  spec w() -> Word[8] { f(7) }\n",
+                5,
+            ),
+            ("  spec i() -> Int { 4294967296 * 4294967296 + 1 }\n", 12),
+            ("  spec i() -> Int { -18446744073709551616 }\n", 1),
+            ("  spec i() -> Int { -(18446744073709551616) }\n", 5),
+            ("  spec i() -> Int { 0 - 0 }\n", 3),
+            (
+                "  spec f(x: Int) -> Int { x + x }\n  spec i() -> Int { f(7) }\n",
+                6,
+            ),
+        ] {
+            let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+            let exact = evaluate_with_limit(&core, steps);
+            assert_eq!(exact.diagnostics(), [], "{members}");
+            let short = evaluate_with_limit(&core, steps - 1);
+            assert!(short.values().is_none(), "{members}");
+            assert_eq!(
+                short.diagnostics()[0].message(),
+                "reference evaluation step limit exceeded"
+            );
+            assert_eq!(
+                short.diagnostics()[0].label(),
+                if steps == 1 {
+                    "evaluation stopped before this function"
+                } else {
+                    "evaluation stopped while evaluating this function"
+                },
+                "{members}"
+            );
+        }
+    }
+
+    #[test]
+    fn exponential_call_trees_stop_at_the_step_limit() {
+        let mut members = String::from("  spec d0(x: Word[8]) -> Word[8] { x + x }\n");
+        for level in 1..=24 {
+            members.push_str(&format!(
+                "  spec d{level}(x: Word[8]) -> Word[8] {{ d{0}(x) ^ d{0}(x) }}\n",
+                level - 1
+            ));
+        }
+        members.push_str("  spec root() -> Word[8] { d24(1) }\n");
+        let (diagnostic, covered, _) = single_failure(&members, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation step limit exceeded"
+        );
+        assert_eq!(covered, "root");
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this function"
+        );
+    }
+
+    #[test]
+    fn value_and_call_stack_reservation_failures_return_no_values() {
+        let core = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec id(x: Word[8]) -> Word[8] { x }\n",
+            "  spec root() -> Word[8] { id(1) }\n",
+            "}\n",
+        ));
+        for (reservations, label) in [
+            (
+                Reservations {
+                    stack: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation value stack could not be reserved",
+            ),
+            (
+                Reservations {
+                    frames: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation call stack could not be reserved",
+            ),
+            (
+                Reservations {
+                    frames: |frames, count| frames.is_empty() && frames.try_reserve(count).is_ok(),
+                    ..Reservations::DEFAULT
+                },
+                "evaluation call stack could not be reserved",
+            ),
+        ] {
+            let run = || {
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.values().is_none());
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label);
+            assert_eq!(diagnostic.primary_span(), core.functions[1].name_span);
+        }
+    }
+
+    /// Runs every accepted worst case through the whole pipeline on a thread
+    /// whose stack is far smaller than a default thread's, unoptimized.
+    #[test]
+    fn deepest_accepted_sources_fit_in_one_mebibyte_of_stack() {
+        use crate::parser::{MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING};
+        let nested = |prefix: &str, core: &str, suffix: &str| {
+            format!(
+                "{}{core}{}",
+                prefix.repeat(MAX_EXPRESSION_NESTING),
+                suffix.repeat(MAX_EXPRESSION_NESTING)
+            )
+        };
+        let bodies = [
+            nested("(", "x", ")"),
+            nested("~", "x", ""),
+            nested("g(", "x", ")"),
+            nested("x + x * (", "x", ")"),
+            nested("x + x * g(", "x", ")"),
+            nested("x ^ (", "x", ")"),
+            format!("x{}", " ^ x".repeat(MAX_EXPRESSION_HEIGHT - 1)),
+            format!("(x{})", " + x".repeat(MAX_EXPRESSION_HEIGHT - 2)),
+        ];
+        let sources = bodies
+            .iter()
+            .map(|body| {
+                format!(
+                    "edition 2026; module m {{\n  spec g(x: Word[32]) -> Word[32] {{ x }}\n  \
+                     spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
+                     spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
+                )
+            })
+            .collect::<Vec<_>>();
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                sources
+                    .iter()
+                    .map(|text| {
+                        let (_, core) = analyzed(text);
+                        evaluate(&core).values().map(<[EvaluatedFunction]>::len)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        assert_eq!(worker.join().unwrap(), vec![Some(1); bodies.len()]);
+    }
 }

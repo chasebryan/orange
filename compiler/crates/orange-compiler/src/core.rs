@@ -1068,4 +1068,129 @@ mod tests {
             }
         }
     }
+
+    fn reserve(limbs: &mut Vec<u32>, count: usize) -> bool {
+        limbs.try_reserve_exact(count).is_ok()
+    }
+
+    fn exact(value: i128) -> ExactInteger {
+        let mut magnitude = Magnitude::zero();
+        let unsigned = value.unsigned_abs();
+        for shift in (0..8).rev() {
+            let digit = u32::try_from((unsigned >> (16 * shift)) & 0xffff).unwrap();
+            assert!(
+                magnitude.multiply_add_with_reservation(1 << 16, digit, |limbs| {
+                    limbs.try_reserve(1).is_ok()
+                })
+            );
+        }
+        ExactInteger::new(value < 0, magnitude)
+    }
+
+    fn exact_corpus() -> Vec<i128> {
+        let mut values = vec![
+            0,
+            1,
+            2,
+            i128::from(u32::MAX) - 1,
+            i128::from(u32::MAX),
+            1 << 32,
+            (1 << 32) + 1,
+            i128::from(i64::MAX),
+            (1 << 63) + 12_345,
+        ];
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        for _ in 0..12 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            values.push(i128::from(state >> (state % 61)));
+        }
+        let negatives = values.iter().map(|value| -value).collect::<Vec<_>>();
+        values.extend(negatives);
+        values
+    }
+
+    #[test]
+    fn exact_integer_arithmetic_matches_an_i128_reference() {
+        let corpus = exact_corpus();
+        for &left in &corpus {
+            assert_eq!(exact(left).to_string(), left.to_string());
+            assert_eq!(exact(left).negated().to_string(), (-left).to_string());
+            assert_eq!(exact(left).is_negative(), left < 0);
+            for &right in &corpus {
+                let (a, b) = (exact(left), exact(right));
+                assert_eq!(
+                    a.add(&b, reserve).unwrap().to_string(),
+                    (left + right).to_string(),
+                    "{left} + {right}"
+                );
+                assert_eq!(
+                    a.subtract(&b, reserve).unwrap().to_string(),
+                    (left - right).to_string(),
+                    "{left} - {right}"
+                );
+                assert_eq!(
+                    a.multiply(&b, reserve).unwrap().to_string(),
+                    (left * right).to_string(),
+                    "{left} * {right}"
+                );
+                // Every zero result is the canonical, unsigned zero.
+                let difference = a.subtract(&a, reserve).unwrap();
+                assert!(difference.is_zero() && !difference.is_negative());
+                assert_eq!(difference, exact(0));
+            }
+        }
+    }
+
+    #[test]
+    fn multi_limb_arithmetic_is_exact() {
+        let power = |bits: usize| {
+            let mut value = exact(1);
+            for _ in 0..bits {
+                value = value.add(&value, reserve).unwrap();
+            }
+            value
+        };
+        for bits in [31, 32, 33, 63, 64, 65, 127, 128, 500, 1024] {
+            let two_k = power(bits);
+            let below = two_k.subtract(&exact(1), reserve).unwrap();
+            let above = two_k.add(&exact(1), reserve).unwrap();
+            // (2^k - 1)(2^k + 1) = 2^(2k) - 1, whose magnitude has 2k bits.
+            let product = below.multiply(&above, reserve).unwrap();
+            assert_eq!(product.magnitude_bits(), 2 * bits);
+            assert_eq!(
+                product.add(&exact(1), reserve).unwrap(),
+                power(2 * bits),
+                "{bits}"
+            );
+            assert_eq!(
+                above.multiply(&below, reserve).unwrap(),
+                product,
+                "multiplication commutes"
+            );
+            assert_eq!(below.subtract(&above, reserve).unwrap().to_string(), "-2");
+            let negative = below.clone().negated();
+            assert_eq!(
+                negative.multiply(&negative, reserve).unwrap(),
+                below.multiply(&below, reserve).unwrap()
+            );
+        }
+        assert_eq!(
+            power(128).to_string(),
+            "340282366920938463463374607431768211456"
+        );
+    }
+
+    #[test]
+    fn exact_arithmetic_storage_failures_return_none() {
+        let (a, b) = (exact(1 << 40), exact(-(1 << 70)));
+        let fail = |_: &mut Vec<u32>, _: usize| false;
+        assert_eq!(a.add(&b, fail), None);
+        assert_eq!(a.add(&a, fail), None);
+        assert_eq!(a.subtract(&b, fail), None);
+        assert_eq!(a.multiply(&b, fail), None);
+        // Multiplying by zero allocates nothing.
+        assert_eq!(a.multiply(&exact(0), fail), Some(exact(0)));
+    }
 }

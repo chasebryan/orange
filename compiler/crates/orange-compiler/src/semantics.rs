@@ -3594,4 +3594,782 @@ mod tests {
         assert_eq!(first, second);
         assert!(first.core.unwrap().functions.is_empty());
     }
+
+    /// Renders one function's postorder Core as `(operation, source, type)`.
+    fn core_nodes<'text>(
+        fixture: &'text Fixture,
+        function: &CoreFunction,
+    ) -> Vec<(String, &'text str, CoreType)> {
+        function
+            .body
+            .nodes
+            .iter()
+            .map(|node| {
+                let operation = match &node.kind {
+                    CoreNodeKind::Literal(value) => format!("literal {value}"),
+                    CoreNodeKind::Parameter(index) => format!("parameter {index}"),
+                    CoreNodeKind::Call {
+                        function,
+                        arguments,
+                    } => format!("call #{} with {arguments}", function.index()),
+                    CoreNodeKind::Unary(operator) => format!("prefix {}", operator.as_str()),
+                    CoreNodeKind::Binary(operator) => format!("infix {}", operator.as_str()),
+                    CoreNodeKind::Shift { operator, amount } => {
+                        format!("shift {} {amount}", operator.as_str())
+                    }
+                };
+                (
+                    operation,
+                    fixture.source().slice(node.span).unwrap(),
+                    node.ty,
+                )
+            })
+            .collect()
+    }
+
+    /// Renders diagnostics as `(code, responsible source, message)`.
+    fn reported<'text>(
+        fixture: &'text Fixture,
+        result: &AnalysisResult,
+    ) -> Vec<(DiagnosticCode, &'text str, String)> {
+        result
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.code(),
+                    fixture.source().slice(diagnostic.primary_span()).unwrap(),
+                    diagnostic.message().to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    const TYPES: [CoreType; 5] = [
+        CoreType::Int,
+        CoreType::Word8,
+        CoreType::Word16,
+        CoreType::Word32,
+        CoreType::Word64,
+    ];
+
+    fn module(members: &str) -> Fixture {
+        Fixture::new(format!("edition 2026; module m {{\n{members}}}\n"))
+    }
+
+    fn accepted(members: &str) -> (Fixture, CoreModule) {
+        let fixture = module(members);
+        let result = fixture.analyze();
+        assert_eq!(result.diagnostics, [], "{members}");
+        let core = result.core.unwrap();
+        (fixture, core)
+    }
+
+    fn rejected(members: &str) -> (Fixture, AnalysisResult) {
+        let fixture = module(members);
+        let first = fixture.analyze();
+        assert_eq!(first, fixture.analyze(), "{members}");
+        assert!(first.core.is_none(), "{members}");
+        (fixture, first)
+    }
+
+    #[test]
+    fn typed_core_is_postorder_with_exact_types_spans_and_operations() {
+        let (fixture, core) = accepted(concat!(
+            "  spec mix(x: Word[32], y: Word[32]) -> Word[32] { (x ^ ~y) <<< 7 }\n",
+            "  spec use_mix() -> Word[32] { mix(1, 0xff) + 2 * 3 }\n",
+            "  spec exact(n: Int) -> Int { -(n - -5) * n }\n",
+        ));
+        assert_eq!(
+            core.functions
+                .iter()
+                .map(|function| (
+                    function.id.index(),
+                    function.name.as_str(),
+                    function.parameters.clone(),
+                    function.result_type
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    0,
+                    "mix",
+                    vec![CoreType::Word32, CoreType::Word32],
+                    CoreType::Word32
+                ),
+                (1, "use_mix", vec![], CoreType::Word32),
+                (2, "exact", vec![CoreType::Int], CoreType::Int),
+            ]
+        );
+        let word = CoreType::Word32;
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[0]),
+            owned(&[
+                ("parameter 0", "x", word),
+                ("parameter 1", "y", word),
+                ("prefix ~", "~y", word),
+                ("infix ^", "x ^ ~y", word),
+                ("shift <<< 7", "(x ^ ~y) <<< 7", word),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[1]),
+            owned(&[
+                ("literal 0x00000001", "1", word),
+                ("literal 0x000000ff", "0xff", word),
+                ("call #0 with 2", "mix(1, 0xff)", word),
+                ("literal 0x00000002", "2", word),
+                ("literal 0x00000003", "3", word),
+                ("infix *", "2 * 3", word),
+                ("infix +", "mix(1, 0xff) + 2 * 3", word),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[2]),
+            owned(&[
+                ("parameter 0", "n", CoreType::Int),
+                ("literal -5", "-5", CoreType::Int),
+                ("infix -", "n - -5", CoreType::Int),
+                ("prefix -", "-(n - -5)", CoreType::Int),
+                ("parameter 0", "n", CoreType::Int),
+                ("infix *", "-(n - -5) * n", CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            core.functions[0].body.root().map(|node| node.kind.clone()),
+            Some(CoreNodeKind::Shift {
+                operator: BinaryOperator::RotateLeft,
+                amount: 7
+            })
+        );
+        assert_eq!(core.functions[0].body.literal(), None);
+    }
+
+    #[test]
+    fn calls_resolve_in_any_order_and_acyclic_graphs_are_accepted() {
+        let (fixture, core) = accepted(concat!(
+            "  spec top() -> Int { left() + right() + left() }\n",
+            "  spec left() -> Int { base(1) }\n",
+            "  spec right() -> Int { base(2) * base(3) }\n",
+            "  spec base(x: Int) -> Int { x * x }\n",
+            "  spec unused() {}\n",
+            "  impl unused() {}\n",
+            "  spec after() -> Int { top() }\n",
+        ));
+        let calls = |index: usize| {
+            core_nodes(&fixture, &core.functions[index])
+                .into_iter()
+                .filter(|(operation, _, _)| operation.starts_with("call"))
+                .map(|(operation, source, _)| (operation, source))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            calls(0),
+            [
+                (String::from("call #1 with 0"), "left()"),
+                (String::from("call #2 with 0"), "right()"),
+                (String::from("call #1 with 0"), "left()"),
+            ]
+        );
+        assert_eq!(
+            calls(2),
+            [
+                (String::from("call #3 with 1"), "base(2)"),
+                (String::from("call #3 with 1"), "base(3)"),
+            ]
+        );
+        assert_eq!(calls(4), [(String::from("call #0 with 0"), "top()")]);
+        assert_eq!(core.functions.len(), 5);
+    }
+
+    #[test]
+    fn call_cycles_are_reported_once_at_the_closing_call() {
+        let (fixture, result) = rejected(concat!(
+            "  spec itself() -> Int { itself() + 1 }\n",
+            "  spec ping() -> Int { pong() }\n",
+            "  spec pong() -> Int { ping() }\n",
+            "  spec a() -> Int { b() }\n",
+            "  spec b() -> Int { c() }\n",
+            "  spec c() -> Int { a() + a() }\n",
+            "  spec into_cycle() -> Int { ping() }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::CallCycle,
+                    "itself()",
+                    String::from("`itself` calls itself")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "ping()",
+                    String::from("call cycle `ping` -> `pong` -> `ping`")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "a()",
+                    String::from("call cycle `a` -> `b` -> `c` -> `a`")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    "a()",
+                    String::from("call cycle `a` -> `b` -> `c` -> `a`")
+                ),
+            ]
+        );
+        let spans = result
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.primary_span())
+            .collect::<Vec<_>>();
+        assert_ne!(spans[2], spans[3], "each closing call is its own site");
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.label(), "this call closes the cycle");
+        assert_eq!(
+            diagnostic.notes(),
+            ["a `spec` may not depend on itself; recursion is not part of Orange 2026"]
+        );
+    }
+
+    #[test]
+    fn long_call_cycles_have_bounded_messages() {
+        let count = MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC + 2;
+        let members = (0..count)
+            .map(|index| {
+                format!(
+                    "  spec f{index}() -> Int {{ f{}() }}\n",
+                    (index + 1) % count
+                )
+            })
+            .collect::<String>();
+        let (fixture, result) = rejected(&members);
+        let route = (0..MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC)
+            .map(|index| format!("`f{index}`"))
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        assert_eq!(
+            reported(&fixture, &result),
+            [(
+                DiagnosticCode::CallCycle,
+                "f0()",
+                format!("call cycle {route} -> ... -> `f0`")
+            )]
+        );
+    }
+
+    #[test]
+    fn names_and_calls_resolve_only_to_parameters_and_typed_specs() {
+        let (fixture, result) = rejected(concat!(
+            "  spec f(x: Int) -> Int { y }\n",
+            "  spec g(x: Int) -> Int { helper }\n",
+            "  spec helper() -> Int { 1 }\n",
+            "  spec h() -> Int { missing() }\n",
+            "  spec i() -> Int { legacy() }\n",
+            "  spec legacy() {}\n",
+            "  spec j() -> Int { body() }\n",
+            "  impl body() {}\n",
+            "  spec k(x: Int, x: Int) -> Int { x }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "y",
+                    String::from("`y` is not a parameter of `f`")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "helper",
+                    String::from("`helper` is not a parameter of `g`")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    "missing",
+                    String::from("no typed `spec` function named `missing` in this module")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    "legacy",
+                    String::from("`spec` function `legacy` has no typed body and cannot be called")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    "body",
+                    String::from("no typed `spec` function named `body` in this module")
+                ),
+                (
+                    DiagnosticCode::DuplicateParameter,
+                    "x",
+                    String::from("duplicate parameter `x`")
+                ),
+            ]
+        );
+        let notes = result
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.notes()[0].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            notes,
+            [
+                "a bare name in a `spec` body refers to one of its parameters",
+                "to call the function `helper`, write `helper()` with its arguments",
+                "calls name a typed `spec` declared in the same module",
+                "calls name a typed `spec` declared in the same module",
+                "`impl` functions have no semantics yet and cannot be called",
+                "parameter names must be unique within one function",
+            ]
+        );
+        let [declared] = result.diagnostics[3].secondary_spans() else {
+            panic!("an untyped callee must cite its declaration");
+        };
+        assert_eq!(fixture.source().slice(declared.span()), Some("legacy"));
+        let [first] = result.diagnostics[5].secondary_spans() else {
+            panic!("a duplicate parameter must cite the first parameter");
+        };
+        assert_eq!(declared.label(), "declared without a result type here");
+        assert_eq!(first.label(), "first parameter is here");
+        assert!(first.span().start() < result.diagnostics[5].primary_span().start());
+    }
+
+    #[test]
+    fn calls_check_arity_argument_types_and_result_types() {
+        let (fixture, result) = rejected(concat!(
+            "  spec one(x: Word[8]) -> Word[8] { x }\n",
+            "  spec two(x: Int, y: Int) -> Int { x + y }\n",
+            "  spec int() -> Int { 1 }\n",
+            "  spec a() -> Word[8] { one() }\n",
+            "  spec b() -> Word[8] { one(1, 2) }\n",
+            "  spec c() -> Int { two(1) }\n",
+            "  spec d() -> Word[8] { one(256) }\n",
+            "  spec e() -> Word[8] { int() }\n",
+            "  spec f(w: Word[16]) -> Word[8] { one(w) }\n",
+            "  spec g() -> Int { two(1, one(2)) }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::ArgumentCountMismatch,
+                    "one()",
+                    String::from("`one` takes 1 argument but 0 were supplied")
+                ),
+                (
+                    DiagnosticCode::ArgumentCountMismatch,
+                    "one(1, 2)",
+                    String::from("`one` takes 1 argument but 2 were supplied")
+                ),
+                (
+                    DiagnosticCode::ArgumentCountMismatch,
+                    "two(1)",
+                    String::from("`two` takes 2 arguments but 1 was supplied")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "256",
+                    String::from("literal is outside the range of `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "int()",
+                    String::from("`int` returns `Int`, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "w",
+                    String::from("`w` has type `Word[16]`, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "one(2)",
+                    String::from("`one` returns `Word[8]`, but `Int` is required here")
+                ),
+            ]
+        );
+        assert!(result.diagnostics.iter().all(|diagnostic| {
+            diagnostic.code() != DiagnosticCode::TypeMismatch
+                || diagnostic.notes() == ["Orange has no implicit conversions between types"]
+        }));
+    }
+
+    #[test]
+    fn operators_are_defined_only_for_their_types() {
+        let (fixture, result) = rejected(concat!(
+            "  spec a(x: Word[8]) -> Word[8] { -x }\n",
+            "  spec b(n: Int) -> Int { ~n }\n",
+            "  spec c(n: Int) -> Int { n & 1 }\n",
+            "  spec d(n: Int) -> Int { n | 1 }\n",
+            "  spec e(n: Int) -> Int { n ^ 1 }\n",
+            "  spec f(n: Int) -> Int { n << 1 }\n",
+            "  spec g(n: Int) -> Int { n >>> 1 }\n",
+            "  spec h(x: Word[64]) -> Word[64] { -(x + unknown) }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "-",
+                    String::from("prefix `-` is not defined for `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "~",
+                    String::from("prefix `~` is not defined for `Int`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "&",
+                    String::from("`&` is not defined for `Int`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "|",
+                    String::from("`|` is not defined for `Int`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "^",
+                    String::from("`^` is not defined for `Int`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "<<",
+                    String::from("`<<` is not defined for `Int`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    ">>>",
+                    String::from("`>>>` is not defined for `Int`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "-",
+                    String::from("prefix `-` is not defined for `Word[64]`")
+                ),
+            ]
+        );
+        let notes = result
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.notes()[0].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            notes,
+            [
+                "write `0 - x` for negation modulo 2^8",
+                "bitwise operators apply only to `Word[n]` values",
+                "bitwise operators apply only to `Word[n]` values",
+                "bitwise operators apply only to `Word[n]` values",
+                "bitwise operators apply only to `Word[n]` values",
+                "shifts and rotations apply only to `Word[n]` values",
+                "shifts and rotations apply only to `Word[n]` values",
+                "write `0 - x` for negation modulo 2^64",
+            ]
+        );
+
+        // Every arithmetic operator is defined for every type.
+        let members = TYPES
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| {
+                format!("  spec f{index}(x: {ty}, y: {ty}) -> {ty} {{ x + y - x * y }}\n")
+            })
+            .collect::<String>();
+        accepted(&members);
+    }
+
+    #[test]
+    fn shift_and_rotation_amounts_are_literals_below_the_width() {
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        for ty in TYPES.iter().filter(|ty| **ty != CoreType::Int) {
+            let bits = ty.word_bits().unwrap();
+            for operator in ["<<", ">>", "<<<", ">>>"] {
+                members.push_str(&format!(
+                    "  spec ok{bits}_{}(x: {ty}) -> {ty} {{ (x {operator} 0) ^ (x {operator} {}) }}\n",
+                    members.len(),
+                    bits - 1
+                ));
+            }
+        }
+        let (fixture, core) = accepted(&members);
+        let amounts = core
+            .functions
+            .iter()
+            .flat_map(|function| core_nodes(&fixture, function))
+            .filter_map(|(operation, _, _)| {
+                operation
+                    .strip_prefix("shift ")
+                    .map(|rest| rest.rsplit_once(' ').unwrap().1.parse::<u32>().unwrap())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(amounts.len(), 32);
+        assert_eq!(amounts.iter().filter(|amount| **amount == 0).count(), 16);
+
+        members.clear();
+        for (index, (ty, amount)) in [
+            ("Word[8]", "8"),
+            ("Word[16]", "16"),
+            ("Word[32]", "0x20"),
+            ("Word[64]", "64"),
+            ("Word[64]", "0x1_0000_0000_0000_0000"),
+            ("Word[8]", "-1"),
+            ("Word[8]", "x"),
+            ("Word[8]", "(1)"),
+            ("Word[8]", "1 + 1"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let amount_source = if amount == "1 + 1" { "(1 + 1)" } else { amount };
+            members.push_str(&format!(
+                "  spec bad{index}(x: {ty}) -> {ty} {{ x <<< {amount_source} }}\n"
+            ));
+            let highest = TYPES
+                .into_iter()
+                .find(|candidate| candidate.as_str() == ty)
+                .and_then(CoreType::word_bits)
+                .unwrap()
+                - 1;
+            expected.push((
+                DiagnosticCode::InvalidShiftAmount,
+                amount_source,
+                format!("`<<<` on `{ty}` needs an amount from 0 through {highest}"),
+            ));
+        }
+        let (fixture, result) = rejected(&members);
+        let reported = reported(&fixture, &result);
+        assert_eq!(
+            reported
+                .iter()
+                .map(|(code, source, message)| (*code, *source, message.as_str()))
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .map(|(code, source, message)| (*code, *source, message.as_str()))
+                .collect::<Vec<_>>()
+        );
+        assert!(result.diagnostics.iter().all(|diagnostic| {
+            diagnostic.label() == "amount must be an unsigned integer literal"
+        }));
+    }
+
+    #[test]
+    fn every_word_width_has_exact_literal_bounds() {
+        for ty in TYPES.iter().filter(|ty| **ty != CoreType::Int) {
+            let bits = ty.word_bits().unwrap();
+            let maximum = u128::from(u64::MAX) >> (64 - bits);
+            let (_, core) = accepted(&format!(
+                "  spec max() -> {ty} {{ {maximum} }}\n  spec max_hex(x: {ty}) -> {ty} {{ x ^ 0x{maximum:x} }}\n"
+            ));
+            assert_eq!(
+                core.functions[0]
+                    .body
+                    .literal()
+                    .and_then(CoreValue::word_as_u64),
+                Some(u64::try_from(maximum).unwrap())
+            );
+
+            let over = (maximum + 1).to_string();
+            let (fixture, result) = rejected(&format!(
+                "  spec over() -> {ty} {{ {over} }}\n  spec negative(x: {ty}) -> {ty} {{ x & -1 }}\n"
+            ));
+            assert_eq!(
+                reported(&fixture, &result),
+                [
+                    (
+                        DiagnosticCode::WordLiteralOutOfRange,
+                        over.as_str(),
+                        format!("literal is outside the range of `{ty}`")
+                    ),
+                    (
+                        DiagnosticCode::NegativeWordLiteral,
+                        "-1",
+                        format!("`{ty}` literals cannot be negative")
+                    ),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn only_exact_decimal_word_widths_resolve() {
+        let (_, core) =
+            accepted("  spec a(x: Word[8], y: Word[16], z: Word[32], w: Word[64]) -> Int { 0 }\n");
+        assert_eq!(
+            core.functions[0].parameters,
+            [
+                CoreType::Word8,
+                CoreType::Word16,
+                CoreType::Word32,
+                CoreType::Word64
+            ]
+        );
+        let (fixture, result) = rejected(concat!(
+            "  spec a(x: Word[12]) -> Int { 0 }\n",
+            "  spec b(x: Word[128]) -> Int { 0 }\n",
+            "  spec c(x: Word[0x20]) -> Int { 0 }\n",
+            "  spec d(x: Word[032]) -> Int { 0 }\n",
+            "  spec e(x: Word[3_2]) -> Int { 0 }\n",
+            "  spec f(x: Word[0]) -> Int { 0 }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::UnsupportedWordWidth, "12"),
+                (DiagnosticCode::UnsupportedWordWidth, "128"),
+                (DiagnosticCode::UnsupportedWordWidth, "0x20"),
+                (DiagnosticCode::UnsupportedWordWidth, "032"),
+                (DiagnosticCode::UnsupportedWordWidth, "3_2"),
+                (DiagnosticCode::UnsupportedWordWidth, "0"),
+            ]
+        );
+    }
+
+    #[test]
+    fn unresolved_signatures_are_reported_once_without_cascades() {
+        let (fixture, result) = rejected(concat!(
+            "  spec bad_parameter(x: Word[12]) -> Int { x }\n",
+            "  spec bad_result() -> Float { 1 }\n",
+            "  spec caller() -> Int { bad_parameter(1) + bad_result() }\n",
+            "  spec wrong_count() -> Int { bad_parameter() }\n",
+            "  spec hidden(n: Int) -> Int { ~(n + missing) }\n",
+            "  spec shifted(n: Int) -> Int { n << n }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::UnsupportedWordWidth, "12"),
+                (DiagnosticCode::UnsupportedType, "Float"),
+                (DiagnosticCode::UnsupportedOperator, "~"),
+                (DiagnosticCode::UnsupportedOperator, "<<"),
+            ]
+        );
+    }
+
+    #[test]
+    fn body_errors_precede_call_graph_errors_and_all_errors_are_ordered() {
+        let (fixture, result) = rejected(concat!(
+            "  spec loop_a() -> Int { loop_b() }\n",
+            "  spec loop_b() -> Int { loop_a() }\n",
+            "  spec later(x: Word[8]) -> Word[8] { x + 256 }\n",
+            "  spec last() -> Int { nothing }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::WordLiteralOutOfRange, "256"),
+                (DiagnosticCode::UnknownParameter, "nothing"),
+                (DiagnosticCode::CallCycle, "loop_a()"),
+            ]
+        );
+    }
+
+    #[test]
+    fn expression_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2), the parameter's uniqueness check, name,
+        // and width (3), the result name and width (2), and one event for each
+        // of `^`, `~`, and `x`, plus the literal's own event, prefix, and one
+        // significant digit (6): 13 analysis events. Core is the module and
+        // one function node, one result-type node, one parameter-type node,
+        // and the four expression nodes `x`, `~x`, `1`, and `^`: 8 nodes, each
+        // one more event.
+        let operators = module("  spec f(x: Word[8]) -> Word[8] { ~x ^ 1 }\n");
+        // `g`: 2 + 1 result + 3 literal = 6. `f`: 2 + 1 result + 1 group +
+        // 1 call = 5. Core: module + (2 + 1) + (2 + 1) = 7 nodes. The call
+        // graph check consumes no events.
+        let calls = module("  spec g() -> Int { 1 }\n  spec f() -> Int { (g()) }\n");
+        // 2 + 3 parameter + 2 result + `<<<` + `x` + amount literal event,
+        // prefix, and two significant digits = 13. Core: module + 2 + 1 + 2.
+        let shift = module("  spec s(x: Word[32]) -> Word[32] { x <<< 0x1f }\n");
+        for (fixture, events, nodes) in [(&operators, 21, 8), (&calls, 18, 7), (&shift, 19, 6)] {
+            let exact = fixture.analyze_with(Limits {
+                events,
+                nodes,
+                ..Limits::DEFAULT
+            });
+            assert_eq!(exact.diagnostics, []);
+            assert!(exact.core.is_some());
+            for (limits, label) in [
+                (
+                    Limits {
+                        events: events - 1,
+                        nodes,
+                        ..Limits::DEFAULT
+                    },
+                    "semantic event budget exhausted",
+                ),
+                (
+                    Limits {
+                        events,
+                        nodes: nodes - 1,
+                        ..Limits::DEFAULT
+                    },
+                    "typed Core node budget exhausted",
+                ),
+            ] {
+                let first = fixture.analyze_with(limits);
+                assert_eq!(first, fixture.analyze_with(limits));
+                assert!(first.core.is_none());
+                assert_eq!(first.diagnostics.len(), 1);
+                assert_eq!(
+                    first.diagnostics[0].code(),
+                    DiagnosticCode::SemanticResourceLimit
+                );
+                assert_eq!(first.diagnostics[0].label(), label);
+            }
+        }
+    }
+
+    #[test]
+    fn expression_storage_failures_return_no_partial_core() {
+        let fixture = module("  spec g() -> Int { 1 }\n  spec f() -> Int { g() }\n");
+        let node_failure = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_node_slot = |_| false;
+            analyzer.run()
+        };
+        let edge_failure = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_call_edge_slot = |_| false;
+            analyzer.run()
+        };
+        for (run, detail, source) in [
+            (
+                &node_failure as &dyn Fn() -> AnalysisResult,
+                "typed Core expression storage allocation failed",
+                "1",
+            ),
+            (&edge_failure, "call graph storage allocation failed", "g()"),
+        ] {
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            let diagnostic = &first.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+            assert_eq!(
+                fixture.source().slice(diagnostic.primary_span()),
+                Some(source)
+            );
+            assert_eq!(diagnostic.label(), detail);
+        }
+    }
 }
