@@ -25,7 +25,9 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_REPOSITORY_BYTES,
     GATE0_MAXIMUM_REPOSITORY_FILES,
     GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
+    GATE0_MAXIMUM_RUN_OUTPUTS_BYTES,
     GATE0_IGNORE_PATTERNS,
+    GATE0_RUN_OUTPUTS_PATH,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     GATE0_MAXIMUM_VALIDATOR_BYTES,
     ORANGE_BOOK_APPENDICES,
@@ -307,8 +309,9 @@ class RepositoryResourceBoundTests(unittest.TestCase):
 
     def test_repository_resource_bounds_are_exact(self) -> None:
         self.assertEqual(GATE0_MAXIMUM_TEXT_FILE_BYTES, 256 * 1024)
-        self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 384 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 448 * 1024)
         self.assertEqual(GATE0_MAXIMUM_BINARY_FILE_BYTES, 2 * 1024 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_RUN_OUTPUTS_BYTES, 2 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 16 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_FILES, 512)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_PATH_BYTES, 1024)
@@ -339,6 +342,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         cases = (
             ("record.txt", GATE0_MAXIMUM_TEXT_FILE_BYTES),
             ("tools/validate_foundation.py", GATE0_MAXIMUM_VALIDATOR_BYTES),
+            (GATE0_RUN_OUTPUTS_PATH, GATE0_MAXIMUM_RUN_OUTPUTS_BYTES),
         )
         for name, limit in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:

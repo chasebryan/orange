@@ -24,9 +24,9 @@ same candidate order through TC-08. It is a canonical identity serialization,
 not an authorized physical execution order.
 
 The packet's strict canonical JSON SHA-256, excluding its final line feed, is
-`f95adf14aebe4232b7ca59b7a33302522901571416f4d182a1239a6f3504e0be`;
+`a0c527aedb3a031ccca55f7c11d34e25f056e0b54f831e1420bd6519278c8f3c`;
 its raw file SHA-256, including the final line feed, is
-`d16f3f325e372e76e39eaa69d1d8183506a268d99502f6786b840816abf42a14`.
+`49466c6a8894cee04470128031bb012b2ecac7af8b6abc097a286a8395c4eed5`.
 Its closed packet schema is `d009-pre-epoch-packet-v0.3`; the suite version
 remains `d009-v0.1-draft`, and the existing filename is retained as a stable
 draft locator.
