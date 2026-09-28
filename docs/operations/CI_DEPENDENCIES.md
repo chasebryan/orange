@@ -168,15 +168,19 @@ requests #180, #187, and #188 surfaced. markdownlint-cli2-action v24.2.0
 replaces v24.0.0 with an unchanged descriptor, license, and `@actions/core`
 3.0.1; its bundle moves to `markdownlint-cli2` 0.23.2 and markdownlint 0.41.1,
 which report no issue across the repository's Markdown under the unchanged
-configuration. zizmor-action v0.6.4 replaces v0.5.7 with an unchanged license;
+configuration. markdownlint 0.41.1 now resolves bare package names named by
+configuration `extends`, custom rules, or plugins; Orange's configuration names
+none. zizmor-action v0.6.4 replaces v0.5.7 with an unchanged license;
 it pulls the digest-selected image before running it, still maps zizmor 1.26.1
 to the digest recorded in section 5, still rejects an unknown version, and adds
 a `collect` input whose default passes `--collect=default`, the value zizmor
 1.26.1 already applies when the flag is absent. CodeQL `upload-sarif` v4.38.1
 replaces v4.37.0 with an unchanged descriptor, inputs, license, and Node 24
-entry points; v4.38.2 was deferred because it only moves the default CodeQL
-bundle, which `upload-sarif` does not use, and it was published inside the
-seven-day cooldown. The need is to stay on each upstream's maintained release
+entry points; its shared bundle updates the upload HTTP stack (undici 6.28.0
+and `@octokit/request` 10.0.16) and now exports `CODEQL_ACTION_JOB_RUN_UUID`
+from the upload step. v4.38.2 was deferred because its changes sit outside the
+upload path, chiefly a new default CodeQL bundle, and it was published inside
+the seven-day cooldown. The need is to stay on each upstream's maintained release
 line; retaining the earlier revisions was rejected because none of the
 replacements changes Orange's inputs, while drift makes each later update
 larger. The direct Action graph, permissions, network access, runtime class,
