@@ -196,7 +196,8 @@ snapshot. After each read, the descriptor and its component-relative directory
 entry must still match that snapshot. Preflight caps ordinary text files at
 256 KiB (`256 * 1024` bytes), the validator itself at 384 KiB
 (`384 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
-and the complete repository at 16 MiB (`16 * 1024 * 1024` bytes). Returned
+the generated and hash-pinned D-004 run adapter outputs at 2 MiB
+(`2 * 1024 * 1024` bytes), and the complete repository at 16 MiB (`16 * 1024 * 1024` bytes). Returned
 payload bytes consume the aggregate read allowance as soon as they enter the
 bounded reader; each read uses at most one additional byte only to detect
 overflow. A later snapshot or representation rejection cannot refund already
@@ -271,79 +272,78 @@ The descriptor also closes digest joins, checked resource and SR-dependent
 verdict rules, replay failure states, and empty result, observation, verdict,
 review, and evidence collections.
 
-The reviewed protocol exposes no launcher, adapter, or persistence API. Its
-epoch is null and unfrozen, execution is unauthorized, evidence remains zero
-completed of 25 required units and 0 of 75 result records, and both
-`roadmap_gate_credit` and `readiness_credit` remain `none`. None of these
-inventories contains a candidate result, accepted D-004 decision, or release
-evidence; D-004 remains proposed, S3b remains blocked, and the 3-of-10 (30%)
-binary gate-closure score is unchanged. D-005's protected Rust
-laboratory may construct
-canonical adapter requests and validate synthetic captured transport envelopes,
-enumerate the exact 192 in-memory transport identities, and bind a closed
-synthetic observation inventory to canonical raw-stream integrity receipts.
-Those receipts fix isolation to unevaluated, payload status to unvalidated, and
-evidence status to none; they do not authorize a physical run order or compare
-opaque payloads. The laboratory contains no subprocess launcher, candidate
-payload validator, result artifact, or execution authority and retains 0/32.
-The D-009 laboratory likewise retains 0/24 while admitting, acquiring,
-installing, or executing no solver, certificate checker, or proof tool. It
-validates no proof, certificate, counterexample, claim, or cache result and
-does not place any solver inside or outside the logical TCB.
-The D-004 through D-006, D-009, and D-010 policy checks share one table-driven identity
-boundary:
-each admitted research tree is exact, JSON is parsed through the bounded strict
-profile, reviewed canonical meanings and raw transports are SHA-256 bound, and
-every external input binding is verified from a trusted path. Whole-object
-identity drift now receives an artifact-level diagnostic instead of a
-field-specific diagnosis. D-005 additionally retains the live check that all
-five fixed historical mutations are still accepted by the historical v0.1
-schema and second pass; hashes alone cannot establish that compatibility. This
-consolidation changes no research input, decision, execution count, evidence,
-gate status, or readiness credit.
-The S2 inventory includes
-the lexer and parser sources, the protected S2 conformance runner, and normative
-[`docs/LANGUAGE_2026.md`](../docs/LANGUAGE_2026.md). That runner requires the
-exact stable 13-rule ID inventory, the exact evidence-layer declarations, and
-named executable evidence at the expected harness depth; it also directly
-exercises string escapes, punctuation longest matching, trivia and uppercase
-radix forms, malformed grammar diagnostics, and lexical phase exclusion. The
-runner independently binds the exact Cargo workspace/package manifests and the
-compiler crate's unconditional mapped-module registrations, while the
-repository validator enforces the same parsed-manifest contract before Cargo
-runs. The index establishes registration; execution of every mapped binary is
-a protected full-gate claim because that gate clears caller Cargo configuration
-and target runners. A standalone S2 target run is not evidence that the other
-mapped binaries executed. The
-S2 rules bind only the D-025/OEP-0002 base accepted at
-`52a3460853636f7cbaa27f3e27d86e032e3c82d4`; typed-`spec`, parsed-type, and
-signed-integer grammar remain under the separate S3a index. The
-S3a inventory explicitly adds the Core, semantics, and evaluator sources; the
-permanent typed-answer fixture; the exact ten-file S3a CLI conformance corpus
-and runner; and normative
+The reviewed protocol exposes no launcher, adapter, or persistence API; the
+v0.7 run harness supplies them, and Gate 0 protects the adapter, the harness,
+the archive tool, the bundle, the overlay and the committed run archive under
+`d004-v0.7/run/`. Epoch `d004-e-eefa7ffe75b0a9765894` records 20 closed of 25
+required units and 75 of 75 result records, contributor-produced and
+unreviewed, and both `roadmap_gate_credit` and `readiness_credit` remain
+`none`. None of these inventories contains an accepted D-004 decision or
+release evidence; D-004 remains proposed, S3b remains blocked, and the 3-of-10
+(30%) binary gate-closure score is unchanged. D-005's protected Rust laboratory
+may construct canonical adapter requests and validate synthetic captured
+transport envelopes, enumerate the exact 192 in-memory transport identities,
+and bind a closed synthetic observation inventory to canonical raw-stream
+integrity receipts. Those receipts fix isolation to unevaluated, payload status
+to unvalidated, and evidence status to none; they do not authorize a physical
+run order or compare opaque payloads. The laboratory contains no subprocess
+launcher, candidate payload validator, result artifact, or execution authority
+and retains 0/32. The D-009 laboratory likewise retains 0/24 while admitting,
+acquiring, installing, or executing no solver, certificate checker, or proof
+tool. It validates no proof, certificate, counterexample, claim, or cache
+result and does not place any solver inside or outside the logical TCB. The
+D-004 through D-006, D-009, and D-010 policy checks share one table-driven
+identity boundary: each admitted research tree is exact, JSON is parsed through
+the bounded strict profile, reviewed canonical meanings and raw transports are
+SHA-256 bound, and every external input binding is verified from a trusted
+path. Whole-object identity drift now receives an artifact-level diagnostic
+instead of a field-specific diagnosis. D-005 additionally retains the live
+check that all five fixed historical mutations are still accepted by the
+historical v0.1 schema and second pass; hashes alone cannot establish that
+compatibility. This consolidation changes no research input, decision,
+execution count, evidence, gate status, or readiness credit. The S2 inventory
+includes the lexer and parser sources, the protected S2 conformance runner, and
+normative [`docs/LANGUAGE_2026.md`](../docs/LANGUAGE_2026.md). That runner
+requires the exact stable 13-rule ID inventory, the exact evidence-layer
+declarations, and named executable evidence at the expected harness depth; it
+also directly exercises string escapes, punctuation longest matching, trivia
+and uppercase radix forms, malformed grammar diagnostics, and lexical phase
+exclusion. The runner independently binds the exact Cargo workspace/package
+manifests and the compiler crate's unconditional mapped-module registrations,
+while the repository validator enforces the same parsed-manifest contract
+before Cargo runs. The index establishes registration; execution of every
+mapped binary is a protected full-gate claim because that gate clears caller
+Cargo configuration and target runners. A standalone S2 target run is not
+evidence that the other mapped binaries executed. The S2 rules bind only the
+D-025/OEP-0002 base accepted at `52a3460853636f7cbaa27f3e27d86e032e3c82d4`;
+typed-`spec`, parsed-type, and signed-integer grammar remain under the separate
+S3a index. The S3a inventory explicitly adds the Core, semantics, and evaluator
+sources; the permanent typed-answer fixture; the exact ten-file S3a CLI
+conformance corpus and runner; and normative
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md). The corpus externalizes
 only accepted behavior and is one layer of the indexed S3a evidence set. The
-runner requires an exact stable 30-rule ID inventory and named evidence mapping;
-it also binds each normative evidence-layer label and requires the corresponding
-CLI, generated-CLI, parser-unit, or unit observation. Specialized labels also
-require a named injected-writer or injected-limit test; host-failure coverage
-separately requires I/O, allocation, and non-regular host-boundary failures.
-Every named test must have exactly one unconditional declaration at its expected
-harness location: integration tests at file root and unit tests directly inside
-the source's unique `#[cfg(test)] mod tests` container. Declarations inside
-comments, strings, nested functions, macro token trees, or alternate or disabled
-modules do not qualify. The runner independently binds the exact Cargo
-workspace/package manifests and the compiler crate's unconditional `core`,
-`eval`, `parser`, `semantics`, and `source` registrations. As with S2, the index
-establishes registration; execution of every mapped binary is a protected
-full-gate claim because that gate clears caller Cargo configuration and target
-runners. A standalone S3a target run is not evidence that the other mapped
-binaries executed. That traceability is not proof that a named test exhausts
-its rule. Production constants remain specification-bound by policy validation,
-and internal injected-limit tests exercise accounting where a maximum cannot be
-reached through valid public source before an earlier bound. The normative
-Orange 2026 syntax and semantic documents are digest protected. Adding another
-compiler source, fixture, test runner, or normative language file requires an
+runner requires an exact stable 30-rule ID inventory and named evidence
+mapping; it also binds each normative evidence-layer label and requires the
+corresponding CLI, generated-CLI, parser-unit, or unit observation. Specialized
+labels also require a named injected-writer or injected-limit test;
+host-failure coverage separately requires I/O, allocation, and non-regular
+host-boundary failures. Every named test must have exactly one unconditional
+declaration at its expected harness location: integration tests at file root
+and unit tests directly inside the source's unique `#[cfg(test)] mod tests`
+container. Declarations inside comments, strings, nested functions, macro token
+trees, or alternate or disabled modules do not qualify. The runner
+independently binds the exact Cargo workspace/package manifests and the
+compiler crate's unconditional `core`, `eval`, `parser`, `semantics`, and
+`source` registrations. As with S2, the index establishes registration;
+execution of every mapped binary is a protected full-gate claim because that
+gate clears caller Cargo configuration and target runners. A standalone S3a
+target run is not evidence that the other mapped binaries executed. That
+traceability is not proof that a named test exhausts its rule. Production
+constants remain specification-bound by policy validation, and internal
+injected-limit tests exercise accounting where a maximum cannot be reached
+through valid public source before an earlier bound. The normative Orange 2026
+syntax and semantic documents are digest protected. Adding another compiler
+source, fixture, test runner, or normative language file requires an
 intentional policy and validator inventory update.
 
 The S2 and S3a conformance runners and all ten S3a corpus fixtures also retain

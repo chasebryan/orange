@@ -1,9 +1,10 @@
 # D-004 pre-epoch decision laboratory
 
-Status: `prerequisites_built_run_pending`. The v0.7 tranche builds every
-epoch prerequisite the reviewed protocol listed as absent. No D-004 evidence
-epoch, candidate execution, result, conclusion, or semantic-strata selection
-exists here yet. D004-PRE-01 remains `solo-reviewed`, and the v0.6
+Status: `run_recorded_review_pending`. The v0.7 tranche builds every epoch
+prerequisite the reviewed protocol listed as absent, and epoch
+`d004-e-eefa7ffe75b0a9765894` has run all 75 scheduled executions. Its results
+are contributor-produced and unreviewed. No conclusion or semantic-strata
+selection exists. D004-PRE-01 remains `solo-reviewed`, and the v0.6
 implementation closure is `provisional_pending_exact_merged_revision`.
 
 On 2026-07-26 the Orange Project Owner accepted D004-PRE-01 at exact review-
@@ -148,9 +149,10 @@ reviewed replay plan therefore contains 75 ordered but uninstantiated execution
 rows. No concrete scheduled-execution digest is available until an epoch,
 packet identity, and executable manifests are frozen. This synthetic contract
 accepts no populated records, launches no process or adapter, and persists
-nothing. Its epoch remains null and unfrozen, execution is unauthorized,
-execution evidence remains 0 completed of 25 required candidate-case units and
-0 of 75 result records, and selection and conclusion remain null. Both
+nothing. At v0.6 its epoch was null and unfrozen, execution was
+unauthorized, and execution evidence was 0 completed of 25 required
+candidate-case units and 0 of 75 result records; the v0.7 run below records
+the first epoch. Selection and conclusion remain null, and both
 `roadmap_gate_credit` and `readiness_credit` remain `none`.
 
 ## v0.7 run prerequisites
@@ -199,7 +201,68 @@ The raw-file/canonical SHA-256 pairs are:
   `f980ecbf4c1c9b4661db91ef307dff3381c440217526796e0d28107509aaa848` /
   `e6b9ca6a1a618b2b0d6f8ba98d0bac7a528273dff6e00aebb0f37e53eba30a9f`.
 
-Canonical evidence remains 0/25/0 until an epoch runs: zero completed
-candidate-case units, 25 required units, and zero result records. D-004
-remains proposed, S3b remains blocked, and Orange's binary gate-closure score
-remains 3 of 10 (30%).
+## v0.7 epoch run
+
+Epoch `d004-e-eefa7ffe75b0a9765894` was prepared and run on 2026-09-28 from
+source revision `571c5bd1ffad65f304d8171bfe4f68d382598575`. Its packet binds
+the bundle, the overlay, run harness raw SHA-256
+`e5c6d73db20f97b94f02927e57e6cb908c88d07dd417e895b405ef331dd63c06`, the host
+tool, dependency and environment manifests, all five candidate models and all
+five input manifests. All 75 executions ran once each in the reviewed physical
+order under the enforcing launcher. Every execution exited normally within the
+ceilings: wall time 84 to 141 ms, peak memory 11.3 to 12.0 MB for the whole
+process tree, no temporary storage, and no stderr output.
+
+| Candidate | Cases passed | Closed units |
+| --- | --- | --- |
+| ST-REL | SC-01 to SC-05 | 5 of 5 |
+| ST-UNI | SC-01 to SC-05 | 5 of 5 |
+| ST-DUAL | SC-01 to SC-05 | 5 of 5 |
+| ST-MIRROR | SC-01 to SC-05 | 5 of 5 |
+| ST-HOST | none | 0 of 5 |
+
+Canonical evidence is now 20/25/75: 20 closed candidate-case units of 25
+required, and 75 of 75 result records. Four candidates are complete, and no
+case is complete across all five candidates. The three repetitions of every
+slot are byte-identical in their deterministic fields, so every failure is a
+deterministic failure, not an independent or flaky one.
+
+ST-HOST fails every case for one reason. It delegates SR-04, SR-05, SR-08,
+SR-11, SR-12, and SR-13 to hosts whose identities are parameters of the open
+D-006 and D-011 decisions, and the adapter reports those relationships as
+`unsupported` until a host is selected. SC-04 and SC-05 also depend on those
+crossings for their positive and mutation observations, so 3 and 7
+observations there are `unsupported` where the oracle requires `succeeded` or
+`rejected`.
+
+The main finding is about the suite. ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR
+are indistinguishable under it: the shared adapter evaluates every candidate
+by the same rules at that candidate's own crossings, and each of the four
+passes every case. The suite as reviewed can therefore rule out a candidate
+that cannot yet reach a relationship, but it cannot choose among candidates
+that can. Choosing among the four needs either an owner judgment on grounds
+the suite does not measure, or a successor suite with cases that separate
+them. The epoch packet fixes the selection rule as absent and forbids a
+tie-break written after results exist, so no selection follows from this run.
+
+The runner's archive is about 13.5 MB. Its committed form under
+`d004-v0.7/run/` keeps only what cannot be re-derived: the packet, the host
+captures, each execution's state, measurements and diagnostics, and the 25
+distinct adapter outputs. [`tools/d004_archive.py`](../../../tools/d004_archive.py)
+rebuilds the full archive byte for byte and checks it against archive-manifest
+SHA-256 `eb96d805127067c628c62b82cf37059566c303320fc6e2c626f709625e700a49`,
+then re-runs the harness's `verify` over it. The raw-file/canonical SHA-256
+pairs are:
+
+- archive index:
+  `727bf100a25058d36cea864e16ce60c18c48ac6df93a78cf382e429c6ebef018` /
+  `e87d6a4c1abbcc238fc8de8997ec58e0a783b7a543a70523384e4c28880af03c`; and
+- adapter outputs:
+  `f2dbb78822c426818adf849c1d8d92213719bfd9d930553df967748081f0f92c` /
+  `3b3bbb52a158a401ce88b73f49d0e4b7852a1b09a4ff435886a8749cd9f1affa`.
+
+Any later change to the adapter, the run harness, the bundle, the overlay or
+their bound inputs starts a new epoch; this one stays reproducible only from
+these bytes. D-004 remains proposed pending owner review of these results,
+S3b remains blocked, and Orange's binary gate-closure score remains 3 of 10
+(30%).

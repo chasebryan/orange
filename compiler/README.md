@@ -92,14 +92,15 @@ No concrete scheduled-execution digest exists until the epoch, packet identity,
 and executable manifests are frozen.
 
 This synthetic contract accepts no populated records, launches no process or
-adapter, and persists nothing. Candidate adapters, closed payload schemas,
-exact executable and dependency manifests, enforcing isolation, result parsers,
-an execution-subject revision, and a separate owner freeze record remain
-absent. The epoch is null and unfrozen, execution is unauthorized, and evidence
-remains zero completed of 25 required candidate-case units and 0 of 75 result
-records. Selection and conclusion remain null. D-004 remains proposed, S3b
-remains blocked, both `roadmap_gate_credit` and `readiness_credit` remain
-`none`, and Orange's 3-of-10 (30%) binary gate-closure score is unchanged.
+adapter, and persists nothing. The Python run harness in `tools/d004_run.py`
+supplies the adapter, closed payload schemas, executable and dependency
+manifests, enforcing isolation and result parsers. Epoch
+`d004-e-eefa7ffe75b0a9765894` ran all 75 executions and closed 20 of 25
+required candidate-case units with 75 of 75 result records,
+contributor-produced and unreviewed; see the D-004 laboratory README. Selection
+and conclusion remain null. D-004 remains proposed, S3b remains blocked, both
+`roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's
+3-of-10 (30%) binary gate-closure score is unchanged.
 
 ## D-005 decision laboratory
 
