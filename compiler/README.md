@@ -98,9 +98,13 @@ manifests, enforcing isolation and result parsers. Epoch
 `d004-e-4aaf8a83a01693d543c4` ran all 75 executions and closed 20 of 25
 required candidate-case units with 75 of 75 result records,
 contributor-produced and unreviewed; see the D-004 laboratory README. Selection
-and conclusion remain null. D-004 remains proposed, S3b remains blocked, both
-`roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's
-3-of-10 (30%) binary gate-closure score is unchanged.
+and conclusion remain null. The v0.8 harness in `tools/d004_v08_run.py` adds
+SC-06 and SC-07. Epoch `d004-e-1b3a184e9895cc149b09` ran all 105 executions and
+closed 28 of 35 units with 105 of 105 result records, and the owner's
+isolation-first rule leaves only ST-REL; that result is contributor-produced,
+unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b remains
+blocked, both `roadmap_gate_credit` and `readiness_credit` remain `none`, and
+Orange's 3-of-10 (30%) binary gate-closure score is unchanged.
 
 ## D-005 decision laboratory
 

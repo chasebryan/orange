@@ -275,10 +275,12 @@ review, and evidence collections.
 The reviewed protocol exposes no launcher, adapter, or persistence API; the
 v0.7 run harness supplies them, and Gate 0 protects the adapter, the harness,
 the archive tool, the bundle, the overlay and the committed run archive under
-`d004-v0.7/run/`. Epoch `d004-e-4aaf8a83a01693d543c4` records 20 closed of 25
-required units and 75 of 75 result records, contributor-produced and
-unreviewed, and both `roadmap_gate_credit` and `readiness_credit` remain
-`none`. None of these inventories contains an accepted D-004 decision or
+`d004-v0.7/run/`, and the same for the v0.8 suite under `d004-v0.8/`. Epoch
+`d004-e-4aaf8a83a01693d543c4` records 20 closed of 25 required units and 75 of
+75 result records, and v0.8 epoch `d004-e-1b3a184e9895cc149b09` records 28
+closed of 35 required units and 105 of 105 result records. Both are
+contributor-produced and unreviewed, and both `roadmap_gate_credit` and
+`readiness_credit` remain `none`. None of these inventories contains an accepted D-004 decision or
 release evidence; D-004 remains proposed, S3b remains blocked, and the 3-of-10
 (30%) binary gate-closure score is unchanged. D-005's protected Rust laboratory
 may construct canonical adapter requests and validate synthetic captured

@@ -6,11 +6,14 @@ from pathlib import Path
 
 from tools import d004_archive as archive
 from tools import d004_run as run
+from tools import d004_v08_run as run08
 
 
 REPOSITORY = run.Repository(Path(__file__).resolve().parents[2])
 INDEX_RAW = REPOSITORY.raw(archive.INDEX_PATH)
 OUTPUTS_RAW = REPOSITORY.raw(archive.OUTPUTS_PATH)
+V08 = archive.LAYOUTS["v0.8"]
+REPOSITORY08 = run08.Repository(REPOSITORY.root)
 
 
 def _unpack(index_raw: bytes, outputs_raw: bytes) -> dict[str, object]:
@@ -59,6 +62,25 @@ class D004ArchiveTests(unittest.TestCase):
         extra = {**outputs, "outputs": {**outputs["outputs"], "0" * 64: {"utf8": ""}}}
         with self.assertRaisesRegex(run.RunError, "unreferenced"):
             _unpack(INDEX_RAW, run.canonical_file(extra))
+
+
+class D004V08ArchiveTests(unittest.TestCase):
+    def test_committed_run_rebuilds_and_verifies(self) -> None:
+        self.assertEqual(archive.check(REPOSITORY08, V08), [])
+        index = run08.canonical_document(REPOSITORY08.raw(V08.index_path))
+        self.assertEqual(index["epoch"], index["packet"]["epoch"])
+        self.assertEqual(len(index["executions"]), 105)
+
+    def test_committed_run_summary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="d004-archive-test-") as scratch:
+            summary = archive.unpack(REPOSITORY08, REPOSITORY08.raw(V08.index_path), REPOSITORY08.raw(V08.outputs_path), Path(scratch) / "archive", V08)
+        self.assertEqual(summary["execution"]["completed_candidate_cases"], 28)
+        self.assertEqual(summary["execution"]["result_record_count"], 105)
+        self.assertIsNone(summary["selection"])
+        failed = [slot for slot in summary["slots"] if slot["closure"] != "closed"]
+        self.assertEqual({slot["candidate"] for slot in failed}, {"ST-HOST"})
+        result = summary["distinguishing_rule_result"]
+        self.assertEqual((result["rule"], result["result"]), ("isolation_first", "recommend_st_rel"))
 
 
 if __name__ == "__main__":

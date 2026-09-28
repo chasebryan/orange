@@ -3,9 +3,12 @@
 Status: `run_recorded_review_pending`. The v0.7 tranche builds every epoch
 prerequisite the reviewed protocol listed as absent, and epoch
 `d004-e-4aaf8a83a01693d543c4` has run all 75 scheduled executions. Its results
-are contributor-produced and unreviewed. The v0.8 suite, which adds cases and
-measures that can separate the candidates v0.7 could not, is built and has not
-run. No conclusion or semantic-strata selection exists. D004-PRE-01 remains
+are contributor-produced and unreviewed. The v0.8 suite adds cases and measures
+that separate the candidates v0.7 could not, and epoch
+`d004-e-1b3a184e9895cc149b09` has run all 105 of its executions under the
+owner's isolation-first rule, which leaves ST-REL. Those results are also
+contributor-produced and unreviewed. No conclusion or semantic-strata selection
+exists. D004-PRE-01 remains
 `solo-reviewed`, and the v0.6 implementation closure is
 `provisional_pending_exact_merged_revision`.
 
@@ -384,5 +387,80 @@ then fewest re-identified subject classes, then fewest discrimination
 judgments, then fewest semantic definitions. The overlay records that choice,
 so every v0.8 epoch packet binds it. Before the choice, a local trial of the
 harness with a placeholder rule ran all 105 executions and verified. That trial
-is not a D-004 epoch. No v0.8 epoch has run yet, so no v0.8 evidence,
-conclusion or selection exists.
+is not a D-004 epoch.
+
+## v0.8 epoch run
+
+Epoch `d004-e-1b3a184e9895cc149b09` was prepared and run on 2026-09-28 from
+source revision `f39d181775ae2992479e0857083c3d7e02a172c1`. Its packet binds
+the v0.8 bundle and overlay, and with them the owner's rule, v0.8 run harness
+raw SHA-256
+`529fda520e752a022872fa18969f74a4b5406ce539311c508df1a0b426b865f1`, the host
+tool, dependency and environment manifests, all five candidate models and all
+seven input manifests. All 105 executions ran once each in the rotation order
+under the same enforcing launcher as v0.7, after execute re-checked the host
+context that prepare recorded. Every execution exited normally within the
+ceilings: wall time 82 to 155 ms, peak memory 10.8 to 12.3 MB for the whole
+process tree, no temporary storage, and no stderr output.
+
+| Candidate | Cases passed | Closed units |
+| --- | --- | --- |
+| ST-REL | SC-01 to SC-07 | 7 of 7 |
+| ST-UNI | SC-01 to SC-07 | 7 of 7 |
+| ST-DUAL | SC-01 to SC-07 | 7 of 7 |
+| ST-MIRROR | SC-01 to SC-07 | 7 of 7 |
+| ST-HOST | none | 0 of 7 |
+
+Evidence for this epoch is 28/35/105: 28 closed candidate-case units of 35
+required, and 105 of 105 result records. The three repetitions of every slot
+are byte-identical in their deterministic fields. ST-HOST fails SC-01 to SC-05
+for the reason v0.7 found, and fails SC-06 and SC-07 the same way: their
+positive subjects cross SR-04, SR-05, SR-08 and SR-11, which it delegates to
+hosts owned by the open D-006 and D-011 decisions, so each reports
+`unsupported` where the oracle requires `succeeded`.
+
+As designed, pass or fail does not separate the four other candidates, and the
+measures do. Every measure is a count where fewer is better:
+
+| Candidate | Isolation obligations | Of them, Spec Core | Re-identified classes | Discrimination judgments | Semantic definitions |
+| --- | --- | --- | --- | --- | --- |
+| ST-REL | 0 | 0 | 6 | 0 | 5 |
+| ST-UNI | 10 | 6 | 36 | 5 | 1 |
+| ST-DUAL | 4 | 0 | 28 | 2 | 2 |
+| ST-MIRROR | 0 | 0 | 7 | 1 | 5 |
+
+The owner's rule, isolation first, compares isolation obligations, then
+re-identified classes, then discrimination judgments, then semantic
+definitions. ST-REL and ST-MIRROR tie at zero isolation obligations, and ST-REL
+re-identifies six subject classes to ST-MIRROR's seven, so the rule leaves
+ST-REL (`recommend_st_rel`). The other preregistered rules would have left
+ST-UNI (fewest definitions first) or ST-DUAL (spec isolation first); the owner
+chose before any v0.8 result existed. The summary scopes this result to the
+candidates that close all seven cases and to SS-G05 and the SS-G03 structure
+only. It is not a D-004 recommendation under suite section 8 until the owner
+disposes every candidate and every hard gate, so `selection` stays null.
+
+The runner's archive is about 15.6 MB. Its committed form under
+`d004-v0.8/run/` keeps the same parts as v0.7's, and
+[`tools/d004_archive.py`](../../../tools/d004_archive.py) rebuilds it byte for
+byte, checks archive-manifest SHA-256
+`84e2fd244b04db0276941d34e7208f1f2b46f0643c58f320e9030e401eaccb3c`, then
+re-runs the v0.8 harness's `verify`. The raw-file/canonical SHA-256 pairs are:
+
+- v0.8 archive index:
+  `65e6e54e55d1c48ebcdae9e67f7a930997211020c418eb4b6c9d5a43b2060ab7` /
+  `46ac175b8d413b62749468b03663e7f1860559ca97896185a45208f3c409c2e5`; and
+- v0.8 adapter outputs:
+  `dfe92803340451f6aaf47c8dd679469a1f7dcf7460720915df27a1d0ab9987a2` /
+  `31e999d72ffd86c6150d76fa83e4a86e15829a86f1018eed98adc74aad301f72`.
+
+An earlier v0.8 epoch, `d004-e-afadaff4cbc1bb294d3e`, ran the same schedule
+before the v0.8 harness gained the host re-check and produced the same
+verdicts, closures, measures and rule result in every slot. It was superseded
+before any review, and its archive is not committed.
+
+Any later change to the v0.8 adapter, the v0.8 harness, the v0.8 documents,
+the v0.7 bundle or overlay they bind, or their inputs starts a new epoch. D-004
+remains proposed pending owner review of both runs, S3b remains blocked by
+D-004 in the decision register, and Orange's binary gate-closure score remains
+3 of 10 (30%).
