@@ -388,6 +388,6 @@ function stratumClass(word) {
 // Dims a number's radix prefix and digit separators: 0x_ff_ff.
 function numberHtml(text) {
   const match = /^(0[bBxX])?(.*)$/.exec(text);
-  const prefix = match[1] ? `<span class="radix">${match[1]}</span>` : "";
+  const prefix = match[1] ? `<span class="num-radix">${match[1]}</span>` : "";
   return prefix + escapeHtml(match[2]).replace(/_/g, '<span class="sep">_</span>');
 }

@@ -14,7 +14,7 @@ pub struct Asset {
 }
 
 /// Every embedded file.
-pub const ASSETS: [Asset; 10] = [
+pub const ASSETS: [Asset; 11] = [
     Asset {
         path: "/",
         media_type: "text/html; charset=utf-8",
@@ -29,6 +29,11 @@ pub const ASSETS: [Asset; 10] = [
         path: "/assets/tabula.svg",
         media_type: "image/svg+xml",
         bytes: include_bytes!("../web/tabula.svg"),
+    },
+    Asset {
+        path: "/assets/boot.js",
+        media_type: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../web/boot.js"),
     },
     Asset {
         path: "/assets/app.js",
@@ -98,6 +103,7 @@ mod tests {
     fn the_page_loads_only_embedded_scripts() {
         let page = std::str::from_utf8(lookup("/").unwrap().bytes).unwrap();
         assert!(page.contains(r#"<script type="module" src="/assets/app.js"></script>"#));
+        assert!(page.contains(r#"<script src="/assets/boot.js"></script>"#));
         assert!(!page.contains("http://") && !page.contains("https://"));
         assert!(!page.contains("style=\""));
         for asset in &ASSETS {

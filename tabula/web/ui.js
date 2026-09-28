@@ -147,7 +147,7 @@ export function dialog({ title, content, actions, wide = false, onOpen, validate
     root.onclick = (event) => { if (event.target === root) finish(null); };
     document.addEventListener("keydown", onKey, true);
     if (onOpen) onOpen(box);
-    const focusable = box.querySelector("input, textarea, select") || box.querySelector(".btn.primary");
+    const focusable = box.querySelector("[autofocus], input, textarea, select") || box.querySelector(".btn.primary");
     if (focusable) setTimeout(() => { focusable.focus(); if (focusable.select) focusable.select(); }, 20);
   });
 }

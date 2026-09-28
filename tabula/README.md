@@ -64,12 +64,13 @@ double click on an edge puts it back.
 | Notebook | Your notes, on the right. |
 
 The palette button at the bottom left opens the theme picker. Click a theme to
-use it at once; Tabula remembers the choice on this computer.
+use it at once; Tabula remembers the choice in this browser. Until you pick
+one, Tabula follows your system and switches between Dark and Light with it.
 
 | Theme | Look |
 | --- | --- |
-| Dark | Tabula's own dark theme, with Orange accents. It is the default unless your system asks for light. |
-| Light | Warm paper tones for daylight. It is the default when your system asks for light. |
+| Dark | Tabula's own dark theme, with Orange accents. |
+| Light | Warm paper tones for daylight. |
 | Tokyo | A deep blue night, after the Tokyo Night colours. |
 | Corporate | A black frame around a white page, in greys and navy blue. Red is kept for errors and one thin line at the top. |
 

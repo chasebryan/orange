@@ -33,7 +33,8 @@ const store = {
   },
 };
 
-// The ids stay "ink" and "paper" so earlier choices still load.
+// The ids stay "ink" and "paper" so earlier choices still load. boot.js
+// repeats the ids so the first paint is already in the right theme.
 const THEMES = [
   { id: "ink", name: "Dark", note: "Tabula's own dark theme, with Orange accents." },
   { id: "paper", name: "Light", note: "Warm paper tones for daylight." },
@@ -138,7 +139,10 @@ const workspaceKey = (name) => `ws:${S.session ? S.session.workspaceRoot : ""}:$
 
 // ---------- Start ----------
 
-applyTheme(store.get("theme", matchMedia("(prefers-color-scheme: light)").matches ? "paper" : "ink"));
+const systemLight = matchMedia("(prefers-color-scheme: light)");
+applyTheme(store.get("theme", null));
+// Until a theme is picked, Tabula follows the system between Dark and Light.
+systemLight.addEventListener("change", () => { if (store.get("theme", null) === null) applyTheme(null); });
 start();
 
 async function start() {
@@ -203,10 +207,10 @@ function showDisconnected(reason) {
 
 // ---------- Theme and layout ----------
 
-function applyTheme(theme) {
-  const known = THEMES.some((entry) => entry.id === theme) ? theme : "ink";
+function applyTheme(theme, remember = false) {
+  const known = THEMES.some((entry) => entry.id === theme) ? theme : systemLight.matches ? "paper" : "ink";
   document.documentElement.dataset.theme = known;
-  store.set("theme", known);
+  if (remember) store.set("theme", known);
 }
 
 // A small picture of Tabula in one theme: title bar, left edge, side
@@ -235,7 +239,8 @@ function showThemes() {
     class: "theme-choice",
     type: "button",
     dataset: { choice: theme.id },
-    onclick: () => { applyTheme(theme.id); mark(); },
+    autofocus: theme.id === document.documentElement.dataset.theme,
+    onclick: () => { applyTheme(theme.id, true); mark(); },
   },
   themePreview(theme.id),
   h("span", { class: "theme-name", text: theme.name }),
@@ -251,7 +256,7 @@ function showThemes() {
   dialog({
     title: "Theme",
     content: h("div", {},
-      h("p", { text: "Click a theme to use it. Tabula remembers the choice on this computer." }),
+      h("p", { text: "Click a theme to use it. Tabula remembers the choice in this browser." }),
       h("div", { class: "theme-grid" }, cards)),
     actions: [{ label: "Done", value: true, kind: "primary" }],
     wide: true,
