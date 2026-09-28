@@ -2,147 +2,222 @@
 
 ![Hand-drawn Orange cryptography wordmark illustrating commitments, key derivation, threshold sharing, permutations, Merkle trees, and checked evidence](assets/brand/orange-cryptography-handdrawn-banner.png)
 
-Orange is a language and toolchain for specifying, implementing, and verifying
-cryptography.
+**Orange is a language and toolchain for cryptography you can check.** You
+write the mathematical specification, connect it to a fast implementation, say
+exactly which properties you claim, and ship the native code together with the
+evidence for each claim.
 
-The goal is a production system in which a cryptographic engineer can write a
-mathematical specification, connect it to an efficient implementation, state
-the exact assurance claims that matter, and ship native artifacts together with
-machine-readable evidence, including independently checkable proofs and
-certificates where the claim kind permits them.
+Orange is made for cryptographers, cryptologists, and cryptanalysts: people who
+read mathematics for a living. Its aim is to be exact and beautiful at once, so
+that Orange source reads like the definition in a standard or a paper, while
+every step from that definition to machine code stays precise enough to check.
 
-Orange is now in solo, pre-alpha compiler development. The repository contains
-the Rust compiler foundation, the accepted Orange 2026 parser slice, and an
-accepted S3a typed-literal semantic slice. `orangec check` performs bounded lexical,
-syntactic, and semantic validation; typed `spec` literals with exact `Int` or
-`Word[8]` types lower to a deterministic, noncanonical Typed Reference Core;
-and `orangec eval FILE` prints those closed values in source order.
+> [!IMPORTANT]
+> Orange is **pre-alpha** and built by one person. Today the compiler checks
+> and evaluates a small typed fragment of the language. It does not yet
+> generate code, check proofs, or implement any cryptography, and nothing in
+> this repository has been independently reviewed or formally verified.
 
-Orange is **30% complete toward version 1.0.0 by gate closure: 3 of 10 binary
-gates are closed**. See the [roadmap completion metric](docs/ROADMAP.md#orange-100-completion-metric)
-for the exact denominator and limitations; this is not an effort estimate or a
-release-readiness claim.
+## Why Orange exists
 
-The S3a slice has separate `spec` and `impl` name namespaces, but only
-typed specifications acquire values. It defines no parameters, operators,
-calls, typed implementations, refinement, proof system, canonical Core encoding,
-code generation, ABI, standard library, package or release behavior, or verified
-cryptographic implementation. Accepted D-003 and OEP-0004 establish Orange's
-standalone product form at exact revision
-`a82a5cec2ee4359dc2fe66171f17c93146747333`. D-004 remains unresolved and
-unratified, and later S3 semantic work is incomplete.
+A serious cryptographic library carries several meanings at once: the
+mathematics it is meant to compute, the code that runs on real machines, the
+security properties it claims, and the evidence behind those claims. Today
+those meanings live in different tools: a notation for the specification, C or
+Rust or assembly for speed, a proof assistant for correctness, a separate
+analyzer for constant-time behavior, and test vectors and build logs around the
+outside. Each tool can be excellent. The trouble is at the crossings, where a
+proof about one definition gets attached to a different binary, or a
+source-level guarantee quietly fails to survive the compiler.
 
-The accepted S3a implementation and normative documentation were merged by
-[PR #9](https://github.com/chasebryan/orange/pull/9) as commit
-`6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. That repository fact is
-implementation evidence, not a stable compatibility or assurance claim.
+Orange aims to make those crossings part of the product:
 
-Implemented behavior is solo-authored and solo-reviewed. It is not independently
-reviewed, formally verified, production-ready, or a cryptographic assurance
-claim.
+- **One language, several semantic worlds.** Mathematical specifications,
+  executable implementations, leakage-aware machine code, security games, and
+  proofs live in one module system, each with semantics suited to its job.
+- **Claims, not labels.** Instead of a single "verified" badge, every artifact
+  carries narrowly worded claims (conformance, functional refinement, memory
+  safety, leakage, compiler preservation, ABI agreement, and more), each with
+  its own subject, assumptions, evidence, and outcome.
+- **Evidence you can replay.** Proofs, certificates, and build records are
+  machine-readable and content-addressed, so a release can be rechecked
+  offline.
+- **A small, published trusted base per claim.** Each claim names exactly which
+  components it trusts, instead of inheriting one project-wide trust list.
+- **Real native output.** The end goal is production native code with a stable
+  C ABI, deterministic builds, and signed release provenance.
 
-## Directed commitments
+These are design directions, not current features. The
+[Orange Book](docs/THE_ORANGE_BOOK.md) explains them in depth.
 
-- Deliver the complete language and toolchain, not a disposable prototype.
-- Build incrementally through tested components of the final production
-  architecture; do not plan a prototype-to-rewrite phase.
-- Operate as a solo project without making development depend on unavailable
-  contributors, reviewers, auditors, laboratories, or partner organizations.
-- Separate implementation progress from assurance claims: missing external
-  evidence is disclosed and limits claims, not unrelated development.
+## A first look
 
-## Architecture direction
+This is Orange 2026 source that the current compiler accepts:
 
-The current planning documents recommend the following. Individual choices are
-ratified incrementally before the component or claim that depends on them.
+```orange
+edition 2026;
+module demo {
+  spec answer() -> Int { 42 }
+  spec negative() -> Int { -0x2a }
+  spec mask() -> Word[8] { 0xff }
+}
+```
 
-- One language with distinct semantic strata for mathematical specifications,
-  executable implementations, leakage-aware low-level code, probabilistic
-  games, and proofs.
-- Explicit claim reports instead of a generic `verified` label.
-- Machine-readable, content-addressed evidence; proof and compilation evidence
-  is independently checkable, and thick release bundles replay offline.
-- A small, published trusted computing base for every kind of claim.
-- Production native code, a stable C ABI, deterministic builds, and signed
-  release provenance.
+`Int` is the type of mathematical integers, with no overflow. `Word[8]` is an
+unsigned 8-bit machine word that holds 0 through 255 and never wraps or
+truncates silently. `orangec eval` checks the module and evaluates each
+specification:
 
-### Semantic prism
+```console
+$ orangec eval compiler/fixtures/typed-answer.or
+demo::answer: Int = 42
+demo::negative: Int = -42
+demo::mask: Word[8] = 0xff
+```
 
-![Orange Semantic Prism conceptual architecture snapshot showing proposed Spec, Impl, Game, and Machine strata connected by a claim-indexed evidence path; S3a is implemented, three of ten gates are closed, and D-004 is unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)
+Out-of-range values are errors with stable codes and precise source spans. For
+a file `byte.or` that declares `spec byte() -> Word[8] { 256 }` inside a module:
 
-*S3a semantic-prism snapshot at `a82a5ce`. Its embedded `D-003 PF-01
-provisionally accepted / exact-revision OEP closure pending` text records the
-pre-closure state of that revision; D-003 and OEP-0004 are now Accepted. D-004
-remains unselected at 0/25, and 30% denotes binary gate closure, not release
-readiness. See the [asset record](docs/images/README.md).*
+```console
+$ orangec check byte.or
+error[ORC0207]: literal is outside the range of `Word[8]`
+ --> byte.or:3:28
+  |
+3 |   spec byte() -> Word[8] { 256 }
+  |                            ^^^ expected a value from 0 through 255
+  = note: fixed-width words do not truncate or wrap out-of-range integers
+```
 
-## Plan
+## What works today
 
-- [The Orange Book](docs/THE_ORANGE_BOOK.md), the living reader guide by Chase
-  Bryan
-- [Project charter](docs/PROJECT_CHARTER.md)
-- [Research and landscape analysis](docs/RESEARCH.md)
-- [End-state architecture](docs/ARCHITECTURE.md)
-- [Assurance and security model](docs/ASSURANCE.md)
-- [Dependency-ordered roadmap](docs/ROADMAP.md)
-- [Gate 0 feature traceability](docs/GATE0_TRACEABILITY.md)
-- [Proposed Orange 1.0 user journeys](docs/USER_JOURNEYS.md)
-- [D-003 product-form decision packet](docs/PRODUCT_FORM_DECISION_PACKET.md)
-- [D-004 semantic-strata decision suite](docs/SEMANTIC_STRATA_DECISION_SUITE.md)
-- [D-005 public-assurance-model decision suite](docs/PUBLIC_ASSURANCE_MODEL_DECISION_SUITE.md)
-- [D-006 proof-foundation decision suite](docs/PROOF_FOUNDATION_DECISION_SUITE.md)
-- [D-009 solver-trust decision suite](docs/SOLVER_TRUST_DECISION_SUITE.md)
-- [D-010 compiler-strategy decision suite](docs/COMPILER_STRATEGY_DECISION_SUITE.md)
-- [Decision register](docs/DECISIONS.md)
-- [Normative Orange 2026 lexical and grammar specification](docs/LANGUAGE_2026.md)
-- [Normative Orange 2026 typed-literal semantics](docs/SEMANTICS_2026.md)
-- [Solo-development process](docs/governance/oeps/OEP-0001-solo-development.md)
-- [Edition 2026 parser proposal](docs/governance/oeps/OEP-0002-edition-2026-parser.md)
-- [Accepted typed-literal semantics OEP](docs/governance/oeps/OEP-0003-orange-2026-typed-literals.md)
-- [Accepted standalone-product-form OEP](docs/governance/oeps/OEP-0004-standalone-orange-product-form.md)
-- [Compiler status and usage](compiler/README.md)
+| Area | Status |
+| --- | --- |
+| Source model, UTF-8 byte spans, stable diagnostic codes | Working |
+| Deterministic lexer (`orangec lex`) | Working |
+| Orange 2026 grammar: one edition, one module, `spec` and `impl` declarations | Working |
+| Semantic checking for typed `spec` literals of type `Int` and `Word[8]` | Working |
+| Typed Reference Core and reference evaluator (`orangec eval`) | Working, literals only |
+| Expressions, operators, parameters, calls, control flow | Not yet |
+| Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
+| Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
+| Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
+| Cryptography corpus (hashes, AEADs, signatures, KEMs) | Planned |
+| Packages and releases | Planned; no release exists |
 
-## Repository and compiler foundation
+## Quick start
 
-The repository carries the permanent policy and evidence architecture created
-during Gate 0, the first two completed production-lineage compiler slices, and
-the accepted S3a typed-literal slice. The larger S3 semantic milestone remains
-incomplete:
-
-- [governance](GOVERNANCE.md), [contribution boundary](CONTRIBUTING.md), and the
-  [OEP](docs/governance/oeps/README.md) and
-  [ADR](docs/governance/adrs/README.md) processes;
-- [security reporting](SECURITY.md), [support](SUPPORT.md), the living
-  [threat model](docs/security/THREAT_MODEL.md), and the honest
-  [OSPS evidence matrix](docs/security/OSPS_BASELINE.md), backed by the
-  [secrets and incident playbook](docs/security/SECRETS_AND_INCIDENTS.md);
-- [dependency](DEPENDENCY_POLICY.md) and [release](RELEASE_POLICY.md) policy,
-  with an honest [CI dependency inventory](docs/operations/CI_DEPENDENCIES.md);
-- the [Gate 0 reproducibility contract](docs/REPRODUCIBILITY.md), provisional
-  [evidence schemas](schemas/README.md), and positive/adversarial
-  [conformance fixtures](conformance/foundation/README.md); and
-- the machine-readable [repository policy](policy/README.md), pinned CI,
-  dependency review, CodeQL default-setup record, and
-  [GitHub control runbook](docs/operations/GITHUB_CONTROLS.md); and
-- the owner-designated [official Orange emblem, wordmark, and lockup
-  assets](assets/brand/README.md), preserved with a digest manifest and explicit
-  rights boundary.
-
-Run the deterministic repository and compiler checks with:
+You need [rustup](https://rustup.rs). The repository pins Rust 1.96.1 in
+[`rust-toolchain.toml`](rust-toolchain.toml), so rustup selects it
+automatically. The compiler has no third-party dependencies.
 
 ```sh
+git clone https://github.com/chasebryan/orange.git
+cd orange
+
+# Build and try the compiler
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/typed-answer.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
+
+# Run the compiler test suite
+cargo test --manifest-path compiler/Cargo.toml --workspace
+
+# Run the local repository gate: policy checks and sandboxed compiler checks
 scripts/ci/check-repository
 ```
 
-Passing this check demonstrates the scoped repository invariants, fixture
-expectations, and tested compiler behavior only. It does not prove language or
-compiler soundness, cryptographic correctness, a security certification, OSPS
-conformance, independent review, or release readiness.
+The repository gate runs on Linux and needs a C compiler, Python 3, user
+namespaces, and Landlock ABI 3 or newer; the [policy guide](policy/README.md)
+explains the sandbox. Markdown lint, workflow audits, and link checks run only
+in CI.
 
-The repository has no selected outbound license under D-018 and does not accept
-third-party pull requests for merge yet. Security reports must use
-the private path in [SECURITY.md](SECURITY.md), never a public issue.
+`orangec` reads a file path, or `-` for standard input:
 
-The name **Orange** is a working project name until the naming and trademark
-gate in the decision register is closed. Existing software and an earlier
-systems language already use the name.
+```text
+Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
+
+Commands:
+  check    Perform lexical, syntactic, and semantic validation
+  eval     Reference-evaluate one source after complete validation
+  lex      Print the deterministic token stream
+```
+
+The [compiler guide](compiler/README.md) covers the grammar, diagnostics, and
+test corpora in detail.
+
+## Roadmap
+
+Orange is built in dependency order. Each stage adds permanent components to
+the production compiler; there is no throwaway prototype.
+
+| Stage | Delivers | Status |
+| --- | --- | --- |
+| S0 | Repository foundation: governance, CI, policy checks | Done |
+| S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
+| S2 | Editioned grammar and bounded parser | Done |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done |
+| S4 | Proof and claim boundary | Research underway |
+| S5 | Compiler IRs and one output path | Open |
+| S6 | Memory, leakage, ABI, and native targets | Open |
+| S7 | Cryptography corpus | Open |
+| S8 | Packages, developer tools, and preview releases | Open |
+| 1.0 | Stable release | Open |
+
+Three of the ten gates are closed. That counts finished stages, not effort or
+time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
+[decision register](docs/DECISIONS.md) tracks every open design choice.
+
+### Where the design is headed
+
+![Orange Semantic Prism conceptual architecture snapshot showing proposed Spec, Impl, Game, and Machine strata connected by a claim-indexed evidence path; S3a is implemented, three of ten gates are closed, and D-004 is unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)
+
+*The semantic prism: proposed specification, implementation, game, and machine
+strata joined by a claim-indexed evidence path. This is a conceptual snapshot
+from July 2026, not a finished design; see the
+[asset record](docs/images/README.md).*
+
+## Read more
+
+- **[The Orange Book](docs/THE_ORANGE_BOOK.md)**: the reader's guide to why
+  Orange exists, how it is designed, and what has been built. Start here.
+- [Orange 2026 language specification](docs/LANGUAGE_2026.md) and
+  [typed-literal semantics](docs/SEMANTICS_2026.md): the normative definition
+  of what the compiler accepts today.
+- [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
+- [Architecture](docs/ARCHITECTURE.md) and
+  [assurance model](docs/ASSURANCE.md): the intended end state.
+- [Roadmap](docs/ROADMAP.md), [decision register](docs/DECISIONS.md), and
+  [project charter](docs/PROJECT_CHARTER.md): scope, sequence, and open
+  questions.
+- [Research and landscape](docs/RESEARCH.md): how Orange relates to existing
+  verified-cryptography work.
+- [Governance](GOVERNANCE.md) and
+  [Orange Enhancement Proposals](docs/governance/oeps/README.md): how changes
+  are decided.
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| [`compiler/`](compiler/README.md) | The Rust workspace: the `orange-compiler` library and the `orangec` CLI |
+| [`docs/`](docs/) | The Orange Book, language specification, architecture, assurance, roadmap, and decisions |
+| [`research/decisions/`](research/decisions/) | Decision laboratories that compare design candidates |
+| [`schemas/`](schemas/README.md) and [`conformance/`](conformance/foundation/README.md) | Provisional evidence schemas and their test fixtures |
+| [`policy/`](policy/README.md) and [`tools/`](tools/) | Repository policy and the Python checks that enforce it |
+| [`assets/brand/`](assets/brand/README.md) | Orange emblem, wordmark, and banners |
+
+## Project status
+
+- **Solo, pre-alpha.** One owner, Chase Bryan, designs, builds, and reviews
+  Orange. Owner review is not independent review, and passing tests show only
+  that the implemented slice behaves as tested.
+- **No license yet.** An outbound license has not been chosen
+  ([D-018](docs/DECISIONS.md#d-018--licenses)), so no right to use, copy, or
+  redistribute is granted. For the same reason, outside pull requests can't be
+  merged yet; issues with facts, sources, and questions are welcome. See
+  [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Security reports stay private.** Use the process in
+  [SECURITY.md](SECURITY.md), never a public issue.
+- **Working name.** "Orange" is a working name until naming and trademark
+  questions are settled. Other software, including an earlier systems
+  language, already uses the name.

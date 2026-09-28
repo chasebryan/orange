@@ -135,12 +135,12 @@ class WorkflowHardeningTests(unittest.TestCase):
         source = (source_root / "README.md").read_text(encoding="utf-8")
         mutations = (
             (
-                "Orange is now in solo, pre-alpha compiler development.",
-                "Orange is now a production-ready compiler and toolchain.",
+                "Orange is **pre-alpha** and built by one person.",
+                "Orange is a production-ready compiler and toolchain.",
             ),
             (
-                "Implemented behavior is solo-authored and solo-reviewed. It is not independently\nreviewed, formally verified, production-ready, or a cryptographic assurance\nclaim.",
-                "Implemented behavior is independently reviewed, formally verified, production-ready, and a cryptographic assurance claim.",
+                "nothing in\n> this repository has been independently reviewed or formally verified.",
+                "everything in\n> this repository has been independently reviewed and formally verified.",
             ),
         )
         for old, new in mutations:
@@ -3051,11 +3051,10 @@ class BrandAssetHardeningTests(unittest.TestCase):
             "unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)"
         )
         prism_caption = (
-            "*S3a semantic-prism snapshot at `a82a5ce`. Its embedded `D-003 PF-01\n"
-            "provisionally accepted / exact-revision OEP closure pending` text records the\n"
-            "pre-closure state of that revision; D-003 and OEP-0004 are now Accepted. D-004\n"
-            "remains unselected at 0/25, and 30% denotes binary gate closure, not release\n"
-            "readiness. See the [asset record](docs/images/README.md).*"
+            "*The semantic prism: proposed specification, implementation, game, and machine\n"
+            "strata joined by a claim-indexed evidence path. This is a conceptual snapshot\n"
+            "from July 2026, not a finished design; see the\n"
+            "[asset record](docs/images/README.md).*"
         )
         self.assertEqual(readme.count(readme_banner), 1)
         self.assertEqual(orange_book.count(book_banner), 1)

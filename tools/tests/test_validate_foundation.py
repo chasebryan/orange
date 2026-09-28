@@ -30,6 +30,9 @@ from tools.validate_foundation import (
     GATE0_RUN_OUTPUTS_PATH,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     GATE0_MAXIMUM_VALIDATOR_BYTES,
+    ORANGE_BOOK_APPENDICES,
+    ORANGE_BOOK_CHAPTERS,
+    ORANGE_BOOK_CONTENTS,
     _fallback_repository_files,
     audit_schema_vocabulary,
     git_index_entries,
@@ -2671,9 +2674,17 @@ class MarkdownTests(unittest.TestCase):
         byline: str = "By Chase Bryan",
         chapter_words: int = 1_200,
         chapter_two_words: int = 1_200,
+        last_chapter_words: int = 1_200,
     ) -> str:
-        chapter = " ".join("evidence" for _ in range(chapter_words))
-        chapter_two = " ".join("claims" for _ in range(chapter_two_words))
+        words = {1: chapter_words, 2: chapter_two_words, len(ORANGE_BOOK_CHAPTERS): last_chapter_words}
+        chapters = "\n\n".join(
+            f"{heading}\n\n" + " ".join("evidence" for _ in range(words.get(number, 1_200)))
+            for number, heading in enumerate(ORANGE_BOOK_CHAPTERS, 1)
+        )
+        appendices = "\n\n".join(
+            f"{heading}\n\n" + " ".join("reference" for _ in range(400)) for heading in ORANGE_BOOK_APPENDICES
+        )
+        contents = "\n".join(ORANGE_BOOK_CONTENTS)
         return f"""# The Orange Book
 
 {byline}
@@ -2682,33 +2693,25 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-07-12
 
-Manuscript version: 0.2
+Manuscript version: 0.3
 
 This is not a normative language specification.
 
 ## Contents
 
-- [Preface](#preface)
-- [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)
-- [Chapter 2: Claims, Not Labels](#chapter-2-claims-not-labels)
-- [Manuscript map](#manuscript-map)
-- [Sources and drafting disclosure](#sources-and-drafting-disclosure)
+{contents}
 
 ## Preface
 
 Reader context.
 
-## Chapter 1: The Seams Are the System
+{chapters}
 
-{chapter}
-
-## Chapter 2: Claims, Not Labels
-
-{chapter_two}
+{appendices}
 
 ## Manuscript map
 
-Future chapters.
+Drafted chapters.
 
 ## Sources and drafting disclosure
 
@@ -2716,9 +2719,20 @@ Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.
 
 Manuscript version 0.2 added Chapter 2, drafted with OpenAI Codex, based on
 GPT-5, under Chase Bryan's direction on 2026-07-14.
+
+Manuscript version 0.3 added Chapters 3 through 17, drafted with Claude Code
+under Chase Bryan's direction on 2026-09-28.
 """
 
-    def test_orange_book_contract_accepts_v02_structure(self) -> None:
+    def test_orange_book_contents_match_heading_anchors(self) -> None:
+        anchors = markdown_anchors(self._orange_book_text())
+        self.assertEqual(len(ORANGE_BOOK_CONTENTS), len(ORANGE_BOOK_CHAPTERS) + len(ORANGE_BOOK_APPENDICES) + 3)
+        for entry in ORANGE_BOOK_CONTENTS:
+            match = re.fullmatch(r"- \[([^]]+)\]\(#([^)]+)\)", entry)
+            self.assertIsNotNone(match, entry)
+            self.assertIn(match.group(2), anchors, entry)
+
+    def test_orange_book_contract_accepts_v03_structure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / "docs/THE_ORANGE_BOOK.md"
@@ -2754,6 +2768,17 @@ GPT-5, under Chase Bryan's direction on 2026-07-14.
             validator._validate_orange_book()
             self.assertEqual({finding.code for finding in validator.findings}, {"book.chapter_length"})
 
+    def test_orange_book_contract_does_not_count_appendices_toward_last_chapter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "docs/THE_ORANGE_BOOK.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(self._orange_book_text(last_chapter_words=20), encoding="utf-8")
+            validator = FoundationValidator(root)
+            validator._validate_orange_book()
+            self.assertEqual({finding.code for finding in validator.findings}, {"book.chapter_length"})
+            self.assertIn("Chapter 17", validator.findings[0].message)
+
     def test_orange_book_contract_rejects_reordered_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2777,8 +2802,8 @@ GPT-5, under Chase Bryan's direction on 2026-07-14.
             path.parent.mkdir(parents=True)
             hidden_words = " ".join("evidence" for _ in range(1_200))
             text = self._orange_book_text(chapter_words=20).replace(
-                "\n## Manuscript map",
-                f"\n<!-- {hidden_words} -->\n\n## Manuscript map",
+                "\n## Chapter 2: ",
+                f"\n<!-- {hidden_words} -->\n\n## Chapter 2: ",
             ).replace(
                 "Drafted with OpenAI Codex, based on GPT-5. Chase Bryan is the named author.",
                 "<!-- OpenAI Codex GPT-5 Chase Bryan is the named author -->",
@@ -2791,21 +2816,24 @@ GPT-5, under Chase Bryan's direction on 2026-07-14.
                 {"book.chapter_length", "book.disclosure"},
             )
 
-    def test_orange_book_contract_rejects_missing_v02_disclosure(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            path = root / "docs/THE_ORANGE_BOOK.md"
-            path.parent.mkdir(parents=True)
-            text = self._orange_book_text().replace(
-                "\nManuscript version 0.2 added Chapter 2, drafted with OpenAI Codex, based on\n"
-                "GPT-5, under Chase Bryan's direction on 2026-07-14.\n",
-                "\n",
-                1,
-            )
-            path.write_text(text, encoding="utf-8")
-            validator = FoundationValidator(root)
-            validator._validate_orange_book()
-            self.assertEqual({finding.code for finding in validator.findings}, {"book.disclosure"})
+    def test_orange_book_contract_rejects_missing_v02_or_v03_disclosure(self) -> None:
+        removals = (
+            "\nManuscript version 0.2 added Chapter 2, drafted with OpenAI Codex, based on\n"
+            "GPT-5, under Chase Bryan's direction on 2026-07-14.\n",
+            "\nManuscript version 0.3 added Chapters 3 through 17, drafted with Claude Code\n"
+            "under Chase Bryan's direction on 2026-09-28.\n",
+        )
+        for removal in removals:
+            with self.subTest(removal=removal), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / "docs/THE_ORANGE_BOOK.md"
+                path.parent.mkdir(parents=True)
+                text = self._orange_book_text()
+                self.assertIn(removal, text)
+                path.write_text(text.replace(removal, "\n", 1), encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_orange_book()
+                self.assertEqual({finding.code for finding in validator.findings}, {"book.disclosure"})
 
     def test_orange_book_contract_rejects_impossible_snapshot_date(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2820,11 +2848,11 @@ GPT-5, under Chase Bryan's direction on 2026-07-14.
 
     def test_orange_book_contract_rejects_missing_wrong_or_duplicate_version(self) -> None:
         mutations = (
-            lambda text: text.replace("Manuscript version: 0.2\n\n", "", 1),
-            lambda text: text.replace("Manuscript version: 0.2", "Manuscript version: 0.3", 1),
+            lambda text: text.replace("Manuscript version: 0.3\n\n", "", 1),
+            lambda text: text.replace("Manuscript version: 0.3", "Manuscript version: 0.2", 1),
             lambda text: text.replace(
-                "Manuscript version: 0.2",
-                "Manuscript version: 0.2\n\nManuscript version: 0.2",
+                "Manuscript version: 0.3",
+                "Manuscript version: 0.3\n\nManuscript version: 0.3",
                 1,
             ),
         )
