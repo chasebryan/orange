@@ -108,25 +108,50 @@ POLICY_PATH = Path("policy/gate0-repository-policy.json")
 MAKEFILE_CONTRACT_PATH = Path("policy/makefile-entrypoint-contract-v0.1.json")
 VALIDATOR_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
-ORANGE_BOOK_VERSION = "0.2"
+ORANGE_BOOK_VERSION = "0.3"
 ORANGE_BOOK_MINIMUM_CHAPTER_WORDS = 1_200
-ORANGE_BOOK_CHAPTERS = (
-    "## Chapter 1: The Seams Are the System",
-    "## Chapter 2: Claims, Not Labels",
+ORANGE_BOOK_CHAPTERS = tuple(
+    f"## Chapter {number}: {title}"
+    for number, title in enumerate(
+        (
+            "The Seams Are the System",
+            "Claims, Not Labels",
+            "One Language, Several Semantic Worlds",
+            "From Surface Text to Meaning",
+            "Proof Search Is Not Proof Checking",
+            "Secrets Are a Semantic Concern",
+            "No Disposable Prototype",
+            "Orange 2026: The Smallest Honest Slice",
+            "From Core to Native Bytes",
+            "The Foreign Boundary",
+            "Standards as Versioned Inputs",
+            "The Corpus as Acceptance Test",
+            "Interoperability and External Validation",
+            "Evidence That Survives the Build",
+            "Offline Replay and Trust Budgets",
+            "Solo Work Through Incremental Gates",
+            "Releases, Updates, and Failure",
+        ),
+        1,
+    )
+)
+ORANGE_BOOK_APPENDICES = tuple(
+    f"## Appendix {letter}: {title}"
+    for letter, title in zip(
+        "ABCD", ("Current Grammar and CLI", "Decision Ledger", "Claim Vocabulary", "Source Notes")
+    )
 )
 ORANGE_BOOK_REQUIRED_SECTIONS = (
     "## Contents",
     "## Preface",
     *ORANGE_BOOK_CHAPTERS,
+    *ORANGE_BOOK_APPENDICES,
     "## Manuscript map",
     "## Sources and drafting disclosure",
 )
-ORANGE_BOOK_CONTENTS = (
-    "- [Preface](#preface)",
-    "- [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)",
-    "- [Chapter 2: Claims, Not Labels](#chapter-2-claims-not-labels)",
-    "- [Manuscript map](#manuscript-map)",
-    "- [Sources and drafting disclosure](#sources-and-drafting-disclosure)",
+ORANGE_BOOK_CONTENTS = tuple(
+    f"- [{heading[3:]}](#{re.sub(r'[^a-z0-9 -]', '', heading[3:].lower()).replace(' ', '-')})"
+    for heading in ORANGE_BOOK_REQUIRED_SECTIONS[1:]
 )
 IGNORED_PARTS = set(".git .agents .codex __pycache__".split())
 BINARY_SUFFIXES = set(".gif .jpeg .jpg .png .wasm".split())
@@ -544,7 +569,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "fdbe079c36630747139c92a1dafbcabdebcefb4e54d6d0a82ca7abc11cbcc711"
+_RDC = "dedd3d70f7715a62b6ba7a8754f3d60a3e92336610604f8918d350a452015afb"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -608,7 +633,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "891a530086fa81a5bcc92de944b007f215a1f384d24aeed13cf44bf92291c638"
+_PHD = "2a561d975987d67ea536e15ff6c0c062cb5692c0cfdfa9c307010ef906f0d132"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3908,12 +3933,8 @@ class FoundationValidator:
             if observed_contents != list(ORANGE_BOOK_CONTENTS):
                 self.add("book.navigation", path, "contents must list the required manuscript destinations in order")
 
-        for index, heading in enumerate(ORANGE_BOOK_CHAPTERS):
-            following_heading = (
-                ORANGE_BOOK_CHAPTERS[index + 1]
-                if index + 1 < len(ORANGE_BOOK_CHAPTERS)
-                else "## Manuscript map"
-            )
+        for heading in ORANGE_BOOK_CHAPTERS:
+            following_heading = ORANGE_BOOK_REQUIRED_SECTIONS[ORANGE_BOOK_REQUIRED_SECTIONS.index(heading) + 1]
             try:
                 chapter_start = lines.index(heading) + 1
                 chapter_end = lines.index(following_heading)
@@ -3933,19 +3954,20 @@ class FoundationValidator:
         if re.search(r"not a\s+normative language specification", boundary_text) is None:
             self.add("book.boundary", path, "the manuscript must state its non-normative boundary")
         disclosure_text = " ".join(visible_text.split())
-        v01_disclosure = all(
-            marker in disclosure_text
-            for marker in ("OpenAI Codex", "GPT-5", "Chase Bryan is the named author")
-        )
-        v02_disclosure = all(
+        if not all(
             marker in disclosure_text
             for marker in (
+                "OpenAI Codex",
+                "GPT-5",
+                "Chase Bryan is the named author",
                 "Manuscript version 0.2 added Chapter 2",
                 "drafted with OpenAI Codex, based on GPT-5",
                 "under Chase Bryan's direction on 2026-07-14",
+                "Manuscript version 0.3 added Chapters 3 through 17",
+                "drafted with Claude Code",
+                "under Chase Bryan's direction on 2026-09-28",
             )
-        )
-        if not v01_disclosure or not v02_disclosure:
+        ):
             self.add(
                 "book.disclosure",
                 path,
