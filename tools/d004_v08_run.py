@@ -1361,6 +1361,13 @@ class EpochContext:
         epoch = archive / "epoch"
         read = lambda name: canonical_document((epoch / name).read_bytes())  # noqa: E731
         self.packet = read("packet.json")
+        # Execute and verify both judge an epoch with the repository's harness and bundle, so both must be the bound ones.
+        for field, bound in (
+            ("runner", {"path": RUNNER_PATH, "raw_sha256": sha256(repository.raw(RUNNER_PATH))}),
+            ("bundle", binding(BUNDLE_PATH, repository.raw(BUNDLE_PATH))),
+        ):
+            if self.packet[field] != bound:
+                raise RunError(f"repository {field} differs from the one the packet binds")
         self.plan = read("replay-plan.json")
         self.schedule = read("schedule.json")
         self.tool = read("tool-manifest.json")

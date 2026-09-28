@@ -16,6 +16,18 @@ V08 = archive.LAYOUTS["v0.8"]
 REPOSITORY08 = run08.Repository(REPOSITORY.root)
 
 
+class _Changed(run08.Repository):
+    """The repository with one file's bytes changed after an epoch bound them."""
+
+    def __init__(self, root: Path, changed: str) -> None:
+        super().__init__(root)
+        self._changed = changed
+
+    def raw(self, relative: str) -> bytes:
+        data = super().raw(relative)
+        return data + b"\n" if relative == self._changed else data
+
+
 def _unpack(index_raw: bytes, outputs_raw: bytes) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="d004-archive-test-") as scratch:
         return archive.unpack(REPOSITORY, index_raw, outputs_raw, Path(scratch) / "archive")
@@ -82,6 +94,16 @@ class D004V08ArchiveTests(unittest.TestCase):
         result = summary["distinguishing_rule_result"]
         self.assertEqual((result["rule"], result["result"]), ("isolation_first", "recommend_st_rel"))
         self.assertEqual((result["compared"], result["unmeasured"]), (["ST-DUAL", "ST-MIRROR", "ST-REL", "ST-UNI"], []))
+
+    def test_verify_refuses_a_harness_or_bundle_the_epoch_did_not_bind(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="d004-archive-test-") as scratch:
+            root = Path(scratch) / "archive"
+            archive.unpack(REPOSITORY08, REPOSITORY08.raw(V08.index_path), REPOSITORY08.raw(V08.outputs_path), root, V08)
+            self.assertEqual(run08.command_verify(REPOSITORY08, root), [])
+            for field, path in (("runner", run08.RUNNER_PATH), ("bundle", run08.BUNDLE_PATH)):
+                changed = _Changed(REPOSITORY08.root, path)
+                with self.assertRaisesRegex(run08.RunError, f"repository {field} differs from the one the packet binds"):
+                    run08.command_verify(changed, root)
 
     def test_a_complete_candidate_without_measures_leaves_the_rule_inconclusive(self) -> None:
         with tempfile.TemporaryDirectory(prefix="d004-archive-test-") as scratch:
