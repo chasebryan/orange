@@ -213,9 +213,9 @@ output bytes. The change runs the other way:
 - `orangec lex` reports `<<`, `>>`, `<<<`, and `>>>` as single tokens. No
   source containing those spellings was syntactically valid before.
 
-Those S3a fixture and test edits touch files that the D-004 decision suite
-currently binds by digest. They are made together with a rebinding that keeps
-D-004's recorded inputs byte-identical, so no D-004 evidence changes.
+The D-004 decision suite once bound those S3a files by digest. It now reads
+byte-identical stored copies under `research/decisions/D-004/baseline/`, so the
+live S3a files can change without changing any D-004 evidence.
 
 Rollback reverts the lexer tokens, grammar, semantics, Core, evaluator, tests,
 fixtures, and normative documents together.
