@@ -685,11 +685,13 @@ class D004DraftPacketTests(unittest.TestCase):
             },
         )
         for name, binding in packet["input_bindings"].items():
+            # The S3a inputs are measured from D-004's stored copies.
+            path = Path(binding["path"])
+            if not binding["path"].startswith(("research/", "docs/SEMANTIC_STRATA")):
+                path = RESEARCH_ROOT / "baseline" / path
             with self.subTest(binding=name):
                 self.assertEqual(
-                    hashlib.sha256(
-                        (REPOSITORY_ROOT / binding["path"]).read_bytes()
-                    ).hexdigest(),
+                    hashlib.sha256((REPOSITORY_ROOT / path).read_bytes()).hexdigest(),
                     binding["sha256"],
                 )
 

@@ -497,7 +497,7 @@
     "tools/d004_run.py": "05fbf410b05cb8fbf7ab36b80977d08b16440403d7237c7451464cb9b109c673",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_d004_archive.py": "c50a0f75b564f4ae4205ba4194c285a5f3c4222af5b2e5ce72302c9abfcea9f1",
-    "tools/tests/test_d004_draft_packet.py": "7c6179b9a6e247539df88c5d95f8f7e499b4e06d2e8d30b12d2cba84db037f5d",
+    "tools/tests/test_d004_draft_packet.py": "628ced10b9ae7ac0c68aa3e4ffffccf4e910dfc94f46be633d2f198c231194ee",
     "tools/tests/test_d004_reviewed_protocol.py": "344eb250ec4f1c34cc4089ff184499632167d29d9c47c0f2c50d8711ba17c462",
     "tools/tests/test_d004_run.py": "ad856c78d578c5f6e8f58a4e8209ff819a33b162f42c48cc7dbc35ece14a3112",
     "tools/tests/test_d005_draft_packet.py": "657d5bf9468d481be3c4b7ee3143fed2b4a9f1253d21bc35477476e968017b09",
