@@ -4,13 +4,14 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    CoreFunction, CoreFunctionId, CoreModule, CoreType, CoreValue, ExactInteger,
-    MAX_EXACT_INTEGER_BITS, Magnitude,
+    CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType,
+    CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Magnitude,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
-    FunctionBody, FunctionDeclaration, FunctionKind, IntegerLiteral, SyntaxTree, TypeSyntax,
-    TypedLiteralBody,
+    BinaryExpression, BinaryOperator, CallExpression, Expression, ExpressionKind, FunctionBody,
+    FunctionDeclaration, FunctionKind, Identifier, IntegerLiteral, Parameter, SyntaxTree,
+    TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
 };
 use crate::source::{SourceFile, Span};
 
@@ -30,6 +31,8 @@ pub const MAX_INTEGER_BITS: usize = 16_384;
 const _: () = assert!(MAX_INTEGER_BITS == MAX_EXACT_INTEGER_BITS);
 
 const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
+const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
+const ADMITTED_TYPES: &str = "`Int`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
 
 /// The complete result of semantic analysis.
 ///
@@ -44,7 +47,7 @@ const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
 pub struct AnalysisResult {
     /// Typed Core, present only when semantic analysis produced no diagnostics.
     core: Option<CoreModule>,
-    /// Semantic and semantic-resource diagnostics in deterministic source order.
+    /// Semantic and semantic-resource diagnostics in deterministic order.
     diagnostics: Vec<Diagnostic>,
 }
 
@@ -55,7 +58,7 @@ impl AnalysisResult {
         self.core.as_ref()
     }
 
-    /// Returns semantic diagnostics in deterministic source order.
+    /// Returns semantic diagnostics in deterministic order.
     #[must_use]
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
@@ -77,7 +80,9 @@ impl AnalysisResult {
 /// Resolves and checks one successfully parsed Orange syntax tree.
 ///
 /// Empty functions participate in namespace checking but do not enter Core.
-/// The first semantic fragment assigns meaning only to typed `spec` functions.
+/// Typed `spec` functions are checked in source order against the signatures
+/// of every typed `spec` in the module, and the call graph among them must be
+/// acyclic.
 #[must_use]
 pub fn analyze(source: &SourceFile, ast: &SyntaxTree) -> AnalysisResult {
     if !syntax_tree_belongs_to_source(source, ast) {
@@ -91,6 +96,9 @@ pub fn analyze(source: &SourceFile, ast: &SyntaxTree) -> AnalysisResult {
 fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool {
     let source_id = source.id();
     let belongs = |span: Span| span.source() == source_id;
+    let type_belongs = |ty: &TypeSyntax| {
+        belongs(ty.span) && belongs(ty.name.span) && ty.width_span.is_none_or(belongs)
+    };
 
     belongs(ast.span)
         && belongs(ast.edition.span)
@@ -100,18 +108,47 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
         && ast.module.functions.iter().all(|function| {
             belongs(function.span)
                 && belongs(function.name.span)
+                && function.parameters.iter().all(|parameter| {
+                    belongs(parameter.span)
+                        && belongs(parameter.name.span)
+                        && type_belongs(&parameter.ty)
+                })
                 && match &function.body {
                     FunctionBody::Empty => true,
-                    FunctionBody::TypedLiteral(body) => {
+                    FunctionBody::Typed(body) => {
                         belongs(body.span)
-                            && belongs(body.result_type.span)
-                            && belongs(body.result_type.name.span)
-                            && body.result_type.width_span.is_none_or(belongs)
-                            && belongs(body.literal.span)
-                            && belongs(body.literal.magnitude_span)
+                            && type_belongs(&body.result_type)
+                            && expression_belongs(&body.expression, &belongs)
                     }
                 }
         })
+}
+
+/// Parser-established expression height bounds this recursion.
+fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) -> bool {
+    belongs(expression.span)
+        && match &expression.kind {
+            ExpressionKind::Literal(literal) => {
+                belongs(literal.span) && belongs(literal.magnitude_span)
+            }
+            ExpressionKind::Name(name) => belongs(name.span),
+            ExpressionKind::Call(call) => {
+                belongs(call.callee.span)
+                    && call
+                        .arguments
+                        .iter()
+                        .all(|argument| expression_belongs(argument, belongs))
+            }
+            ExpressionKind::Unary(unary) => {
+                belongs(unary.operator_span) && expression_belongs(&unary.operand, belongs)
+            }
+            ExpressionKind::Binary(binary) => {
+                belongs(binary.operator_span)
+                    && expression_belongs(&binary.left, belongs)
+                    && expression_belongs(&binary.right, belongs)
+            }
+            ExpressionKind::Parenthesized(inner) => expression_belongs(inner, belongs),
+        }
 }
 
 fn invalid_semantic_input(
@@ -168,13 +205,58 @@ struct Analyzer<'source, 'ast> {
     reserve_magnitude_limb: fn(&mut Vec<u32>) -> bool,
     reserve_core_name: fn(&mut String, usize) -> bool,
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
+    reserve_core_node_slot: fn(&mut Vec<CoreNode>) -> bool,
+    reserve_call_edge_slot: fn(&mut Vec<CallEdge>) -> bool,
 }
 
 struct PendingFunction {
     span: Span,
     name: String,
     name_span: Span,
-    value: CoreValue,
+    parameters: Vec<CoreType>,
+    result_type: CoreType,
+    nodes: Vec<CoreNode>,
+}
+
+/// The silently resolved signature of one typed `spec`, used to check calls
+/// to it from any function in the module.
+struct Signature {
+    id: CoreFunctionId,
+    parameters: Vec<Option<CoreType>>,
+    result_type: Option<CoreType>,
+}
+
+impl Signature {
+    fn is_complete(&self) -> bool {
+        self.result_type.is_some() && self.parameters.iter().all(Option::is_some)
+    }
+}
+
+/// One checked call from a typed `spec` to a typed `spec`.
+struct CallEdge {
+    caller: CoreFunctionId,
+    callee: CoreFunctionId,
+    span: Span,
+}
+
+/// Module-wide name and signature tables shared by every body check.
+struct ModuleScope<'scope, 'ast> {
+    declarations: &'scope DeclarationIndex<'ast>,
+    signatures: &'scope [Option<Signature>],
+}
+
+/// Core nodes of the body being checked and the module's checked calls.
+struct BodyOutput<'edges> {
+    nodes: Vec<CoreNode>,
+    call_edges: &'edges mut Vec<CallEdge>,
+}
+
+/// The function whose body is being checked.
+struct BodyContext<'ast> {
+    id: CoreFunctionId,
+    name: &'ast Identifier,
+    parameters: &'ast [Parameter],
+    parameter_types: Vec<Option<CoreType>>,
 }
 
 struct DeclarationEntry<'ast> {
@@ -215,6 +297,61 @@ fn reserve_diagnostic_slots(diagnostics: &mut Vec<Diagnostic>, capacity: usize) 
     diagnostics.try_reserve_exact(capacity).is_ok()
 }
 
+fn reserve_core_node_slot(nodes: &mut Vec<CoreNode>) -> bool {
+    nodes.try_reserve(1).is_ok()
+}
+
+fn reserve_call_edge_slot(edges: &mut Vec<CallEdge>) -> bool {
+    edges.try_reserve(1).is_ok()
+}
+
+/// The outcome of classifying a parsed type without reporting.
+enum TypeClass {
+    Resolved(CoreType),
+    MissingWordWidth,
+    UnsupportedWordWidth(Span),
+    Unsupported,
+}
+
+fn classify_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
+    match (syntax.name.text.as_str(), syntax.width_span) {
+        ("Int", None) => TypeClass::Resolved(CoreType::Int),
+        ("Word", Some(width_span)) => {
+            let width = match source.slice(width_span) {
+                Some("8") => Some(8),
+                Some("16") => Some(16),
+                Some("32") => Some(32),
+                Some("64") => Some(64),
+                _ => None,
+            };
+            width
+                .and_then(CoreType::word_of_width)
+                .map_or(TypeClass::UnsupportedWordWidth(width_span), |ty| {
+                    TypeClass::Resolved(ty)
+                })
+        }
+        ("Word", None) => TypeClass::MissingWordWidth,
+        _ => TypeClass::Unsupported,
+    }
+}
+
+fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
+    match classify_type(source, syntax) {
+        TypeClass::Resolved(ty) => Some(ty),
+        _ => None,
+    }
+}
+
+fn word_maximum(ty: CoreType) -> Option<u64> {
+    match ty {
+        CoreType::Int => None,
+        CoreType::Word8 => Some(u64::from(u8::MAX)),
+        CoreType::Word16 => Some(u64::from(u16::MAX)),
+        CoreType::Word32 => Some(u64::from(u32::MAX)),
+        CoreType::Word64 => Some(u64::MAX),
+    }
+}
+
 impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn new(source: &'source SourceFile, ast: &'ast SyntaxTree, limits: Limits) -> Self {
         Self {
@@ -232,6 +369,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             reserve_magnitude_limb,
             reserve_core_name,
             reserve_diagnostic_slots,
+            reserve_core_node_slot,
+            reserve_call_edge_slot,
         }
     }
 
@@ -282,7 +421,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .then_with(|| left.name.cmp(right.name))
                 .then_with(|| left.source_index.cmp(&right.source_index))
         });
+        let Some(signatures) = self.collect_signatures() else {
+            return AnalysisResult {
+                core: None,
+                diagnostics: self.diagnostics,
+            };
+        };
         let mut pending_functions = Vec::new();
+        let mut call_edges = Vec::new();
 
         for (source_index, function) in self.ast.module.functions.iter().enumerate() {
             // One event for the declaration-key lookup.
@@ -323,23 +469,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
             }
 
-            if let FunctionBody::TypedLiteral(body) = &function.body {
+            if let FunctionBody::Typed(body) = &function.body {
                 if function.kind != FunctionKind::Spec {
                     let span = function.name.span;
                     if self.begin_report(span) {
                         self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedTypedFunction,
-                            "typed literal bodies are supported only on `spec` functions",
-                            span,
-                        )
-                        .with_label("this `impl` function has no semantics in the current fragment")
-                        .with_note("use an empty `impl` body or move the typed literal to a `spec` function"),
+                            Diagnostic::error(
+                                DiagnosticCode::UnsupportedTypedFunction,
+                                "typed bodies are supported only on `spec` functions",
+                                span,
+                            )
+                            .with_label(
+                                "this `impl` function has no semantics in the current fragment",
+                            )
+                            .with_note(
+                                "use an empty `impl` body or move the typed body to a `spec` function",
+                            ),
                         );
                     }
                     continue;
                 }
-                if let Some(pending) = self.analyze_typed_function(function, body) {
+                let Some(id) = signatures
+                    .get(source_index)
+                    .and_then(Option::as_ref)
+                    .map(|signature| signature.id)
+                else {
+                    self.resource_limit(function.span, "semantic signature table is inconsistent");
+                    break;
+                };
+                let context = BodyContext {
+                    id,
+                    name: &function.name,
+                    parameters: &function.parameters,
+                    parameter_types: Vec::new(),
+                };
+                let scope = ModuleScope {
+                    declarations: &declarations,
+                    signatures: &signatures,
+                };
+                if let Some(pending) =
+                    self.analyze_typed_function(function, body, context, &scope, &mut call_edges)
+                {
                     if (self.reserve_pending_function_slot)(&mut pending_functions) {
                         pending_functions.push(pending);
                     } else {
@@ -350,7 +520,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         break;
                     }
                 }
+                if self.halted {
+                    break;
+                }
             }
+        }
+
+        if !self.halted {
+            self.check_call_graph(&signatures, &call_edges);
         }
 
         let core = if self.diagnostics.is_empty() && !self.halted {
@@ -364,20 +541,703 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
+    /// Resolves every typed `spec` signature without events or diagnostics.
+    ///
+    /// Types are reported once, in source order, when their own declaration is
+    /// checked; calls to a function whose signature did not resolve are then
+    /// not reported again.
+    fn collect_signatures(&mut self) -> Option<Vec<Option<Signature>>> {
+        let functions = &self.ast.module.functions;
+        let mut signatures = Vec::new();
+        if signatures.try_reserve_exact(functions.len()).is_err() {
+            self.resource_limit(
+                self.ast.module.span,
+                "semantic signature table allocation failed",
+            );
+            return None;
+        }
+        let mut next_id = 0_usize;
+        for function in functions {
+            let signature = match (&function.body, function.kind) {
+                (FunctionBody::Typed(body), FunctionKind::Spec) => {
+                    let Some(id) = CoreFunctionId::from_index(next_id) else {
+                        self.resource_limit(
+                            function.span,
+                            "Core function identity exceeds the u32 representation limit",
+                        );
+                        return None;
+                    };
+                    next_id = next_id.saturating_add(1);
+                    let mut parameters = Vec::new();
+                    if parameters
+                        .try_reserve_exact(function.parameters.len())
+                        .is_err()
+                    {
+                        self.resource_limit(function.span, "semantic signature allocation failed");
+                        return None;
+                    }
+                    parameters.extend(
+                        function
+                            .parameters
+                            .iter()
+                            .map(|parameter| silent_type(self.source, &parameter.ty)),
+                    );
+                    Some(Signature {
+                        id,
+                        parameters,
+                        result_type: silent_type(self.source, &body.result_type),
+                    })
+                }
+                _ => None,
+            };
+            signatures.push(signature);
+        }
+        Some(signatures)
+    }
+
     fn analyze_typed_function(
         &mut self,
-        function: &FunctionDeclaration,
-        body: &TypedLiteralBody,
+        function: &'ast FunctionDeclaration,
+        body: &'ast TypedBody,
+        mut context: BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        call_edges: &mut Vec<CallEdge>,
     ) -> Option<PendingFunction> {
-        let result_type = self.analyze_type(&body.result_type)?;
-        let value = self.analyze_literal(result_type, &body.literal)?;
+        if context
+            .parameter_types
+            .try_reserve_exact(function.parameters.len())
+            .is_err()
+        {
+            self.resource_limit(function.span, "parameter type storage allocation failed");
+            return None;
+        }
+        for (index, parameter) in function.parameters.iter().enumerate() {
+            // One event for the parameter-name uniqueness check.
+            if !self.event(parameter.name.span) {
+                return None;
+            }
+            let earlier = function.parameters.get(..index).and_then(|earlier| {
+                earlier
+                    .iter()
+                    .find(|candidate| candidate.name.text == parameter.name.text)
+            });
+            if let Some(earlier) = earlier {
+                let span = parameter.name.span;
+                if self.begin_report(span) {
+                    let name = identifier_spelling_for_diagnostic(&parameter.name.text);
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::DuplicateParameter,
+                            format!("duplicate parameter `{name}`"),
+                            span,
+                        )
+                        .with_label("this parameter repeats an earlier name")
+                        .with_secondary_span(earlier.name.span, "first parameter is here")
+                        .with_note("parameter names must be unique within one function"),
+                    );
+                }
+            }
+            let ty = self.analyze_type(&parameter.ty, "parameter type");
+            context.parameter_types.push(ty);
+        }
+        let result_type = self.analyze_type(&body.result_type, "result type")?;
+        let mut output = BodyOutput {
+            nodes: Vec::new(),
+            call_edges,
+        };
+        let checked =
+            self.check_expression(&body.expression, result_type, &context, scope, &mut output);
+        if !checked || self.halted {
+            return None;
+        }
+        let nodes = output.nodes;
+        let parameters = context
+            .parameter_types
+            .iter()
+            .copied()
+            .collect::<Option<Vec<_>>>()?;
         let name = self.copy_core_name(&function.name.text, function.name.span)?;
         Some(PendingFunction {
             span: function.span,
             name,
             name_span: function.name.span,
-            value,
+            parameters,
+            result_type,
+            nodes,
         })
+    }
+
+    /// Checks `expression` against `expected` and appends its Core nodes in
+    /// postorder. Returns whether the expression is well typed.
+    ///
+    /// Parser-established expression height bounds this recursion.
+    fn check_expression(
+        &mut self,
+        expression: &'ast Expression,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        if self.halted {
+            return false;
+        }
+        match &expression.kind {
+            ExpressionKind::Literal(literal) => {
+                // Literals keep the S3a accounting: one literal event followed
+                // by prefix and significant-digit events.
+                let Some(value) = self.analyze_literal(expected, literal) else {
+                    return false;
+                };
+                self.push_node(
+                    output,
+                    expression.span,
+                    expected,
+                    CoreNodeKind::Literal(value),
+                )
+            }
+            ExpressionKind::Parenthesized(inner) => {
+                if !self.event(expression.span) {
+                    return false;
+                }
+                self.check_expression(inner, expected, context, scope, output)
+            }
+            ExpressionKind::Name(name) => {
+                if !self.event(name.span) {
+                    return false;
+                }
+                self.check_parameter_reference(name, expected, context, scope, output)
+            }
+            ExpressionKind::Call(call) => {
+                if !self.event(expression.span) {
+                    return false;
+                }
+                self.check_call(expression, call, expected, context, scope, output)
+            }
+            ExpressionKind::Unary(unary) => {
+                if !self.event(unary.operator_span) {
+                    return false;
+                }
+                if !self.unary_is_defined(unary, expected) {
+                    return false;
+                }
+                let operand =
+                    self.check_expression(&unary.operand, expected, context, scope, output);
+                operand
+                    && self.push_node(
+                        output,
+                        expression.span,
+                        expected,
+                        CoreNodeKind::Unary(unary.operator),
+                    )
+            }
+            ExpressionKind::Binary(binary) => {
+                if !self.event(binary.operator_span) {
+                    return false;
+                }
+                if !self.binary_is_defined(binary, expected) {
+                    return false;
+                }
+                let left = self.check_expression(&binary.left, expected, context, scope, output);
+                if binary.operator.is_shift_or_rotation() {
+                    let amount = self.check_shift_amount(binary, expected);
+                    return match (left, amount) {
+                        (true, Some(amount)) => self.push_node(
+                            output,
+                            expression.span,
+                            expected,
+                            CoreNodeKind::Shift {
+                                operator: binary.operator,
+                                amount,
+                            },
+                        ),
+                        _ => false,
+                    };
+                }
+                let right = self.check_expression(&binary.right, expected, context, scope, output);
+                left && right
+                    && self.push_node(
+                        output,
+                        expression.span,
+                        expected,
+                        CoreNodeKind::Binary(binary.operator),
+                    )
+            }
+        }
+    }
+
+    fn check_parameter_reference(
+        &mut self,
+        name: &'ast Identifier,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let found = context
+            .parameters
+            .iter()
+            .position(|parameter| parameter.name.text == name.text);
+        let Some(index) = found else {
+            if self.begin_report(name.span) {
+                let spelling = identifier_spelling_for_diagnostic(&name.text);
+                let function = identifier_spelling_for_diagnostic(&context.name.text);
+                let mut diagnostic = Diagnostic::error(
+                    DiagnosticCode::UnknownParameter,
+                    format!("`{spelling}` is not a parameter of `{function}`"),
+                    name.span,
+                )
+                .with_label("unknown name");
+                diagnostic =
+                    if first_declaration(scope.declarations, FunctionKind::Spec, &name.text)
+                        .is_some()
+                    {
+                        diagnostic.with_note(format!(
+                        "to call the function `{spelling}`, write `{spelling}()` with its arguments"
+                    ))
+                    } else {
+                        diagnostic.with_note(
+                            "a bare name in a `spec` body refers to one of its parameters",
+                        )
+                    };
+                self.diagnostics.push(diagnostic);
+            }
+            return false;
+        };
+        // An unresolved parameter type was reported at its declaration.
+        let Some(actual) = context.parameter_types.get(index).copied().flatten() else {
+            return false;
+        };
+        if actual != expected {
+            if self.begin_report(name.span) {
+                let spelling = identifier_spelling_for_diagnostic(&name.text);
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!(
+                            "`{spelling}` has type `{actual}`, but `{expected}` is required here"
+                        ),
+                        name.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("Orange has no implicit conversions between types"),
+                );
+            }
+            return false;
+        }
+        let Ok(index) = u32::try_from(index) else {
+            self.resource_limit(
+                name.span,
+                "parameter index exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        self.push_node(output, name.span, expected, CoreNodeKind::Parameter(index))
+    }
+
+    fn check_call(
+        &mut self,
+        expression: &'ast Expression,
+        call: &'ast CallExpression,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let callee_name = &call.callee;
+        let spelling = identifier_spelling_for_diagnostic(&callee_name.text);
+        let declaration =
+            first_declaration(scope.declarations, FunctionKind::Spec, &callee_name.text);
+        let signature =
+            declaration.and_then(|entry| scope.signatures.get(entry.source_index)?.as_ref());
+        let Some(signature) = signature else {
+            if self.begin_report(callee_name.span) {
+                let mut diagnostic = if let Some(entry) = declaration {
+                    Diagnostic::error(
+                        DiagnosticCode::UnknownFunction,
+                        format!(
+                            "`spec` function `{spelling}` has no typed body and cannot be called"
+                        ),
+                        callee_name.span,
+                    )
+                    .with_label("no value to call")
+                    .with_secondary_span(entry.span, "declared without a result type here")
+                } else {
+                    Diagnostic::error(
+                        DiagnosticCode::UnknownFunction,
+                        format!("no typed `spec` function named `{spelling}` in this module"),
+                        callee_name.span,
+                    )
+                    .with_label("unknown function")
+                };
+                diagnostic =
+                    if first_declaration(scope.declarations, FunctionKind::Impl, &callee_name.text)
+                        .is_some()
+                    {
+                        diagnostic.with_note(
+                            "`impl` functions have no semantics yet and cannot be called",
+                        )
+                    } else {
+                        diagnostic
+                            .with_note("calls name a typed `spec` declared in the same module")
+                    };
+                self.diagnostics.push(diagnostic);
+            }
+            return false;
+        };
+        // An unresolved callee type was reported at the callee's declaration.
+        if !signature.is_complete() {
+            return false;
+        }
+        if signature.parameters.len() != call.arguments.len() {
+            if self.begin_report(expression.span) {
+                let expected_count = signature.parameters.len();
+                let supplied = call.arguments.len();
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::ArgumentCountMismatch,
+                        format!(
+                            "`{spelling}` takes {expected_count} {} but {supplied} {} supplied",
+                            if expected_count == 1 {
+                                "argument"
+                            } else {
+                                "arguments"
+                            },
+                            if supplied == 1 { "was" } else { "were" },
+                        ),
+                        expression.span,
+                    )
+                    .with_label("wrong number of arguments")
+                    .with_note("every parameter receives exactly one argument"),
+                );
+            }
+            return false;
+        }
+        let Some(result_type) = signature.result_type else {
+            return false;
+        };
+        let mut arguments_checked = true;
+        for (argument, parameter_type) in call.arguments.iter().zip(&signature.parameters) {
+            let Some(parameter_type) = *parameter_type else {
+                return false;
+            };
+            arguments_checked &=
+                self.check_expression(argument, parameter_type, context, scope, output);
+            if self.halted {
+                return false;
+            }
+        }
+        if result_type != expected {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!(
+                            "`{spelling}` returns `{result_type}`, but `{expected}` is required here"
+                        ),
+                        expression.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("Orange has no implicit conversions between types"),
+                );
+            }
+            return false;
+        }
+        if !arguments_checked {
+            return false;
+        }
+        if !(self.reserve_call_edge_slot)(output.call_edges) {
+            self.resource_limit(expression.span, "call graph storage allocation failed");
+            return false;
+        }
+        output.call_edges.push(CallEdge {
+            caller: context.id,
+            callee: signature.id,
+            span: expression.span,
+        });
+        let Ok(arguments) = u32::try_from(call.arguments.len()) else {
+            self.resource_limit(
+                expression.span,
+                "argument count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        self.push_node(
+            output,
+            expression.span,
+            expected,
+            CoreNodeKind::Call {
+                function: signature.id,
+                arguments,
+            },
+        )
+    }
+
+    fn unary_is_defined(&mut self, unary: &UnaryExpression, expected: CoreType) -> bool {
+        let defined = match unary.operator {
+            UnaryOperator::Negate => expected == CoreType::Int,
+            UnaryOperator::Complement => expected != CoreType::Int,
+        };
+        if !defined && self.begin_report(unary.operator_span) {
+            let operator = unary.operator.as_str();
+            let note = match (unary.operator, expected.word_bits()) {
+                (UnaryOperator::Negate, Some(bits)) => {
+                    format!("write `0 - x` for negation modulo 2^{bits}")
+                }
+                _ => String::from("bitwise operators apply only to `Word[n]` values"),
+            };
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedOperator,
+                    format!("prefix `{operator}` is not defined for `{expected}`"),
+                    unary.operator_span,
+                )
+                .with_label(format!("`{expected}` is required here"))
+                .with_note(note),
+            );
+        }
+        defined
+    }
+
+    fn binary_is_defined(&mut self, binary: &BinaryExpression, expected: CoreType) -> bool {
+        let defined = match binary.operator {
+            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => true,
+            BinaryOperator::And
+            | BinaryOperator::Or
+            | BinaryOperator::Xor
+            | BinaryOperator::ShiftLeft
+            | BinaryOperator::ShiftRight
+            | BinaryOperator::RotateLeft
+            | BinaryOperator::RotateRight => expected != CoreType::Int,
+        };
+        if !defined && self.begin_report(binary.operator_span) {
+            let operator = binary.operator.as_str();
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedOperator,
+                    format!("`{operator}` is not defined for `{expected}`"),
+                    binary.operator_span,
+                )
+                .with_label(format!("`{expected}` is required here"))
+                .with_note(if binary.operator.is_shift_or_rotation() {
+                    "shifts and rotations apply only to `Word[n]` values"
+                } else {
+                    "bitwise operators apply only to `Word[n]` values"
+                }),
+            );
+        }
+        defined
+    }
+
+    fn check_shift_amount(&mut self, binary: &BinaryExpression, expected: CoreType) -> Option<u32> {
+        let bits = expected.word_bits()?;
+        let amount = &binary.right;
+        let decoded = match &amount.kind {
+            ExpressionKind::Literal(literal) if !literal.negative => {
+                // An amount literal keeps the literal event accounting; an
+                // oversized magnitude is reported by decoding alone.
+                if !self.event(literal.span) {
+                    return None;
+                }
+                let magnitude = self.parse_magnitude(literal, self.limits.integer_bits)?;
+                magnitude
+                    .to_u64()
+                    .filter(|value| *value < u64::from(bits))
+                    .and_then(|value| u32::try_from(value).ok())
+            }
+            _ => None,
+        };
+        if decoded.is_none() && self.begin_report(amount.span) {
+            let operator = binary.operator.as_str();
+            let highest = bits.saturating_sub(1);
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::InvalidShiftAmount,
+                    format!(
+                        "`{operator}` on `{expected}` needs an amount from 0 through {highest}"
+                    ),
+                    amount.span,
+                )
+                .with_label("amount must be an unsigned integer literal")
+                .with_note(
+                    "amounts are fixed literals; variable amounts are not part of Orange 2026",
+                ),
+            );
+        }
+        decoded
+    }
+
+    fn push_node(
+        &mut self,
+        output: &mut BodyOutput<'_>,
+        span: Span,
+        ty: CoreType,
+        kind: CoreNodeKind,
+    ) -> bool {
+        if !(self.reserve_core_node_slot)(&mut output.nodes) {
+            self.resource_limit(span, "typed Core expression storage allocation failed");
+            return false;
+        }
+        output.nodes.push(CoreNode { span, ty, kind });
+        true
+    }
+
+    /// Reports every call cycle among typed specifications.
+    ///
+    /// A depth-first search in function-ID order examines each function's call
+    /// edges in checking order; each edge that returns to a function still on
+    /// the search path closes a cycle and is reported once at that call. The
+    /// search consumes no semantic events: it visits each function and each
+    /// already counted call exactly once.
+    fn check_call_graph(&mut self, signatures: &[Option<Signature>], edges: &[CallEdge]) {
+        let function_count = signatures.iter().flatten().count();
+        let mut names = Vec::new();
+        let mut offsets = Vec::new();
+        let mut targets: Vec<(CoreFunctionId, usize)> = Vec::new();
+        let mut state = Vec::new();
+        let mut path = Vec::new();
+        if names.try_reserve_exact(function_count).is_err()
+            || offsets
+                .try_reserve_exact(function_count.saturating_add(1))
+                .is_err()
+            || targets.try_reserve_exact(edges.len()).is_err()
+            || state.try_reserve_exact(function_count).is_err()
+            || path.try_reserve_exact(function_count).is_err()
+        {
+            self.resource_limit(self.ast.module.span, "call graph storage allocation failed");
+            return;
+        }
+        names.extend(
+            self.ast
+                .module
+                .functions
+                .iter()
+                .zip(signatures)
+                .filter(|(_, signature)| signature.is_some())
+                .map(|(function, _)| &function.name),
+        );
+        // Group edges by caller; within one caller, edges keep the order in
+        // which their calls finished checking.
+        targets.extend(
+            edges
+                .iter()
+                .enumerate()
+                .map(|(index, edge)| (edge.caller, index)),
+        );
+        targets.sort_unstable();
+        offsets.push(0_usize);
+        let mut cursor = 0_usize;
+        for index in 0..function_count {
+            while targets
+                .get(cursor)
+                .is_some_and(|(caller, _)| usize::try_from(caller.index()).ok() == Some(index))
+            {
+                cursor = cursor.saturating_add(1);
+            }
+            offsets.push(cursor);
+        }
+        state.resize(function_count, VisitState::Unvisited);
+
+        for root in 0..function_count {
+            if state.get(root) != Some(&VisitState::Unvisited) {
+                continue;
+            }
+            path.push((root, offsets.get(root).copied().unwrap_or(0)));
+            if let Some(slot) = state.get_mut(root) {
+                *slot = VisitState::OnPath;
+            }
+            while let Some((node, next_edge)) = path.last().copied() {
+                let end = offsets.get(node.saturating_add(1)).copied().unwrap_or(0);
+                if next_edge >= end {
+                    path.pop();
+                    if let Some(slot) = state.get_mut(node) {
+                        *slot = VisitState::Done;
+                    }
+                    continue;
+                }
+                if let Some(top) = path.last_mut() {
+                    top.1 = next_edge.saturating_add(1);
+                }
+                let Some(edge) = targets
+                    .get(next_edge)
+                    .and_then(|(_, index)| edges.get(*index))
+                else {
+                    self.resource_limit(self.ast.module.span, "call graph index is inconsistent");
+                    return;
+                };
+                let Ok(target) = usize::try_from(edge.callee.index()) else {
+                    self.resource_limit(edge.span, "call graph index is inconsistent");
+                    return;
+                };
+                match state.get(target) {
+                    Some(VisitState::Unvisited) => {
+                        if let Some(slot) = state.get_mut(target) {
+                            *slot = VisitState::OnPath;
+                        }
+                        path.push((target, offsets.get(target).copied().unwrap_or(0)));
+                    }
+                    Some(VisitState::OnPath) => {
+                        self.report_cycle(edge, target, &path, &names);
+                        if self.halted {
+                            return;
+                        }
+                    }
+                    Some(VisitState::Done) => {}
+                    None => {
+                        self.resource_limit(edge.span, "call graph index is inconsistent");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    fn report_cycle(
+        &mut self,
+        edge: &CallEdge,
+        target: usize,
+        path: &[(usize, usize)],
+        names: &[&Identifier],
+    ) {
+        if !self.begin_report(edge.span) {
+            return;
+        }
+        let start = path
+            .iter()
+            .position(|(node, _)| *node == target)
+            .unwrap_or(0);
+        let cycle = path.get(start..).unwrap_or_default();
+        let name_of = |index: usize| {
+            names.get(index).map_or_else(String::new, |name| {
+                identifier_spelling_for_diagnostic(&name.text).to_string()
+            })
+        };
+        let target_name = name_of(target);
+        let message = if cycle.len() <= 1 {
+            format!("`{target_name}` calls itself")
+        } else {
+            let mut route = String::new();
+            for (position, (node, _)) in cycle.iter().enumerate() {
+                if position >= MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC {
+                    route.push_str(" -> ...");
+                    break;
+                }
+                if position != 0 {
+                    route.push_str(" -> ");
+                }
+                route.push('`');
+                route.push_str(&name_of(*node));
+                route.push('`');
+            }
+            format!("call cycle {route} -> `{target_name}`")
+        };
+        self.diagnostics.push(
+            Diagnostic::error(DiagnosticCode::CallCycle, message, edge.span)
+                .with_label("this call closes the cycle")
+                .with_note(
+                    "a `spec` may not depend on itself; recursion is not part of Orange 2026",
+                ),
+        );
     }
 
     fn construct_core(
@@ -401,12 +1261,17 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return None;
         }
         for pending_function in pending {
-            // Each admitted entry contributes one function, type, and value node.
-            if !self.record_core_node(pending_function.span)
-                || !self.record_core_node(pending_function.span)
-                || !self.record_core_node(pending_function.span)
-            {
-                return None;
+            // Each function contributes one function node, one result-type
+            // node, one node per parameter type, and its expression nodes.
+            let node_count = pending_function
+                .parameters
+                .len()
+                .saturating_add(pending_function.nodes.len())
+                .saturating_add(2);
+            for _ in 0..node_count {
+                if !self.record_core_node(pending_function.span) {
+                    return None;
+                }
             }
             let Some(id) = CoreFunctionId::from_index(functions.len()) else {
                 self.resource_limit(
@@ -420,7 +1285,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 span: pending_function.span,
                 name: pending_function.name,
                 name_span: pending_function.name_span,
-                value: pending_function.value,
+                parameters: pending_function.parameters,
+                result_type: pending_function.result_type,
+                body: CoreExpression {
+                    nodes: pending_function.nodes,
+                },
             });
         }
         Some(CoreModule {
@@ -430,7 +1299,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         })
     }
 
-    fn analyze_type(&mut self, syntax: &TypeSyntax) -> Option<CoreType> {
+    fn analyze_type(&mut self, syntax: &TypeSyntax, role: &str) -> Option<CoreType> {
         // The identifier and optional width are distinct parsed-type components.
         if !self.event(syntax.name.span) {
             return None;
@@ -440,51 +1309,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         {
             return None;
         }
-        match (syntax.name.text.as_str(), syntax.width_span) {
-            ("Int", None) => Some(CoreType::Int),
-            ("Word", Some(width_span)) => {
-                if self.source.slice(width_span) == Some("8") {
-                    Some(CoreType::Word8)
-                } else {
-                    if self.begin_report(width_span) {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                DiagnosticCode::UnsupportedWordWidth,
-                                "only the exact type `Word[8]` is supported",
-                                width_span,
-                            )
-                            .with_label("unsupported word width")
-                            .with_note("word widths do not coerce, truncate, or wrap"),
-                        );
-                    }
-                    None
+        match classify_type(self.source, syntax) {
+            TypeClass::Resolved(ty) => Some(ty),
+            TypeClass::UnsupportedWordWidth(width_span) => {
+                if self.begin_report(width_span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::UnsupportedWordWidth,
+                            "`Word` width must be exactly 8, 16, 32, or 64",
+                            width_span,
+                        )
+                        .with_label("unsupported word width")
+                        .with_note("word widths do not coerce, truncate, or wrap"),
+                    );
                 }
+                None
             }
-            ("Word", None) => {
+            TypeClass::MissingWordWidth => {
                 let span = syntax.name.span;
                 if self.begin_report(span) {
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::UnsupportedWordWidth,
-                            "`Word` requires the exact width `[8]`",
+                            "`Word` requires an exact width of 8, 16, 32, or 64",
                             span,
                         )
-                        .with_label("missing supported word width")
-                        .with_note("write `Word[8]`"),
+                        .with_label("missing word width")
+                        .with_note("write the width in decimal, as in `Word[32]`"),
                     );
                 }
                 None
             }
-            _ => {
+            TypeClass::Unsupported => {
                 if self.begin_report(syntax.span) {
                     let name = identifier_spelling_for_diagnostic(&syntax.name.text);
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::UnsupportedType,
-                            format!("unsupported result type `{name}`"),
+                            format!("unsupported {role} `{name}`"),
                             syntax.span,
                         )
-                        .with_label("the current semantic fragment admits only `Int` and `Word[8]`")
+                        .with_label(format!("the admitted types are {ADMITTED_TYPES}"))
                         .with_note(
                             "types are resolved contextually and never inferred by spelling similarity",
                         ),
@@ -497,7 +1362,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     fn analyze_literal(
         &mut self,
-        result_type: CoreType,
+        expected: CoreType,
         literal: &IntegerLiteral,
     ) -> Option<CoreValue> {
         // One literal event precedes shared exact-magnitude decoding. Word sign
@@ -506,48 +1371,46 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return None;
         }
         let magnitude = self.parse_magnitude(literal, self.limits.integer_bits)?;
-        match result_type {
-            CoreType::Int => Some(CoreValue::Int(ExactInteger::new(
+        let Some(maximum) = word_maximum(expected) else {
+            return Some(CoreValue::Int(ExactInteger::new(
                 literal.negative,
                 magnitude,
-            ))),
-            CoreType::Word8 => {
-                if literal.negative {
-                    if self.begin_report(literal.span) {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                DiagnosticCode::NegativeWordLiteral,
-                                "`Word[8]` literals cannot be negative",
-                                literal.span,
-                            )
-                            .with_label("negative value is outside the range 0 through 255")
-                            .with_note("fixed-width words do not wrap or coerce negative integers"),
-                        );
-                    }
-                    return None;
-                }
-                if let Some(value) = magnitude.to_u8() {
-                    Some(CoreValue::Word8(value))
-                } else {
-                    if self.begin_report(literal.magnitude_span) {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                DiagnosticCode::WordLiteralOutOfRange,
-                                "literal is outside the range of `Word[8]`",
-                                literal.magnitude_span,
-                            )
-                            .with_label("expected a value from 0 through 255")
-                            .with_note(
-                                "fixed-width words do not truncate or wrap out-of-range integers",
-                            ),
-                        );
-                    }
-                    None
-                }
+            )));
+        };
+        if literal.negative {
+            if self.begin_report(literal.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::NegativeWordLiteral,
+                        format!("`{expected}` literals cannot be negative"),
+                        literal.span,
+                    )
+                    .with_label(format!(
+                        "negative value is outside the range 0 through {maximum}"
+                    ))
+                    .with_note("fixed-width words do not wrap or coerce negative integers"),
+                );
             }
+            return None;
+        }
+        let value = magnitude.to_u64().filter(|value| *value <= maximum);
+        if let Some(value) = value.and_then(|value| CoreValue::word_from_u64(expected, value)) {
+            Some(value)
+        } else {
+            if self.begin_report(literal.magnitude_span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::WordLiteralOutOfRange,
+                        format!("literal is outside the range of `{expected}`"),
+                        literal.magnitude_span,
+                    )
+                    .with_label(format!("expected a value from 0 through {maximum}"))
+                    .with_note("fixed-width words do not truncate or wrap out-of-range integers"),
+                );
+            }
+            None
         }
     }
-
     fn parse_magnitude(&mut self, literal: &IntegerLiteral, bit_limit: usize) -> Option<Magnitude> {
         let Some(spelling) = self.source.slice(literal.magnitude_span) else {
             self.resource_limit(
@@ -703,6 +1566,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum VisitState {
+    Unvisited,
+    OnPath,
+    Done,
+}
+
 struct DiagnosticIdentifierSpelling<'text> {
     prefix: &'text str,
     total_bytes: Option<usize>,
@@ -779,10 +1649,24 @@ mod tests {
         }
     }
 
-    fn typed_body_mut(ast: &mut SyntaxTree) -> &mut TypedLiteralBody {
+    fn typed_body_mut(ast: &mut SyntaxTree) -> &mut TypedBody {
         match &mut ast.module.functions.first_mut().unwrap().body {
-            FunctionBody::TypedLiteral(body) => body,
+            FunctionBody::Typed(body) => body,
             FunctionBody::Empty => unreachable!(),
+        }
+    }
+
+    fn body_literal(body: &TypedBody) -> &IntegerLiteral {
+        match &body.expression.kind {
+            ExpressionKind::Literal(literal) => literal,
+            _ => unreachable!(),
+        }
+    }
+
+    fn body_literal_mut(ast: &mut SyntaxTree) -> &mut IntegerLiteral {
+        match &mut typed_body_mut(ast).expression.kind {
+            ExpressionKind::Literal(literal) => literal,
+            _ => unreachable!(),
         }
     }
 
@@ -910,7 +1794,7 @@ mod tests {
         let second = Fixture::new(text);
         let foreign_function = second.ast.module.functions.first().unwrap();
         let foreign_body = match &foreign_function.body {
-            FunctionBody::TypedLiteral(body) => body,
+            FunctionBody::Typed(body) => body,
             FunctionBody::Empty => unreachable!(),
         };
 
@@ -952,12 +1836,14 @@ mod tests {
                 |ast: &mut SyntaxTree| typed_body_mut(ast).result_type.width_span =
                     foreign_body.result_type.width_span
             ),
+            foreign_case!(|ast: &mut SyntaxTree| typed_body_mut(ast).expression.span =
+                foreign_body.expression.span),
             foreign_case!(
-                |ast: &mut SyntaxTree| typed_body_mut(ast).literal.span = foreign_body.literal.span
+                |ast: &mut SyntaxTree| body_literal_mut(ast).span = body_literal(foreign_body).span
             ),
             foreign_case!(
-                |ast: &mut SyntaxTree| typed_body_mut(ast).literal.magnitude_span =
-                    foreign_body.literal.magnitude_span
+                |ast: &mut SyntaxTree| body_literal_mut(ast).magnitude_span =
+                    body_literal(foreign_body).magnitude_span
             ),
         ];
 
@@ -1055,7 +1941,7 @@ mod tests {
             .unwrap()
             .functions
             .iter()
-            .map(|function| function.value.to_string())
+            .map(|function| function.body.literal().unwrap().to_string())
             .collect();
         assert_eq!(
             values,
@@ -1132,7 +2018,7 @@ mod tests {
             .unwrap()
             .functions
             .iter()
-            .map(|function| function.value.to_string())
+            .map(|function| function.body.literal().unwrap().to_string())
             .collect();
         assert_eq!(observed, expected);
     }
@@ -1208,7 +2094,7 @@ mod tests {
         let observed_core: Vec<_> = core
             .functions
             .iter()
-            .map(|function| function.value.to_string())
+            .map(|function| function.body.literal().unwrap().to_string())
             .collect();
         assert_eq!(observed_core, expected);
 
@@ -1259,7 +2145,7 @@ mod tests {
             .unwrap()
             .functions
             .iter()
-            .map(|function| function.value.to_string())
+            .map(|function| function.body.literal().unwrap().to_string())
             .collect();
         assert_eq!(observed, expected);
     }
@@ -1272,7 +2158,7 @@ mod tests {
         ));
         let result = fixture.analyze();
         let core = result.core.unwrap();
-        let CoreValue::Int(value) = &core.functions[0].value else {
+        let Some(CoreValue::Int(value)) = core.functions[0].body.literal() else {
             panic!("expected exact integer");
         };
         assert_eq!(value.magnitude_bits(), MAX_INTEGER_BITS);
@@ -1335,7 +2221,10 @@ mod tests {
         });
         assert_eq!(first, second);
         assert_eq!(first.diagnostics, []);
-        assert_eq!(first.core.unwrap().functions[0].value, CoreValue::Word8(42));
+        assert_eq!(
+            first.core.unwrap().functions[0].body.literal(),
+            Some(&CoreValue::Word8(42))
+        );
 
         let first = fixture.analyze_with(Limits {
             nodes: 4,
@@ -1366,7 +2255,14 @@ mod tests {
         let second = negative_zero.analyze_with(limits);
         assert_eq!(first, second);
         assert_eq!(first.diagnostics, []);
-        assert_eq!(first.core.unwrap().functions[0].value.to_string(), "0");
+        assert_eq!(
+            first.core.unwrap().functions[0]
+                .body
+                .literal()
+                .unwrap()
+                .to_string(),
+            "0"
+        );
 
         let limits = Limits {
             nodes: 4,
@@ -1399,7 +2295,7 @@ mod tests {
             .unwrap()
             .functions
             .iter()
-            .map(|function| function.value.to_string())
+            .map(|function| function.body.literal().unwrap().to_string())
             .collect();
         assert_eq!(values, ["0x00", "0x01", "0xfe", "0xff"]);
     }
@@ -1436,7 +2332,7 @@ mod tests {
             .unwrap()
             .functions
             .iter()
-            .map(|function| function.value.clone())
+            .map(|function| function.body.literal().unwrap().clone())
             .collect();
         assert_eq!(observed, expected);
     }
@@ -1578,9 +2474,29 @@ mod tests {
                 "Word",
             ),
             (
-                "spec typed() -> Word[16] { 1 }",
+                "spec typed() -> Word[12] { 1 }",
                 DiagnosticCode::UnsupportedWordWidth,
-                "16",
+                "12",
+            ),
+            (
+                "spec typed() -> Word[128] { 1 }",
+                DiagnosticCode::UnsupportedWordWidth,
+                "128",
+            ),
+            (
+                "spec typed() -> Word[016] { 1 }",
+                DiagnosticCode::UnsupportedWordWidth,
+                "016",
+            ),
+            (
+                "spec typed(x: Word[7]) -> Word[8] { 1 }",
+                DiagnosticCode::UnsupportedWordWidth,
+                "7",
+            ),
+            (
+                "spec typed(x: Integer) -> Int { 1 }",
+                DiagnosticCode::UnsupportedType,
+                "Integer",
             ),
             (
                 "spec typed() -> Word[08] { 1 }",
@@ -1628,7 +2544,7 @@ mod tests {
             "  spec repeated() {}\n",
             "  spec unsupported() -> Integer { 1 }\n",
             "  spec missing_width() -> Word { 1 }\n",
-            "  spec bad_width() -> Word[16] { 1 }\n",
+            "  spec bad_width() -> Word[12] { 1 }\n",
             "  spec negative() -> Word[8] { -1 }\n",
             "  spec out_of_range() -> Word[8] { 256 }\n",
             "}\n",
@@ -1643,7 +2559,7 @@ mod tests {
             (DiagnosticCode::DuplicateFunction, "repeated"),
             (DiagnosticCode::UnsupportedType, "Integer"),
             (DiagnosticCode::UnsupportedWordWidth, "Word"),
-            (DiagnosticCode::UnsupportedWordWidth, "16"),
+            (DiagnosticCode::UnsupportedWordWidth, "12"),
             (DiagnosticCode::NegativeWordLiteral, "-1"),
             (DiagnosticCode::WordLiteralOutOfRange, "256"),
         ];
@@ -1690,7 +2606,7 @@ mod tests {
         let fixture = Fixture::new(concat!(
             "edition 2026; module values {\n",
             "  spec repeated() {}\n",
-            "  spec repeated() -> Word[16] { 1 }\n",
+            "  spec repeated() -> Word[12] { 1 }\n",
             "}\n",
         ));
 
@@ -1715,7 +2631,7 @@ mod tests {
         );
         assert_eq!(
             fixture.source().slice(first.diagnostics[1].primary_span()),
-            Some("16")
+            Some("12")
         );
         let [first_declaration] = first.diagnostics[0].secondary_spans() else {
             panic!("duplicate diagnostic must cite exactly one first declaration");
@@ -2152,7 +3068,7 @@ mod tests {
         let compounded = Fixture::new(concat!(
             "edition 2026; module values {\n",
             "  spec repeated() {}\n",
-            "  spec repeated() -> Word[16] { 1 }\n",
+            "  spec repeated() -> Word[12] { 1 }\n",
             "}\n",
         ));
         // The first declaration consumes lookup and insertion. The second
@@ -2199,7 +3115,7 @@ mod tests {
                 compounded
                     .source()
                     .slice(first.diagnostics[1].primary_span()),
-                Some("16")
+                Some("12")
             );
         }
     }

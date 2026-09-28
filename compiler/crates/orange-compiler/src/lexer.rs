@@ -124,6 +124,14 @@ define_token_kinds! {
     LessEqual => "LESS_EQUAL",
     /// `>=`
     GreaterEqual => "GREATER_EQUAL",
+    /// `<<`
+    LessLess => "LESS_LESS",
+    /// `>>`
+    GreaterGreater => "GREATER_GREATER",
+    /// `<<<`
+    LessLessLess => "LESS_LESS_LESS",
+    /// `>>>`
+    GreaterGreaterGreater => "GREATER_GREATER_GREATER",
     /// `->`
     Arrow => "ARROW",
     /// `=>`
@@ -618,7 +626,13 @@ impl<'source> Lexer<'source> {
     }
 
     fn lex_punctuation(&mut self) -> Option<TokenKind> {
-        const DOUBLE: [(&str, TokenKind); 10] = [
+        // Longest match: every three-byte spelling is tried before the
+        // two-byte spellings it extends, and those before single bytes.
+        const TRIPLE: [(&str, TokenKind); 2] = [
+            ("<<<", TokenKind::LessLessLess),
+            (">>>", TokenKind::GreaterGreaterGreater),
+        ];
+        const DOUBLE: [(&str, TokenKind); 12] = [
             ("..", TokenKind::DotDot),
             ("::", TokenKind::DoubleColon),
             ("&&", TokenKind::AmpAmp),
@@ -627,10 +641,12 @@ impl<'source> Lexer<'source> {
             ("!=", TokenKind::BangEqual),
             ("<=", TokenKind::LessEqual),
             (">=", TokenKind::GreaterEqual),
+            ("<<", TokenKind::LessLess),
+            (">>", TokenKind::GreaterGreater),
             ("->", TokenKind::Arrow),
             ("=>", TokenKind::FatArrow),
         ];
-        for (spelling, kind) in DOUBLE {
+        for (spelling, kind) in TRIPLE.into_iter().chain(DOUBLE) {
             if self.starts_with(spelling) {
                 if !self.advance_bytes(spelling.len()) {
                     return None;
@@ -976,6 +992,10 @@ mod tests {
             "BANG_EQUAL",
             "LESS_EQUAL",
             "GREATER_EQUAL",
+            "LESS_LESS",
+            "GREATER_GREATER",
+            "LESS_LESS_LESS",
+            "GREATER_GREATER_GREATER",
             "ARROW",
             "FAT_ARROW",
             "QUESTION",
@@ -1033,6 +1053,10 @@ mod tests {
             ("!=", TokenKind::BangEqual),
             ("<=", TokenKind::LessEqual),
             (">=", TokenKind::GreaterEqual),
+            ("<<", TokenKind::LessLess),
+            (">>", TokenKind::GreaterGreater),
+            ("<<<", TokenKind::LessLessLess),
+            (">>>", TokenKind::GreaterGreaterGreater),
             ("->", TokenKind::Arrow),
             ("=>", TokenKind::FatArrow),
             ("?", TokenKind::Question),
@@ -1054,6 +1078,41 @@ mod tests {
         let eof = lexed.tokens().last().unwrap();
         assert_eq!(eof.kind, TokenKind::Eof);
         assert_eq!(eof.lexeme(source), Some(""));
+    }
+
+    #[test]
+    fn shift_and_rotation_tokens_use_longest_match() {
+        let cases: [(&str, &[TokenKind]); 8] = [
+            ("<<<<", &[TokenKind::LessLessLess, TokenKind::Less]),
+            (
+                ">>>>>",
+                &[TokenKind::GreaterGreaterGreater, TokenKind::GreaterGreater],
+            ),
+            ("<<=", &[TokenKind::LessLess, TokenKind::Equal]),
+            (
+                ">>>=",
+                &[TokenKind::GreaterGreaterGreater, TokenKind::Equal],
+            ),
+            ("< <<", &[TokenKind::Less, TokenKind::LessLess]),
+            (
+                "x>>>7",
+                &[
+                    TokenKind::Identifier,
+                    TokenKind::GreaterGreaterGreater,
+                    TokenKind::Integer,
+                ],
+            ),
+            ("->>", &[TokenKind::Arrow, TokenKind::Greater]),
+            ("<=<", &[TokenKind::LessEqual, TokenKind::Less]),
+        ];
+        for (text, expected) in cases {
+            let (_, lexed) = lex_text(text);
+            assert_eq!(lexed.diagnostics(), [], "{text}");
+            let actual = kinds(&lexed);
+            let (eof, tokens) = actual.split_last().unwrap();
+            assert_eq!(*eof, TokenKind::Eof, "{text}");
+            assert_eq!(tokens, expected, "{text}");
+        }
     }
 
     #[test]
