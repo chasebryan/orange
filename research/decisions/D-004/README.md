@@ -195,11 +195,11 @@ cannot report a measurement.
 The raw-file/canonical SHA-256 pairs are:
 
 - adapter bundle:
-  `a50ecf2b365df6e361fa4c592fc04451df8e53dd5c76c09e7a45cf67a2491f11` /
-  `e9b5c9943fe0f62b5b54ea77f5c6b2f1822ed5ea9d4b1a887baa3b8e57a3669a`; and
+  `577d071cf5480e10cd24a53747238b726f2931129237c53c4546ecba8ef55da5` /
+  `28f422dd6a482a4e9a2c30bebf47fd1b50ba520072207c2b4463881c931eaf80`; and
 - prerequisites overlay:
-  `f980ecbf4c1c9b4661db91ef307dff3381c440217526796e0d28107509aaa848` /
-  `e6b9ca6a1a618b2b0d6f8ba98d0bac7a528273dff6e00aebb0f37e53eba30a9f`.
+  `ddb999ef447d4864cab3bbe79a2e09799c21824a5d8076464ccfd556e1e7bee4` /
+  `a2e1830b840a3ac2e46332ddd2fda9675ec09bc7d1acc4bdb5cddef61289da59`.
 
 ## v0.7 epoch run
 

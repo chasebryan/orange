@@ -63,7 +63,7 @@ def _load_d004_helper_functions() -> tuple[Any, Any]:
 ) = _load_d004_helper_functions()
 
 _D004_REVIEWED_PROTOCOL_HELPER_RAW_SHA256 = (
-    "a99489313c4504bf2dbd047f47d7197675478350a41615dd46e4173f5f2d58b1"
+    "194433eb4ca459bd4dee1ef9e952d20b475a940f020d08cdfbe76b75a4727c83"
 )
 
 
@@ -619,7 +619,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "9a298d55281df5506cdfe9117f450eed071571bddefea7c51748688e235f844c"
+_PHD = "ba09f1bea481384402235be6cfa621e17b4781ad0053e38dfd7087d7f84f9fd0"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1139,8 +1139,8 @@ DECISION_LABORATORY_SPECS["d004"] = {
             _D004_REVIEWED_REPLAY_PLAN_RAW_SHA256,
             True,
         ),
-        (_D004_V07 + "adapter-bundle.json", "prerequisite_bundle_", "prerequisite_bundle_missing", "e9b5c9943fe0f62b5b54ea77f5c6b2f1822ed5ea9d4b1a887baa3b8e57a3669a", "a50ecf2b365df6e361fa4c592fc04451df8e53dd5c76c09e7a45cf67a2491f11", True),
-        (_D004_V07 + "protocol/prerequisites-overlay.json", "prerequisite_overlay_", "prerequisite_overlay_missing", "e6b9ca6a1a618b2b0d6f8ba98d0bac7a528273dff6e00aebb0f37e53eba30a9f", "f980ecbf4c1c9b4661db91ef307dff3381c440217526796e0d28107509aaa848", True),
+        (_D004_V07 + "adapter-bundle.json", "prerequisite_bundle_", "prerequisite_bundle_missing", "28f422dd6a482a4e9a2c30bebf47fd1b50ba520072207c2b4463881c931eaf80", "577d071cf5480e10cd24a53747238b726f2931129237c53c4546ecba8ef55da5", True),
+        (_D004_V07 + "protocol/prerequisites-overlay.json", "prerequisite_overlay_", "prerequisite_overlay_missing", "a2e1830b840a3ac2e46332ddd2fda9675ec09bc7d1acc4bdb5cddef61289da59", "ddb999ef447d4864cab3bbe79a2e09799c21824a5d8076464ccfd556e1e7bee4", True),
         (_D004_V07 + "run/archive-index.json", "run_index_", "run_index_missing", "e87d6a4c1abbcc238fc8de8997ec58e0a783b7a543a70523384e4c28880af03c", "727bf100a25058d36cea864e16ce60c18c48ac6df93a78cf382e429c6ebef018", True),
         (_D004_V07 + "run/adapter-outputs.json", "run_outputs_", "run_outputs_missing", "3b3bbb52a158a401ce88b73f49d0e4b7852a1b09a4ff435886a8749cd9f1affa", "f2dbb78822c426818adf849c1d8d92213719bfd9d930553df967748081f0f92c", True),
     ),

@@ -6,11 +6,12 @@ This module turns the reviewed D-004 protocol into something that can run:
   prerequisites overlay equal to their mechanical derivation;
 * ``prepare`` captures the host tools, dependency closure and environment,
   derives a content-addressed epoch (packet, replay plan, 75 scheduled
-  identities) and stages one request per logical slot;
-* ``execute`` runs the 75 executions once each, in physical order, under the
-  isolated launcher, and writes one case record per execution plus the
+  identities) and stages one request per logical slot in an archive named by
+  the epoch identifier under ``ARCHIVE_ROOT``;
+* ``execute EPOCH`` runs the 75 executions once each, in physical order, under
+  the isolated launcher, and writes one case record per execution plus the
   repetition closures and a summary;
-* ``verify`` re-derives every identity, record, closure and the archive
+* ``verify EPOCH`` re-derives every identity, record, closure and the archive
   manifest from the archive bytes.
 
 ``validate_d004_prerequisites`` is the foundation-validator entry point. It only
@@ -68,6 +69,7 @@ PROCESS_LIMIT = 256
 ENVIRONMENT = (("LANG", "C"), ("LC_ALL", "C"), ("PATH", "/usr/bin:/bin"), ("TZ", "UTC"))
 ADAPTER_FLAGS = ("-I", "-S", "-B", "-X", "utf8")
 ADAPTER_ARGS = ("tool/d004_adapter.py", "in/request.json")
+ARCHIVE_ROOT = Path(tempfile.gettempdir()) / "orange-d004"
 NETWORK = "denied"
 CACHE = "fresh_empty_candidate_specific_per_execution"
 NAMESPACE = (
@@ -191,8 +193,8 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _no_number(token: str) -> Any:
-    raise ValueError(f"forbidden JSON number {token}")
+def _no_number(literal: str) -> Any:
+    raise ValueError(f"forbidden JSON number {literal}")
 
 
 def strict_json(data: bytes) -> Any:
@@ -1627,9 +1629,19 @@ def _write(path: Path, data: bytes) -> None:
     path.chmod(0o644)
 
 
-def command_prepare(repository: Repository, archive: Path, source_revision: str) -> str:
-    if archive.exists():
-        raise RunError("archive directory already exists")
+def existing_archive(root: Path, epoch: str) -> Path:
+    """Return the prepared archive named ``epoch`` under ``root``.
+
+    The name is only compared with directory entries that already exist, so a
+    command-line argument never becomes part of a filesystem path.
+    """
+    for child in sorted(root.iterdir()) if root.is_dir() else ():
+        if child.name == epoch and child.is_dir() and not child.is_symlink():
+            return child
+    raise RunError(f"no prepared archive named {epoch!r}")
+
+
+def command_prepare(repository: Repository, root: Path, source_revision: str) -> Path:
     bundle_raw, overlay_raw = repository.raw(BUNDLE_PATH), repository.raw(OVERLAY_PATH)
     if (bundle_raw, overlay_raw) != generated_documents(repository):
         raise RunError("committed bundle or overlay is stale; run generate")
@@ -1646,6 +1658,9 @@ def command_prepare(repository: Repository, archive: Path, source_revision: str)
     packet = epoch_packet(binding(BUNDLE_PATH, bundle_raw), binding(OVERLAY_PATH, overlay_raw), repository.raw(RUNNER_PATH), tool, dependency, environment, suite)
     plan = epoch_replay_plan(packet, suite)
     schedule = schedule_identities(packet, plan, suite, tool, dependency, environment)
+    archive = root / packet["epoch"]
+    if archive.exists():
+        raise RunError("archive directory already exists")
     epoch = archive / "epoch"
     for name, value in (("packet.json", packet), ("replay-plan.json", plan), ("schedule.json", schedule), ("tool-manifest.json", tool), ("dependency-manifest.json", dependency), ("environment-manifest.json", environment)):
         _write(epoch / name, canonical_file(value))
@@ -1657,7 +1672,7 @@ def command_prepare(repository: Repository, archive: Path, source_revision: str)
         _write(epoch / "requests" / f"slot-{row['logical_slot_ordinal']:02d}.json", canonical_file(request_document(suite, packet, plan, row)))
     _write(archive / "tool" / "d004_adapter.py", suite.adapter_raw)
     _write(archive / "provenance.json", canonical_file({"source_revision": source_revision, "note": "diagnostic only; the epoch identity is content-addressed"}))
-    return packet["epoch"]
+    return archive
 
 
 def command_execute(repository: Repository, archive: Path) -> dict[str, Any]:
@@ -1743,22 +1758,23 @@ def main(argv: list[str]) -> int:
                 sys.stderr.write("D-004 v0.7 bundle or overlay is stale; run generate\n")
                 return 1
             return 0
-        if command == "prepare" and len(argv) == 5 and argv[3] == "--source-revision":
-            sys.stdout.write(command_prepare(repository, Path(argv[2]), argv[4]) + "\n")
+        if command == "prepare" and len(argv) == 4 and argv[2] == "--source-revision":
+            archive = command_prepare(repository, ARCHIVE_ROOT, argv[3])
+            sys.stdout.write(f"{archive.name}\t{archive}\n")
             return 0
         if command == "execute" and len(argv) == 3:
-            summary = command_execute(repository, Path(argv[2]))
+            summary = command_execute(repository, existing_archive(ARCHIVE_ROOT, argv[2]))
             sys.stdout.write(json.dumps(summary["execution"], sort_keys=True) + "\n")
             return 0
         if command == "verify" and len(argv) == 3:
-            errors = command_verify(repository, Path(argv[2]))
+            errors = command_verify(repository, existing_archive(ARCHIVE_ROOT, argv[2]))
             for error in errors:
                 sys.stderr.write(error + "\n")
             return 1 if errors else 0
     except RunError as exc:
         sys.stderr.write(f"d004 run invalid: {exc}\n")
         return 2
-    sys.stderr.write("usage: d004_run.py generate | check | prepare ARCHIVE --source-revision REV | execute ARCHIVE | verify ARCHIVE\n")
+    sys.stderr.write("usage: d004_run.py generate | check | prepare --source-revision REV | execute EPOCH | verify EPOCH\n")
     return 64
 
 

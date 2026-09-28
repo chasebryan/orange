@@ -39,6 +39,7 @@ EXIT_CODES = {
     "resource_exhaustion": 6,
 }
 MAX_REQUEST_BYTES = 4 * 1024 * 1024
+REQUEST_PATH = "in/request.json"
 
 # Parameter slots bound identically for every candidate. Slots whose meaning
 # belongs to an open decision stay symbolic; a candidate that needs a concrete
@@ -178,12 +179,12 @@ def digest(value: Any) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
-def _reject_constant(token: str) -> Any:
-    raise ValueError(f"non-finite JSON number {token}")
+def _reject_constant(literal: str) -> Any:
+    raise ValueError(f"non-finite JSON number {literal}")
 
 
-def _reject_float(token: str) -> Any:
-    raise ValueError(f"floating-point JSON number {token}")
+def _reject_float(literal: str) -> Any:
+    raise ValueError(f"floating-point JSON number {literal}")
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -761,8 +762,8 @@ class CaseSemantics:
         pure = self.model["pure_subject"]
         if pure["effects"] != [] or pure["total"] is not True:
             return "effect_in_pure_subject"
-        key = _xor_constant(pure["operation"])
-        output = [byte ^ key for byte in self.model["input_bytes"]]
+        mask = _xor_constant(pure["operation"])
+        output = [byte ^ mask for byte in self.model["input_bytes"]]
         self.values["pure_output_bytes"] = output
         return None if output == pure["output_bytes"] else "evaluation_mismatch"
 
@@ -775,10 +776,10 @@ class CaseSemantics:
             return "ownership_or_failure_untyped"
         buffer = list(self.model["input_bytes"])
         _require(len(buffer) == region["length"], "input length differs from the owned region")
-        key = _xor_constant(implementation["operation"])
+        mask = _xor_constant(implementation["operation"])
         low, high = _range(implementation["loop"]["range"])
         for index in range(low, high):
-            buffer[index] ^= key
+            buffer[index] ^= mask
         self.values["implementation_output_bytes"] = buffer
         return None
 
@@ -1166,13 +1167,15 @@ def run_request(request_bytes: bytes, source_sha256: str) -> bytes:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        sys.stderr.write("usage: d004_adapter.py REQUEST\n")
+    # The launcher stages the request at one fixed relative path; any other
+    # argument is a transport error, so no caller-chosen path is ever opened.
+    if argv[1:] != [REQUEST_PATH]:
+        sys.stderr.write(f"usage: d004_adapter.py {REQUEST_PATH}\n")
         return EXIT_CODES["unsupported_behavior"]
     try:
         source_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         try:
-            request_bytes = Path(argv[1]).read_bytes()
+            request_bytes = Path(REQUEST_PATH).read_bytes()
         except FileNotFoundError:
             raise AdapterFailure("missing_input", "request file is absent") from None
         response = run_request(request_bytes, source_sha256)

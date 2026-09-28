@@ -480,7 +480,7 @@ def _expected_schedule() -> list[dict[str, int | str]]:
 # The v0.7 run harness is pinned here so the foundation validator reaches it
 # through this already-pinned helper.
 _D004_RUN_HELPER_RAW_SHA256 = (
-    "e5c6d73db20f97b94f02927e57e6cb908c88d07dd417e895b405ef331dd63c06"
+    "005dbc26a64bf0f24b77e2fc044fafd7ec44b99c14798370477c57e934623c81"
 )
 
 

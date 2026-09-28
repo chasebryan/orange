@@ -14,10 +14,11 @@ keeps only what cannot be re-derived:
 * ``adapter-outputs.json``: each distinct adapter output, keyed by its raw
   SHA-256.
 
-``unpack`` rebuilds the archive byte for byte with the run harness's own
-functions and fails unless the rebuilt archive manifest has the recorded
-digest. ``check`` unpacks the committed form and runs the harness's
-``verify`` over the result.
+``pack EPOCH`` reduces a prepared and executed archive under the harness's
+``ARCHIVE_ROOT`` to this form. ``unpack`` rebuilds the archive byte for byte
+into a new temporary directory with the run harness's own functions and fails
+unless the rebuilt archive manifest has the recorded digest. ``check``
+unpacks the committed form and runs the harness's ``verify`` over the result.
 """
 
 from __future__ import annotations
@@ -195,12 +196,14 @@ def main(argv: list[str]) -> int:
     command = argv[1] if len(argv) > 1 else ""
     try:
         if command == "pack" and len(argv) == 3:
-            index_raw, outputs_raw = pack(repository, Path(argv[2]))
+            index_raw, outputs_raw = pack(repository, run.existing_archive(run.ARCHIVE_ROOT, argv[2]))
             run._write(repository.root / INDEX_PATH, index_raw)
             run._write(repository.root / OUTPUTS_PATH, outputs_raw)
             return 0
-        if command == "unpack" and len(argv) == 3:
-            unpack(repository, repository.raw(INDEX_PATH), repository.raw(OUTPUTS_PATH), Path(argv[2]))
+        if command == "unpack" and len(argv) == 2:
+            target = Path(tempfile.mkdtemp(prefix="d004-unpack-")) / "archive"
+            unpack(repository, repository.raw(INDEX_PATH), repository.raw(OUTPUTS_PATH), target)
+            sys.stdout.write(f"{target}\n")
             return 0
         if command == "check" and len(argv) == 2:
             errors = check(repository)
@@ -210,7 +213,7 @@ def main(argv: list[str]) -> int:
     except run.RunError as exc:
         sys.stderr.write(f"d004 archive invalid: {exc}\n")
         return 2
-    sys.stderr.write("usage: d004_archive.py pack ARCHIVE | unpack DIRECTORY | check\n")
+    sys.stderr.write("usage: d004_archive.py pack EPOCH | unpack | check\n")
     return 64
 
 
