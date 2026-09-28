@@ -75,15 +75,16 @@ demo::negative: Int = -42
 demo::mask: Word[8] = 0xff
 ```
 
-Out-of-range values are errors with stable codes and precise source spans:
+Out-of-range values are errors with stable codes and precise source spans. For
+a file `byte.or` that declares `spec byte() -> Word[8] { 256 }` inside a module:
 
 ```console
-$ orangec check compiler/fixtures/s3a/invalid-word-range.or
+$ orangec check byte.or
 error[ORC0207]: literal is outside the range of `Word[8]`
- --> compiler/fixtures/s3a/invalid-word-range.or:5:31
+ --> byte.or:3:28
   |
-5 |   spec decimal() -> Word[8] { 256 }
-  |                               ^^^ expected a value from 0 through 255
+3 |   spec byte() -> Word[8] { 256 }
+  |                            ^^^ expected a value from 0 through 255
   = note: fixed-width words do not truncate or wrap out-of-range integers
 ```
 
@@ -98,8 +99,8 @@ error[ORC0207]: literal is outside the range of `Word[8]`
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working, literals only |
 | Expressions, operators, parameters, calls, control flow | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
-| Proof checking, claim reports, evidence bundles | Designed, not built |
-| Code generation, native targets, C ABI | Designed, not built |
+| Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
+| Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
 | Cryptography corpus (hashes, AEADs, signatures, KEMs) | Planned |
 | Packages and releases | Planned; no release exists |
 
@@ -121,9 +122,14 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixture
 # Run the compiler test suite
 cargo test --manifest-path compiler/Cargo.toml --workspace
 
-# Run every repository check that CI runs
+# Run the local repository gate: policy checks and sandboxed compiler checks
 scripts/ci/check-repository
 ```
+
+The repository gate runs on Linux and needs a C compiler, Python 3, user
+namespaces, and Landlock ABI 3 or newer; the [policy guide](policy/README.md)
+explains the sandbox. Markdown lint, workflow audits, and link checks run only
+in CI.
 
 `orangec` reads a file path, or `-` for standard input:
 

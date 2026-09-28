@@ -1129,15 +1129,17 @@ everyone.
 
 Today Orange has no proof syntax, no Proof IR, no checker, and no admitted
 solver. The word `proof` is reserved and does nothing. The current compiler's
-semantic analyzer and evaluator are engineering dependencies, not a logical
-trusted base, and their test results are implementation evidence, not proofs.
+semantic analyzer and evaluator are engineering trust dependencies. No logical
+checker exists, so they are not outside any trusted base by virtue of being
+checked, and their test results are implementation evidence, not proofs.
 
 That emptiness is a feature of the order of work, not an oversight. Proof
 components are gated on decisions that are still open, and the proof-neutral
 frontend has been built first because it does not depend on them. When proofs
-do arrive, the intended shape is already fixed in outline: search wherever it
-helps, check in one small place, and never let a fast answer stand in for a
-checked one.
+do arrive, one principle is already directed: search wherever it helps, and
+accept a solver's answer only through a checked certificate or an explicitly
+disclosed external-trust claim. Which checker and which solver policy carry
+that authority remain open under D-006, D-007, and D-009.
 
 ## Chapter 6: Secrets Are a Semantic Concern
 
@@ -1237,8 +1239,9 @@ trace, so two runs that differ only in `b` produce different traces. The
 property fails, and a type system that knows `b` is secret can reject the
 branch where it is written.
 
-The familiar alternative computes a mask. Negating the bit modulo the word size
-gives either all ones or all zeros, and the result is `(x AND mask) OR (y AND
+The familiar alternative computes a mask. Negating the bit in w-bit
+two's-complement arithmetic, that is modulo 2^w, gives either all ones or all
+zeros, and the result is `(x AND mask) OR (y AND
 NOT mask)`. Every run performs the same operations on the same addresses, the
 traces agree, and the property holds at the source. This is code cryptographers
 already write by hand. Orange's contribution would be to check it, and to
@@ -1274,8 +1277,8 @@ a leak.
 ### Testing finds; it does not prove
 
 Statistical timing tools such as `dudect` run code on real hardware and look
-for input-dependent timing. They regularly find leaks that no formal model
-anticipated, which makes them valuable. But the absence of a detected signal is
+for input-dependent timing. They can find leaks that the formal model in use
+does not capture, which makes them valuable. But the absence of a detected signal is
 not evidence of absence. A clean timing run is recorded as a test result about
 a named corpus, method, and machine. It does not become a noninterference proof
 because it came back clean, and it does not cover a different target.
@@ -1397,9 +1400,11 @@ language. But each piece was built as the permanent version of itself:
 
 The typed-literal slice showed what permanence means when a language grows.
 S3a did not replace the S2 parser. It extended the same grammar with one new
-tail for `spec` declarations, kept every legacy empty `spec` and `impl`
-declaration valid with its old meaning, and kept every earlier diagnostic
-code. The S2 conformance runner still runs beside the S3a runner. Where S3a
+tail for `spec` declarations, kept legacy empty `spec` and `impl`
+declarations syntactically valid, and kept every earlier diagnostic code. Where
+it did change behavior, it said so: same-kind duplicate names, which S2's
+`check` accepted, now fail semantic checking with `ORC0201`, and OEP-0003
+records that as a migration. The S2 conformance runner still runs beside the S3a runner. Where S3a
 deliberately declined to extend the language, it said so in the grammar: a
 typed `impl` is a syntax error, not a silently ignored annotation, because
 implementation semantics have not been decided.
@@ -1467,9 +1472,12 @@ documents disagree, they win.
 
 The edition name matters. `2026` is not a version number that will be bumped
 with every release. It names a language edition, in the same sense that Rust
-editions do: a stable interpretation of source text that a later edition can
-change only through an explicit migration. Every Orange source begins by
-saying which edition it is written in, and today exactly one exists.
+editions do: a named interpretation of source text. During pre-alpha it
+carries no stability promise and has already been extended in place, but every
+change must say whether it extends 2026 or introduces a new edition and must
+give an explicit source migration boundary, so meaning never changes silently.
+Every Orange source begins by saying which edition it is written in, and today
+exactly one exists.
 
 ### A complete program
 
@@ -1637,8 +1645,10 @@ orangec [OPTIONS] <check|eval|lex> <FILE>...
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints `orangec 0.0.1 (Orange edition 2026)`.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
-usage error. Output streams are bounded like everything else, and a failing
-`eval` never prints a partial list of values.
+usage error. Output streams are bounded like everything else. A compiler-phase
+failure makes `eval` print no values at all; if writing the output itself
+fails, `eval` exits with status 1, although a prefix the stream already
+accepted may remain, and that prefix is never reported as a result.
 
 ### Conformance
 
@@ -1669,11 +1679,13 @@ packaging, and releases.
 That is not a finished language in miniature, and it does not pretend to be.
 It is the smallest slice whose every behavior is specified, bounded, tested,
 and deterministic, built as the permanent foundation that later slices extend.
-The next planned slice, S3b, is meant to add pure expressions: arithmetic on
-integers and words, and the operators a cryptographer reaches for first. It
-waits on the semantic strata decision described in
-[Chapter 3](#chapter-3-one-language-several-semantic-worlds). When it lands,
-the programs in this chapter will still mean exactly what they mean today.
+The next planned slice, S3b, would expand the Typed Reference Core with pure
+expressions or calls; its exact surface has not been chosen. The roadmap
+places it after the semantic strata decision described in
+[Chapter 3](#chapter-3-one-language-several-semantic-worlds) and requires its
+own OEP. Orange 2026 is pre-alpha and makes no compatibility promise, but any
+change to what the programs in this chapter mean would have to arrive with an
+explicit, documented migration.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -1833,7 +1845,8 @@ already have a required answer, and a place in the evidence to record it.
 
 ## Chapter 10: The Foreign Boundary
 
-Almost no cryptographic code is called by more cryptographic code. A key
+Most cryptographic code is ultimately called by code that is not
+cryptographic. A key
 exchange is called by a TLS stack; a signature routine is called by a package
 manager; a hash is called by a database, a file system, or a browser. The
 caller is ordinary software, written in C, Rust, Go, Python, or something else,
@@ -1939,7 +1952,7 @@ The claim model gives these properties a home. An `abi` claim asks whether the
 object and its wrapper satisfy a named calling, layout, alias, and error
 contract. An `erases` claim asks whether named secret storage is overwritten
 under a stated machine model. Both are separate from functional correctness and
-from leakage, and each can be satisfied, unsatisfied, unresolved, or
+from leakage, and each can be satisfied, not satisfied, unresolved, or
 unsupported on its own.
 
 ### Testing the boundary as an adversary would
@@ -1999,8 +2012,9 @@ gives current examples. FIPS 203 and FIPS 204, the post-quantum key
 encapsulation and signature standards, published planning notes and errata
 after their final publication. The set of algorithms and schemas supported by
 NIST's Automated Cryptographic Validation Protocol evolves. Protocol profiles
-that build on a primitive may remain Internet-Drafts for a long time and must
-not be represented as finalized standards.
+that build on a primitive may remain Internet-Drafts, as
+[section 4.10](RESEARCH.md#410-primitive-correctness-is-not-protocol-interoperability)
+notes, and must not be represented as finalized standards.
 
 None of that reflects badly on the standards process. It is what careful
 standardization looks like. But it means that "implements ML-KEM" is an
@@ -2011,9 +2025,10 @@ those answers the claim cannot be audited, only believed.
 
 ### What provenance records
 
-For every standard that becomes an input, Orange's
+For every standard that becomes a decision input, Orange's provisional
 [reproducibility contract](REPRODUCIBILITY.md#6-external-source-and-standards-capture)
-requires capturing:
+requires capturing the following, and the roadmap requires the same exactness
+before any cryptographic claim:
 
 - the issuing organization, exact document identifier, edition, and date;
 - the primary publisher or an authorized mirror;
@@ -2080,8 +2095,9 @@ That is the standard Orange sets for its specification stratum: a reviewer
 should be able to hold the clause in one hand and the definition in the other
 and check them symbol by symbol. Orange cannot yet write these four lines at
 all. It has no 32-bit words and no operators. Making definitions like these
-writable, in a form that reads like the standard, is what the next language
-slice is for.
+writable, in a form that reads like the standard, is a goal for later language
+slices; which word widths and operators the next slice will add has not yet
+been decided.
 
 ### The intent boundary
 
@@ -2240,7 +2256,8 @@ The corpus plan names failure behavior explicitly, and for good reason. How a
 routine fails is often where its security lives. An AEAD decryption must
 reject a forged tag without releasing plaintext and without revealing, through
 timing, how much of the tag matched. ML-KEM goes further: under FIPS 203,
-decapsulation of a malformed ciphertext does not return an error at all. It
+decapsulation of a correctly sized but invalid ciphertext does not return an
+error at all. It
 uses implicit rejection, returning a pseudorandom shared secret derived from a
 secret value and the ciphertext, so that an attacker probing with invalid
 ciphertexts learns nothing from the shape of the response.
@@ -2307,10 +2324,11 @@ No corpus package exists. Orange cannot yet express a hash function: it has no
 operators, no words wider than eight bits, no loops, and no state. The corpus
 remains a set of research inputs rather than promises.
 
-The next language slice is chosen with the corpus in mind. The first operators
-Orange needs are the ones SHA-2 and ChaCha20 need: addition modulo a word size,
-rotation, shifts, exclusive or, and the bitwise operations. When those exist in
-the specification stratum, the first real cryptographic definition can be
+The next language slice has not been chosen: S3b waits on D-004 and its own
+bounded OEP, and the corpus is one natural guide for it. The first real
+definitions need what SHA-2 and ChaCha20 need: addition modulo a word size,
+rotation, shifts, exclusive or, and the bitwise operations. When a slice
+provides those in the specification stratum, the first real cryptographic definition can be
 written, evaluated against official vectors, and kept as a permanent fixture.
 That will be the corpus's first line, and the first time the acceptance test
 can run at all.
@@ -2369,7 +2387,7 @@ the external proof as if Orange's kernel had checked it.
 ### Validation is a different kind of evidence
 
 Cryptographic validation programs occupy a distinct place. NIST's Cryptographic
-Algorithm Validation Program tests algorithm implementations against the
+Algorithm Validation Program tests algorithm implementations through the
 Automated Cryptographic Validation Protocol, a black-box exchange of test
 vectors and responses. The Cryptographic Module Validation Program, under FIPS
 140-3, assesses complete cryptographic modules: a concrete boundary, build,
@@ -2789,7 +2807,7 @@ reputation is not what users rely on. The evidence is.
 ## Chapter 16: Solo Work Through Incremental Gates
 
 Orange is built by one person. That sentence belongs near the end of the book
-because every earlier chapter has depended on it without saying so. Each time
+because every earlier chapter has depended on it, often explicitly. Each time
 this book has said that a review is unavailable, that a rebuild is a same-owner
 repetition, or that a certificate-bearing claim is unsupported, it was
 describing the consequences of one fact about the project's circumstances.
@@ -2815,8 +2833,9 @@ developed as a solo project until the owner explicitly records otherwise, and
 that no milestone may depend on contributors, independent reviewers, auditors,
 laboratories, partner organizations, or separate release and incident-response
 roles. The aggregate Gate 0 implementation embargo was superseded at its honest
-state: zero of its seven institutional exit criteria had been met, and none
-could be met by one person.
+state: zero of its seven institutional exit criteria had been met, and the
+gate as a whole could not close without staff, reviewers, and organizations
+that did not exist.
 
 The easy mistake at that moment would have been to keep the old gate and wait,
 or to drop the old gate and quietly keep its claims. Orange did neither.
@@ -2946,7 +2965,8 @@ that, Orange builds decision laboratories.
 A decision laboratory is an instrument for choosing, not a choice. It fixes
 candidate answers, the cases that could distinguish them, the resource bounds
 and replay rules for running those cases, and the result format, all before
-any candidate is run. The D-003 product-form laboratory has done its job: the
+any candidate is run. The D-003 product-form decision packet, a simpler
+instrument of the same kind, has done its job: the
 owner accepted a standalone Orange product form, and that decision is now
 recorded at an exact revision. The D-004 laboratory is further back. Its
 reviewed protocol describes five candidate graphs and a replay plan of 25
@@ -3089,7 +3109,8 @@ that pinned the old version can still be reproduced and audited. The
 difference matters most in a crisis, when the temptation to make a bad release
 quietly disappear is strongest.
 
-Two open decisions currently block any distribution. The outbound license under
+Two open decisions currently block crate, package-registry, and binary
+distribution. The outbound license under
 [D-018](DECISIONS.md#d-018--licenses) is unselected, and the working name under
 [D-017](DECISIONS.md#d-017--project-and-package-name) has no trademark
 clearance. Until both are recorded for an exact release boundary, crate
@@ -3241,7 +3262,7 @@ nested block comments are trivia.
 
 | Type | Values | Displayed as |
 | --- | --- | --- |
-| `Int` | Mathematical integers, up to 16,384 significant bits of magnitude | Decimal, with `-` when negative |
+| `Int` | All mathematical integers (unbounded); a literal's magnitude may use at most 16,384 significant bits | Decimal, with `-` when negative |
 | `Word[8]` | Unsigned integers from 0 through 255, with no minus sign | `0x` and two lowercase hex digits |
 
 No other type, width, operator, expression, parameter, or call is accepted.
@@ -3332,7 +3353,9 @@ whose design, implementation, or evidence is incomplete.
 with stated assumptions and exclusions, supported by typed evidence and judged
 by a policy. A claim is not a label attached to a project or a function name.
 
-**Outcomes.** `satisfied`: a permitted basis is valid for the recorded subject.
+**Outcomes.** `satisfied`: every mandatory basis, context, identity binding, and
+trust-closure element the claim policy requires is present, valid, and bound to
+the same subject, and no valid decisive negative result exists.
 `not_satisfied`: the proposition was checked and found false or violated.
 `unresolved`: the system cannot presently decide it. `unsupported`: the
 toolchain, model, target, or operating mode does not offer the claim.
