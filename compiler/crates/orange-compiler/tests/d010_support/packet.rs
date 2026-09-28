@@ -64,7 +64,7 @@ const SEMANTIC_BINDING_NAMES: [&str; 10] = [
 ];
 
 const PACKET_CANONICAL_SHA256: &str =
-    "441ff76dc1d4e90ce01f0432ccef51f6ec9bd85a7fba55aaa2cff084a53d9ee0";
+    "16cc6adaba9af6b4b6d2a5bd1af4a2e3fe04676074e409edf3b38a42cbd235b0";
 pub(crate) const CASE_INPUT_INDEX_CANONICAL_SHA256: &str =
     "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209";
 

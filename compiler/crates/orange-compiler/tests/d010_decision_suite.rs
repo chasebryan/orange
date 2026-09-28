@@ -37,8 +37,8 @@ const COMPILER_STRATEGY_SUITE: &[u8] =
     include_bytes!("../../../../docs/COMPILER_STRATEGY_DECISION_SUITE.md");
 
 const PACKET_CANONICAL_SHA256: &str =
-    "441ff76dc1d4e90ce01f0432ccef51f6ec9bd85a7fba55aaa2cff084a53d9ee0";
-const PACKET_RAW_SHA256: &str = "4bf7386abd32f13e5ebbab5db7d606402c34ce359e0898a1de5bcdfaf993b9df";
+    "16cc6adaba9af6b4b6d2a5bd1af4a2e3fe04676074e409edf3b38a42cbd235b0";
+const PACKET_RAW_SHA256: &str = "912c51c0ed9969c931d35294e6164fcbf5d7ca3a87f7d27fc1994273e04ac3ac";
 const INDEX_RAW_SHA256: &str = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670";
 const SUITE_RAW_SHA256: &str = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73";
 
