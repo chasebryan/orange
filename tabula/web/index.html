@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Tabula</title>
+<link rel="icon" href="/assets/tabula.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/tabula.css">
+<script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="titlebar">
+    <div class="brand">
+      <img class="brand-mark" src="/assets/tabula.svg" alt="">
+      <span class="brand-name">Tabula</span>
+      <span class="brand-divider" aria-hidden="true"></span>
+      <span class="workspace-name" id="workspace-name" title="Workspace folder"></span>
+    </div>
+    <div class="toolbar" id="toolbar" role="toolbar" aria-label="Actions"></div>
+    <div class="titlebar-end" id="titlebar-end"></div>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="Views"></nav>
+
+  <aside class="sidebar" id="sidebar" aria-label="Side panel"></aside>
+  <div class="splitter splitter-v" id="split-sidebar" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+
+  <main class="main" id="main">
+    <div class="tabs" id="tabs" role="tablist" aria-label="Open files"></div>
+    <div class="views" id="views"></div>
+    <div class="splitter splitter-h" id="split-panel" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
+    <section class="panel" id="panel" aria-label="Results"></section>
+  </main>
+
+  <div class="splitter splitter-v" id="split-notebook" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+  <aside class="notebook" id="notebook" aria-label="Notebook"></aside>
+
+  <footer class="statusbar" id="statusbar"></footer>
+</div>
+<div class="overlay" id="overlay"></div>
+<div class="tooltip" id="tooltip" role="tooltip"></div>
+<noscript><p class="noscript">Tabula needs JavaScript to run.</p></noscript>
+</body>
+</html>
