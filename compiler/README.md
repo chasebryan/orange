@@ -95,7 +95,7 @@ This synthetic contract accepts no populated records, launches no process or
 adapter, and persists nothing. The Python run harness in `tools/d004_run.py`
 supplies the adapter, closed payload schemas, executable and dependency
 manifests, enforcing isolation and result parsers. Epoch
-`d004-e-d1458087bc013d1e734f` ran all 75 executions and closed 20 of 25
+`d004-e-4aaf8a83a01693d543c4` ran all 75 executions and closed 20 of 25
 required candidate-case units with 75 of 75 result records,
 contributor-produced and unreviewed; see the D-004 laboratory README. Selection
 and conclusion remain null. D-004 remains proposed, S3b remains blocked, both

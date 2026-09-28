@@ -2,7 +2,7 @@
 
 Status: `run_recorded_review_pending`. The v0.7 tranche builds every epoch
 prerequisite the reviewed protocol listed as absent, and epoch
-`d004-e-d1458087bc013d1e734f` has run all 75 scheduled executions. Its results
+`d004-e-4aaf8a83a01693d543c4` has run all 75 scheduled executions. Its results
 are contributor-produced and unreviewed. No conclusion or semantic-strata
 selection exists. D004-PRE-01 remains `solo-reviewed`, and the v0.6
 implementation closure is `provisional_pending_exact_merged_revision`.
@@ -203,14 +203,14 @@ The raw-file/canonical SHA-256 pairs are:
 
 ## v0.7 epoch run
 
-Epoch `d004-e-d1458087bc013d1e734f` was prepared and run on 2026-09-28 from
-source revision `b65f0b8056f3222b9e9222c08446b9ae01c4f6fa`. Its packet binds
+Epoch `d004-e-4aaf8a83a01693d543c4` was prepared and run on 2026-09-28 from
+source revision `2a1fa50e9e245548771a1b4d51d5a1662b1f0fe8`. Its packet binds
 the bundle, the overlay, run harness raw SHA-256
-`05fbf410b05cb8fbf7ab36b80977d08b16440403d7237c7451464cb9b109c673`, the host
+`8f385cd6b3c077c80a6aeacae7c8847e0dca0a045d91b269c02074db50aa3597`, the host
 tool, dependency and environment manifests, all five candidate models and all
 five input manifests. All 75 executions ran once each in the reviewed physical
 order under the enforcing launcher. Every execution exited normally within the
-ceilings: wall time 85 to 392 ms, peak memory 11.2 to 11.9 MB for the whole
+ceilings: wall time 89 to 142 ms, peak memory 11.2 to 11.9 MB for the whole
 process tree, no temporary storage, and no stderr output.
 
 | Candidate | Cases passed | Closed units |
@@ -250,21 +250,22 @@ The runner's archive is about 13.5 MB. Its committed form under
 captures, each execution's state, measurements and diagnostics, and the 25
 distinct adapter outputs. [`tools/d004_archive.py`](../../../tools/d004_archive.py)
 rebuilds the full archive byte for byte and checks it against archive-manifest
-SHA-256 `4e3bbc8d8df5eb9c7ab1dc043aa8197c03332b8bd7a1926655920a34c0ebe20e`,
+SHA-256 `8538b9008dcb455410c2a23044f8d2f6046ef81b0dc5f56847556f323720eb85`,
 then re-runs the harness's `verify` over it. The raw-file/canonical SHA-256
 pairs are:
 
 - archive index:
-  `47c925c0141320712be11af489e7fb100074d0466777c69d34b168f65da23361` /
-  `7cdcbf99e842e0fb58fd48f342a6d7760dd484802bf179cbf988385df10e5bc5`; and
+  `e142ad7e177c6b4a6d507176c60151175a82464c912ac3d222de3c0ffe9f0af0` /
+  `716d1132e73edfb06f06e6f134ade9220a83d98d1c6ee780803d54e8fe5427f6`; and
 - adapter outputs:
-  `63fe912005061cb02855247c9b51377cc3b39e7a39946162d3d737b4da7c3bab` /
-  `106fddbb5dbe0b29a38650b62a35ac7ff86c5da6a90132b619ff0d518e9a76d7`.
+  `e14031975071c0b6777a3dcd4bc40621b70f9ff16ea40f8d695c043e41c8774b` /
+  `aec7e3bc5ed42dfb66e9cb014215ab750f0d95dedaca88b0c7ce1d5c5c162995`.
 
-Two earlier epochs ran the same schedule and produced the same verdicts,
-closures, mismatches and unsatisfied relationships in every slot. Both were
-superseded before any review by code-scanning fixes, because any change to
-the adapter or run-harness bytes starts a new epoch:
+Three earlier epochs ran the same schedule and produced the same verdicts,
+closures, mismatches and unsatisfied relationships in every slot. All three
+were superseded before any review, the first two by code-scanning fixes and
+the third by a review finding, because any change to the adapter or
+run-harness bytes starts a new epoch:
 
 - `d004-e-eefa7ffe75b0a9765894` ran from revision
   `571c5bd1ffad65f304d8171bfe4f68d382598575`. The fix after it stopped the
@@ -276,8 +277,14 @@ the adapter or run-harness bytes starts a new epoch:
   run harness copying the trusted-components list through a string subscript
   that code scanning reads as a secret. Its archive-manifest SHA-256 was
   `14eea69d349f62f1d9495e5e83dbcb0f59a3a63a8596f6eb5f338b7b301718ed`.
+- `d004-e-d1458087bc013d1e734f` ran from revision
+  `b65f0b8056f3222b9e9222c08446b9ae01c4f6fa`. The fix after it made execute
+  re-capture the tool, dependency and environment manifests, including the
+  isolation probe, and refuse to run unless they equal the ones prepare
+  recorded. Its archive-manifest SHA-256 was
+  `4e3bbc8d8df5eb9c7ab1dc043aa8197c03332b8bd7a1926655920a34c0ebe20e`.
 
-Neither superseded archive is committed.
+No superseded archive is committed.
 
 Any later change to the adapter, the run harness, the bundle, the overlay or
 their bound inputs starts a new epoch; this one stays reproducible only from
