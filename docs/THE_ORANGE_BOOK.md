@@ -759,7 +759,11 @@ make conflicting demands, and that hiding those conflicts inside effect
 annotations could make the semantics less honest rather than more. That is a
 hypothesis to test against five fixed cases: SHA-like word code, mutable-buffer
 refinement, a secret-dependent rejection, one vector intrinsic, and one game
-with a reduction. None of the 25 candidate-case executions has been run.
+with a reduction. The first run of all 25 candidate-case units, on 2026-09-28,
+passed every case for ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR and failed every
+case for ST-HOST, whose delegated hosts depend on the open D-006 and D-011
+decisions. The cases could not tell the four passing candidates apart, so the
+run selects nothing. Its results are contributor-produced and unreviewed.
 
 ### What exists in the language now
 
@@ -3247,8 +3251,12 @@ instrument of the same kind, has done its job: the
 owner accepted a standalone Orange product form, and that decision is now
 recorded at an exact revision. The D-004 laboratory is further back. Its
 reviewed protocol describes five candidate graphs and a replay plan of 25
-candidate-case units, each run three times, for 75 planned executions. None
-has been executed, and D-004 remains proposed.
+candidate-case units, each run three times, for 75 executions. Epoch
+`d004-e-4aaf8a83a01693d543c4` ran all 75 on 2026-09-28 with byte-identical
+repetitions. Four candidates passed every case and ST-HOST failed every case,
+so the laboratory narrowed the field without choosing. The results are
+contributor-produced and unreviewed, the selection remains null, and D-004
+remains proposed.
 
 Laboratories let research run ahead of commitments without becoming
 commitments. They also make the eventual decision auditable. When D-004 is
@@ -3639,7 +3647,7 @@ its gate; `investigate` means the alternatives need a reproducible comparison.
 | D-001 | Mission | Directed |
 | D-002 | No disposable prototype | Directed |
 | D-003 | Product form | Accepted: standalone Orange (PF-01) |
-| D-004 | Semantic strata | Proposed; decision laboratory prepared, not run |
+| D-004 | Semantic strata | Proposed; first laboratory run recorded, contributor-produced and unreviewed; nothing selected |
 | D-005 | Public assurance model | Proposed |
 | D-006 | Proof foundation | Investigate |
 | D-007 | Orange-owned proof format and checker | Proposed; depends on D-006 |
@@ -3785,9 +3793,9 @@ controls how far its prose may go.
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.5 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendix A revised in v0.5 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A and B revised in v0.5 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -3850,7 +3858,8 @@ provenance boundaries apply.
 
 Manuscript version 0.5 revised the preface, Chapters 1, 3, 4, 8, and 12, and
 Appendix A for the S3c binding and conversion slice, and added the Chapter 8
-section "Naming steps and changing types". It was drafted with Claude Code
+section "Naming steps and changing types". It also records the first D-004
+laboratory run in Chapters 3 and 16 and Appendix B. It was drafted with Claude Code
 under Chase Bryan's direction on 2026-09-28, and every Orange example it adds
 was run against the compiler at the revision that introduced it. That check is
 not independent review, and the same authorship, review, evidence, and
