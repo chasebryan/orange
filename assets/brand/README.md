@@ -2,9 +2,9 @@
 
 Status: official project emblem, wordmark, and lockup assets initially
 designated by the Bootstrap Steward on 2026-07-11 and expanded through
-2026-07-25
+2026-09-28
 
-These ten images were imported byte-for-byte from the steward-supplied
+The original ten images were imported byte-for-byte from the steward-supplied
 `Orange-Assets` collection. Eight were admitted on 2026-07-11; the marker banner
 was added on 2026-07-14; and the cryptography banner was added on 2026-07-25 as
 the repository README hero without replacing the existing horizontal lockups.
@@ -42,6 +42,33 @@ The JPEG files are compact opaque alternatives. `orange-banner2.PNG`,
 variants under clearer repository names. In particular, `orangePNG.PNG` has
 the same decoded pixels as `orange.png`, but its distinct original encoding
 and digest are retained.
+
+## Cipher artwork added on 2026-09-28
+
+At Chase Bryan's request, two matching assets were generated with OpenAI image
+generation and admitted to the working project identity:
+
+| Asset | Dimensions | Intended use |
+| --- | --- | --- |
+| [Cipher README banner](orange-cipher-readme-banner.png) | 2172 x 724 | Emblem, wordmark, and tagline on ivory |
+| [Orange Book cover](orange-book-cipher-cover.png) | 1024 x 1536 | Flat front cover, titled The Orange Book, by Chase Bryan |
+
+The banner is a byte-for-byte import of
+`exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png`. Its embedded C2PA container is
+retained, but its cryptographic validity has not been independently verified.
+
+The cover uses the banner as a visual reference. Its original generation was
+`exec-20007692-ab83-4401-8529-3ba127105b2c.png`, SHA-256
+`c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771`.
+The committed `orange-book-cipher-cover.png` is a losslessly recompressed PNG
+with identical dimensions and RGB pixels. This derivative omits metadata,
+including the original C2PA container, and makes no signed-provenance claim.
+It fits the existing 2 MiB per-image limit. The manifest records the prepared
+derivative's filename and digest; the policy also records the original source
+and transformation.
+
+Both images are additional assets. The existing images, README hero, and book
+manuscript image references retain their current bytes and paths.
 
 ## Integrity and rights boundary
 

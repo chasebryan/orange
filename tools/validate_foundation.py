@@ -207,7 +207,7 @@ _JM = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
 GATE0_MAXIMUM_VALIDATOR_BYTES = 384 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
-GATE0_MAXIMUM_REPOSITORY_BYTES = 12 * 1024 * 1024
+GATE0_MAXIMUM_REPOSITORY_BYTES = 16 * 1024 * 1024
 GATE0_GIT_EXECUTABLE = "/usr/bin/git"
 GATE0_MAXIMUM_REPOSITORY_FILES = 512
 GATE0_MAXIMUM_REPOSITORY_PATH_BYTES = 1024
@@ -375,6 +375,8 @@ assets/brand/orange-handdrawn-marker-banner.png
 assets/brand/orange.jpg
 assets/brand/orange.png
 assets/brand/orangePNG.PNG
+assets/brand/orange-cipher-readme-banner.png
+assets/brand/orange-book-cipher-cover.png
 conformance/foundation/manifest.json
 conformance/foundation/README.md
 docs/DECISIONS.md
@@ -494,7 +496,19 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
         "sha256": "41b1806fac78c66542b3b89b14d3bcefa85458321ab8d81719e3aa23730e620b",
         "role": "README conceptual-architecture snapshot for the S3a baseline at a82a5ce",
         "provenance": "Byte-for-byte import from the steward-supplied HOI_RDNWUAAcD7_.jpeg on 2026-07-26",
-    }
+    },
+    {
+        "path": "assets/brand/orange-cipher-readme-banner.png",
+        "sha256": "d4ed4c5bbde5d5bfe020562bd49f11f4c6be5698d36ffbcb0d9e8db9b494543d",
+        "role": "Official working Orange cipher README emblem and wordmark on ivory",
+        "provenance": "Owner-requested OpenAI image generation on 2026-09-28; byte-for-byte import of exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png; embedded C2PA unverified",
+    },
+    {
+        "path": "assets/brand/orange-book-cipher-cover.png",
+        "sha256": "99682f1f646868105b28f3091e3391d6532404cb0bfadaec51e109262ff7f66d",
+        "role": "Official working Orange Book cipher front cover, lossless PNG derivative",
+        "provenance": "Owner-requested OpenAI image generation on 2026-09-28; lossless PNG recompression with identical RGB pixels from exec-20007692-ab83-4401-8529-3ba127105b2c.png (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); metadata omitted",
+    },
 ]
 GATE0_BRAND_ASSET_METADATA = {
     "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
@@ -507,6 +521,8 @@ GATE0_BRAND_ASSET_METADATA = {
     "orange.png": ("image/png", 1254, 1254, False, True),
     "orange-handdrawn-marker-banner.png": ("image/png", 2048, 682, False, False),
     "orange-cryptography-handdrawn-banner.png": ("image/png", 2172, 724, False, False),
+    "orange-cipher-readme-banner.png": ("image/png", 2172, 724, False, True),
+    "orange-book-cipher-cover.png": ("image/png", 1024, 1536, False, False),
 }
 GATE0_BRAND_SOURCE_FILENAMES = {
     "orange-banner2.PNG": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
@@ -519,6 +535,8 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange.png": "orange.png",
     "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
     "orange-cryptography-handdrawn-banner.png": "exec-b489e83f-e13c-467d-85b5-c6f62fe265b7.png",
+    "orange-cipher-readme-banner.png": "exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png",
+    "orange-book-cipher-cover.png": "orange-book-cipher-cover.png",
 }
 GATE0_EXECUTABLE_PATHS = set(
     """scripts/ci/check-external-links scripts/ci/check-repository
@@ -633,7 +651,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "9d12d12aeaa6561f6758e1e63df4bad308b6b5baebb742f100ff2e74e9961a97"
+_PHD = "78253ae01d46753cbacfa285d431f05b6d076d661253d308207831e5c76b5240"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -939,7 +957,7 @@ _PM = {
         "ordinary text files at\n256 KiB (`256 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
         "validator itself at 384 KiB\n(`384 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
         "binary files at 2 MiB (`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_BINARY_FILE_BYTES,
-        "repository at 12 MiB (`12 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
+        "repository at 16 MiB (`16 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
         "at most 512 files": GATE0_MAXIMUM_REPOSITORY_FILES,
         "at most 1,024 bytes per raw path": GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
         "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata": GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES,

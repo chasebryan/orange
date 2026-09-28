@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.124",
+  "policy_version": "0.2.125",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -97,6 +97,18 @@
       "sha256": "41b1806fac78c66542b3b89b14d3bcefa85458321ab8d81719e3aa23730e620b",
       "role": "README conceptual-architecture snapshot for the S3a baseline at a82a5ce",
       "provenance": "Byte-for-byte import from the steward-supplied HOI_RDNWUAAcD7_.jpeg on 2026-07-26"
+    },
+    {
+      "path": "assets/brand/orange-cipher-readme-banner.png",
+      "sha256": "d4ed4c5bbde5d5bfe020562bd49f11f4c6be5698d36ffbcb0d9e8db9b494543d",
+      "role": "Official working Orange cipher README emblem and wordmark on ivory",
+      "provenance": "Owner-requested OpenAI image generation on 2026-09-28; byte-for-byte import of exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png; embedded C2PA unverified"
+    },
+    {
+      "path": "assets/brand/orange-book-cipher-cover.png",
+      "sha256": "99682f1f646868105b28f3091e3391d6532404cb0bfadaec51e109262ff7f66d",
+      "role": "Official working Orange Book cipher front cover, lossless PNG derivative",
+      "provenance": "Owner-requested OpenAI image generation on 2026-09-28; lossless PNG recompression with identical RGB pixels from exec-20007692-ab83-4401-8529-3ba127105b2c.png (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); metadata omitted"
     }
   ],
   "required_paths": [
@@ -140,6 +152,8 @@
     "assets/brand/orange.jpg",
     "assets/brand/orange.png",
     "assets/brand/orangePNG.PNG",
+    "assets/brand/orange-cipher-readme-banner.png",
+    "assets/brand/orange-book-cipher-cover.png",
     "compiler/.gitignore",
     "compiler/Cargo.lock",
     "compiler/Cargo.toml",
@@ -346,8 +360,8 @@
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "546dc8bf2c68eacf452641fb19ef591d41228dcec43d4c028a5758ab9d9a2f82",
-    "assets/brand/manifest.json": "776173a6e2cab2f5840a5f5b882f131ee34ce1ed10a50658717361267e5d93e4",
+    "assets/brand/README.md": "2e4b22f3ea3df4f629107de99f7ab35e47be58226019fae190d7119f678a0214",
+    "assets/brand/manifest.json": "17b38c22f1a58455f5e240226406301084bb47d1abeb238f6d4f743ed7fa28e6",
     "compiler/.gitignore": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368",
     "compiler/crates/orange-compiler/tests/d004_decision_suite.rs": "b2edbdd5b40a93d754d2def1bd7dff494a478459b055ff9f16e8c0c416011c47",
     "compiler/crates/orange-compiler/tests/d004_support/candidate_mappings.rs": "bb6c76ca7cc754f4af28ef04bbe84cc327b2e805d3750f525e3ff8afcd0401cc",
@@ -420,7 +434,7 @@
     "docs/security/OSPS_BASELINE.md": "f912af598fcbe2a76b3b774fab5358b8c63aa68794a209b33f3418e656fdda78",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "3145c13e35831876b8784a395963d26a5e9fbe63685a37b2c205c39e2f86cceb",
-    "policy/README.md": "94d9b0e12aac83a477687f0ff30bf5f74b1ce6507c5ad71a8faa7d90b05ed8ff",
+    "policy/README.md": "1f764b2f0d1f976cd80a4eaf5d96b20200b30fb37f60124a9a88760ac9fb2fd1",
     "policy/makefile-entrypoint-contract-v0.1.json": "370e0954ca798d4ba4eb04d71a223167c530ce5f41c4b5a0ddf7e3a34c0fb19f",
     "research/decisions/D-004/README.md": "f39ed15976a3c31ad51d81778afd9594881d81bd29964a09ec0766fa8013d091",
     "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json": "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481",
@@ -469,8 +483,8 @@
     "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
     "tools/tests/test_d009_draft_packet.py": "75e7e143a38394282cb927ba3f9d2fe22e657dd039ca36ab8d8dc76bfc181135",
     "tools/tests/test_d010_draft_packet.py": "45698f5c3addbcabdcd0f37adb1fbf423bce38fd45f9e5824e480071f2073702",
-    "tools/tests/test_validate_foundation.py": "dcd4b386c16f8272605ad2e5c81cd60c8a5d20225c922865da003501b88a0d82",
-    "tools/tests/test_validate_foundation_hardening.py": "a1671763b28b9942cf60003eae2dfb16191de88a39b144a88039b965f569124f"
+    "tools/tests/test_validate_foundation.py": "6cc808276145775fa9471d1a2443e4c005ebf179aa5f3f2b7237f979402c19dd",
+    "tools/tests/test_validate_foundation_hardening.py": "cafa3f530d2237921e61ae975d19fe14029f0dfa210edfa7ca06ce98679ca0b2"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",
