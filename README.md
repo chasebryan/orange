@@ -237,15 +237,6 @@ Three of the ten gates are closed. That counts finished stages, not effort or
 time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 [decision register](docs/DECISIONS.md) tracks every open design choice.
 
-### Where the design is headed
-
-![Orange Semantic Prism conceptual architecture snapshot showing proposed Spec, Impl, Game, and Machine strata connected by a claim-indexed evidence path; S3a is implemented, three of ten gates are closed, and D-004 is unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)
-
-*The semantic prism: proposed specification, implementation, game, and machine
-strata joined by a claim-indexed evidence path. This is a conceptual snapshot
-from July 2026, not a finished design; see the
-[asset record](docs/images/README.md).*
-
 ## Read more
 
 - **[The Orange Book](docs/THE_ORANGE_BOOK.md)**: the reader's guide to why
