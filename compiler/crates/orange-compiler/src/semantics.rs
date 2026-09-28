@@ -4,14 +4,14 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType,
-    CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Magnitude,
+    CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode, CoreNodeKind,
+    CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Magnitude,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
-    BinaryExpression, BinaryOperator, CallExpression, Expression, ExpressionKind, FunctionBody,
-    FunctionDeclaration, FunctionKind, Identifier, IntegerLiteral, Parameter, SyntaxTree,
-    TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
+    BinaryExpression, BinaryOperator, Binding, CallExpression, ConversionExpression, Expression,
+    ExpressionKind, FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IntegerLiteral,
+    Parameter, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
 };
 use crate::source::{SourceFile, Span};
 
@@ -82,7 +82,8 @@ impl AnalysisResult {
 /// Empty functions participate in namespace checking but do not enter Core.
 /// Typed `spec` functions are checked in source order against the signatures
 /// of every typed `spec` in the module, and the call graph among them must be
-/// acyclic.
+/// acyclic. Within a body, each `let` binding is checked in source order
+/// before the result expression.
 #[must_use]
 pub fn analyze(source: &SourceFile, ast: &SyntaxTree) -> AnalysisResult {
     if !syntax_tree_belongs_to_source(source, ast) {
@@ -118,6 +119,12 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
                     FunctionBody::Typed(body) => {
                         belongs(body.span)
                             && type_belongs(&body.result_type)
+                            && body.bindings.iter().all(|binding| {
+                                belongs(binding.span)
+                                    && belongs(binding.name.span)
+                                    && type_belongs(&binding.ty)
+                                    && expression_belongs(&binding.value, &belongs)
+                            })
                             && expression_belongs(&body.expression, &belongs)
                     }
                 }
@@ -148,6 +155,14 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && expression_belongs(&binary.right, belongs)
             }
             ExpressionKind::Parenthesized(inner) => expression_belongs(inner, belongs),
+            ExpressionKind::Conversion(conversion) => {
+                let target = &conversion.target;
+                belongs(conversion.keyword_span)
+                    && belongs(target.span)
+                    && belongs(target.name.span)
+                    && target.width_span.is_none_or(belongs)
+                    && expression_belongs(&conversion.operand, belongs)
+            }
         }
 }
 
@@ -215,6 +230,7 @@ struct PendingFunction {
     name_span: Span,
     parameters: Vec<CoreType>,
     result_type: CoreType,
+    locals: Vec<CoreLocal>,
     nodes: Vec<CoreNode>,
 }
 
@@ -257,6 +273,89 @@ struct BodyContext<'ast> {
     name: &'ast Identifier,
     parameters: &'ast [Parameter],
     parameter_types: Vec<Option<CoreType>>,
+    /// Every binding of the body, including those not yet in scope.
+    bindings: &'ast [Binding],
+    /// Types of the bindings in scope: exactly the first `binding_types.len()`.
+    binding_types: Vec<Option<CoreType>>,
+}
+
+/// A binding whose type resolved.
+struct CheckedBinding {
+    ty: CoreType,
+    /// The value's Core nodes, present only when the binding is well formed.
+    nodes: Option<Vec<CoreNode>>,
+}
+
+/// What a bare name refers to at one point of a body.
+enum NameResolution<'ast> {
+    Parameter(usize),
+    Binding(usize),
+    /// A binding of this body whose scope has not started.
+    LaterBinding(&'ast Binding),
+    Unknown,
+}
+
+impl<'ast> BodyContext<'ast> {
+    /// Resolves a bare name: parameters first, then the bindings in scope,
+    /// each list searched in source order.
+    fn resolve(&self, name: &str) -> NameResolution<'ast> {
+        if let Some(index) = self
+            .parameters
+            .iter()
+            .position(|parameter| parameter.name.text == name)
+        {
+            return NameResolution::Parameter(index);
+        }
+        let (visible, later) = self
+            .bindings
+            .split_at_checked(self.binding_types.len())
+            .unwrap_or((self.bindings, &[]));
+        if let Some(index) = visible
+            .iter()
+            .position(|binding| binding.name.text == name)
+        {
+            return NameResolution::Binding(index);
+        }
+        later
+            .iter()
+            .find(|binding| binding.name.text == name)
+            .map_or(NameResolution::Unknown, NameResolution::LaterBinding)
+    }
+
+    /// Returns the type of a name in scope without reporting.
+    fn name_type(&self, name: &str) -> Option<CoreType> {
+        match self.resolve(name) {
+            NameResolution::Parameter(index) => self.parameter_types.get(index).copied().flatten(),
+            NameResolution::Binding(index) => self.binding_types.get(index).copied().flatten(),
+            NameResolution::LaterBinding(_) | NameResolution::Unknown => None,
+        }
+    }
+}
+
+/// Returns the first name, call, or conversion of `expression`, from left to
+/// right, outside call arguments and shift amounts.
+///
+/// Every operator gives its result the type of its operands, and a shift or
+/// rotation amount is a literal, so this leaf's type is the type of the whole
+/// expression. Literals take their type from their context and are skipped.
+/// Parser-established expression height bounds this recursion.
+fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
+    match &expression.kind {
+        ExpressionKind::Literal(_) => None,
+        ExpressionKind::Name(_) | ExpressionKind::Call(_) | ExpressionKind::Conversion(_) => {
+            Some(expression)
+        }
+        ExpressionKind::Parenthesized(inner) => first_typed_leaf(inner),
+        ExpressionKind::Unary(unary) => first_typed_leaf(&unary.operand),
+        ExpressionKind::Binary(binary) => {
+            let left = first_typed_leaf(&binary.left);
+            if binary.operator.is_shift_or_rotation() {
+                left
+            } else {
+                left.or_else(|| first_typed_leaf(&binary.right))
+            }
+        }
+    }
 }
 
 struct DeclarationEntry<'ast> {
@@ -502,6 +601,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     name: &function.name,
                     parameters: &function.parameters,
                     parameter_types: Vec::new(),
+                    bindings: &body.bindings,
+                    binding_types: Vec::new(),
                 };
                 let scope = ModuleScope {
                     declarations: &declarations,
@@ -641,13 +742,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             context.parameter_types.push(ty);
         }
         let result_type = self.analyze_type(&body.result_type, "result type")?;
+        let mut locals = Vec::new();
+        if context
+            .binding_types
+            .try_reserve_exact(body.bindings.len())
+            .is_err()
+            || locals.try_reserve_exact(body.bindings.len()).is_err()
+        {
+            self.resource_limit(body.span, "binding storage allocation failed");
+            return None;
+        }
+        let mut bindings_checked = true;
+        for (index, binding) in body.bindings.iter().enumerate() {
+            let checked = self.check_binding(function, body, index, &context, scope, call_edges);
+            if self.halted {
+                return None;
+            }
+            context.binding_types.push(checked.as_ref().map(|checked| checked.ty));
+            if let Some(CheckedBinding {
+                ty,
+                nodes: Some(nodes),
+            }) = checked
+            {
+                let name = self.copy_core_name(&binding.name.text, binding.name.span)?;
+                locals.push(CoreLocal {
+                    span: binding.span,
+                    name,
+                    name_span: binding.name.span,
+                    ty,
+                    value: CoreExpression { nodes },
+                });
+            } else {
+                bindings_checked = false;
+            }
+        }
         let mut output = BodyOutput {
             nodes: Vec::new(),
             call_edges,
         };
         let checked =
             self.check_expression(&body.expression, result_type, &context, scope, &mut output);
-        if !checked || self.halted {
+        if !checked || !bindings_checked || self.halted {
             return None;
         }
         let nodes = output.nodes;
@@ -663,7 +798,71 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             name_span: function.name.span,
             parameters,
             result_type,
+            locals,
             nodes,
+        })
+    }
+
+    /// Checks the binding at `index`: its name, its type, and its value
+    /// against that type, using the parameters and the earlier bindings.
+    ///
+    /// Returns the binding's type and Core nodes, or `None` when the type
+    /// did not resolve and the value was not checked. The value's nodes are
+    /// present only when it is well typed.
+    fn check_binding(
+        &mut self,
+        function: &'ast FunctionDeclaration,
+        body: &'ast TypedBody,
+        index: usize,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        call_edges: &mut Vec<CallEdge>,
+    ) -> Option<CheckedBinding> {
+        let binding = body.bindings.get(index)?;
+        // One event for the binding-name uniqueness check.
+        if !self.event(binding.name.span) {
+            return None;
+        }
+        let parameter = function
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name.text == binding.name.text)
+            .map(|parameter| (parameter.name.span, "the parameter is here"));
+        let earlier = parameter.or_else(|| {
+            body.bindings
+                .get(..index)?
+                .iter()
+                .find(|earlier| earlier.name.text == binding.name.text)
+                .map(|earlier| (earlier.name.span, "the first binding is here"))
+        });
+        if let Some((earlier_span, earlier_label)) = earlier {
+            let span = binding.name.span;
+            if self.begin_report(span) {
+                let name = identifier_spelling_for_diagnostic(&binding.name.text);
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::DuplicateBinding,
+                        format!("duplicate binding `{name}`"),
+                        span,
+                    )
+                    .with_label("this binding repeats an earlier name")
+                    .with_secondary_span(earlier_span, earlier_label)
+                    .with_note(
+                        "each parameter and binding of a function has its own name; \
+                         Orange has no shadowing",
+                    ),
+                );
+            }
+        }
+        let ty = self.analyze_type(&binding.ty, "binding type")?;
+        let mut output = BodyOutput {
+            nodes: Vec::new(),
+            call_edges,
+        };
+        let checked = self.check_expression(&binding.value, ty, context, scope, &mut output);
+        Some(CheckedBinding {
+            ty,
+            nodes: (checked && earlier.is_none()).then_some(output.nodes),
         })
     }
 
@@ -706,7 +905,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 if !self.event(name.span) {
                     return false;
                 }
-                self.check_parameter_reference(name, expected, context, scope, output)
+                self.check_name_reference(name, expected, context, scope, output)
             }
             ExpressionKind::Call(call) => {
                 if !self.event(expression.span) {
@@ -730,6 +929,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         expected,
                         CoreNodeKind::Unary(unary.operator),
                     )
+            }
+            ExpressionKind::Conversion(conversion) => {
+                if !self.event(conversion.keyword_span) {
+                    return false;
+                }
+                self.check_conversion(expression, conversion, expected, context, scope, output)
             }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
@@ -766,7 +971,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
-    fn check_parameter_reference(
+    fn check_name_reference(
         &mut self,
         name: &'ast Identifier,
         expected: CoreType,
@@ -774,38 +979,42 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
-        let found = context
-            .parameters
-            .iter()
-            .position(|parameter| parameter.name.text == name.text);
-        let Some(index) = found else {
-            if self.begin_report(name.span) {
-                let spelling = identifier_spelling_for_diagnostic(&name.text);
-                let function = identifier_spelling_for_diagnostic(&context.name.text);
-                let mut diagnostic = Diagnostic::error(
-                    DiagnosticCode::UnknownParameter,
-                    format!("`{spelling}` is not a parameter of `{function}`"),
-                    name.span,
-                )
-                .with_label("unknown name");
-                diagnostic =
-                    if first_declaration(scope.declarations, FunctionKind::Spec, &name.text)
-                        .is_some()
-                    {
-                        diagnostic.with_note(format!(
-                        "to call the function `{spelling}`, write `{spelling}()` with its arguments"
-                    ))
-                    } else {
-                        diagnostic.with_note(
-                            "a bare name in a `spec` body refers to one of its parameters",
+        let (actual, kind) = match context.resolve(&name.text) {
+            NameResolution::Parameter(index) => (
+                context.parameter_types.get(index).copied(),
+                u32::try_from(index).map(CoreNodeKind::Parameter),
+            ),
+            NameResolution::Binding(index) => (
+                context.binding_types.get(index).copied(),
+                u32::try_from(index).map(CoreNodeKind::Local),
+            ),
+            NameResolution::LaterBinding(binding) => {
+                if self.begin_report(name.span) {
+                    let spelling = identifier_spelling_for_diagnostic(&name.text);
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::UnknownParameter,
+                            format!("`{spelling}` is used before it is bound"),
+                            name.span,
                         )
-                    };
-                self.diagnostics.push(diagnostic);
+                        .with_label("not bound yet")
+                        .with_secondary_span(binding.name.span, "the binding is here")
+                        .with_note(
+                            "a binding is in scope after its own `;`, for the bindings that \
+                             follow it and the result",
+                        ),
+                    );
+                }
+                return false;
             }
-            return false;
+            NameResolution::Unknown => {
+                self.report_unknown_name(name, context, scope);
+                return false;
+            }
         };
-        // An unresolved parameter type was reported at its declaration.
-        let Some(actual) = context.parameter_types.get(index).copied().flatten() else {
+        // An unresolved parameter or binding type was reported at its
+        // declaration.
+        let Some(Some(actual)) = actual else {
             return false;
         };
         if actual != expected {
@@ -825,14 +1034,153 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         }
-        let Ok(index) = u32::try_from(index) else {
+        let Ok(kind) = kind else {
             self.resource_limit(
                 name.span,
-                "parameter index exceeds the u32 representation limit",
+                "parameter or binding index exceeds the u32 representation limit",
             );
             return false;
         };
-        self.push_node(output, name.span, expected, CoreNodeKind::Parameter(index))
+        self.push_node(output, name.span, expected, kind)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_unknown_name(
+        &mut self,
+        name: &Identifier,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) {
+        if !self.begin_report(name.span) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(&name.text);
+        let function = identifier_spelling_for_diagnostic(&context.name.text);
+        let has_bindings = !context.bindings.is_empty();
+        let mut diagnostic = Diagnostic::error(
+            DiagnosticCode::UnknownParameter,
+            if has_bindings {
+                format!("`{spelling}` is not a parameter or binding of `{function}`")
+            } else {
+                format!("`{spelling}` is not a parameter of `{function}`")
+            },
+            name.span,
+        )
+        .with_label("unknown name");
+        diagnostic = if first_declaration(scope.declarations, FunctionKind::Spec, &name.text)
+            .is_some()
+        {
+            diagnostic.with_note(format!(
+                "to call the function `{spelling}`, write `{spelling}()` with its arguments"
+            ))
+        } else if has_bindings {
+            diagnostic.with_note(
+                "a bare name in a `spec` body refers to one of its parameters or bindings",
+            )
+        } else {
+            diagnostic.with_note("a bare name in a `spec` body refers to one of its parameters")
+        };
+        self.diagnostics.push(diagnostic);
+    }
+
+    /// Checks `operand as Target` against `expected`.
+    ///
+    /// The target type is resolved and compared with `expected` first, as a
+    /// call's result type is. The operand's own type is the type of its first
+    /// typed leaf, and the operand is then checked against that type.
+    fn check_conversion(
+        &mut self,
+        expression: &'ast Expression,
+        conversion: &'ast ConversionExpression,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let target = self.analyze_type(&conversion.target, "conversion type");
+        if self.halted {
+            return false;
+        }
+        let target_matches = match target {
+            Some(target) if target != expected => {
+                if self.begin_report(conversion.target.span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::TypeMismatch,
+                            format!(
+                                "this conversion gives `{target}`, but `{expected}` is required here"
+                            ),
+                            conversion.target.span,
+                        )
+                        .with_label(format!("expected `{expected}`"))
+                        .with_note("`as` gives exactly the type written after it"),
+                    );
+                }
+                false
+            }
+            Some(_) => true,
+            None => false,
+        };
+        let Some(leaf) = first_typed_leaf(&conversion.operand) else {
+            let span = conversion.operand.span;
+            if self.begin_report(span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::UntypedConversionOperand,
+                        "the operand of `as` has no type of its own",
+                        span,
+                    )
+                    .with_label("a literal takes its type from where it is used")
+                    .with_note(
+                        "write the literal where its type is required, or give it a type \
+                         with a `let` binding",
+                    ),
+                );
+            }
+            return false;
+        };
+        let Some(from) = self.leaf_type(leaf, context, scope) else {
+            // The leaf's own check reports why it has no type. That check
+            // stops before comparing with the type passed here.
+            self.check_expression(leaf, expected, context, scope, output);
+            return false;
+        };
+        let operand = self.check_expression(&conversion.operand, from, context, scope, output);
+        operand
+            && target_matches
+            && self.push_node(
+                output,
+                expression.span,
+                expected,
+                CoreNodeKind::Convert { from },
+            )
+    }
+
+    /// Returns the type of a name, call, or conversion without reporting.
+    fn leaf_type(
+        &self,
+        leaf: &Expression,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) -> Option<CoreType> {
+        match &leaf.kind {
+            ExpressionKind::Name(name) => context.name_type(&name.text),
+            ExpressionKind::Call(call) => {
+                let entry =
+                    first_declaration(scope.declarations, FunctionKind::Spec, &call.callee.text)?;
+                scope
+                    .signatures
+                    .get(entry.source_index)?
+                    .as_ref()?
+                    .result_type
+            }
+            ExpressionKind::Conversion(conversion) => silent_type(self.source, &conversion.target),
+            ExpressionKind::Literal(_)
+            | ExpressionKind::Unary(_)
+            | ExpressionKind::Binary(_)
+            | ExpressionKind::Parenthesized(_) => None,
+        }
     }
 
     fn check_call(
@@ -1281,12 +1629,24 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         for pending_function in pending {
             // Each function contributes one function node, one result-type
-            // node, one node per parameter type, and its expression nodes.
+            // node, one node per parameter type, and its expression nodes;
+            // each binding contributes one binding node, one type node, and
+            // its expression nodes.
             let node_count = pending_function
-                .parameters
-                .len()
-                .saturating_add(pending_function.nodes.len())
-                .saturating_add(2);
+                .locals
+                .iter()
+                .fold(
+                    pending_function
+                        .parameters
+                        .len()
+                        .saturating_add(pending_function.nodes.len())
+                        .saturating_add(2),
+                    |count, local| {
+                        count
+                            .saturating_add(local.value.nodes.len())
+                            .saturating_add(2)
+                    },
+                );
             for _ in 0..node_count {
                 if !self.record_core_node(pending_function.span) {
                     return None;
@@ -1306,6 +1666,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 name_span: pending_function.name_span,
                 parameters: pending_function.parameters,
                 result_type: pending_function.result_type,
+                locals: pending_function.locals,
                 body: CoreExpression {
                     nodes: pending_function.nodes,
                 },
@@ -3614,19 +3975,28 @@ mod tests {
         assert!(first.core.unwrap().functions.is_empty());
     }
 
-    /// Renders one function's postorder Core as `(operation, source, type)`.
+    /// Renders one function's postorder body Core as `(operation, source, type)`.
     fn core_nodes<'text>(
         fixture: &'text Fixture,
         function: &CoreFunction,
     ) -> Vec<(String, &'text str, CoreType)> {
-        function
-            .body
+        expression_nodes(fixture, &function.body)
+    }
+
+    /// Renders one postorder Core expression as `(operation, source, type)`.
+    fn expression_nodes<'text>(
+        fixture: &'text Fixture,
+        expression: &CoreExpression,
+    ) -> Vec<(String, &'text str, CoreType)> {
+        expression
             .nodes
             .iter()
             .map(|node| {
                 let operation = match &node.kind {
                     CoreNodeKind::Literal(value) => format!("literal {value}"),
                     CoreNodeKind::Parameter(index) => format!("parameter {index}"),
+                    CoreNodeKind::Local(index) => format!("local {index}"),
+                    CoreNodeKind::Convert { from } => format!("convert from {from}"),
                     CoreNodeKind::Call {
                         function,
                         arguments,

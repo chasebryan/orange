@@ -87,6 +87,8 @@ pub struct CoreFunction {
     pub(crate) parameters: Vec<CoreType>,
     /// Statically checked result type.
     pub(crate) result_type: CoreType,
+    /// `let` bindings in source order, evaluated before the body.
+    pub(crate) locals: Vec<CoreLocal>,
     /// Statically checked body.
     pub(crate) body: CoreExpression,
 }
@@ -128,10 +130,67 @@ impl CoreFunction {
         self.result_type
     }
 
+    /// Returns the `let` bindings in source order.
+    #[must_use]
+    pub fn locals(&self) -> &[CoreLocal] {
+        &self.locals
+    }
+
     /// Returns the statically checked body.
     #[must_use]
     pub const fn body(&self) -> &CoreExpression {
         &self.body
+    }
+}
+
+/// One `let` binding of a typed specification function.
+///
+/// A binding's value may use the function's parameters and the bindings
+/// before it, and every binding is evaluated exactly once, in source order,
+/// before the function's body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreLocal {
+    /// Full source extent of the binding, from `let` through `;`.
+    pub(crate) span: Span,
+    /// Exact ASCII binding name.
+    pub(crate) name: String,
+    /// Source extent of the binding name.
+    pub(crate) name_span: Span,
+    /// Declared type of the binding.
+    pub(crate) ty: CoreType,
+    /// Statically checked bound expression.
+    pub(crate) value: CoreExpression,
+}
+
+impl CoreLocal {
+    /// Returns the full source extent of the binding.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact ASCII binding name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the source extent of the binding name.
+    #[must_use]
+    pub const fn name_span(&self) -> Span {
+        self.name_span
+    }
+
+    /// Returns the declared type of the binding.
+    #[must_use]
+    pub const fn ty(&self) -> CoreType {
+        self.ty
+    }
+
+    /// Returns the statically checked bound expression.
+    #[must_use]
+    pub const fn value(&self) -> &CoreExpression {
+        &self.value
     }
 }
 
@@ -215,6 +274,8 @@ pub enum CoreNodeKind {
     Literal(CoreValue),
     /// The value of the parameter at this zero-based index.
     Parameter(u32),
+    /// The value of the function's `let` binding at this zero-based index.
+    Local(u32),
     /// A call of a function with this many argument subtrees.
     Call {
         /// The called function.
@@ -232,6 +293,13 @@ pub enum CoreNodeKind {
         operator: BinaryOperator,
         /// The amount, less than the operand's word width.
         amount: u32,
+    },
+    /// An explicit conversion of one operand subtree to this node's type:
+    /// the operand's integer value, reduced modulo 2^n when the node's type
+    /// is `Word[n]`.
+    Convert {
+        /// The operand's type.
+        from: CoreType,
     },
 }
 
@@ -419,6 +487,26 @@ impl ExactInteger {
         })
     }
 
+    /// Returns the nonnegative integer `value`, or `None` if storage cannot
+    /// be reserved.
+    pub(crate) fn from_u64(
+        value: u64,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<Self> {
+        Some(Self::new(false, Magnitude::from_u64(value, reserve_limbs)?))
+    }
+
+    /// Returns this integer modulo 2^64, as its representative from 0
+    /// through 2^64 - 1.
+    pub(crate) fn modulo_2_64(&self) -> u64 {
+        let low = self.magnitude.low_u64();
+        if self.negative {
+            low.wrapping_neg()
+        } else {
+            low
+        }
+    }
+
     /// Returns the exact negation.
     pub(crate) fn negated(self) -> Self {
         Self::new(!self.negative, self.magnitude)
@@ -549,6 +637,30 @@ impl Magnitude {
 
     pub(crate) const fn is_zero(&self) -> bool {
         self.limbs.is_empty()
+    }
+
+    fn from_u64(value: u64, reserve_limbs: fn(&mut Vec<u32>, usize) -> bool) -> Option<Self> {
+        let [b0, b1, b2, b3, b4, b5, b6, b7] = value.to_le_bytes();
+        let low = u32::from_le_bytes([b0, b1, b2, b3]);
+        let high = u32::from_le_bytes([b4, b5, b6, b7]);
+        let length = if high != 0 {
+            2
+        } else {
+            usize::from(low != 0)
+        };
+        let mut limbs = Vec::new();
+        if length != 0 && !reserve_limbs(&mut limbs, length) {
+            return None;
+        }
+        limbs.extend([low, high].into_iter().take(length));
+        Some(Self { limbs })
+    }
+
+    /// Returns the magnitude modulo 2^64.
+    fn low_u64(&self) -> u64 {
+        let low = self.limbs.first().copied().map_or(0, u64::from);
+        let high = self.limbs.get(1).copied().map_or(0, u64::from);
+        (high << u32::BITS) | low
     }
 
     fn compare(&self, other: &Self) -> Ordering {
@@ -964,6 +1076,7 @@ mod tests {
                 name_span: span,
                 parameters: Vec::new(),
                 result_type: CoreType::Int,
+                locals: Vec::new(),
                 body: CoreExpression {
                     nodes: vec![CoreNode {
                         span,
@@ -982,6 +1095,28 @@ mod tests {
                 name_span: span,
                 parameters: vec![CoreType::Word32],
                 result_type: CoreType::Word8,
+                locals: vec![CoreLocal {
+                    span,
+                    name: String::from("low"),
+                    name_span: span,
+                    ty: CoreType::Word8,
+                    value: CoreExpression {
+                        nodes: vec![
+                            CoreNode {
+                                span,
+                                ty: CoreType::Word32,
+                                kind: CoreNodeKind::Parameter(0),
+                            },
+                            CoreNode {
+                                span,
+                                ty: CoreType::Word8,
+                                kind: CoreNodeKind::Convert {
+                                    from: CoreType::Word32,
+                                },
+                            },
+                        ],
+                    },
+                }],
                 body: CoreExpression {
                     nodes: vec![CoreNode {
                         span,
@@ -1005,6 +1140,7 @@ mod tests {
         assert_eq!(module.functions()[0].name_span(), span);
         assert_eq!(module.functions()[0].result_type(), CoreType::Int);
         assert_eq!(module.functions()[0].parameters(), []);
+        assert!(module.functions()[0].locals().is_empty());
         assert_eq!(
             module.functions()[0].body().literal().map(CoreValue::ty),
             Some(CoreType::Int)
@@ -1018,6 +1154,19 @@ mod tests {
         assert_eq!(module.functions()[1].id().index(), 1);
         assert_eq!(module.functions()[1].result_type(), CoreType::Word8);
         assert_eq!(module.functions()[1].parameters(), [CoreType::Word32]);
+        let local = &module.functions()[1].locals()[0];
+        assert_eq!(local.span(), span);
+        assert_eq!(local.name(), "low");
+        assert_eq!(local.name_span(), span);
+        assert_eq!(local.ty(), CoreType::Word8);
+        assert_eq!(local.value().nodes().len(), 2);
+        assert_eq!(local.value().literal(), None);
+        assert_eq!(
+            local.value().root().unwrap().kind(),
+            &CoreNodeKind::Convert {
+                from: CoreType::Word32
+            }
+        );
         assert_eq!(
             module.functions()[1].body().literal(),
             Some(&CoreValue::Word8(8))
@@ -1040,9 +1189,23 @@ mod tests {
                 name_span: _,
                 parameters: _,
                 result_type: _,
+                locals,
                 body,
             } = function;
-            for node in body.nodes {
+            let local_values = locals.into_iter().map(|local| {
+                let CoreLocal {
+                    span: _,
+                    name: _,
+                    name_span: _,
+                    ty: _,
+                    value,
+                } = local;
+                value
+            });
+            for node in local_values
+                .chain(std::iter::once(body))
+                .flat_map(|expression| expression.nodes)
+            {
                 let CoreNode { span: _, ty, kind } = node;
                 match kind {
                     CoreNodeKind::Literal(
@@ -1053,10 +1216,12 @@ mod tests {
                         | CoreValue::Word64(_),
                     )
                     | CoreNodeKind::Parameter(_)
+                    | CoreNodeKind::Local(_)
                     | CoreNodeKind::Call { .. }
                     | CoreNodeKind::Unary(_)
                     | CoreNodeKind::Binary(_)
-                    | CoreNodeKind::Shift { .. } => {}
+                    | CoreNodeKind::Shift { .. }
+                    | CoreNodeKind::Convert { .. } => {}
                 }
                 match ty {
                     CoreType::Int
@@ -1192,5 +1357,30 @@ mod tests {
         assert_eq!(a.multiply(&b, fail), None);
         // Multiplying by zero allocates nothing.
         assert_eq!(a.multiply(&exact(0), fail), Some(exact(0)));
+        assert_eq!(ExactInteger::from_u64(1, fail), None);
+        assert_eq!(ExactInteger::from_u64(0, fail), Some(exact(0)));
+    }
+
+    #[test]
+    fn word_conversions_match_an_i128_reference() {
+        let mut corpus = exact_corpus();
+        corpus.extend([
+            i128::from(u64::MAX),
+            i128::from(u64::MAX) + 1,
+            -i128::from(u64::MAX),
+            -(i128::from(u64::MAX) + 1),
+            i128::MAX,
+            -i128::MAX,
+        ]);
+        for value in corpus {
+            let expected = u64::try_from(value.rem_euclid(1 << 64)).unwrap();
+            assert_eq!(exact(value).modulo_2_64(), expected, "{value}");
+        }
+        for value in [0, 1, u64::from(u32::MAX), 1 << 32, u64::MAX] {
+            let converted = ExactInteger::from_u64(value, reserve).unwrap();
+            assert_eq!(converted, exact(i128::from(value)));
+            assert_eq!(converted.to_string(), value.to_string());
+            assert_eq!(converted.modulo_2_64(), value);
+        }
     }
 }

@@ -38,6 +38,9 @@ pub const MAX_PARAMETERS_PER_FUNCTION: usize = 64;
 /// Maximum arguments supplied by one call.
 pub const MAX_ARGUMENTS_PER_CALL: usize = 256;
 
+/// Maximum `let` bindings in one typed body.
+pub const MAX_BINDINGS_PER_BODY: usize = 256;
+
 /// A complete minimal Orange source file.
 ///
 /// Parsed nodes are read-only outside this crate so later stages can rely on
@@ -266,7 +269,9 @@ pub struct TypedBody {
     pub(crate) span: Span,
     /// Syntactic result type; semantic analysis resolves its meaning.
     pub(crate) result_type: TypeSyntax,
-    /// The function body's sole expression.
+    /// `let` bindings in source order, before the result expression.
+    pub(crate) bindings: Vec<Binding>,
+    /// The expression that gives the function's value.
     pub(crate) expression: Expression,
 }
 
@@ -283,10 +288,55 @@ impl TypedBody {
         &self.result_type
     }
 
-    /// Returns the function body's sole expression.
+    /// Returns the `let` bindings in source order.
+    #[must_use]
+    pub fn bindings(&self) -> &[Binding] {
+        &self.bindings
+    }
+
+    /// Returns the expression that gives the function's value.
     #[must_use]
     pub const fn expression(&self) -> &Expression {
         &self.expression
+    }
+}
+
+/// One `let name: Type = expression;` binding in a typed body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Binding {
+    /// Full extent from `let` through the closing `;`.
+    pub(crate) span: Span,
+    /// Bound name.
+    pub(crate) name: Identifier,
+    /// Syntactic declared type; semantic analysis resolves its meaning.
+    pub(crate) ty: TypeSyntax,
+    /// The bound expression.
+    pub(crate) value: Expression,
+}
+
+impl Binding {
+    /// Returns the full extent from `let` through the closing `;`.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the bound name.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Returns the syntactic declared type.
+    #[must_use]
+    pub const fn ty(&self) -> &TypeSyntax {
+        &self.ty
+    }
+
+    /// Returns the bound expression.
+    #[must_use]
+    pub const fn value(&self) -> &Expression {
+        &self.value
     }
 }
 
@@ -321,7 +371,7 @@ impl Expression {
 pub enum ExpressionKind {
     /// An integer literal, optionally with a sign written directly before it.
     Literal(IntegerLiteral),
-    /// A bare identifier, which names a parameter.
+    /// A bare identifier, which names a parameter or a binding.
     Name(Identifier),
     /// A call of a named function.
     Call(CallExpression),
@@ -331,6 +381,40 @@ pub enum ExpressionKind {
     Binary(BinaryExpression),
     /// An expression enclosed in grouping parentheses.
     Parenthesized(Box<Expression>),
+    /// An explicit conversion `operand as Type`, boxed so that it does not
+    /// enlarge every expression.
+    Conversion(Box<ConversionExpression>),
+}
+
+/// An explicit conversion `operand as Type`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConversionExpression {
+    /// The converted operand.
+    pub(crate) operand: Expression,
+    /// Exact extent of the `as` keyword.
+    pub(crate) keyword_span: Span,
+    /// Syntactic target type; semantic analysis resolves its meaning.
+    pub(crate) target: TypeSyntax,
+}
+
+impl ConversionExpression {
+    /// Returns the converted operand.
+    #[must_use]
+    pub fn operand(&self) -> &Expression {
+        &self.operand
+    }
+
+    /// Returns the exact extent of the `as` keyword.
+    #[must_use]
+    pub const fn keyword_span(&self) -> Span {
+        self.keyword_span
+    }
+
+    /// Returns the syntactic target type.
+    #[must_use]
+    pub const fn target(&self) -> &TypeSyntax {
+        &self.target
+    }
 }
 
 /// A call `name(arguments)`.
@@ -741,6 +825,26 @@ impl Limits {
     };
 }
 
+const BODY_SHAPE_NOTE: &str =
+    "a typed `spec` body holds `let` bindings, if any, and then one result expression";
+
+/// Something that continues an expression after an operand: a binary
+/// operator or the conversion keyword `as`.
+#[derive(Clone, Copy)]
+enum Joiner {
+    Binary(BinaryOperator),
+    As,
+}
+
+impl Joiner {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Binary(operator) => operator.as_str(),
+            Self::As => "as",
+        }
+    }
+}
+
 struct Parser<'source, 'tokens> {
     source: &'source SourceFile,
     tokens: &'tokens [Token],
@@ -756,6 +860,7 @@ struct Parser<'source, 'tokens> {
     reserve_function_slot: fn(&mut Vec<FunctionDeclaration>) -> bool,
     reserve_parameter_slot: fn(&mut Vec<Parameter>) -> bool,
     reserve_argument_slot: fn(&mut Vec<Expression>) -> bool,
+    reserve_binding_slot: fn(&mut Vec<Binding>) -> bool,
     reserve_identifier_text: fn(&mut String, usize) -> bool,
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
 }
@@ -770,6 +875,10 @@ fn reserve_parameter_slot(parameters: &mut Vec<Parameter>) -> bool {
 
 fn reserve_argument_slot(arguments: &mut Vec<Expression>) -> bool {
     arguments.try_reserve(1).is_ok()
+}
+
+fn reserve_binding_slot(bindings: &mut Vec<Binding>) -> bool {
+    bindings.try_reserve(1).is_ok()
 }
 
 fn reserve_identifier_text(text: &mut String, bytes: usize) -> bool {
@@ -797,6 +906,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             reserve_function_slot,
             reserve_parameter_slot,
             reserve_argument_slot,
+            reserve_binding_slot,
             reserve_identifier_text,
             reserve_diagnostic_slots,
         }
@@ -1303,7 +1413,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let left_brace = self.consume_or_recover(
             TokenKind::LeftBrace,
             "`{` after the result type",
-            "a typed `spec` body contains exactly one expression",
+            BODY_SHAPE_NOTE,
             &[
                 TokenKind::RightBrace,
                 TokenKind::KwSpec,
@@ -1311,10 +1421,23 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 TokenKind::Eof,
             ],
         );
-        let expression = if left_brace.is_some() {
-            self.parse_expression(0).map(|(expression, _)| expression)
+        let bindings = if left_brace.is_some() {
+            self.parse_bindings()
         } else {
             None
+        };
+        let expression = match &bindings {
+            Some(bindings)
+                if !bindings.is_empty() && self.current_kind() == TokenKind::RightBrace =>
+            {
+                self.expected(
+                    "a result expression after the last binding",
+                    "a typed `spec` body ends with the expression that gives its value",
+                );
+                None
+            }
+            Some(_) => self.parse_expression(0).map(|(expression, _)| expression),
+            None => None,
         };
         if expression.is_none()
             && !matches!(
@@ -1334,10 +1457,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             self.bump()
         } else {
             if expression.is_some() {
-                self.expected(
-                    "`}` after the body expression",
-                    "a typed `spec` body contains exactly one expression",
-                );
+                self.expected("`}` after the body expression", BODY_SHAPE_NOTE);
             }
             self.recover_to(&[
                 TokenKind::RightBrace,
@@ -1352,21 +1472,77 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
         };
 
-        match (arrow, result_type, left_brace, expression, right_brace) {
-            (Some(arrow), Some(result_type), Some(_), Some(expression), Some(right_brace))
-                if self.record_node() =>
-            {
-                (
-                    Some(FunctionBody::Typed(Box::new(TypedBody {
-                        span: self.join(arrow.span, right_brace.span),
-                        result_type,
-                        expression,
-                    }))),
-                    Some(right_brace),
-                )
-            }
+        match (arrow, result_type, bindings, expression, right_brace) {
+            (
+                Some(arrow),
+                Some(result_type),
+                Some(bindings),
+                Some(expression),
+                Some(right_brace),
+            ) if self.record_node() => (
+                Some(FunctionBody::Typed(Box::new(TypedBody {
+                    span: self.join(arrow.span, right_brace.span),
+                    result_type,
+                    bindings,
+                    expression,
+                }))),
+                Some(right_brace),
+            ),
             (_, _, _, _, right_brace) => (None, right_brace),
         }
+    }
+
+    /// Parses the `let` bindings at the start of a typed body.
+    ///
+    /// `let` is recognized by position, not reserved: it starts a binding
+    /// only when an identifier follows it, which no expression allows.
+    fn parse_bindings(&mut self) -> Option<Vec<Binding>> {
+        let mut bindings = Vec::new();
+        while self.current_is_word("let") && self.next_kind() == TokenKind::Identifier {
+            let binding = self.parse_binding()?;
+            if bindings.len() >= MAX_BINDINGS_PER_BODY {
+                self.resource_limit_at(
+                    format!("typed body declares more than {MAX_BINDINGS_PER_BODY} bindings"),
+                    binding.span,
+                );
+                return None;
+            }
+            if !(self.reserve_binding_slot)(&mut bindings) {
+                self.resource_limit_at("parser could not allocate binding storage", binding.span);
+                return None;
+            }
+            bindings.push(binding);
+        }
+        Some(bindings)
+    }
+
+    fn parse_binding(&mut self) -> Option<Binding> {
+        let keyword = self.bump()?;
+        let name = self.parse_identifier("binding")?;
+        self.expect(
+            TokenKind::Colon,
+            "`:` and the binding's type",
+            "every binding states its type, as in `let t: Word[32] = x + y;`",
+        )?;
+        let ty = self.parse_type_syntax("binding type")?;
+        self.expect(
+            TokenKind::Equal,
+            "`=` after the binding's type",
+            "a binding is written `let name: Type = expression;`",
+        )?;
+        let (value, _) = self.parse_expression(0)?;
+        let semicolon = self.expect(
+            TokenKind::Semicolon,
+            "`;` after the bound expression",
+            "each binding ends with `;`; the body's last item is its result expression",
+        )?;
+        let span = self.join(keyword.span, semicolon.span);
+        self.record_node().then_some(Binding {
+            span,
+            name,
+            ty,
+            value,
+        })
     }
 
     /// Parses one expression enclosed by `level` groups, call argument
@@ -1385,16 +1561,22 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             self.nesting_limit(self.current_span());
             return None;
         }
+        // The operator groups are parsed in this one function, not in
+        // helpers, so each nesting level adds as few frames as possible.
         let mut expression = self.parse_unary(level)?;
-        let Some(group) = BinaryOperator::from_token(self.current_kind()) else {
-            return Some(expression);
-        };
-        let mut previous = group;
-        match group {
-            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => {
+        let previous = match self.current_joiner() {
+            None => return Some(expression),
+            Some(Joiner::As) => {
+                expression = self.parse_conversion(expression)?;
+                Joiner::As
+            }
+            Some(Joiner::Binary(
+                group @ (BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply),
+            )) => {
                 // `*` binds tighter than `+` and `-`; each is left-associative.
                 // `sum` holds the completed terms and the additive operator
                 // awaiting the current product.
+                let mut previous = group;
                 let mut sum: Option<((Expression, usize), BinaryOperator, Span)> = None;
                 loop {
                     let operator = match self.current_kind() {
@@ -1423,40 +1605,60 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 if let Some((left, pending, pending_span)) = sum {
                     expression = self.binary_node(left, pending, pending_span, expression)?;
                 }
+                Joiner::Binary(previous)
             }
-            BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Xor => {
+            Some(Joiner::Binary(
+                group @ (BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Xor),
+            )) => {
                 while self.current_kind() == group.token_kind() {
                     let operator_span = self.bump()?.span;
                     let operand = self.parse_unary(level)?;
                     expression = self.binary_node(expression, group, operator_span, operand)?;
                 }
+                Joiner::Binary(group)
             }
-            BinaryOperator::ShiftLeft
-            | BinaryOperator::ShiftRight
-            | BinaryOperator::RotateLeft
-            | BinaryOperator::RotateRight => {
+            Some(Joiner::Binary(
+                group @ (BinaryOperator::ShiftLeft
+                | BinaryOperator::ShiftRight
+                | BinaryOperator::RotateLeft
+                | BinaryOperator::RotateRight),
+            )) => {
                 let operator_span = self.bump()?.span;
                 let amount = self.parse_unary(level)?;
                 expression = self.binary_node(expression, group, operator_span, amount)?;
+                Joiner::Binary(group)
             }
-        }
+        };
 
-        if let Some(ungrouped) = BinaryOperator::from_token(self.current_kind()) {
+        if let Some(ungrouped) = self.current_joiner() {
             self.report_ungrouped(ungrouped, previous);
-            // Continue through the remaining operators so that one ungrouped
-            // expression produces one diagnostic and parsing stays aligned.
-            while let Some(operator) = BinaryOperator::from_token(self.current_kind()) {
-                let operator_span = self.bump()?.span;
-                let operand = self.parse_unary(level)?;
-                expression = self.binary_node(expression, operator, operator_span, operand)?;
+            // Continue through the remaining operators and conversions so
+            // that one ungrouped expression produces one diagnostic and
+            // parsing stays aligned.
+            while let Some(joiner) = self.current_joiner() {
+                expression = match joiner {
+                    Joiner::Binary(operator) => {
+                        let operator_span = self.bump()?.span;
+                        let operand = self.parse_unary(level)?;
+                        self.binary_node(expression, operator, operator_span, operand)?
+                    }
+                    Joiner::As => self.parse_conversion(expression)?,
+                };
             }
         }
         Some(expression)
     }
 
+    fn current_joiner(&self) -> Option<Joiner> {
+        if self.current_is_word("as") {
+            return Some(Joiner::As);
+        }
+        BinaryOperator::from_token(self.current_kind()).map(Joiner::Binary)
+    }
+
     #[cold]
     #[inline(never)]
-    fn report_ungrouped(&mut self, ungrouped: BinaryOperator, previous: BinaryOperator) {
+    fn report_ungrouped(&mut self, ungrouped: Joiner, previous: Joiner) {
         let span = self.current_span();
         self.report_lazy(span, || {
             Diagnostic::error(
@@ -1469,15 +1671,45 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 span,
             )
             .with_label("ungrouped operator")
-            .with_note(
-                if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() {
+            .with_note(match (previous, ungrouped) {
+                (Joiner::As, _) | (_, Joiner::As) => {
+                    "`as` converts exactly one operand; parenthesize the conversion or the \
+                     expression it converts"
+                }
+                (Joiner::Binary(previous), Joiner::Binary(ungrouped))
+                    if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() =>
+                {
                     "a shift or rotation takes exactly two operands; parenthesize one of them"
-                } else {
+                }
+                (Joiner::Binary(_), Joiner::Binary(_)) => {
                     "operators from different groups have no relative precedence in Orange; \
                      parenthesize the part that applies first"
-                },
-            )
+                }
+            })
         });
+    }
+
+    /// Parses `as Type` after a complete operand.
+    #[inline(never)]
+    fn parse_conversion(
+        &mut self,
+        (operand, operand_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let keyword_span = self.bump()?.span;
+        let target = self.parse_type_syntax("conversion type")?;
+        let height = self.node_height(operand_height, keyword_span)?;
+        let span = self.join(operand.span, target.span);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Conversion(Box::new(ConversionExpression {
+                    operand,
+                    keyword_span,
+                    target,
+                })),
+            },
+            height,
+        ))
     }
 
     #[inline(never)]
@@ -1814,6 +2046,24 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             text,
             span: token.span,
         })
+    }
+
+    /// Consumes a token of `kind`, or reports what was expected.
+    fn expect(&mut self, kind: TokenKind, expected: &str, note: &str) -> Option<Token> {
+        if self.current_kind() == kind {
+            return self.bump();
+        }
+        self.expected(expected, note);
+        None
+    }
+
+    /// Returns whether the current token is the identifier spelled `word`.
+    fn current_is_word(&self, word: &str) -> bool {
+        self.tokens
+            .get(self.cursor)
+            .filter(|token| token.kind == TokenKind::Identifier)
+            .and_then(|token| token.lexeme(self.source))
+            == Some(word)
     }
 
     fn consume_or_recover(
@@ -2888,6 +3138,11 @@ mod tests {
                 shape(source, &binary.right)
             ),
             ExpressionKind::Parenthesized(inner) => format!("[{}]", shape(source, inner)),
+            ExpressionKind::Conversion(conversion) => format!(
+                "({} as {})",
+                shape(source, &conversion.operand),
+                source.slice(conversion.target.span).unwrap()
+            ),
         }
     }
 
@@ -2900,6 +3155,7 @@ mod tests {
                 tree_height(&binary.left).max(tree_height(&binary.right))
             }
             ExpressionKind::Parenthesized(inner) => tree_height(inner),
+            ExpressionKind::Conversion(conversion) => tree_height(&conversion.operand),
         }
     }
 

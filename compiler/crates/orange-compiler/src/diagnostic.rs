@@ -105,6 +105,10 @@ define_diagnostic_codes! {
     CallCycle => "ORC0217",
     /// A parameter name repeats within one function.
     DuplicateParameter => "ORC0218",
+    /// A binding name repeats a parameter or an earlier binding of the function.
+    DuplicateBinding => "ORC0219",
+    /// The operand of `as` has no type of its own, such as a bare literal.
+    UntypedConversionOperand => "ORC0220",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -670,7 +674,7 @@ mod tests {
             "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107", "ORC0108",
             "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
             "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
-            "ORC0217", "ORC0218", "ORC0301",
+            "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::core::{
-    CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue,
-    ExactInteger, MAX_EXACT_INTEGER_BITS,
+    CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType,
+    CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, UnaryOperator};
@@ -203,12 +203,27 @@ enum Value {
 }
 
 /// One active function evaluation.
+///
+/// A frame's values occupy the shared stack from `base`: its arguments, then
+/// the values of its completed bindings, then intermediate values.
 struct Frame<'core> {
     function: &'core CoreFunction,
-    /// Index of the next node to evaluate.
+    /// The expression being evaluated: a binding's index, or the number of
+    /// bindings for the body.
+    part: usize,
+    /// Index of the next node of that expression to evaluate.
     next: usize,
     /// Index in the shared value stack of this frame's first argument.
     base: usize,
+}
+
+/// Returns a function's binding value at `part`, or its body when `part` is
+/// the number of bindings.
+fn expression_part(function: &CoreFunction, part: usize) -> Option<&CoreExpression> {
+    match function.locals.get(part) {
+        Some(local) => Some(&local.value),
+        None => (part == function.locals.len()).then_some(&function.body),
+    }
 }
 
 /// Why evaluation stopped without a value.
@@ -220,9 +235,12 @@ enum Stop {
     InconsistentCore,
 }
 
+/// Shared `Int` literals, indexed by function, expression part, and node.
+type SharedLiterals = Vec<Vec<Vec<Option<Rc<ExactInteger>>>>>;
+
 struct Machine<'core> {
     core: &'core CoreModule,
-    literals: Vec<Vec<Option<Rc<ExactInteger>>>>,
+    literals: SharedLiterals,
     steps: usize,
     step_limit: usize,
     reservations: Reservations,
@@ -351,6 +369,7 @@ impl<'core> Machine<'core> {
         }
         self.frames.push(Frame {
             function: root,
+            part: 0,
             next: 0,
             base: 0,
         });
@@ -360,9 +379,29 @@ impl<'core> Machine<'core> {
             };
             let function = frame.function;
             let base = frame.base;
+            let part = frame.part;
             let offset = frame.next;
-            let Some(node) = function.body.nodes.get(offset) else {
-                // The frame's body is complete: its value replaces its arguments.
+            let expression = expression_part(function, part).ok_or(Stop::InconsistentCore)?;
+            let Some(node) = expression.nodes.get(offset) else {
+                if part < function.locals.len() {
+                    // The binding's value stays on the stack as its slot,
+                    // directly after the arguments and earlier bindings.
+                    let slots = base
+                        .checked_add(function.parameters.len())
+                        .and_then(|slots| slots.checked_add(part))
+                        .and_then(|slots| slots.checked_add(1))
+                        .ok_or(Stop::InconsistentCore)?;
+                    if self.stack.len() != slots {
+                        return Err(Stop::InconsistentCore);
+                    }
+                    if let Some(frame) = self.frames.last_mut() {
+                        frame.part = part.saturating_add(1);
+                        frame.next = 0;
+                    }
+                    continue;
+                }
+                // The frame's body is complete: its value replaces its
+                // arguments and bindings.
                 let value = self.pop()?;
                 self.frames.pop();
                 if self.stack.len() != base {
@@ -380,7 +419,7 @@ impl<'core> Machine<'core> {
             if let Some(frame) = self.frames.last_mut() {
                 frame.next = frame.next.saturating_add(1);
             }
-            self.step(function, base, offset, node)?;
+            self.step(function, base, part, offset, node)?;
         }
     }
 
@@ -388,6 +427,7 @@ impl<'core> Machine<'core> {
         &mut self,
         function: &'core CoreFunction,
         base: usize,
+        part: usize,
         offset: usize,
         node: &'core CoreNode,
     ) -> Result<(), Stop> {
@@ -401,6 +441,7 @@ impl<'core> Machine<'core> {
                         let shared = self
                             .literals
                             .get(index)
+                            .and_then(|parts| parts.get(part))
                             .and_then(|literals| literals.get(offset))
                             .and_then(Option::as_ref)
                             .ok_or(Stop::InconsistentCore)?;
@@ -414,6 +455,24 @@ impl<'core> Machine<'core> {
                 self.charge(1)?;
                 let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
                 let slot = base.checked_add(index).ok_or(Stop::InconsistentCore)?;
+                let value = self
+                    .stack
+                    .get(slot)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(value)
+            }
+            CoreNodeKind::Local(index) => {
+                self.charge(1)?;
+                // Only a binding before the current part has a value.
+                let index = usize::try_from(*index)
+                    .ok()
+                    .filter(|index| *index < part)
+                    .ok_or(Stop::InconsistentCore)?;
+                let slot = base
+                    .checked_add(function.parameters.len())
+                    .and_then(|slot| slot.checked_add(index))
+                    .ok_or(Stop::InconsistentCore)?;
                 let value = self
                     .stack
                     .get(slot)
@@ -453,6 +512,7 @@ impl<'core> Machine<'core> {
                 }
                 self.frames.push(Frame {
                     function: callee,
+                    part: 0,
                     next: 0,
                     base: callee_base,
                 });
@@ -526,6 +586,23 @@ impl<'core> Machine<'core> {
                 let shifted = word_shift(*operator, bits, mask, value, *amount)
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(Value::Word(shifted))
+            }
+            CoreNodeKind::Convert { from } => {
+                self.charge(1)?;
+                let value = match (word_mask(*from), word_mask(node.ty)) {
+                    (None, None) => Value::Int(self.pop_int()?),
+                    (None, Some(mask)) => Value::Word(self.pop_int()?.modulo_2_64() & mask),
+                    (Some(_), Some(mask)) => Value::Word(self.pop_word()? & mask),
+                    (Some(_), None) => {
+                        let word = self.pop_word()?;
+                        let value = ExactInteger::from_u64(word, self.reservations.value_limbs)
+                            .ok_or(Stop::Allocation(
+                                "exact integer storage could not be reserved",
+                            ))?;
+                        Value::Int(Rc::new(value))
+                    }
+                };
+                self.push(value)
             }
         }
     }
@@ -646,21 +723,33 @@ fn evaluate_with_reservations(
 }
 
 /// Shares every `Int` literal once so that evaluation never copies literal digits.
-fn share_literals(core: &CoreModule) -> Option<Vec<Vec<Option<Rc<ExactInteger>>>>> {
+fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     let mut shared = Vec::new();
     shared.try_reserve_exact(core.functions.len()).ok()?;
     for function in &core.functions {
-        let mut literals = Vec::new();
-        literals.try_reserve_exact(function.body.nodes.len()).ok()?;
-        for node in &function.body.nodes {
-            literals.push(match &node.kind {
-                CoreNodeKind::Literal(CoreValue::Int(value)) => Some(Rc::new(
-                    value.try_clone_with_reservation(reserve_value_limbs)?,
-                )),
-                _ => None,
-            });
+        let mut parts = Vec::new();
+        parts
+            .try_reserve_exact(function.locals.len().checked_add(1)?)
+            .ok()?;
+        let expressions = function
+            .locals
+            .iter()
+            .map(|local| &local.value)
+            .chain(std::iter::once(&function.body));
+        for expression in expressions {
+            let mut literals = Vec::new();
+            literals.try_reserve_exact(expression.nodes.len()).ok()?;
+            for node in &expression.nodes {
+                literals.push(match &node.kind {
+                    CoreNodeKind::Literal(CoreValue::Int(value)) => Some(Rc::new(
+                        value.try_clone_with_reservation(reserve_value_limbs)?,
+                    )),
+                    _ => None,
+                });
+            }
+            parts.push(literals);
         }
-        shared.push(literals);
+        shared.push(parts);
     }
     Some(shared)
 }
