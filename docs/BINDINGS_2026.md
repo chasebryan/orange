@@ -21,6 +21,11 @@ section 12. Until then, the compiler behavior it describes exists so that the
 proposal can be reviewed against running code, and it establishes no accepted
 language meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, extends this
+> document with fixed-length arrays, so that one function can return a whole
+> quarter round. Every source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

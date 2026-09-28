@@ -22,8 +22,10 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 
 > [!NOTE]
 > [`BINDINGS_2026.md`](BINDINGS_2026.md), proposed under OEP-0006, extends this
-> document with typed `let` bindings and explicit `as` conversions. Every
-> source this document accepts keeps its meaning under it.
+> document with typed `let` bindings and explicit `as` conversions, and
+> [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, adds
+> fixed-length arrays on top of it. Every source this document accepts keeps
+> its meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -36,6 +36,10 @@ unresolved.
 > conversions. It adds no token and no reserved word: `let` and `as` keep
 > their meaning as identifiers everywhere except in the two positions it
 > defines.
+>
+> The S3d slice proposed in [`ARRAYS_2026.md`](ARRAYS_2026.md) under OEP-0007,
+> also in review, builds on S3c with fixed-length array types `T^n`, array
+> literals, and literal indices. It also adds no token and no reserved word.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
