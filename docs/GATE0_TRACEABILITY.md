@@ -172,18 +172,18 @@ hosts owned by the open D-006 and D-011 decisions are unsupported. Evidence is
 contributor-produced and unreviewed. The suite cannot separate the four passing
 candidates, so selection and conclusion remain null. The v0.8 suite adds SC-06
 (semantic evolution) and SC-07 (within-authority relabeling) with five cost
-measures, and the owner chose the isolation-first distinguishing rule before any
-v0.8 result existed. Epoch `d004-e-1b3a184e9895cc149b09` ran all 105 executions
-on 2026-09-28: the same four candidates closed all seven cases and ST-HOST
-closed none, for 28 closed of 35 required units and 105 of 105 result records.
-Isolation first leaves only ST-REL, which ties ST-MIRROR at zero isolation
-obligations and re-identifies six subject classes to its seven. That result is
-contributor-produced and unreviewed, and it is not a D-004 recommendation until
-the owner disposes every candidate and hard gate. Integrity parsing and
-structural oracles satisfy none of the F-01, F-03, F-04, or F-06 exit evidence.
-D-004 remains proposed, S3 remains incomplete, S3b remains blocked, and the
-binary gate-closure score remains 3 of 10 (30%); that mechanical score is not
-release readiness.
+measures, and the owner chose the isolation-first distinguishing rule knowing
+which candidate each rule was predicted to select. Epoch
+`d004-e-aee8a5dee258f7ce2078` ran all 105 executions on 2026-09-28: the same
+four candidates closed all seven cases and ST-HOST closed none, for 28 closed of
+35 required units and 105 of 105 result records. Isolation first leaves only
+ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
+subject classes to its seven. That result is contributor-produced and
+unreviewed, and it is not a D-004 recommendation until the owner disposes every
+candidate and hard gate. Integrity parsing and structural oracles satisfy none
+of the F-01, F-03, F-04, or F-06 exit evidence. D-004 remains proposed, S3
+remains incomplete, S3b remains blocked, and the binary gate-closure score
+remains 3 of 10 (30%); that mechanical score is not release readiness.
 
 D-010 candidate identity is separate from feature completion. Its two
 direct-native candidates, versioned Jasmin boundary, portable C11 boundary, and

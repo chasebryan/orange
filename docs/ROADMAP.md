@@ -409,16 +409,16 @@ records, contributor-produced and unreviewed. The suite cannot separate the
 four passing candidates, so selection and conclusion remain null. The v0.8 suite
 adds SC-06 (semantic evolution) and SC-07 (within-authority relabeling) with
 five cost measures, and the owner chose the isolation-first distinguishing rule
-before any v0.8 result existed. Epoch `d004-e-1b3a184e9895cc149b09` ran all 105
-executions on 2026-09-28: the same four candidates closed all seven cases and
-ST-HOST closed none, for 28 closed of 35 required units and 105 of 105 result
-records. Isolation first leaves only ST-REL, which ties ST-MIRROR at zero
-isolation obligations and re-identifies six subject classes to its seven. That
-result is contributor-produced and unreviewed, and it is not a D-004
-recommendation until the owner disposes every candidate and hard gate. D-004
-remains proposed pending owner review, S3 remains incomplete, S3b remains
-blocked, and Orange remains 30% complete by its unchanged 3-of-10 binary
-gate-closure score.
+knowing which candidate each rule was predicted to select. Epoch
+`d004-e-aee8a5dee258f7ce2078` ran all 105 executions on 2026-09-28: the same
+four candidates closed all seven cases and ST-HOST closed none, for 28 closed of
+35 required units and 105 of 105 result records. Isolation first leaves only
+ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
+subject classes to its seven. That result is contributor-produced and
+unreviewed, and it is not a D-004 recommendation until the owner disposes every
+candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
+incomplete, S3b remains blocked, and Orange remains 30% complete by its
+unchanged 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
 
