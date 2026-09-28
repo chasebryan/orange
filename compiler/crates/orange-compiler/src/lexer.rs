@@ -1113,6 +1113,117 @@ mod tests {
     }
 
     #[test]
+    fn rejects_every_other_control_and_unicode_space_scalar() {
+        for scalar in ['\u{000b}', '\u{000c}', '\u{0085}', '\u{2028}', '\u{2029}'] {
+            let label = format!("U+{:04X}", u32::from(scalar));
+            let text = format!("one{scalar}two");
+            let (_, lexed) = lex_text(&text);
+
+            assert_eq!(
+                kinds(&lexed),
+                vec![TokenKind::Identifier, TokenKind::Identifier, TokenKind::Eof],
+                "{label}"
+            );
+            assert_eq!(lexed.diagnostics.len(), 1, "{label}");
+            let diagnostic = &lexed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::UnexpectedCharacter,
+                "{label}"
+            );
+            assert_eq!(
+                diagnostic.message(),
+                format!("unexpected character {label}"),
+                "{label}"
+            );
+            assert_eq!(diagnostic.primary_span().start().bytes(), 3, "{label}");
+            assert_eq!(
+                diagnostic.primary_span().len(),
+                u32::try_from(scalar.len_utf8()).unwrap(),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_leading_byte_order_mark_is_an_unexpected_character() {
+        let (_, lexed) = lex_text("\u{feff}edition 2026;");
+
+        assert_eq!(
+            kinds(&lexed),
+            vec![
+                TokenKind::KwEdition,
+                TokenKind::Integer,
+                TokenKind::Semicolon,
+                TokenKind::Eof,
+            ]
+        );
+        assert_eq!(lexed.diagnostics.len(), 1);
+        let diagnostic = &lexed.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::UnexpectedCharacter);
+        assert_eq!(diagnostic.message(), "unexpected character U+FEFF");
+        assert_eq!(diagnostic.primary_span().start().bytes(), 0);
+        assert_eq!(diagnostic.primary_span().len(), 3);
+    }
+
+    #[test]
+    fn comment_delimiters_have_no_escape_syntax() {
+        let (_, lexed) = lex_text("a /* \\*/ b // c \\\nd");
+        assert!(lexed.diagnostics.is_empty());
+        assert_eq!(
+            kinds(&lexed),
+            vec![
+                TokenKind::Identifier,
+                TokenKind::Identifier,
+                TokenKind::Identifier,
+                TokenKind::Eof,
+            ]
+        );
+
+        let (_, quoted) = lex_text("p /* \" */ q");
+        assert!(quoted.diagnostics.is_empty());
+        assert_eq!(
+            kinds(&quoted),
+            vec![TokenKind::Identifier, TokenKind::Identifier, TokenKind::Eof]
+        );
+
+        let (_, block) = lex_text("x /* \\*/ @");
+        assert_eq!(block.diagnostics.len(), 1);
+        assert_eq!(
+            block.diagnostics[0].code(),
+            DiagnosticCode::UnexpectedCharacter
+        );
+        assert_eq!(block.diagnostics[0].primary_span().start().bytes(), 9);
+
+        let (_, line) = lex_text("y // \\\n@");
+        assert_eq!(line.diagnostics.len(), 1);
+        assert_eq!(
+            line.diagnostics[0].code(),
+            DiagnosticCode::UnexpectedCharacter
+        );
+        assert_eq!(line.diagnostics[0].primary_span().start().bytes(), 7);
+    }
+
+    #[test]
+    fn reserved_word_case_variants_lex_as_identifiers() {
+        let spellings = [
+            "Edition", "EDITION", "eDition", "Module", "MODULE", "Spec", "SPEC", "sPEC", "Impl",
+            "IMPL", "Game", "GAME", "Proof", "PROOF", "Claim", "CLAIM",
+        ];
+        let text = spellings.join(" ");
+        let (sources, lexed) = lex_text(&text);
+        let source = sources.iter().next().unwrap();
+
+        assert_eq!(lexed.diagnostics(), []);
+        assert_eq!(lexed.tokens().len(), spellings.len() + 1);
+        for (token, spelling) in lexed.tokens().iter().zip(spellings) {
+            assert_eq!(token.kind, TokenKind::Identifier, "{spelling}");
+            assert_eq!(token.lexeme(source), Some(spelling), "{spelling}");
+        }
+        assert_eq!(lexed.tokens().last().unwrap().kind, TokenKind::Eof);
+    }
+
+    #[test]
     fn reports_an_unterminated_nested_comment_at_its_outer_opening() {
         let (_, lexed) = lex_text("ok /* outer /* inner */");
         assert_eq!(lexed.diagnostics.len(), 1);
@@ -1136,6 +1247,37 @@ mod tests {
         assert_eq!(malformed.len(), 5);
         assert!(malformed[0].contains("`0x`"));
         assert!(malformed[4].contains("`123abc`"));
+    }
+
+    #[test]
+    fn underscores_adjacent_to_a_base_prefix_are_malformed() {
+        let spellings = ["0x_f", "0b_1", "0X_F", "0B_1", "0x_", "0b_", "0x__f"];
+        let text = spellings.join(" ");
+        let (sources, lexed) = lex_text(&text);
+        let source = sources.iter().next().unwrap();
+
+        assert_eq!(lexed.tokens().len(), spellings.len() + 1);
+        assert_eq!(lexed.diagnostics().len(), spellings.len());
+        for ((token, diagnostic), spelling) in lexed
+            .tokens()
+            .iter()
+            .zip(lexed.diagnostics())
+            .zip(spellings)
+        {
+            assert_eq!(token.kind, TokenKind::Integer, "{spelling}");
+            assert_eq!(token.lexeme(source), Some(spelling), "{spelling}");
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::MalformedInteger,
+                "{spelling}"
+            );
+            assert!(
+                diagnostic.message().contains(&format!("`{spelling}`")),
+                "{spelling}: {}",
+                diagnostic.message()
+            );
+            assert_eq!(diagnostic.primary_span(), token.span, "{spelling}");
+        }
     }
 
     #[test]
@@ -1625,6 +1767,54 @@ mod tests {
         assert_eq!(
             first.diagnostics.last().unwrap().message(),
             format!("stopped reporting after {MAX_DIAGNOSTICS_PER_SOURCE} lexical errors")
+        );
+    }
+
+    #[test]
+    fn exact_ordinary_diagnostic_budget_emits_no_suppression_record() {
+        fn shape(diagnostic: &Diagnostic) -> (DiagnosticCode, u32, u32) {
+            (
+                diagnostic.code(),
+                diagnostic.primary_span().start().bytes(),
+                diagnostic.primary_span().end().bytes(),
+            )
+        }
+
+        let text = "@".repeat(MAX_DIAGNOSTICS_PER_SOURCE);
+        let mut sources = SourceMap::new();
+        let id = sources.add("test.or", text).unwrap();
+        let source = sources.get(id).unwrap();
+        let first = lex(source, Edition::E2026);
+        let second = lex(source, Edition::E2026);
+
+        assert_eq!(first, second);
+        assert_eq!(kinds(&first), vec![TokenKind::Eof]);
+        assert_eq!(first.diagnostics.len(), MAX_DIAGNOSTICS_PER_SOURCE);
+        assert!(
+            first
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code() == DiagnosticCode::UnexpectedCharacter)
+        );
+        assert!(
+            !first
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code() == DiagnosticCode::TooManyLexicalErrors)
+        );
+
+        let (_, exceeded) = lex_text(&"@".repeat(MAX_DIAGNOSTICS_PER_SOURCE + 1));
+        assert_eq!(exceeded.diagnostics.len(), MAX_DIAGNOSTICS_PER_SOURCE + 1);
+        assert_eq!(
+            exceeded.diagnostics[..MAX_DIAGNOSTICS_PER_SOURCE]
+                .iter()
+                .map(shape)
+                .collect::<Vec<_>>(),
+            first.diagnostics.iter().map(shape).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            exceeded.diagnostics.last().unwrap().code(),
+            DiagnosticCode::TooManyLexicalErrors
         );
     }
 

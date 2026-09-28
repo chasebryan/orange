@@ -1460,6 +1460,11 @@ mod tests {
             "edition 2026; module m { spec f() -> Int {} }",
             "edition 2026; module m { spec f() -> Int { - } }",
             "edition 2026; module m { spec f() -> Int { 1 2 } }",
+            "edition 2026; module m { spec f() -> Int { --5 } }",
+            "edition 2026; module m { spec f() -> Int { - -5 } }",
+            "edition 2026; module m { spec f() -> Int { +5 } }",
+            "edition 2026; module m { spec f() -> Word[-8] { 1 } }",
+            "edition 2026; module m { spec f() -> Word[+8] { 1 } }",
             "edition 2026; module m { impl f() -> Int { 1 } }",
         ];
 

@@ -2205,6 +2205,78 @@ mod tests {
     }
 
     #[test]
+    fn exact_ordinary_diagnostic_budget_emits_no_suppression_record() {
+        let two_errors = Fixture::new(concat!(
+            "edition 2026; module values {\n",
+            "  spec first() -> Nope { 1 }\n",
+            "  spec second() -> Nope { 2 }\n",
+            "}\n",
+        ));
+        let at_injected_limit = two_errors.analyze_with(Limits {
+            diagnostics: 2,
+            ..Limits::DEFAULT
+        });
+        assert!(at_injected_limit.core.is_none());
+        assert_eq!(
+            at_injected_limit
+                .diagnostics
+                .iter()
+                .map(Diagnostic::code)
+                .collect::<Vec<_>>(),
+            [
+                DiagnosticCode::UnsupportedType,
+                DiagnosticCode::UnsupportedType
+            ]
+        );
+
+        let mut text = String::from("edition 2026; module values {\n");
+        for index in 0..MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE {
+            text.push_str(&format!("  spec bad{index}() -> Nope {{ {index} }}\n"));
+        }
+        let mut exceeded_text = text.clone();
+        text.push_str("}\n");
+        exceeded_text.push_str("  spec overflow() -> Nope { 0 }\n}\n");
+
+        let at_limit = Fixture::new(text);
+        let first = at_limit.analyze_with(Limits::DEFAULT);
+        let second = at_limit.analyze_with(Limits::DEFAULT);
+        assert_eq!(first, second);
+        assert!(first.core.is_none());
+        assert_eq!(first.diagnostics.len(), MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE);
+        assert!(
+            first
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code() == DiagnosticCode::UnsupportedType)
+        );
+
+        let exceeded = Fixture::new(exceeded_text).analyze_with(Limits::DEFAULT);
+        assert!(exceeded.core.is_none());
+        assert_eq!(
+            exceeded.diagnostics.len(),
+            MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE + 1
+        );
+        let shape = |diagnostic: &Diagnostic| {
+            (
+                diagnostic.code(),
+                diagnostic.primary_span().start().bytes(),
+                diagnostic.primary_span().end().bytes(),
+            )
+        };
+        assert_eq!(
+            exceeded.diagnostics[..MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE]
+                .iter()
+                .map(shape)
+                .collect::<Vec<_>>(),
+            first.diagnostics.iter().map(shape).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            exceeded.diagnostics.last().unwrap().code(),
+            DiagnosticCode::TooManySemanticErrors
+        );
+    }
+
+    #[test]
     fn complete_diagnostic_bound_requires_no_capacity_growth() {
         let fixture = Fixture::new("edition 2026; module values { spec value() -> Int { 1 } }\n");
         let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
