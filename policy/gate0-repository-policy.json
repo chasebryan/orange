@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.123",
+  "policy_version": "0.2.124",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
