@@ -19,39 +19,39 @@ Manuscript version: 0.3
 
 - [Preface](#preface)
 
-**Part I: Why Orange**
+Part I: Why Orange
 
 - [Chapter 1: The Seams Are the System](#chapter-1-the-seams-are-the-system)
 - [Chapter 2: Claims, Not Labels](#chapter-2-claims-not-labels)
 - [Chapter 3: One Language, Several Semantic Worlds](#chapter-3-one-language-several-semantic-worlds)
 
-**Part II: Meaning and Trust**
+Part II: Meaning and Trust
 
 - [Chapter 4: From Surface Text to Meaning](#chapter-4-from-surface-text-to-meaning)
 - [Chapter 5: Proof Search Is Not Proof Checking](#chapter-5-proof-search-is-not-proof-checking)
 - [Chapter 6: Secrets Are a Semantic Concern](#chapter-6-secrets-are-a-semantic-concern)
 
-**Part III: Building the Language**
+Part III: Building the Language
 
 - [Chapter 7: No Disposable Prototype](#chapter-7-no-disposable-prototype)
 - [Chapter 8: Orange 2026: The Smallest Honest Slice](#chapter-8-orange-2026-the-smallest-honest-slice)
 - [Chapter 9: From Core to Native Bytes](#chapter-9-from-core-to-native-bytes)
 - [Chapter 10: The Foreign Boundary](#chapter-10-the-foreign-boundary)
 
-**Part IV: Cryptography in Practice**
+Part IV: Cryptography in Practice
 
 - [Chapter 11: Standards as Versioned Inputs](#chapter-11-standards-as-versioned-inputs)
 - [Chapter 12: The Corpus as Acceptance Test](#chapter-12-the-corpus-as-acceptance-test)
 - [Chapter 13: Interoperability and External Validation](#chapter-13-interoperability-and-external-validation)
 
-**Part V: Operating Orange**
+Part V: Operating Orange
 
 - [Chapter 14: Evidence That Survives the Build](#chapter-14-evidence-that-survives-the-build)
 - [Chapter 15: Offline Replay and Trust Budgets](#chapter-15-offline-replay-and-trust-budgets)
 - [Chapter 16: Solo Work Through Incremental Gates](#chapter-16-solo-work-through-incremental-gates)
 - [Chapter 17: Releases, Updates, and Failure](#chapter-17-releases-updates-and-failure)
 
-**Appendices**
+Appendices
 
 - [Appendix A: Current Grammar and CLI](#appendix-a-current-grammar-and-cli)
 - [Appendix B: Decision Ledger](#appendix-b-decision-ledger)
