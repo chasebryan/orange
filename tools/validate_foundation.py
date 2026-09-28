@@ -350,6 +350,7 @@ compiler/crates/orangec/tests/s2_conformance.rs
 compiler/crates/orangec/tests/s3a_conformance.rs
 compiler/crates/orangec/tests/s3b_conformance.rs
 compiler/crates/orangec/tests/s3c_conformance.rs
+compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/fixtures/hello.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
 compiler/fixtures/s3a/invalid-int-magnitude.or
@@ -385,6 +386,14 @@ compiler/fixtures/s3c/valid-chacha20-quarter-round.or
 compiler/fixtures/s3c/valid-conversions.or
 compiler/fixtures/s3c/valid-let-and-as-names.or
 compiler/fixtures/s3c/valid-sha256-round.or
+compiler/fixtures/s3d/invalid-array-literals.or
+compiler/fixtures/s3d/invalid-array-operators.or
+compiler/fixtures/s3d/invalid-array-syntax.or
+compiler/fixtures/s3d/invalid-array-types.or
+compiler/fixtures/s3d/invalid-indices.or
+compiler/fixtures/s3d/valid-arrays.or
+compiler/fixtures/s3d/valid-chacha20-block.or
+compiler/fixtures/s3d/valid-sha256-rounds.or
 compiler/fixtures/typed-answer.or
 DEPENDENCY_POLICY.md
 GOVERNANCE.md
@@ -429,6 +438,7 @@ docs/ROADMAP.md
 docs/SEMANTIC_STRATA_DECISION_SUITE.md
 docs/EXPRESSIONS_2026.md
 docs/BINDINGS_2026.md
+docs/ARRAYS_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
 docs/governance/adrs/ADR-0000-template.md
