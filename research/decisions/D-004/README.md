@@ -5,7 +5,7 @@ prerequisite the reviewed protocol listed as absent, and epoch
 `d004-e-4aaf8a83a01693d543c4` has run all 75 scheduled executions. Its results
 are contributor-produced and unreviewed. The v0.8 suite adds cases and measures
 that separate the candidates v0.7 could not, and epoch
-`d004-e-aee8a5dee258f7ce2078` has run all 105 of its executions under the
+`d004-e-633e0aa831615cda3e06` has run all 105 of its executions under the
 owner's isolation-first rule, which leaves ST-REL. The owner chose that rule
 knowing which candidate each rule would leave. Those results are also
 contributor-produced and unreviewed. No conclusion or semantic-strata selection
@@ -408,16 +408,16 @@ preregistration made in ignorance of the result.
 
 ## v0.8 epoch run
 
-Epoch `d004-e-aee8a5dee258f7ce2078` was prepared and run on 2026-09-28 from
-source revision `690dea814bc29a08af1139b7ce07bc2dc6332ca5`. Its packet binds
+Epoch `d004-e-633e0aa831615cda3e06` was prepared and run on 2026-09-28 from
+source revision `8fd7387ec50719397de52744318605a8aad9ac72`. Its packet binds
 the v0.8 bundle and overlay, and with them the owner's rule, v0.8 run harness
 raw SHA-256
-`f439889a8d5e46491569dcbf136714edc5ede9cd069945184e049194781314a5`, the host
+`0c2c074b8c39289aeb71dc1e54384030bf011de1c7690f2ada829b5e1af4d678`, the host
 tool, dependency and environment manifests, all five candidate models and all
 seven input manifests. All 105 executions ran once each in the rotation order
 under the same enforcing launcher as v0.7, after execute re-checked the host
 context that prepare recorded. Every execution exited normally within the
-ceilings: wall time 88 to 147 ms, peak memory 10.8 to 12.4 MB for the whole
+ceilings: wall time 78 to 186 ms, peak memory 10.7 to 12.3 MB for the whole
 process tree, no temporary storage, and no stderr output.
 
 | Candidate | Cases passed | Closed units |
@@ -464,19 +464,21 @@ The runner's archive is about 15.6 MB. Its committed form under
 `d004-v0.8/run/` keeps the same parts as v0.7's, and
 [`tools/d004_archive.py`](../../../tools/d004_archive.py) rebuilds it byte for
 byte, checks archive-manifest SHA-256
-`73566b1acc8a959aae426ca167e170c3d4f7ad02fb988c4a7337533f6ff6f015`, then
-re-runs the v0.8 harness's `verify`. The raw-file/canonical SHA-256 pairs are:
+`aab4ff83d50c5f0040f42de1b36a50f3daf4f0edb75c1ab4b84d76157bb20487`, then
+re-runs the v0.8 harness's `verify`, which refuses unless the repository's
+run harness and adapter bundle are the ones the packet binds. The
+raw-file/canonical SHA-256 pairs are:
 
 - v0.8 archive index:
-  `9c52a12a78d7dd0f28417e77f1a497d76664d2a29c2c1129650eb37df89dc7df` /
-  `edd2d1b45b72eb12a7e5b03693cdf185fc5579bd52dbbfd53c50ce5f7ddf630c`; and
+  `75b89340f073759663e9baa04227179b6f059f1eac8ef0ffb78d9d8b6d5c6ed3` /
+  `8d6eca9fdc1aadd355538c035bfab724398827d33ad7e0cdcfe40023a35fe38e`; and
 - v0.8 adapter outputs:
-  `e521e83471a10e75b55bc07bf297560e600bc2dd61e0fd0e525bb84d42e1a3f9` /
-  `bb23588ac192d870c79c8716cac13f21c44e32b050121cfb2402f28405de3ceb`.
+  `57c48c8395904fd59c07f1820119cc097c6c30d37f29057c153f3d77d58b6f7f` /
+  `ae8a3da7775749e25dd8a780d267457d83744441335c6c237e1ba1fa1a0e0254`.
 
-Two earlier v0.8 epochs ran the same schedule and produced the same verdicts,
-closures, measures and rule result in every slot. Both were superseded before
-any owner review:
+Three earlier v0.8 epochs ran the same schedule and produced the same
+verdicts, closures, measures and rule result in every slot. All three were
+superseded before any owner review:
 
 - `d004-e-afadaff4cbc1bb294d3e` ran before the v0.8 harness gained the host
   re-check, and no review had seen it. Its archive-manifest SHA-256 was
@@ -490,8 +492,20 @@ any owner review:
   candidate that closes every case lacks a full measure set. Its
   archive-manifest SHA-256 was
   `84e2fd244b04db0276941d34e7208f1f2b46f0643c58f320e9030e401eaccb3c`.
+- `d004-e-aee8a5dee258f7ce2078` ran from revision
+  `690dea814bc29a08af1139b7ce07bc2dc6332ca5`. An automated review of its pull
+  request found that the harness's `verify` never compared the repository's
+  run harness with the one the packet binds, so a changed harness could
+  re-derive an old epoch and report it verified. The next fix makes `execute`
+  and `verify` refuse unless the repository's harness and adapter bundle are
+  the bound ones. The committed-form check already compared the harness
+  before running `verify`. Its archive-manifest SHA-256 was
+  `73566b1acc8a959aae426ca167e170c3d4f7ad02fb988c4a7337533f6ff6f015`.
 
-No superseded v0.8 archive is committed.
+No superseded v0.8 archive is committed. The v0.7 harness's own `verify` has
+the same gap. It stays as merged, because changing its bytes would unbind
+the committed v0.7 epoch; the committed-form check compares the v0.7 harness
+with its packet before it runs that `verify`.
 
 Any later change to the v0.8 adapter, the v0.8 harness, the v0.8 documents,
 the v0.7 bundle or overlay they bind, or their inputs starts a new epoch. D-004

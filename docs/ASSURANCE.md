@@ -70,7 +70,7 @@ candidates, so selection and conclusion remain null. The v0.8 suite adds SC-06
 (semantic evolution) and SC-07 (within-authority relabeling) with five cost
 measures, and the owner chose the isolation-first distinguishing rule knowing
 which candidate each rule was predicted to select. Epoch
-`d004-e-aee8a5dee258f7ce2078` ran all 105 executions on 2026-09-28: the same
+`d004-e-633e0aa831615cda3e06` ran all 105 executions on 2026-09-28: the same
 four candidates closed all seven cases and ST-HOST closed none, for 28 closed of
 35 required units and 105 of 105 result records. Isolation first leaves only
 ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
