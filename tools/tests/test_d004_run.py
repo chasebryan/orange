@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools import d004_adapter as adapter
 from tools import d004_run as run
@@ -329,6 +330,58 @@ class D004RunnerTests(unittest.TestCase):
             manifest["entries"][0]["path"] = "../escape"
             (archive / "manifest.json").write_bytes(run.canonical_file(manifest))
             self.assertTrue(any("escapes the archive" in item for item in run.parse_archive_manifest(archive)))
+
+    def test_host_context_changes_names_each_recaptured_manifest_that_drifted(self) -> None:
+        prepared = {
+            "tool": {"interpreter": {"raw_sha256": "a" * 64}, "sandbox": {"binary_raw_sha256": "b" * 64}},
+            "dependency": {"mapped_files": [{"file": "/usr/lib/libc.so.6", "raw_sha256": "c" * 64}]},
+            "environment": {"argv": ["/usr/bin/python3"], "isolation_probe": {"network": "denied"}},
+        }
+
+        class Host:
+            def __init__(self, **current: dict[str, object]) -> None:
+                self.current, self.adapters = {**copy.deepcopy(prepared), **current}, []
+
+            def isolation_probe(self, base: Path, adapter_raw: bytes) -> dict[str, object]:
+                self.adapters.append(adapter_raw)
+                return self.current["environment"]["isolation_probe"]
+
+            def tool_manifest(self, adapter_raw: bytes) -> dict[str, object]:
+                self.adapters.append(adapter_raw)
+                return self.current["tool"]
+
+            def dependency_manifest(self, base: Path, adapter_raw: bytes) -> dict[str, object]:
+                self.adapters.append(adapter_raw)
+                return self.current["dependency"]
+
+            def environment_manifest(self, probe: dict[str, object]) -> dict[str, object]:
+                return {**self.current["environment"], "isolation_probe": probe}
+
+        ctx = type("Context", (), {"adapter_raw": b"archived adapter", **copy.deepcopy(prepared)})()
+        same = Host()
+        self.assertEqual(run.host_context_changes(same, ctx, Path("work")), [])
+        self.assertEqual(same.adapters, [b"archived adapter"] * 3)
+        swapped_libc = {"mapped_files": [{"file": "/usr/lib/libc.so.6", "raw_sha256": "d" * 64}]}
+        self.assertEqual(run.host_context_changes(Host(dependency=swapped_libc), ctx, Path("work")), ["dependency manifest"])
+        swapped_python = {**prepared["tool"], "interpreter": {"raw_sha256": "e" * 64}}
+        self.assertEqual(run.host_context_changes(Host(tool=swapped_python), ctx, Path("work")), ["tool manifest"])
+        open_network = {**prepared["environment"], "isolation_probe": {"network": "allowed"}}
+        self.assertEqual(run.host_context_changes(Host(environment=open_network), ctx, Path("work")), ["environment manifest"])
+
+    def test_execute_refuses_before_any_launch_when_the_host_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory)
+            host = mock.MagicMock()
+            with (
+                mock.patch.object(run, "EpochContext", return_value=mock.MagicMock(schedule=[{"execution_ordinal": 1, "logical_slot_ordinal": 1}])),
+                mock.patch.object(run, "Host", return_value=host),
+                mock.patch.object(run, "host_context_changes", return_value=["dependency manifest"]) as recheck,
+            ):
+                with self.assertRaisesRegex(run.RunError, "the host differs from the prepared epoch: dependency manifest"):
+                    run.command_execute(REPOSITORY, archive)
+            recheck.assert_called_once()
+            host.run_staged.assert_not_called()
+            self.assertFalse((archive / "executions").exists())
 
 
 if __name__ == "__main__":

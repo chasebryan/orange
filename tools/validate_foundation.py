@@ -63,7 +63,7 @@ def _load_d004_helper_functions() -> tuple[Any, Any]:
 ) = _load_d004_helper_functions()
 
 _D004_REVIEWED_PROTOCOL_HELPER_RAW_SHA256 = (
-    "4ec382ed8882c14d33e4ab0de4e372dbd4f6e0908686d4dbd7468eaaac76744e"
+    "ed1bcd187b3dbd03838a0ccd0d66b7e04487ca96f68bd14a9653501f9d39fa8b"
 )
 
 
@@ -644,7 +644,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "67812843c5116f74b9cc9d5ab02c01cc9b02bf85725723a1b8773c14cd0216c1"
+_PHD = "cfa5875890da27fec7d8332106dcd7232ae8ab35541a1ecec090aa258d4e3e87"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"

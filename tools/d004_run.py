@@ -1674,6 +1674,17 @@ def command_prepare(repository: Repository, root: Path, source_revision: str) ->
     return archive
 
 
+def host_context_changes(host: Any, ctx: Any, work: Path) -> list[str]:
+    """Re-capture everything the packet binds about the host and name each part that changed since prepare."""
+    probe = host.isolation_probe(work, ctx.adapter_raw)
+    captured = (
+        ("tool manifest", host.tool_manifest(ctx.adapter_raw), ctx.tool),
+        ("dependency manifest", host.dependency_manifest(work, ctx.adapter_raw), ctx.dependency),
+        ("environment manifest", host.environment_manifest(probe), ctx.environment),
+    )
+    return [name for name, current, prepared in captured if current != prepared]
+
+
 def command_execute(repository: Repository, archive: Path) -> dict[str, Any]:
     ctx = EpochContext(archive, repository)
     if (archive / "executions").exists():
@@ -1682,8 +1693,9 @@ def command_execute(repository: Repository, archive: Path) -> dict[str, Any]:
     records = []
     try:
         host = Host(repository, work, CgroupMeter)
-        if host.sandbox_identity != ctx.tool["sandbox"] or host.adapter_argv() != ctx.environment["argv"]:
-            raise RunError("host tools differ from the prepared epoch")
+        changed = host_context_changes(host, ctx, work)
+        if changed:
+            raise RunError(f"the host differs from the prepared epoch: {', '.join(changed)}")
         for row in ctx.schedule:
             request_raw = (archive / "epoch" / "requests" / f"slot-{row['logical_slot_ordinal']:02d}.json").read_bytes()
             wall_start = time.time()
