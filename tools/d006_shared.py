@@ -13,8 +13,8 @@ candidate, proves nothing, and is not trusted by either candidate's proofs;
 a candidate that agrees with it has computed the same observations, which is
 what DS-01, DS-03 and DS-04 compare.
 
-``generate`` writes the shared inputs (the golden LRAT certificate is copied
-from the path given, since producing it needs the pinned producers), and
+``generate`` writes the shared inputs (the golden LRAT certificate is read
+from standard input, since producing it needs the pinned producers), and
 ``check`` rebuilds every generated file in memory and fails on any byte
 difference. The standard library suffices; nothing here touches the network.
 """
@@ -1957,8 +1957,8 @@ def build(golden: str, semantics: bytes) -> dict[str, bytes]:
 
 def main(arguments: list[str]) -> int:
     root = ROOT / LAB
-    if len(arguments) == 2 and arguments[0] == "generate":
-        golden = Path(arguments[1]).read_text(encoding="ascii")
+    if arguments == ["generate"]:
+        golden = sys.stdin.buffer.read().decode("ascii")
         if lrat_verdict("B-C01", cnf_text("B-C01"), golden) != ("accept",):
             print("the golden certificate does not check", file=sys.stderr)
             return 1
@@ -1975,7 +1975,7 @@ def main(arguments: list[str]) -> int:
         for name in problems:
             print(f"laboratory file differs from the reference: {name}", file=sys.stderr)
         return 1 if problems else 0
-    print("usage: d006_shared.py generate GOLDEN_LRAT | check", file=sys.stderr)
+    print("usage: d006_shared.py generate < GOLDEN_LRAT | check", file=sys.stderr)
     return 2
 
 

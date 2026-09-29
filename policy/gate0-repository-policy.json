@@ -597,7 +597,7 @@
     "tools/d004_run.py": "8f385cd6b3c077c80a6aeacae7c8847e0dca0a045d91b269c02074db50aa3597",
     "tools/d004_v08_adapter.py": "24f3140d9eba4f25ee306f59ffb99f88d3a93a28f854f6c01a72e9f0a594b8e6",
     "tools/d004_v08_run.py": "0c2c074b8c39289aeb71dc1e54384030bf011de1c7690f2ada829b5e1af4d678",
-    "tools/d006_shared.py": "d534885d7b0bb4d9556ba3e413fb8e636835f5f5abee48bc2a2e61b2b84c0931",
+    "tools/d006_shared.py": "1eb8842b0560f45823ecf2657399097027d20394cd9917a7a4bfbc77db12b206",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_d004_archive.py": "026f3425de7eecdc8327ea59951abe0eee2bcde6afab596b4219e3e63741b90e",
     "tools/tests/test_d004_draft_packet.py": "628ced10b9ae7ac0c68aa3e4ffffccf4e910dfc94f46be633d2f198c231194ee",
