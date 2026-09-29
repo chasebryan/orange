@@ -3113,18 +3113,17 @@ class BrandAssetHardeningTests(unittest.TestCase):
         }
         self.assertEqual(observed, expected)
 
-    def test_reader_entrypoints_use_their_designated_hand_drawn_banners(self) -> None:
+    def test_reader_entrypoints_use_their_designated_identity_banners(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         readme = (source_root / "README.md").read_text(encoding="utf-8")
         orange_book = (source_root / "docs/THE_ORANGE_BOOK.md").read_text(encoding="utf-8")
         readme_banner = (
-            "![Hand-drawn Orange cryptography wordmark illustrating commitments, key "
-            "derivation, threshold sharing, permutations, Merkle trees, and checked evidence]"
-            "(assets/brand/orange-cryptography-handdrawn-banner.png)"
+            '<img src="assets/identity/orange-readme-banner.svg" width="830" '
+            'alt="Orange: cryptography you can check.">'
         )
         book_banner = (
-            "![Hand-drawn Orange carton emblem and wordmark]"
-            "(../assets/brand/orange-handdrawn-marker-banner.png)"
+            '<img src="../assets/identity/orange-book-cover.svg" width="400" '
+            'alt="The Orange Book: the Orange emblem in cream on a field of Orange.">'
         )
         prism = (
             "![Orange Semantic Prism conceptual architecture snapshot showing proposed "

@@ -1,6 +1,6 @@
 # The Orange Book
 
-![Hand-drawn Orange carton emblem and wordmark](../assets/brand/orange-handdrawn-marker-banner.png)
+<img src="../assets/identity/orange-book-cover.svg" width="400" alt="The Orange Book: the Orange emblem in cream on a field of Orange.">
 
 By Chase Bryan
 

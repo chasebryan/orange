@@ -12,7 +12,9 @@
     },
     "MD033": {
       "allowed_elements": [
-        "img"
+        "img",
+        "picture",
+        "source"
       ]
     }
   }

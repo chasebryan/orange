@@ -1,6 +1,10 @@
 # Orange
 
-![Hand-drawn Orange cryptography wordmark illustrating commitments, key derivation, threshold sharing, permutations, Merkle trees, and checked evidence](assets/brand/orange-cryptography-handdrawn-banner.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/identity/orange-readme-banner-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/identity/orange-readme-banner-light.svg">
+  <img src="assets/identity/orange-readme-banner.svg" width="830" alt="Orange: cryptography you can check.">
+</picture>
 
 **Orange is a language and toolchain for cryptography you can check.** You
 write the mathematical specification, connect it to a fast implementation, say

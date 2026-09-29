@@ -642,7 +642,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "2c98f75edcd3125485905ca2f5f0598680364faa234f483c3588d2d1b069a154"
+_RDC = "2ffcb4c8e92fbbc06ab397854d17413cb3a1b87f84ff42dba5c9850f8e79df78"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -674,7 +674,9 @@ _MLC = '''{
     },
     "MD033": {
       "allowed_elements": [
-        "img"
+        "img",
+        "picture",
+        "source"
       ]
     }
   }

@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.130",
+  "policy_version": "0.2.131",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -425,7 +425,7 @@
     ".github/workflows/scorecard.yml": "54e7cc0cea627465e5b03512206e2ea0121a7b7b9ba9b84df1f7a11720cca99d",
     ".github/workflows/workflow-online-audit.yml": "2639479836f5a10568bbfcee6153feddc902af6b57b8f1e1b657097905b52a6a",
     ".gitignore": "0dc93ed8728b8eb9726b7461ef8fd42db8f366b07d72039ed421ed9357e4152d",
-    ".markdownlint-cli2.jsonc": "abcacc70e3d54a4cbfc4a4d3cbfd92564f5fbbf3f408d0f61aae37af4ab781a5",
+    ".markdownlint-cli2.jsonc": "a2e0c960a3420ac9feb5a945f7146d901b0138309310248d9984850f5437fd31",
     "CODE_OF_CONDUCT.md": "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a",
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
