@@ -19,7 +19,7 @@ every step from that definition to machine code stays precise enough to check.
 > [!IMPORTANT]
 > Orange is **pre-alpha** and built by one person. Today the compiler checks
 > and evaluates a small typed fragment of the language. It does not yet
-> generate code, check proofs, or implement any cryptography, and nothing in
+> generate native code or check proofs, and nothing in
 > this repository has been independently reviewed or formally verified.
 
 ## Why Orange exists
@@ -188,6 +188,14 @@ ring element, and every index is a literal, so every position a specification
 reads is visible and in range. This slice, S3d, is implemented and tested; its
 specification is in review as
 [OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md).
+
+### Daylight Horizon example
+
+[`examples/daylight/`](examples/daylight/README.md) contains an owner-directed
+Orange port of Daylight Horizon v17's SHA-256, HKDF, ChaCha20 and Poly1305
+computations. It includes a standalone framed-encryption vector, a host adapter
+that preserves Horizon's existing evidence-policy checks, and interoperability
+tests. This is executable reference code, not verified production cryptography.
 
 ## What works today
 

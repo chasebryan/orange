@@ -1,0 +1,14 @@
+Daylight Horizon Orange Port
+
+Upstream WUCI-JI
+Copyright 2026 Chase Bryan
+This product includes software developed for the WUCI-JI project.
+
+This package contains a new Orange translation and interpreter bridge for
+Daylight Horizon v17's cryptographic mechanics. It follows the Apache-2.0
+Daylight v17 Horizon and v15 Meridian sources at upstream revision
+fec91dc6618d477908790520118bae7e25909c43.
+
+The new/modified material is daylight.or, daylight-horizon.or, daylight.py,
+emit_example.py, test_daylight.py, README.md and validation.txt. The work was
+AI-assisted with OpenAI Codex. No Noether Forge initramfs patches are included.
