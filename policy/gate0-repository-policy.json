@@ -411,8 +411,8 @@
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "2e4b22f3ea3df4f629107de99f7ab35e47be58226019fae190d7119f678a0214",
-    "assets/brand/manifest.json": "17b38c22f1a58455f5e240226406301084bb47d1abeb238f6d4f743ed7fa28e6",
+    "assets/brand/README.md": "0f70fc8b8610096a97f8312e1e25176ad9099718e9faf45189c409dba42277bf",
+    "assets/brand/manifest.json": "8ce296a870b0c2a6eacd40d15dd6ff3fcaffe838e322bfa898871c1eb7365d2a",
     "compiler/.gitignore": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368",
     "compiler/crates/orange-compiler/tests/d004_decision_suite.rs": "b9615fb562b492a289d510afb78f57be6a65ba26011784e90d0d11384fc36f03",
     "compiler/crates/orange-compiler/tests/d004_support/candidate_mappings.rs": "bb6c76ca7cc754f4af28ef04bbe84cc327b2e805d3750f525e3ff8afcd0401cc",
@@ -552,7 +552,7 @@
     "tools/tests/test_d009_draft_packet.py": "eb10596a538693b53069d4235a0c941c7b6166aef993e20d3d7cd499e7a6c1c0",
     "tools/tests/test_d010_draft_packet.py": "291a86bb074b8b3b96f47093981e66e8aba7eb983faff2a4c68981ad120bac9d",
     "tools/tests/test_validate_foundation.py": "05832bb924e443c5ea4cef97ef525f916ed1263f1aa7deed6b658d7a98cac865",
-    "tools/tests/test_validate_foundation_hardening.py": "a3cebdd23b5cc53b1283bb1ad6c98bcabb83ea2789591e62a9caa4eea11dfcbb"
+    "tools/tests/test_validate_foundation_hardening.py": "1913decff79a37faef435f373b0556dcb35b737bd79de8876c053ab36036788b"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

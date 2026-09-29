@@ -121,12 +121,13 @@
     },
     {
       "path": "orange-book-cipher-cover.png",
-      "source_filename": "orange-book-cipher-cover.png",
+      "source_filename": "exec-20007692-ab83-4401-8529-3ba127105b2c.png",
       "media_type": "image/png",
       "width": 1024,
       "height": 1536,
       "alpha": false,
       "role": "orange-book-cipher-front-cover-lossless-derived",
+      "derivation": "lossless PNG recompression of the source (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); identical dimensions and RGB pixels; metadata, including C2PA, omitted",
       "sha256": "99682f1f646868105b28f3091e3391d6532404cb0bfadaec51e109262ff7f66d"
     }
   ]

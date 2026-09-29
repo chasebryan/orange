@@ -574,7 +574,10 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
     "orange-cryptography-handdrawn-banner.png": "exec-b489e83f-e13c-467d-85b5-c6f62fe265b7.png",
     "orange-cipher-readme-banner.png": "exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png",
-    "orange-book-cipher-cover.png": "orange-book-cipher-cover.png",
+    "orange-book-cipher-cover.png": "exec-20007692-ab83-4401-8529-3ba127105b2c.png",
+}
+GATE0_BRAND_DERIVATIONS = {
+    "orange-book-cipher-cover.png": "lossless PNG recompression of the source (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); identical dimensions and RGB pixels; metadata, including C2PA, omitted",
 }
 GATE0_EXECUTABLE_PATHS = set(
     """scripts/ci/check-external-links scripts/ci/check-repository
@@ -689,7 +692,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "c2be05d8b3af8f463c4fee418f6763c46f29bb16bab6bc6b027a81e3e9dc15bf"
+_PHD = "fa493ab9b1d9f882737c3c45c99dd8bf7c3bfaa75790ae9b17d03465cc189b2e"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -3863,6 +3866,8 @@ class FoundationValidator:
             }
             if has_c2pa:
                 expected_fields.add("content_credentials")
+            if name in GATE0_BRAND_DERIVATIONS:
+                expected_fields.add("derivation")
             if set(item) != expected_fields:
                 self.add("brand.manifest_fields", manifest_path, f"assets[{index}] fields must remain exact")
             if (
@@ -3876,11 +3881,13 @@ class FoundationValidator:
                 self.add("brand.manifest_metadata", manifest_path, f"assets[{index}] technical metadata is incorrect")
             if item.get("sha256") != admissions[name]["sha256"]:
                 self.add("brand.manifest_digest", manifest_path, f"assets[{index}] digest disagrees with policy")
-            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name]:
+            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name] or item.get(
+                "derivation"
+            ) != GATE0_BRAND_DERIVATIONS.get(name):
                 self.add(
                     "brand.manifest_provenance",
                     manifest_path,
-                    f"assets[{index}] source filename is incorrect",
+                    f"assets[{index}] source filename or derivation is incorrect",
                 )
             if has_c2pa and item.get("content_credentials") != (
                 "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified"

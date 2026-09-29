@@ -3040,6 +3040,28 @@ class BrandAssetHardeningTests(unittest.TestCase):
             validator._validate_brand_assets()
             self.assertIn("brand.manifest_provenance", {finding.code for finding in validator.findings})
 
+    def test_brand_manifest_derivation_mutation_is_rejected(self) -> None:
+        source_root = Path(__file__).resolve().parents[2]
+        for mutation in ("drop", "change", "add"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                shutil.copytree(source_root / "assets/brand", root / "assets/brand")
+                manifest_path = root / "assets/brand/manifest.json"
+                manifest = load_json(manifest_path)
+                assets = {item["path"]: item for item in manifest["assets"]}
+                derived = assets["orange-book-cipher-cover.png"]
+                if mutation == "drop":
+                    del derived["derivation"]
+                elif mutation == "change":
+                    derived["derivation"] = "byte-for-byte import"
+                else:
+                    assets["orange.png"]["derivation"] = derived["derivation"]
+                manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator._validate_brand_assets()
+                codes = {finding.code for finding in validator.findings}
+                self.assertTrue({"brand.manifest_fields", "brand.manifest_provenance"} & codes)
+
     def test_all_official_brand_assets_are_marked_binary_by_git(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         manifest = load_json(source_root / "assets/brand/manifest.json")

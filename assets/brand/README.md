@@ -63,9 +63,9 @@ The cover uses the banner as a visual reference. Its original generation was
 The committed `orange-book-cipher-cover.png` is a losslessly recompressed PNG
 with identical dimensions and RGB pixels. This derivative omits metadata,
 including the original C2PA container, and makes no signed-provenance claim.
-It fits the existing 2 MiB per-image limit. The manifest records the prepared
-derivative's filename and digest; the policy also records the original source
-and transformation.
+It fits the existing 2 MiB per-image limit. The manifest records the original
+source filename, the transformation (`derivation`) and the derivative's digest;
+the policy records the same source and transformation.
 
 Both images are additional assets. The existing images, README hero, and book
 manuscript image references retain their current bytes and paths.
