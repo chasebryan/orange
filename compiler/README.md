@@ -1,6 +1,7 @@
 # Orange compiler
 
-Status: production-lineage, pre-alpha S3a under accepted OEP-0003
+Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b
+proposed under OEP-0005, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -9,10 +10,15 @@ interfaces to extend rather than a disposable prototype.
 
 Nothing here makes a verification, correctness, constant-time, or production
 readiness claim. `orangec check` performs lexical, syntactic, and bounded
-semantic validation. The accepted S3a slice assigns meaning only to closed
-typed `spec` literals, lowers them to a noncanonical Typed Reference Core, and
-reference-evaluates them. General expressions, typed `impl`, proof checking,
-verified lowering, and code generation do not exist.
+semantic validation. The accepted S3a slice assigns meaning to closed typed
+`spec` literals. The S3b slice, proposed in
+[`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md) and in owner review
+under OEP-0005, extends it to pure typed `spec` functions: parameters, calls,
+`Int` and `Word[8]` through `Word[64]`, exact integer arithmetic, word ring
+arithmetic, bitwise operators, shifts, and rotations. Both lower to a
+noncanonical Typed Reference Core and are reference-evaluated. Local bindings,
+control flow, typed `impl`, proof checking, verified lowering, and code
+generation do not exist.
 
 This boundary was merged by
 [PR #9](https://github.com/chasebryan/orange/pull/9) as commit
@@ -33,9 +39,12 @@ cargo test --manifest-path compiler/Cargo.toml --workspace
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/typed-answer.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/typed-answer.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-chacha20-quarter-round.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3b_conformance --locked --offline
 ```
 
 ## D-004 pre-epoch decision laboratory
@@ -92,14 +101,16 @@ No concrete scheduled-execution digest exists until the epoch, packet identity,
 and executable manifests are frozen.
 
 This synthetic contract accepts no populated records, launches no process or
-adapter, and persists nothing. Candidate adapters, closed payload schemas,
-exact executable and dependency manifests, enforcing isolation, result parsers,
-an execution-subject revision, and a separate owner freeze record remain
-absent. The epoch is null and unfrozen, execution is unauthorized, and evidence
-remains zero completed of 25 required candidate-case units and 0 of 75 result
-records. Selection and conclusion remain null. D-004 remains proposed, S3b
-remains blocked, both `roadmap_gate_credit` and `readiness_credit` remain
-`none`, and Orange's 3-of-10 (30%) binary gate-closure score is unchanged.
+adapter, and persists nothing. The Python run harness in `tools/d004_run.py`
+supplies the adapter, closed payload schemas, executable and dependency
+manifests, enforcing isolation and result parsers. Epoch
+`d004-e-4aaf8a83a01693d543c4` ran all 75 executions and closed 20 of 25
+required candidate-case units with 75 of 75 result records,
+contributor-produced and unreviewed; see the D-004 laboratory README. Selection
+and conclusion remain null. D-004 remains proposed, S3b is implemented and
+awaits owner review under OEP-0005, both `roadmap_gate_credit` and
+`readiness_credit` remain `none`, and Orange's 3-of-10 (30%) binary
+gate-closure score is unchanged.
 
 ## D-005 decision laboratory
 
@@ -538,19 +549,34 @@ may improve without reusing a code for a different error.
 ## Orange 2026 grammar
 
 The parser accepts exactly one edition declaration followed by exactly one
-module. Legacy empty `spec` and `impl` functions remain valid. A `spec` may also
-declare one parsed result type and one signed integer literal:
+module. Empty `spec` and `impl` functions remain valid. A typed `spec` declares
+its parameters, one parsed result type, and a body of exactly one expression:
 
 ```text
-source_file   = edition_decl module_decl EOF ;
-edition_decl  = "edition" "2026" ";" ;
-module_decl   = "module" IDENTIFIER "{" function_decl* "}" ;
-function_decl = "spec" IDENTIFIER "(" ")" spec_tail
-              | "impl" IDENTIFIER "(" ")" empty_body ;
-spec_tail     = empty_body | "->" parsed_type "{" signed_integer "}" ;
-parsed_type   = IDENTIFIER ("[" INTEGER "]")? ;
-signed_integer = "-"? INTEGER ;
-empty_body    = "{" "}" ;
+source_file     = edition_decl module_decl EOF ;
+edition_decl    = "edition" "2026" ";" ;
+module_decl     = "module" IDENTIFIER "{" function_decl* "}" ;
+function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
+                | "spec" IDENTIFIER "(" parameters ")" typed_tail
+                | "impl" IDENTIFIER "(" ")" empty_body ;
+spec_tail       = empty_body | typed_tail ;
+typed_tail      = "->" parsed_type "{" expression "}" ;
+empty_body      = "{" "}" ;
+parameters      = parameter ("," parameter)* ","? ;
+parameter       = IDENTIFIER ":" parsed_type ;
+parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
+
+expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift ;
+arithmetic      = product (("+" | "-") product)* ;
+product         = prefixed ("*" prefixed)* ;
+chain(op)       = prefixed (op prefixed)+ ;
+shift           = prefixed shift_operator prefixed ;
+shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
+prefixed        = literal | ("-" | "~") prefixed | primary ;
+literal         = "-"? INTEGER ;
+primary         = IDENTIFIER | call | "(" expression ")" ;
+call            = IDENTIFIER "(" arguments? ")" ;
+arguments       = expression ("," expression)* ","? ;
 ```
 
 For example:
@@ -562,17 +588,32 @@ module demo {
   impl rounds() {}
   spec answer() -> Int { 42 }
   spec mask() -> Word[8] { 0xff }
+  spec big_sigma0(x: Word[32]) -> Word[32] {
+    (x >>> 2) ^ (x >>> 13) ^ (x >>> 22)
+  }
+  spec sample() -> Word[32] { big_sigma0(0x6a09_e667) }
 }
 ```
 
+The only precedence is that prefix operators bind first and `*` binds more
+tightly than `+` and `-`. Operators from different groups, or two shifts, at one
+level are `ORC0108`, so `(x >>> 2) ^ (x >>> 13)` needs its parentheses. A `-`
+immediately before an integer token is that literal's sign, so the S3a body
+`{ -42 }` is still one literal.
+
 The parser accepts generic type syntax so unsupported forms receive semantic
-diagnostics. Semantics accepts only exact `Int` and exact `Word[8]` on typed
-`spec` declarations. `Int` is mathematical within the bounded accepted source
-representation and does not silently wrap;
-`Word[8]` accepts only 0 through 255 and does not coerce, truncate, or wrap.
-Duplicate names are syntactically valid, then semantic analysis rejects a
-duplicate within the same declaration-kind namespace. Empty declarations have
-no value, and a typed `impl` remains a syntax error.
+diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
+and `Word[64]`, and checks every expression against an expected type with no
+inference or coercion. `Int` is mathematical within the evaluator's resource
+bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
+and `*` wrap because that is their meaning, while a literal must already fit
+and never coerces, truncates, or wraps. Shift and rotation amounts are
+unsigned literals from 0 through n - 1. Names are the enclosing function's
+parameters, calls name typed `spec` functions of the same module, and the call
+graph must be acyclic. Duplicate names are syntactically valid, then semantic
+analysis rejects a duplicate within the same declaration-kind namespace or
+parameter list. Empty declarations have no value, and a typed `impl` remains a
+syntax error.
 
 The reusable syntax-tree and Typed Reference Core nodes, together with parser,
 analysis, and evaluation result envelopes, are read-only outside the compiler
@@ -586,18 +627,25 @@ syntax tree paired with a different source as `ORC0210`. A Core function's
 reported type is derived from its value, so a type/value mismatch is not
 representable at the public Core boundary.
 
-`orangec eval` prints every typed specification in source order:
+`orangec eval` prints every typed specification without parameters in
+source order. Functions with parameters are checked but run only when called,
+and words print as fixed-width lowercase hexadecimal:
 
 ```text
 demo::answer: Int = 42
 demo::mask: Word[8] = 0xff
+demo::sample: Word[32] = 0xce20b47e
 ```
 
-The complete accepted rules and non-claims are in
-[`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md). This slice defines no
-operators, calls, parameters, bindings, effects, proof meaning, implementation
-refinement, target behavior, ABI, leakage property, output code, package or
-release behavior, or cryptographic construction.
+The accepted S3a rules and non-claims are in
+[`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
+rules, limits, and non-claims are in
+[`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md). Neither defines
+bindings, control flow, effects, proof meaning, implementation refinement,
+target behavior, ABI, leakage property, output code, package or release
+behavior, or cryptographic construction. A function that evaluates to a
+standard's example value is not thereby a verified transcription of that
+standard.
 
 ## S2 conformance index
 
@@ -727,6 +775,35 @@ at reachable boundaries. This indexed mapping does not complete S3 and adds no
 source construct, semantic rule, canonical Core identity, proof, target, claim,
 or S3b authority.
 
+## S3b expression conformance
+
+`fixtures/s3b/` contains an exact fourteen-file corpus for the proposed S3b
+behavior: five fixtures must evaluate successfully and nine must fail closed.
+The accepted fixtures cover `Int` arithmetic, word ring arithmetic at every
+width, calls and grouping, the SHA-256 functions of FIPS 180-4 through round 0
+of the "abc" example, and the ChaCha20 quarter round against the test vector of
+RFC 8439 section 2.1.1. The rejected fixtures cover parameter syntax, ungrouped
+operators, unknown names and calls, argument counts, types and undefined
+operators, shift amounts, word literals and widths, call cycles, and the
+diagnostic order across all of them.
+
+`crates/orangec/tests/s3b_conformance.rs` checks the directory inventory, runs
+`orangec check` and `orangec eval` twice per fixture, and requires identical
+bytes each time. Accepted cases must check silently and print exact values.
+Rejected cases must fail with no partial output, the exact ordered diagnostic
+codes, their primary lines and columns, and their meaning.
+
+The runner parses the 28-rule S3b index in `docs/EXPRESSIONS_2026.md`, rejects
+missing, unknown, and duplicate rule IDs, and binds every rule to named CLI,
+generated-CLI, parser-unit, or unit tests declared exactly once at their
+harness locations. Generated cases pin each resource limit at its exact
+boundary: 64 nesting levels for every opener, expression height 256, 64
+parameters and 256 arguments, 256 call frames, the shared 1,048,576-step
+evaluation budget, and the 16,384-bit `Int` result limit. The shift and
+rotation tokens are checked for longest-match lexing. This corpus establishes
+the tested behavior of one implementation; it does not accept OEP-0005, prove
+the rules sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -744,6 +821,10 @@ or S3b authority.
   parser conformance runner;
 - `crates/orangec/tests/s3a_conformance.rs`: exact repeatable black-box S3a
   corpus runner;
-- `fixtures/hello.or`: permanent legacy syntax fixture; and
-- `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture; and
-- `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus.
+- `crates/orangec/tests/s3b_conformance.rs`: exact repeatable S3b corpus,
+  rule-index, and resource-limit runner;
+- `fixtures/hello.or`: permanent legacy syntax fixture;
+- `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
+- `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
+  and
+- `fixtures/s3b/`: exact five-positive/nine-negative S3b CLI fixture corpus.

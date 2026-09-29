@@ -52,40 +52,61 @@ These are design directions, not current features. The
 
 ## A first look
 
-This is Orange 2026 source that the current compiler accepts:
+This is Orange 2026 source that the current compiler accepts: three of the
+SHA-256 functions of FIPS 180-4, written the way the standard writes them.
 
 ```orange
 edition 2026;
-module demo {
-  spec answer() -> Int { 42 }
-  spec negative() -> Int { -0x2a }
-  spec mask() -> Word[8] { 0xff }
+module sha256 {
+  spec choose(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    (x & y) ^ (~x & z)
+  }
+  spec majority(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    (x & y) ^ (x & z) ^ (y & z)
+  }
+  spec big_sigma0(x: Word[32]) -> Word[32] {
+    (x >>> 2) ^ (x >>> 13) ^ (x >>> 22)
+  }
+
+  // Values from round 0 of the FIPS 180-4 "abc" example.
+  spec sigma0_of_h0() -> Word[32] { big_sigma0(0x6a09_e667) }
+  spec majority_of_h() -> Word[32] { majority(0x6a09_e667, 0xbb67_ae85, 0x3c6e_f372) }
 }
 ```
 
-`Int` is the type of mathematical integers, with no overflow. `Word[8]` is an
-unsigned 8-bit machine word that holds 0 through 255 and never wraps or
-truncates silently. `orangec eval` checks the module and evaluates each
-specification:
+`Word[32]` is the ring of integers modulo 2^32, so `+`, `-`, and `*` on words
+are the ring operations: wrapping is the meaning, never an accident. `>>>` and
+`<<<` rotate, `>>` and `<<` shift, and every amount is a literal checked
+against the width. `Int` is the type of mathematical integers, with no
+overflow. A literal must fit its type exactly, so `256` is an error as a
+`Word[8]`, not a silent zero. Saved as `sha256.or`, the module checks and
+evaluates:
 
 ```console
-$ orangec eval compiler/fixtures/typed-answer.or
-demo::answer: Int = 42
-demo::negative: Int = -42
-demo::mask: Word[8] = 0xff
+$ orangec eval sha256.or
+sha256::sigma0_of_h0: Word[32] = 0xce20b47e
+sha256::majority_of_h: Word[32] = 0x3a6fe667
 ```
 
-Out-of-range values are errors with stable codes and precise source spans. For
-a file `byte.or` that declares `spec byte() -> Word[8] { 256 }` inside a module:
+The full [SHA-256 fixture](compiler/fixtures/s3b/valid-sha256-functions.or)
+carries these functions through round 0 and reproduces NIST's published value
+of `a`, `0x5d6aebcd`; the
+[ChaCha20 fixture](compiler/fixtures/s3b/valid-chacha20-quarter-round.or)
+reproduces the quarter-round test vector of RFC 8439.
+
+Orange's whole precedence table fits in one line: prefix operators first, then
+`*` before `+` and `-`. Operators from different families never share a level
+without parentheses, so every expression reads exactly as it groups. For a
+file `mix.or` whose function body is `a + b ^ b <<< 7`:
 
 ```console
-$ orangec check byte.or
-error[ORC0207]: literal is outside the range of `Word[8]`
- --> byte.or:3:28
+$ orangec check mix.or
+error[ORC0108]: `^` follows `+` without grouping parentheses
+ --> mix.or:4:11
   |
-3 |   spec byte() -> Word[8] { 256 }
-  |                            ^^^ expected a value from 0 through 255
-  = note: fixed-width words do not truncate or wrap out-of-range integers
+4 |     a + b ^ b <<< 7
+  |           ^ ungrouped operator
+  = note: operators from different groups have no relative precedence in Orange; parenthesize the part that applies first
 ```
 
 ## What works today
@@ -95,9 +116,10 @@ error[ORC0207]: literal is outside the range of `Word[8]`
 | Source model, UTF-8 byte spans, stable diagnostic codes | Working |
 | Deterministic lexer (`orangec lex`) | Working |
 | Orange 2026 grammar: one edition, one module, `spec` and `impl` declarations | Working |
-| Semantic checking for typed `spec` literals of type `Int` and `Word[8]` | Working |
-| Typed Reference Core and reference evaluator (`orangec eval`) | Working, literals only |
-| Expressions, operators, parameters, calls, control flow | Not yet |
+| Typed `spec` functions: parameters, calls, `Int`, and `Word[8]` through `Word[64]` | Working; specification in review ([OEP-0005](docs/governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md)) |
+| Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
+| Typed Reference Core and reference evaluator (`orangec eval`) | Working |
+| Local bindings, comparisons, conditionals, loops, arrays, conversions | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -115,7 +137,7 @@ git clone https://github.com/chasebryan/orange.git
 cd orange
 
 # Build and try the compiler
-cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/typed-answer.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 
@@ -155,7 +177,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -180,9 +202,10 @@ from July 2026, not a finished design; see the
 
 - **[The Orange Book](docs/THE_ORANGE_BOOK.md)**: the reader's guide to why
   Orange exists, how it is designed, and what has been built. Start here.
-- [Orange 2026 language specification](docs/LANGUAGE_2026.md) and
-  [typed-literal semantics](docs/SEMANTICS_2026.md): the normative definition
-  of what the compiler accepts today.
+- [Orange 2026 language specification](docs/LANGUAGE_2026.md),
+  [typed-literal semantics](docs/SEMANTICS_2026.md), and the proposed
+  [pure expression semantics](docs/EXPRESSIONS_2026.md): the definition of
+  what the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Architecture](docs/ARCHITECTURE.md) and
   [assurance model](docs/ASSURANCE.md): the intended end state.

@@ -67,13 +67,15 @@ define_diagnostic_codes! {
     ParserResourceLimit => "ORC0106",
     /// Parsing received lexer output owned by another source.
     InvalidParserInput => "ORC0107",
+    /// Operators from different groups, or chained shifts, lack parentheses.
+    UngroupedOperators => "ORC0108",
     /// A second function declaration conflicts in its declaration namespace.
     DuplicateFunction => "ORC0201",
-    /// A typed literal body appeared on a function kind without semantics.
+    /// A typed body appeared on a function kind without semantics.
     UnsupportedTypedFunction => "ORC0202",
-    /// A typed literal names a type outside the admitted semantic fragment.
+    /// A type outside the admitted semantic fragment was named.
     UnsupportedType => "ORC0203",
-    /// A `Word` type uses a width other than the admitted exact width.
+    /// A `Word` type uses a width other than the admitted exact widths.
     UnsupportedWordWidth => "ORC0204",
     /// An exact integer magnitude exceeds the semantic representation budget.
     IntegerMagnitudeLimit => "ORC0205",
@@ -87,6 +89,22 @@ define_diagnostic_codes! {
     SemanticResourceLimit => "ORC0209",
     /// Semantic analysis received a syntax tree owned by another source.
     InvalidSemanticInput => "ORC0210",
+    /// A bare identifier is not a parameter of the enclosing function.
+    UnknownParameter => "ORC0211",
+    /// A call names no typed `spec` function in the module.
+    UnknownFunction => "ORC0212",
+    /// A call supplies a different number of arguments than the callee declares.
+    ArgumentCountMismatch => "ORC0213",
+    /// An expression's type differs from the type its context requires.
+    TypeMismatch => "ORC0214",
+    /// An operator is not defined for the type its context requires.
+    UnsupportedOperator => "ORC0215",
+    /// A shift or rotation amount is not an admitted literal for the word width.
+    InvalidShiftAmount => "ORC0216",
+    /// Calls between typed `spec` functions form a cycle.
+    CallCycle => "ORC0217",
+    /// A parameter name repeats within one function.
+    DuplicateParameter => "ORC0218",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -649,9 +667,10 @@ mod tests {
             .collect::<Vec<_>>();
         let expected = [
             "ORC0001", "ORC0002", "ORC0003", "ORC0004", "ORC0005", "ORC0006", "ORC0007", "ORC0008",
-            "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107", "ORC0201",
-            "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208", "ORC0209",
-            "ORC0210", "ORC0301",
+            "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107", "ORC0108",
+            "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
+            "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
+            "ORC0217", "ORC0218", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

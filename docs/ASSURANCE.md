@@ -56,15 +56,22 @@ overlay is present at an exact merged revision.
 
 The reviewed replay plan assigns three deterministic repetitions to each of 25
 candidate-case units, for 75 planned executions with a fresh empty candidate-
-specific cache per execution and deterministic equality requirements. It is not
-an executable evidence epoch: adapters and executable manifests remain absent,
-the epoch is null and unfrozen, execution is unauthorized, and evidence remains
-zero completed of 25 required units and 0 of 75 result records. Selection and
-conclusion remain null. Canonical parsing, digest checks, and structural oracles
-establish no Orange semantics, proof, leakage, target, cryptographic, or
-readiness assurance. D-004 remains proposed, S3b remains blocked, and Orange's
-binary gate-closure score remains 3 of 10 (30%); that mechanical score is not
-release readiness.
+specific cache per execution and deterministic equality requirements. The v0.7
+tranche built the adapter, closed payload schemas, executable manifests,
+enforcing isolation and result parsers, and replaced the separate owner freeze
+record with a content-addressed epoch identity. Epoch
+`d004-e-4aaf8a83a01693d543c4` ran all 75 executions on 2026-09-28. ST-REL,
+ST-UNI, ST-DUAL, and ST-MIRROR each passed all five cases with byte-identical
+repetitions; ST-HOST failed all five because six relationships it delegates to
+hosts owned by the open D-006 and D-011 decisions are unsupported. Evidence is
+20 closed of 25 required units and 75 of 75 result records,
+contributor-produced and unreviewed. The suite cannot separate the four passing
+candidates, so selection and conclusion remain null. The epoch records
+execution behavior only; a passing record is not an assurance claim. Canonical
+parsing, digest checks, and structural oracles establish no Orange semantics,
+proof, leakage, target, cryptographic, or readiness assurance. D-004 remains
+proposed, S3b is implemented and awaits owner review under OEP-0005, and
+Orange's binary gate-closure score remains 3 of 10 (30%); that mechanical score is not release readiness.
 
 The D-010 input-only laboratory is planning evidence only. It compares five
 candidate identities across eight zero-fixture cases and remains at 0/40. It

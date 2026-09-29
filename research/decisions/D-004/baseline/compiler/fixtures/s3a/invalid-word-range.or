@@ -1,0 +1,8 @@
+// S3a rejection: Word[8] does not wrap, truncate, saturate, or coerce 256.
+edition 2026;
+module s3a_invalid_word_range {
+  spec valid_before_error() -> Int { 42 }
+  spec decimal() -> Word[8] { 256 }
+  spec hexadecimal() -> Word[8] { 0x1_00 }
+  spec binary() -> Word[8] { 0b1_0000_0000 }
+}

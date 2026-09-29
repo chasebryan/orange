@@ -147,15 +147,21 @@ available at an exact merged revision.
 The reviewed replay plan assigns exactly three deterministic repetitions to
 each of the 25 candidate-case units, for 75 planned executions. Every execution
 requires a fresh empty candidate-specific cache and equality of the specified
-deterministic fields. The plan remains uninstantiated: adapters, executable
-manifests, enforcing isolation, result parsers, an exact execution-subject
-revision, and a separate owner freeze record are absent. The D-004 epoch is null
-and unfrozen, execution is unauthorized, evidence remains zero completed of 25
-required units and 0 of 75 result records, and selection and conclusion remain
-null. Integrity parsing and structural oracles ratify no Orange semantics.
-D-004 remains proposed, S3b remains blocked, and Orange's 3-of-10 (30%) binary
-gate-closure score remains unchanged; that mechanical score is not release
-readiness.
+deterministic fields. The v0.7 tranche built the adapter, closed payload
+schemas, executable manifests, enforcing isolation and result parsers, and
+replaced the separate owner freeze record with a content-addressed epoch
+identity. Epoch `d004-e-4aaf8a83a01693d543c4` ran all 75 executions on
+2026-09-28. ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR each passed all five cases
+with byte-identical repetitions; ST-HOST failed all five because six
+relationships it delegates to hosts owned by the open D-006 and D-011 decisions
+are unsupported. Evidence is 20 closed of 25 required units and 75 of 75 result
+records, contributor-produced and unreviewed. The suite cannot separate the
+four passing candidates, so selection and conclusion remain null. Integrity
+parsing and structural oracles ratify no Orange semantics. D-004 remains
+proposed pending owner review of these results, S3b is implemented and awaits
+owner review under OEP-0005, and Orange's 3-of-10 (30%) binary gate-closure
+score remains unchanged; that
+mechanical score is not release readiness.
 
 ## D-005 — Public assurance model
 

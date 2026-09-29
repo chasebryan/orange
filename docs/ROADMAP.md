@@ -364,14 +364,23 @@ S3a evidence closure is complete at exact merged revision
 `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`, with OEP-0003 accepted and its
 local and hosted evidence recorded.
 
-Before S3b expands the Typed Reference Core with pure expressions or calls:
+S3b expands the Typed Reference Core with pure expressions and calls. It did
+not wait for D-004: under the owner's direction of 2026-09-28 that development
+should not freeze unless the owner asks for it, S3b was built and tested while
+D-004 remains open, and it assumes only what every D-004 candidate gives the
+specification stratum. Its acceptance requires:
 
-1. retain accepted D-003 and
+1. retaining accepted D-003 and
    [OEP-0004](governance/oeps/OEP-0004-standalone-orange-product-form.md) as
-   the exact-revision PF-01 standalone product-form boundary;
-2. decide D-004, the complete semantic strata and Core relationships; and
-3. authorize the bounded S3b surface through an OEP with explicit conformance,
-   resource, compatibility, threat, and non-claim boundaries.
+   the exact-revision PF-01 standalone product-form boundary; and
+2. the owner's acceptance of
+   [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
+   which bounds the S3b surface in [`EXPRESSIONS_2026.md`](EXPRESSIONS_2026.md)
+   with explicit conformance, resource, compatibility, threat, and non-claim
+   boundaries.
+
+When D-004 is decided, it places the S3b Core within the chosen strata. That
+placement changes no S3b source.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -397,13 +406,19 @@ sufficient only for bounded suite coverage. It reviews all five candidate
 graphs and 70 SR mappings only as symmetric, falsifiable test hypotheses, not
 accepted Orange semantics or capability evidence. The reviewed replay plan
 assigns three deterministic repetitions to each of 25 candidate-case units, for
-75 planned executions. It remains uninstantiated: candidate adapters,
-executable manifests, enforcing isolation, result parsers, an exact execution-
-subject revision, and a separate owner freeze record are absent. The epoch is
-null and unfrozen, execution is unauthorized, evidence is zero completed of 25
-required units and 0 of 75 result records, and selection and conclusion remain
-null. D-004 remains proposed, S3 remains incomplete, S3b remains blocked, and
-Orange remains 30% complete by its unchanged 3-of-10 binary gate-closure score.
+75 planned executions. The v0.7 tranche built the adapter, closed payload
+schemas, executable manifests, enforcing isolation and result parsers, and
+replaced the separate owner freeze record with a content-addressed epoch
+identity. Epoch `d004-e-4aaf8a83a01693d543c4` ran all 75 executions on
+2026-09-28. ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR each passed all five cases
+with byte-identical repetitions; ST-HOST failed all five because six
+relationships it delegates to hosts owned by the open D-006 and D-011 decisions
+are unsupported. Evidence is 20 closed of 25 required units and 75 of 75 result
+records, contributor-produced and unreviewed. The suite cannot separate the
+four passing candidates, so selection and conclusion remain null. D-004 remains
+proposed pending owner review, S3 remains incomplete, S3b is implemented and
+awaits owner review under OEP-0005, and Orange remains 30% complete by its
+unchanged 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
 

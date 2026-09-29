@@ -1,0 +1,31 @@
+// S3b conformance: the ChaCha20 quarter round of RFC 8439 section 2.1, checked
+// against the test vector of section 2.1.1. Each function names one
+// intermediate value of the round.
+edition 2026;
+module chacha20 {
+  spec a1(a: Word[32], b: Word[32]) -> Word[32] { a + b }
+  spec d1(a: Word[32], b: Word[32], d: Word[32]) -> Word[32] { (d ^ a1(a, b)) <<< 16 }
+  spec c1(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    c + d1(a, b, d)
+  }
+  spec b1(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    (b ^ c1(a, b, c, d)) <<< 12
+  }
+  spec a2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    a1(a, b) + b1(a, b, c, d)
+  }
+  spec d2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    (d1(a, b, d) ^ a2(a, b, c, d)) <<< 8
+  }
+  spec c2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    c1(a, b, c, d) + d2(a, b, c, d)
+  }
+  spec b2(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    (b1(a, b, c, d) ^ c2(a, b, c, d)) <<< 7
+  }
+
+  spec a() -> Word[32] { a2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec b() -> Word[32] { b2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec c() -> Word[32] { c2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec d() -> Word[32] { d2(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+}
