@@ -813,6 +813,16 @@ impl ExactInteger {
         let magnitude = self.magnitude.multiply(&other.magnitude, reserve_limbs)?;
         Some(Self::new(self.negative != other.negative, magnitude))
     }
+
+    /// Compares two integers by their exact values.
+    pub(crate) fn compare(&self, other: &Self) -> Ordering {
+        match (self.negative, other.negative) {
+            (false, true) => Ordering::Greater,
+            (true, false) => Ordering::Less,
+            (false, false) => self.magnitude.compare(&other.magnitude),
+            (true, true) => other.magnitude.compare(&self.magnitude),
+        }
+    }
 }
 
 impl fmt::Display for ExactInteger {

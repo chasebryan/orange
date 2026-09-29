@@ -262,6 +262,7 @@ struct Analyzer<'source, 'ast> {
     limits: Limits,
     reserve_pending_function_slot: fn(&mut Vec<PendingFunction>) -> bool,
     reserve_magnitude_limb: fn(&mut Vec<u32>) -> bool,
+    reserve_range_limbs: fn(&mut Vec<u32>, usize) -> bool,
     reserve_core_name: fn(&mut String, usize) -> bool,
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
     reserve_core_node_slot: fn(&mut Vec<CoreNode>) -> bool,
@@ -575,70 +576,51 @@ fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
     }
 }
 
-/// Decodes an integer literal whose magnitude fits in 63 bits, without
-/// events or diagnostics; the literal was already checked as an `Int`.
-fn small_literal(source: &SourceFile, literal: &IntegerLiteral) -> Option<i128> {
-    let spelling = source.slice(literal.magnitude_span)?;
-    let (radix, digits) = if let Some(digits) = spelling
-        .strip_prefix("0b")
-        .or_else(|| spelling.strip_prefix("0B"))
-    {
-        (2, digits)
-    } else if let Some(digits) = spelling
-        .strip_prefix("0x")
-        .or_else(|| spelling.strip_prefix("0X"))
-    {
-        (16, digits)
-    } else {
-        (10, spelling)
-    };
-    let mut value = 0_i128;
-    for character in digits.chars().filter(|character| *character != '_') {
-        let digit = character.to_digit(radix)?;
-        value = value
-            .checked_mul(i128::from(radix))?
-            .checked_add(i128::from(digit))?;
-        if value > i128::from(i64::MAX) {
-            return None;
-        }
-    }
-    Some(if literal.negative {
-        value.checked_neg()?
-    } else {
-        value
-    })
-}
+/// The least and greatest values an index can take, as exact integers.
+type IndexRange = (ExactInteger, ExactInteger);
 
 /// Returns the range of `left operator right` for the ranges of its
-/// operands, or `None` when a bound exceeds the 128-bit range.
+/// operands, computed exactly, or `None` when storage cannot be reserved.
 fn combine_ranges(
     operator: BinaryOperator,
-    (left_low, left_high): (i128, i128),
-    (right_low, right_high): (i128, i128),
-) -> Option<(i128, i128)> {
+    (left_low, left_high): &IndexRange,
+    (right_low, right_high): &IndexRange,
+    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+) -> Option<IndexRange> {
     match operator {
         BinaryOperator::Add => Some((
-            left_low.checked_add(right_low)?,
-            left_high.checked_add(right_high)?,
+            left_low.add(right_low, reserve_limbs)?,
+            left_high.add(right_high, reserve_limbs)?,
         )),
         BinaryOperator::Subtract => Some((
-            left_low.checked_sub(right_high)?,
-            left_high.checked_sub(right_low)?,
+            left_low.subtract(right_high, reserve_limbs)?,
+            left_high.subtract(right_low, reserve_limbs)?,
         )),
         BinaryOperator::Multiply => {
-            let products = [
-                left_low.checked_mul(right_low)?,
-                left_low.checked_mul(right_high)?,
-                left_high.checked_mul(right_low)?,
-                left_high.checked_mul(right_high)?,
+            let mut products = [
+                left_low.multiply(right_low, reserve_limbs)?,
+                left_low.multiply(right_high, reserve_limbs)?,
+                left_high.multiply(right_low, reserve_limbs)?,
+                left_high.multiply(right_high, reserve_limbs)?,
             ];
-            Some((
-                products.iter().copied().min()?,
-                products.iter().copied().max()?,
-            ))
+            products.sort_unstable_by(ExactInteger::compare);
+            let [low, _, _, high] = products;
+            Some((low, high))
         }
         _ => None,
     }
+}
+
+/// Writes an exact integer in decimal, or returns `None` when storage
+/// cannot be reserved.
+fn render_exact(value: &ExactInteger) -> Option<String> {
+    let mut text = String::new();
+    fmt::write(&mut text, format_args!("{value}")).ok()?;
+    Some(text)
+}
+
+fn reserve_range_limbs(limbs: &mut Vec<u32>, count: usize) -> bool {
+    limbs.try_reserve_exact(count).is_ok()
 }
 
 fn word_maximum(ty: CoreType) -> Option<u64> {
@@ -666,6 +648,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             limits,
             reserve_pending_function_slot,
             reserve_magnitude_limb,
+            reserve_range_limbs,
             reserve_core_name,
             reserve_diagnostic_slots,
             reserve_core_node_slot,
@@ -1659,18 +1642,28 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return false;
             }
         };
-        let in_range = range.is_some_and(|(low, high)| low >= 0 && high < i128::from(length));
+        let in_range = range.as_ref().is_some_and(|(low, high)| {
+            !low.is_negative() && high.to_i64().is_some_and(|high| high < i64::from(length))
+        });
         if !in_range && self.begin_report(index.span) {
             let highest = length.saturating_sub(1);
             let array = CoreType::Array(array);
-            let message = match range {
-                Some((low, high)) if low == high => {
-                    format!("index {low} is out of range for `{array}`")
-                }
-                Some((low, high)) => {
-                    format!("this index runs from {low} through {high}, out of range for `{array}`")
-                }
-                None => format!("this index is out of range for `{array}`"),
+            let message = match &range {
+                Some((low, high)) => match (render_exact(low), render_exact(high)) {
+                    (Some(low_text), Some(_)) if low.compare(high) == Ordering::Equal => {
+                        format!("index {low_text} is out of range for `{array}`")
+                    }
+                    (Some(low_text), Some(high_text)) => format!(
+                        "this index runs from {low_text} through {high_text}, out of range \
+                         for `{array}`"
+                    ),
+                    _ => format!("this index is out of range for `{array}`"),
+                },
+                None => format!(
+                    "a bound of this index's range exceeds the {}-significant-bit limit of \
+                     `Int`",
+                    self.limits.integer_bits
+                ),
             };
             self.diagnostics.push(
                 Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, index.span)
@@ -1686,33 +1679,38 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     /// Returns the least and greatest values of a well-typed index built
     /// from literals, loop indices, parentheses, negation, `+`, `-`, and
-    /// `*`, or `None` when a bound exceeds the 128-bit range. Anything else
-    /// is returned as the span of the first such part.
+    /// `*`, computed exactly, or `None` when a bound's magnitude exceeds the
+    /// integer limit or storage cannot be reserved (which is reported as a
+    /// resource limit). Anything else is returned as the span of the first
+    /// such part.
     ///
     /// Parser-established expression height bounds this recursion.
     fn static_range(
-        &self,
+        &mut self,
         index: &Expression,
         context: &BodyContext<'ast>,
-    ) -> Result<Option<(i128, i128)>, Span> {
-        match &index.kind {
-            ExpressionKind::Literal(literal) => {
-                Ok(small_literal(self.source, literal).map(|value| (value, value)))
-            }
-            ExpressionKind::Parenthesized(inner) => self.static_range(inner, context),
+    ) -> Result<Option<IndexRange>, Span> {
+        let range = match &index.kind {
+            ExpressionKind::Literal(literal) => self.range_literal(literal).and_then(|value| {
+                let copy = value.try_clone_with_reservation(self.reserve_range_limbs)?;
+                Some((value, copy))
+            }),
+            ExpressionKind::Parenthesized(inner) => return self.static_range(inner, context),
             ExpressionKind::Name(name) => match context.resolve(&name.text) {
                 NameResolution::LoopIndex(position) => {
                     let scope = context.loop_scopes.get(position).ok_or(name.span)?;
-                    Ok(Some((
-                        i128::from(scope.start),
-                        i128::from(scope.end).saturating_sub(1),
-                    )))
+                    let last = scope.end.checked_sub(1).ok_or(name.span)?;
+                    ExactInteger::from_u64(u64::from(scope.start), self.reserve_range_limbs).zip(
+                        ExactInteger::from_u64(u64::from(last), self.reserve_range_limbs),
+                    )
                 }
-                _ => Err(name.span),
+                _ => return Err(name.span),
             },
-            ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => Ok(self
-                .static_range(&unary.operand, context)?
-                .and_then(|(low, high)| Some((high.checked_neg()?, low.checked_neg()?)))),
+            ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => {
+                return Ok(self
+                    .static_range(&unary.operand, context)?
+                    .map(|(low, high)| (high.negated(), low.negated())));
+            }
             ExpressionKind::Binary(binary)
                 if matches!(
                     binary.operator,
@@ -1721,12 +1719,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             {
                 let left = self.static_range(&binary.left, context)?;
                 let right = self.static_range(&binary.right, context)?;
-                Ok(left
-                    .zip(right)
-                    .and_then(|(left, right)| combine_ranges(binary.operator, left, right)))
+                let (Some(left), Some(right)) = (left, right) else {
+                    return Ok(None);
+                };
+                combine_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
             }
-            _ => Err(index.span),
+            _ => return Err(index.span),
+        };
+        let Some(range) = range else {
+            self.resource_limit(index.span, "index range storage allocation failed");
+            return Ok(None);
+        };
+        let bits = self.limits.integer_bits;
+        Ok((range.0.magnitude_bits() <= bits && range.1.magnitude_bits() <= bits).then_some(range))
+    }
+
+    /// Decodes an index literal exactly, without events or diagnostics; the
+    /// literal was already checked as an `Int`. Returns `None` when storage
+    /// cannot be reserved.
+    fn range_literal(&self, literal: &IntegerLiteral) -> Option<ExactInteger> {
+        let spelling = self.source.slice(literal.magnitude_span)?;
+        let (radix, digits) = if let Some(digits) = spelling
+            .strip_prefix("0b")
+            .or_else(|| spelling.strip_prefix("0B"))
+        {
+            (2, digits)
+        } else if let Some(digits) = spelling
+            .strip_prefix("0x")
+            .or_else(|| spelling.strip_prefix("0X"))
+        {
+            (16, digits)
+        } else {
+            (10, spelling)
+        };
+        let mut magnitude = Magnitude::zero();
+        for character in digits.chars().filter(|character| *character != '_') {
+            let digit = character.to_digit(radix)?;
+            if !magnitude.multiply_add_with_reservation(radix, digit, self.reserve_magnitude_limb) {
+                return None;
+            }
         }
+        Some(ExactInteger::new(literal.negative, magnitude))
     }
 
     /// Checks `base with [index] = value` against `expected`, which must be
@@ -4027,6 +4060,30 @@ mod tests {
             diagnostic.label(),
             "exact integer magnitude storage allocation failed"
         );
+    }
+
+    #[test]
+    fn index_range_reservation_failure_returns_no_partial_core() {
+        let fixture = Fixture::new(concat!(
+            "edition 2026; module values {\n",
+            "  spec f(x: Word[8]^4) -> Word[8] { for i in 1..5 with s: Word[8] = 0 { s ^ x[i - 1] } }\n",
+            "}\n",
+        ));
+        let analyze_with_failure = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_range_limbs = |_, _| false;
+            analyzer.run()
+        };
+
+        let first = analyze_with_failure();
+        let second = analyze_with_failure();
+        assert_eq!(first, second);
+        assert!(first.core().is_none());
+        assert_eq!(first.diagnostics().len(), 1);
+        let diagnostic = &first.diagnostics()[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(fixture.source().slice(diagnostic.primary_span()), Some("i"));
+        assert_eq!(diagnostic.label(), "index range storage allocation failed");
     }
 
     #[test]
@@ -7105,6 +7162,11 @@ mod tests {
             "x[i * -1 + 4]",
             "x[(i - 1) * 1]",
             "x[0x3]",
+            // Bounds are exact however wide the literals.
+            "x[9223372036854775808 - 9223372036854775808]",
+            "x[i - 1 + 0x1_0000_0000_0000_0000_0000_0000_0000_0000 \
+               - 0x1_0000_0000_0000_0000_0000_0000_0000_0000]",
+            "x[(i - 1) * 0x1_0000_0000_0000_0000 * 0x1_0000_0000_0000_0000 * 0 + i - 1]",
         ];
         for index in accepted_indices {
             accepted(&format!(
@@ -7138,7 +7200,8 @@ mod tests {
             ("x[-1 + 5]", "index 4 is out of range for `Word[8]^4`"),
             (
                 "x[i + 0x1_0000_0000_0000_0000]",
-                "this index is out of range for `Word[8]^4`",
+                "this index runs from 18446744073709551617 through 18446744073709551620, \
+                 out of range for `Word[8]^4`",
             ),
         ] {
             let (fixture, result) = rejected(&format!(
@@ -7172,6 +7235,31 @@ mod tests {
         assert_eq!(
             result.diagnostics[0].message(),
             "this index runs from -5 through -2, out of range for `Word[8]^4`"
+        );
+        // A bound may have as many significant bits as an `Int` value, and no
+        // more: 2^16382 + 2^16382 has 16,384 bits, 2^16383 + 2^16383 one more.
+        let wide = |top: char| format!("0x{top}{}", "0".repeat(4095));
+        let (half, full) = (wide('4'), wide('8'));
+        accepted(&format!(
+            "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 \
+             {{ s ^ x[{half} + {half} - {half} - {half} + i - 1] }} }}\n"
+        ));
+        let (_, result) = rejected(&format!(
+            "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 \
+             {{ s ^ x[{full} + {full} - {full} - {full} + i - 1] }} }}\n"
+        ));
+        assert_eq!(result.diagnostics.len(), 1, "{:?}", result.diagnostics);
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::IndexOutOfRange
+        );
+        assert_eq!(
+            result.diagnostics[0].message(),
+            "a bound of this index's range exceeds the 16384-significant-bit limit of `Int`"
+        );
+        assert_eq!(
+            result.diagnostics[0].label(),
+            "indices run from 0 through 3"
         );
     }
 

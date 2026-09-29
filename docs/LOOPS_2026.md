@@ -170,8 +170,12 @@ as follows:
    k..k, a loop index over a..b has range a..b-1, and each operator combines
    its operands' least and greatest values. Each bound is computed
    separately, so `i - i` over 1..5 has range -3..3 although its value is
-   always 0. If the least value is negative or the greatest is not below the
-   array's length n, that is `ORC0223` at the index, naming the range.
+   always 0. Bounds are exact integers, as `Int` values are, so
+   `x[9223372036854775808 - 9223372036854775808]` has range 0..0. If the
+   least value is negative or the greatest is not below the array's length
+   n, that is `ORC0223` at the index, naming the range. A bound whose
+   magnitude would exceed 16,384 significant bits, the limit of an `Int`
+   value, is also `ORC0223` at the index.
 
 A static index is therefore in range for every value of every loop index it
 uses, and selecting it never fails at run time.
@@ -229,7 +233,7 @@ The new and widened categories are:
 | `ORC0219` | semantic | also a loop index or accumulator that repeats a name in scope |
 | `ORC0221` | semantic | also a fill literal's length that is not a decimal integer from 1 through 256 |
 | `ORC0222` | semantic | also a fill literal whose length differs from its type's |
-| `ORC0223` | semantic | also a static index whose range leaves the array |
+| `ORC0223` | semantic | also a static index whose range leaves the array or has a bound beyond 16,384 significant bits |
 | `ORC0224` | semantic | also an update of a value that is not an array |
 | `ORC0225` | semantic | a loop's bounds are not a nonempty range within 0 through 65536 |
 | `ORC0226` | semantic | an index uses something other than integer literals and loop indices |
