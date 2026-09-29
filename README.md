@@ -376,6 +376,9 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [conditions and division](docs/CONDITIONS_2026.md): the definition of what
   the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
+- [Tabula](tabula/README.md): a local workbench for writing Orange, with the
+  compiler's results and this documentation beside the editor. It is a
+  separate tool, not part of the language.
 - [Architecture](docs/ARCHITECTURE.md) and
   [assurance model](docs/ASSURANCE.md): the intended end state.
 - [Roadmap](docs/ROADMAP.md), [decision register](docs/DECISIONS.md), and
@@ -392,11 +395,12 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 | Path | Contents |
 | --- | --- |
 | [`compiler/`](compiler/README.md) | The Rust workspace: the `orange-compiler` library and the `orangec` CLI |
+| [`tabula/`](tabula/README.md) | A local workbench for writing Orange; a separate tool, not part of the language |
 | [`docs/`](docs/) | The Orange Book, language specification, architecture, assurance, roadmap, and decisions |
 | [`research/decisions/`](research/decisions/) | Decision laboratories that compare design candidates |
 | [`schemas/`](schemas/README.md) and [`conformance/`](conformance/foundation/README.md) | Provisional evidence schemas and their test fixtures |
 | [`policy/`](policy/README.md) and [`tools/`](tools/) | Repository policy and the Python checks that enforce it |
-| [`assets/brand/`](assets/brand/README.md) | Orange emblem, wordmark, and banners |
+| [`assets/identity/`](assets/identity/README.md) and [`assets/brand/`](assets/brand/README.md) | The Orange emblem, wordmark, README banner, and book covers, and the original brand assets |
 
 ## Project status
 

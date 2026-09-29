@@ -2234,6 +2234,12 @@ failure makes `eval` print no values at all; if writing the output itself
 fails, `eval` exits with status 1, although a prefix the stream already
 accepted may remain, and that prefix is never reported as a result.
 
+A separate workbench, [Tabula](../tabula/README.md), puts `orangec` beside an
+editor in the browser. It runs `check`, `eval`, and `lex` as you write and
+shows their diagnostics, values, and tokens next to the source and this book.
+It is a tool for writing Orange, not part of the language, and it reports only
+what `orangec` reports.
+
 ### Conformance
 
 The specifications are backed by executable conformance. The lexical and
