@@ -147,12 +147,11 @@ const CASES: [Case; 8] = [
     Case {
         fixture: "invalid-array-syntax.or",
         expectation: Expectation::Failure {
-            codes: &["ORC0101", "ORC0101", "ORC0101", "ORC0101"],
-            locations: &["5:32", "6:54", "7:45", "8:29"],
+            codes: &["ORC0101", "ORC0101", "ORC0101"],
+            locations: &["6:32", "7:45", "8:29"],
             messages: &[
                 "expected an array element",
                 "Orange 2026 has no empty arrays",
-                "expected an integer index after `[`",
                 "expected an operator or the end of the expression",
                 "expected the end of the type after its array length",
                 "arrays of arrays are not part of Orange 2026",

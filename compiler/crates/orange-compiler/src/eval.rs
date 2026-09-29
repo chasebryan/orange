@@ -222,27 +222,59 @@ struct ArrayValue {
     elements: Vec<Value>,
 }
 
-/// One active function evaluation.
+/// One active function evaluation, or one active loop within it.
 ///
-/// A frame's values occupy the shared stack from `base`: its arguments, then
-/// the values of its completed bindings, then intermediate values.
+/// A function frame's values occupy the shared stack from `base`: its
+/// arguments, then the values of its completed bindings, then intermediate
+/// values. A loop frame shares its function's `base` and keeps its index and
+/// accumulator itself; its step's values lie above the stack length at which
+/// the loop began.
 struct Frame<'core> {
     function: &'core CoreFunction,
-    /// The expression being evaluated: a binding's index, or the number of
-    /// bindings for the body.
+    /// The expression being evaluated: a binding's index, the number of
+    /// bindings for the body, or one more than that plus a loop's number
+    /// for that loop's step.
     part: usize,
     /// Index of the next node of that expression to evaluate.
     next: usize,
-    /// Index in the shared value stack of this frame's first argument.
+    /// Index in the shared value stack of the function's first argument.
     base: usize,
+    /// The loop whose step this frame evaluates, if any.
+    active_loop: Option<ActiveLoop>,
 }
 
-/// Returns a function's binding value at `part`, or its body when `part` is
-/// the number of bindings.
+/// The state of one loop between steps.
+struct ActiveLoop {
+    /// The loop's number within its function.
+    id: usize,
+    /// The current index.
+    index: u32,
+    /// The current accumulator.
+    accumulator: Value,
+    /// Stack length when the loop began.
+    floor: usize,
+}
+
+/// Returns a function's binding value at `part`, its body when `part` is
+/// the number of bindings, or a loop's step for the parts after that.
 fn expression_part(function: &CoreFunction, part: usize) -> Option<&CoreExpression> {
     match function.locals.get(part) {
         Some(local) => Some(&local.value),
-        None => (part == function.locals.len()).then_some(&function.body),
+        None if part == function.locals.len() => Some(&function.body),
+        None => {
+            let id = part.checked_sub(function.locals.len())?.checked_sub(1)?;
+            function.loops.get(id).map(|r#loop| &r#loop.step)
+        }
+    }
+}
+
+/// Returns whether a value has exactly the type `ty`.
+fn has_type(value: &Value, ty: CoreType) -> bool {
+    match (value, ty) {
+        (Value::Int(_), CoreType::Int) => true,
+        (Value::Word(word), ty) => word_mask(ty).is_some_and(|mask| (*word & !mask) == 0),
+        (Value::Array(array), CoreType::Array(array_type)) => array.ty == array_type,
+        _ => false,
     }
 }
 
@@ -266,6 +298,8 @@ struct Machine<'core> {
     reservations: Reservations,
     stack: Vec<Value>,
     frames: Vec<Frame<'core>>,
+    /// The number of loop frames in `frames`.
+    loop_frames: usize,
 }
 
 fn digits(value: &ExactInteger) -> usize {
@@ -415,6 +449,7 @@ impl<'core> Machine<'core> {
     fn run(&mut self, root: &'core CoreFunction) -> Result<Value, Stop> {
         self.stack.clear();
         self.frames.clear();
+        self.loop_frames = 0;
         if !(self.reservations.frames)(&mut self.frames, 1) {
             return Err(Stop::Allocation(
                 "evaluation call stack could not be reserved",
@@ -425,6 +460,7 @@ impl<'core> Machine<'core> {
             part: 0,
             next: 0,
             base: 0,
+            active_loop: None,
         });
         loop {
             let Some(frame) = self.frames.last() else {
@@ -434,8 +470,30 @@ impl<'core> Machine<'core> {
             let base = frame.base;
             let part = frame.part;
             let offset = frame.next;
+            // The bindings a node may read, and the stack length above which
+            // its expression's intermediate values lie.
+            let (visible, floor) = match &frame.active_loop {
+                Some(active) => (
+                    function
+                        .loops
+                        .get(active.id)
+                        .and_then(|r#loop| usize::try_from(r#loop.visible_locals).ok())
+                        .ok_or(Stop::InconsistentCore)?,
+                    active.floor,
+                ),
+                None => (
+                    part,
+                    base.checked_add(function.parameters.len())
+                        .and_then(|floor| floor.checked_add(part))
+                        .ok_or(Stop::InconsistentCore)?,
+                ),
+            };
             let expression = expression_part(function, part).ok_or(Stop::InconsistentCore)?;
             let Some(node) = expression.nodes.get(offset) else {
+                if frame.active_loop.is_some() {
+                    self.finish_step()?;
+                    continue;
+                }
                 if part < function.locals.len() {
                     // The binding's value stays on the stack as its slot,
                     // directly after the arguments and earlier bindings.
@@ -472,8 +530,133 @@ impl<'core> Machine<'core> {
             if let Some(frame) = self.frames.last_mut() {
                 frame.next = frame.next.saturating_add(1);
             }
-            self.step(function, base, part, offset, node)?;
+            self.step(function, base, part, offset, (visible, floor), node)?;
         }
+    }
+
+    /// Completes one step of the loop in the top frame: its value becomes
+    /// the accumulator, and either the next step begins or the loop's value
+    /// replaces the loop.
+    fn finish_step(&mut self) -> Result<(), Stop> {
+        let value = self.pop()?;
+        let Some(frame) = self.frames.last_mut() else {
+            return Err(Stop::InconsistentCore);
+        };
+        let function = frame.function;
+        let Some(active) = frame.active_loop.as_mut() else {
+            return Err(Stop::InconsistentCore);
+        };
+        let r#loop = function
+            .loops
+            .get(active.id)
+            .ok_or(Stop::InconsistentCore)?;
+        if self.stack.len() != active.floor || !has_type(&value, r#loop.ty) {
+            return Err(Stop::InconsistentCore);
+        }
+        active.accumulator = value;
+        active.index = active.index.checked_add(1).ok_or(Stop::InconsistentCore)?;
+        if active.index < r#loop.end {
+            frame.next = 0;
+            // One step for each iteration.
+            return self.charge(1);
+        }
+        let Some(Frame {
+            active_loop: Some(finished),
+            ..
+        }) = self.frames.pop()
+        else {
+            return Err(Stop::InconsistentCore);
+        };
+        self.loop_frames = self.loop_frames.saturating_sub(1);
+        self.push(finished.accumulator)
+    }
+
+    /// Returns the innermost active loop numbered `id` of the function
+    /// whose step is being evaluated.
+    fn active_loop(&self, id: u32) -> Result<&ActiveLoop, Stop> {
+        let id = usize::try_from(id).map_err(|_| Stop::InconsistentCore)?;
+        self.frames
+            .iter()
+            .rev()
+            .map_while(|frame| frame.active_loop.as_ref())
+            .find(|active| active.id == id)
+            .ok_or(Stop::InconsistentCore)
+    }
+
+    /// Pops an `Int` index and returns it as a position below `length`.
+    fn pop_position(&mut self, length: usize) -> Result<usize, Stop> {
+        let index = self.pop_int()?;
+        index
+            .to_i64()
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < length)
+            .ok_or(Stop::InconsistentCore)
+    }
+
+    /// Begins the loop numbered `id` of `function` with the popped initial
+    /// accumulator.
+    fn begin_loop(
+        &mut self,
+        function: &'core CoreFunction,
+        base: usize,
+        id: u32,
+        ty: CoreType,
+    ) -> Result<(), Stop> {
+        self.charge(1)?;
+        let accumulator = self.pop()?;
+        let index = usize::try_from(id).map_err(|_| Stop::InconsistentCore)?;
+        let r#loop = function.loops.get(index).ok_or(Stop::InconsistentCore)?;
+        // The loops active in this function must be exactly those that
+        // enclose this one.
+        let enclosing = r#loop
+            .scope
+            .split_last()
+            .filter(|(last, _)| **last == id)
+            .map(|(_, enclosing)| enclosing)
+            .ok_or(Stop::InconsistentCore)?;
+        let active = self
+            .frames
+            .iter()
+            .rev()
+            .map_while(|frame| frame.active_loop.as_ref())
+            .map(|active| active.id);
+        let consistent = active.eq(enclosing
+            .iter()
+            .rev()
+            .map(|id| usize::try_from(*id).unwrap_or(usize::MAX)));
+        if !consistent
+            || r#loop.ty != ty
+            || r#loop.start >= r#loop.end
+            || !has_type(&accumulator, ty)
+        {
+            return Err(Stop::InconsistentCore);
+        }
+        let part = function
+            .locals
+            .len()
+            .checked_add(1)
+            .and_then(|part| part.checked_add(index))
+            .ok_or(Stop::InconsistentCore)?;
+        if !(self.reservations.frames)(&mut self.frames, 1) {
+            return Err(Stop::Allocation(
+                "evaluation call stack could not be reserved",
+            ));
+        }
+        self.frames.push(Frame {
+            function,
+            part,
+            next: 0,
+            base,
+            active_loop: Some(ActiveLoop {
+                id: index,
+                index: r#loop.start,
+                accumulator,
+                floor: self.stack.len(),
+            }),
+        });
+        self.loop_frames = self.loop_frames.saturating_add(1);
+        // One step for the first iteration.
+        self.charge(1)
     }
 
     fn step(
@@ -482,6 +665,7 @@ impl<'core> Machine<'core> {
         base: usize,
         part: usize,
         offset: usize,
+        (visible, floor): (usize, usize),
         node: &'core CoreNode,
     ) -> Result<(), Stop> {
         match &node.kind {
@@ -517,10 +701,10 @@ impl<'core> Machine<'core> {
             }
             CoreNodeKind::Local(index) => {
                 self.charge(1)?;
-                // Only a binding before the current part has a value.
+                // Only a binding before the current expression has a value.
                 let index = usize::try_from(*index)
                     .ok()
-                    .filter(|index| *index < part)
+                    .filter(|index| *index < visible)
                     .ok_or(Stop::InconsistentCore)?;
                 let slot = base
                     .checked_add(function.parameters.len())
@@ -538,7 +722,8 @@ impl<'core> Machine<'core> {
                 arguments,
             } => {
                 self.charge(1)?;
-                if self.frames.len() >= MAX_CALL_DEPTH {
+                // Loop frames do not count toward the call depth.
+                if self.frames.len().saturating_sub(self.loop_frames) >= MAX_CALL_DEPTH {
                     return Err(Stop::CallDepth(node.span));
                 }
                 let callee_index =
@@ -556,7 +741,7 @@ impl<'core> Machine<'core> {
                     .stack
                     .len()
                     .checked_sub(arguments)
-                    .filter(|callee_base| *callee_base >= base)
+                    .filter(|callee_base| *callee_base >= floor)
                     .ok_or(Stop::InconsistentCore)?;
                 if !(self.reservations.frames)(&mut self.frames, 1) {
                     return Err(Stop::Allocation(
@@ -568,6 +753,7 @@ impl<'core> Machine<'core> {
                     part: 0,
                     next: 0,
                     base: callee_base,
+                    active_loop: None,
                 });
                 Ok(())
             }
@@ -645,14 +831,113 @@ impl<'core> Machine<'core> {
                 let length = usize::try_from(*elements).map_err(|_| Stop::InconsistentCore)?;
                 // One step per element; an array has at least one.
                 self.charge(length.max(1))?;
-                // Elements are intermediate values above the arguments and
-                // the bindings already evaluated.
-                let floor = base
-                    .checked_add(function.parameters.len())
-                    .and_then(|floor| floor.checked_add(part))
-                    .ok_or(Stop::InconsistentCore)?;
+                // Elements are intermediate values of the current expression.
                 let array = self.build_array(ty, length, floor)?;
                 self.push(array)
+            }
+            CoreNodeKind::Select => {
+                self.charge(1)?;
+                let length = self
+                    .stack
+                    .len()
+                    .checked_sub(2)
+                    .filter(|below| *below >= floor)
+                    .and_then(|below| match self.stack.get(below) {
+                        Some(Value::Array(array)) if array.ty.element() == node.ty => {
+                            Some(array.elements.len())
+                        }
+                        _ => None,
+                    })
+                    .ok_or(Stop::InconsistentCore)?;
+                let position = self.pop_position(length)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let element = array
+                    .elements
+                    .get(position)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(element)
+            }
+            CoreNodeKind::Update => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per element copied.
+                self.charge(length)?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(3)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let value = self.pop()?;
+                let position = self.pop_position(length)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if array.ty != ty || !has_type(&value, ty.element()) {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(array.elements.iter().cloned());
+                let slot = elements.get_mut(position).ok_or(Stop::InconsistentCore)?;
+                *slot = value;
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::Fill => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per element.
+                self.charge(length)?;
+                if self.stack.len() <= floor {
+                    return Err(Stop::InconsistentCore);
+                }
+                let element = self.pop()?;
+                if !has_type(&element, ty.element()) {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(std::iter::repeat_n(element, length));
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::Fold(id) => {
+                if self.stack.len() <= floor {
+                    return Err(Stop::InconsistentCore);
+                }
+                self.begin_loop(function, base, *id, node.ty)
+            }
+            CoreNodeKind::LoopIndex(id) => {
+                self.charge(1)?;
+                if node.ty != CoreType::Int {
+                    return Err(Stop::InconsistentCore);
+                }
+                let index = self.active_loop(*id)?.index;
+                let value = ExactInteger::from_u64(u64::from(index), self.reservations.value_limbs)
+                    .ok_or(Stop::Allocation(
+                        "exact integer storage could not be reserved",
+                    ))?;
+                self.push(Value::Int(Rc::new(value)))
+            }
+            CoreNodeKind::Accumulator(id) => {
+                self.charge(1)?;
+                let accumulator = self.active_loop(*id)?.accumulator.clone();
+                if !has_type(&accumulator, node.ty) {
+                    return Err(Stop::InconsistentCore);
+                }
+                self.push(accumulator)
             }
             CoreNodeKind::Index { index } => {
                 self.charge(1)?;
@@ -738,6 +1023,7 @@ fn evaluate_with_reservations(
         reservations,
         stack: Vec::new(),
         frames: Vec::new(),
+        loop_frames: 0,
     };
     let mut shared_module = None;
     for function in core
@@ -845,13 +1131,20 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     for function in &core.functions {
         let mut parts = Vec::new();
         parts
-            .try_reserve_exact(function.locals.len().checked_add(1)?)
+            .try_reserve_exact(
+                function
+                    .locals
+                    .len()
+                    .checked_add(1)?
+                    .checked_add(function.loops.len())?,
+            )
             .ok()?;
         let expressions = function
             .locals
             .iter()
             .map(|local| &local.value)
-            .chain(std::iter::once(&function.body));
+            .chain(std::iter::once(&function.body))
+            .chain(function.loops.iter().map(|r#loop| &r#loop.step));
         for expression in expressions {
             let mut literals = Vec::new();
             literals.try_reserve_exact(expression.nodes.len()).ok()?;
@@ -1689,6 +1982,26 @@ mod tests {
                 "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; t[1] ^ t[0] }\n",
                 9,
             ),
+            // A loop costs one step and one more per iteration, plus its
+            // initial value's and every step's; an index or accumulator
+            // read costs one step, as does a selection.
+            (
+                "  spec f() -> Int { for i in 0..3 with s: Int = 0 { s } }\n",
+                8,
+            ),
+            (
+                "  spec f() -> Word[8] { for i in 5..6 with s: Word[8] = 1 { s } }\n",
+                4,
+            ),
+            (
+                "  spec f() -> Word[8] { let t: Word[8]^2 = [1, 2]; \
+                 for i in 0..2 with s: Word[8] = 0 { s ^ t[i] } }\n",
+                18,
+            ),
+            // An update or fill of n elements costs n steps beyond its
+            // operands'.
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 11),
+            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 5),
         ] {
             let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
             let exact = evaluate_with_limit(&core, steps);
@@ -1825,6 +2138,35 @@ mod tests {
                 (0..MAX_BINDINGS_PER_BODY)
                     .map(|index| format!("let v{index}: Word[32] = {};", nested("(", "x", ")")))
                     .collect::<String>()
+            ),
+            // Loops nested in steps and in initial values, updates nested in
+            // updated values, and an index nested in groups.
+            format!(
+                "{}x{}",
+                (0..MAX_EXPRESSION_NESTING)
+                    .map(|index| format!("for i{index} in 0..1 with s{index}: Word[32] = x {{ "))
+                    .collect::<String>(),
+                " }".repeat(MAX_EXPRESSION_NESTING)
+            ),
+            format!(
+                "{}x{}",
+                (0..MAX_EXPRESSION_NESTING)
+                    .map(|index| format!("for i{index} in 0..1 with s{index}: Word[32] = "))
+                    .collect::<String>(),
+                (0..MAX_EXPRESSION_NESTING)
+                    .rev()
+                    .map(|index| format!(" {{ s{index} }}"))
+                    .collect::<String>()
+            ),
+            format!(
+                "{}x{}",
+                "h([x] with [0] = ".repeat(MAX_EXPRESSION_NESTING / 2),
+                ")[0]".repeat(MAX_EXPRESSION_NESTING / 2)
+            ),
+            format!(
+                "h([x])[{}0{}]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
             ),
         ];
         let sources = bodies
@@ -2175,6 +2517,215 @@ mod tests {
             );
             assert_eq!(diagnostic.label(), label);
             assert_eq!(diagnostic.primary_span(), core.functions[0].name_span);
+        }
+    }
+
+    #[test]
+    fn loops_updates_and_fills_evaluate_in_index_order() {
+        let members = concat!(
+            "  spec sum() -> Int { for i in 0..10 with s: Int = 0 { s + i } }\n",
+            "  spec product() -> Int { for i in 3..5 with p: Int = 1 { p * i } }\n",
+            "  spec grid() -> Int {\n",
+            "    for i in 0..3 with s: Int = 0 { for j in 0..4 with t: Int = s { t + i * j } }\n",
+            "  }\n",
+            "  spec reversed(x: Word[8]^4) -> Word[8]^4 {\n",
+            "    for i in 0..4 with r: Word[8]^4 = x { r with [i] = x[3 - i] }\n",
+            "  }\n",
+            "  spec reverse() -> Word[8]^4 { reversed([1, 2, 3, 4]) }\n",
+            "  spec filled() -> Word[16]^3 { [0xbeef; 3] }\n",
+            "  spec updated() -> Int^3 { ([1, 2, 3] with [0] = -1) with [2] = 5 }\n",
+            "  spec inner(x: Int) -> Int { for j in 0..3 with t: Int = x { t + j } }\n",
+            "  spec outer() -> Int { for i in 0..2 with s: Int = 0 { inner(s) + i } }\n",
+            "  spec bound() -> Int { let k: Int = 5; for i in 0..3 with s: Int = k { s + k * i } }\n",
+            "  spec bound_twice() -> Int { let a: Int = for i in 0..3 with s: Int = 0 { s + i }; a * 2 }\n",
+            "  spec longest() -> Word[32] { for i in 0..65536 with s: Word[32] = 0 { s + 1 } }\n",
+            "  spec last() -> Int { for i in 65535..65536 with s: Int = 0 { i } }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "sum = 45",
+                "product = 12",
+                "grid = 18",
+                "reverse = [0x04, 0x03, 0x02, 0x01]",
+                "filled = [0xbeef, 0xbeef, 0xbeef]",
+                "updated = [-1, 2, 5]",
+                "outer = 7",
+                "bound = 20",
+                "bound_twice = 6",
+                "longest = 0x00010000",
+                "last = 65535",
+            ]
+        );
+    }
+
+    #[test]
+    fn loop_frames_do_not_count_toward_the_call_depth() {
+        let mut members = String::new();
+        for index in 0..MAX_CALL_DEPTH - 1 {
+            members.push_str(&format!(
+                "  spec f{index}() -> Int {{ for i in 0..1 with s: Int = 0 {{ f{}() }} }}\n",
+                index + 1
+            ));
+        }
+        members.push_str(&format!(
+            "  spec f{}() -> Int {{ 7 }}\n",
+            MAX_CALL_DEPTH - 1
+        ));
+        let values = values_of(&members);
+        assert_eq!(values.len(), MAX_CALL_DEPTH);
+        assert!(values.iter().all(|value| value.ends_with(" = 7")));
+    }
+
+    #[test]
+    fn inconsistent_loops_updates_and_fills_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec sum() -> Int { for i in 0..3 with s: Int = 0 { s + i } }\n",
+            "  spec pick() -> Word[8] {\n",
+            "    let t: Word[8]^2 = [1, 2];\n",
+            "    for i in 0..2 with s: Word[8] = 0 { s ^ t[i] }\n",
+            "  }\n",
+            "  spec up() -> Word[8]^2 { [1, 2] with [1] = 3 }\n",
+            "  spec fill() -> Word[8]^2 { [4; 2] }\n",
+            "}\n"
+        ));
+        assert_eq!(base.functions[0].loops[0].step.nodes.len(), 3);
+        assert_eq!(base.functions[1].loops[0].step.nodes.len(), 5);
+        let mutations: [fn(&mut CoreModule); 16] = [
+            // A loop has no iterations.
+            |core| core.functions[0].loops[0].start = 3,
+            // A loop's bounds are reversed.
+            |core| {
+                core.functions[0].loops[0].start = 2;
+                core.functions[0].loops[0].end = 1;
+            },
+            // A loop has a different type than its node.
+            |core| core.functions[0].loops[0].ty = CoreType::Word8,
+            // A loop node names a loop the function lacks.
+            |core| core.functions[0].body.nodes[1].kind = CoreNodeKind::Fold(1),
+            // A loop claims an enclosing loop that is not active.
+            |core| core.functions[0].loops[0].scope = vec![0, 0],
+            // A loop's scope does not end with the loop itself.
+            |core| core.functions[0].loops[0].scope = vec![1],
+            // An index is read outside its loop.
+            |core| core.functions[0].body.nodes[0].kind = CoreNodeKind::LoopIndex(0),
+            // An accumulator is read outside its loop.
+            |core| core.functions[0].body.nodes[0].kind = CoreNodeKind::Accumulator(0),
+            // An accumulator read claims a different type.
+            |core| core.functions[0].loops[0].step.nodes[0].ty = CoreType::Word8,
+            // A step leaves no value behind.
+            |core| core.functions[0].loops[0].step.nodes.clear(),
+            // A step reads a binding that is not in scope.
+            |core| core.functions[1].loops[0].visible_locals = 0,
+            // A loop runs past the end of the array it selects from.
+            |core| core.functions[1].loops[0].end = 3,
+            // A selection claims a different element type.
+            |core| core.functions[1].loops[0].step.nodes[3].ty = CoreType::Word16,
+            // An update stores a value that does not fit its element type.
+            |core| {
+                core.functions[2].body.nodes[4].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x103));
+            },
+            // An update has a scalar type.
+            |core| core.functions[2].body.nodes[5].ty = CoreType::Word8,
+            // A fill repeats a value that does not fit its element type.
+            |core| {
+                core.functions[3].body.nodes[0].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x104));
+            },
+        ];
+        assert_eq!(base.functions[2].body.nodes[5].kind, CoreNodeKind::Update);
+        assert_eq!(base.functions[3].body.nodes[1].kind, CoreNodeKind::Fill);
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    thread_local! {
+        static ARRAY_RESERVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Refuses the second array reservation of the current evaluation.
+    fn refuse_second_array(elements: &mut Vec<Value>, count: usize) -> bool {
+        let calls = ARRAY_RESERVATIONS.with(|calls| {
+            calls.set(calls.get() + 1);
+            calls.get()
+        });
+        calls != 2 && elements.try_reserve_exact(count).is_ok()
+    }
+
+    #[test]
+    fn loop_update_and_fill_reservation_failures_return_no_values() {
+        for (members, reservations, label) in [
+            // The loop's frame is the only frame after the root's.
+            (
+                "  spec f() -> Word[8] { for i in 0..2 with s: Word[8] = 1 { s } }\n",
+                Reservations {
+                    frames: |frames, count| {
+                        frames.is_empty() && frames.try_reserve_exact(count).is_ok()
+                    },
+                    ..Reservations::DEFAULT
+                },
+                "evaluation call stack could not be reserved",
+            ),
+            // The index 0 needs no storage; the index 1 does.
+            (
+                "  spec f() -> Int { for i in 0..2 with s: Int = 0 { i } }\n",
+                Reservations {
+                    value_limbs: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "exact integer storage could not be reserved",
+            ),
+            // The fill is the first array and the update the second.
+            (
+                "  spec f() -> Word[8]^2 { [4; 2] with [1] = 3 }\n",
+                Reservations {
+                    array: refuse_second_array,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+            (
+                "  spec f() -> Word[8]^2 { [4; 2] }\n",
+                Reservations {
+                    array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+        ] {
+            let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+            let run = || {
+                ARRAY_RESERVATIONS.with(|calls| calls.set(0));
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run(), "{members}");
+            assert!(first.values().is_none(), "{members}");
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label, "{members}");
         }
     }
 

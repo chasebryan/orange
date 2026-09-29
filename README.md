@@ -189,6 +189,49 @@ reads is visible and in range. This slice, S3d, is implemented and tested; its
 specification is in review as
 [OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md).
 
+### Loops the way standards write them
+
+FIPS 180-4 prepares the SHA-256 message schedule "for t = 16 to 63", and Orange
+writes exactly that. A loop runs over a range given by two literals, carries
+one accumulator of a stated type, and has that accumulator's value after its
+last step: a fold, with its count in plain sight. `w with [t] = v` is the array
+`w` with element `t` replaced, and `[0; 64]` is sixty-four zeros.
+
+```orange
+spec schedule(m: Word[32]^16) -> Word[32]^64 {
+  let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] { w with [t] = m[t] };
+  for t in 16..64 with w: Word[32]^64 = head {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+
+spec compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+  let w: Word[32]^64 = schedule(m);
+  let k: Word[32]^64 = round_constants();
+  let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h { round(v, k[t], w[t]) };
+  for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + h[i] }
+}
+```
+
+The [SHA-256 fixture](compiler/fixtures/s3e/valid-sha256.or) hashes "abc" to
+the digest FIPS 180-4 publishes, and the two-block NIST example too:
+
+```text
+sha256::abc_digest: Word[32]^8 = [0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad]
+```
+
+An index such as `w[t - 15]` may use only literals and loop indices, and the
+compiler proves, before anything runs, that it stays in range for every `t`
+from 16 to 63; `w[t - 17]` is rejected with the range it would take, -1
+through 46. An index that depends on data, the classic source of cache-timing
+leaks in table-driven code, cannot be written at all. The
+[ChaCha20 fixture](compiler/fixtures/s3e/valid-chacha20.or) loads the key and
+nonce with loops, runs the ten double rounds as one loop, and encrypts the
+"sunscreen" plaintext of RFC 8439 section 2.4.2 to the RFC's ciphertext, byte
+for byte. This slice, S3e, is implemented and tested; its specification is in
+review as
+[OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) contains an owner-directed
@@ -208,8 +251,9 @@ tests. This is executable reference code, not verified production cryptography.
 | Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
+| Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Loops, comparisons, conditionals, mixed-type tuples | Not yet |
+| Comparisons, conditionals, data-dependent indices, mixed-type tuples | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -267,7 +311,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, and arrays in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, and loops in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -286,9 +330,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 - [Orange 2026 language specification](docs/LANGUAGE_2026.md),
   [typed-literal semantics](docs/SEMANTICS_2026.md), and the proposed
   [pure expression semantics](docs/EXPRESSIONS_2026.md),
-  [bindings and conversions](docs/BINDINGS_2026.md), and
-  [fixed-length arrays](docs/ARRAYS_2026.md): the definition of what the
-  compiler accepts today.
+  [bindings and conversions](docs/BINDINGS_2026.md),
+  [fixed-length arrays](docs/ARRAYS_2026.md), and
+  [bounded loops](docs/LOOPS_2026.md): the definition of what the compiler
+  accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Architecture](docs/ARCHITECTURE.md) and
   [assurance model](docs/ASSURANCE.md): the intended end state.

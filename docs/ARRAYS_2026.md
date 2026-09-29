@@ -20,6 +20,12 @@ requires OEP-0006. At that point it replaces the S3c clauses listed in section
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`LOOPS_2026.md`](LOOPS_2026.md), proposed under OEP-0008, extends this
+> document with bounded loops, indices computed from loop indices, updates of
+> one element, and fill literals, which lift the absence of loops described in
+> section 12. Every source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea
@@ -172,7 +178,9 @@ operator whose expected type is an array is `ORC0215` at the operator. The
 first typed leaf of a conversion operand (`BINDINGS_2026.md` section 6) may now
 be an index, whose type is its element type, so `x[0] as Int` is an ordinary
 conversion. A conversion whose first typed leaf is an array literal or has an
-array type is `ORC0215` at `as`.
+array type is `ORC0215` at `as`. Like every undefined operator
+(`EXPRESSIONS_2026.md` section 10), it stops there: its operand is not
+checked, so a call inside it is not examined and adds no call graph edge.
 
 Arrays pass through calls and bindings like any other value: a parameter,
 result, or binding may have an array type, and the S3b and S3c rules for

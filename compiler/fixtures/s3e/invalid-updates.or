@@ -1,0 +1,15 @@
+// S3e rejection: an update gives the array it updates, a fill literal states
+// its type's length, and both keep their element type.
+edition 2026;
+module updates {
+  spec scalar(x: Word[8]) -> Word[8] { x with [0] = 1 }
+  spec gives(x: Word[8]^2) -> Word[8] { x with [0] = 1 }
+  spec past_end(x: Word[8]^2) -> Word[8]^2 {
+    for i in 0..3 with s: Word[8]^2 = x { s with [i] = 0 }
+  }
+  spec element(x: Word[8]^2) -> Word[8]^2 { x with [0] = 256 }
+  spec short() -> Word[8]^4 { [0; 3] }
+  spec none() -> Word[8]^4 { [0; 0] }
+  spec fill_scalar() -> Word[8] { [0; 4] }
+  spec fill_element() -> Word[8]^2 { [0x100; 2] }
+}

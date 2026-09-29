@@ -4,16 +4,17 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    ArrayType, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode,
-    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS,
-    Magnitude,
+    ArrayType, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreLoop, CoreModule,
+    CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH,
+    MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, Magnitude,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
     ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
-    ConversionExpression, Expression, ExpressionKind, FunctionBody, FunctionDeclaration,
-    FunctionKind, Identifier, IndexExpression, IntegerLiteral, MAX_ARRAY_ELEMENTS, Parameter,
-    SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
+    ConversionExpression, Expression, ExpressionKind, FillExpression, FunctionBody,
+    FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral, LoopExpression,
+    MAX_ARRAY_ELEMENTS, Parameter, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression,
+    UnaryOperator, UpdateExpression,
 };
 use crate::source::{SourceFile, Span};
 
@@ -39,6 +40,8 @@ const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
 const ADMITTED_TYPES: &str = "`Int`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
 const ARRAY_OPERATOR_NOTE: &str =
     "operators apply to `Int` and word values; apply them to elements, such as `x[0]`";
+const STATIC_INDEX_NOTE: &str = "an index is built from integer literals and loop indices with \
+     `+`, `-`, and `*`, so that every index is known to be in range when the program is checked";
 
 /// The complete result of semantic analysis.
 ///
@@ -177,8 +180,32 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                 .elements
                 .iter()
                 .all(|element| expression_belongs(element, belongs)),
+            ExpressionKind::Fill(fill) => {
+                belongs(fill.length_span) && expression_belongs(&fill.element, belongs)
+            }
             ExpressionKind::Index(index) => {
-                belongs(index.index_span) && expression_belongs(&index.base, belongs)
+                expression_belongs(&index.index, belongs)
+                    && expression_belongs(&index.base, belongs)
+            }
+            ExpressionKind::Update(update) => {
+                belongs(update.keyword_span)
+                    && expression_belongs(&update.base, belongs)
+                    && expression_belongs(&update.index, belongs)
+                    && expression_belongs(&update.value, belongs)
+            }
+            ExpressionKind::Loop(r#loop) => {
+                let ty = &r#loop.ty;
+                belongs(r#loop.keyword_span)
+                    && belongs(r#loop.index.span)
+                    && belongs(r#loop.start_span)
+                    && belongs(r#loop.end_span)
+                    && belongs(r#loop.accumulator.span)
+                    && belongs(ty.span)
+                    && belongs(ty.name.span)
+                    && ty.width_span.is_none_or(belongs)
+                    && ty.length_span.is_none_or(belongs)
+                    && expression_belongs(&r#loop.init, belongs)
+                    && expression_belongs(&r#loop.step, belongs)
             }
         }
 }
@@ -235,6 +262,7 @@ struct Analyzer<'source, 'ast> {
     limits: Limits,
     reserve_pending_function_slot: fn(&mut Vec<PendingFunction>) -> bool,
     reserve_magnitude_limb: fn(&mut Vec<u32>) -> bool,
+    reserve_range_limbs: fn(&mut Vec<u32>, usize) -> bool,
     reserve_core_name: fn(&mut String, usize) -> bool,
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
     reserve_core_node_slot: fn(&mut Vec<CoreNode>) -> bool,
@@ -249,6 +277,7 @@ struct PendingFunction {
     result_type: CoreType,
     locals: Vec<CoreLocal>,
     nodes: Vec<CoreNode>,
+    loops: Vec<CoreLoop>,
 }
 
 /// The silently resolved signature of one typed `spec`, used to check calls
@@ -294,6 +323,21 @@ struct BodyContext<'ast> {
     bindings: &'ast [Binding],
     /// Types of the bindings in scope: exactly the first `binding_types.len()`.
     binding_types: Vec<Option<CoreType>>,
+    /// Loops whose step is being checked, outermost first.
+    loop_scopes: Vec<LoopScope<'ast>>,
+    /// Checked loops of the function, by number. A loop's number is taken
+    /// when its check starts, and its entry is filled once it is well formed.
+    loops: Vec<Option<CoreLoop>>,
+}
+
+/// A loop whose index and accumulator are in scope.
+struct LoopScope<'ast> {
+    id: u32,
+    index: &'ast Identifier,
+    accumulator: &'ast Identifier,
+    ty: CoreType,
+    start: u32,
+    end: u32,
 }
 
 /// A binding whose type resolved.
@@ -307,6 +351,10 @@ struct CheckedBinding {
 enum NameResolution<'ast> {
     Parameter(usize),
     Binding(usize),
+    /// The index of the loop scope at this position.
+    LoopIndex(usize),
+    /// The accumulator of the loop scope at this position.
+    Accumulator(usize),
     /// A binding of this body whose scope has not started.
     LaterBinding(&'ast Binding),
     Unknown,
@@ -330,6 +378,14 @@ impl<'ast> BodyContext<'ast> {
         if let Some(index) = visible.iter().position(|binding| binding.name.text == name) {
             return NameResolution::Binding(index);
         }
+        for (position, scope) in self.loop_scopes.iter().enumerate().rev() {
+            if scope.index.text == name {
+                return NameResolution::LoopIndex(position);
+            }
+            if scope.accumulator.text == name {
+                return NameResolution::Accumulator(position);
+            }
+        }
         later
             .iter()
             .find(|binding| binding.name.text == name)
@@ -341,8 +397,40 @@ impl<'ast> BodyContext<'ast> {
         match self.resolve(name) {
             NameResolution::Parameter(index) => self.parameter_types.get(index).copied().flatten(),
             NameResolution::Binding(index) => self.binding_types.get(index).copied().flatten(),
+            NameResolution::LoopIndex(_) => Some(CoreType::Int),
+            NameResolution::Accumulator(position) => {
+                self.loop_scopes.get(position).map(|scope| scope.ty)
+            }
             NameResolution::LaterBinding(_) | NameResolution::Unknown => None,
         }
+    }
+
+    /// Returns the earlier declaration of `name` among the parameters, the
+    /// bindings in scope, and the loop names in scope, if any.
+    fn earlier_name(&self, name: &str) -> Option<(Span, &'static str)> {
+        if let Some(parameter) = self
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name.text == name)
+        {
+            return Some((parameter.name.span, "the parameter is here"));
+        }
+        if let Some(binding) = self
+            .bindings
+            .get(..self.binding_types.len())
+            .and_then(|visible| visible.iter().find(|binding| binding.name.text == name))
+        {
+            return Some((binding.name.span, "the binding is here"));
+        }
+        self.loop_scopes.iter().find_map(|scope| {
+            if scope.index.text == name {
+                Some((scope.index.span, "the loop index is here"))
+            } else if scope.accumulator.text == name {
+                Some((scope.accumulator.span, "the accumulator is here"))
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -361,8 +449,12 @@ fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
         | ExpressionKind::Call(_)
         | ExpressionKind::Conversion(_)
         | ExpressionKind::Index(_)
-        | ExpressionKind::Array(_) => Some(expression),
+        | ExpressionKind::Array(_)
+        | ExpressionKind::Fill(_)
+        | ExpressionKind::Loop(_) => Some(expression),
         ExpressionKind::Parenthesized(inner) => first_typed_leaf(inner),
+        // An update has the type of the array it updates.
+        ExpressionKind::Update(update) => first_typed_leaf(&update.base),
         ExpressionKind::Unary(unary) => first_typed_leaf(&unary.operand),
         ExpressionKind::Binary(binary) => {
             let left = first_typed_leaf(&binary.left);
@@ -484,6 +576,53 @@ fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
     }
 }
 
+/// The least and greatest values an index can take, as exact integers.
+type IndexRange = (ExactInteger, ExactInteger);
+
+/// Returns the range of `left operator right` for the ranges of its
+/// operands, computed exactly, or `None` when storage cannot be reserved.
+fn combine_ranges(
+    operator: BinaryOperator,
+    (left_low, left_high): &IndexRange,
+    (right_low, right_high): &IndexRange,
+    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+) -> Option<IndexRange> {
+    match operator {
+        BinaryOperator::Add => Some((
+            left_low.add(right_low, reserve_limbs)?,
+            left_high.add(right_high, reserve_limbs)?,
+        )),
+        BinaryOperator::Subtract => Some((
+            left_low.subtract(right_high, reserve_limbs)?,
+            left_high.subtract(right_low, reserve_limbs)?,
+        )),
+        BinaryOperator::Multiply => {
+            let mut products = [
+                left_low.multiply(right_low, reserve_limbs)?,
+                left_low.multiply(right_high, reserve_limbs)?,
+                left_high.multiply(right_low, reserve_limbs)?,
+                left_high.multiply(right_high, reserve_limbs)?,
+            ];
+            products.sort_unstable_by(ExactInteger::compare);
+            let [low, _, _, high] = products;
+            Some((low, high))
+        }
+        _ => None,
+    }
+}
+
+/// Writes an exact integer in decimal, or returns `None` when storage
+/// cannot be reserved.
+fn render_exact(value: &ExactInteger) -> Option<String> {
+    let mut text = String::new();
+    fmt::write(&mut text, format_args!("{value}")).ok()?;
+    Some(text)
+}
+
+fn reserve_range_limbs(limbs: &mut Vec<u32>, count: usize) -> bool {
+    limbs.try_reserve_exact(count).is_ok()
+}
+
 fn word_maximum(ty: CoreType) -> Option<u64> {
     match ty {
         CoreType::Int | CoreType::Array(_) => None,
@@ -509,6 +648,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             limits,
             reserve_pending_function_slot,
             reserve_magnitude_limb,
+            reserve_range_limbs,
             reserve_core_name,
             reserve_diagnostic_slots,
             reserve_core_node_slot,
@@ -646,6 +786,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     parameter_types: Vec::new(),
                     bindings: &body.bindings,
                     binding_types: Vec::new(),
+                    loop_scopes: Vec::new(),
+                    loops: Vec::new(),
                 };
                 let scope = ModuleScope {
                     declarations: &declarations,
@@ -797,7 +939,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let mut bindings_checked = true;
         for (index, binding) in body.bindings.iter().enumerate() {
-            let checked = self.check_binding(function, body, index, &context, scope, call_edges);
+            let checked =
+                self.check_binding(function, body, index, &mut context, scope, call_edges);
             if self.halted {
                 return None;
             }
@@ -825,12 +968,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             nodes: Vec::new(),
             call_edges,
         };
-        let checked =
-            self.check_expression(&body.expression, result_type, &context, scope, &mut output);
+        let checked = self.check_expression(
+            &body.expression,
+            result_type,
+            &mut context,
+            scope,
+            &mut output,
+        );
         if !checked || !bindings_checked || self.halted {
             return None;
         }
         let nodes = output.nodes;
+        // Every loop of a well-formed function is well formed.
+        let loops = context.loops.into_iter().collect::<Option<Vec<_>>>()?;
         let parameters = context
             .parameter_types
             .iter()
@@ -845,6 +995,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             result_type,
             locals,
             nodes,
+            loops,
         })
     }
 
@@ -859,7 +1010,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         function: &'ast FunctionDeclaration,
         body: &'ast TypedBody,
         index: usize,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         call_edges: &mut Vec<CallEdge>,
     ) -> Option<CheckedBinding> {
@@ -919,7 +1070,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -993,11 +1144,30 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 self.check_array(expression, array, expected, context, scope, output)
             }
+            ExpressionKind::Fill(fill) => {
+                // One event for the literal and one for its length token.
+                if !self.event(expression.span) || !self.event(fill.length_span) {
+                    return false;
+                }
+                self.check_fill(expression, fill, expected, context, scope, output)
+            }
             ExpressionKind::Index(index) => {
-                if !self.event(index.index_span) {
+                if !self.event(index.index_span()) {
                     return false;
                 }
                 self.check_index(expression, index, expected, context, scope, output)
+            }
+            ExpressionKind::Update(update) => {
+                if !self.event(update.keyword_span) {
+                    return false;
+                }
+                self.check_update(expression, update, expected, context, scope, output)
+            }
+            ExpressionKind::Loop(r#loop) => {
+                if !self.event(r#loop.keyword_span) {
+                    return false;
+                }
+                self.check_loop(expression, r#loop, expected, context, scope, output)
             }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
@@ -1051,6 +1221,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 context.binding_types.get(index).copied(),
                 u32::try_from(index).map(CoreNodeKind::Local),
             ),
+            NameResolution::LoopIndex(position) => match context.loop_scopes.get(position) {
+                Some(scope) => (
+                    Some(Some(CoreType::Int)),
+                    Ok(CoreNodeKind::LoopIndex(scope.id)),
+                ),
+                None => (None, Ok(CoreNodeKind::LoopIndex(0))),
+            },
+            NameResolution::Accumulator(position) => match context.loop_scopes.get(position) {
+                Some(scope) => (
+                    Some(Some(scope.ty)),
+                    Ok(CoreNodeKind::Accumulator(scope.id)),
+                ),
+                None => (None, Ok(CoreNodeKind::Accumulator(0))),
+            },
             NameResolution::LaterBinding(binding) => {
                 if self.begin_report(name.span) {
                     let spelling = identifier_spelling_for_diagnostic(&name.text);
@@ -1161,7 +1345,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         conversion: &'ast ConversionExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1267,11 +1451,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .leaf_type(&index.base, context, scope)?
                 .as_array()
                 .map(ArrayType::element),
+            ExpressionKind::Loop(r#loop) => silent_type(self.source, &r#loop.ty),
+            ExpressionKind::Update(update) => {
+                self.leaf_type(first_typed_leaf(&update.base)?, context, scope)
+            }
             ExpressionKind::Literal(_)
             | ExpressionKind::Unary(_)
             | ExpressionKind::Binary(_)
             | ExpressionKind::Parenthesized(_)
-            | ExpressionKind::Array(_) => None,
+            | ExpressionKind::Array(_)
+            | ExpressionKind::Fill(_) => None,
         }
     }
 
@@ -1283,7 +1472,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         array: &'ast ArrayExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1358,7 +1547,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         index: &'ast IndexExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1383,7 +1572,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             self.check_expression(&index.base, base_type, context, scope, output);
             return false;
         };
-        let position = self.check_index_literal(index, array_type);
+        let literal = index.is_literal();
+        let position = if literal {
+            self.check_index_literal(index, array_type)
+        } else {
+            None
+        };
         let element = array_type.element();
         let element_matches = element == expected;
         if !element_matches && self.begin_report(expression.span) {
@@ -1398,6 +1592,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             );
         }
         let base = self.check_expression(&index.base, base_type, context, scope, output);
+        if !literal {
+            let in_range =
+                self.check_static_index(&index.index, array_type, context, scope, output);
+            return in_range
+                && base
+                && element_matches
+                && self.push_node(output, expression.span, expected, CoreNodeKind::Select);
+        }
         match position {
             Some(position) if base && element_matches => self.push_node(
                 output,
@@ -1409,11 +1611,486 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
+    /// Checks an index expression as an `Int`, then proves it in range for
+    /// `array` from the ranges of its literals and loop indices.
+    fn check_static_index(
+        &mut self,
+        index: &'ast Expression,
+        array: ArrayType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        if !self.check_expression(index, CoreType::Int, context, scope, output) {
+            return false;
+        }
+        let length = array.length();
+        let range = match self.static_range(index, context) {
+            Ok(range) => range,
+            Err(span) => {
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::NonStaticIndex,
+                            "an index may use only integer literals and loop indices",
+                            span,
+                        )
+                        .with_label("not known when the program is checked")
+                        .with_note(STATIC_INDEX_NOTE),
+                    );
+                }
+                return false;
+            }
+        };
+        let in_range = range.as_ref().is_some_and(|(low, high)| {
+            !low.is_negative() && high.to_i64().is_some_and(|high| high < i64::from(length))
+        });
+        if !in_range && self.begin_report(index.span) {
+            let highest = length.saturating_sub(1);
+            let array = CoreType::Array(array);
+            let message = match &range {
+                Some((low, high)) => match (render_exact(low), render_exact(high)) {
+                    (Some(low_text), Some(_)) if low.compare(high) == Ordering::Equal => {
+                        format!("index {low_text} is out of range for `{array}`")
+                    }
+                    (Some(low_text), Some(high_text)) => format!(
+                        "this index runs from {low_text} through {high_text}, out of range \
+                         for `{array}`"
+                    ),
+                    _ => format!("this index is out of range for `{array}`"),
+                },
+                None => format!(
+                    "a bound of this index's range exceeds the {}-significant-bit limit of \
+                     `Int`",
+                    self.limits.integer_bits
+                ),
+            };
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, index.span)
+                    .with_label(format!("indices run from 0 through {highest}"))
+                    .with_note(
+                        "every value an index can take, over every loop index in it, must \
+                         select an element",
+                    ),
+            );
+        }
+        in_range
+    }
+
+    /// Returns the least and greatest values of a well-typed index built
+    /// from literals, loop indices, parentheses, negation, `+`, `-`, and
+    /// `*`, computed exactly, or `None` when a bound's magnitude exceeds the
+    /// integer limit or storage cannot be reserved (which is reported as a
+    /// resource limit). Anything else is returned as the span of the first
+    /// such part.
+    ///
+    /// Parser-established expression height bounds this recursion.
+    fn static_range(
+        &mut self,
+        index: &Expression,
+        context: &BodyContext<'ast>,
+    ) -> Result<Option<IndexRange>, Span> {
+        let range = match &index.kind {
+            ExpressionKind::Literal(literal) => self.range_literal(literal).and_then(|value| {
+                let copy = value.try_clone_with_reservation(self.reserve_range_limbs)?;
+                Some((value, copy))
+            }),
+            ExpressionKind::Parenthesized(inner) => return self.static_range(inner, context),
+            ExpressionKind::Name(name) => match context.resolve(&name.text) {
+                NameResolution::LoopIndex(position) => {
+                    let scope = context.loop_scopes.get(position).ok_or(name.span)?;
+                    let last = scope.end.checked_sub(1).ok_or(name.span)?;
+                    ExactInteger::from_u64(u64::from(scope.start), self.reserve_range_limbs).zip(
+                        ExactInteger::from_u64(u64::from(last), self.reserve_range_limbs),
+                    )
+                }
+                _ => return Err(name.span),
+            },
+            ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => {
+                return Ok(self
+                    .static_range(&unary.operand, context)?
+                    .map(|(low, high)| (high.negated(), low.negated())));
+            }
+            ExpressionKind::Binary(binary)
+                if matches!(
+                    binary.operator,
+                    BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
+                ) =>
+            {
+                let left = self.static_range(&binary.left, context)?;
+                let right = self.static_range(&binary.right, context)?;
+                let (Some(left), Some(right)) = (left, right) else {
+                    return Ok(None);
+                };
+                combine_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
+            }
+            _ => return Err(index.span),
+        };
+        let Some(range) = range else {
+            self.resource_limit(index.span, "index range storage allocation failed");
+            return Ok(None);
+        };
+        let bits = self.limits.integer_bits;
+        Ok((range.0.magnitude_bits() <= bits && range.1.magnitude_bits() <= bits).then_some(range))
+    }
+
+    /// Decodes an index literal exactly, without events or diagnostics; the
+    /// literal was already checked as an `Int`. Returns `None` when storage
+    /// cannot be reserved.
+    fn range_literal(&self, literal: &IntegerLiteral) -> Option<ExactInteger> {
+        let spelling = self.source.slice(literal.magnitude_span)?;
+        let (radix, digits) = if let Some(digits) = spelling
+            .strip_prefix("0b")
+            .or_else(|| spelling.strip_prefix("0B"))
+        {
+            (2, digits)
+        } else if let Some(digits) = spelling
+            .strip_prefix("0x")
+            .or_else(|| spelling.strip_prefix("0X"))
+        {
+            (16, digits)
+        } else {
+            (10, spelling)
+        };
+        let mut magnitude = Magnitude::zero();
+        for character in digits.chars().filter(|character| *character != '_') {
+            let digit = character.to_digit(radix)?;
+            if !magnitude.multiply_add_with_reservation(radix, digit, self.reserve_magnitude_limb) {
+                return None;
+            }
+        }
+        Some(ExactInteger::new(literal.negative, magnitude))
+    }
+
+    /// Checks `base with [index] = value` against `expected`, which must be
+    /// the base's array type.
+    fn check_update(
+        &mut self,
+        expression: &'ast Expression,
+        update: &'ast UpdateExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let base_type =
+            first_typed_leaf(&update.base).and_then(|leaf| self.leaf_type(leaf, context, scope));
+        if let Some(base_type) = base_type
+            && base_type.is_scalar()
+        {
+            if self.begin_report(update.base.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::NotAnArray,
+                        format!("only an array can be updated, but this has type `{base_type}`"),
+                        update.base.span,
+                    )
+                    .with_label(format!("`{base_type}` has no elements"))
+                    .with_note("`x with [i] = v` is the array `x` with one element replaced"),
+                );
+            }
+            self.check_expression(&update.base, base_type, context, scope, output);
+            return false;
+        }
+        let Some(array) = expected.as_array() else {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!("an update gives an array, but `{expected}` is required here"),
+                        expression.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("`x with [i] = v` is the array `x` with one element replaced"),
+                );
+            }
+            return false;
+        };
+        let base = self.check_expression(&update.base, expected, context, scope, output);
+        if self.halted {
+            return false;
+        }
+        let index = self.check_static_index(&update.index, array, context, scope, output);
+        if self.halted {
+            return false;
+        }
+        let value = self.check_expression(&update.value, array.element(), context, scope, output);
+        base && index
+            && value
+            && self.push_node(output, expression.span, expected, CoreNodeKind::Update)
+    }
+
+    /// Checks `[element; n]` against `expected`, which must be an array type
+    /// of length n.
+    fn check_fill(
+        &mut self,
+        expression: &'ast Expression,
+        fill: &'ast FillExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Some(array) = expected.as_array() else {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!("an array literal cannot have type `{expected}`"),
+                        expression.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("an array literal is written where an array type `T^n` is required"),
+                );
+            }
+            return false;
+        };
+        let length = array_length(self.source, fill.length_span)
+            .filter(|length| (1..=MAX_ARRAY_LENGTH).contains(length));
+        match length {
+            None => self.report_unsupported_array_length(fill.length_span),
+            Some(length) if length != array.length() => {
+                if self.begin_report(expression.span) {
+                    let expected_length = array.length();
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::ArrayLengthMismatch,
+                            format!(
+                                "this array has {length} {}, but `{expected}` has {expected_length}",
+                                if length == 1 { "element" } else { "elements" },
+                            ),
+                            expression.span,
+                        )
+                        .with_label(format!(
+                            "expected {expected_length} {}",
+                            if expected_length == 1 {
+                                "element"
+                            } else {
+                                "elements"
+                            }
+                        ))
+                        .with_note("`[e; n]` is the array of n copies of e"),
+                    );
+                }
+            }
+            Some(_) => {}
+        }
+        let element = self.check_expression(&fill.element, array.element(), context, scope, output);
+        element
+            && length == Some(array.length())
+            && self.push_node(output, expression.span, expected, CoreNodeKind::Fill)
+    }
+
+    /// Checks `for i in a..b with s: T = init { step }` against `expected`.
+    ///
+    /// The loop takes its number before its initial value is checked, so
+    /// loops are numbered in source order of their `for` keywords. The step
+    /// is checked with the index and the accumulator in scope and becomes
+    /// the loop's own Core expression.
+    fn check_loop(
+        &mut self,
+        expression: &'ast Expression,
+        r#loop: &'ast LoopExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let bounds = self.check_loop_bounds(r#loop);
+        if self.halted {
+            return false;
+        }
+        let mut names_unique = true;
+        for (name, sibling) in [
+            (&r#loop.index, None),
+            (&r#loop.accumulator, Some(&r#loop.index)),
+        ] {
+            // One event for each loop name's uniqueness check.
+            if !self.event(name.span) {
+                return false;
+            }
+            let earlier = context.earlier_name(&name.text).or_else(|| {
+                sibling
+                    .filter(|sibling| sibling.text == name.text)
+                    .map(|sibling| (sibling.span, "the loop index is here"))
+            });
+            if let Some((earlier_span, earlier_label)) = earlier {
+                names_unique = false;
+                if self.begin_report(name.span) {
+                    let spelling = identifier_spelling_for_diagnostic(&name.text);
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::DuplicateBinding,
+                            format!("duplicate name `{spelling}`"),
+                            name.span,
+                        )
+                        .with_label("this name repeats a name in scope")
+                        .with_secondary_span(earlier_span, earlier_label)
+                        .with_note(
+                            "each parameter, binding, loop index, and accumulator in scope has \
+                             its own name; Orange has no shadowing",
+                        ),
+                    );
+                }
+            }
+        }
+        let Some(ty) = self.analyze_type(&r#loop.ty, "accumulator type") else {
+            return false;
+        };
+        let type_matches = ty == expected;
+        if !type_matches && self.begin_report(expression.span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!("this loop has type `{ty}`, but `{expected}` is required here"),
+                    expression.span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("a loop's value is its accumulator after the last step"),
+            );
+        }
+        let Ok(id) = u32::try_from(context.loops.len()) else {
+            self.resource_limit(
+                expression.span,
+                "loop count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        if context.loops.try_reserve(1).is_err() {
+            self.resource_limit(expression.span, "loop storage allocation failed");
+            return false;
+        }
+        context.loops.push(None);
+        let init = self.check_expression(&r#loop.init, ty, context, scope, output);
+        let Some((start, end)) = bounds else {
+            return false;
+        };
+        if self.halted {
+            return false;
+        }
+        if context.loop_scopes.try_reserve(1).is_err() {
+            self.resource_limit(expression.span, "loop scope allocation failed");
+            return false;
+        }
+        context.loop_scopes.push(LoopScope {
+            id,
+            index: &r#loop.index,
+            accumulator: &r#loop.accumulator,
+            ty,
+            start,
+            end,
+        });
+        let mut step_output = BodyOutput {
+            nodes: Vec::new(),
+            call_edges: &mut *output.call_edges,
+        };
+        let step = self.check_expression(&r#loop.step, ty, context, scope, &mut step_output);
+        let step_nodes = step_output.nodes;
+        let mut loop_scope = Vec::new();
+        let scope_reserved = loop_scope
+            .try_reserve_exact(context.loop_scopes.len())
+            .is_ok();
+        loop_scope.extend(context.loop_scopes.iter().map(|scope| scope.id));
+        context.loop_scopes.pop();
+        if !scope_reserved {
+            self.resource_limit(expression.span, "loop scope allocation failed");
+            return false;
+        }
+        if !(init && step && names_unique && type_matches) || self.halted {
+            return false;
+        }
+        let Ok(visible_locals) = u32::try_from(context.binding_types.len()) else {
+            self.resource_limit(
+                expression.span,
+                "binding count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        let Some(index_name) = self.copy_core_name(&r#loop.index.text, r#loop.index.span) else {
+            return false;
+        };
+        let Some(accumulator_name) =
+            self.copy_core_name(&r#loop.accumulator.text, r#loop.accumulator.span)
+        else {
+            return false;
+        };
+        let Some(entry) = usize::try_from(id)
+            .ok()
+            .and_then(|id| context.loops.get_mut(id))
+        else {
+            self.resource_limit(expression.span, "semantic loop table is inconsistent");
+            return false;
+        };
+        *entry = Some(CoreLoop {
+            span: expression.span,
+            index_name,
+            accumulator_name,
+            ty,
+            start,
+            end,
+            visible_locals,
+            scope: loop_scope,
+            step: CoreExpression { nodes: step_nodes },
+        });
+        self.push_node(output, expression.span, expected, CoreNodeKind::Fold(id))
+    }
+
+    /// Decodes a loop's bounds and checks that they form a nonempty range
+    /// within 0 through [`MAX_LOOP_BOUND`].
+    fn check_loop_bounds(&mut self, r#loop: &LoopExpression) -> Option<(u32, u32)> {
+        let start = self.loop_bound(r#loop.start_span)?;
+        let end = self.loop_bound(r#loop.end_span)?;
+        let limit = u64::from(MAX_LOOP_BOUND);
+        let (span, message, label) = if start > limit || end > limit {
+            let span = if start > limit {
+                r#loop.start_span
+            } else {
+                r#loop.end_span
+            };
+            (
+                span,
+                format!("a loop bound must be at most {MAX_LOOP_BOUND}"),
+                "loop bound too large",
+            )
+        } else if start >= end {
+            (
+                r#loop.end_span,
+                format!("the loop range {start}..{end} is empty"),
+                "a loop runs at least once",
+            )
+        } else {
+            return Some((u32::try_from(start).ok()?, u32::try_from(end).ok()?));
+        };
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(DiagnosticCode::InvalidLoopRange, message, span)
+                    .with_label(label)
+                    .with_note(
+                        "a loop `for i in a..b` runs once for each i from a up to b - 1, with \
+                         a < b <= 65536",
+                    ),
+            );
+        }
+        None
+    }
+
+    /// Decodes one loop bound. A bound above the u64 range decodes as the
+    /// u64 maximum, which is too large.
+    fn loop_bound(&mut self, span: Span) -> Option<u64> {
+        let literal = IntegerLiteral {
+            span,
+            magnitude_span: span,
+            negative: false,
+        };
+        let magnitude = self.parse_magnitude(&literal, self.limits.integer_bits)?;
+        Some(magnitude.to_u64().unwrap_or(u64::MAX))
+    }
+
     /// Decodes an index literal and checks it against the array's length.
     fn check_index_literal(&mut self, index: &IndexExpression, array: ArrayType) -> Option<u32> {
         let literal = IntegerLiteral {
-            span: index.index_span,
-            magnitude_span: index.index_span,
+            span: index.index_span(),
+            magnitude_span: index.index_span(),
             negative: false,
         };
         let magnitude = self.parse_magnitude(&literal, self.limits.integer_bits)?;
@@ -1422,11 +2099,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .to_u64()
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value < length);
-        if decoded.is_none() && self.begin_report(index.index_span) {
+        if decoded.is_none() && self.begin_report(index.index_span()) {
             let highest = length.saturating_sub(1);
             let spelling = self
                 .source
-                .slice(index.index_span)
+                .slice(index.index_span())
                 .map_or_else(String::new, |spelling| {
                     identifier_spelling_for_diagnostic(spelling).to_string()
                 });
@@ -1437,12 +2114,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         "index `{spelling}` is out of range for `{}`",
                         CoreType::Array(array)
                     ),
-                    index.index_span,
+                    index.index_span(),
                 )
                 .with_label(format!("indices run from 0 through {highest}"))
-                .with_note(
-                    "an index is a fixed literal; variable indices are not part of Orange 2026",
-                ),
+                .with_note("a literal index must be less than the array's length"),
             );
         }
         decoded
@@ -1470,7 +2145,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &'ast Expression,
         call: &'ast CallExpression,
         expected: CoreType,
-        context: &BodyContext<'ast>,
+        context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -1919,6 +2594,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             // node, one node per parameter type, and its expression nodes;
             // each binding contributes one binding node, one type node, and
             // its expression nodes.
+            // Each loop contributes one loop node, one accumulator-type
+            // node, and its step's nodes.
             let node_count = pending_function.locals.iter().fold(
                 pending_function
                     .parameters
@@ -1931,6 +2608,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .saturating_add(2)
                 },
             );
+            let node_count = pending_function
+                .loops
+                .iter()
+                .fold(node_count, |count, r#loop| {
+                    count
+                        .saturating_add(r#loop.step.nodes.len())
+                        .saturating_add(2)
+                });
             for _ in 0..node_count {
                 if !self.record_core_node(pending_function.span) {
                     return None;
@@ -1954,6 +2639,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 body: CoreExpression {
                     nodes: pending_function.nodes,
                 },
+                loops: pending_function.loops,
             });
         }
         Some(CoreModule {
@@ -1981,22 +2667,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         match classify_type(self.source, syntax) {
             TypeClass::Resolved(ty) => Some(ty),
             TypeClass::UnsupportedArrayLength(length_span) => {
-                if self.begin_report(length_span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedArrayLength,
-                            format!(
-                                "an array length must be a decimal integer from 1 through \
-                                 {MAX_ARRAY_LENGTH}"
-                            ),
-                            length_span,
-                        )
-                        .with_label("unsupported array length")
-                        .with_note(
-                            "write the length in decimal without leading zeros, as in `Word[32]^16`",
-                        ),
-                    );
-                }
+                self.report_unsupported_array_length(length_span);
                 None
             }
             TypeClass::UnsupportedWordWidth(width_span) => {
@@ -2045,6 +2716,27 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 None
             }
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_unsupported_array_length(&mut self, span: Span) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedArrayLength,
+                    format!(
+                        "an array length must be a decimal integer from 1 through \
+                         {MAX_ARRAY_LENGTH}"
+                    ),
+                    span,
+                )
+                .with_label("unsupported array length")
+                .with_note(
+                    "write the length in decimal without leading zeros, as in `Word[32]^16`",
+                ),
+            );
         }
     }
 
@@ -3371,6 +4063,30 @@ mod tests {
     }
 
     #[test]
+    fn index_range_reservation_failure_returns_no_partial_core() {
+        let fixture = Fixture::new(concat!(
+            "edition 2026; module values {\n",
+            "  spec f(x: Word[8]^4) -> Word[8] { for i in 1..5 with s: Word[8] = 0 { s ^ x[i - 1] } }\n",
+            "}\n",
+        ));
+        let analyze_with_failure = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_range_limbs = |_, _| false;
+            analyzer.run()
+        };
+
+        let first = analyze_with_failure();
+        let second = analyze_with_failure();
+        assert_eq!(first, second);
+        assert!(first.core().is_none());
+        assert_eq!(first.diagnostics().len(), 1);
+        let diagnostic = &first.diagnostics()[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(fixture.source().slice(diagnostic.primary_span()), Some("i"));
+        assert_eq!(diagnostic.label(), "index range storage allocation failed");
+    }
+
+    #[test]
     fn pending_function_reservation_failure_returns_no_partial_core() {
         let fixture = Fixture::new("edition 2026; module values { spec value() -> Int { 1 } }\n");
         let analyze_with_failure = || {
@@ -4388,6 +5104,12 @@ mod tests {
                     }
                     CoreNodeKind::Array { elements } => format!("array of {elements}"),
                     CoreNodeKind::Index { index } => format!("index {index}"),
+                    CoreNodeKind::Select => String::from("select"),
+                    CoreNodeKind::Update => String::from("update"),
+                    CoreNodeKind::Fill => String::from("fill"),
+                    CoreNodeKind::Fold(id) => format!("loop #{id}"),
+                    CoreNodeKind::LoopIndex(id) => format!("index of loop #{id}"),
+                    CoreNodeKind::Accumulator(id) => format!("accumulator of loop #{id}"),
                 };
                 (
                     operation,
@@ -5993,7 +6715,7 @@ mod tests {
         );
         assert_eq!(
             notes(5),
-            ["an index is a fixed literal; variable indices are not part of Orange 2026"]
+            ["a literal index must be less than the array's length"]
         );
         assert_eq!(result.diagnostics[7].label(), "`Word[8]` has no elements");
         assert_eq!(
@@ -6026,6 +6748,10 @@ mod tests {
             "  spec convert_call() -> Word[8] { rows() as Word[8] }\n",
             "  spec convert_literal() -> Int { [1] as Int }\n",
             "  spec rows() -> Word[8]^2 { [1, 2] }\n",
+            // An undefined `as` stops there, as every undefined operator
+            // does: `back()` is not examined, so it closes no cycle.
+            "  spec convert_cycle() -> Int { back() as Int }\n",
+            "  spec back() -> Word[8]^1 { [convert_cycle() as Word[8]] }\n",
         ));
         let note = String::from(ARRAY_OPERATOR_NOTE);
         assert_eq!(
@@ -6070,6 +6796,11 @@ mod tests {
                     DiagnosticCode::UnsupportedOperator,
                     "as",
                     String::from("`as` is not defined for an array")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for `Word[8]^1`")
                 ),
             ]
         );
@@ -6223,8 +6954,632 @@ mod tests {
                 };
                 array.elements[1].span = foreign_array.elements[1].span;
             },
-            &|ast| index_mut(ast).index_span = foreign_index.index_span,
+            &|ast| index_mut(ast).index.span = foreign_index.index.span,
             &|ast| index_mut(ast).base.span = foreign_index.base.span,
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
+    }
+
+    /// Renders a function's loops as `(index, accumulator, type, range,
+    /// visible bindings, scope)`.
+    fn loop_headers(
+        function: &CoreFunction,
+    ) -> Vec<(String, String, CoreType, String, u32, Vec<u32>)> {
+        function
+            .loops
+            .iter()
+            .map(|r#loop| {
+                (
+                    r#loop.index_name().to_owned(),
+                    r#loop.accumulator_name().to_owned(),
+                    r#loop.ty(),
+                    format!("{}..{}", r#loop.start(), r#loop.end()),
+                    r#loop.visible_locals(),
+                    r#loop.scope().to_vec(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn loops_updates_fills_and_selections_build_typed_core_in_postorder() {
+        let (fixture, core) = accepted(concat!(
+            "  spec sum(x: Int^4) -> Int { for i in 0..4 with s: Int = 0 { s + x[i] } }\n",
+            "  spec odd(x: Word[8]^8) -> Word[8]^4 {\n",
+            "    for i in 0..4 with s: Word[8]^4 = [0; 4] { s with [i] = x[2 * i + 1] }\n",
+            "  }\n",
+            "  spec grid() -> Int {\n",
+            "    let base: Int = 10;\n",
+            "    for i in 0..2 with a: Int = base { for j in 0..3 with b: Int = a { b + i * j } }\n",
+            "  }\n",
+            "  spec first() -> Int {\n",
+            "    for i in 0..2 with a: Int = for j in 5..7 with b: Int = 0 { b + j } { a + i }\n",
+            "  }\n",
+        ));
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        let ints = array_of(CoreType::Int, 4);
+        let bytes = array_of(CoreType::Word8, 8);
+        let half = array_of(CoreType::Word8, 4);
+
+        let sum = &core.functions[0];
+        assert_eq!(
+            core_nodes(&fixture, sum),
+            owned(&[
+                ("literal 0", "0", CoreType::Int),
+                (
+                    "loop #0",
+                    "for i in 0..4 with s: Int = 0 { s + x[i] }",
+                    CoreType::Int
+                ),
+            ])
+        );
+        assert_eq!(
+            loop_headers(sum),
+            [(
+                String::from("i"),
+                String::from("s"),
+                CoreType::Int,
+                String::from("0..4"),
+                0,
+                vec![0]
+            )]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, sum.loops[0].step()),
+            owned(&[
+                ("accumulator of loop #0", "s", CoreType::Int),
+                ("parameter 0", "x", ints),
+                ("index of loop #0", "i", CoreType::Int),
+                ("select", "x[i]", CoreType::Int),
+                ("infix +", "s + x[i]", CoreType::Int),
+            ])
+        );
+
+        let odd = &core.functions[1];
+        assert_eq!(
+            core_nodes(&fixture, odd)
+                .into_iter()
+                .map(|(operation, _, ty)| (operation, ty))
+                .collect::<Vec<_>>(),
+            [
+                (String::from("literal 0x00"), CoreType::Word8),
+                (String::from("fill"), half),
+                (String::from("loop #0"), half),
+            ]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, odd.loops[0].step()),
+            owned(&[
+                ("accumulator of loop #0", "s", half),
+                ("index of loop #0", "i", CoreType::Int),
+                ("parameter 0", "x", bytes),
+                ("literal 2", "2", CoreType::Int),
+                ("index of loop #0", "i", CoreType::Int),
+                ("infix *", "2 * i", CoreType::Int),
+                ("literal 1", "1", CoreType::Int),
+                ("infix +", "2 * i + 1", CoreType::Int),
+                ("select", "x[2 * i + 1]", CoreType::Word8),
+                ("update", "s with [i] = x[2 * i + 1]", half),
+            ])
+        );
+
+        // Loops are numbered in source order of their `for` keywords; a step
+        // sees the bindings in scope and every enclosing loop.
+        let grid = &core.functions[2];
+        assert_eq!(
+            loop_headers(grid),
+            [
+                (
+                    String::from("i"),
+                    String::from("a"),
+                    CoreType::Int,
+                    String::from("0..2"),
+                    1,
+                    vec![0]
+                ),
+                (
+                    String::from("j"),
+                    String::from("b"),
+                    CoreType::Int,
+                    String::from("0..3"),
+                    1,
+                    vec![0, 1]
+                ),
+            ]
+        );
+        assert_eq!(
+            core_nodes(&fixture, grid)
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["local 0", "loop #0"]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, grid.loops[0].step())
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["accumulator of loop #0", "loop #1"]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, grid.loops[1].step())
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            [
+                "accumulator of loop #1",
+                "index of loop #0",
+                "index of loop #1",
+                "infix *",
+                "infix +"
+            ]
+        );
+
+        // A loop in an initial value is not inside the outer loop's scope.
+        let first = &core.functions[3];
+        assert_eq!(
+            loop_headers(first)
+                .into_iter()
+                .map(|(index, _, _, range, _, scope)| (index, range, scope))
+                .collect::<Vec<_>>(),
+            [
+                (String::from("i"), String::from("0..2"), vec![0]),
+                (String::from("j"), String::from("5..7"), vec![1]),
+            ]
+        );
+        assert_eq!(
+            core_nodes(&fixture, first)
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["literal 0", "loop #1", "loop #0"]
+        );
+    }
+
+    #[test]
+    fn index_ranges_follow_interval_arithmetic_over_loop_ranges() {
+        let accepted_indices = [
+            "x[i - 1]",
+            "x[4 - i]",
+            "x[-i + 4]",
+            "x[i * -1 + 4]",
+            "x[(i - 1) * 1]",
+            "x[0x3]",
+            // Bounds are exact however wide the literals.
+            "x[9223372036854775808 - 9223372036854775808]",
+            "x[i - 1 + 0x1_0000_0000_0000_0000_0000_0000_0000_0000 \
+               - 0x1_0000_0000_0000_0000_0000_0000_0000_0000]",
+            "x[(i - 1) * 0x1_0000_0000_0000_0000 * 0x1_0000_0000_0000_0000 * 0 + i - 1]",
+        ];
+        for index in accepted_indices {
+            accepted(&format!(
+                "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 {{ s ^ {index} }} }}\n"
+            ));
+        }
+        // Each bound is computed separately, so `i - i` runs from -3 through
+        // 3 over 1..5 though its value is always 0, and `(i - 3) * (i - 3)`
+        // runs from -2 through 4 over 1..5.
+        for (index, message) in [
+            (
+                "x[i]",
+                "this index runs from 1 through 4, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[i - 2]",
+                "this index runs from -1 through 2, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[i - i]",
+                "this index runs from -3 through 3, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[i + 3 - i]",
+                "this index runs from 0 through 6, out of range for `Word[8]^4`",
+            ),
+            (
+                "x[(i - 3) * (i - 3)]",
+                "this index runs from -2 through 4, out of range for `Word[8]^4`",
+            ),
+            ("x[-1 + 5]", "index 4 is out of range for `Word[8]^4`"),
+            (
+                "x[i + 0x1_0000_0000_0000_0000]",
+                "this index runs from 18446744073709551617 through 18446744073709551620, \
+                 out of range for `Word[8]^4`",
+            ),
+        ] {
+            let (fixture, result) = rejected(&format!(
+                "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 {{ s ^ {index} }} }}\n"
+            ));
+            assert_eq!(
+                result.diagnostics.len(),
+                1,
+                "{index}: {:?}",
+                result.diagnostics
+            );
+            let diagnostic = &result.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::IndexOutOfRange,
+                "{index}"
+            );
+            assert_eq!(diagnostic.message(), message, "{index}");
+            assert_eq!(diagnostic.label(), "indices run from 0 through 3");
+            assert_eq!(
+                Some(format!(
+                    "x[{}]",
+                    fixture.source().slice(diagnostic.primary_span()).unwrap()
+                )),
+                Some(index.to_owned())
+            );
+        }
+        let (_, result) = rejected(
+            "  spec f(x: Word[8]^4) -> Word[8] { for i in 0..4 with s: Word[8] = 0 { s ^ x[i - 5] } }\n",
+        );
+        assert_eq!(
+            result.diagnostics[0].message(),
+            "this index runs from -5 through -2, out of range for `Word[8]^4`"
+        );
+        // A bound may have as many significant bits as an `Int` value, and no
+        // more: 2^16382 + 2^16382 has 16,384 bits, 2^16383 + 2^16383 one more.
+        let wide = |top: char| format!("0x{top}{}", "0".repeat(4095));
+        let (half, full) = (wide('4'), wide('8'));
+        accepted(&format!(
+            "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 \
+             {{ s ^ x[{half} + {half} - {half} - {half} + i - 1] }} }}\n"
+        ));
+        let (_, result) = rejected(&format!(
+            "  spec f(x: Word[8]^4) -> Word[8] {{ for i in 1..5 with s: Word[8] = 0 \
+             {{ s ^ x[{full} + {full} - {full} - {full} + i - 1] }} }}\n"
+        ));
+        assert_eq!(result.diagnostics.len(), 1, "{:?}", result.diagnostics);
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::IndexOutOfRange
+        );
+        assert_eq!(
+            result.diagnostics[0].message(),
+            "a bound of this index's range exceeds the 16384-significant-bit limit of `Int`"
+        );
+        assert_eq!(
+            result.diagnostics[0].label(),
+            "indices run from 0 through 3"
+        );
+    }
+
+    #[test]
+    fn loop_update_and_fill_errors_are_reported_once_in_checking_order() {
+        let (fixture, result) = rejected(concat!(
+            "  spec variable(x: Word[8]^4, i: Int) -> Word[8] { x[i + 1] }\n",
+            "  spec call(x: Word[8]^4) -> Word[8] { x[width(x)] }\n",
+            "  spec width(x: Word[8]^4) -> Int { 4 }\n",
+            "  spec empty() -> Int { for i in 3..3 with s: Int = 0 { s } }\n",
+            "  spec long() -> Int { for i in 0..65537 with s: Int = 0 { s } }\n",
+            "  spec longest() -> Int { for i in 65535..65536 with s: Int = 0 { s + i } }\n",
+            "  spec same(x: Int) -> Int { for x in 0..2 with s: Int = 0 { s } }\n",
+            "  spec twin() -> Int { for i in 0..2 with i: Int = 0 { i } }\n",
+            "  spec inner() -> Int { for i in 0..2 with s: Int = 0 { for j in 0..2 with s: Int = 0 { s } } }\n",
+            "  spec typed() -> Word[8] { for i in 0..2 with s: Int = 0 { s } }\n",
+            "  spec scalar(x: Word[8]) -> Word[8] { x with [0] = 1 }\n",
+            "  spec gives(x: Word[8]^2) -> Word[8] { x with [0] = 1 }\n",
+            "  spec value(x: Word[8]^2) -> Word[8]^2 { x with [0] = 256 }\n",
+            "  spec short() -> Word[8]^4 { [0; 3] }\n",
+            "  spec none() -> Word[8]^4 { [0; 0] }\n",
+            "  spec fill() -> Int { [0; 2] }\n",
+            "  spec outside() -> Int { let a: Int = for i in 0..2 with s: Int = 0 { s + i }; s }\n",
+            "  spec whole(x: Word[8]^2) -> Word[8]^2 { for i in 0..2 with s: Word[8]^2 = x { s + x } }\n",
+            "  spec store(x: Word[8]^2) -> Word[8]^2 { for i in 0..3 with s: Word[8]^2 = x { s with [i] = 0 } }\n",
+            "  spec step(x: Word[8]^2) -> Word[8]^2 { for i in 0..2 with s: Word[8]^2 = x { i } }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::NonStaticIndex,
+                    "i",
+                    String::from("an index may use only integer literals and loop indices")
+                ),
+                (
+                    DiagnosticCode::NonStaticIndex,
+                    "width(x)",
+                    String::from("an index may use only integer literals and loop indices")
+                ),
+                (
+                    DiagnosticCode::InvalidLoopRange,
+                    "3",
+                    String::from("the loop range 3..3 is empty")
+                ),
+                (
+                    DiagnosticCode::InvalidLoopRange,
+                    "65537",
+                    String::from("a loop bound must be at most 65536")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "x",
+                    String::from("duplicate name `x`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "i",
+                    String::from("duplicate name `i`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "s",
+                    String::from("duplicate name `s`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "for i in 0..2 with s: Int = 0 { s }",
+                    String::from("this loop has type `Int`, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::NotAnArray,
+                    "x",
+                    String::from("only an array can be updated, but this has type `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x with [0] = 1",
+                    String::from("an update gives an array, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "256",
+                    String::from("literal is outside the range of `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[0; 3]",
+                    String::from("this array has 3 elements, but `Word[8]^4` has 4")
+                ),
+                (
+                    DiagnosticCode::UnsupportedArrayLength,
+                    "0",
+                    String::from("an array length must be a decimal integer from 1 through 256")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "[0; 2]",
+                    String::from("an array literal cannot have type `Int`")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "s",
+                    String::from("`s` is not a parameter or binding of `outside`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "+",
+                    String::from("`+` is not defined for `Word[8]^2`")
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "i",
+                    String::from("this index runs from 0 through 2, out of range for `Word[8]^2`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "i",
+                    String::from("`i` has type `Int`, but `Word[8]^2` is required here")
+                ),
+            ]
+        );
+        let secondary = |index: usize| {
+            result.diagnostics[index]
+                .secondary_spans()
+                .iter()
+                .map(|secondary| {
+                    (
+                        fixture.source().slice(secondary.span()).unwrap(),
+                        secondary.label().to_owned(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(secondary(4), [("x", String::from("the parameter is here"))]);
+        assert_eq!(
+            secondary(5),
+            [("i", String::from("the loop index is here"))]
+        );
+        assert_eq!(
+            secondary(6),
+            [("s", String::from("the accumulator is here"))]
+        );
+        assert_eq!(result.diagnostics[0].notes(), [STATIC_INDEX_NOTE]);
+    }
+
+    #[test]
+    fn loop_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); the parameter's uniqueness check,
+        // name, width, and length (4); the result's name and width (2); the
+        // loop (1); the bound `0` (prefix, no significant digit: 1) and the
+        // bound `2` (prefix and one digit: 2); the two loop-name checks (2);
+        // the accumulator type's name and width (2); the initial literal
+        // `0` (literal and prefix: 2); and the step's `^`, `s`, the index
+        // `x[i]`, its base `x`, and its index `i` (5): 23 analysis events.
+        // Core is the module, one function node, one result-type node, one
+        // parameter-type node, the body nodes `0` and the loop, one loop
+        // node, one accumulator-type node, and the step nodes `s`, `x`, `i`,
+        // the selection, and `^`: 13 nodes, each one more event.
+        let fixture = module(
+            "  spec f(x: Word[8]^2) -> Word[8] { for i in 0..2 with s: Word[8] = 0 { s ^ x[i] } }\n",
+        );
+        let (events, nodes) = (36, 13);
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert!(exact.core.is_some());
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label);
+        }
+        // An update is one event, and a fill two: the literal and its length.
+        let fixture = module("  spec f(x: Word[8]^2) -> Word[8]^2 { [0; 2] with [1] = x[0] }\n");
+        // Lookup and installation (2); the parameter (4); the result (3); the
+        // update (1); the fill and its length (2); the element `0` (2); the
+        // index `1` (literal, prefix, and one digit: 3); the value's index,
+        // its prefix and digit-free `0`, and its base (3): 20 events, and
+        // the module, function, result, parameter, `0`, fill, `1`, `x`,
+        // `x[0]`, and the update: 10 nodes.
+        let exact = fixture.analyze_with(Limits {
+            events: 30,
+            nodes: 10,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        let short = fixture.analyze_with(Limits {
+            events: 29,
+            nodes: 10,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(
+            short.diagnostics[0].label(),
+            "semantic event budget exhausted"
+        );
+        // A loop bound decodes against the significant-bit limit before its
+        // range is checked.
+        let fixture = module(&format!(
+            "  spec f() -> Int {{ for i in 0..0x{} with s: Int = 0 {{ s }} }}\n",
+            "f".repeat(4097)
+        ));
+        let result = fixture.analyze();
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::IntegerMagnitudeLimit
+        );
+    }
+
+    #[test]
+    fn loop_step_storage_failures_return_no_partial_core() {
+        let fixture =
+            module("  spec f(x: Int) -> Int { for i in 0..2 with s: Int = x { s + i } }\n");
+        let first = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_node_slot =
+                |nodes| nodes.len() < 2 && nodes.try_reserve(1).is_ok();
+            analyzer.run()
+        };
+        let result = first();
+        assert_eq!(result, first());
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(
+            fixture.source().slice(diagnostic.primary_span()),
+            Some("s + i")
+        );
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_loops_updates_and_fills() {
+        let text = "edition 2026; module values { \
+                    spec value(x: Word[8]^2) -> Word[8]^2 { \
+                    for i in 0..2 with s: Word[8]^2 = [0; 2] { s with [i] = x[i] } } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        fn loop_of(ast: &SyntaxTree) -> &LoopExpression {
+            let FunctionBody::Typed(body) = &ast.module.functions[0].body else {
+                unreachable!();
+            };
+            let ExpressionKind::Loop(r#loop) = &body.expression.kind else {
+                unreachable!();
+            };
+            r#loop
+        }
+        fn loop_mut(ast: &mut SyntaxTree) -> &mut LoopExpression {
+            let ExpressionKind::Loop(r#loop) = &mut typed_body_mut(ast).expression.kind else {
+                unreachable!();
+            };
+            r#loop
+        }
+        fn update_mut(ast: &mut SyntaxTree) -> &mut UpdateExpression {
+            match &mut loop_mut(ast).step.kind {
+                ExpressionKind::Update(update) => update,
+                _ => unreachable!(),
+            }
+        }
+        fn fill_mut(ast: &mut SyntaxTree) -> &mut FillExpression {
+            match &mut loop_mut(ast).init.kind {
+                ExpressionKind::Fill(fill) => fill,
+                _ => unreachable!(),
+            }
+        }
+        let foreign = loop_of(&second.ast).clone();
+        let ExpressionKind::Update(foreign_update) = &foreign.step.kind else {
+            unreachable!();
+        };
+        let ExpressionKind::Fill(foreign_fill) = &foreign.init.kind else {
+            unreachable!();
+        };
+        let ExpressionKind::Index(foreign_index) = &foreign_update.value.kind else {
+            unreachable!();
+        };
+        type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
+        let mutations: Vec<Mutation<'_>> = vec![
+            Box::new(|ast| loop_mut(ast).keyword_span = foreign.keyword_span),
+            Box::new(|ast| loop_mut(ast).index.span = foreign.index.span),
+            Box::new(|ast| loop_mut(ast).start_span = foreign.start_span),
+            Box::new(|ast| loop_mut(ast).end_span = foreign.end_span),
+            Box::new(|ast| loop_mut(ast).accumulator.span = foreign.accumulator.span),
+            Box::new(|ast| loop_mut(ast).ty.length_span = foreign.ty.length_span),
+            Box::new(|ast| update_mut(ast).keyword_span = foreign_update.keyword_span),
+            Box::new(|ast| update_mut(ast).index.span = foreign_update.index.span),
+            Box::new(|ast| fill_mut(ast).length_span = foreign_fill.length_span),
+            Box::new(|ast| fill_mut(ast).element.span = foreign_fill.element.span),
+            Box::new(|ast| {
+                let ExpressionKind::Index(index) = &mut update_mut(ast).value.kind else {
+                    unreachable!();
+                };
+                index.index.span = foreign_index.index.span;
+            }),
         ];
         assert!(analyze(first.source(), &first.ast).core.is_some());
         for (case_index, mutate) in mutations.iter().enumerate() {

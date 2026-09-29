@@ -1,0 +1,41 @@
+// S3e conformance: bounded loops, indices computed from loop indices,
+// updates, and fill literals, each with its exact value.
+edition 2026;
+module loops {
+  // 0 + 1 + ... + 100.
+  spec triangle() -> Int { for i in 0..101 with s: Int = 0 { s + i } }
+
+  // 2^64 as a product of sixty-four twos, exact in `Int`.
+  spec power() -> Int { for i in 0..64 with p: Int = 1 { p * 2 } }
+
+  // The odd-numbered bytes: the index `2 * i + 1` runs from 1 through 7
+  // over 0..4, so it is known to be in range before anything runs.
+  spec odd(x: Word[8]^8) -> Word[8]^4 {
+    for i in 0..4 with s: Word[8]^4 = [0; 4] { s with [i] = x[2 * i + 1] }
+  }
+  spec odds() -> Word[8]^4 { odd([0, 1, 2, 3, 4, 5, 6, 7]) }
+
+  spec reversed() -> Word[8]^4 {
+    let x: Word[8]^4 = [1, 2, 3, 4];
+    for i in 0..4 with s: Word[8]^4 = x { s with [3 - i] = x[i] }
+  }
+
+  // A loop as the step of a loop, starting from the outer accumulator.
+  spec nested() -> Int {
+    for i in 1..4 with total: Int = 0 { for j in 0..4 with t: Int = total { t + i * j } }
+  }
+
+  // Words wrap: 0 + 1 + ... + 299 modulo 256.
+  spec words() -> Word[8] { for i in 0..300 with s: Word[8] = 0 { s + (i as Word[8]) } }
+
+  spec updated() -> Word[8]^3 { [1, 2, 3] with [1] = 9 }
+  spec filled() -> Word[16]^4 { [0xbeef; 4] }
+
+  // The longest loop: 65536 steps.
+  spec longest() -> Word[32] { for i in 0..65536 with s: Word[32] = 0 { s + 1 } }
+
+  // `for`, `in`, and `with` are words only in a loop's position, so earlier
+  // programs that use them as names keep their meaning.
+  spec contextual(for: Int, in: Int, with: Int) -> Int { for + in + with }
+  spec names() -> Int { contextual(1, 2, 3) }
+}

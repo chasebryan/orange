@@ -197,7 +197,7 @@ and final file component is opened with no-follow flags; the final open is also
 nonblocking before its descriptor metadata is compared with the preflight
 snapshot. After each read, the descriptor and its component-relative directory
 entry must still match that snapshot. Preflight caps ordinary text files at
-256 KiB (`256 * 1024` bytes), the validator itself at 448 KiB
+512 KiB (`512 * 1024` bytes), the validator itself at 448 KiB
 (`448 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
 each committed D-004 run's generated and hash-pinned adapter outputs at 2 MiB
 (`2 * 1024 * 1024` bytes), and the complete repository at 24 MiB (`24 * 1024 * 1024` bytes). Returned
@@ -284,10 +284,10 @@ the archive tool, the bundle, the overlay and the committed run archive under
 closed of 35 required units and 105 of 105 result records. Both are
 contributor-produced and unreviewed, and both `roadmap_gate_credit` and
 `readiness_credit` remain `none`. None of these inventories contains an accepted
-D-004 decision or release evidence; D-004 remains proposed, S3b, S3c, and S3d
-are implemented and await owner review under OEP-0005, OEP-0006, and OEP-0007,
-and the 3-of-10 (30%) binary gate-closure score is unchanged. D-005's protected
-Rust laboratory may construct canonical adapter requests and validate synthetic
+D-004 decision or release evidence; D-004 remains proposed, S3b, S3c, S3d, and
+S3e are implemented and await owner review under OEP-0005 through OEP-0008, and
+the 3-of-10 (30%) binary gate-closure score is unchanged. D-005's protected Rust
+laboratory may construct canonical adapter requests and validate synthetic
 captured transport envelopes, enumerate the exact 192 in-memory transport
 identities, and bind a closed synthetic observation inventory to canonical
 raw-stream integrity receipts. Those receipts fix isolation to unevaluated,
