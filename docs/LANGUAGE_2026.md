@@ -45,6 +45,12 @@ unresolved.
 > also in review, builds on S3d with bounded loops, computed indices, updates,
 > and fill literals. It adds no token and no reserved word either: `for`, `in`,
 > and `with` are recognized by position.
+>
+> The S3f slice proposed in [`CONDITIONS_2026.md`](CONDITIONS_2026.md) under
+> OEP-0009, also in review, builds on S3e with `Bool`, comparisons, logical
+> operators, Euclidean division, and conditionals. It gives meaning to tokens
+> the lexer already produces, and it adds no token and no reserved word:
+> `if` and `else` are recognized by position, and `true` and `false` by scope.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

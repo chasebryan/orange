@@ -232,6 +232,52 @@ for byte. This slice, S3e, is implemented and tested; its specification is in
 review as
 [OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md).
 
+### Prime fields and choices
+
+RFC 7748 defines X25519 in the integers modulo 2^255 − 19: reduce after every
+product, read one bit of the scalar per rung of the Montgomery ladder, and
+swap two points when the bit is set. Orange writes each step the way the RFC
+does. `%` is Euclidean, so `a % p` is always the canonical residue from 0
+through p − 1; a comparison gives a `Bool`; and `if c { a } else { b }` chooses
+one of two values of the same type and evaluates only the one it chooses.
+
+```orange
+spec rung(x1: Int, s: Int^4, set: Bool) -> Int^4 {
+  if set { swap(ladder(x1, swap(s))) } else { ladder(x1, s) }
+}
+
+spec x25519(scalar: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+  let k: Word[8]^32 = clamp(scalar);
+  let masks: Word[8]^8 = [1, 2, 4, 8, 16, 32, 64, 128];
+  let x1: Int = decode_u(u);
+  let s: Int^4 = for i in 0..255 with s: Int^4 = [1, 0, x1, 1] {
+    rung(x1, s, (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0)
+  };
+  encode((s[0] * power(s[1], prime() - 2)) % prime())
+}
+```
+
+The [X25519 fixture](compiler/fixtures/s3f/valid-x25519.or) computes the first
+test vector of RFC 7748 section 5.2, byte for byte:
+
+```text
+x25519::test_vector: Word[8]^32 = [0xc3, 0xda, 0x55, 0x37, 0x9d, 0xe9, 0xc6, 0x90, 0x8e, 0x94, 0xea, 0x4d, 0xf2, 0x8d, 0x08, 0x4f, 0x32, 0xec, 0xcf, 0x03, 0x49, 0x1c, 0x71, 0xf7, 0x54, 0xb4, 0x07, 0x55, 0x77, 0xa2, 0x85, 0x52]
+```
+
+The index `k[(254 - i) / 8]` divides a loop index, and the compiler still
+proves it in range, 0 through 31, before anything runs. The
+[Poly1305 fixture](compiler/fixtures/s3f/valid-poly1305.or) reproduces the tag
+of RFC 8439 section 2.5.2, and the
+[AEAD fixture](compiler/fixtures/s3f/valid-aead.or) seals the section 2.8.2
+"sunscreen" message with ChaCha20-Poly1305 to the RFC's ciphertext and tag.
+Division by zero is defined (`x / 0` is 0 and `x % 0` is x), so nothing fails
+at run time, and `Bool` is not a number: it converts to nothing and has only
+`!`, `&&`, `||`, `==`, and `!=`. A conditional is a choice between values, not
+a claim about how a machine branches; RFC 7748 asks for a constant-time swap,
+and Orange makes no timing claim until it generates code. This slice, S3f, is
+implemented and tested; its specification is in review as
+[OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) contains an owner-directed
@@ -252,8 +298,9 @@ tests. This is executable reference code, not verified production cryptography.
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
+| `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Comparisons, conditionals, data-dependent indices, mixed-type tuples | Not yet |
+| Data-dependent indices, mixed-type tuples, a type of integers modulo a prime | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -271,6 +318,7 @@ git clone https://github.com/chasebryan/orange.git
 cd orange
 
 # Build and try the compiler
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3f/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
@@ -311,7 +359,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, and loops in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, and conditions in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -331,10 +379,14 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [typed-literal semantics](docs/SEMANTICS_2026.md), and the proposed
   [pure expression semantics](docs/EXPRESSIONS_2026.md),
   [bindings and conversions](docs/BINDINGS_2026.md),
-  [fixed-length arrays](docs/ARRAYS_2026.md), and
-  [bounded loops](docs/LOOPS_2026.md): the definition of what the compiler
-  accepts today.
+  [fixed-length arrays](docs/ARRAYS_2026.md),
+  [bounded loops](docs/LOOPS_2026.md), and
+  [conditions and division](docs/CONDITIONS_2026.md): the definition of what
+  the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
+- [Tabula](tabula/README.md): a local workbench for writing Orange, with the
+  compiler's results and this documentation beside the editor. It is a
+  separate tool, not part of the language.
 - [Architecture](docs/ARCHITECTURE.md) and
   [assurance model](docs/ASSURANCE.md): the intended end state.
 - [Roadmap](docs/ROADMAP.md), [decision register](docs/DECISIONS.md), and
@@ -351,11 +403,12 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 | Path | Contents |
 | --- | --- |
 | [`compiler/`](compiler/README.md) | The Rust workspace: the `orange-compiler` library and the `orangec` CLI |
+| [`tabula/`](tabula/README.md) | A local workbench for writing Orange; a separate tool, not part of the language |
 | [`docs/`](docs/) | The Orange Book, language specification, architecture, assurance, roadmap, and decisions |
 | [`research/decisions/`](research/decisions/) | Decision laboratories that compare design candidates |
 | [`schemas/`](schemas/README.md) and [`conformance/`](conformance/foundation/README.md) | Provisional evidence schemas and their test fixtures |
 | [`policy/`](policy/README.md) and [`tools/`](tools/) | Repository policy and the Python checks that enforce it |
-| [`assets/brand/`](assets/brand/README.md) | Orange emblem, wordmark, and banners |
+| [`assets/identity/`](assets/identity/README.md) and [`assets/brand/`](assets/brand/README.md) | The Orange emblem, wordmark, README banner, and book covers, and the original brand assets |
 
 ## Project status
 

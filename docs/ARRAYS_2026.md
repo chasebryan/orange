@@ -24,7 +24,10 @@ meaning. It accepts no D-004 candidate.
 > [`LOOPS_2026.md`](LOOPS_2026.md), proposed under OEP-0008, extends this
 > document with bounded loops, indices computed from loop indices, updates of
 > one element, and fill literals, which lift the absence of loops described in
-> section 12. Every source this document accepts keeps its meaning under it.
+> section 12, and [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under
+> OEP-0009, adds `Bool`, comparisons, Euclidean division, and conditionals on
+> top of those. Every source this document accepts keeps its meaning under
+> both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
@@ -134,7 +137,7 @@ The length must be a decimal spelling with no base prefix, separator, sign, or
 leading zero, exactly as a word width is. `Word[32]^16` is admitted;
 `Word[32]^0`, `Word[32]^257`, `Word[32]^0x10`, `Word[32]^016`, and
 `Word[32]^1_6` are `ORC0221`, reported at the length. The element type is
-resolved first: `Word^4` is `ORC0204` and `Bool^4` is `ORC0203`, and neither
+resolved first: `Word^4` is `ORC0204` and `Float^4` is `ORC0203`, and neither
 is reported again for its length.
 
 Two array types are equal exactly when their element types and lengths are

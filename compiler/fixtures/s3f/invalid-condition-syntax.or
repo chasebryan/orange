@@ -1,0 +1,13 @@
+// S3f rejection: a conditional is written `if c { a } else { b }` and always
+// has an `else`; a comparison and a division take exactly two operands; and
+// operators from different groups are parenthesized.
+edition 2026;
+module syntax {
+  spec no_else(c: Bool) -> Int { if c { 1 } }
+  spec bare_else(c: Bool) -> Int { if c { 1 } else 2 }
+  spec two_values(c: Bool) -> Int { if c { 1, 2 } else { 3 } }
+  spec chained(a: Int, b: Int, c: Int) -> Bool { a < b < c }
+  spec divided(a: Int, b: Int, c: Int) -> Int { a / b / c }
+  spec mixed(a: Bool, b: Bool, c: Bool) -> Bool { a && b || c }
+  spec arithmetic(a: Int, b: Int) -> Bool { a + 1 < b }
+}

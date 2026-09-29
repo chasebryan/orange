@@ -121,6 +121,8 @@ define_diagnostic_codes! {
     InvalidLoopRange => "ORC0225",
     /// An index is not built from literals and loop indices alone.
     NonStaticIndex => "ORC0226",
+    /// The operands of a comparison have no type of their own.
+    UntypedComparison => "ORC0227",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -687,7 +689,7 @@ mod tests {
             "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
             "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
             "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223", "ORC0224",
-            "ORC0225", "ORC0226", "ORC0301",
+            "ORC0225", "ORC0226", "ORC0227", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

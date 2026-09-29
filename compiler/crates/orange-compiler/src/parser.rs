@@ -399,6 +399,9 @@ pub enum ExpressionKind {
     Update(Box<UpdateExpression>),
     /// A bounded loop `for i in a..b with s: T = init { step }`.
     Loop(Box<LoopExpression>),
+    /// A conditional `if c { a } else { b }`, with any number of
+    /// `else if` arms.
+    Conditional(Box<ConditionalExpression>),
 }
 
 /// An array literal `[e0, e1, ...]` with at least one element.
@@ -598,6 +601,71 @@ impl LoopExpression {
     }
 }
 
+/// A conditional `if c0 { v0 } else if c1 { v1 } ... else { w }`.
+///
+/// Its value is the value of the first arm whose condition is true, or the
+/// value after the last `else` when none is.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConditionalExpression {
+    /// The arms in source order; there is at least one.
+    pub(crate) arms: Vec<ConditionalArm>,
+    /// Exact extent of the last `else` keyword.
+    pub(crate) else_span: Span,
+    /// The value when no condition is true.
+    pub(crate) otherwise: Expression,
+}
+
+impl ConditionalExpression {
+    /// Returns the arms in source order.
+    #[must_use]
+    pub fn arms(&self) -> &[ConditionalArm] {
+        &self.arms
+    }
+
+    /// Returns the exact extent of the last `else` keyword.
+    #[must_use]
+    pub const fn else_span(&self) -> Span {
+        self.else_span
+    }
+
+    /// Returns the value when no condition is true.
+    #[must_use]
+    pub fn otherwise(&self) -> &Expression {
+        &self.otherwise
+    }
+}
+
+/// One arm `if condition { value }` of a conditional.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConditionalArm {
+    /// Exact extent of the arm's `if` keyword.
+    pub(crate) keyword_span: Span,
+    /// The condition, a `Bool` expression.
+    pub(crate) condition: Expression,
+    /// The value when the condition is the first true one.
+    pub(crate) value: Expression,
+}
+
+impl ConditionalArm {
+    /// Returns the exact extent of the arm's `if` keyword.
+    #[must_use]
+    pub const fn keyword_span(&self) -> Span {
+        self.keyword_span
+    }
+
+    /// Returns the condition.
+    #[must_use]
+    pub fn condition(&self) -> &Expression {
+        &self.condition
+    }
+
+    /// Returns the value.
+    #[must_use]
+    pub fn value(&self) -> &Expression {
+        &self.value
+    }
+}
+
 /// An explicit conversion `operand as Type`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConversionExpression {
@@ -756,6 +824,8 @@ define_operators! {
         Negate => "-",
         /// `~`: bitwise complement.
         Complement => "~",
+        /// `!`: logical negation.
+        Not => "!",
     }
 }
 
@@ -782,6 +852,26 @@ define_operators! {
         RotateLeft => "<<<",
         /// `>>>`: rotation right.
         RotateRight => ">>>",
+        /// `/`: quotient.
+        Divide => "/",
+        /// `%`: remainder.
+        Remainder => "%",
+        /// `==`: equality.
+        Equal => "==",
+        /// `!=`: inequality.
+        NotEqual => "!=",
+        /// `<`: less than.
+        Less => "<",
+        /// `<=`: less than or equal to.
+        LessEqual => "<=",
+        /// `>`: greater than.
+        Greater => ">",
+        /// `>=`: greater than or equal to.
+        GreaterEqual => ">=",
+        /// `&&`: logical and, of two `Bool` values.
+        LogicalAnd => "&&",
+        /// `||`: logical or, of two `Bool` values.
+        LogicalOr => "||",
     }
 }
 
@@ -796,6 +886,33 @@ impl BinaryOperator {
         )
     }
 
+    /// Returns whether this operator compares two values and gives a
+    /// `Bool`.
+    #[must_use]
+    pub const fn is_comparison(self) -> bool {
+        matches!(
+            self,
+            Self::Equal
+                | Self::NotEqual
+                | Self::Less
+                | Self::LessEqual
+                | Self::Greater
+                | Self::GreaterEqual
+        )
+    }
+
+    /// Returns whether this operator is `/` or `%`.
+    #[must_use]
+    pub const fn is_division(self) -> bool {
+        matches!(self, Self::Divide | Self::Remainder)
+    }
+
+    /// Returns whether this operator is `&&` or `||`.
+    #[must_use]
+    pub const fn is_logical(self) -> bool {
+        matches!(self, Self::LogicalAnd | Self::LogicalOr)
+    }
+
     const fn token_kind(self) -> TokenKind {
         match self {
             Self::Add => TokenKind::Plus,
@@ -808,6 +925,16 @@ impl BinaryOperator {
             Self::ShiftRight => TokenKind::GreaterGreater,
             Self::RotateLeft => TokenKind::LessLessLess,
             Self::RotateRight => TokenKind::GreaterGreaterGreater,
+            Self::Divide => TokenKind::Slash,
+            Self::Remainder => TokenKind::Percent,
+            Self::Equal => TokenKind::EqualEqual,
+            Self::NotEqual => TokenKind::BangEqual,
+            Self::Less => TokenKind::Less,
+            Self::LessEqual => TokenKind::LessEqual,
+            Self::Greater => TokenKind::Greater,
+            Self::GreaterEqual => TokenKind::GreaterEqual,
+            Self::LogicalAnd => TokenKind::AmpAmp,
+            Self::LogicalOr => TokenKind::PipePipe,
         }
     }
 
@@ -823,6 +950,16 @@ impl BinaryOperator {
             TokenKind::GreaterGreater => Self::ShiftRight,
             TokenKind::LessLessLess => Self::RotateLeft,
             TokenKind::GreaterGreaterGreater => Self::RotateRight,
+            TokenKind::Slash => Self::Divide,
+            TokenKind::Percent => Self::Remainder,
+            TokenKind::EqualEqual => Self::Equal,
+            TokenKind::BangEqual => Self::NotEqual,
+            TokenKind::Less => Self::Less,
+            TokenKind::LessEqual => Self::LessEqual,
+            TokenKind::Greater => Self::Greater,
+            TokenKind::GreaterEqual => Self::GreaterEqual,
+            TokenKind::AmpAmp => Self::LogicalAnd,
+            TokenKind::PipePipe => Self::LogicalOr,
             _ => return None,
         })
     }
@@ -1052,6 +1189,9 @@ const BODY_SHAPE_NOTE: &str =
 
 const LOOP_SHAPE_NOTE: &str = "a loop is written `for i in 0..n with s: Type = start { step }`";
 
+const CONDITIONAL_SHAPE_NOTE: &str =
+    "a conditional is written `if condition { value } else { other value }`";
+
 /// Something that continues an expression after an operand: a binary
 /// operator, the conversion keyword `as`, or the update keyword `with`.
 #[derive(Clone, Copy)]
@@ -1087,6 +1227,7 @@ struct Parser<'source, 'tokens> {
     reserve_parameter_slot: fn(&mut Vec<Parameter>) -> bool,
     reserve_argument_slot: fn(&mut Vec<Expression>) -> bool,
     reserve_binding_slot: fn(&mut Vec<Binding>) -> bool,
+    reserve_arm_slot: fn(&mut Vec<ConditionalArm>) -> bool,
     reserve_identifier_text: fn(&mut String, usize) -> bool,
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
 }
@@ -1101,6 +1242,10 @@ fn reserve_parameter_slot(parameters: &mut Vec<Parameter>) -> bool {
 
 fn reserve_argument_slot(arguments: &mut Vec<Expression>) -> bool {
     arguments.try_reserve(1).is_ok()
+}
+
+fn reserve_arm_slot(arms: &mut Vec<ConditionalArm>) -> bool {
+    arms.try_reserve(1).is_ok()
 }
 
 fn reserve_binding_slot(bindings: &mut Vec<Binding>) -> bool {
@@ -1133,6 +1278,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             reserve_parameter_slot,
             reserve_argument_slot,
             reserve_binding_slot,
+            reserve_arm_slot,
             reserve_identifier_text,
             reserve_diagnostic_slots,
         }
@@ -1647,6 +1793,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 TokenKind::Eof,
             ],
         );
+        let body_start = self.cursor;
         let bindings = if left_brace.is_some() {
             self.parse_bindings()
         } else {
@@ -1665,18 +1812,26 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             Some(_) => self.parse_expression(0).map(|(expression, _)| expression),
             None => None,
         };
-        if expression.is_none()
-            && !matches!(
-                self.current_kind(),
-                TokenKind::RightBrace | TokenKind::KwSpec | TokenKind::KwImpl | TokenKind::Eof
-            )
-        {
-            self.recover_to(&[
-                TokenKind::RightBrace,
-                TokenKind::KwSpec,
-                TokenKind::KwImpl,
-                TokenKind::Eof,
-            ]);
+        if expression.is_none() {
+            // An error inside a loop's step or a conditional's branch leaves
+            // their braces open; recovery skips to the body's own `}`.
+            let open = self.open_braces_since(body_start);
+            if open > 0
+                || !matches!(
+                    self.current_kind(),
+                    TokenKind::RightBrace | TokenKind::KwSpec | TokenKind::KwImpl | TokenKind::Eof
+                )
+            {
+                self.recover_to_depth(
+                    &[
+                        TokenKind::RightBrace,
+                        TokenKind::KwSpec,
+                        TokenKind::KwImpl,
+                        TokenKind::Eof,
+                    ],
+                    open,
+                );
+            }
         }
 
         let right_brace = if self.current_kind() == TokenKind::RightBrace {
@@ -1834,7 +1989,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 Joiner::Binary(previous)
             }
             Some(Joiner::Binary(
-                group @ (BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Xor),
+                group @ (BinaryOperator::And
+                | BinaryOperator::Or
+                | BinaryOperator::Xor
+                | BinaryOperator::LogicalAnd
+                | BinaryOperator::LogicalOr),
             )) => {
                 while self.current_kind() == group.token_kind() {
                     let operator_span = self.bump()?.span;
@@ -1843,12 +2002,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 }
                 Joiner::Binary(group)
             }
-            Some(Joiner::Binary(
-                group @ (BinaryOperator::ShiftLeft
-                | BinaryOperator::ShiftRight
-                | BinaryOperator::RotateLeft
-                | BinaryOperator::RotateRight),
-            )) => {
+            // Shifts, rotations, divisions, and comparisons take exactly
+            // two operands.
+            Some(Joiner::Binary(group)) => {
                 let operator_span = self.bump()?.span;
                 let amount = self.parse_unary(level)?;
                 expression = self.binary_node(expression, group, operator_span, amount)?;
@@ -1915,6 +2071,17 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() =>
                 {
                     "a shift or rotation takes exactly two operands; parenthesize one of them"
+                }
+                (Joiner::Binary(previous), Joiner::Binary(ungrouped))
+                    if previous.is_division() && ungrouped.is_division() =>
+                {
+                    "`/` and `%` take exactly two operands; parenthesize one of them"
+                }
+                (Joiner::Binary(previous), Joiner::Binary(ungrouped))
+                    if previous.is_comparison() && ungrouped.is_comparison() =>
+                {
+                    "a comparison takes exactly two operands; join two comparisons with `&&` \
+                     or `||`"
                 }
                 (Joiner::Binary(_), Joiner::Binary(_)) => {
                     "operators from different groups have no relative precedence in Orange; \
@@ -2045,7 +2212,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         self.resource_limit_at(
             format!(
                 "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-                 for groups, calls, arrays, indices, loops, updates, and prefix operators"
+                 for groups, calls, arrays, indices, loops, conditionals, updates, and prefix \
+                 operators"
             ),
             span,
         );
@@ -2079,6 +2247,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
             TokenKind::Minus => UnaryOperator::Negate,
             TokenKind::Tilde => UnaryOperator::Complement,
+            TokenKind::Bang => UnaryOperator::Not,
             _ => return self.parse_primary(level),
         };
         let inner = self.open_level(level)?;
@@ -2119,6 +2288,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             {
                 self.parse_loop(level)
             }
+            TokenKind::Identifier if self.current_is_word("if") && self.starts_conditional() => {
+                self.parse_conditional(level)
+            }
             TokenKind::Identifier if self.next_kind() == TokenKind::LeftParen => {
                 let call = self.parse_call(level)?;
                 self.parse_index_suffix(call, level)
@@ -2138,7 +2310,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 self.expected(
                     "an expression",
                     "an expression is an integer literal, a name, a call, an array, a loop, a \
-                     prefix operator, or a parenthesized expression",
+                     conditional, a prefix operator, or a parenthesized expression",
                 );
                 None
             }
@@ -2396,6 +2568,176 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             Expression {
                 span,
                 kind: ExpressionKind::Loop(header),
+            },
+            height,
+        ))
+    }
+
+    /// Returns whether the `if` at the cursor starts a conditional.
+    ///
+    /// `if` is recognized by position, as `for` is. Before an integer, `!`,
+    /// `~`, or an identifier that does not continue an expression, a name
+    /// `if` could not stand, so `if` starts a conditional. Before `(`, `-`,
+    /// or `[`, `if` could also be a name that is called, subtracted from, or
+    /// indexed, so the tokens after it are examined: `if` starts a
+    /// conditional exactly when a brace group closed at its own depth is
+    /// followed directly by `else`, which follows `}` nowhere else. The
+    /// examination costs one parser event per token and stops at the end of
+    /// the expression `if` stands in.
+    fn starts_conditional(&mut self) -> bool {
+        let next = self.cursor.saturating_add(1);
+        match self.kind_at(next) {
+            TokenKind::Identifier => {
+                let continues = self.is_word_at(next, "as")
+                    || (self.is_word_at(next, "with")
+                        && self.kind_at(next.saturating_add(1)) == TokenKind::LeftBracket);
+                !continues
+            }
+            TokenKind::Integer | TokenKind::Bang | TokenKind::Tilde => true,
+            TokenKind::LeftParen | TokenKind::Minus | TokenKind::LeftBracket => {
+                self.else_follows(next)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns whether a brace group that closes at the depth of `start` is
+    /// followed directly by `else` before that depth's expression ends.
+    #[inline(never)]
+    fn else_follows(&mut self, start: usize) -> bool {
+        let mut depth = 0_usize;
+        let mut position = start;
+        loop {
+            if self.halted || !self.event() {
+                return false;
+            }
+            let kind = self.kind_at(position);
+            match kind {
+                TokenKind::Eof => return false,
+                TokenKind::LeftParen | TokenKind::LeftBracket | TokenKind::LeftBrace => {
+                    depth = depth.saturating_add(1);
+                }
+                TokenKind::RightParen | TokenKind::RightBracket | TokenKind::RightBrace => {
+                    let Some(outer) = depth.checked_sub(1) else {
+                        return false;
+                    };
+                    depth = outer;
+                    if depth == 0
+                        && kind == TokenKind::RightBrace
+                        && self.is_word_at(position.saturating_add(1), "else")
+                    {
+                        return true;
+                    }
+                }
+                TokenKind::Semicolon | TokenKind::Comma if depth == 0 => return false,
+                _ => {}
+            }
+            position = position.saturating_add(1);
+        }
+    }
+
+    /// Parses `if c { a } else if ... else { b }`.
+    ///
+    /// Every condition and value is one nesting level deeper than the
+    /// conditional, and an `else if` arm opens no further level, so this loop
+    /// parses a chain of any length. Only this function's small frame stays
+    /// on the stack while the parts are parsed.
+    fn parse_conditional(&mut self, level: usize) -> Option<(Expression, usize)> {
+        let inner = self.open_level(level)?;
+        let mut arms = Vec::new();
+        let mut height = 0_usize;
+        loop {
+            let keyword_span = self.bump()?.span;
+            let condition = self.parse_expression(inner)?;
+            self.expect(
+                TokenKind::LeftBrace,
+                "`{` after the condition",
+                CONDITIONAL_SHAPE_NOTE,
+            )?;
+            let value = self.parse_expression(inner)?;
+            let else_span =
+                self.close_arm(&mut arms, &mut height, keyword_span, condition, value)?;
+            if self.current_is_word("if") {
+                continue;
+            }
+            self.expect(
+                TokenKind::LeftBrace,
+                "`{` or `if` after `else`",
+                CONDITIONAL_SHAPE_NOTE,
+            )?;
+            let otherwise = self.parse_expression(inner)?;
+            return self.finish_conditional(arms, height, else_span, otherwise);
+        }
+    }
+
+    /// Completes one arm after its value: the closing `}`, the `else` that
+    /// must follow it, and the arm's place in the conditional. Returns the
+    /// span of `else`.
+    #[inline(never)]
+    fn close_arm(
+        &mut self,
+        arms: &mut Vec<ConditionalArm>,
+        height: &mut usize,
+        keyword_span: Span,
+        (condition, condition_height): (Expression, usize),
+        (value, value_height): (Expression, usize),
+    ) -> Option<Span> {
+        self.expect(
+            TokenKind::RightBrace,
+            "`}` after the value",
+            "each branch of a conditional is one expression",
+        )?;
+        if !self.current_is_word("else") {
+            self.expected(
+                "`else` and the value when the condition is false",
+                "every `if` has an `else`, so that a conditional always has a value",
+            );
+            return None;
+        }
+        if !(self.reserve_arm_slot)(arms) {
+            self.resource_limit_at(
+                "parser could not allocate conditional storage",
+                keyword_span,
+            );
+            return None;
+        }
+        *height = (*height).max(condition_height).max(value_height);
+        arms.push(ConditionalArm {
+            keyword_span,
+            condition,
+            value,
+        });
+        Some(self.bump()?.span)
+    }
+
+    /// Completes a conditional after its last value: the closing `}`, the
+    /// tree height, and the node.
+    #[inline(never)]
+    fn finish_conditional(
+        &mut self,
+        arms: Vec<ConditionalArm>,
+        height: usize,
+        else_span: Span,
+        (otherwise, otherwise_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let right_brace = self
+            .expect(
+                TokenKind::RightBrace,
+                "`}` after the value",
+                "each branch of a conditional is one expression",
+            )?
+            .span;
+        let first = arms.first()?.keyword_span;
+        let height = self.node_height(height.max(otherwise_height), first)?;
+        let span = self.join(first, right_brace);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Conditional(Box::new(ConditionalExpression {
+                    arms,
+                    else_span,
+                    otherwise,
+                })),
             },
             height,
         ))
@@ -2741,7 +3083,28 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     }
 
     fn recover_to(&mut self, recovery: &[TokenKind]) {
-        let mut depth = 0_usize;
+        self.recover_to_depth(recovery, 0);
+    }
+
+    /// Returns the number of `{` tokens from `start` up to the cursor that
+    /// are not closed before it.
+    #[inline(never)]
+    fn open_braces_since(&self, start: usize) -> usize {
+        self.tokens
+            .get(start..self.cursor)
+            .unwrap_or_default()
+            .iter()
+            .fold(0_usize, |open, token| match token.kind {
+                TokenKind::LeftBrace => open.saturating_add(1),
+                TokenKind::RightBrace => open.saturating_sub(1),
+                _ => open,
+            })
+    }
+
+    /// Skips tokens until one of `recovery` at delimiter depth zero, starting
+    /// `depth` delimiters deep.
+    fn recover_to_depth(&mut self, recovery: &[TokenKind], depth: usize) {
+        let mut depth = depth;
         while !self.halted && self.current_kind() != TokenKind::Eof {
             let kind = self.current_kind();
             if depth == 0 && recovery.contains(&kind) {
@@ -2771,6 +3134,22 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         self.tokens
             .get(self.cursor)
             .map_or(TokenKind::Eof, |token| token.kind)
+    }
+
+    fn kind_at(&self, position: usize) -> TokenKind {
+        self.tokens
+            .get(position)
+            .map_or(TokenKind::Eof, |token| token.kind)
+    }
+
+    /// Returns whether the token at `position` is the identifier spelled
+    /// `word`.
+    fn is_word_at(&self, position: usize, word: &str) -> bool {
+        self.tokens
+            .get(position)
+            .filter(|token| token.kind == TokenKind::Identifier)
+            .and_then(|token| token.lexeme(self.source))
+            == Some(word)
     }
 
     fn next_kind(&self) -> TokenKind {
@@ -3664,28 +4043,48 @@ mod tests {
                 .iter()
                 .map(|operator| operator.as_str())
                 .collect::<Vec<_>>(),
-            ["-", "~"]
+            ["-", "~", "!"]
         );
         assert_eq!(
             BinaryOperator::ALL
                 .iter()
                 .map(|operator| operator.as_str())
                 .collect::<Vec<_>>(),
-            ["+", "-", "*", "&", "|", "^", "<<", ">>", "<<<", ">>>"]
+            [
+                "+", "-", "*", "&", "|", "^", "<<", ">>", "<<<", ">>>", "/", "%", "==", "!=", "<",
+                "<=", ">", ">=", "&&", "||"
+            ]
         );
         for operator in BinaryOperator::ALL {
+            let spelling = operator.as_str();
             assert_eq!(
                 BinaryOperator::from_token(operator.token_kind()),
                 Some(*operator)
             );
             assert_eq!(
                 operator.is_shift_or_rotation(),
-                operator.as_str().starts_with("<<") || operator.as_str().starts_with(">>"),
+                spelling.starts_with("<<") || spelling.starts_with(">>"),
+                "{operator:?}"
+            );
+            assert_eq!(
+                operator.is_comparison(),
+                ["==", "!=", "<", "<=", ">", ">="].contains(&spelling),
+                "{operator:?}"
+            );
+            assert_eq!(
+                operator.is_division(),
+                ["/", "%"].contains(&spelling),
+                "{operator:?}"
+            );
+            assert_eq!(
+                operator.is_logical(),
+                ["&&", "||"].contains(&spelling),
                 "{operator:?}"
             );
         }
         for kind in [
             TokenKind::Tilde,
+            TokenKind::Bang,
             TokenKind::Arrow,
             TokenKind::Comma,
             TokenKind::LeftParen,
@@ -3787,6 +4186,20 @@ mod tests {
                 shape(source, &r#loop.init),
                 shape(source, &r#loop.step)
             ),
+            ExpressionKind::Conditional(conditional) => format!(
+                "({} else {{ {} }})",
+                conditional
+                    .arms
+                    .iter()
+                    .map(|arm| format!(
+                        "if {} {{ {} }}",
+                        shape(source, &arm.condition),
+                        shape(source, &arm.value)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" else "),
+                shape(source, &conditional.otherwise)
+            ),
         }
     }
 
@@ -3811,6 +4224,13 @@ mod tests {
             ExpressionKind::Loop(r#loop) => {
                 tree_height(&r#loop.init).max(tree_height(&r#loop.step))
             }
+            ExpressionKind::Conditional(conditional) => conditional
+                .arms
+                .iter()
+                .map(|arm| tree_height(&arm.condition).max(tree_height(&arm.value)))
+                .max()
+                .unwrap_or(0)
+                .max(tree_height(&conditional.otherwise)),
         }
     }
 
@@ -4149,10 +4569,27 @@ mod tests {
     fn bounds_expression_nesting_for_every_opener() {
         let message = format!(
             "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-             for groups, calls, arrays, indices, loops, updates, and prefix operators"
+             for groups, calls, arrays, indices, loops, conditionals, updates, and prefix \
+             operators"
         );
         type Form = (&'static str, fn(usize) -> String, &'static str);
-        let forms: [Form; 10] = [
+        let forms: [Form; 14] = [
+            (
+                "conditional values",
+                |count| nested("if a { ", count, "a", " } else { a }"),
+                "if",
+            ),
+            (
+                "conditional conditions",
+                |count| nested("if ", count, "a", " { a } else { a }"),
+                "if",
+            ),
+            (
+                "else values",
+                |count| nested("if a { a } else { ", count, "a", " }"),
+                "if",
+            ),
+            ("nots", |count| nested("!", count, "a", ""), "!"),
             ("groups", |count| nested("(", count, "a", ")"), "("),
             (
                 "loops",
@@ -4204,6 +4641,19 @@ mod tests {
         let wide = format!("g({})", vec!["a"; MAX_ARGUMENTS_PER_CALL].join(", "));
         let (_, expression) = body_expression(&spec_source(&wide));
         assert_eq!(tree_height(&expression), 2);
+
+        // An `else if` chain is one conditional, one level deep however long
+        // it runs.
+        let chain = format!(
+            "{}{{ a }}",
+            "if a { a } else ".repeat(4 * MAX_EXPRESSION_NESTING)
+        );
+        let (_, expression) = body_expression(&spec_source(&chain));
+        assert_eq!(tree_height(&expression), 2);
+        let ExpressionKind::Conditional(conditional) = &expression.kind else {
+            panic!("expected a conditional");
+        };
+        assert_eq!(conditional.arms().len(), 4 * MAX_EXPRESSION_NESTING);
     }
 
     #[test]
@@ -5149,6 +5599,333 @@ mod tests {
     }
 
     #[test]
+    fn builds_conditionals_comparisons_and_divisions_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec sign(x: Int) -> Int { if x < 0 { -1 } else if x == 0 { 0 } else { 1 } } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let FunctionBody::Typed(body) = &ast.module.functions[0].body else {
+            panic!("expected a typed body");
+        };
+        let expression = body.expression();
+        assert_eq!(
+            source.slice(expression.span),
+            Some("if x < 0 { -1 } else if x == 0 { 0 } else { 1 }")
+        );
+        let ExpressionKind::Conditional(conditional) = &expression.kind else {
+            panic!("expected a conditional");
+        };
+        // An `else if` chain is one conditional with an arm per `if`.
+        assert_eq!(conditional.arms().len(), 2);
+        let keywords = conditional
+            .arms()
+            .iter()
+            .map(|arm| arm.keyword_span().start())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            keywords,
+            [
+                TextOffset::new(u32::try_from(text.find("if x <").unwrap()).unwrap()),
+                TextOffset::new(u32::try_from(text.find("if x ==").unwrap()).unwrap()),
+            ]
+        );
+        for arm in conditional.arms() {
+            assert_eq!(source.slice(arm.keyword_span()), Some("if"));
+        }
+        assert_eq!(
+            source.slice(conditional.arms()[0].condition().span),
+            Some("x < 0")
+        );
+        assert_eq!(source.slice(conditional.arms()[0].value().span), Some("-1"));
+        assert_eq!(
+            source.slice(conditional.arms()[1].condition().span),
+            Some("x == 0")
+        );
+        assert_eq!(source.slice(conditional.else_span()), Some("else"));
+        assert_eq!(
+            conditional.else_span().start(),
+            TextOffset::new(u32::try_from(text.rfind("else").unwrap()).unwrap())
+        );
+        assert_eq!(source.slice(conditional.otherwise().span), Some("1"));
+        assert_eq!(
+            shape(source, expression),
+            "(if (x < 0) { -1 } else if (x == 0) { 0 } else { 1 })"
+        );
+        // A conditional is one level above its tallest part.
+        assert_eq!(tree_height(expression), 3);
+
+        for (body, expected) in [
+            ("a / b", "(a / b)"),
+            ("a % b", "(a % b)"),
+            ("a != b", "(a != b)"),
+            ("a <= b", "(a <= b)"),
+            ("a >= b", "(a >= b)"),
+            ("a > b", "(a > b)"),
+            ("a && b && c", "((a && b) && c)"),
+            ("a || b || c", "((a || b) || c)"),
+            ("!a && !!b", "((!a) && (!(!b)))"),
+            ("(a + b) < (c * d)", "([(a + b)] < [(c * d)])"),
+            ("-a / ~b", "((-a) / (~b))"),
+            ("(a < b) == (c < d)", "([(a < b)] == [(c < d)])"),
+            ("if (a) { b } else { c }", "(if [a] { b } else { c })"),
+            ("if -a { b } else { c }", "(if (-a) { b } else { c })"),
+            ("if !a { b } else { c }", "(if (!a) { b } else { c })"),
+            ("if ~a { b } else { c }", "(if (~a) { b } else { c })"),
+            ("if 1 { b } else { c }", "(if 1 { b } else { c })"),
+            ("if [a] { b } else { c }", "(if {a} { b } else { c })"),
+            ("if a[0] { b } else { c }", "(if a[0] { b } else { c })"),
+            (
+                "if a { if b { c } else { d } } else { a }",
+                "(if a { (if b { c } else { d }) } else { a })",
+            ),
+            (
+                "if if a { b } else { c } { d } else { a }",
+                "(if (if a { b } else { c }) { d } else { a })",
+            ),
+            ("if a { b } else { c } + d", "((if a { b } else { c }) + d)"),
+            (
+                "for i in 0..2 with s: Int = 0 { if a { s } else { i } }",
+                "(for i in 0..2 with s: Int = 0 { (if a { s } else { i }) })",
+            ),
+        ] {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+        }
+    }
+
+    #[test]
+    fn conditional_words_are_recognized_only_by_position() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec f(if: Int, else: Int) -> Int { if + else } ",
+            "spec g(if: Word[8]^2) -> Word[8]^2 { if with [0] = if[1] } ",
+            "spec h(x: Int) -> Int { if(x) - if(x) } ",
+            "spec if(x: Int) -> Int { x } ",
+            "spec k(if: Int) -> Int { (if as Int) * if } ",
+            "spec t(true: Int, false: Int) -> Int { true - false } ",
+            "spec n(if: Int^2) -> Int { if[0] - if[1] } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let shapes = ast
+            .module
+            .functions
+            .iter()
+            .filter(|function| function.name.text != "if")
+            .map(|function| {
+                let FunctionBody::Typed(body) = &function.body else {
+                    panic!("expected a typed body");
+                };
+                shape(source, body.expression())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            shapes,
+            [
+                "(if + else)",
+                "(if with [0] = if[1])",
+                "(if(x) - if(x))",
+                "([(if as Int)] * if)",
+                "(true - false)",
+                "(if[0] - if[1])",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_conditionals_with_exact_messages() {
+        let cases = [
+            ("if a b } else { c }", "expected `{` after the condition"),
+            (
+                "if a { b }",
+                "expected `else` and the value when the condition is false",
+            ),
+            (
+                "if a { b } c",
+                "expected `else` and the value when the condition is false",
+            ),
+            ("if a { b } else c", "expected `{` or `if` after `else`"),
+            ("if a { b } else if", "expected an expression"),
+            ("if a { b, } else { c }", "expected `}` after the value"),
+            ("if a { b } else { c, }", "expected `}` after the value"),
+            (
+                "if a { let x: Int = b; x } else { c }",
+                "expected `}` after the value",
+            ),
+            ("if a { } else { c }", "expected an expression"),
+            ("if a { b } else { }", "expected an expression"),
+            // Before `(`, `if` starts a conditional only when `else` follows
+            // a brace group; otherwise it is a call of a function `if`.
+            ("if (a) { b }", "expected `}` after the body expression"),
+        ];
+        for (body, message) in cases {
+            let text = spec_source(body);
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+        }
+        let (_, _, parsed) = parse_text(&spec_source("if a { b }"));
+        assert_eq!(
+            parsed.diagnostics[0].notes(),
+            ["every `if` has an `else`, so that a conditional always has a value"]
+        );
+
+        // Comparisons and divisions take exactly two operands, and operator
+        // groups still need parentheses.
+        for (body, ungrouped, previous, note) in [
+            (
+                "a < b < c",
+                "<",
+                "<",
+                "a comparison takes exactly two operands; join two comparisons with `&&` or `||`",
+            ),
+            (
+                "a == b != c",
+                "!=",
+                "==",
+                "a comparison takes exactly two operands; join two comparisons with `&&` or `||`",
+            ),
+            (
+                "a / b / c",
+                "/",
+                "/",
+                "`/` and `%` take exactly two operands; parenthesize one of them",
+            ),
+            (
+                "a / b % c",
+                "%",
+                "/",
+                "`/` and `%` take exactly two operands; parenthesize one of them",
+            ),
+            (
+                "a && b || c",
+                "||",
+                "&&",
+                "operators from different groups have no relative precedence in Orange; \
+                 parenthesize the part that applies first",
+            ),
+            (
+                "a == b && c",
+                "&&",
+                "==",
+                "operators from different groups have no relative precedence in Orange; \
+                 parenthesize the part that applies first",
+            ),
+            (
+                "a + b < c",
+                "<",
+                "+",
+                "operators from different groups have no relative precedence in Orange; \
+                 parenthesize the part that applies first",
+            ),
+            (
+                "(a + b) < c * d",
+                "*",
+                "<",
+                "operators from different groups have no relative precedence in Orange; \
+                 parenthesize the part that applies first",
+            ),
+            (
+                "a * b / c",
+                "/",
+                "*",
+                "operators from different groups have no relative precedence in Orange; \
+                 parenthesize the part that applies first",
+            ),
+            (
+                "a & b == c",
+                "==",
+                "&",
+                "operators from different groups have no relative precedence in Orange; \
+                 parenthesize the part that applies first",
+            ),
+            (
+                "a < b as Int",
+                "as",
+                "<",
+                "`as` converts exactly one operand; parenthesize the conversion or the \
+                 expression it converts",
+            ),
+        ] {
+            let (sources, _, parsed) = parse_text(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            assert_eq!(parsed.diagnostics.len(), 1, "{body:?}");
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::UngroupedOperators);
+            assert_eq!(
+                diagnostic.message(),
+                format!("`{ungrouped}` follows `{previous}` without grouping parentheses"),
+                "{body:?}"
+            );
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(ungrouped));
+            assert_eq!(diagnostic.notes(), [note], "{body:?}");
+        }
+    }
+
+    #[test]
+    fn errors_inside_branches_and_steps_recover_to_the_next_function() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec f(c: Bool) -> Int { if c { 1, 2 } else { 3 } } ",
+            "spec g() -> Int { for i in 0..2 with s: Int = 0 { if true { s } else { s i } } } ",
+            "spec h(c: Bool) -> Int { let a: Int = if c { 1 } else { (2 }; a } ",
+            "spec k(c: Bool) -> Int { if c { 1 } else { 2 } } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        let source = sources.iter().next().unwrap();
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.code(),
+                    diagnostic.message(),
+                    source.slice(diagnostic.primary_span()).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `}` after the value",
+                    ","
+                ),
+                (
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `}` after the value",
+                    "i"
+                ),
+                (
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `)` to close the group",
+                    "}"
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn expression_parsing_is_repeatable_and_malformed_expressions_never_panic() {
         let bodies = [
             "(((((",
@@ -5184,6 +5961,19 @@ mod tests {
             "x with [0] = x with [",
             "[0; [0; [0;",
             "a[i + [a[i -",
+            "if if if",
+            "if a { if b {",
+            "if (((",
+            "if (a) { b } else if (c",
+            "if a { b } else if c { d } else",
+            "else else else",
+            "a < < b",
+            "!!!",
+            "a && && b",
+            "a / / b",
+            "if - - - {",
+            "if [ { } ] else",
+            "if a { b } else { c } else { d }",
         ];
         for body in bodies {
             let mut sources = SourceMap::new();

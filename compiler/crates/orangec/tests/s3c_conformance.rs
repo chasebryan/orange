@@ -201,7 +201,7 @@ const CASES: [Case; 10] = [
             codes: &["ORC0203", "ORC0214", "ORC0207", "ORC0204"],
             locations: &["5:41", "6:51", "7:53", "8:40"],
             messages: &[
-                "unsupported binding type `Bool`",
+                "unsupported binding type `Float`",
                 "`x` has type `Word[8]`, but `Int` is required here",
                 "literal is outside the range of `Word[8]`",
                 "`Word` requires an exact width of 8, 16, 32, or 64",

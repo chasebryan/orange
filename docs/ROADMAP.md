@@ -412,9 +412,23 @@ acceptance requires the owner's acceptance of
 [OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), which bounds
 the S3e surface in [`LOOPS_2026.md`](LOOPS_2026.md) and builds on OEP-0007.
 Like the slices before it, it assumes only pure, total, deterministic meaning.
-Static index parameters, so that one quarter round can act on four positions
-of a whole state, and tuples for working variables of different roles are the
-next candidate slices.
+
+S3f follows S3e. It adds the type `Bool`, comparisons, strict logical
+operators, Euclidean division and remainder that are total at zero, and
+conditionals that always have both branches, so that a field element reduces
+modulo its prime and a ladder chooses by a bit of its scalar. The X25519
+function of RFC 7748, Poly1305 of RFC 8439, and the ChaCha20-Poly1305 AEAD
+construction are now Orange programs that reproduce the published test vector,
+tag, ciphertext, and AEAD tag. It is implemented and tested, and its
+acceptance requires the owner's acceptance of
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md), which bounds
+the S3f surface in [`CONDITIONS_2026.md`](CONDITIONS_2026.md) and builds on
+OEP-0008. Like the slices before it, it assumes only pure, total,
+deterministic meaning, and it makes no timing claim: a conditional chooses a
+value, and how an implementation decides is a question for the implementation
+stratum. A type of integers modulo a declared prime, static index parameters,
+so that one quarter round can act on four positions of a whole state, and
+tuples for working variables of different roles are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -460,8 +474,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b, S3c, S3d, and S3e are implemented and await owner review under
-OEP-0005 through OEP-0008, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3f are implemented and await owner review under
+OEP-0005 through OEP-0009, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

@@ -1,0 +1,60 @@
+// S3f conformance: Poly1305 of RFC 8439 section 2.5. The accumulator lives
+// in the integers modulo 2^130 - 5, written with exact `Int` arithmetic and
+// `%`; r is clamped by a byte mask; a conditional places the last block's
+// extra byte; and the tag of the section 2.5.2 example, "Cryptographic Forum
+// Research Group", matches the RFC byte for byte.
+edition 2026;
+module poly1305 {
+  // p = 2^130 - 5.
+  spec prime() -> Int { 1361129467683753853853498429727072845819 }
+
+  // Section 2.5.1: add one block to the accumulator and multiply by r.
+  spec absorb(a: Int, r: Int, block: Int) -> Int { ((a + block) * r) % prime() }
+
+  // 256^i for 0 <= i < 16.
+  spec byte_weight(i: Int) -> Int {
+    for j in 0..16 with w: Int = 1 { if j < i { w * 256 } else { w } }
+  }
+
+  // The low sixteen bytes of x, little-endian: the tag is a + s modulo 2^128.
+  spec tag(x: Int) -> Word[8]^16 {
+    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (x / byte_weight(i)) as Word[8] }
+  }
+
+  // Section 2.5.1 for a message of `length` bytes, 32 < length <= 48,
+  // padded with zeros to 48: two whole blocks, then a last block of
+  // `length - 32` bytes.
+  spec mac(key: Word[8]^32, m: Word[8]^48, length: Int) -> Word[8]^16 {
+    // Section 2.5: r &= 0x0ffffffc0ffffffc0ffffffc0fffffff.
+    let clamp: Word[8]^16 = [
+      0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+      0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+    ];
+    let r: Int = for i in 0..16 with n: Int = 0 { n * 256 + ((key[15 - i] & clamp[15 - i]) as Int) };
+    let s: Int = for i in 0..16 with n: Int = 0 { n * 256 + (key[31 - i] as Int) };
+    // Each whole block is its sixteen bytes, little-endian, with the byte
+    // 0x01 above them.
+    let whole: Int = for j in 0..2 with a: Int = 0 {
+      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (m[16 * j + 15 - i] as Int) })
+    };
+    // The last block's byte 0x01 sits just above its `length - 32` bytes.
+    let last: Int = for i in 0..16 with n: Int = 0 { n * 256 + (m[47 - i] as Int) };
+    tag(absorb(whole, r, last + byte_weight(length - 32)) + s)
+  }
+
+  // Section 2.5.2.
+  spec example() -> Word[8]^16 {
+    mac(
+      [
+        0x85, 0xd6, 0xbe, 0x78, 0x57, 0x55, 0x6d, 0x33, 0x7f, 0x44, 0x52, 0xfe, 0x42, 0xd5, 0x06, 0xa8,
+        0x01, 0x03, 0x80, 0x8a, 0xfb, 0x0d, 0xb2, 0xfd, 0x4a, 0xbf, 0xf6, 0xaf, 0x41, 0x49, 0xf5, 0x1b,
+      ],
+      [
+        0x43, 0x72, 0x79, 0x70, 0x74, 0x6f, 0x67, 0x72, 0x61, 0x70, 0x68, 0x69, 0x63, 0x20, 0x46, 0x6f,
+        0x72, 0x75, 0x6d, 0x20, 0x52, 0x65, 0x73, 0x65, 0x61, 0x72, 0x63, 0x68, 0x20, 0x47, 0x72, 0x6f,
+        0x75, 0x70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      ],
+      34,
+    )
+  }
+}
