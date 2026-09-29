@@ -290,9 +290,11 @@ divisors in y's range separately and joining their ranges:
 
 So `(254 - i) / 8` over 0..255 has range 0 through 31, `(254 - i) % 8` has
 range 0 through 7, `(i + 1) % 5` over 0..5 has range 0 through 4, and
-`i % 0` over 0..8 has range 0 through 7. As in S3e, each bound is computed
-separately, so a range may be wider than the values an index takes; the
-`ORC0223` error names the computed range.
+`i % 0` over 0..8 has range 0 through 7. As in S3e, bounds are exact
+integers under the 16,384-bit limit of an `Int`, so
+`(0x1_0000_0000_0000_0000 / 0x1_0000_0000_0000_0000) * i` has the range of
+`i`, and each bound is computed separately, so a range may be wider than the
+values an index takes; the `ORC0223` error names the computed range.
 
 ## 10. Diagnostics
 

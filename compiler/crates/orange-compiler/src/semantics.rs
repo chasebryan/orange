@@ -739,9 +739,8 @@ fn positive_divisor_range(
     (divisor_low, divisor_high): (&ExactInteger, &ExactInteger),
     reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
 ) -> Option<IndexRange> {
-    let divide = |value: &ExactInteger, divisor: &ExactInteger| {
-        value.divide_euclid(divisor, reserve_limbs)
-    };
+    let divide =
+        |value: &ExactInteger, divisor: &ExactInteger| value.divide_euclid(divisor, reserve_limbs);
     if operator == BinaryOperator::Divide {
         // The quotient grows with x, and for a fixed x it moves toward zero
         // as d grows, so its extremes are at the corners.
@@ -8529,6 +8528,16 @@ mod tests {
             ("0..4", "x[i / 0]"),
             ("0..3", "x[(i - 3) / -1]"),
             ("4..8", "x[i % 4]"),
+            // Bounds are exact, so division is exact far beyond 64 bits.
+            (
+                "0..4",
+                "x[(0x1_0000_0000_0000_0000 / 0x1_0000_0000_0000_0000) * i]",
+            ),
+            (
+                "0..4",
+                "x[(i + 0x1_0000_0000_0000_0000) % 0x1_0000_0000_0000_0000]",
+            ),
+            ("0..4", "x[i / (0 - 0x1_0000_0000_0000_0000)]"),
         ] {
             accepted(&format!(
                 "  spec f(x: Word[8]^4) -> Word[8] {{ for i in {range} with s: Word[8] = 0 {{ s ^ {index} }} }}\n"
@@ -8569,6 +8578,21 @@ mod tests {
                 "0..4",
                 "x[-1 / 2]",
                 "index -1 is out of range for `Word[8]^4`",
+            ),
+            (
+                "0..4",
+                "x[(0x1_0000_0000_0000_0000 * 3) / 2]",
+                "index 27670116110564327424 is out of range for `Word[8]^4`",
+            ),
+            (
+                "0..4",
+                "x[(i + 0x1_0000_0000_0000_0000) % 0x1_0000_0000_0000_0001]",
+                "this index runs from 0 through 18446744073709551616, out of range for `Word[8]^4`",
+            ),
+            (
+                "0..4",
+                "x[(i + 0x1_0000_0000_0000_0000) % 0]",
+                "this index runs from 18446744073709551616 through 18446744073709551619, out of range for `Word[8]^4`",
             ),
         ] {
             let (fixture, result) = rejected(&format!(
