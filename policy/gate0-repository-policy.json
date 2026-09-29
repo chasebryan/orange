@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.136",
+  "policy_version": "0.2.137",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -321,6 +321,13 @@
     "docs/security/OSPS_BASELINE.md",
     "docs/security/SECRETS_AND_INCIDENTS.md",
     "docs/security/THREAT_MODEL.md",
+    "examples/daylight/LICENSE",
+    "examples/daylight/NOTICE",
+    "examples/daylight/README.md",
+    "examples/daylight/daylight-horizon.or",
+    "examples/daylight/daylight.py",
+    "examples/daylight/test_daylight.py",
+    "examples/daylight/validation.txt",
     "policy/README.md",
     "policy/gate0-repository-policy.json",
     "policy/makefile-entrypoint-contract-v0.1.json",
@@ -425,16 +432,7 @@
     "tools/tests/test_d010_draft_packet.py",
     "tools/tests/test_validate_foundation.py",
     "tools/tests/test_validate_foundation_hardening.py",
-    "tools/validate_foundation.py",
-    "examples/daylight/LICENSE",
-    "examples/daylight/NOTICE",
-    "examples/daylight/README.md",
-    "examples/daylight/daylight-horizon.or",
-    "examples/daylight/daylight.or",
-    "examples/daylight/daylight.py",
-    "examples/daylight/emit_example.py",
-    "examples/daylight/test_daylight.py",
-    "examples/daylight/validation.txt"
+    "tools/validate_foundation.py"
   ],
   "forbidden_paths": [
     "COPYING",
