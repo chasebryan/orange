@@ -3685,7 +3685,7 @@ elements.
 | `Word[16]` | The integers modulo 2^16 | `0x` and 4 lowercase hex digits |
 | `Word[32]` | The integers modulo 2^32 | `0x` and 8 lowercase hex digits |
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
-| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 256 | The elements in order, separated by `, ` and enclosed in `[` and `]` |
+| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 256 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
 
 No other type, width, or length is accepted. Word literals are never wrapped, truncated,
 saturated, or coerced, and no value changes type implicitly. `e as T` converts

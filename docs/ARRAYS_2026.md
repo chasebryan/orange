@@ -191,8 +191,8 @@ with positions 0 through n - 1.
   shares nothing observable; there is no mutation, so no aliasing can be seen.
 
 `orangec eval` writes an array value as its elements in order, each in its
-scalar display form, separated by `, ` and enclosed in brackets. The type is
-written `T^n`:
+scalar display form, separated by a comma and a space and enclosed in brackets.
+The type is written `T^n`:
 
 ```text
 chacha20::test_vector: Word[32]^16 = [0xe4e7f110, 0x15593bd1, ..., 0x4e3c50a2]
