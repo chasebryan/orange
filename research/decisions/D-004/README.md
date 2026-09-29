@@ -3,9 +3,15 @@
 Status: `run_recorded_review_pending`. The v0.7 tranche builds every epoch
 prerequisite the reviewed protocol listed as absent, and epoch
 `d004-e-4aaf8a83a01693d543c4` has run all 75 scheduled executions. Its results
-are contributor-produced and unreviewed. No conclusion or semantic-strata
-selection exists. D004-PRE-01 remains `solo-reviewed`, and the v0.6
-implementation closure is `provisional_pending_exact_merged_revision`.
+are contributor-produced and unreviewed. The v0.8 suite adds cases and measures
+that separate the candidates v0.7 could not, and epoch
+`d004-e-633e0aa831615cda3e06` has run all 105 of its executions under the
+owner's isolation-first rule, which leaves ST-REL. The owner chose that rule
+knowing which candidate each rule would leave. Those results are also
+contributor-produced and unreviewed. No conclusion or semantic-strata selection
+exists. D004-PRE-01 remains
+`solo-reviewed`, and the v0.6 implementation closure is
+`provisional_pending_exact_merged_revision`.
 
 On 2026-07-26 the Orange Project Owner accepted D004-PRE-01 at exact review-
 subject revision `7d09a27369649855ce987c76315271b0d34a20ef`. That direction
@@ -289,8 +295,8 @@ No superseded archive is committed.
 Any later change to the adapter, the run harness, the bundle, the overlay or
 their bound inputs starts a new epoch; this one stays reproducible only from
 these bytes. D-004 remains proposed pending owner review of these results,
-S3b remains blocked, and Orange's binary gate-closure score remains 3 of 10
-(30%).
+S3b is implemented and awaits owner review under OEP-0005, and Orange's binary
+gate-closure score remains 3 of 10 (30%).
 
 ## Stored S3a inputs
 
@@ -310,3 +316,199 @@ without touching D-004. No digest in the packet, the protocol, the bundle, the
 overlay or the committed run changes, and the v0.7 epoch identity is unchanged,
 because the run harness never read these files. The suite document stays bound
 at its live path, because it is this laboratory's own record.
+
+## v0.8 suite
+
+The v0.7 run could not separate ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR. Their
+v0.5 graphs differ only in how they group semantic members: which members
+exist, which members are views of a parent, and which crossings stay inside one
+authority. On 2026-09-28 the owner chose to build a successor suite that can
+tell them apart. The v0.8 tranche adds that suite. It is contributor-produced
+and is not an owner record.
+
+v0.8 keeps SC-01 to SC-05 and adds two cases:
+
+- **SC-06, semantic evolution.** Four suite-fixed changes: a new target
+  operation class (E1), a revised memory model (E2), a revised sampling model
+  (E3), and a revised proof-evidence interface (E4). Each change re-identifies
+  every subject class under the member that owns the changed construct. Where
+  a change reaches a class that a suite section 4 invariant protects (Spec Core
+  for E1 to E3, runtime subjects for E4), the candidate must carry an open
+  isolation obligation.
+- **SC-07, within-authority relabeling.** For SR-07 to SR-11, a probe presents
+  a subject from one side of the crossing as the other. It must be rejected at
+  a member boundary or by a named discrimination judgment. A crossing inside
+  one authority with no named judgment fails the case.
+
+A construct belongs to the member that holds its facet, and ownership is the
+authority root of that member. A crossing whose two sides share one semantic
+authority root needs a discrimination judgment, except SR-06 and SR-12, which
+stay inside one authority for every candidate. The adapter derives both from
+each candidate's reviewed graph.
+
+SC-06 and SC-07 record five measures, all counts where fewer is better:
+isolation obligations, the part of them that protects Spec Core, re-identified
+subject classes, discrimination judgments, and independent semantic
+definitions. Pass or fail alone is not expected to separate the four
+candidates, because each can meet both cases. When more than one candidate
+passes, suite section 8 leaves the result inconclusive until the owner records
+a non-compensable distinguishing rule, and AM-07 lets such a rule decide only
+an epoch that runs after it is recorded. The v0.8 adapter bundle offers four
+such rules: isolation first, fewest definitions first, spec isolation first,
+and dominance only. `prepare` refuses until the overlay records the owner's
+choice, and the epoch packet binds it.
+
+- [`tools/d004_v08_adapter.py`](../../../tools/d004_v08_adapter.py) and
+  [`tools/d004_v08_run.py`](../../../tools/d004_v08_run.py) extend the v0.7
+  adapter and harness in new files, so the v0.7 run keeps verifying from its
+  own bytes. The schedule is a 5 by 7 rotation, run three times for 105
+  executions.
+- `d004-v0.8/case-subjects.json` holds the SC-06 and SC-07 positive subjects
+  and seven named mutations.
+- `d004-v0.8/adapter-bundle.json` publishes the adapter contract, the new
+  rules and computations, each candidate's judgments and definitions, the
+  measures and the distinguishing rules.
+- `d004-v0.8/protocol/suite-overlay.json` binds the v0.7 bundle and overlay,
+  adds amendments AM-09 to AM-13, which replace AM-02's execution count and
+  AM-07's first sentence, and records the owner's distinguishing rule with the
+  context in which it was chosen.
+
+All three regenerate byte for byte (`python3 tools/d004_v08_run.py check`).
+The raw-file/canonical SHA-256 pairs are:
+
+- v0.8 case subjects:
+  `ecbb05bc18f0c35e7dd11083184702f6492bfdaa80d3351b69bfdc994c7cd125` /
+  `bbe14dca3b7d60f38df9357491a49ea75581c932e9b1d680f7783a4ea35b8d7f`;
+- v0.8 adapter bundle:
+  `e4dca7aa537403c76be925aaa8d9bdec54725071c7ca39ca250be3e8e88ca3ba` /
+  `d756959e3258d5ac86cb416e5993fc2f90119867a600170af7b69abe4dadd02c`; and
+- v0.8 suite overlay:
+  `658e899497fd1b2860f63a43039123facf56a1ff99f7b34273eefbfc427c2806` /
+  `b86e791fd1a49624816ab0fcb63ed633819cb66f3e2ca70955a6cfe6bbc28618`.
+
+On 2026-09-28 the owner chose isolation first: fewest isolation obligations,
+then fewest re-identified subject classes, then fewest discrimination
+judgments, then fewest semantic definitions. The overlay records that choice,
+so every v0.8 epoch packet binds it. The choice was not blind. The measures are
+deterministic functions of the candidate graphs and the suite, and the decision
+card, posted at 10:14 UTC, showed the candidate each rule was predicted to
+select. The contributor who built the suite recommended isolation first on that
+card, giving as reasons that evidence has to survive frequent new targets, that
+the suite's invariants are about isolation, and that the rule matches the
+earlier ST-REL research recommendation. At about 10:27 UTC a local trial of the
+harness, `d004-e-f23ea422b328ad18e04a`, ran all 105 executions with the
+isolation-first rule marked as a dry run, verified, and reproduced those
+predictions; its archive-manifest SHA-256 was
+`fbcd6067f32a28367ba58fa5d29377cb51d933d2155764afc0b9c17eedac7850`. That trial
+is not a D-004 epoch, and its archive is not committed. The owner chose at
+11:01 UTC. The overlay's rule record states this context. So the rule was bound
+before any v0.8 epoch ran, but it was chosen with its outcome known, on a
+recommendation that matched the existing research favorite, and it is not a
+preregistration made in ignorance of the result.
+
+## v0.8 epoch run
+
+Epoch `d004-e-633e0aa831615cda3e06` was prepared and run on 2026-09-28 from
+source revision `8fd7387ec50719397de52744318605a8aad9ac72`. Its packet binds
+the v0.8 bundle and overlay, and with them the owner's rule, v0.8 run harness
+raw SHA-256
+`0c2c074b8c39289aeb71dc1e54384030bf011de1c7690f2ada829b5e1af4d678`, the host
+tool, dependency and environment manifests, all five candidate models and all
+seven input manifests. All 105 executions ran once each in the rotation order
+under the same enforcing launcher as v0.7, after execute re-checked the host
+context that prepare recorded. Every execution exited normally within the
+ceilings: wall time 78 to 186 ms, peak memory 10.7 to 12.3 MB for the whole
+process tree, no temporary storage, and no stderr output.
+
+| Candidate | Cases passed | Closed units |
+| --- | --- | --- |
+| ST-REL | SC-01 to SC-07 | 7 of 7 |
+| ST-UNI | SC-01 to SC-07 | 7 of 7 |
+| ST-DUAL | SC-01 to SC-07 | 7 of 7 |
+| ST-MIRROR | SC-01 to SC-07 | 7 of 7 |
+| ST-HOST | none | 0 of 7 |
+
+Evidence for this epoch is 28/35/105: 28 closed candidate-case units of 35
+required, and 105 of 105 result records. The three repetitions of every slot
+are byte-identical in their deterministic fields. ST-HOST fails SC-01 to SC-05
+for the reason v0.7 found, and fails SC-06 and SC-07 the same way: their
+positive subjects cross SR-04, SR-05, SR-08 and SR-11, which it delegates to
+hosts owned by the open D-006 and D-011 decisions, so each reports
+`unsupported` where the oracle requires `succeeded`.
+
+As designed, pass or fail does not separate the four other candidates. The
+measures do, but which candidate they leave depends on the rule. Every measure
+is a count where fewer is better:
+
+| Candidate | Isolation obligations | Of them, Spec Core | Re-identified classes | Discrimination judgments | Semantic definitions |
+| --- | --- | --- | --- | --- | --- |
+| ST-REL | 0 | 0 | 6 | 0 | 5 |
+| ST-UNI | 10 | 6 | 36 | 5 | 1 |
+| ST-DUAL | 4 | 0 | 28 | 2 | 2 |
+| ST-MIRROR | 0 | 0 | 7 | 1 | 5 |
+
+The owner's rule, isolation first, compares isolation obligations, then
+re-identified classes, then discrimination judgments, then semantic
+definitions. ST-REL and ST-MIRROR tie at zero isolation obligations, and ST-REL
+re-identifies six subject classes to ST-MIRROR's seven, so the rule leaves
+ST-REL (`recommend_st_rel`). Fewest definitions first would have left ST-UNI,
+spec isolation first would have left ST-DUAL, and dominance only would have
+removed only ST-MIRROR, leaving ST-REL, ST-UNI and ST-DUAL inconclusive. The
+owner chose knowing this, as the "v0.8 suite" section above records. The
+summary scopes this result to the candidates that close all seven cases and to
+SS-G05 and the SS-G03 structure only. It is not a D-004 recommendation under
+suite section 8 until the owner disposes every candidate and every hard gate,
+so `selection` stays null.
+
+The runner's archive is about 15.6 MB. Its committed form under
+`d004-v0.8/run/` keeps the same parts as v0.7's, and
+[`tools/d004_archive.py`](../../../tools/d004_archive.py) rebuilds it byte for
+byte, checks archive-manifest SHA-256
+`aab4ff83d50c5f0040f42de1b36a50f3daf4f0edb75c1ab4b84d76157bb20487`, then
+re-runs the v0.8 harness's `verify`, which refuses unless the repository's
+run harness and adapter bundle are the ones the packet binds. The
+raw-file/canonical SHA-256 pairs are:
+
+- v0.8 archive index:
+  `75b89340f073759663e9baa04227179b6f059f1eac8ef0ffb78d9d8b6d5c6ed3` /
+  `8d6eca9fdc1aadd355538c035bfab724398827d33ad7e0cdcfe40023a35fe38e`; and
+- v0.8 adapter outputs:
+  `57c48c8395904fd59c07f1820119cc097c6c30d37f29057c153f3d77d58b6f7f` /
+  `ae8a3da7775749e25dd8a780d267457d83744441335c6c237e1ba1fa1a0e0254`.
+
+Three earlier v0.8 epochs ran the same schedule and produced the same
+verdicts, closures, measures and rule result in every slot. All three were
+superseded before any owner review:
+
+- `d004-e-afadaff4cbc1bb294d3e` ran before the v0.8 harness gained the host
+  re-check, and no review had seen it. Its archive-manifest SHA-256 was
+  `6851937e0a6826657436b5dc523291c08790bed56f955d2e60245dfcd4b3ce74`.
+- `d004-e-1b3a184e9895cc149b09` ran from revision
+  `f39d181775ae2992479e0857083c3d7e02a172c1`. A contributor review of that
+  run found the gaps the next fix closes. The fix makes the overlay name what
+  AM-09 and AM-13 replace in AM-02 and AM-07 and record the context of the
+  owner's choice. It also makes the harness read each case's
+  measures strictly and report the rule result as inconclusive when a
+  candidate that closes every case lacks a full measure set. Its
+  archive-manifest SHA-256 was
+  `84e2fd244b04db0276941d34e7208f1f2b46f0643c58f320e9030e401eaccb3c`.
+- `d004-e-aee8a5dee258f7ce2078` ran from revision
+  `690dea814bc29a08af1139b7ce07bc2dc6332ca5`. An automated review of its pull
+  request found that the harness's `verify` never compared the repository's
+  run harness with the one the packet binds, so a changed harness could
+  re-derive an old epoch and report it verified. The next fix makes `execute`
+  and `verify` refuse unless the repository's harness and adapter bundle are
+  the bound ones. The committed-form check already compared the harness
+  before running `verify`. Its archive-manifest SHA-256 was
+  `73566b1acc8a959aae426ca167e170c3d4f7ad02fb988c4a7337533f6ff6f015`.
+
+No superseded v0.8 archive is committed. The v0.7 harness's own `verify` has
+the same gap. It stays as merged, because changing its bytes would unbind
+the committed v0.7 epoch; the committed-form check compares the v0.7 harness
+with its packet before it runs that `verify`.
+
+Any later change to the v0.8 adapter, the v0.8 harness, the v0.8 documents,
+the v0.7 bundle or overlay they bind, or their inputs starts a new epoch. D-004
+remains proposed pending owner review of both runs, S3b is implemented and
+awaits owner review under OEP-0005, and Orange's binary gate-closure score
+remains 3 of 10 (30%).
