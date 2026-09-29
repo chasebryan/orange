@@ -2161,6 +2161,35 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
                 codes = {finding.code for finding in validator.findings}
                 self.assertEqual("path.inventory" not in codes, admitted)
 
+    def test_algorithm_entries_admit_only_their_shapes(self) -> None:
+        cases = {
+            "algorithms/aes/aes.or": True,
+            "algorithms/aes/aes-modes.or": True,
+            "algorithms/aes/README.md": True,
+            "algorithms/chacha20-poly1305/chacha20-poly1305.or": True,
+            "algorithms/aes/notes.md": False,
+            "algorithms/aes/aes.py": False,
+            "algorithms/aes/vectors/aes.or": False,
+            "algorithms/AES/aes.or": False,
+            "algorithms/aes_modes/aes.or": False,
+            "algorithms/aes.or": False,
+        }
+        for value, admitted in cases.items():
+            with self.subTest(path=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / value
+                path.parent.mkdir(parents=True)
+                path.write_text("x\n", encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator.policy = {
+                    "allowed_top_level_paths": ["algorithms"],
+                    "required_paths": [],
+                    "forbidden_paths": [],
+                }
+                validator._validate_required_and_forbidden_paths()
+                codes = {finding.code for finding in validator.findings}
+                self.assertEqual("path.inventory" not in codes, admitted)
+
     def test_numbered_change_record_path_remains_admitted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

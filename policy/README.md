@@ -12,7 +12,11 @@ admitted Cargo manifest and the lock graph; only the workspace-local `orangec`
 to `orange-compiler` path dependency is allowed. Tabula, the Orange workbench
 in `tabula/`, is admitted as its own Cargo workspace with no dependencies; the
 gate formats, lints, and tests it next to the compiler, and its end-to-end tests
-drive the release `orangec` that the gate builds. Product implementation is
+drive the release `orangec` that the gate builds. The `algorithms/` folder
+holds cryptographic algorithms written in Orange with the vectors their
+standards publish; the gate admits its README, its `verify.py`, and one folder
+per algorithm holding a README and `.or` sources, and the compiler tests
+reproduce every recorded vector. Product implementation is
 allowed; product releases and third-party pull requests are not.
 
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX
