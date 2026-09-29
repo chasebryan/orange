@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.128",
+  "policy_version": "0.2.129",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -29,6 +29,7 @@
     "research",
     "schemas",
     "scripts",
+    "tabula",
     "tools"
   ],
   "allowed_binary_artifacts": [
@@ -405,7 +406,7 @@
     "CONTRIBUTING.md": "ee6a23e1c2bca6f86f6a40e2511c4de4c253a77ac2b24d3ae3d975416055b86f",
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
-    "Makefile": "168fdef359964e08fe78fe02a19f182235b75721ff01b4498c7c46cb3273627e",
+    "Makefile": "4c885f6ac2c85f68cb2cc3e15de3bfae9793690831cc260347c4501410ac2cf5",
     "README.md": "32ea2b0c48f7022e093fcf48dcdfa0b3c6a4f4fcdb52c55799849697fff0b6a8",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
@@ -484,8 +485,8 @@
     "docs/security/OSPS_BASELINE.md": "f912af598fcbe2a76b3b774fab5358b8c63aa68794a209b33f3418e656fdda78",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "9f53fb4c77c71903b5fdf20145de8bfab845f6a10ceb46df36dac2ffb7db1392",
-    "policy/README.md": "e067cce57d2ae90c13a6b83fe6256f626784421a305ac9172f115ba6b393c00a",
-    "policy/makefile-entrypoint-contract-v0.1.json": "370e0954ca798d4ba4eb04d71a223167c530ce5f41c4b5a0ddf7e3a34c0fb19f",
+    "policy/README.md": "75e2e117b2c46d30bd38b4ed695245c2eeb9ea813b521294cd13b0d9fa8cc2d1",
+    "policy/makefile-entrypoint-contract-v0.1.json": "979cb7c63c1a7ec36864cdfc6bd114c335a1f0d2f34091d812426224a37136b8",
     "research/decisions/D-004/README.md": "7f7e9907e8614d7948d7fef88d1a607d293ddf10f68737e18e4d2d95fbce0c18",
     "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json": "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481",
     "research/decisions/D-004/d004-v0.2-named-mutations.json": "1d46d6d66c0704fcaa462c625dcac2e72150497bb075322c5e076ea42898be54",
@@ -550,8 +551,8 @@
     "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
     "tools/tests/test_d009_draft_packet.py": "eb10596a538693b53069d4235a0c941c7b6166aef993e20d3d7cd499e7a6c1c0",
     "tools/tests/test_d010_draft_packet.py": "291a86bb074b8b3b96f47093981e66e8aba7eb983faff2a4c68981ad120bac9d",
-    "tools/tests/test_validate_foundation.py": "e334f4c52f0bb35a3f5acc13a080adce8bff9f86b10019a5b8fd249dabee322b",
-    "tools/tests/test_validate_foundation_hardening.py": "299bd517e927e1f4026963c25dabc02263f28ce798dc8116d7ff4dc8dd29e96d"
+    "tools/tests/test_validate_foundation.py": "05832bb924e443c5ea4cef97ef525f916ed1263f1aa7deed6b658d7a98cac865",
+    "tools/tests/test_validate_foundation_hardening.py": "a3cebdd23b5cc53b1283bb1ad6c98bcabb83ea2789591e62a9caa4eea11dfcbb"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

@@ -2132,6 +2132,35 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
             validator._validate_tree_encoding_and_format()
             self.assertIn("file.binary_digest", {finding.code for finding in validator.findings})
 
+    def test_tabula_admits_only_its_source_shapes(self) -> None:
+        cases = {
+            "tabula/src/server.rs": True,
+            "tabula/tests/end_to_end.rs": True,
+            "tabula/web/app.js": True,
+            "tabula/web/tabula.svg": True,
+            "tabula/README.md": True,
+            "tabula/Cargo.lock": True,
+            "tabula/web/run.py": False,
+            "tabula/src/nested/mod.rs": False,
+            "tabula/target/debug/tabula": False,
+            "tabula/build.rs": False,
+        }
+        for value, admitted in cases.items():
+            with self.subTest(path=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / value
+                path.parent.mkdir(parents=True)
+                path.write_text("x\n", encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator.policy = {
+                    "allowed_top_level_paths": ["tabula"],
+                    "required_paths": [],
+                    "forbidden_paths": [],
+                }
+                validator._validate_required_and_forbidden_paths()
+                codes = {finding.code for finding in validator.findings}
+                self.assertEqual("path.inventory" not in codes, admitted)
+
     def test_numbered_change_record_path_remains_admitted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2215,6 +2244,33 @@ dependencies = [
  "orange-compiler",
 ]
 """,
+            "tabula/Cargo.toml": """[package]
+name = "tabula"
+description = "Tabula, a minimalist and mouse-first writing table for Orange"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96.1"
+publish = false
+
+[workspace]
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+
+[profile.release]
+debug-assertions = true
+overflow-checks = true
+""",
+            "tabula/Cargo.lock": """version = 4
+
+[[package]]
+name = "tabula"
+version = "0.1.0"
+""",
         }
         for value, source in manifests.items():
             path = root / value
@@ -2265,6 +2321,9 @@ dependencies = [
                 "compiler/Cargo.toml",
                 '[replace]\n"serde:1.0.0" = { git = "https://example.invalid/serde" }\n',
             ),
+            ("tabula/Cargo.toml", '[dependencies]\nserde = "1"\n'),
+            ("tabula/Cargo.toml", '[dev-dependencies]\nserde = "1"\n'),
+            ("tabula/Cargo.toml", '[patch.crates-io]\nserde = { path = "../outside" }\n'),
         )
         for value, addition in mutations:
             with self.subTest(manifest=value, addition=addition), tempfile.TemporaryDirectory() as directory:
@@ -2323,15 +2382,16 @@ version = "0.1.0"
 """,
         )
         for addition in additions:
-            with self.subTest(addition=addition), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                self._write_workspace(root)
-                path = root / "compiler/Cargo.lock"
-                path.write_text(path.read_text(encoding="utf-8") + "\n" + addition, encoding="utf-8")
-                self.assertIn(
-                    "compiler.lock_graph",
-                    {finding.code for finding in self._compiler_findings(root)},
-                )
+            for value in ("compiler/Cargo.lock", "tabula/Cargo.lock"):
+                with self.subTest(lock=value, addition=addition), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    self._write_workspace(root)
+                    path = root / value
+                    path.write_text(path.read_text(encoding="utf-8") + "\n" + addition, encoding="utf-8")
+                    self.assertIn(
+                        "compiler.lock_graph",
+                        {finding.code for finding in self._compiler_findings(root)},
+                    )
 
     def test_extra_manifest_is_rejected_by_dependency_inventory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
