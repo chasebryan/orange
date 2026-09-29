@@ -299,7 +299,7 @@ const CASES: [Case; 10] = [
         expectation: Expectation::Failure {
             diagnostic_codes: &["ORC0101"],
             messages: &[
-                "typed literal bodies are allowed only on `spec` functions",
+                "typed bodies are allowed only on `spec` functions",
                 "until implementation semantics are defined",
             ],
             primary_locations: &["4:16"],
@@ -352,8 +352,8 @@ const CASES: [Case; 10] = [
         expectation: Expectation::Failure {
             diagnostic_codes: &["ORC0204", "ORC0204", "ORC0204", "ORC0204", "ORC0204"],
             messages: &[
-                "`Word` requires the exact width `[8]`",
-                "only the exact type `Word[8]` is supported",
+                "`Word` requires an exact width of 8, 16, 32, or 64",
+                "`Word` width must be exactly 8, 16, 32, or 64",
                 "word widths do not coerce, truncate, or wrap",
             ],
             primary_locations: &["4:27", "5:31", "6:36", "7:34", "8:30"],
@@ -1929,7 +1929,7 @@ fn s3a_mixed_semantic_diagnostics_are_source_ordered_and_repeatable() {
     let source = concat!(
         "edition 2026; module mixed_errors {\n",
         "  spec repeated() {}\n",
-        "  spec repeated() -> Word[16] { 1 }\n",
+        "  spec repeated() -> Word[12] { 1 }\n",
         "  spec unsupported() -> Integer { 1 }\n",
         "  spec negative() -> Word[8] { -1 }\n",
         "  spec valid_between() -> Int { 42 }\n",
@@ -1952,7 +1952,7 @@ fn s3a_mixed_semantic_diagnostics_are_source_ordered_and_repeatable() {
             &["ORC0201", "ORC0204", "ORC0203", "ORC0206", "ORC0207"],
             &[
                 "duplicate spec function `repeated`",
-                "only the exact type `Word[8]` is supported",
+                "`Word` width must be exactly 8, 16, 32, or 64",
                 "unsupported result type `Integer`",
                 "`Word[8]` literals cannot be negative",
                 "literal is outside the range of `Word[8]`",

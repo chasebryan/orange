@@ -199,8 +199,8 @@ snapshot. After each read, the descriptor and its component-relative directory
 entry must still match that snapshot. Preflight caps ordinary text files at
 256 KiB (`256 * 1024` bytes), the validator itself at 448 KiB
 (`448 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
-the generated and hash-pinned D-004 run adapter outputs at 2 MiB
-(`2 * 1024 * 1024` bytes), and the complete repository at 16 MiB (`16 * 1024 * 1024` bytes). Returned
+each committed D-004 run's generated and hash-pinned adapter outputs at 2 MiB
+(`2 * 1024 * 1024` bytes), and the complete repository at 24 MiB (`24 * 1024 * 1024` bytes). Returned
 payload bytes consume the aggregate read allowance as soon as they enter the
 bounded reader; each read uses at most one additional byte only to detect
 overflow. A later snapshot or representation rejection cannot refund already
@@ -278,12 +278,15 @@ review, and evidence collections.
 The reviewed protocol exposes no launcher, adapter, or persistence API; the
 v0.7 run harness supplies them, and Gate 0 protects the adapter, the harness,
 the archive tool, the bundle, the overlay and the committed run archive under
-`d004-v0.7/run/`. Epoch `d004-e-4aaf8a83a01693d543c4` records 20 closed of 25
-required units and 75 of 75 result records, contributor-produced and
-unreviewed, and both `roadmap_gate_credit` and `readiness_credit` remain
-`none`. None of these inventories contains an accepted D-004 decision or
-release evidence; D-004 remains proposed, S3b remains blocked, and the 3-of-10
-(30%) binary gate-closure score is unchanged. D-005's protected Rust laboratory
+`d004-v0.7/run/`, and the same for the v0.8 suite under `d004-v0.8/`. Epoch
+`d004-e-4aaf8a83a01693d543c4` records 20 closed of 25 required units and 75 of
+75 result records, and v0.8 epoch `d004-e-633e0aa831615cda3e06` records 28
+closed of 35 required units and 105 of 105 result records. Both are
+contributor-produced and unreviewed, and both `roadmap_gate_credit` and
+`readiness_credit` remain `none`. None of these inventories contains an accepted
+D-004 decision or release evidence; D-004 remains proposed, S3b is implemented
+and awaits owner review under OEP-0005, and the 3-of-10 (30%) binary
+gate-closure score is unchanged. D-005's protected Rust laboratory
 may construct canonical adapter requests and validate synthetic captured
 transport envelopes, enumerate the exact 192 in-memory transport identities,
 and bind a closed synthetic observation inventory to canonical raw-stream

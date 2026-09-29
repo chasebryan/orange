@@ -1,0 +1,12 @@
+// S3b rejection: specifications may not depend on themselves. Each cycle is
+// reported at the call that closes it.
+edition 2026;
+module cycles {
+  spec itself() -> Int { itself() + 1 }
+  spec ping() -> Int { pong() }
+  spec pong() -> Int { ping() }
+  spec first() -> Int { second() }
+  spec second() -> Int { third() }
+  spec third() -> Int { first() }
+  spec outside() -> Int { ping() }
+}

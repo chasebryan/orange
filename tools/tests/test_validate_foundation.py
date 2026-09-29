@@ -27,7 +27,7 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
     GATE0_MAXIMUM_RUN_OUTPUTS_BYTES,
     GATE0_IGNORE_PATTERNS,
-    GATE0_RUN_OUTPUTS_PATH,
+    GATE0_RUN_OUTPUTS_PATHS,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     GATE0_MAXIMUM_VALIDATOR_BYTES,
     ORANGE_BOOK_APPENDICES,
@@ -312,7 +312,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 448 * 1024)
         self.assertEqual(GATE0_MAXIMUM_BINARY_FILE_BYTES, 2 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_RUN_OUTPUTS_BYTES, 2 * 1024 * 1024)
-        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 16 * 1024 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 24 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_FILES, 512)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_PATH_BYTES, 1024)
         self.assertEqual(GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES, 1024 * 1024)
@@ -342,7 +342,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         cases = (
             ("record.txt", GATE0_MAXIMUM_TEXT_FILE_BYTES),
             ("tools/validate_foundation.py", GATE0_MAXIMUM_VALIDATOR_BYTES),
-            (GATE0_RUN_OUTPUTS_PATH, GATE0_MAXIMUM_RUN_OUTPUTS_BYTES),
+            *((path, GATE0_MAXIMUM_RUN_OUTPUTS_BYTES) for path in GATE0_RUN_OUTPUTS_PATHS),
         )
         for name, limit in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
@@ -2694,7 +2694,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-07-12
 
-Manuscript version: 0.3
+Manuscript version: 0.4
 
 This is not a normative language specification.
 
@@ -2849,11 +2849,11 @@ under Chase Bryan's direction on 2026-09-28.
 
     def test_orange_book_contract_rejects_missing_wrong_or_duplicate_version(self) -> None:
         mutations = (
-            lambda text: text.replace("Manuscript version: 0.3\n\n", "", 1),
-            lambda text: text.replace("Manuscript version: 0.3", "Manuscript version: 0.2", 1),
+            lambda text: text.replace("Manuscript version: 0.4\n\n", "", 1),
+            lambda text: text.replace("Manuscript version: 0.4", "Manuscript version: 0.3", 1),
             lambda text: text.replace(
-                "Manuscript version: 0.3",
-                "Manuscript version: 0.3\n\nManuscript version: 0.3",
+                "Manuscript version: 0.4",
+                "Manuscript version: 0.4\n\nManuscript version: 0.4",
                 1,
             ),
         )

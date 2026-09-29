@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use orange_compiler::{
-    CoreType, CoreValue, Diagnostic, DiagnosticCode, Edition, FunctionBody, FunctionKind,
-    MAX_LEXICAL_DIAGNOSTICS_PER_SOURCE, MAX_SOURCE_BYTES, MAX_TOKENS_PER_SOURCE, Severity,
-    SourceMap, analyze, evaluate, lex, parse,
+    CoreType, CoreValue, Diagnostic, DiagnosticCode, Edition, ExpressionKind, FunctionBody,
+    FunctionKind, MAX_LEXICAL_DIAGNOSTICS_PER_SOURCE, MAX_SOURCE_BYTES, MAX_TOKENS_PER_SOURCE,
+    Severity, SourceMap, analyze, evaluate, lex, parse,
 };
 
 fn orangec() -> Command {
@@ -82,9 +82,13 @@ fn public_compiler_accessors_preserve_checked_structure() {
             .unwrap()
             .starts_with("spec")
     );
-    let FunctionBody::TypedLiteral(body) = functions[0].body() else {
-        panic!("expected the public typed-literal body");
+    let FunctionBody::Typed(body) = functions[0].body() else {
+        panic!("expected the public typed body");
     };
+    let ExpressionKind::Literal(literal) = body.expression().kind() else {
+        panic!("expected the public literal expression");
+    };
+    assert_eq!(body.expression().span(), literal.span());
     assert!(source.slice(body.span()).unwrap().starts_with("->"));
     assert_eq!(source.slice(body.result_type().span()), Some("Word[8]"));
     assert_eq!(body.result_type().name().text(), "Word");
@@ -93,9 +97,10 @@ fn public_compiler_accessors_preserve_checked_structure() {
         source.slice(body.result_type().width_span().unwrap()),
         Some("8")
     );
-    assert_eq!(source.slice(body.literal().span()), Some("8"));
-    assert_eq!(source.slice(body.literal().magnitude_span()), Some("8"));
-    assert!(!body.literal().is_negative());
+    assert_eq!(source.slice(literal.span()), Some("8"));
+    assert_eq!(source.slice(literal.magnitude_span()), Some("8"));
+    assert!(!literal.is_negative());
+    assert_eq!(functions[0].parameters(), []);
     assert_eq!(functions[1].kind(), FunctionKind::Impl);
     assert_eq!(functions[1].body(), &FunctionBody::Empty);
 
@@ -116,7 +121,8 @@ fn public_compiler_accessors_preserve_checked_structure() {
     assert_eq!(source.slice(function.name_span()), Some("byte"));
     assert_eq!(function.result_type(), CoreType::Word8);
     assert_eq!(function.result_type().as_str(), "Word[8]");
-    assert_eq!(function.value(), &CoreValue::Word8(8));
+    assert_eq!(function.parameters(), []);
+    assert_eq!(function.body().literal(), Some(&CoreValue::Word8(8)));
 
     let diagnostic = Diagnostic::error(
         DiagnosticCode::UnsupportedType,
@@ -273,7 +279,7 @@ fn evaluation_emits_no_partial_values_after_a_parser_error() {
     let stderr = String::from_utf8(first.stderr).unwrap();
     assert_eq!(stderr.matches("error[ORC0101]").count(), 1, "{stderr}");
     assert!(
-        stderr.contains("typed literal bodies are allowed only on `spec` functions"),
+        stderr.contains("typed bodies are allowed only on `spec` functions"),
         "{stderr}"
     );
     assert!(!stderr.contains("error[ORC02"), "{stderr}");

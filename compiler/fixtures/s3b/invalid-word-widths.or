@@ -1,0 +1,8 @@
+// S3b rejection: Word widths are exactly 8, 16, 32, or 64, written in decimal.
+edition 2026;
+module widths {
+  spec twelve(x: Word[12]) -> Int { 0 }
+  spec wide() -> Word[128] { 0 }
+  spec hexadecimal(x: Word[0x20]) -> Int { 0 }
+  spec leading_zero(x: Word[032]) -> Int { 0 }
+}
