@@ -382,6 +382,17 @@ specification stratum. Its acceptance requires:
 When D-004 is decided, it places the S3b Core within the chosen strata. That
 placement changes no S3b source.
 
+S3c follows S3b on the same terms. It adds typed `let` bindings and explicit
+`as` conversions among `Int` and the four word types, so that a transcription
+can name a standard's intermediate values and state its byte order. It is
+implemented and tested, and its acceptance requires the owner's acceptance of
+[OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
+which bounds the S3c surface in [`BINDINGS_2026.md`](BINDINGS_2026.md) and
+builds on OEP-0005. Like S3b, it assumes only pure, total, deterministic
+meaning, so the placement D-004 decides changes no S3c source either. Tuples or
+fixed-size records, so that one function can return a whole round, are the
+next candidate slice.
+
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
 The accepted
@@ -426,9 +437,9 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b is implemented and awaits owner review under OEP-0005, and
-Orange remains 30% complete by its
-unchanged 3-of-10 binary gate-closure score.
+incomplete, S3b and S3c are implemented and await owner review under OEP-0005
+and OEP-0006, and Orange remains 30% complete by its unchanged 3-of-10 binary
+gate-closure score.
 
 ## 7. Quality and claim metrics
 

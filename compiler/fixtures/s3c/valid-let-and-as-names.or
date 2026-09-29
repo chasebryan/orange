@@ -1,0 +1,15 @@
+// S3c conformance: `let` and `as` are not reserved. `let` starts a binding
+// only when a name follows it, and `as` converts only after a complete
+// operand, so both remain ordinary names everywhere else.
+edition 2026;
+module names {
+  spec let(as: Int) -> Int { as + 1 }
+  spec as(let: Int) -> Int { let * 2 }
+  spec both(let: Int, as: Int) -> Int {
+    let sum: Int = let + as;
+    let(sum) + as(sum)
+  }
+  spec converted(as: Word[8]) -> Int { as as Int }
+  spec value() -> Int { both(3, 4) }
+  spec byte() -> Int { converted(0xfe) }
+}

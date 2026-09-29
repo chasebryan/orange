@@ -105,6 +105,10 @@ define_diagnostic_codes! {
     CallCycle => "ORC0217",
     /// A parameter name repeats within one function.
     DuplicateParameter => "ORC0218",
+    /// A binding name repeats a parameter or an earlier binding of the function.
+    DuplicateBinding => "ORC0219",
+    /// The operand of `as` has no type of its own, such as a bare literal.
+    UntypedConversionOperand => "ORC0220",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -670,7 +674,7 @@ mod tests {
             "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107", "ORC0108",
             "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
             "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
-            "ORC0217", "ORC0218", "ORC0301",
+            "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0301",
         ];
 
         assert_eq!(actual, expected);
@@ -846,6 +850,63 @@ mod tests {
 
         assert!(rendered.contains(&format!("1 | ... \\u{{e9}}{}@\n", "b".repeat(39))));
         assert!(rendered.contains(&format!("  | {}^\n", " ".repeat(49))));
+    }
+
+    #[test]
+    fn right_truncated_excerpts_bound_trailing_context_and_clip_the_caret() {
+        fn render_window(text: &str, start: u32, end: u32) -> String {
+            let mut sources = SourceMap::new();
+            let id = sources.add("window.or", text.to_owned()).unwrap();
+            let source = sources.get(id).unwrap();
+            let span = source
+                .span(TextOffset::new(start), TextOffset::new(end))
+                .unwrap();
+            let diagnostic = Diagnostic::error(
+                DiagnosticCode::UnexpectedCharacter,
+                "unexpected character '@'",
+                span,
+            );
+            render_diagnostics(&sources, &[diagnostic])
+        }
+
+        let header = concat!(
+            "error[ORC0001]: unexpected character '@'\n",
+            " --> window.or:1:41\n",
+            "  |\n",
+        );
+        let caret = format!("  | {}^\n", " ".repeat(40));
+
+        let exact = format!("{}@{}\n", "a".repeat(40), "a".repeat(79));
+        assert_eq!(
+            render_window(&exact, 40, 41),
+            format!("{header}1 | {}@{}\n{caret}", "a".repeat(40), "a".repeat(79))
+        );
+
+        let truncated = format!("{}@{}\n", "a".repeat(40), "a".repeat(80));
+        assert_eq!(
+            render_window(&truncated, 40, 41),
+            format!(
+                "{header}1 | {}@{} ...\n{caret}",
+                "a".repeat(40),
+                "a".repeat(79)
+            )
+        );
+
+        let clipped = format!("@{}\n", "a".repeat(200));
+        assert_eq!(
+            render_window(&clipped, 0, 201),
+            format!(
+                concat!(
+                    "error[ORC0001]: unexpected character '@'\n",
+                    " --> window.or:1:1\n",
+                    "  |\n",
+                    "1 | @{} ...\n",
+                    "  | {}\n",
+                ),
+                "a".repeat(79),
+                "^".repeat(80)
+            )
+        );
     }
 
     #[test]

@@ -3113,35 +3113,20 @@ class BrandAssetHardeningTests(unittest.TestCase):
         }
         self.assertEqual(observed, expected)
 
-    def test_reader_entrypoints_use_their_designated_hand_drawn_banners(self) -> None:
+    def test_reader_entrypoints_use_their_designated_identity_banners(self) -> None:
         source_root = Path(__file__).resolve().parents[2]
         readme = (source_root / "README.md").read_text(encoding="utf-8")
         orange_book = (source_root / "docs/THE_ORANGE_BOOK.md").read_text(encoding="utf-8")
         readme_banner = (
-            "![Hand-drawn Orange cryptography wordmark illustrating commitments, key "
-            "derivation, threshold sharing, permutations, Merkle trees, and checked evidence]"
-            "(assets/brand/orange-cryptography-handdrawn-banner.png)"
+            '<img src="assets/identity/orange-readme-banner.svg" width="830" '
+            'alt="Orange: cryptography you can check.">'
         )
         book_banner = (
-            "![Hand-drawn Orange carton emblem and wordmark]"
-            "(../assets/brand/orange-handdrawn-marker-banner.png)"
-        )
-        prism = (
-            "![Orange Semantic Prism conceptual architecture snapshot showing proposed "
-            "Spec, Impl, Game, and Machine strata connected by a claim-indexed evidence "
-            "path; S3a is implemented, three of ten gates are closed, and D-004 is "
-            "unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)"
-        )
-        prism_caption = (
-            "*The semantic prism: proposed specification, implementation, game, and machine\n"
-            "strata joined by a claim-indexed evidence path. This is a conceptual snapshot\n"
-            "from July 2026, not a finished design; see the\n"
-            "[asset record](docs/images/README.md).*"
+            '<img src="../assets/identity/orange-book-cover.svg" width="400" '
+            'alt="The Orange Book: the Orange emblem in cream on a field of Orange.">'
         )
         self.assertEqual(readme.count(readme_banner), 1)
         self.assertEqual(orange_book.count(book_banner), 1)
-        self.assertEqual(readme.count(prism), 1)
-        self.assertEqual(readme.count(prism_caption), 1)
         self.assertNotIn("user-attachments/assets", readme)
         self.assertNotIn("user-attachments/assets", orange_book)
 

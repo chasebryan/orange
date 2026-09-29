@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::core::{
-    CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue,
-    ExactInteger, MAX_EXACT_INTEGER_BITS,
+    CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType,
+    CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, UnaryOperator};
@@ -203,12 +203,27 @@ enum Value {
 }
 
 /// One active function evaluation.
+///
+/// A frame's values occupy the shared stack from `base`: its arguments, then
+/// the values of its completed bindings, then intermediate values.
 struct Frame<'core> {
     function: &'core CoreFunction,
-    /// Index of the next node to evaluate.
+    /// The expression being evaluated: a binding's index, or the number of
+    /// bindings for the body.
+    part: usize,
+    /// Index of the next node of that expression to evaluate.
     next: usize,
     /// Index in the shared value stack of this frame's first argument.
     base: usize,
+}
+
+/// Returns a function's binding value at `part`, or its body when `part` is
+/// the number of bindings.
+fn expression_part(function: &CoreFunction, part: usize) -> Option<&CoreExpression> {
+    match function.locals.get(part) {
+        Some(local) => Some(&local.value),
+        None => (part == function.locals.len()).then_some(&function.body),
+    }
 }
 
 /// Why evaluation stopped without a value.
@@ -220,9 +235,12 @@ enum Stop {
     InconsistentCore,
 }
 
+/// Shared `Int` literals, indexed by function, expression part, and node.
+type SharedLiterals = Vec<Vec<Vec<Option<Rc<ExactInteger>>>>>;
+
 struct Machine<'core> {
     core: &'core CoreModule,
-    literals: Vec<Vec<Option<Rc<ExactInteger>>>>,
+    literals: SharedLiterals,
     steps: usize,
     step_limit: usize,
     reservations: Reservations,
@@ -351,6 +369,7 @@ impl<'core> Machine<'core> {
         }
         self.frames.push(Frame {
             function: root,
+            part: 0,
             next: 0,
             base: 0,
         });
@@ -360,9 +379,29 @@ impl<'core> Machine<'core> {
             };
             let function = frame.function;
             let base = frame.base;
+            let part = frame.part;
             let offset = frame.next;
-            let Some(node) = function.body.nodes.get(offset) else {
-                // The frame's body is complete: its value replaces its arguments.
+            let expression = expression_part(function, part).ok_or(Stop::InconsistentCore)?;
+            let Some(node) = expression.nodes.get(offset) else {
+                if part < function.locals.len() {
+                    // The binding's value stays on the stack as its slot,
+                    // directly after the arguments and earlier bindings.
+                    let slots = base
+                        .checked_add(function.parameters.len())
+                        .and_then(|slots| slots.checked_add(part))
+                        .and_then(|slots| slots.checked_add(1))
+                        .ok_or(Stop::InconsistentCore)?;
+                    if self.stack.len() != slots {
+                        return Err(Stop::InconsistentCore);
+                    }
+                    if let Some(frame) = self.frames.last_mut() {
+                        frame.part = part.saturating_add(1);
+                        frame.next = 0;
+                    }
+                    continue;
+                }
+                // The frame's body is complete: its value replaces its
+                // arguments and bindings.
                 let value = self.pop()?;
                 self.frames.pop();
                 if self.stack.len() != base {
@@ -380,7 +419,7 @@ impl<'core> Machine<'core> {
             if let Some(frame) = self.frames.last_mut() {
                 frame.next = frame.next.saturating_add(1);
             }
-            self.step(function, base, offset, node)?;
+            self.step(function, base, part, offset, node)?;
         }
     }
 
@@ -388,6 +427,7 @@ impl<'core> Machine<'core> {
         &mut self,
         function: &'core CoreFunction,
         base: usize,
+        part: usize,
         offset: usize,
         node: &'core CoreNode,
     ) -> Result<(), Stop> {
@@ -401,6 +441,7 @@ impl<'core> Machine<'core> {
                         let shared = self
                             .literals
                             .get(index)
+                            .and_then(|parts| parts.get(part))
                             .and_then(|literals| literals.get(offset))
                             .and_then(Option::as_ref)
                             .ok_or(Stop::InconsistentCore)?;
@@ -414,6 +455,24 @@ impl<'core> Machine<'core> {
                 self.charge(1)?;
                 let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
                 let slot = base.checked_add(index).ok_or(Stop::InconsistentCore)?;
+                let value = self
+                    .stack
+                    .get(slot)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(value)
+            }
+            CoreNodeKind::Local(index) => {
+                self.charge(1)?;
+                // Only a binding before the current part has a value.
+                let index = usize::try_from(*index)
+                    .ok()
+                    .filter(|index| *index < part)
+                    .ok_or(Stop::InconsistentCore)?;
+                let slot = base
+                    .checked_add(function.parameters.len())
+                    .and_then(|slot| slot.checked_add(index))
+                    .ok_or(Stop::InconsistentCore)?;
                 let value = self
                     .stack
                     .get(slot)
@@ -453,6 +512,7 @@ impl<'core> Machine<'core> {
                 }
                 self.frames.push(Frame {
                     function: callee,
+                    part: 0,
                     next: 0,
                     base: callee_base,
                 });
@@ -526,6 +586,23 @@ impl<'core> Machine<'core> {
                 let shifted = word_shift(*operator, bits, mask, value, *amount)
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(Value::Word(shifted))
+            }
+            CoreNodeKind::Convert { from } => {
+                self.charge(1)?;
+                let value = match (word_mask(*from), word_mask(node.ty)) {
+                    (None, None) => Value::Int(self.pop_int()?),
+                    (None, Some(mask)) => Value::Word(self.pop_int()?.modulo_2_64() & mask),
+                    (Some(_), Some(mask)) => Value::Word(self.pop_word()? & mask),
+                    (Some(_), None) => {
+                        let word = self.pop_word()?;
+                        let value = ExactInteger::from_u64(word, self.reservations.value_limbs)
+                            .ok_or(Stop::Allocation(
+                                "exact integer storage could not be reserved",
+                            ))?;
+                        Value::Int(Rc::new(value))
+                    }
+                };
+                self.push(value)
             }
         }
     }
@@ -646,21 +723,33 @@ fn evaluate_with_reservations(
 }
 
 /// Shares every `Int` literal once so that evaluation never copies literal digits.
-fn share_literals(core: &CoreModule) -> Option<Vec<Vec<Option<Rc<ExactInteger>>>>> {
+fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     let mut shared = Vec::new();
     shared.try_reserve_exact(core.functions.len()).ok()?;
     for function in &core.functions {
-        let mut literals = Vec::new();
-        literals.try_reserve_exact(function.body.nodes.len()).ok()?;
-        for node in &function.body.nodes {
-            literals.push(match &node.kind {
-                CoreNodeKind::Literal(CoreValue::Int(value)) => Some(Rc::new(
-                    value.try_clone_with_reservation(reserve_value_limbs)?,
-                )),
-                _ => None,
-            });
+        let mut parts = Vec::new();
+        parts
+            .try_reserve_exact(function.locals.len().checked_add(1)?)
+            .ok()?;
+        let expressions = function
+            .locals
+            .iter()
+            .map(|local| &local.value)
+            .chain(std::iter::once(&function.body));
+        for expression in expressions {
+            let mut literals = Vec::new();
+            literals.try_reserve_exact(expression.nodes.len()).ok()?;
+            for node in &expression.nodes {
+                literals.push(match &node.kind {
+                    CoreNodeKind::Literal(CoreValue::Int(value)) => Some(Rc::new(
+                        value.try_clone_with_reservation(reserve_value_limbs)?,
+                    )),
+                    _ => None,
+                });
+            }
+            parts.push(literals);
         }
-        shared.push(literals);
+        shared.push(parts);
     }
     Some(shared)
 }
@@ -1458,6 +1547,24 @@ mod tests {
                 "  spec f(x: Int) -> Int { x + x }\n  spec i() -> Int { f(7) }\n",
                 6,
             ),
+            // A binding costs its value's steps; each read of it costs one.
+            (
+                "  spec i() -> Int { let a: Int = 1; let b: Int = a + a; b }\n",
+                6,
+            ),
+            // Every conversion costs one step.
+            (
+                "  spec w() -> Word[8] { let a: Word[32] = 0x1ff; a as Word[8] }\n",
+                3,
+            ),
+            (
+                "  spec i() -> Int { let a: Word[64] = 0xffffffffffffffff; (a as Int) * 2 }\n",
+                7,
+            ),
+            (
+                "  spec w() -> Word[8] { let n: Int = -18446744073709551617; n as Word[8] }\n",
+                3,
+            ),
         ] {
             let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
             let exact = evaluate_with_limit(&core, steps);
@@ -1560,7 +1667,7 @@ mod tests {
     /// whose stack is far smaller than a default thread's, unoptimized.
     #[test]
     fn deepest_accepted_sources_fit_in_one_mebibyte_of_stack() {
-        use crate::parser::{MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING};
+        use crate::parser::{MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING};
         let nested = |prefix: &str, core: &str, suffix: &str| {
             format!(
                 "{}{core}{}",
@@ -1577,6 +1684,14 @@ mod tests {
             nested("x ^ (", "x", ")"),
             format!("x{}", " ^ x".repeat(MAX_EXPRESSION_HEIGHT - 1)),
             format!("(x{})", " + x".repeat(MAX_EXPRESSION_HEIGHT - 2)),
+            nested("(", "x", " as Word[32])"),
+            nested("g(", "x", " as Word[32])"),
+            format!(
+                "{}x",
+                (0..MAX_BINDINGS_PER_BODY)
+                    .map(|index| format!("let v{index}: Word[32] = {};", nested("(", "x", ")")))
+                    .collect::<String>()
+            ),
         ];
         let sources = bodies
             .iter()
@@ -1601,5 +1716,159 @@ mod tests {
             })
             .unwrap();
         assert_eq!(worker.join().unwrap(), vec![Some(1); bodies.len()]);
+    }
+
+    #[test]
+    fn conversions_match_a_wide_reference_for_every_type_pair() {
+        let modulus = |bits: u32| 1_i128 << bits;
+        let mut sources: Vec<(String, i128)> = [
+            0,
+            1,
+            -1,
+            255,
+            256,
+            -256,
+            65_535,
+            1 << 32,
+            -(1 << 32) - 1,
+            i128::from(u64::MAX),
+            i128::from(u64::MAX) + 1,
+            -i128::from(u64::MAX) - 1,
+            (1 << 100) + 0x1234_5678,
+            i128::MAX,
+            -i128::MAX,
+        ]
+        .into_iter()
+        .map(|value| (String::from("Int"), value))
+        .collect();
+        for (name, bits) in WORDS {
+            for value in word_corpus(bits) {
+                sources.push((String::from(name), i128::try_from(value).unwrap()));
+            }
+        }
+        let targets = [("Int", None), ("Word[8]", Some(8)), ("Word[16]", Some(16))]
+            .into_iter()
+            .chain([("Word[32]", Some(32)), ("Word[64]", Some(64))]);
+        let targets = targets.collect::<Vec<_>>();
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        for (index, (from, value)) in sources.iter().enumerate() {
+            for (target_index, (to, bits)) in targets.iter().enumerate() {
+                let literal = if from == "Int" {
+                    value.to_string()
+                } else {
+                    format!("{value:#x}")
+                };
+                let name = format!("c{index}_{target_index}");
+                members.push_str(&format!(
+                    "  spec {name}() -> {to} {{ let v: {from} = {literal}; v as {to} }}\n"
+                ));
+                let rendered = match bits {
+                    None => value.to_string(),
+                    Some(bits) => render_word(
+                        *bits,
+                        u128::try_from(value.rem_euclid(modulus(*bits))).unwrap(),
+                    ),
+                };
+                expected.push(format!("{name} = {rendered}"));
+            }
+        }
+        assert_eq!(values_of(&members), expected);
+    }
+
+    #[test]
+    fn bindings_are_evaluated_once_in_order_and_read_from_their_slots() {
+        let members = concat!(
+            "  spec f(x: Word[32], y: Word[32]) -> Word[32] {\n",
+            "    let a: Word[32] = x + y;\n",
+            "    let b: Word[32] = a ^ x;\n",
+            "    let c: Word[32] = g(b, a);\n",
+            "    (a | b) + c\n",
+            "  }\n",
+            "  spec g(p: Word[32], q: Word[32]) -> Word[32] {\n",
+            "    let r: Word[32] = p - q;\n",
+            "    r <<< 5\n",
+            "  }\n",
+            "  spec run() -> Word[32] { f(0x01234567, 0x89abcdef) }\n",
+            "  spec nested() -> Int { let n: Int = 3; let m: Int = h(n * n) + n; m }\n",
+            "  spec h(k: Int) -> Int { let twice: Int = k + k; twice * twice }\n",
+        );
+        let (x, y) = (0x0123_4567_u32, 0x89ab_cdef_u32);
+        let a = x.wrapping_add(y);
+        let b = a ^ x;
+        let c = b.wrapping_sub(a).rotate_left(5);
+        let result = (a | b).wrapping_add(c);
+        assert_eq!(
+            values_of(members),
+            [
+                format!("run = {}", render_word(32, u128::from(result))),
+                String::from("nested = 327"),
+            ]
+        );
+    }
+
+    #[test]
+    fn inconsistent_locals_and_conversions_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec f() -> Word[8] { let t: Word[8] = 1; t }\n",
+            "  spec g() -> Word[8] { let n: Int = 1; n as Word[8] }\n",
+            "}\n"
+        ));
+        let mutations: [fn(&mut CoreModule); 4] = [
+            // The body reads a binding that does not exist.
+            |core| core.functions[0].locals.clear(),
+            // A binding reads its own slot.
+            |core| core.functions[0].locals[0].value.nodes[0].kind = CoreNodeKind::Local(0),
+            // A conversion claims an operand of the wrong kind.
+            |core| {
+                core.functions[1].body.nodes[1].kind = CoreNodeKind::Convert {
+                    from: CoreType::Word8,
+                };
+            },
+            // A binding leaves no value behind.
+            |core| core.functions[0].locals[0].value.nodes.clear(),
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn word_to_int_conversion_allocation_failure_returns_no_values() {
+        let core = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec i() -> Int { let w: Word[64] = 0xffffffffffffffff; w as Int }\n",
+            "}\n"
+        ));
+        let reservations = Reservations {
+            value_limbs: |_, _| false,
+            ..Reservations::DEFAULT
+        };
+        let result = evaluate_with_reservations(
+            &core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            reservations,
+        );
+        assert!(result.values().is_none());
+        assert_eq!(result.diagnostics().len(), 1);
+        assert_eq!(
+            result.diagnostics()[0].message(),
+            "reference evaluation result allocation failed"
+        );
+        assert_eq!(
+            result.diagnostics()[0].label(),
+            "exact integer storage could not be reserved"
+        );
     }
 }

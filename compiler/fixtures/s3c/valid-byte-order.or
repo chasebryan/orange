@@ -1,0 +1,30 @@
+// S3c conformance: words assembled from bytes and split back into bytes, in
+// the little-endian order of RFC 8439 section 2.3 and the big-endian order of
+// FIPS 180-4 section 3.1. Widening a word keeps its value; narrowing keeps
+// its low bits.
+edition 2026;
+module bytes {
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    load_le32(b3, b2, b1, b0)
+  }
+  spec byte0(w: Word[32]) -> Word[8] { w as Word[8] }
+  spec byte3(w: Word[32]) -> Word[8] { (w >> 24) as Word[8] }
+  spec join64(high: Word[32], low: Word[32]) -> Word[64] {
+    ((high as Word[64]) << 32) | (low as Word[64])
+  }
+
+  // The first ChaCha20 key word of RFC 8439 section 2.3.2: bytes 00 01 02 03.
+  spec key_word0() -> Word[32] { load_le32(0x00, 0x01, 0x02, 0x03) }
+  spec abc_word0() -> Word[32] { load_be32(0x61, 0x62, 0x63, 0x80) }
+  spec low_byte() -> Word[8] { byte0(0x61626380) }
+  spec high_byte() -> Word[8] { byte3(0x61626380) }
+  spec lane() -> Word[64] { join64(0xdeadbeef, 0xcafef00d) }
+  spec round_trip() -> Word[32] {
+    let w: Word[32] = 0x9b8d6f43;
+    load_le32(byte0(w), byte0(w >> 8), byte0(w >> 16), byte3(w))
+  }
+}

@@ -1,6 +1,10 @@
 # Orange
 
-![Hand-drawn Orange cryptography wordmark illustrating commitments, key derivation, threshold sharing, permutations, Merkle trees, and checked evidence](assets/brand/orange-cryptography-handdrawn-banner.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/identity/orange-readme-banner-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/identity/orange-readme-banner-light.svg">
+  <img src="assets/identity/orange-readme-banner.svg" width="830" alt="Orange: cryptography you can check.">
+</picture>
 
 **Orange is a language and toolchain for cryptography you can check.** You
 write the mathematical specification, connect it to a fast implementation, say
@@ -109,6 +113,49 @@ error[ORC0108]: `^` follows `+` without grouping parentheses
   = note: operators from different groups have no relative precedence in Orange; parenthesize the part that applies first
 ```
 
+### Named steps and explicit conversions
+
+A standard names its intermediate values, and so can Orange. A body may begin
+with `let` bindings, each with a stated type, and a value changes type only
+through a written `as`. The ChaCha20 quarter round of RFC 8439 then reads the
+way the RFC prints it, and bytes become a word in the order the standard
+names:
+
+```orange
+edition 2026;
+module chacha20 {
+  spec quarter_a(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    a1 + b1
+  }
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+
+  // RFC 8439: the quarter-round test vector of section 2.1.1 and the first
+  // key word of section 2.3.2.
+  spec a() -> Word[32] { quarter_a(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec key_word0() -> Word[32] { load_le32(0x00, 0x01, 0x02, 0x03) }
+}
+```
+
+```console
+$ orangec eval chacha20.or
+chacha20::a: Word[32] = 0xea2a92f4
+chacha20::key_word0: Word[32] = 0x03020100
+```
+
+A binding never shadows another name, and `as` converts exactly one operand.
+`x + y as Word[32]` is an error, because for bytes `x` and `y` the two
+readings, `(x + y) as Word[32]` and `(x as Word[32]) + (y as Word[32])`, are
+different values. This slice, S3c, is implemented and tested; its
+specification is in review as
+[OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md).
+
 ## What works today
 
 | Area | Status |
@@ -118,8 +165,9 @@ error[ORC0108]: `^` follows `+` without grouping parentheses
 | Orange 2026 grammar: one edition, one module, `spec` and `impl` declarations | Working |
 | Typed `spec` functions: parameters, calls, `Int`, and `Word[8]` through `Word[64]` | Working; specification in review ([OEP-0005](docs/governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md)) |
 | Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
+| Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Local bindings, comparisons, conditionals, loops, arrays, conversions | Not yet |
+| Tuples, arrays, comparisons, conditionals, loops | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -177,7 +225,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, and conversions in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -189,23 +237,15 @@ Three of the ten gates are closed. That counts finished stages, not effort or
 time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 [decision register](docs/DECISIONS.md) tracks every open design choice.
 
-### Where the design is headed
-
-![Orange Semantic Prism conceptual architecture snapshot showing proposed Spec, Impl, Game, and Machine strata connected by a claim-indexed evidence path; S3a is implemented, three of ten gates are closed, and D-004 is unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)
-
-*The semantic prism: proposed specification, implementation, game, and machine
-strata joined by a claim-indexed evidence path. This is a conceptual snapshot
-from July 2026, not a finished design; see the
-[asset record](docs/images/README.md).*
-
 ## Read more
 
 - **[The Orange Book](docs/THE_ORANGE_BOOK.md)**: the reader's guide to why
   Orange exists, how it is designed, and what has been built. Start here.
 - [Orange 2026 language specification](docs/LANGUAGE_2026.md),
   [typed-literal semantics](docs/SEMANTICS_2026.md), and the proposed
-  [pure expression semantics](docs/EXPRESSIONS_2026.md): the definition of
-  what the compiler accepts today.
+  [pure expression semantics](docs/EXPRESSIONS_2026.md) and
+  [bindings and conversions](docs/BINDINGS_2026.md): the definition of what
+  the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Architecture](docs/ARCHITECTURE.md) and
   [assurance model](docs/ASSURANCE.md): the intended end state.
