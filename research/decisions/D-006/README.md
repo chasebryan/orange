@@ -45,8 +45,10 @@ so that both candidates can be built against one frozen packet:
 - [`protocol/toolchains.json`](d006-v0.3/protocol/toolchains.json) records
   the candidate and shared tools, with versions, commits, archive digests,
   build recipes and terms: Lean 4.34.1, Rocq 9.2.0 and its Stdlib built from
-  their tags, CaDiCaL 3.0.1 as the pinned untrusted solver, and drat-trim
-  for the golden certificate.
+  their tags, CaDiCaL 3.0.1 as the pinned untrusted solver, drat-trim for
+  the golden certificate, and the AArch64 runtime closures both standalone
+  checkers need on the emulated H-02 row (an OCaml 4.14.1 bytecode runtime
+  cross-built from its tag, and Lean 4.34.1's AArch64 release archive).
 
 [`tools/d006_shared.py`](../../../tools/d006_shared.py) is a plain-Python
 reference that computes every expected observation and regenerates every

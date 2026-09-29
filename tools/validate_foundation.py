@@ -708,7 +708,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "907bf1a95a98f50a764b779db1556521a37abd5e6f320e0f8c5d74a886d3269d"
+_PHD = "4d1ce5d56788528deecbbe70625c6d3686953e60019e656d5472a930430c7403"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1300,8 +1300,8 @@ _D006_V03 = {"research/decisions/D-006/d006-v0.3/" + n for n in "protocol/suite-
 MINIMUM_REQUIRED_PATHS |= _D006_V03 | {"tools/d006_shared.py", "tools/tests/test_d006_shared.py"}
 DECISION_LABORATORY_SPECS["d006"]["inventory"] = DECISION_LABORATORY_SPECS["d006"]["inventory"] | _D006_V03
 DECISION_LABORATORY_SPECS["d006"]["json_identities"] += tuple(("research/decisions/D-006/d006-v0.3/" + n, f"v03_{i}_", f"v03_{i}_missing", c, r, True) for i, (n, c, r) in enumerate((
- ("protocol/suite-overlay.json", "f1241e673be2babf9d4342172007890b654de9dd0d4b947f160fa481a37864e0", "85a85d284466abdbcb8c0603c04e3a9af9f841c969131173c638362a58cc011f"),
- ("protocol/toolchains.json", "868660cfe31cad418cbb0416891944e31857325fbc4668edfb8b9f4c67e6c4a0", "031e28f4aa84afaf66c2975af9626ffed3a213f5e7bf1e27b03cba966f1a489d"),
+ ("protocol/suite-overlay.json", "6bbe827744ca0008f62df2d8426fa2f210d5f4407c94ac0fc87d656dedfd2166", "0050c48391815ac9d27c82b66c36e3c940900b29ac398d76fb13c04df66f9864"),
+ ("protocol/toolchains.json", "4746d069981994e89533d16b931a2417e4af4e7999b5fc7f0be5855106984d4e", "9f083f33b5635958eb879275af15a40c9718064356ef9e710c8d51d3cfd95299"),
  ("shared-inputs/manifest.json", "fcc3852eea3a01b582cc3c4c52c69b559a1b4539be8ec4e1f62438aacacbcc29", "d6aed8aeebf2d523334c0d25ccd0cd81e2f9eb975de7de1413f63c052e549b30"),
  ("shared-inputs/taxonomy.json", "95dede0dab94185944e44707a9dbbc257a3d43b18ae3d971ec546bfb31952fa6", "dc49a902501daa4db325a39ac502a9129b8d3f004b23288923b976c78ed25622"),
  ("shared-inputs/ds01-core-fragment.json", "bf85429fbb8644e4f5117f7794923c75c3733d3630ee5a62d4ec969432e104e4", "87c15fae3b015bb5e9433ae4208488cf1c9145289cbb60d58bab54305c51a33d"),
