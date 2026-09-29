@@ -61,7 +61,7 @@ so each of the 36 vertices can be checked by hand.
 | File | Use |
 | --- | --- |
 | `orange-emblem.svg` | The primary emblem, in Orange, on any light or dark ground |
-| `orange-emblem-mono.svg` | One colour; it takes the surrounding text colour (`currentColor`) |
+| `orange-emblem-mono.svg` | One colour, drawn in `currentColor`. Inlined in HTML or SVG it takes the surrounding text colour. Loaded through `<img>` or CSS it draws in black, so inline it for any other colour |
 | `orange-emblem-shaded.svg` | A secondary three-tone version that shows the cube's faces, for app icons and splash screens |
 | `orange-emblem-construction.svg` | The construction sheet above |
 | `orange-wordmark.svg` | ORANGE, in capitals drawn on the same lattice |
