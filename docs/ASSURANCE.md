@@ -66,12 +66,23 @@ repetitions; ST-HOST failed all five because six relationships it delegates to
 hosts owned by the open D-006 and D-011 decisions are unsupported. Evidence is
 20 closed of 25 required units and 75 of 75 result records,
 contributor-produced and unreviewed. The suite cannot separate the four passing
-candidates, so selection and conclusion remain null. The epoch records
-execution behavior only; a passing record is not an assurance claim. Canonical
-parsing, digest checks, and structural oracles establish no Orange semantics,
-proof, leakage, target, cryptographic, or readiness assurance. D-004 remains
-proposed, S3b is implemented and awaits owner review under OEP-0005, and
-Orange's binary gate-closure score remains 3 of 10 (30%); that mechanical score is not release readiness.
+candidates, so selection and conclusion remain null. The v0.8 suite adds SC-06
+(semantic evolution) and SC-07 (within-authority relabeling) with five cost
+measures, and the owner chose the isolation-first distinguishing rule knowing
+which candidate each rule was predicted to select. Epoch
+`d004-e-633e0aa831615cda3e06` ran all 105 executions on 2026-09-28: the same
+four candidates closed all seven cases and ST-HOST closed none, for 28 closed of
+35 required units and 105 of 105 result records. Isolation first leaves only
+ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
+subject classes to its seven. That result is contributor-produced and
+unreviewed, and it is not a D-004 recommendation until the owner disposes every
+candidate and hard gate. The epoch records execution behavior only; a passing
+record is not an assurance claim. Canonical parsing, digest checks, and
+structural oracles establish no Orange semantics, proof, leakage, target,
+cryptographic, or readiness assurance. D-004 remains proposed, S3b is
+implemented and awaits owner review under OEP-0005, and Orange's binary
+gate-closure score remains 3 of 10 (30%); that mechanical score is not release
+readiness.
 
 The D-010 input-only laboratory is planning evidence only. It compares five
 candidate identities across eight zero-fixture cases and remains at 0/40. It

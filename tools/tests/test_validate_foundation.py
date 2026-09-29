@@ -27,7 +27,7 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_REPOSITORY_PATH_BYTES,
     GATE0_MAXIMUM_RUN_OUTPUTS_BYTES,
     GATE0_IGNORE_PATTERNS,
-    GATE0_RUN_OUTPUTS_PATH,
+    GATE0_RUN_OUTPUTS_PATHS,
     GATE0_MAXIMUM_TEXT_FILE_BYTES,
     GATE0_MAXIMUM_VALIDATOR_BYTES,
     ORANGE_BOOK_APPENDICES,
@@ -342,7 +342,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         cases = (
             ("record.txt", GATE0_MAXIMUM_TEXT_FILE_BYTES),
             ("tools/validate_foundation.py", GATE0_MAXIMUM_VALIDATOR_BYTES),
-            (GATE0_RUN_OUTPUTS_PATH, GATE0_MAXIMUM_RUN_OUTPUTS_BYTES),
+            *((path, GATE0_MAXIMUM_RUN_OUTPUTS_BYTES) for path in GATE0_RUN_OUTPUTS_PATHS),
         )
         for name, limit in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
