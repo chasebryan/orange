@@ -3011,11 +3011,9 @@ mod tests {
             let mut expected = Vec::new();
             for (index, (&left, &right)) in corpus.iter().zip(corpus.iter().rev()).enumerate() {
                 for (label, divisor) in [("n", right), ("z", 0)] {
-                    let (quotient, remainder) = if divisor == 0 {
-                        (0, left)
-                    } else {
-                        (left / divisor, left % divisor)
-                    };
+                    // Orange's total rule: x / 0 = 0 and x % 0 = x.
+                    let quotient = left.checked_div(divisor).unwrap_or(0);
+                    let remainder = left.checked_rem(divisor).unwrap_or(left);
                     members.push_str(&format!(
                         "  spec d{label}{index}() -> {ty}^2 {{ let a: {ty} = {left}; \
                          [a / {divisor}, a % {divisor}] }}\n"
