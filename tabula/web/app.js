@@ -1768,7 +1768,7 @@ function setNotePreview(on) {
 
 async function openNote(name) {
   if (S.note && S.note.name === name) return;
-  if (S.note && S.note.text !== S.note.savedText) await saveNote();
+  if (!(await keepUnsavedNote())) return;
   let data;
   try {
     data = await api.note(name);
@@ -1780,6 +1780,15 @@ async function openNote(name) {
   nb.text.value = data.text;
   renderNoteList();
   showNoteEditor();
+}
+
+// Saves the open note before another replaces it. When the save fails, the
+// note stays open so its unsaved text is not lost.
+async function keepUnsavedNote() {
+  const note = S.note;
+  if (!note || note.text === note.savedText || (await saveNote())) return true;
+  toast(`This note stays open because it could not be saved: ${note.error}`, true);
+  return false;
 }
 
 async function saveNote() {
@@ -1803,7 +1812,7 @@ async function saveNote() {
 }
 
 async function newNote(text = "") {
-  if (S.note && S.note.text !== S.note.savedText) await saveNote();
+  if (!(await keepUnsavedNote())) return null;
   let created;
   try {
     created = await api.createNote("", text);
@@ -2177,7 +2186,9 @@ function renderTokens(body, tab) {
 async function loadTokens(tab) {
   const source = tab.editor.getValue();
   try {
-    const response = await api.lex(diskTextOf(tab, source));
+    // Lex the editor's own text, whose line endings are always LF, so the
+    // returned offsets match it even when the file on disk uses CRLF.
+    const response = await api.lex(source);
     tab.tokens = { source, list: response.tokens };
   } catch (error) {
     toast(`orangec lex failed: ${error.message}`, true);
