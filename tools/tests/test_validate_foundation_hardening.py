@@ -2806,7 +2806,7 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("256 KiB (`256 * 1024` bytes)", "255 KiB (`255 * 1024` bytes)"),
             ("448 KiB\n(`448 * 1024` bytes)", "447 KiB\n(`447 * 1024` bytes)"),
             ("2 MiB (`2 * 1024 * 1024` bytes)", "1 MiB (`1 * 1024 * 1024` bytes)"),
-            ("16 MiB (`16 * 1024 * 1024` bytes)", "15 MiB (`15 * 1024 * 1024` bytes)"),
+            ("24 MiB (`24 * 1024 * 1024` bytes)", "23 MiB (`23 * 1024 * 1024` bytes)"),
             ("at most 512 files", "at most 511 files"),
             ("at most 1,024 bytes per raw path", "at most 1,023 bytes per raw path"),
             (
