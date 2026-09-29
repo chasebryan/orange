@@ -1125,3 +1125,69 @@ fn usage_errors_have_a_distinct_exit_status() {
         format!("orangec: option `--edition` may be specified at most once\n\n{help}")
     );
 }
+
+#[test]
+fn daylight_horizon_example_matches_upstream_frame_deterministically() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let example = root.join("examples/daylight/daylight-horizon.or");
+    let core = root.join("examples/daylight/daylight.or");
+    let checked = orangec()
+        .arg("check")
+        .arg(&core)
+        .arg(&example)
+        .output()
+        .unwrap();
+    assert!(checked.status.success(), "{:?}", checked);
+    assert!(checked.stdout.is_empty());
+    assert!(checked.stderr.is_empty());
+
+    // Pinned Wuci-Ji fec91dc: horizon_crypto.seal_framed with the public
+    // root 00..1f, nonce 000000000000000000000001 and this exact header.
+    let header = concat!(
+        "{\"authorization\":{\"authorization_tag\":\"",
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "\"},\"nonce\":\"000000000000000000000001\",\"plaintext_len\":32}"
+    );
+    let mut frame = b"DLTHV1A".to_vec();
+    frame.extend_from_slice(&u32::try_from(header.len()).unwrap().to_le_bytes());
+    frame.extend_from_slice(header.as_bytes());
+    let sealed_hex = concat!(
+        "52a6747ccae6ef1548b86f1eabbfa9569f815f01841a4b7f17384facd1772f",
+        "b5dbff1531ab89bb4161a5afca9ea0717c"
+    );
+    for pair in sealed_hex.as_bytes().chunks_exact(2) {
+        frame.push(u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap());
+    }
+    assert_eq!(frame.len(), 219);
+    let expected = format!(
+        "daylight::example: Word[8]^219 = [{}]\n",
+        frame
+            .iter()
+            .map(|b| format!("0x{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    for _ in 0..2 {
+        let result = orangec().arg("eval").arg(&example).output().unwrap();
+        assert!(result.status.success(), "{:?}", result);
+        assert!(result.stderr.is_empty());
+        assert_eq!(result.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn daylight_python_adapter_runs_rfc8439_through_orange() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let result = Command::new("python3")
+        .args(["-S", "-B"])
+        .arg(root.join("examples/daylight/daylight.py"))
+        .arg("--orangec")
+        .arg(env!("CARGO_BIN_EXE_orangec"))
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{:?}", result);
+    assert!(result.stderr.is_empty());
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    assert!(stdout.contains("RFC 8439 tag: 1ae10b594f09e26a7e902ecbd0600691\n"));
+    assert!(stdout.ends_with("Authenticated roundtrip: PASS\n"));
+}
