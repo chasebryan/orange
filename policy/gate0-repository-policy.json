@@ -604,7 +604,7 @@
     "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
     "tools/tests/test_d009_draft_packet.py": "846e6051283c2f919b912ba6d3702240ccbf75966b481b72f0b754e275b27656",
     "tools/tests/test_d010_draft_packet.py": "9e810a375d06d360e4356aa38deab973cddb529483b6900fcecf75b612e88ebd",
-    "tools/tests/test_validate_foundation.py": "5b55a00765bbc7dc726549b9b4f7cf1feaeadbefe0fb7a52ff8fd9d70682abe2",
+    "tools/tests/test_validate_foundation.py": "c0c3a13082b6fd11ac9ffb6b68bfe6390cb028c7c1dc49e886643cfad1811093",
     "tools/tests/test_validate_foundation_hardening.py": "6dd131ad84ade6ec90cc5a31c37545e93234e85b3aaa2d91a2c88976ab9a1ed3"
   },
   "executable_paths": [
