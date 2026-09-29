@@ -1,17 +1,20 @@
 test_real_vault_framing_and_evidence_checks (__main__.HorizonTests.test_real_vault_framing_and_evidence_checks) ... ok
-test_standalone_orange_fixture_is_reproducible (__main__.HorizonTests.test_standalone_orange_fixture_is_reproducible) ... ok
+test_seal_open_and_authentic_in_orange (__main__.HorizonTests.test_seal_open_and_authentic_in_orange) ... ok
+test_standalone_program_prints_the_pinned_frame (__main__.HorizonTests.test_standalone_program_prints_the_pinned_frame) ... ok
 test_aead_rfc8439_and_boundaries (__main__.PrimitiveTests.test_aead_rfc8439_and_boundaries) ... ok
 test_chacha_rfc8439 (__main__.PrimitiveTests.test_chacha_rfc8439) ... ok
 test_hkdf_rfc5869 (__main__.PrimitiveTests.test_hkdf_rfc5869) ... ok
+test_hmac_and_hkdf_in_orange (__main__.PrimitiveTests.test_hmac_and_hkdf_in_orange) ... ok
 test_hmac_key_boundaries (__main__.PrimitiveTests.test_hmac_key_boundaries) ... ok
 test_invalid_lengths_and_counter (__main__.PrimitiveTests.test_invalid_lengths_and_counter) ... ok
 test_poly_carries_partial_and_batch_boundaries (__main__.PrimitiveTests.test_poly_carries_partial_and_batch_boundaries) ... ok
-test_poly_final_reduction_and_addition_carry (__main__.PrimitiveTests.test_poly_final_reduction_and_addition_carry) ... ok
+test_poly_reduction_and_tag_truncation (__main__.PrimitiveTests.test_poly_reduction_and_tag_truncation) ... ok
 test_poly_rfc8439 (__main__.PrimitiveTests.test_poly_rfc8439) ... ok
 test_rejects_before_plaintext_computation (__main__.PrimitiveTests.test_rejects_before_plaintext_computation) ... ok
+test_sha256_fips_examples_in_orange (__main__.PrimitiveTests.test_sha256_fips_examples_in_orange) ... ok
 test_sha256_padding_and_batch_boundaries (__main__.PrimitiveTests.test_sha256_padding_and_batch_boundaries) ... ok
 
 ----------------------------------------------------------------------
-Ran 12 tests in 0.905s
+Ran 15 tests in 2.036s
 
 OK
