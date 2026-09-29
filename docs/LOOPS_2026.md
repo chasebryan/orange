@@ -21,6 +21,12 @@ requires OEP-0007. At that point it replaces the S3d clauses listed in section
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, extends
+> this document with `Bool`, comparisons, Euclidean division, and
+> conditionals, and lets a static index divide a loop index. Every source this
+> document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

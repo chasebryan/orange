@@ -182,9 +182,9 @@ subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. Integrity parsing and structural oracles satisfy none
 of the F-01, F-03, F-04, or F-06 exit evidence. D-004 remains proposed, S3
-remains incomplete, S3b, S3c, S3d, and S3e are implemented and await owner
-review under OEP-0005 through OEP-0008, and the binary gate-closure score
-remains 3 of 10 (30%); that mechanical score is not release readiness.
+remains incomplete, S3b through S3f are implemented and await owner review under
+OEP-0005 through OEP-0009, and the binary gate-closure score remains 3 of 10
+(30%); that mechanical score is not release readiness.
 
 D-010 candidate identity is separate from feature completion. Its two
 direct-native candidates, versioned Jasmin boundary, portable C11 boundary, and

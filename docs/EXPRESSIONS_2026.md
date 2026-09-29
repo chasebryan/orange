@@ -24,9 +24,11 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > [`BINDINGS_2026.md`](BINDINGS_2026.md), proposed under OEP-0006, extends this
 > document with typed `let` bindings and explicit `as` conversions,
 > [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, adds
-> fixed-length arrays on top of it, and [`LOOPS_2026.md`](LOOPS_2026.md),
-> proposed under OEP-0008, adds bounded loops on top of those. Every source this
-> document accepts keeps its meaning under all three.
+> fixed-length arrays on top of it, [`LOOPS_2026.md`](LOOPS_2026.md), proposed
+> under OEP-0008, adds bounded loops on top of those, and
+> [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, adds
+> `Bool`, comparisons, Euclidean division, and conditionals. Every source this
+> document accepts keeps its meaning under all four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

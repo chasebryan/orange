@@ -360,7 +360,10 @@ operators do. All draw on the same 64-level budget, and the nesting message
 names groups, calls, arrays, indices, loops, conditionals, updates, and prefix
 operators. A conditional adds one to the height of its tallest part, so a
 chain of any length has the height of its tallest arm plus one. Chains are
-parsed and checked by iteration, not recursion.
+parsed and checked by iteration, not recursion. When an `if` is followed by
+`(`, `-`, or `[`, the scan of section 3 that looks for `else` costs one parse
+event for each token it examines, so it draws on the per-source parse-event
+budget like every other step of parsing.
 
 **Semantic events.** Each arm of a conditional, that is each `if`, is one
 event. A comparison, `!`, `&&`, `||`, `/`, and `%` are operators and cost one

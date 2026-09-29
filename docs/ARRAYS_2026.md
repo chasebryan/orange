@@ -24,7 +24,10 @@ meaning. It accepts no D-004 candidate.
 > [`LOOPS_2026.md`](LOOPS_2026.md), proposed under OEP-0008, extends this
 > document with bounded loops, indices computed from loop indices, updates of
 > one element, and fill literals, which lift the absence of loops described in
-> section 12. Every source this document accepts keeps its meaning under it.
+> section 12, and [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under
+> OEP-0009, adds `Bool`, comparisons, Euclidean division, and conditionals on
+> top of those. Every source this document accepts keeps its meaning under
+> both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

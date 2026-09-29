@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-09-28
+Snapshot: 2026-09-29
 
-Manuscript version: 0.7
+Manuscript version: 0.8
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -95,10 +95,11 @@ specification, extends them to pure functions over integers and 8- to 64-bit
 words, the S3c slice, likewise implemented and in review, adds named
 intermediate values and explicit conversions between those types, the S3d
 slice adds fixed-length arrays, so that a cipher's whole state is one value,
-and the S3e slice adds loops over literal ranges, so that a standard's rounds
-are one expression. None of them adds branches or other control flow that
-depends on data, typed implementations, refinement, code
-generation, a standard library, a proof checker, package or release behavior,
+the S3e slice adds loops over literal ranges, so that a standard's rounds are
+one expression, and the S3f slice adds truth values, comparisons, Euclidean
+division, and conditionals, so that a prime field and a key exchange can be
+written as their standards write them. None of them adds typed
+implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
 language or compiler is sound.
@@ -294,8 +295,10 @@ S3a slice adds closed typed-literal specifications, the S3b slice, whose
 specification is in the owner's review, adds pure functions over integers and
 machine words, the S3c slice, also in review, adds `let` bindings and
 explicit `as` conversions, the S3d slice, also in review, adds fixed-length
-arrays of those types, and the S3e slice, also in review, adds loops over
-literal ranges, indices proved in range, and updates of one element.
+arrays of those types, the S3e slice, also in review, adds loops over literal
+ranges, indices proved in range, and updates of one element, and the S3f
+slice, also in review, adds `Bool`, comparisons, Euclidean division, and
+conditionals.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -777,18 +780,18 @@ reserves `spec` and `impl` as declaration keywords and gives them separate
 namespaces, so a module may contain both `spec rounds` and `impl rounds`
 without a conflict while two `spec rounds` declarations are an error. The words
 `game`, `proof`, and `claim` are reserved and introduce nothing. Only typed
-specifications have meaning: pure `spec` functions over `Int` and `Word[8]`
-through `Word[64]` and fixed-length arrays of them, built from literals,
-parameters, calls, operators, `let` bindings, explicit conversions, array
-literals, indices, bounded loops, and updates. An `impl` body must still be
-empty.
+specifications have meaning: pure `spec` functions over `Int`, `Bool`, and
+`Word[8]` through `Word[64]` and fixed-length arrays of them, built from
+literals, parameters, calls, operators, comparisons, `let` bindings, explicit
+conversions, array literals, indices, bounded loops, updates, and
+conditionals. An `impl` body must still be empty.
 
 Even that small surface already follows the chapter's rules. `Int` and each
 word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, and loop slices were built to fit inside every candidate's
+binding, array, loop, and condition slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -876,8 +879,11 @@ confusing parse errors downstream of a token that should never have existed.
 
 Parsing checks that the tokens have one of a small number of shapes. The
 parser reads them in order and never backtracks: one token of lookahead decides
-almost everything, and a second is consulted only to tell a call from a name
-and a literal's sign from negation. A source is exactly one edition
+almost everything, and a second is consulted only in a few places, such as
+telling a call from a name and a literal's sign from negation. The one longer
+look is at `if` before `(`, `-`, or `[`, where the parser scans ahead, without
+backtracking, to see whether a brace group followed by `else` makes it a
+conditional. A source is exactly one edition
 declaration, `edition 2026;`, followed by exactly one module. A module contains
 `spec` and `impl` declarations. An `impl` has an empty parameter list and an
 empty body. A `spec` body may be empty, or the `spec` may declare parameters
@@ -1027,14 +1033,14 @@ number and relationships.
 
 ### The next steps of meaning
 
-The five current slices complete bounded parts of the roadmap's S3 stage:
+The six current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
-range. The rest of S3 adds the remaining substance of a language: records of
-mixed types, comparisons and control flow, and explicit failure semantics,
-together with
-one conformance case per normative rule. Each addition follows the same
+range, then truth values, comparisons, Euclidean division, and conditionals.
+The rest of S3 adds the remaining substance of a language: records of mixed
+types, a type for integers modulo a prime, and explicit failure semantics,
+together with one conformance case per normative rule. Each addition follows the same
 pattern as the slices before it: a normative rule, a diagnostic for
 every way to break it, a bound on the work it can cause, and a reference result
 that can be printed and compared.
@@ -1540,13 +1546,15 @@ normative sources are the [lexical and grammar specification](LANGUAGE_2026.md),
 the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [pure expression specification](EXPRESSIONS_2026.md) of S3b, the
 [bindings and conversions specification](BINDINGS_2026.md) of S3c, the
-[arrays specification](ARRAYS_2026.md) of S3d, and the
-[loops specification](LOOPS_2026.md) of S3e. S3b through S3e are implemented
-and tested, but their specifications are **proposed**:
+[arrays specification](ARRAYS_2026.md) of S3d, the
+[loops specification](LOOPS_2026.md) of S3e, and the
+[conditions specification](CONDITIONS_2026.md) of S3f. S3b through S3f are
+implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
-[OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md), and
-[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md) are in the
+[OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
+[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md) are in the
 owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1628,14 +1636,16 @@ readable: `0x6a09_e667` rather than `0x6a09e667`. Leading, trailing, or doubled 
 
 The expression slice gives grammatical roles to `,`, `:`, `+`, `-`, `*`, `&`,
 `|`, `^`, and `~`, and adds four tokens of its own, `<<`, `>>`, `<<<`, and
-`>>>`, matched longest first, so `<<<<` is `<<<` followed by `<`. String
-tokens and the remaining punctuation (`%`, `&&`, and the rest) are lexically
-reserved but have no grammatical role yet. `orangec lex` shows how any source
+`>>>`, matched longest first, so `<<<<` is `<<<` followed by `<`. The
+condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
+`!`, `/`, and `%`, which the lexer has always produced. String tokens and the
+remaining punctuation are lexically reserved but have no grammatical role
+yet. `orangec lex` shows how any source
 tokenizes, with exact byte spans.
 
 ### The grammar
 
-The whole Orange 2026 grammar fits in thirty-five lines:
+The whole Orange 2026 grammar fits in forty lines:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
@@ -1654,6 +1664,7 @@ declared_type   = parsed_type ("^" INTEGER)? ;
 parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
+                | comparison | chain("&&") | chain("||") | division
                 | conversion | update ;
 conversion      = prefixed "as" parsed_type ;
 update          = prefixed "with" "[" expression "]" "=" expression ;
@@ -1662,16 +1673,21 @@ product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
 shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
-prefixed        = literal | ("-" | "~") prefixed | primary ;
+comparison      = prefixed compare_op prefixed ;
+compare_op      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
+division        = prefixed ("/" | "%") prefixed ;
+prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
 primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop ;
+                | array | fill | loop | conditional ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
                   "with" IDENTIFIER ":" declared_type "=" expression
                   "{" expression "}" ;
+conditional     = "if" expression "{" expression "}"
+                  "else" ("{" expression "}" | conditional) ;
 call            = IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
@@ -1681,9 +1697,12 @@ must spell `2026` exactly. `let`, `as`, `for`, `in`, and `with` are contextual
 words: `let` starts a binding only at the start of a body item and before a
 name, `as` converts only directly after a complete operand, `for` starts a loop
 only before a name, `in` and `with` are words only inside a loop's header, and
-`with` updates only directly after a complete operand and before `[`. Anywhere
-else they are ordinary names, so no program that used them as names changed
-meaning when they gained a role. After a declared type, `^` and a length make it an array
+`with` updates only directly after a complete operand and before `[`. In the
+same way, `if` starts a conditional only where a condition can follow it,
+`else` is a word only after a conditional's value, and `true` and `false` are
+values only where no name of that spelling is in scope. Anywhere else they are
+ordinary names, so no program that used them as names changed meaning when
+they gained a role. After a declared type, `^` and a length make it an array
 type; everywhere else `^` is exclusive or. One source holds one module. A typed `impl` is a syntax error, not a feature waiting to be switched
 on, and a `spec` with parameters must declare a result type and a body. A `-`
 written directly before an integer is that literal's sign, so the S3a body
@@ -1696,9 +1715,9 @@ recite it. In C, `a + b ^ c` means `(a + b) ^ c` and `a & b == c` means
 `a & (b == c)`, and cryptographic code is exactly where those rules bite.
 Orange 2026 keeps only the precedence every reader already knows: prefix
 operators bind first, and `*` binds more tightly than `+` and `-`. Beyond that,
-operators fall into five groups: arithmetic, `&`, `|`, `^`, and the shifts and
-rotations. Two operators from different groups may not share a level without
-parentheses:
+operators fall into nine groups: arithmetic, `&`, `|`, `^`, the shifts and
+rotations, the comparisons, `&&`, `||`, and division with remainder. Two
+operators from different groups may not share a level without parentheses:
 
 ```text
 error[ORC0108]: `^` follows `+` without grouping parentheses
@@ -1715,15 +1734,20 @@ function as `(x ∧ y) ⊕ (¬x ∧ z)`, with its grouping visible, and the Oran
 transcription is `(x & y) ^ (~x & z)`, the same shape symbol for symbol. A
 shift or rotation takes exactly two operands, and its amount must be a literal
 that fits the width, so `x >>> 32` on a `Word[32]` is an error rather than a
-question about what some processor does.
+question about what some processor does. A comparison also takes exactly two
+operands, so `a < b < c` is an error whose note says to join two comparisons
+with `&&` or `||`. Division is deliberately not grouped with multiplication:
+with integer division, `(a * b) / c` and `a * (b / c)` differ, so `a * b / c`
+must say which it means.
 
-### Five types
+### Six types
 
-Five types have meaning:
+Six types have meaning:
 
 | Source form | Meaning | Values |
 | --- | --- | --- |
 | `Int` | Mathematical integers | Every integer, positive or negative |
+| `Bool` | Truth values | `true` and `false` |
 | `Word[8]` | The integers modulo 2^8 | 0 through 255 |
 | `Word[16]` | The integers modulo 2^16 | 0 through 65,535 |
 | `Word[32]` | The integers modulo 2^32 | 0 through 4,294,967,295 |
@@ -1737,7 +1761,9 @@ a value outside a word's range is an error rather than a wrapped value, because
 a constant that does not fit is almost always a transcription mistake. No
 value changes type implicitly, and nothing is inferred. `Word` with any width
 other than the exact decimal tokens `8`, `16`, `32`, and `64` is rejected, and
-so is `Int` with a width.
+so is `Int` with a width. `Bool`, added by the condition slice, is the type of
+comparisons and conditions, and it is not a number: no arithmetic applies to
+it, and nothing converts to or from it.
 
 ### Naming steps and changing types
 
@@ -1972,6 +1998,122 @@ because positions passed as parameters are not static and so cannot be used as
 indices. Positions known at every call, such as a quarter round over columns 0,
 4, 8, and 12, are the natural next step.
 
+### Choices and prime fields
+
+Public-key cryptography lives in prime fields. RFC 7748 defines X25519 over
+the integers modulo p = 2^255 − 19, and RFC 8439 defines Poly1305 over
+p = 2^130 − 5. Their algorithms reduce "mod p" after every product, read one
+bit of a secret scalar at a time, and swap two values when the bit is set. The
+S3f slice, proposed in the [conditions specification](CONDITIONS_2026.md),
+adds exactly what those sentences need: a remainder, a truth value, and a
+choice.
+
+`Int` already holds any integer exactly, so a field element is an `Int` and
+its reduction is `%`. Here is the step of Poly1305 section 2.5.1, which adds
+a block to the accumulator, multiplies by r, and reduces:
+
+```orange
+spec absorb(a: Int, r: Int, block: Int) -> Int { ((a + block) * r) % prime() }
+```
+
+Division in Orange is Euclidean: `a % b` is never negative, whatever the signs
+of a and b, so `a % p` is always the representative from 0 through p − 1 that
+a cryptographer writes. `-7 % 2` is 1 in Orange; in C and Rust it is −1.
+Division is also total. `x / 0` is 0 and `x % 0` is x, so no division fails,
+and the identity a = b · (a / b) + a % b holds for every a and every b.
+
+A comparison gives a value of the sixth type, `Bool`. Its values are `true`
+and `false`, and its only operators are `!`, `&&`, `||`, `==`, and `!=`.
+`true + 1` is an error, and so is `b as Int`; a number becomes a truth value
+only through a comparison such as `x != 0`, and a truth value becomes a
+number only through a choice. Integers compare by value, and words as the
+unsigned numbers they denote. Whole arrays do not compare at all; a program
+compares their elements, so that a reader sees what is compared.
+
+A choice is a conditional, and it always has both branches:
+
+```orange
+spec sign(x: Int) -> Int { if x < 0 { -1 } else if x == 0 { 0 } else { 1 } }
+```
+
+Both branches have the conditional's type, and only the chosen one is
+evaluated. An `if` without an `else` would have no value when its condition is
+false, so Orange rejects it:
+
+```text
+error[ORC0101]: expected `else` and the value when the condition is false
+ --> <stdin>:3:42
+  |
+3 | ...  spec pick(c: Bool) -> Int { if c { 1 } }
+  |                                             ^ found RIGHT_BRACE
+  = note: every `if` has an `else`, so that a conditional always has a value
+```
+
+A conditional is also the only way to skip work. `&&` and `||` always evaluate
+both operands, so every choice a program makes is written where a reader can
+see it.
+
+The Montgomery ladder of RFC 7748 is 255 such choices. The fixture writes one
+rung as the RFC's conditional swap around one step of the ladder, and the
+ladder as a loop over the scalar's bits from 254 down to 0:
+
+```orange
+spec rung(x1: Int, s: Int^4, set: Bool) -> Int^4 {
+  if set { swap(ladder(x1, swap(s))) } else { ladder(x1, s) }
+}
+
+spec x25519(scalar: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+  let k: Word[8]^32 = clamp(scalar);
+  let masks: Word[8]^8 = [1, 2, 4, 8, 16, 32, 64, 128];
+  let x1: Int = decode_u(u);
+  let s: Int^4 = for i in 0..255 with s: Int^4 = [1, 0, x1, 1] {
+    rung(x1, s, (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0)
+  };
+  encode((s[0] * power(s[1], prime() - 2)) % prime())
+}
+```
+
+The indices divide a loop index, and the checker still proves them in range
+before anything runs: `(254 - i) / 8` takes values from 0 through 31, and
+`(254 - i) % 8` from 0 through 7. The proof follows Euclidean division
+exactly, including its rule for zero, so an index such as `k[i % 0]` over
+`0..8` has the range of `i` itself:
+
+```text
+error[ORC0223]: this index runs from 0 through 7, out of range for `Word[8]^4`
+ --> <stdin>:4:47
+  |
+4 | ... r i in 0..8 with s: Word[8] = 0 { s ^ k[i % 0] }
+  |                                             ^^^^^ indices run from 0 through 3
+  = note: every value an index can take, over every loop index in it, must select an element
+```
+
+The [X25519 fixture](../compiler/fixtures/s3f/valid-x25519.or) computes the
+first test vector of RFC 7748 section 5.2, byte for byte:
+
+```text
+x25519::test_vector: Word[8]^32 = [0xc3, 0xda, 0x55, 0x37, 0x9d, 0xe9, 0xc6, 0x90, 0x8e, 0x94, 0xea, 0x4d, 0xf2, 0x8d, 0x08, 0x4f, 0x32, 0xec, 0xcf, 0x03, 0x49, 0x1c, 0x71, 0xf7, 0x54, 0xb4, 0x07, 0x55, 0x77, 0xa2, 0x85, 0x52]
+```
+
+The [Poly1305 fixture](../compiler/fixtures/s3f/valid-poly1305.or)
+reproduces the tag of RFC 8439 section 2.5.2, and the
+[AEAD fixture](../compiler/fixtures/s3f/valid-aead.or) seals the "sunscreen"
+message of section 2.8.2 with ChaCha20-Poly1305: ChaCha20 with counter 0 makes
+the one-time Poly1305 key, the plaintext is encrypted from counter 1, and
+Poly1305 authenticates the additional data, the ciphertext, and both lengths.
+The result matches the RFC's 114 bytes of ciphertext and its 16-byte tag.
+
+Two seams show. The first is timing. A conditional is a choice between two
+mathematical values, not a machine branch. RFC 7748 asks implementations to
+swap in constant time, and the fixture's `if` says only which value results,
+not how long a machine would take to decide. That question belongs to the
+implementation stratum and to
+[Chapter 6](#chapter-6-secrets-are-a-semantic-concern), where Orange means to
+answer it with a claim rather than a keyword. The second is the field itself:
+every `%` in these modules is written by hand. A type of integers modulo a
+declared prime, whose arithmetic reduces on its own and whose values cannot
+leave the field, is the natural next step.
+
 ### From bytes to a value
 
 It is worth following one line through the compiler, because each step is a
@@ -2059,7 +2201,11 @@ the end, and `ORC0224` for an index on a value that is not an array. The loop
 slice adds `ORC0225` for a loop range that is empty or reaches past 65536 and
 `ORC0226` for an index built from anything but literals and loop indices, and
 it reuses `ORC0219` for a loop name that repeats a name in scope and `ORC0223`
-for a computed index whose range leaves the array.
+for a computed index whose range leaves the array. The condition slice adds
+`ORC0227` for a comparison whose operands have no type of their own, such as
+`1 < 2`, and reuses `ORC0214` for a condition that is not a `Bool` and
+`ORC0215` for an operator that a type does not have, such as `<` on `Bool`
+values or `&&` on words.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -2112,7 +2258,12 @@ specification adds 18 rule identifiers and seven sources, three valid and four
 invalid, including the whole SHA-256 hash of both FIPS 180-4 examples and the
 ChaCha20 encryption of RFC 8439 section 2.4.2, and generated sources pin the
 65536 loop bound and show two nested maximal loops stopped by the evaluation
-step budget. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+step budget. The condition specification adds 18 rule identifiers and eight
+sources, four valid and four invalid, including X25519 against the first test
+vector of RFC 7748, Poly1305 against RFC 8439 section 2.5.2, and the
+ChaCha20-Poly1305 seal of section 2.8.2; generated sources run a conditional
+of 4096 arms and show that a branch the step budget could never finish costs
+nothing unless it is chosen. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -2127,9 +2278,10 @@ The list of absences is long, and it is printed in the specifications rather
 than hidden: imports, multiple modules, attributes, visibility, generic
 arguments, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, mixed-type tuples, arrays of arrays, indices that
-depend on data, booleans, comparisons, conditionals, loops over computed
-ranges, early exit, division, remainder, signed words, variable shift and
-rotation amounts, recursion, typed implementations,
+depend on data, loops over computed ranges, early exit, short-circuit
+operators, conditionals without `else`, a type of integers modulo a prime,
+signed words, variable shift and rotation amounts, recursion, typed
+implementations,
 failure values, secrecy labels, proof terms, claims, games, targets, layout,
 ABI, leakage behavior, lowering, optimization, code generation, packaging, and
 releases.
@@ -2143,15 +2295,15 @@ strata decision described in
 only what every candidate gives the specification stratum: pure, total,
 deterministic meaning over mathematical values. Accepting it is the owner's
 decision, through OEP-0005, S3c's, which builds on it, through OEP-0006,
-S3d's, which builds on S3c, through OEP-0007, and S3e's, which builds on S3d,
-through OEP-0008.
+S3d's, which builds on S3c, through OEP-0007, S3e's, which builds on S3d,
+through OEP-0008, and S3f's, which builds on S3e, through OEP-0009.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All four migrations so far are small: every source
+documented migration. All five migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
-accepted does the same under S3d, and every source S3d accepted does the same
-under S3e.
+accepted does the same under S3d, every source S3d accepted does the same
+under S3e, and every source S3e accepted does the same under S3f.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -2840,8 +2992,13 @@ the cipher, evaluates to the serialized block RFC 8439 publishes. The loop
 slice let the rounds be written the way the standards write them. SHA-256 now
 hashes both NIST examples to their published digests, sixty-four rounds and a
 sixty-four-word schedule per block, and ChaCha20 encrypts the 114-byte sample
-of RFC 8439 to its published ciphertext. These are still fixtures, not corpus
-entries. Each message is padded into blocks by hand, because Orange 2026 has
+of RFC 8439 to its published ciphertext. The condition slice added a
+remainder, a truth value, and a choice, which is what prime-field arithmetic
+needs. X25519 now computes the first test vector of RFC 7748 with a
+255-rung Montgomery ladder over the integers modulo 2^255 − 19, Poly1305
+reproduces the tag of RFC 8439 section 2.5.2, and ChaCha20-Poly1305 seals the
+section 2.8.2 message to its published ciphertext and tag. These are still
+fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
 no byte strings and no message of variable length, and no standard has been
 admitted with its provenance. The corpus remains a set of research inputs
 rather than promises.
@@ -3755,15 +3912,18 @@ This appendix restates the implemented Orange 2026 surface for convenience.
 The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [typed-literal semantics](SEMANTICS_2026.md) are normative, and the
 [pure expression specification](EXPRESSIONS_2026.md), the
-[bindings and conversions specification](BINDINGS_2026.md), and the
-[arrays specification](ARRAYS_2026.md) are proposed under OEP-0005, OEP-0006,
-and OEP-0007 and in the owner's review. Where this summary and those
+[bindings and conversions specification](BINDINGS_2026.md), the
+[arrays specification](ARRAYS_2026.md), the
+[loops specification](LOOPS_2026.md), and the
+[conditions specification](CONDITIONS_2026.md) are proposed under OEP-0005
+through OEP-0009 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
 
 The parser accepts exactly this grammar, with at most two tokens of
-lookahead:
+lookahead, except that `if` before `(`, `-`, or `[` scans forward, without
+backtracking, for a brace group followed by `else`:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
@@ -3782,6 +3942,7 @@ declared_type   = parsed_type ("^" INTEGER)? ;
 parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
+                | comparison | chain("&&") | chain("||") | division
                 | conversion | update ;
 conversion      = prefixed "as" parsed_type ;
 update          = prefixed "with" "[" expression "]" "=" expression ;
@@ -3790,16 +3951,21 @@ product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
 shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
-prefixed        = literal | ("-" | "~") prefixed | primary ;
+comparison      = prefixed compare_op prefixed ;
+compare_op      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
+division        = prefixed ("/" | "%") prefixed ;
+prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
 primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop ;
+                | array | fill | loop | conditional ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
                   "with" IDENTIFIER ":" declared_type "=" expression
                   "{" expression "}" ;
+conditional     = "if" expression "{" expression "}"
+                  "else" ("{" expression "}" | conditional) ;
 call            = IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
@@ -3808,18 +3974,20 @@ Sources are valid UTF-8 of at most 16 MiB. Identifiers are ASCII. Integers
 may be decimal, `0b` binary, or `0x` hexadecimal, with single underscores
 between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 `claim` are reserved; the last three have no grammatical role yet. `let`, `as`,
-`for`, `in`, and `with` are not reserved: `let` starts a binding only at the
-start of a body item before a name, `as` converts only after a complete
-operand, `for` starts a loop only before a name, `in` and `with` are words only
-in a loop's header, and `with` updates only after a complete operand and before
-`[`. Line and
+`for`, `in`, `with`, `if`, `else`, `true`, and `false` are not reserved: `let`
+starts a binding only at the start of a body item before a name, `as` converts
+only after a complete operand, `for` starts a loop only before a name, `in` and
+`with` are words only in a loop's header, `with` updates only after a complete
+operand and before `[`, `if` starts a conditional only where a condition can
+follow it, `else` is a word only after a conditional's value, and `true` and
+`false` are values only where no name of that spelling is in scope. Line and
 nested block comments are trivia. `<<`, `>>`, `<<<`, and `>>>` are single
 tokens, matched longest first. Operators from different groups, or two shifts,
-may not share a level without parentheses, and a conversion or an update shares
+two comparisons, or two divisions, may not share a level without parentheses, and a conversion or an update shares
 a level with no operator and no other conversion or update. `^` after a declared
 type gives its array length; anywhere else it is exclusive or. Expressions may
 nest at most 64 levels deep, counting groups, calls, arrays, indices, loops,
-updates, and prefix operators, and reach height 256; a function declares at
+conditionals, updates, and prefix operators, and reach height 256; a function declares at
 most 64 parameters and 256 bindings, a call supplies at most 256 arguments, an
 array literal lists at most 256 elements, and a loop's bounds satisfy
 0 ≤ a < b ≤ 65536.
@@ -3829,6 +3997,7 @@ array literal lists at most 256 elements, and a loop's bounds satisfy
 | Type | Values | Displayed as |
 | --- | --- | --- |
 | `Int` | All mathematical integers (unbounded); a literal's magnitude may use at most 16,384 significant bits | Decimal, with `-` when negative |
+| `Bool` | The truth values | `true` or `false` |
 | `Word[8]` | The integers modulo 2^8, 0 through 255 | `0x` and 2 lowercase hex digits |
 | `Word[16]` | The integers modulo 2^16 | `0x` and 4 lowercase hex digits |
 | `Word[32]` | The integers modulo 2^32 | `0x` and 8 lowercase hex digits |
@@ -3837,8 +4006,8 @@ array literal lists at most 256 elements, and a loop's bounds satisfy
 
 No other type, width, or length is accepted. Word literals are never wrapped, truncated,
 saturated, or coerced, and no value changes type implicitly. `e as T` converts
-between any two of these types: it takes the integer value of `e` and, for
-`Word[n]`, its residue modulo 2^n. The operand's type comes from its first
+between any two of these types other than `Bool`: it takes the integer value
+of `e` and, for `Word[n]`, its residue modulo 2^n. The operand's type comes from its first
 name, call, conversion, or index, so a conversion of literals alone is an
 error. An array literal lists exactly as many elements as its type, and `x[k]`
 selects the element at a literal index below the length. No operator or
@@ -3854,6 +4023,15 @@ conversion applies to a whole array, and an array's elements are never arrays.
 | `~a` | Not defined | Bitwise complement |
 | `a << k`, `a >> k` | Not defined | Logical shift left, right |
 | `a <<< k`, `a >>> k` | Not defined | Rotation left, right |
+| `a / b`, `a % b` | Euclidean quotient and remainder, 0 ≤ `a % b` < \|b\| | Unsigned quotient and remainder |
+| `a == b`, `a != b` | Equality, giving `Bool` | Equality, giving `Bool` |
+| `a < b`, `a <= b`, `a > b`, `a >= b` | Order by value, giving `Bool` | Unsigned order, giving `Bool` |
+
+For every type, `a / 0` is 0 and `a % 0` is a. On `Bool`, `!a`, `a && b`, and
+`a || b` are negation, conjunction, and disjunction, evaluating every operand,
+and `==` and `!=` compare. `if c { a } else { b }` has the type of both
+branches and evaluates only the one its `Bool` condition chooses; an
+`else if` chain is one conditional per arm.
 
 The amount `k` must be an unsigned integer literal from 0 through n − 1. Calls
 name typed `spec` functions of the same module, pass exactly one argument per
@@ -3884,7 +4062,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0008` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0226` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, index not built from literals and loop indices |
+| `ORC0201`–`ORC0227` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, index not built from literals and loop indices, comparison whose operands have no type |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1008` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit |
 
@@ -3999,7 +4177,8 @@ part are listed here so a reader can move from explanation to authority.
   [OEP-0003](governance/oeps/OEP-0003-orange-2026-typed-literals.md), the
   proposed [expression](EXPRESSIONS_2026.md),
   [binding and conversion](BINDINGS_2026.md), [array](ARRAYS_2026.md), and
-  [loop](LOOPS_2026.md) specifications under OEP-0005 through OEP-0008, the
+  [loop](LOOPS_2026.md), and [condition](CONDITIONS_2026.md) specifications
+  under OEP-0005 through OEP-0009, the
   [compiler guide](../compiler/README.md), and the compiler's own behavior at
   the book's snapshot.
 - **Chapters 5 and 6:** the [architecture](ARCHITECTURE.md), the
@@ -4038,24 +4217,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.7 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.8 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.7 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.7 | Accepted typed-literal Core and evaluator exist; expression, binding, array, and loop slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.8 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.8 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, and condition slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.7 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, and loop slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.8 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, and condition slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.7 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.8 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
 | V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.5 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A and D revised in v0.7 and Appendix B in v0.5 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A and D revised in v0.8 and Appendix B in v0.5 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -4090,9 +4269,11 @@ version 0.5 adds the
 [bindings and conversions specification](BINDINGS_2026.md) and
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 version 0.6 adds the [arrays specification](ARRAYS_2026.md) and
-[OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md), and
+[OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
 version 0.7 adds the [loops specification](LOOPS_2026.md) and
-[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md).
+[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
+version 0.8 adds the [conditions specification](CONDITIONS_2026.md) and
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -4143,6 +4324,14 @@ direction on 2026-09-28, and every Orange example it adds was run against the
 compiler at the revision that introduced it. That check is not independent
 review, and the same authorship, review, evidence, and provenance boundaries
 apply.
+
+Manuscript version 0.8 revised the preface, Chapters 1, 3, 4, 8, and 12, and
+Appendices A and D for the S3f condition slice, and added the Chapter 8
+section "Choices and prime fields". It was drafted with Claude Code under Chase
+Bryan's direction on 2026-09-29, and every Orange example it adds was run
+against the compiler at the revision that introduced it. That check is not
+independent review, and the same authorship, review, evidence, and provenance
+boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

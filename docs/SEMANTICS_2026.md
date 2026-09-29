@@ -36,7 +36,9 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > defines. The S3d slice proposed in [`ARRAYS_2026.md`](ARRAYS_2026.md) under
 > OEP-0007 builds on S3c with fixed-length arrays and keeps them too, as does
 > the S3e slice proposed in [`LOOPS_2026.md`](LOOPS_2026.md) under OEP-0008,
-> which adds bounded loops.
+> which adds bounded loops, and the S3f slice proposed in
+> [`CONDITIONS_2026.md`](CONDITIONS_2026.md) under OEP-0009, which adds
+> `Bool`, comparisons, Euclidean division, and conditionals.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
