@@ -1,0 +1,283 @@
+// Daylight Horizon v17 cryptographic core, Orange 2026.
+// RFC 8439; RFC 5869; FIPS 180-4. Research reference, not a constant-time claim.
+// Port for Chase Bryan, AI-assisted with OpenAI Codex. See README.md.
+edition 2026;
+module daylight {
+  spec le32(a: Word[8], b: Word[8], c: Word[8], d: Word[8]) -> Word[32] {
+    (a as Word[32]) | ((b as Word[32]) << 8) | ((c as Word[32]) << 16) | ((d as Word[32]) << 24)
+  }
+
+  spec be32(a: Word[8], b: Word[8], c: Word[8], d: Word[8]) -> Word[32] {
+    le32(d,c,b,a)
+  }
+
+  spec quarter(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2,b2,c2,d2]
+  }
+
+  spec double_round(x: Word[32]^16) -> Word[32]^16 {
+    let q0: Word[32]^4 = quarter(x[0],x[4],x[8],x[12]);
+    let q1: Word[32]^4 = quarter(x[1],x[5],x[9],x[13]);
+    let q2: Word[32]^4 = quarter(x[2],x[6],x[10],x[14]);
+    let q3: Word[32]^4 = quarter(x[3],x[7],x[11],x[15]);
+    let d0: Word[32]^4 = quarter(q0[0],q1[1],q2[2],q3[3]);
+    let d1: Word[32]^4 = quarter(q1[0],q2[1],q3[2],q0[3]);
+    let d2: Word[32]^4 = quarter(q2[0],q3[1],q0[2],q1[3]);
+    let d3: Word[32]^4 = quarter(q3[0],q0[1],q1[2],q2[3]);
+    [d0[0], d1[0], d2[0], d3[0], d3[1], d0[1], d1[1], d2[1], d2[2], d3[2], d0[2], d1[2], d1[3], d2[3], d3[3], d0[3]]
+  }
+
+  spec chacha_block(k: Word[32]^8, counter: Word[32], n: Word[32]^3) -> Word[32]^16 {
+    let s: Word[32]^16 = [0x61707865,0x3320646e,0x79622d32,0x6b206574,k[0],k[1],k[2],k[3],k[4],k[5],k[6],k[7],counter,n[0],n[1],n[2]];
+    let x1: Word[32]^16 = double_round(s);
+    let x2: Word[32]^16 = double_round(x1);
+    let x3: Word[32]^16 = double_round(x2);
+    let x4: Word[32]^16 = double_round(x3);
+    let x5: Word[32]^16 = double_round(x4);
+    let x6: Word[32]^16 = double_round(x5);
+    let x7: Word[32]^16 = double_round(x6);
+    let x8: Word[32]^16 = double_round(x7);
+    let x9: Word[32]^16 = double_round(x8);
+    let x10: Word[32]^16 = double_round(x9);
+    [s[0] + x10[0], s[1] + x10[1], s[2] + x10[2], s[3] + x10[3], s[4] + x10[4], s[5] + x10[5], s[6] + x10[6], s[7] + x10[7], s[8] + x10[8], s[9] + x10[9], s[10] + x10[10], s[11] + x10[11], s[12] + x10[12], s[13] + x10[13], s[14] + x10[14], s[15] + x10[15]]
+  }
+
+  spec limbs(m: Word[32]^4, high: Word[64]) -> Word[64]^5 {
+    let a: Word[64] = m[0] as Word[64]; let b: Word[64] = m[1] as Word[64];
+    let c: Word[64] = m[2] as Word[64]; let d: Word[64] = m[3] as Word[64];
+    [a & 0x3ffffff, ((a >> 26) | (b << 6)) & 0x3ffffff,
+     ((b >> 20) | (c << 12)) & 0x3ffffff, ((c >> 14) | (d << 18)) & 0x3ffffff, (d >> 8) | high]
+  }
+
+  spec poly_r(k: Word[32]^4) -> Word[64]^5 {
+    limbs([k[0] & 0x0fffffff,k[1] & 0x0ffffffc,k[2] & 0x0ffffffc,k[3] & 0x0ffffffc],0)
+  }
+
+  spec poly_step(h: Word[64]^5, r: Word[64]^5, m: Word[32]^4, high: Word[64]) -> Word[64]^5 {
+    let b: Word[64]^5 = limbs(m,high);
+    let a0: Word[64] = h[0] + b[0];
+    let a1: Word[64] = h[1] + b[1];
+    let a2: Word[64] = h[2] + b[2];
+    let a3: Word[64] = h[3] + b[3];
+    let a4: Word[64] = h[4] + b[4];
+    let d0: Word[64] = a0 * r[0] + a1 * r[4] * 5 + a2 * r[3] * 5 + a3 * r[2] * 5 + a4 * r[1] * 5;
+    let d1: Word[64] = a0 * r[1] + a1 * r[0] + a2 * r[4] * 5 + a3 * r[3] * 5 + a4 * r[2] * 5;
+    let d2: Word[64] = a0 * r[2] + a1 * r[1] + a2 * r[0] + a3 * r[4] * 5 + a4 * r[3] * 5;
+    let d3: Word[64] = a0 * r[3] + a1 * r[2] + a2 * r[1] + a3 * r[0] + a4 * r[4] * 5;
+    let d4: Word[64] = a0 * r[4] + a1 * r[3] + a2 * r[2] + a3 * r[1] + a4 * r[0];
+    let c1: Word[64] = d1 + (d0 >> 26);
+    let c2: Word[64] = d2 + (c1 >> 26);
+    let c3: Word[64] = d3 + (c2 >> 26);
+    let c4: Word[64] = d4 + (c3 >> 26);
+    let c0: Word[64] = (d0 & 0x3ffffff) + ((c4 >> 26) * 5);
+    [c0 & 0x3ffffff,(c1 & 0x3ffffff) + (c0 >> 26),c2 & 0x3ffffff,c3 & 0x3ffffff,c4 & 0x3ffffff]
+  }
+
+  spec poly_finish(h: Word[64]^5, s: Word[32]^4) -> Word[32]^4 {
+    let c2: Word[64] = h[2] + (h[1] >> 26);
+    let c3: Word[64] = h[3] + (c2 >> 26);
+    let c4: Word[64] = h[4] + (c3 >> 26);
+    let c0: Word[64] = h[0] + ((c4 >> 26) * 5);
+    let a0: Word[64] = c0 & 0x3ffffff;
+    let a1: Word[64] = (h[1] & 0x3ffffff) + (c0 >> 26);
+    let a2: Word[64] = c2 & 0x3ffffff; let a3: Word[64] = c3 & 0x3ffffff; let a4: Word[64] = c4 & 0x3ffffff;
+    let g0: Word[64] = a0 + 5;
+    let g1: Word[64] = a1 + (g0 >> 26);
+    let g2: Word[64] = a2 + (g1 >> 26);
+    let g3: Word[64] = a3 + (g2 >> 26);
+    let g4: Word[64] = a4 + (g3 >> 26) - 0x4000000;
+    let mask: Word[64] = (g4 >> 63) - 1;
+    let t0: Word[64] = (a0 & ~mask) | ((g0 & 0x3ffffff) & mask);
+    let t1: Word[64] = (a1 & ~mask) | ((g1 & 0x3ffffff) & mask);
+    let t2: Word[64] = (a2 & ~mask) | ((g2 & 0x3ffffff) & mask);
+    let t3: Word[64] = (a3 & ~mask) | ((g3 & 0x3ffffff) & mask);
+    let t4: Word[64] = (a4 & ~mask) | ((g4 & 0x3ffffff) & mask);
+    let f0: Word[64] = ((t0 | (t1 << 26)) & 0xffffffff) + (s[0] as Word[64]);
+    let f1: Word[64] = (((t1 >> 6) | (t2 << 20)) & 0xffffffff) + (s[1] as Word[64]) + (f0 >> 32);
+    let f2: Word[64] = (((t2 >> 12) | (t3 << 14)) & 0xffffffff) + (s[2] as Word[64]) + (f1 >> 32);
+    let f3: Word[64] = (((t3 >> 18) | (t4 << 8)) & 0xffffffff) + (s[3] as Word[64]) + (f2 >> 32);
+    [f0 as Word[32],f1 as Word[32],f2 as Word[32],f3 as Word[32]]
+  }
+
+  spec tag_equal(a: Word[32]^4, b: Word[32]^4) -> Word[8] {
+    let d: Word[32] = (a[0] ^ b[0]) | (a[1] ^ b[1]) | (a[2] ^ b[2]) | (a[3] ^ b[3]);
+    (((d | (0 - d)) >> 31) ^ 1) as Word[8]
+  }
+
+  spec sigma0(x: Word[32]) -> Word[32] {
+    (x >>> 7) ^ (x >>> 18) ^ (x >> 3)
+  }
+
+  spec sigma1(x: Word[32]) -> Word[32] {
+    (x >>> 17) ^ (x >>> 19) ^ (x >> 10)
+  }
+
+  spec sha_round(s: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+    let t1: Word[32] = s[7] + ((s[4] >>> 6) ^ (s[4] >>> 11) ^ (s[4] >>> 25)) + ((s[4] & s[5]) ^ (~s[4] & s[6])) + k + w;
+    let t2: Word[32] = ((s[0] >>> 2) ^ (s[0] >>> 13) ^ (s[0] >>> 22)) + ((s[0] & s[1]) ^ (s[0] & s[2]) ^ (s[1] & s[2]));
+    [t1 + t2,s[0],s[1],s[2],s[3] + t1,s[4],s[5],s[6]]
+  }
+
+  spec sha_compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+    let w16: Word[32] = sigma1(m[14]) + m[9] + sigma0(m[1]) + m[0];
+    let w17: Word[32] = sigma1(m[15]) + m[10] + sigma0(m[2]) + m[1];
+    let w18: Word[32] = sigma1(w16) + m[11] + sigma0(m[3]) + m[2];
+    let w19: Word[32] = sigma1(w17) + m[12] + sigma0(m[4]) + m[3];
+    let w20: Word[32] = sigma1(w18) + m[13] + sigma0(m[5]) + m[4];
+    let w21: Word[32] = sigma1(w19) + m[14] + sigma0(m[6]) + m[5];
+    let w22: Word[32] = sigma1(w20) + m[15] + sigma0(m[7]) + m[6];
+    let w23: Word[32] = sigma1(w21) + w16 + sigma0(m[8]) + m[7];
+    let w24: Word[32] = sigma1(w22) + w17 + sigma0(m[9]) + m[8];
+    let w25: Word[32] = sigma1(w23) + w18 + sigma0(m[10]) + m[9];
+    let w26: Word[32] = sigma1(w24) + w19 + sigma0(m[11]) + m[10];
+    let w27: Word[32] = sigma1(w25) + w20 + sigma0(m[12]) + m[11];
+    let w28: Word[32] = sigma1(w26) + w21 + sigma0(m[13]) + m[12];
+    let w29: Word[32] = sigma1(w27) + w22 + sigma0(m[14]) + m[13];
+    let w30: Word[32] = sigma1(w28) + w23 + sigma0(m[15]) + m[14];
+    let w31: Word[32] = sigma1(w29) + w24 + sigma0(w16) + m[15];
+    let w32: Word[32] = sigma1(w30) + w25 + sigma0(w17) + w16;
+    let w33: Word[32] = sigma1(w31) + w26 + sigma0(w18) + w17;
+    let w34: Word[32] = sigma1(w32) + w27 + sigma0(w19) + w18;
+    let w35: Word[32] = sigma1(w33) + w28 + sigma0(w20) + w19;
+    let w36: Word[32] = sigma1(w34) + w29 + sigma0(w21) + w20;
+    let w37: Word[32] = sigma1(w35) + w30 + sigma0(w22) + w21;
+    let w38: Word[32] = sigma1(w36) + w31 + sigma0(w23) + w22;
+    let w39: Word[32] = sigma1(w37) + w32 + sigma0(w24) + w23;
+    let w40: Word[32] = sigma1(w38) + w33 + sigma0(w25) + w24;
+    let w41: Word[32] = sigma1(w39) + w34 + sigma0(w26) + w25;
+    let w42: Word[32] = sigma1(w40) + w35 + sigma0(w27) + w26;
+    let w43: Word[32] = sigma1(w41) + w36 + sigma0(w28) + w27;
+    let w44: Word[32] = sigma1(w42) + w37 + sigma0(w29) + w28;
+    let w45: Word[32] = sigma1(w43) + w38 + sigma0(w30) + w29;
+    let w46: Word[32] = sigma1(w44) + w39 + sigma0(w31) + w30;
+    let w47: Word[32] = sigma1(w45) + w40 + sigma0(w32) + w31;
+    let w48: Word[32] = sigma1(w46) + w41 + sigma0(w33) + w32;
+    let w49: Word[32] = sigma1(w47) + w42 + sigma0(w34) + w33;
+    let w50: Word[32] = sigma1(w48) + w43 + sigma0(w35) + w34;
+    let w51: Word[32] = sigma1(w49) + w44 + sigma0(w36) + w35;
+    let w52: Word[32] = sigma1(w50) + w45 + sigma0(w37) + w36;
+    let w53: Word[32] = sigma1(w51) + w46 + sigma0(w38) + w37;
+    let w54: Word[32] = sigma1(w52) + w47 + sigma0(w39) + w38;
+    let w55: Word[32] = sigma1(w53) + w48 + sigma0(w40) + w39;
+    let w56: Word[32] = sigma1(w54) + w49 + sigma0(w41) + w40;
+    let w57: Word[32] = sigma1(w55) + w50 + sigma0(w42) + w41;
+    let w58: Word[32] = sigma1(w56) + w51 + sigma0(w43) + w42;
+    let w59: Word[32] = sigma1(w57) + w52 + sigma0(w44) + w43;
+    let w60: Word[32] = sigma1(w58) + w53 + sigma0(w45) + w44;
+    let w61: Word[32] = sigma1(w59) + w54 + sigma0(w46) + w45;
+    let w62: Word[32] = sigma1(w60) + w55 + sigma0(w47) + w46;
+    let w63: Word[32] = sigma1(w61) + w56 + sigma0(w48) + w47;
+    let s0: Word[32]^8 = sha_round(h,0x428a2f98,m[0]);
+    let s1: Word[32]^8 = sha_round(s0,0x71374491,m[1]);
+    let s2: Word[32]^8 = sha_round(s1,0xb5c0fbcf,m[2]);
+    let s3: Word[32]^8 = sha_round(s2,0xe9b5dba5,m[3]);
+    let s4: Word[32]^8 = sha_round(s3,0x3956c25b,m[4]);
+    let s5: Word[32]^8 = sha_round(s4,0x59f111f1,m[5]);
+    let s6: Word[32]^8 = sha_round(s5,0x923f82a4,m[6]);
+    let s7: Word[32]^8 = sha_round(s6,0xab1c5ed5,m[7]);
+    let s8: Word[32]^8 = sha_round(s7,0xd807aa98,m[8]);
+    let s9: Word[32]^8 = sha_round(s8,0x12835b01,m[9]);
+    let s10: Word[32]^8 = sha_round(s9,0x243185be,m[10]);
+    let s11: Word[32]^8 = sha_round(s10,0x550c7dc3,m[11]);
+    let s12: Word[32]^8 = sha_round(s11,0x72be5d74,m[12]);
+    let s13: Word[32]^8 = sha_round(s12,0x80deb1fe,m[13]);
+    let s14: Word[32]^8 = sha_round(s13,0x9bdc06a7,m[14]);
+    let s15: Word[32]^8 = sha_round(s14,0xc19bf174,m[15]);
+    let s16: Word[32]^8 = sha_round(s15,0xe49b69c1,w16);
+    let s17: Word[32]^8 = sha_round(s16,0xefbe4786,w17);
+    let s18: Word[32]^8 = sha_round(s17,0x0fc19dc6,w18);
+    let s19: Word[32]^8 = sha_round(s18,0x240ca1cc,w19);
+    let s20: Word[32]^8 = sha_round(s19,0x2de92c6f,w20);
+    let s21: Word[32]^8 = sha_round(s20,0x4a7484aa,w21);
+    let s22: Word[32]^8 = sha_round(s21,0x5cb0a9dc,w22);
+    let s23: Word[32]^8 = sha_round(s22,0x76f988da,w23);
+    let s24: Word[32]^8 = sha_round(s23,0x983e5152,w24);
+    let s25: Word[32]^8 = sha_round(s24,0xa831c66d,w25);
+    let s26: Word[32]^8 = sha_round(s25,0xb00327c8,w26);
+    let s27: Word[32]^8 = sha_round(s26,0xbf597fc7,w27);
+    let s28: Word[32]^8 = sha_round(s27,0xc6e00bf3,w28);
+    let s29: Word[32]^8 = sha_round(s28,0xd5a79147,w29);
+    let s30: Word[32]^8 = sha_round(s29,0x06ca6351,w30);
+    let s31: Word[32]^8 = sha_round(s30,0x14292967,w31);
+    let s32: Word[32]^8 = sha_round(s31,0x27b70a85,w32);
+    let s33: Word[32]^8 = sha_round(s32,0x2e1b2138,w33);
+    let s34: Word[32]^8 = sha_round(s33,0x4d2c6dfc,w34);
+    let s35: Word[32]^8 = sha_round(s34,0x53380d13,w35);
+    let s36: Word[32]^8 = sha_round(s35,0x650a7354,w36);
+    let s37: Word[32]^8 = sha_round(s36,0x766a0abb,w37);
+    let s38: Word[32]^8 = sha_round(s37,0x81c2c92e,w38);
+    let s39: Word[32]^8 = sha_round(s38,0x92722c85,w39);
+    let s40: Word[32]^8 = sha_round(s39,0xa2bfe8a1,w40);
+    let s41: Word[32]^8 = sha_round(s40,0xa81a664b,w41);
+    let s42: Word[32]^8 = sha_round(s41,0xc24b8b70,w42);
+    let s43: Word[32]^8 = sha_round(s42,0xc76c51a3,w43);
+    let s44: Word[32]^8 = sha_round(s43,0xd192e819,w44);
+    let s45: Word[32]^8 = sha_round(s44,0xd6990624,w45);
+    let s46: Word[32]^8 = sha_round(s45,0xf40e3585,w46);
+    let s47: Word[32]^8 = sha_round(s46,0x106aa070,w47);
+    let s48: Word[32]^8 = sha_round(s47,0x19a4c116,w48);
+    let s49: Word[32]^8 = sha_round(s48,0x1e376c08,w49);
+    let s50: Word[32]^8 = sha_round(s49,0x2748774c,w50);
+    let s51: Word[32]^8 = sha_round(s50,0x34b0bcb5,w51);
+    let s52: Word[32]^8 = sha_round(s51,0x391c0cb3,w52);
+    let s53: Word[32]^8 = sha_round(s52,0x4ed8aa4a,w53);
+    let s54: Word[32]^8 = sha_round(s53,0x5b9cca4f,w54);
+    let s55: Word[32]^8 = sha_round(s54,0x682e6ff3,w55);
+    let s56: Word[32]^8 = sha_round(s55,0x748f82ee,w56);
+    let s57: Word[32]^8 = sha_round(s56,0x78a5636f,w57);
+    let s58: Word[32]^8 = sha_round(s57,0x84c87814,w58);
+    let s59: Word[32]^8 = sha_round(s58,0x8cc70208,w59);
+    let s60: Word[32]^8 = sha_round(s59,0x90befffa,w60);
+    let s61: Word[32]^8 = sha_round(s60,0xa4506ceb,w61);
+    let s62: Word[32]^8 = sha_round(s61,0xbef9a3f7,w62);
+    let s63: Word[32]^8 = sha_round(s62,0xc67178f2,w63);
+    [h[0] + s63[0], h[1] + s63[1], h[2] + s63[2], h[3] + s63[3], h[4] + s63[4], h[5] + s63[5], h[6] + s63[6], h[7] + s63[7]]
+  }
+
+
+  // Fixed public test context only. Real Horizon uses the adapter and fresh nonces.
+  spec seal_fixture(root: Word[8]^32, p: Word[8]^32) -> Word[8]^219 {
+    let v0: Word[32]^8 = sha_compress([1779033703,3144134277,1013904242,2773480762,1359893119,2600822924,528734635,1541459225],[be32(0x44,0x4c,0x54,0x48),be32(0x56,0x31,0x41,0x7b),be32(0x22,0x61,0x75,0x74),be32(0x68,0x6f,0x72,0x69),be32(0x7a,0x61,0x74,0x69),be32(0x6f,0x6e,0x22,0x3a),be32(0x7b,0x22,0x61,0x75),be32(0x74,0x68,0x6f,0x72),be32(0x69,0x7a,0x61,0x74),be32(0x69,0x6f,0x6e,0x5f),be32(0x74,0x61,0x67,0x22),be32(0x3a,0x22,0x30,0x31),be32(0x32,0x33,0x34,0x35),be32(0x36,0x37,0x38,0x39),be32(0x61,0x62,0x63,0x64),be32(0x65,0x66,0x30,0x31)]);
+    let v1: Word[32]^8 = sha_compress(v0,[be32(0x32,0x33,0x34,0x35),be32(0x36,0x37,0x38,0x39),be32(0x61,0x62,0x63,0x64),be32(0x65,0x66,0x30,0x31),be32(0x32,0x33,0x34,0x35),be32(0x36,0x37,0x38,0x39),be32(0x61,0x62,0x63,0x64),be32(0x65,0x66,0x30,0x31),be32(0x32,0x33,0x34,0x35),be32(0x36,0x37,0x38,0x39),be32(0x61,0x62,0x63,0x64),be32(0x65,0x66,0x22,0x7d),be32(0x2c,0x22,0x6e,0x6f),be32(0x6e,0x63,0x65,0x22),be32(0x3a,0x22,0x30,0x30),be32(0x30,0x30,0x30,0x30)]);
+    let v2: Word[32]^8 = sha_compress(v1,[be32(0x30,0x30,0x30,0x30),be32(0x30,0x30,0x30,0x30),be32(0x30,0x30,0x30,0x30),be32(0x30,0x30,0x30,0x30),be32(0x30,0x31,0x22,0x2c),be32(0x22,0x70,0x6c,0x61),be32(0x69,0x6e,0x74,0x65),be32(0x78,0x74,0x5f,0x6c),be32(0x65,0x6e,0x22,0x3a),be32(0x33,0x32,0x7d,0x80),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0x00,0x00,0x00,0x00),be32(0x00,0x00,0x05,0x38)]);
+    let v3: Word[32]^8 = sha_compress([1779033703,3144134277,1013904242,2773480762,1359893119,2600822924,528734635,1541459225],[be32((((v2[0] >> 24) as Word[8]) ^ 0x36),(((v2[0] >> 16) as Word[8]) ^ 0x36),(((v2[0] >> 8) as Word[8]) ^ 0x36),((v2[0] as Word[8]) ^ 0x36)),be32((((v2[1] >> 24) as Word[8]) ^ 0x36),(((v2[1] >> 16) as Word[8]) ^ 0x36),(((v2[1] >> 8) as Word[8]) ^ 0x36),((v2[1] as Word[8]) ^ 0x36)),be32((((v2[2] >> 24) as Word[8]) ^ 0x36),(((v2[2] >> 16) as Word[8]) ^ 0x36),(((v2[2] >> 8) as Word[8]) ^ 0x36),((v2[2] as Word[8]) ^ 0x36)),be32((((v2[3] >> 24) as Word[8]) ^ 0x36),(((v2[3] >> 16) as Word[8]) ^ 0x36),(((v2[3] >> 8) as Word[8]) ^ 0x36),((v2[3] as Word[8]) ^ 0x36)),be32((((v2[4] >> 24) as Word[8]) ^ 0x36),(((v2[4] >> 16) as Word[8]) ^ 0x36),(((v2[4] >> 8) as Word[8]) ^ 0x36),((v2[4] as Word[8]) ^ 0x36)),be32((((v2[5] >> 24) as Word[8]) ^ 0x36),(((v2[5] >> 16) as Word[8]) ^ 0x36),(((v2[5] >> 8) as Word[8]) ^ 0x36),((v2[5] as Word[8]) ^ 0x36)),be32((((v2[6] >> 24) as Word[8]) ^ 0x36),(((v2[6] >> 16) as Word[8]) ^ 0x36),(((v2[6] >> 8) as Word[8]) ^ 0x36),((v2[6] as Word[8]) ^ 0x36)),be32((((v2[7] >> 24) as Word[8]) ^ 0x36),(((v2[7] >> 16) as Word[8]) ^ 0x36),(((v2[7] >> 8) as Word[8]) ^ 0x36),((v2[7] as Word[8]) ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36))]);
+    let v4: Word[32]^8 = sha_compress(v3,[be32(root[0],root[1],root[2],root[3]),be32(root[4],root[5],root[6],root[7]),be32(root[8],root[9],root[10],root[11]),be32(root[12],root[13],root[14],root[15]),be32(root[16],root[17],root[18],root[19]),be32(root[20],root[21],root[22],root[23]),be32(root[24],root[25],root[26],root[27]),be32(root[28],root[29],root[30],root[31]),be32(0x80,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0x00,0x00,0x00,0x00),be32(0x00,0x00,0x03,0x00)]);
+    let v5: Word[32]^8 = sha_compress([1779033703,3144134277,1013904242,2773480762,1359893119,2600822924,528734635,1541459225],[be32((((v2[0] >> 24) as Word[8]) ^ 0x5c),(((v2[0] >> 16) as Word[8]) ^ 0x5c),(((v2[0] >> 8) as Word[8]) ^ 0x5c),((v2[0] as Word[8]) ^ 0x5c)),be32((((v2[1] >> 24) as Word[8]) ^ 0x5c),(((v2[1] >> 16) as Word[8]) ^ 0x5c),(((v2[1] >> 8) as Word[8]) ^ 0x5c),((v2[1] as Word[8]) ^ 0x5c)),be32((((v2[2] >> 24) as Word[8]) ^ 0x5c),(((v2[2] >> 16) as Word[8]) ^ 0x5c),(((v2[2] >> 8) as Word[8]) ^ 0x5c),((v2[2] as Word[8]) ^ 0x5c)),be32((((v2[3] >> 24) as Word[8]) ^ 0x5c),(((v2[3] >> 16) as Word[8]) ^ 0x5c),(((v2[3] >> 8) as Word[8]) ^ 0x5c),((v2[3] as Word[8]) ^ 0x5c)),be32((((v2[4] >> 24) as Word[8]) ^ 0x5c),(((v2[4] >> 16) as Word[8]) ^ 0x5c),(((v2[4] >> 8) as Word[8]) ^ 0x5c),((v2[4] as Word[8]) ^ 0x5c)),be32((((v2[5] >> 24) as Word[8]) ^ 0x5c),(((v2[5] >> 16) as Word[8]) ^ 0x5c),(((v2[5] >> 8) as Word[8]) ^ 0x5c),((v2[5] as Word[8]) ^ 0x5c)),be32((((v2[6] >> 24) as Word[8]) ^ 0x5c),(((v2[6] >> 16) as Word[8]) ^ 0x5c),(((v2[6] >> 8) as Word[8]) ^ 0x5c),((v2[6] as Word[8]) ^ 0x5c)),be32((((v2[7] >> 24) as Word[8]) ^ 0x5c),(((v2[7] >> 16) as Word[8]) ^ 0x5c),(((v2[7] >> 8) as Word[8]) ^ 0x5c),((v2[7] as Word[8]) ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c))]);
+    let v6: Word[32]^8 = sha_compress(v5,[be32(((v4[0] >> 24) as Word[8]),((v4[0] >> 16) as Word[8]),((v4[0] >> 8) as Word[8]),(v4[0] as Word[8])),be32(((v4[1] >> 24) as Word[8]),((v4[1] >> 16) as Word[8]),((v4[1] >> 8) as Word[8]),(v4[1] as Word[8])),be32(((v4[2] >> 24) as Word[8]),((v4[2] >> 16) as Word[8]),((v4[2] >> 8) as Word[8]),(v4[2] as Word[8])),be32(((v4[3] >> 24) as Word[8]),((v4[3] >> 16) as Word[8]),((v4[3] >> 8) as Word[8]),(v4[3] as Word[8])),be32(((v4[4] >> 24) as Word[8]),((v4[4] >> 16) as Word[8]),((v4[4] >> 8) as Word[8]),(v4[4] as Word[8])),be32(((v4[5] >> 24) as Word[8]),((v4[5] >> 16) as Word[8]),((v4[5] >> 8) as Word[8]),(v4[5] as Word[8])),be32(((v4[6] >> 24) as Word[8]),((v4[6] >> 16) as Word[8]),((v4[6] >> 8) as Word[8]),(v4[6] as Word[8])),be32(((v4[7] >> 24) as Word[8]),((v4[7] >> 16) as Word[8]),((v4[7] >> 8) as Word[8]),(v4[7] as Word[8])),be32(0x80,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0x00,0x00,0x00,0x00),be32(0x00,0x00,0x03,0x00)]);
+    let v7: Word[32]^8 = sha_compress([1779033703,3144134277,1013904242,2773480762,1359893119,2600822924,528734635,1541459225],[be32((((v6[0] >> 24) as Word[8]) ^ 0x36),(((v6[0] >> 16) as Word[8]) ^ 0x36),(((v6[0] >> 8) as Word[8]) ^ 0x36),((v6[0] as Word[8]) ^ 0x36)),be32((((v6[1] >> 24) as Word[8]) ^ 0x36),(((v6[1] >> 16) as Word[8]) ^ 0x36),(((v6[1] >> 8) as Word[8]) ^ 0x36),((v6[1] as Word[8]) ^ 0x36)),be32((((v6[2] >> 24) as Word[8]) ^ 0x36),(((v6[2] >> 16) as Word[8]) ^ 0x36),(((v6[2] >> 8) as Word[8]) ^ 0x36),((v6[2] as Word[8]) ^ 0x36)),be32((((v6[3] >> 24) as Word[8]) ^ 0x36),(((v6[3] >> 16) as Word[8]) ^ 0x36),(((v6[3] >> 8) as Word[8]) ^ 0x36),((v6[3] as Word[8]) ^ 0x36)),be32((((v6[4] >> 24) as Word[8]) ^ 0x36),(((v6[4] >> 16) as Word[8]) ^ 0x36),(((v6[4] >> 8) as Word[8]) ^ 0x36),((v6[4] as Word[8]) ^ 0x36)),be32((((v6[5] >> 24) as Word[8]) ^ 0x36),(((v6[5] >> 16) as Word[8]) ^ 0x36),(((v6[5] >> 8) as Word[8]) ^ 0x36),((v6[5] as Word[8]) ^ 0x36)),be32((((v6[6] >> 24) as Word[8]) ^ 0x36),(((v6[6] >> 16) as Word[8]) ^ 0x36),(((v6[6] >> 8) as Word[8]) ^ 0x36),((v6[6] as Word[8]) ^ 0x36)),be32((((v6[7] >> 24) as Word[8]) ^ 0x36),(((v6[7] >> 16) as Word[8]) ^ 0x36),(((v6[7] >> 8) as Word[8]) ^ 0x36),((v6[7] as Word[8]) ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36)),be32((0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36),(0 ^ 0x36))]);
+    let v8: Word[32]^8 = sha_compress(v7,[be32(0x44,0x41,0x59,0x4c),be32(0x49,0x47,0x48,0x54),be32(0x2d,0x48,0x4f,0x52),be32(0x49,0x5a,0x4f,0x4e),be32(0x2d,0x41,0x4c,0x50),be32(0x48,0x41,0x2d,0x41),be32(0x45,0x41,0x44,0x2d),be32(0x4b,0x45,0x59,0x3a),be32(0x44,0x4c,0x54,0x48),be32(0x56,0x31,0x41,0x3a),be32(0x30,0x31,0x32,0x33),be32(0x34,0x35,0x36,0x37),be32(0x38,0x39,0x61,0x62),be32(0x63,0x64,0x65,0x66),be32(0x30,0x31,0x32,0x33),be32(0x34,0x35,0x36,0x37)]);
+    let v9: Word[32]^8 = sha_compress(v8,[be32(0x38,0x39,0x61,0x62),be32(0x63,0x64,0x65,0x66),be32(0x30,0x31,0x32,0x33),be32(0x34,0x35,0x36,0x37),be32(0x38,0x39,0x61,0x62),be32(0x63,0x64,0x65,0x66),be32(0x30,0x31,0x32,0x33),be32(0x34,0x35,0x36,0x37),be32(0x38,0x39,0x61,0x62),be32(0x63,0x64,0x65,0x66),be32(0x01,0x80,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0x00,0x00,0x00,0x00),be32(0x00,0x00,0x05,0x48)]);
+    let v10: Word[32]^8 = sha_compress([1779033703,3144134277,1013904242,2773480762,1359893119,2600822924,528734635,1541459225],[be32((((v6[0] >> 24) as Word[8]) ^ 0x5c),(((v6[0] >> 16) as Word[8]) ^ 0x5c),(((v6[0] >> 8) as Word[8]) ^ 0x5c),((v6[0] as Word[8]) ^ 0x5c)),be32((((v6[1] >> 24) as Word[8]) ^ 0x5c),(((v6[1] >> 16) as Word[8]) ^ 0x5c),(((v6[1] >> 8) as Word[8]) ^ 0x5c),((v6[1] as Word[8]) ^ 0x5c)),be32((((v6[2] >> 24) as Word[8]) ^ 0x5c),(((v6[2] >> 16) as Word[8]) ^ 0x5c),(((v6[2] >> 8) as Word[8]) ^ 0x5c),((v6[2] as Word[8]) ^ 0x5c)),be32((((v6[3] >> 24) as Word[8]) ^ 0x5c),(((v6[3] >> 16) as Word[8]) ^ 0x5c),(((v6[3] >> 8) as Word[8]) ^ 0x5c),((v6[3] as Word[8]) ^ 0x5c)),be32((((v6[4] >> 24) as Word[8]) ^ 0x5c),(((v6[4] >> 16) as Word[8]) ^ 0x5c),(((v6[4] >> 8) as Word[8]) ^ 0x5c),((v6[4] as Word[8]) ^ 0x5c)),be32((((v6[5] >> 24) as Word[8]) ^ 0x5c),(((v6[5] >> 16) as Word[8]) ^ 0x5c),(((v6[5] >> 8) as Word[8]) ^ 0x5c),((v6[5] as Word[8]) ^ 0x5c)),be32((((v6[6] >> 24) as Word[8]) ^ 0x5c),(((v6[6] >> 16) as Word[8]) ^ 0x5c),(((v6[6] >> 8) as Word[8]) ^ 0x5c),((v6[6] as Word[8]) ^ 0x5c)),be32((((v6[7] >> 24) as Word[8]) ^ 0x5c),(((v6[7] >> 16) as Word[8]) ^ 0x5c),(((v6[7] >> 8) as Word[8]) ^ 0x5c),((v6[7] as Word[8]) ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c)),be32((0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c),(0 ^ 0x5c))]);
+    let v11: Word[32]^8 = sha_compress(v10,[be32(((v9[0] >> 24) as Word[8]),((v9[0] >> 16) as Word[8]),((v9[0] >> 8) as Word[8]),(v9[0] as Word[8])),be32(((v9[1] >> 24) as Word[8]),((v9[1] >> 16) as Word[8]),((v9[1] >> 8) as Word[8]),(v9[1] as Word[8])),be32(((v9[2] >> 24) as Word[8]),((v9[2] >> 16) as Word[8]),((v9[2] >> 8) as Word[8]),(v9[2] as Word[8])),be32(((v9[3] >> 24) as Word[8]),((v9[3] >> 16) as Word[8]),((v9[3] >> 8) as Word[8]),(v9[3] as Word[8])),be32(((v9[4] >> 24) as Word[8]),((v9[4] >> 16) as Word[8]),((v9[4] >> 8) as Word[8]),(v9[4] as Word[8])),be32(((v9[5] >> 24) as Word[8]),((v9[5] >> 16) as Word[8]),((v9[5] >> 8) as Word[8]),(v9[5] as Word[8])),be32(((v9[6] >> 24) as Word[8]),((v9[6] >> 16) as Word[8]),((v9[6] >> 8) as Word[8]),(v9[6] as Word[8])),be32(((v9[7] >> 24) as Word[8]),((v9[7] >> 16) as Word[8]),((v9[7] >> 8) as Word[8]),(v9[7] as Word[8])),be32(0x80,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0,0,0,0),be32(0x00,0x00,0x00,0x00),be32(0x00,0x00,0x03,0x00)]);
+    let v12: Word[32]^8 = [le32(((v11[0] >> 24) as Word[8]),((v11[0] >> 16) as Word[8]),((v11[0] >> 8) as Word[8]),(v11[0] as Word[8])),le32(((v11[1] >> 24) as Word[8]),((v11[1] >> 16) as Word[8]),((v11[1] >> 8) as Word[8]),(v11[1] as Word[8])),le32(((v11[2] >> 24) as Word[8]),((v11[2] >> 16) as Word[8]),((v11[2] >> 8) as Word[8]),(v11[2] as Word[8])),le32(((v11[3] >> 24) as Word[8]),((v11[3] >> 16) as Word[8]),((v11[3] >> 8) as Word[8]),(v11[3] as Word[8])),le32(((v11[4] >> 24) as Word[8]),((v11[4] >> 16) as Word[8]),((v11[4] >> 8) as Word[8]),(v11[4] as Word[8])),le32(((v11[5] >> 24) as Word[8]),((v11[5] >> 16) as Word[8]),((v11[5] >> 8) as Word[8]),(v11[5] as Word[8])),le32(((v11[6] >> 24) as Word[8]),((v11[6] >> 16) as Word[8]),((v11[6] >> 8) as Word[8]),(v11[6] as Word[8])),le32(((v11[7] >> 24) as Word[8]),((v11[7] >> 16) as Word[8]),((v11[7] >> 8) as Word[8]),(v11[7] as Word[8]))];
+    let v13: Word[32]^16 = chacha_block(v12,1,[le32(0x00,0x00,0x00,0x00),le32(0x00,0x00,0x00,0x00),le32(0x00,0x00,0x00,0x01)]);
+    let v14: Word[8]^32 = [p[0] ^ (v13[0] as Word[8]),p[1] ^ ((v13[0] >> 8) as Word[8]),p[2] ^ ((v13[0] >> 16) as Word[8]),p[3] ^ ((v13[0] >> 24) as Word[8]),p[4] ^ (v13[1] as Word[8]),p[5] ^ ((v13[1] >> 8) as Word[8]),p[6] ^ ((v13[1] >> 16) as Word[8]),p[7] ^ ((v13[1] >> 24) as Word[8]),p[8] ^ (v13[2] as Word[8]),p[9] ^ ((v13[2] >> 8) as Word[8]),p[10] ^ ((v13[2] >> 16) as Word[8]),p[11] ^ ((v13[2] >> 24) as Word[8]),p[12] ^ (v13[3] as Word[8]),p[13] ^ ((v13[3] >> 8) as Word[8]),p[14] ^ ((v13[3] >> 16) as Word[8]),p[15] ^ ((v13[3] >> 24) as Word[8]),p[16] ^ (v13[4] as Word[8]),p[17] ^ ((v13[4] >> 8) as Word[8]),p[18] ^ ((v13[4] >> 16) as Word[8]),p[19] ^ ((v13[4] >> 24) as Word[8]),p[20] ^ (v13[5] as Word[8]),p[21] ^ ((v13[5] >> 8) as Word[8]),p[22] ^ ((v13[5] >> 16) as Word[8]),p[23] ^ ((v13[5] >> 24) as Word[8]),p[24] ^ (v13[6] as Word[8]),p[25] ^ ((v13[6] >> 8) as Word[8]),p[26] ^ ((v13[6] >> 16) as Word[8]),p[27] ^ ((v13[6] >> 24) as Word[8]),p[28] ^ (v13[7] as Word[8]),p[29] ^ ((v13[7] >> 8) as Word[8]),p[30] ^ ((v13[7] >> 16) as Word[8]),p[31] ^ ((v13[7] >> 24) as Word[8])];
+    let v15: Word[32]^16 = chacha_block(v12,0,[le32(0x00,0x00,0x00,0x00),le32(0x00,0x00,0x00,0x00),le32(0x00,0x00,0x00,0x01)]);
+    let v16: Word[64]^5 = poly_r([v15[0],v15[1],v15[2],v15[3]]);
+    let v17: Word[64]^5 = poly_step([0,0,0,0,0],v16,[le32(0x44,0x4c,0x54,0x48),le32(0x56,0x31,0x41,0xa0),le32(0x00,0x00,0x00,0x7b),le32(0x22,0x61,0x75,0x74)],0x1000000);
+    let v18: Word[64]^5 = poly_step(v17,v16,[le32(0x68,0x6f,0x72,0x69),le32(0x7a,0x61,0x74,0x69),le32(0x6f,0x6e,0x22,0x3a),le32(0x7b,0x22,0x61,0x75)],0x1000000);
+    let v19: Word[64]^5 = poly_step(v18,v16,[le32(0x74,0x68,0x6f,0x72),le32(0x69,0x7a,0x61,0x74),le32(0x69,0x6f,0x6e,0x5f),le32(0x74,0x61,0x67,0x22)],0x1000000);
+    let v20: Word[64]^5 = poly_step(v19,v16,[le32(0x3a,0x22,0x30,0x31),le32(0x32,0x33,0x34,0x35),le32(0x36,0x37,0x38,0x39),le32(0x61,0x62,0x63,0x64)],0x1000000);
+    let v21: Word[64]^5 = poly_step(v20,v16,[le32(0x65,0x66,0x30,0x31),le32(0x32,0x33,0x34,0x35),le32(0x36,0x37,0x38,0x39),le32(0x61,0x62,0x63,0x64)],0x1000000);
+    let v22: Word[64]^5 = poly_step(v21,v16,[le32(0x65,0x66,0x30,0x31),le32(0x32,0x33,0x34,0x35),le32(0x36,0x37,0x38,0x39),le32(0x61,0x62,0x63,0x64)],0x1000000);
+    let v23: Word[64]^5 = poly_step(v22,v16,[le32(0x65,0x66,0x30,0x31),le32(0x32,0x33,0x34,0x35),le32(0x36,0x37,0x38,0x39),le32(0x61,0x62,0x63,0x64)],0x1000000);
+    let v24: Word[64]^5 = poly_step(v23,v16,[le32(0x65,0x66,0x22,0x7d),le32(0x2c,0x22,0x6e,0x6f),le32(0x6e,0x63,0x65,0x22),le32(0x3a,0x22,0x30,0x30)],0x1000000);
+    let v25: Word[64]^5 = poly_step(v24,v16,[le32(0x30,0x30,0x30,0x30),le32(0x30,0x30,0x30,0x30),le32(0x30,0x30,0x30,0x30),le32(0x30,0x30,0x30,0x30)],0x1000000);
+    let v26: Word[64]^5 = poly_step(v25,v16,[le32(0x30,0x30,0x30,0x30),le32(0x30,0x31,0x22,0x2c),le32(0x22,0x70,0x6c,0x61),le32(0x69,0x6e,0x74,0x65)],0x1000000);
+    let v27: Word[64]^5 = poly_step(v26,v16,[le32(0x78,0x74,0x5f,0x6c),le32(0x65,0x6e,0x22,0x3a),le32(0x33,0x32,0x7d,0),le32(0,0,0,0)],0x1000000);
+    let v28: Word[64]^5 = poly_step(v27,v16,[le32(v14[0],v14[1],v14[2],v14[3]),le32(v14[4],v14[5],v14[6],v14[7]),le32(v14[8],v14[9],v14[10],v14[11]),le32(v14[12],v14[13],v14[14],v14[15])],0x1000000);
+    let v29: Word[64]^5 = poly_step(v28,v16,[le32(v14[16],v14[17],v14[18],v14[19]),le32(v14[20],v14[21],v14[22],v14[23]),le32(v14[24],v14[25],v14[26],v14[27]),le32(v14[28],v14[29],v14[30],v14[31])],0x1000000);
+    let v30: Word[64]^5 = poly_step(v29,v16,[le32(0xab,0x00,0x00,0x00),le32(0x00,0x00,0x00,0x00),le32(0x20,0x00,0x00,0x00),le32(0x00,0x00,0x00,0x00)],0x1000000);
+    let v31: Word[32]^4 = poly_finish(v30,[v15[4],v15[5],v15[6],v15[7]]);
+    [0x44,0x4c,0x54,0x48,0x56,0x31,0x41,0xa0,0x00,0x00,0x00,0x7b,0x22,0x61,0x75,0x74,0x68,0x6f,0x72,0x69,0x7a,0x61,0x74,0x69,0x6f,0x6e,0x22,0x3a,0x7b,0x22,0x61,0x75,0x74,0x68,0x6f,0x72,0x69,0x7a,0x61,0x74,0x69,0x6f,0x6e,0x5f,0x74,0x61,0x67,0x22,0x3a,0x22,0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x61,0x62,0x63,0x64,0x65,0x66,0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x61,0x62,0x63,0x64,0x65,0x66,0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x61,0x62,0x63,0x64,0x65,0x66,0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x61,0x62,0x63,0x64,0x65,0x66,0x22,0x7d,0x2c,0x22,0x6e,0x6f,0x6e,0x63,0x65,0x22,0x3a,0x22,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x30,0x31,0x22,0x2c,0x22,0x70,0x6c,0x61,0x69,0x6e,0x74,0x65,0x78,0x74,0x5f,0x6c,0x65,0x6e,0x22,0x3a,0x33,0x32,0x7d,v14[0],v14[1],v14[2],v14[3],v14[4],v14[5],v14[6],v14[7],v14[8],v14[9],v14[10],v14[11],v14[12],v14[13],v14[14],v14[15],v14[16],v14[17],v14[18],v14[19],v14[20],v14[21],v14[22],v14[23],v14[24],v14[25],v14[26],v14[27],v14[28],v14[29],v14[30],v14[31],(v31[0] as Word[8]),((v31[0] >> 8) as Word[8]),((v31[0] >> 16) as Word[8]),((v31[0] >> 24) as Word[8]),(v31[1] as Word[8]),((v31[1] >> 8) as Word[8]),((v31[1] >> 16) as Word[8]),((v31[1] >> 24) as Word[8]),(v31[2] as Word[8]),((v31[2] >> 8) as Word[8]),((v31[2] >> 16) as Word[8]),((v31[2] >> 24) as Word[8]),(v31[3] as Word[8]),((v31[3] >> 8) as Word[8]),((v31[3] >> 16) as Word[8]),((v31[3] >> 24) as Word[8])]
+  }
+  spec example() -> Word[8]^219 { seal_fixture([0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],[0x44,0x61,0x79,0x6c,0x69,0x67,0x68,0x74,0x20,0x48,0x6f,0x72,0x69,0x7a,0x6f,0x6e,0x20,0x72,0x75,0x6e,0x73,0x20,0x69,0x6e,0x20,0x4f,0x72,0x61,0x6e,0x67,0x65,0x2e]) }
+}

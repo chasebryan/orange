@@ -394,3 +394,13 @@ Neither record claims trademark clearance or grants a repository-wide license.
 The validator and policy JSON cannot safely contain their own digests without a
 self-reference cycle. Their integrity depends on exact path and executable
 contracts plus Git history and required checks.
+
+## Daylight example admission
+
+The owner-directed Daylight Horizon port lives only in `examples/daylight/`.
+Its exact files are required inventory, and its imported Apache-2.0 license
+text is digest-bound. The license exception is limited to that exact path and
+content; all other unratified license files remain forbidden. D-018 records
+the scoped admission without changing Orange's unresolved outbound license.
+The existing compiler CLI suite runs its standalone vector and RFC adapter
+check in both debug and release CI, with no new dependency or network step.
