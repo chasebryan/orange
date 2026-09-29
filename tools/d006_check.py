@@ -481,7 +481,10 @@ def run_patch(cand: Candidate, case: str, negative: dict[str, Any]) -> Outcome:
         launched = patched.runner(argv, patched.src, patched.environment(), NEGATIVE_CEILING)
         msg = (errors(cand.lang.name, launched) or [Message("error", None, None, launched.output[:2000])])[0]
         cat = classify(cand.adapter, launched, msg, "artifact") if launched.exit_status != 0 else None
-        return Outcome(negative["id"], negative["form"], cat in negative["expected"], cat, msg.text[:300], None, None, launched.wall_ms)
+        # An artifact's location is its file: the diagnostic must name the truncated file (M-15).
+        conforms = (negative["id"] in str(target) and cat in CATEGORIES and str(target) in launched.output
+                    and len(launched.output.encode()) <= DIAGNOSTIC_LIMIT)
+        return Outcome(negative["id"], negative["form"], cat in negative["expected"], cat, msg.text[:300], None, conforms, launched.wall_ms)
     patch_file = cand.root / spec
     applied = subprocess.run(["patch", "-p1", "--no-backup-if-mismatch", "-i", str(patch_file)], cwd=patched.src, capture_output=True)
     if applied.returncode != 0:

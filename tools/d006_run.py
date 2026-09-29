@@ -648,7 +648,7 @@ def git_bytes(repo: Path, *args: str) -> bytes:
     return result.stdout
 
 
-BUILD_PRODUCTS = (".lake", "*.vo", "*.vok", "*.vos", "*.glob", ".*.aux", "_build")
+BUILD_PRODUCTS = (".lake", "*.vo", "*.vok", "*.vos", "*.glob", ".*.aux", ".lia.cache", "_build")
 
 
 def source_rows(root: Path) -> list[tuple[str, str]]:
