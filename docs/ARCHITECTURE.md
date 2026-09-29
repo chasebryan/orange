@@ -68,10 +68,10 @@ leaves only ST-REL, which ties ST-MIRROR at zero isolation obligations and
 re-identifies six subject classes to its seven. That result is
 contributor-produced and unreviewed, and it is not a D-004 recommendation until
 the owner disposes every candidate and hard gate. Integrity parsing and
-structural oracles ratify no semantic boundary. D-004 remains proposed, S3b and
-S3c are implemented and await owner review under OEP-0005 and OEP-0006, and
-Orange remains at 3 of 10 binary gate closure (30%); that mechanical score is
-not release readiness.
+structural oracles ratify no semantic boundary. D-004 remains proposed, S3b,
+S3c, and S3d are implemented and await owner review under OEP-0005, OEP-0006,
+and OEP-0007, and Orange remains at 3 of 10 binary gate closure (30%); that
+mechanical score is not release readiness.
 
 D-010 also remains unresolved. Compiler descriptions below are candidate
 requirements and claim-boundary obligations, not a selected backend, pass

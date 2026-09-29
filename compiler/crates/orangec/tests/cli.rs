@@ -120,7 +120,7 @@ fn public_compiler_accessors_preserve_checked_structure() {
     assert_eq!(function.name(), "byte");
     assert_eq!(source.slice(function.name_span()), Some("byte"));
     assert_eq!(function.result_type(), CoreType::Word8);
-    assert_eq!(function.result_type().as_str(), "Word[8]");
+    assert_eq!(function.result_type().to_string(), "Word[8]");
     assert_eq!(function.parameters(), []);
     assert_eq!(function.body().literal(), Some(&CoreValue::Word8(8)));
 

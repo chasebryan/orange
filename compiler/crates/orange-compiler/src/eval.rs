@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::core::{
-    CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType,
-    CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS,
+    ArrayType, CoreArray, CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode,
+    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, UnaryOperator};
@@ -162,6 +162,8 @@ struct Reservations {
     diagnostics: fn(&mut Vec<Diagnostic>, usize) -> bool,
     stack: fn(&mut Vec<Value>, usize) -> bool,
     frames: fn(&mut Vec<Frame<'_>>, usize) -> bool,
+    array: fn(&mut Vec<Value>, usize) -> bool,
+    result_array: fn(&mut Vec<CoreValue>, usize) -> bool,
 }
 
 impl Reservations {
@@ -171,7 +173,17 @@ impl Reservations {
         diagnostics: reserve_diagnostics,
         stack: reserve_stack,
         frames: reserve_frames,
+        array: reserve_array,
+        result_array: reserve_result_array,
     };
+}
+
+fn reserve_array(elements: &mut Vec<Value>, count: usize) -> bool {
+    elements.try_reserve_exact(count).is_ok()
+}
+
+fn reserve_result_array(elements: &mut Vec<CoreValue>, count: usize) -> bool {
+    elements.try_reserve_exact(count).is_ok()
 }
 
 fn reserve_name(name: &mut String, bytes: usize) -> bool {
@@ -194,12 +206,20 @@ fn reserve_frames(frames: &mut Vec<Frame<'_>>, count: usize) -> bool {
     frames.try_reserve(count).is_ok()
 }
 
-/// A runtime value. Exact integers are shared so that loading a literal or
-/// parameter never copies its digits.
+/// A runtime value. Exact integers and arrays are shared so that loading a
+/// literal, parameter, or binding never copies their contents.
 #[derive(Clone, Debug)]
 enum Value {
     Int(Rc<ExactInteger>),
     Word(u64),
+    Array(Rc<ArrayValue>),
+}
+
+/// An array value with the type it was built at.
+#[derive(Debug)]
+struct ArrayValue {
+    ty: ArrayType,
+    elements: Vec<Value>,
 }
 
 /// One active function evaluation.
@@ -254,7 +274,7 @@ fn digits(value: &ExactInteger) -> usize {
 
 fn word_mask(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int => None,
+        CoreType::Int | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -340,15 +360,48 @@ impl<'core> Machine<'core> {
     fn pop_int(&mut self) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Int(value) => Ok(value),
-            Value::Word(_) => Err(Stop::InconsistentCore),
+            Value::Word(_) | Value::Array(_) => Err(Stop::InconsistentCore),
         }
     }
 
     fn pop_word(&mut self) -> Result<u64, Stop> {
         match self.pop()? {
             Value::Word(value) => Ok(value),
-            Value::Int(_) => Err(Stop::InconsistentCore),
+            Value::Int(_) | Value::Array(_) => Err(Stop::InconsistentCore),
         }
+    }
+
+    /// Replaces the top `length` values of the current expression with one
+    /// array of type `ty` holding them in order.
+    fn build_array(&mut self, ty: ArrayType, length: usize, floor: usize) -> Result<Value, Stop> {
+        if usize::try_from(ty.length()).ok() != Some(length) {
+            return Err(Stop::InconsistentCore);
+        }
+        let start = self
+            .stack
+            .len()
+            .checked_sub(length)
+            .filter(|start| *start >= floor)
+            .ok_or(Stop::InconsistentCore)?;
+        let mut elements = Vec::new();
+        if !(self.reservations.array)(&mut elements, length) {
+            return Err(Stop::Allocation(
+                "evaluation array storage could not be reserved",
+            ));
+        }
+        let word = word_mask(ty.element());
+        for element in self.stack.drain(start..) {
+            let consistent = match (&element, word) {
+                (Value::Int(_), None) => true,
+                (Value::Word(value), Some(mask)) => (*value & !mask) == 0,
+                _ => false,
+            };
+            if !consistent {
+                return Err(Stop::InconsistentCore);
+            }
+            elements.push(element);
+        }
+        Ok(Value::Array(Rc::new(ArrayValue { ty, elements })))
     }
 
     fn checked_int(&self, value: ExactInteger, span: Span) -> Result<Value, Stop> {
@@ -587,6 +640,36 @@ impl<'core> Machine<'core> {
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(Value::Word(shifted))
             }
+            CoreNodeKind::Array { elements } => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(*elements).map_err(|_| Stop::InconsistentCore)?;
+                // One step per element; an array has at least one.
+                self.charge(length.max(1))?;
+                // Elements are intermediate values above the arguments and
+                // the bindings already evaluated.
+                let floor = base
+                    .checked_add(function.parameters.len())
+                    .and_then(|floor| floor.checked_add(part))
+                    .ok_or(Stop::InconsistentCore)?;
+                let array = self.build_array(ty, length, floor)?;
+                self.push(array)
+            }
+            CoreNodeKind::Index { index } => {
+                self.charge(1)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if array.ty.element() != node.ty {
+                    return Err(Stop::InconsistentCore);
+                }
+                let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
+                let element = array
+                    .elements
+                    .get(index)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(element)
+            }
             CoreNodeKind::Convert { from } => {
                 self.charge(1)?;
                 let value = match (word_mask(*from), word_mask(node.ty)) {
@@ -684,29 +767,12 @@ fn evaluate_with_reservations(
             );
         }
         name.push_str(&function.name);
-        let value = match value {
-            Value::Int(value) => match value.try_clone_with_reservation(reservations.value_limbs) {
-                Some(value) => CoreValue::Int(value),
-                None => {
-                    return allocation_failure(
-                        diagnostics,
-                        function.name_span,
-                        "evaluated exact integer storage could not be reserved",
-                    );
-                }
-            },
-            Value::Word(value) => {
-                let Some(value) = CoreValue::word_from_u64(function.result_type, value) else {
-                    return stopped(
-                        diagnostics,
-                        function,
-                        Stop::InconsistentCore,
-                        step_limit,
-                        false,
-                    );
-                };
-                value
+        let value = match result_value(value, function.result_type, reservations) {
+            Ok(value) => value,
+            Err(Stop::Allocation(label)) => {
+                return allocation_failure(diagnostics, function.name_span, label);
             }
+            Err(stop) => return stopped(diagnostics, function, stop, step_limit, false),
         };
         let module = Arc::clone(shared_module.get_or_insert_with(|| Arc::from(core.name.as_str())));
         values.push(EvaluatedFunction {
@@ -719,6 +785,56 @@ fn evaluate_with_reservations(
     EvaluationResult {
         values: Some(values),
         diagnostics,
+    }
+}
+
+/// Copies an evaluated value of type `ty` out of the machine's shared storage.
+fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Result<CoreValue, Stop> {
+    match (value, ty) {
+        (Value::Int(value), CoreType::Int) => value
+            .try_clone_with_reservation(reservations.value_limbs)
+            .map(CoreValue::Int)
+            .ok_or(Stop::Allocation(
+                "evaluated exact integer storage could not be reserved",
+            )),
+        (Value::Word(value), ty) => {
+            CoreValue::word_from_u64(ty, value).ok_or(Stop::InconsistentCore)
+        }
+        (Value::Array(array), CoreType::Array(array_type)) if array.ty == array_type => {
+            let mut elements = Vec::new();
+            if !(reservations.result_array)(&mut elements, array.elements.len()) {
+                return Err(Stop::Allocation(
+                    "evaluated array storage could not be reserved",
+                ));
+            }
+            for element in &array.elements {
+                elements.push(result_element(element, array_type.element(), reservations)?);
+            }
+            CoreArray::new(array_type, elements)
+                .map(CoreValue::Array)
+                .ok_or(Stop::InconsistentCore)
+        }
+        _ => Err(Stop::InconsistentCore),
+    }
+}
+
+/// Copies one scalar array element; arrays have no array elements.
+fn result_element(
+    element: &Value,
+    ty: CoreType,
+    reservations: Reservations,
+) -> Result<CoreValue, Stop> {
+    match (element, ty) {
+        (Value::Int(value), CoreType::Int) => value
+            .try_clone_with_reservation(reservations.value_limbs)
+            .map(CoreValue::Int)
+            .ok_or(Stop::Allocation(
+                "evaluated exact integer storage could not be reserved",
+            )),
+        (Value::Word(value), ty) => {
+            CoreValue::word_from_u64(ty, *value).ok_or(Stop::InconsistentCore)
+        }
+        _ => Err(Stop::InconsistentCore),
     }
 }
 
@@ -1565,6 +1681,14 @@ mod tests {
                 "  spec w() -> Word[8] { let n: Int = -18446744073709551617; n as Word[8] }\n",
                 3,
             ),
+            // An array of n elements costs its elements' steps and n more;
+            // every index costs one step.
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] }\n", 6),
+            ("  spec a() -> Int^1 { [-(1)] }\n", 4),
+            (
+                "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; t[1] ^ t[0] }\n",
+                9,
+            ),
         ] {
             let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
             let exact = evaluate_with_limit(&core, steps);
@@ -1687,6 +1811,16 @@ mod tests {
             nested("(", "x", " as Word[32])"),
             nested("g(", "x", " as Word[32])"),
             format!(
+                "{}x{}",
+                "h([".repeat(MAX_EXPRESSION_NESTING / 2),
+                "])[0]".repeat(MAX_EXPRESSION_NESTING / 2)
+            ),
+            format!(
+                "h([{}x{}])[0]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 2),
+                ")".repeat(MAX_EXPRESSION_NESTING - 2)
+            ),
+            format!(
                 "{}x",
                 (0..MAX_BINDINGS_PER_BODY)
                     .map(|index| format!("let v{index}: Word[32] = {};", nested("(", "x", ")")))
@@ -1698,6 +1832,7 @@ mod tests {
             .map(|body| {
                 format!(
                     "edition 2026; module m {{\n  spec g(x: Word[32]) -> Word[32] {{ x }}\n  \
+                     spec h(x: Word[32]^1) -> Word[32]^1 {{ x }}\n  \
                      spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
                      spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
                 )
@@ -1869,6 +2004,213 @@ mod tests {
         assert_eq!(
             result.diagnostics()[0].label(),
             "exact integer storage could not be reserved"
+        );
+    }
+
+    #[test]
+    fn arrays_evaluate_in_index_order_and_display_every_element() {
+        let members = concat!(
+            "  spec rows() -> Word[8]^4 { [1, 0x20, 0xff, 7] }\n",
+            "  spec pick() -> Word[8] { rows()[2] ^ rows()[0] }\n",
+            "  spec ints() -> Int^2 { let p: Int^2 = [-5, 18446744073709551616]; [p[1], p[0]] }\n",
+            "  spec rev(x: Word[32]^3) -> Word[32]^3 { [x[2], x[1], x[0]] }\n",
+            "  spec run() -> Word[32]^3 { rev([1, 2, rev([7, 8, 9])[0]]) }\n",
+            "  spec one() -> Word[64]^1 { [0xffffffffffffffff] }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "rows = [0x01, 0x20, 0xff, 0x07]",
+                "pick = 0xfe",
+                "ints = [18446744073709551616, -5]",
+                "run = [0x00000009, 0x00000002, 0x00000001]",
+                "one = [0xffffffffffffffff]",
+            ]
+        );
+        // Every admitted length evaluates, and elements keep their order.
+        let long = (0..256)
+            .map(|index| format!("{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let members = format!(
+            "  spec all() -> Word[8]^256 {{ [{long}] }}\n  \
+             spec last() -> Word[8] {{ all()[255] }}\n"
+        );
+        let values = values_of(&members);
+        assert_eq!(values[1], "last = 0xff");
+        let expected = (0..256)
+            .map(|index| render_word(8, index))
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(values[0], format!("all = [{expected}]"));
+    }
+
+    #[test]
+    fn chacha20_quarter_round_on_an_array_matches_rfc_8439() {
+        // RFC 8439 section 2.1.1, with the state as one `Word[32]^4`.
+        let members = concat!(
+            "  spec quarter_round(s: Word[32]^4) -> Word[32]^4 {\n",
+            "    let a1: Word[32] = s[0] + s[1];\n",
+            "    let d1: Word[32] = (s[3] ^ a1) <<< 16;\n",
+            "    let c1: Word[32] = s[2] + d1;\n",
+            "    let b1: Word[32] = (s[1] ^ c1) <<< 12;\n",
+            "    let a2: Word[32] = a1 + b1;\n",
+            "    let d2: Word[32] = (d1 ^ a2) <<< 8;\n",
+            "    let c2: Word[32] = c1 + d2;\n",
+            "    let b2: Word[32] = (b1 ^ c2) <<< 7;\n",
+            "    [a2, b2, c2, d2]\n",
+            "  }\n",
+            "  spec test_vector() -> Word[32]^4 {\n",
+            "    quarter_round([0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567])\n",
+            "  }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            ["test_vector = [0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb]"]
+        );
+    }
+
+    #[test]
+    fn inconsistent_arrays_and_indices_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec rows() -> Word[8]^2 { [1, 2] }\n",
+            "  spec pick() -> Word[8] { rows()[1] }\n",
+            "  spec wrap(x: Word[8]) -> Word[8]^1 { [x] }\n",
+            "  spec run() -> Word[8]^1 { wrap(3) }\n",
+            "}\n"
+        ));
+        fn words(length: u32) -> CoreType {
+            CoreType::Array(ArrayType::new(CoreType::Word8, length).unwrap())
+        }
+        let mutations: [fn(&mut CoreModule); 9] = [
+            // An array claims more elements than its type has.
+            |core| core.functions[0].body.nodes[2].kind = CoreNodeKind::Array { elements: 3 },
+            // An array claims fewer elements than were computed.
+            |core| core.functions[0].body.nodes[2].kind = CoreNodeKind::Array { elements: 1 },
+            // An array node has a scalar type.
+            |core| core.functions[0].body.nodes[2].ty = CoreType::Word8,
+            // An element does not fit the element type.
+            |core| {
+                core.functions[0].body.nodes[0].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x100));
+            },
+            // An index is past the end.
+            |core| core.functions[1].body.nodes[1].kind = CoreNodeKind::Index { index: 2 },
+            // An index has a type other than the element type.
+            |core| core.functions[1].body.nodes[1].ty = CoreType::Word16,
+            // An index is applied to a scalar.
+            |core| {
+                core.functions[1].body.nodes[0].kind = CoreNodeKind::Literal(CoreValue::Word8(1));
+            },
+            // An array takes its element from the caller's arguments.
+            |core| {
+                core.functions[2].body.nodes.remove(0);
+            },
+            // A result has a different array type than its value.
+            |core| core.functions[0].result_type = words(1),
+        ];
+        assert_eq!(base.functions[0].result_type, words(2));
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn array_storage_reservation_failures_return_no_values() {
+        let core = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec rows() -> Int^2 { [1, 2] }\n",
+            "}\n"
+        ));
+        for (reservations, label) in [
+            (
+                Reservations {
+                    array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+            (
+                Reservations {
+                    result_array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluated array storage could not be reserved",
+            ),
+            (
+                Reservations {
+                    value_limbs: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluated exact integer storage could not be reserved",
+            ),
+        ] {
+            let run = || {
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.values().is_none());
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label);
+            assert_eq!(diagnostic.primary_span(), core.functions[0].name_span);
+        }
+    }
+
+    /// Nested array literals are rejected at the second level, but the whole
+    /// pipeline still walks all of them within 1 MiB of stack.
+    #[test]
+    fn deeply_nested_rejected_arrays_fit_in_one_mebibyte_of_stack() {
+        use crate::parser::MAX_EXPRESSION_NESTING;
+        let text = format!(
+            "edition 2026; module m {{ spec f(x: Word[32]) -> Word[32]^1 {{ {}x{} }} }}\n",
+            "[".repeat(MAX_EXPRESSION_NESTING),
+            "]".repeat(MAX_EXPRESSION_NESTING)
+        );
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                let mut sources = SourceMap::new();
+                let id = sources.add("evaluate.or", text).unwrap();
+                let source = sources.get(id).unwrap();
+                let lexed = lex(source, Edition::E2026);
+                let parsed = parse(source, &lexed);
+                assert_eq!(parsed.diagnostics(), []);
+                let analyzed = analyze(source, parsed.ast().unwrap());
+                analyzed
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| (diagnostic.code(), diagnostic.message().to_owned()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        assert_eq!(
+            worker.join().unwrap(),
+            [(
+                DiagnosticCode::TypeMismatch,
+                String::from("an array literal cannot have type `Word[32]`")
+            )]
         );
     }
 }

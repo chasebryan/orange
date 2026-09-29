@@ -33,7 +33,8 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > The S3c slice proposed in [`BINDINGS_2026.md`](BINDINGS_2026.md) under
 > OEP-0006, also in review, builds on S3b with typed `let` bindings and
 > explicit `as` conversions, and likewise keeps every value this document
-> defines.
+> defines. The S3d slice proposed in [`ARRAYS_2026.md`](ARRAYS_2026.md) under
+> OEP-0007 builds on S3c with fixed-length arrays and keeps them too.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

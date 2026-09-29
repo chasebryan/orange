@@ -156,6 +156,39 @@ different values. This slice, S3c, is implemented and tested; its
 specification is in review as
 [OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md).
 
+### A whole state as one value
+
+A cipher works on a state, and in Orange a state is one value. `Word[32]^8` is
+eight 32-bit words, an element of (Z/2^32 Z)^8. An array literal lists every
+element, and `s[4]` reads one at a literal index that the compiler checks
+against the length. One SHA-256 round of FIPS 180-4 section 6.2.2 is then one
+function from state to state:
+
+```orange
+spec round(s: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+  let t1: Word[32] = s[7] + big_sigma1(s[4]) + choose(s[4], s[5], s[6]) + k + w;
+  let t2: Word[32] = big_sigma0(s[0]) + majority(s[0], s[1], s[2]);
+  [t1 + t2, s[0], s[1], s[2], s[3] + t1, s[4], s[5], s[6]]
+}
+```
+
+Applied to the initial hash value and the first word of the padded "abc"
+block, the [SHA-256 fixture](compiler/fixtures/s3d/valid-sha256-rounds.or)
+gives exactly the working variables NIST publishes for round 0:
+
+```text
+sha256::after_round0: Word[32]^8 = [0x5d6aebcd, 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xfa2a4622, 0x510e527f, 0x9b05688c, 0x1f83d9ab]
+```
+
+The [ChaCha20 fixture](compiler/fixtures/s3d/valid-chacha20-block.or) holds
+the whole block function of RFC 8439, ten double rounds over a `Word[32]^16`
+state, and reproduces the serialized block of section 2.3.2 word for word.
+Arrays have no operators of their own, so every operator still acts on one
+ring element, and every index is a literal, so every position a specification
+reads is visible and in range. This slice, S3d, is implemented and tested; its
+specification is in review as
+[OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md).
+
 ## What works today
 
 | Area | Status |
@@ -166,8 +199,9 @@ specification is in review as
 | Typed `spec` functions: parameters, calls, `Int`, and `Word[8]` through `Word[64]` | Working; specification in review ([OEP-0005](docs/governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md)) |
 | Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
+| Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Tuples, arrays, comparisons, conditionals, loops | Not yet |
+| Loops, comparisons, conditionals, mixed-type tuples | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -225,7 +259,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, and conversions in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, and arrays in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -243,9 +277,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   Orange exists, how it is designed, and what has been built. Start here.
 - [Orange 2026 language specification](docs/LANGUAGE_2026.md),
   [typed-literal semantics](docs/SEMANTICS_2026.md), and the proposed
-  [pure expression semantics](docs/EXPRESSIONS_2026.md) and
-  [bindings and conversions](docs/BINDINGS_2026.md): the definition of what
-  the compiler accepts today.
+  [pure expression semantics](docs/EXPRESSIONS_2026.md),
+  [bindings and conversions](docs/BINDINGS_2026.md), and
+  [fixed-length arrays](docs/ARRAYS_2026.md): the definition of what the
+  compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Architecture](docs/ARCHITECTURE.md) and
   [assurance model](docs/ASSURANCE.md): the intended end state.

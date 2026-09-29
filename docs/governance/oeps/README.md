@@ -109,3 +109,4 @@ success does not establish technical soundness or authority approval.
 | [OEP-0004](OEP-0004-standalone-orange-product-form.md) | Accepted | Standalone editioned Orange product form; PF-01 accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333` |
 | [OEP-0005](OEP-0005-orange-2026-pure-spec-expressions.md) | Review | Orange 2026 pure specification expressions: parameters, calls, word and integer operators (S3b) |
 | [OEP-0006](OEP-0006-orange-2026-bindings-and-conversions.md) | Review | Orange 2026 bindings and conversions: typed let bindings and explicit as conversions (S3c) |
+| [OEP-0007](OEP-0007-orange-2026-fixed-length-arrays.md) | Review | Orange 2026 fixed-length arrays: array types, literals, and literal indices (S3d) |

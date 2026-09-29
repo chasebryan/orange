@@ -4,14 +4,16 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode, CoreNodeKind,
-    CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Magnitude,
+    ArrayType, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreModule, CoreNode,
+    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS,
+    Magnitude,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
-    BinaryExpression, BinaryOperator, Binding, CallExpression, ConversionExpression, Expression,
-    ExpressionKind, FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IntegerLiteral,
-    Parameter, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
+    ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
+    ConversionExpression, Expression, ExpressionKind, FunctionBody, FunctionDeclaration,
+    FunctionKind, Identifier, IndexExpression, IntegerLiteral, MAX_ARRAY_ELEMENTS, Parameter,
+    SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
 };
 use crate::source::{SourceFile, Span};
 
@@ -29,10 +31,14 @@ pub const MAX_SEMANTIC_EVENTS_PER_SOURCE: usize = 1_048_576;
 /// Maximum significant bits retained for one exact mathematical integer.
 pub const MAX_INTEGER_BITS: usize = 16_384;
 const _: () = assert!(MAX_INTEGER_BITS == MAX_EXACT_INTEGER_BITS);
+// An array literal can spell every admitted array type and no longer one.
+const _: () = assert!(MAX_ARRAY_ELEMENTS == 256 && MAX_ARRAY_LENGTH == 256);
 
 const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
 const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
 const ADMITTED_TYPES: &str = "`Int`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
+const ARRAY_OPERATOR_NOTE: &str =
+    "operators apply to `Int` and word values; apply them to elements, such as `x[0]`";
 
 /// The complete result of semantic analysis.
 ///
@@ -98,7 +104,10 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
     let source_id = source.id();
     let belongs = |span: Span| span.source() == source_id;
     let type_belongs = |ty: &TypeSyntax| {
-        belongs(ty.span) && belongs(ty.name.span) && ty.width_span.is_none_or(belongs)
+        belongs(ty.span)
+            && belongs(ty.name.span)
+            && ty.width_span.is_none_or(belongs)
+            && ty.length_span.is_none_or(belongs)
     };
 
     belongs(ast.span)
@@ -161,7 +170,15 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && belongs(target.span)
                     && belongs(target.name.span)
                     && target.width_span.is_none_or(belongs)
+                    && target.length_span.is_none_or(belongs)
                     && expression_belongs(&conversion.operand, belongs)
+            }
+            ExpressionKind::Array(array) => array
+                .elements
+                .iter()
+                .all(|element| expression_belongs(element, belongs)),
+            ExpressionKind::Index(index) => {
+                belongs(index.index_span) && expression_belongs(&index.base, belongs)
             }
         }
 }
@@ -329,19 +346,22 @@ impl<'ast> BodyContext<'ast> {
     }
 }
 
-/// Returns the first name, call, or conversion of `expression`, from left to
-/// right, outside call arguments and shift amounts.
+/// Returns the first name, call, conversion, index, or array literal of
+/// `expression`, from left to right, outside call arguments and shift amounts.
 ///
 /// Every operator gives its result the type of its operands, and a shift or
 /// rotation amount is a literal, so this leaf's type is the type of the whole
 /// expression. Literals take their type from their context and are skipped.
+/// An array literal ends the search so that a conversion can reject it.
 /// Parser-established expression height bounds this recursion.
 fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
     match &expression.kind {
         ExpressionKind::Literal(_) => None,
-        ExpressionKind::Name(_) | ExpressionKind::Call(_) | ExpressionKind::Conversion(_) => {
-            Some(expression)
-        }
+        ExpressionKind::Name(_)
+        | ExpressionKind::Call(_)
+        | ExpressionKind::Conversion(_)
+        | ExpressionKind::Index(_)
+        | ExpressionKind::Array(_) => Some(expression),
         ExpressionKind::Parenthesized(inner) => first_typed_leaf(inner),
         ExpressionKind::Unary(unary) => first_typed_leaf(&unary.operand),
         ExpressionKind::Binary(binary) => {
@@ -406,10 +426,36 @@ enum TypeClass {
     Resolved(CoreType),
     MissingWordWidth,
     UnsupportedWordWidth(Span),
+    UnsupportedArrayLength(Span),
     Unsupported,
 }
 
 fn classify_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
+    let scalar = classify_scalar_type(source, syntax);
+    match (scalar, syntax.length_span) {
+        (TypeClass::Resolved(element), Some(length_span)) => array_length(source, length_span)
+            .and_then(|length| ArrayType::new(element, length))
+            .map_or(TypeClass::UnsupportedArrayLength(length_span), |array| {
+                TypeClass::Resolved(CoreType::Array(array))
+            }),
+        (scalar, _) => scalar,
+    }
+}
+
+/// Decodes an array length written as a decimal integer with no leading
+/// zero and no underscore, as word widths are written.
+fn array_length(source: &SourceFile, span: Span) -> Option<u32> {
+    let spelling = source.slice(span)?;
+    let canonical = !spelling.is_empty()
+        && !spelling.starts_with('0')
+        && spelling.bytes().all(|byte| byte.is_ascii_digit());
+    if !canonical || spelling.len() > 3 {
+        return None;
+    }
+    spelling.parse().ok()
+}
+
+fn classify_scalar_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
     match (syntax.name.text.as_str(), syntax.width_span) {
         ("Int", None) => TypeClass::Resolved(CoreType::Int),
         ("Word", Some(width_span)) => {
@@ -440,7 +486,7 @@ fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
 
 fn word_maximum(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int => None,
+        CoreType::Int | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -881,6 +927,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         }
         match &expression.kind {
+            ExpressionKind::Literal(literal) if !expected.is_scalar() => {
+                if self.event(literal.span) {
+                    self.report_scalar_for_array(expression.span, "an integer literal", expected);
+                }
+                false
+            }
             ExpressionKind::Literal(literal) => {
                 // Literals keep the S3a accounting: one literal event followed
                 // by prefix and significant-digit events.
@@ -934,6 +986,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     return false;
                 }
                 self.check_conversion(expression, conversion, expected, context, scope, output)
+            }
+            ExpressionKind::Array(array) => {
+                if !self.event(expression.span) {
+                    return false;
+                }
+                self.check_array(expression, array, expected, context, scope, output)
+            }
+            ExpressionKind::Index(index) => {
+                if !self.event(index.index_span) {
+                    return false;
+                }
+                self.check_index(expression, index, expected, context, scope, output)
             }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
@@ -1019,6 +1083,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if actual != expected {
             if self.begin_report(name.span) {
                 let spelling = identifier_spelling_for_diagnostic(&name.text);
+                let note = if actual.as_array().map(ArrayType::element) == Some(expected) {
+                    format!("select one element with an index, such as `{spelling}[0]`")
+                } else {
+                    String::from("Orange has no implicit conversions between types")
+                };
                 self.diagnostics.push(
                     Diagnostic::error(
                         DiagnosticCode::TypeMismatch,
@@ -1028,7 +1097,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         name.span,
                     )
                     .with_label(format!("expected `{expected}`"))
-                    .with_note("Orange has no implicit conversions between types"),
+                    .with_note(note),
                 );
             }
             return false;
@@ -1138,7 +1207,27 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         };
-        let Some(from) = self.leaf_type(leaf, context, scope) else {
+        let from = self.leaf_type(leaf, context, scope);
+        if matches!(leaf.kind, ExpressionKind::Array(_))
+            || from.is_some_and(|from| !from.is_scalar())
+        {
+            let span = conversion.keyword_span;
+            if self.begin_report(span) {
+                let operand =
+                    from.map_or_else(|| String::from("an array"), |from| format!("`{from}`"));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::UnsupportedOperator,
+                        format!("`as` is not defined for {operand}"),
+                        span,
+                    )
+                    .with_label("`as` converts one `Int` or word value")
+                    .with_note("convert each element, such as `x[0] as Int`"),
+                );
+            }
+            return false;
+        }
+        let Some(from) = from else {
             // The leaf's own check reports why it has no type. That check
             // stops before comparing with the type passed here.
             self.check_expression(leaf, expected, context, scope, output);
@@ -1174,11 +1263,206 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .result_type
             }
             ExpressionKind::Conversion(conversion) => silent_type(self.source, &conversion.target),
+            ExpressionKind::Index(index) => self
+                .leaf_type(&index.base, context, scope)?
+                .as_array()
+                .map(ArrayType::element),
             ExpressionKind::Literal(_)
             | ExpressionKind::Unary(_)
             | ExpressionKind::Binary(_)
-            | ExpressionKind::Parenthesized(_) => None,
+            | ExpressionKind::Parenthesized(_)
+            | ExpressionKind::Array(_) => None,
         }
+    }
+
+    /// Checks an array literal against `expected`, which must be an array
+    /// type of the same length; each element is checked against its element
+    /// type.
+    fn check_array(
+        &mut self,
+        expression: &'ast Expression,
+        array: &'ast ArrayExpression,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Some(array_type) = expected.as_array() else {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::TypeMismatch,
+                        format!("an array literal cannot have type `{expected}`"),
+                        expression.span,
+                    )
+                    .with_label(format!("expected `{expected}`"))
+                    .with_note("an array literal is written where an array type `T^n` is required"),
+                );
+            }
+            return false;
+        };
+        let supplied = array.elements.len();
+        let length_matches = usize::try_from(array_type.length()).ok() == Some(supplied);
+        if !length_matches && self.begin_report(expression.span) {
+            let length = array_type.length();
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::ArrayLengthMismatch,
+                    format!(
+                        "this array has {supplied} {}, but `{expected}` has {length}",
+                        if supplied == 1 { "element" } else { "elements" },
+                    ),
+                    expression.span,
+                )
+                .with_label(format!(
+                    "expected {length} {}",
+                    if length == 1 { "element" } else { "elements" }
+                ))
+                .with_note("an array literal lists every element of its type exactly once"),
+            );
+        }
+        let mut elements_checked = true;
+        for element in &array.elements {
+            elements_checked &=
+                self.check_expression(element, array_type.element(), context, scope, output);
+            if self.halted {
+                return false;
+            }
+        }
+        if !length_matches || !elements_checked {
+            return false;
+        }
+        let Ok(elements) = u32::try_from(supplied) else {
+            self.resource_limit(
+                expression.span,
+                "array element count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        self.push_node(
+            output,
+            expression.span,
+            expected,
+            CoreNodeKind::Array { elements },
+        )
+    }
+
+    /// Checks `base[INDEX]` against `expected`.
+    ///
+    /// The base's type is found without reporting, as a conversion operand's
+    /// is. It must be an array, the index must be below its length, and its
+    /// element type must be `expected`; the base is then checked against its
+    /// own type, so errors inside it are still reported.
+    fn check_index(
+        &mut self,
+        expression: &'ast Expression,
+        index: &'ast IndexExpression,
+        expected: CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Some(base_type) = self.leaf_type(&index.base, context, scope) else {
+            // The base's own check reports why it has no type and stops
+            // before comparing with the type passed here.
+            self.check_expression(&index.base, expected, context, scope, output);
+            return false;
+        };
+        let Some(array_type) = base_type.as_array() else {
+            if self.begin_report(index.base.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::NotAnArray,
+                        format!("only an array can be indexed, but this has type `{base_type}`"),
+                        index.base.span,
+                    )
+                    .with_label(format!("`{base_type}` has no elements"))
+                    .with_note("an index selects one element of a value of type `T^n`"),
+                );
+            }
+            self.check_expression(&index.base, base_type, context, scope, output);
+            return false;
+        };
+        let position = self.check_index_literal(index, array_type);
+        let element = array_type.element();
+        let element_matches = element == expected;
+        if !element_matches && self.begin_report(expression.span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!("this element has type `{element}`, but `{expected}` is required here"),
+                    expression.span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("Orange has no implicit conversions between types"),
+            );
+        }
+        let base = self.check_expression(&index.base, base_type, context, scope, output);
+        match position {
+            Some(position) if base && element_matches => self.push_node(
+                output,
+                expression.span,
+                expected,
+                CoreNodeKind::Index { index: position },
+            ),
+            _ => false,
+        }
+    }
+
+    /// Decodes an index literal and checks it against the array's length.
+    fn check_index_literal(&mut self, index: &IndexExpression, array: ArrayType) -> Option<u32> {
+        let literal = IntegerLiteral {
+            span: index.index_span,
+            magnitude_span: index.index_span,
+            negative: false,
+        };
+        let magnitude = self.parse_magnitude(&literal, self.limits.integer_bits)?;
+        let length = array.length();
+        let decoded = magnitude
+            .to_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value < length);
+        if decoded.is_none() && self.begin_report(index.index_span) {
+            let highest = length.saturating_sub(1);
+            let spelling = self
+                .source
+                .slice(index.index_span)
+                .map_or_else(String::new, |spelling| {
+                    identifier_spelling_for_diagnostic(spelling).to_string()
+                });
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::IndexOutOfRange,
+                    format!(
+                        "index `{spelling}` is out of range for `{}`",
+                        CoreType::Array(array)
+                    ),
+                    index.index_span,
+                )
+                .with_label(format!("indices run from 0 through {highest}"))
+                .with_note(
+                    "an index is a fixed literal; variable indices are not part of Orange 2026",
+                ),
+            );
+        }
+        decoded
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_scalar_for_array(&mut self, span: Span, what: &str, expected: CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeMismatch,
+                format!("{what} cannot have type `{expected}`"),
+                span,
+            )
+            .with_label(format!("expected `{expected}`"))
+            .with_note("an array value is written `[e0, e1, ...]`, one element per index"),
+        );
     }
 
     fn check_call(
@@ -1341,11 +1625,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn unary_is_defined(&mut self, unary: &UnaryExpression, expected: CoreType) -> bool {
         let defined = match unary.operator {
             UnaryOperator::Negate => expected == CoreType::Int,
-            UnaryOperator::Complement => expected != CoreType::Int,
+            UnaryOperator::Complement => expected.word_bits().is_some(),
         };
         if !defined && self.begin_report(unary.operator_span) {
             let operator = unary.operator.as_str();
             let note = match (unary.operator, expected.word_bits()) {
+                _ if !expected.is_scalar() => String::from(ARRAY_OPERATOR_NOTE),
                 (UnaryOperator::Negate, Some(bits)) => {
                     format!("write `0 - x` for negation modulo 2^{bits}")
                 }
@@ -1366,14 +1651,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     fn binary_is_defined(&mut self, binary: &BinaryExpression, expected: CoreType) -> bool {
         let defined = match binary.operator {
-            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => true,
+            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => {
+                expected.is_scalar()
+            }
             BinaryOperator::And
             | BinaryOperator::Or
             | BinaryOperator::Xor
             | BinaryOperator::ShiftLeft
             | BinaryOperator::ShiftRight
             | BinaryOperator::RotateLeft
-            | BinaryOperator::RotateRight => expected != CoreType::Int,
+            | BinaryOperator::RotateRight => expected.word_bits().is_some(),
         };
         if !defined && self.begin_report(binary.operator_span) {
             let operator = binary.operator.as_str();
@@ -1384,7 +1671,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     binary.operator_span,
                 )
                 .with_label(format!("`{expected}` is required here"))
-                .with_note(if binary.operator.is_shift_or_rotation() {
+                .with_note(if !expected.is_scalar() {
+                    ARRAY_OPERATOR_NOTE
+                } else if binary.operator.is_shift_or_rotation() {
                     "shifts and rotations apply only to `Word[n]` values"
                 } else {
                     "bitwise operators apply only to `Word[n]` values"
@@ -1684,8 +1973,32 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         {
             return None;
         }
+        if let Some(length_span) = syntax.length_span
+            && !self.event(length_span)
+        {
+            return None;
+        }
         match classify_type(self.source, syntax) {
             TypeClass::Resolved(ty) => Some(ty),
+            TypeClass::UnsupportedArrayLength(length_span) => {
+                if self.begin_report(length_span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::UnsupportedArrayLength,
+                            format!(
+                                "an array length must be a decimal integer from 1 through \
+                                 {MAX_ARRAY_LENGTH}"
+                            ),
+                            length_span,
+                        )
+                        .with_label("unsupported array length")
+                        .with_note(
+                            "write the length in decimal without leading zeros, as in `Word[32]^16`",
+                        ),
+                    );
+                }
+                None
+            }
             TypeClass::UnsupportedWordWidth(width_span) => {
                 if self.begin_report(width_span) {
                     self.diagnostics.push(
@@ -4073,6 +4386,8 @@ mod tests {
                     CoreNodeKind::Shift { operator, amount } => {
                         format!("shift {} {amount}", operator.as_str())
                     }
+                    CoreNodeKind::Array { elements } => format!("array of {elements}"),
+                    CoreNodeKind::Index { index } => format!("index {index}"),
                 };
                 (
                     operation,
@@ -4657,7 +4972,7 @@ mod tests {
             ));
             let highest = TYPES
                 .into_iter()
-                .find(|candidate| candidate.as_str() == ty)
+                .find(|candidate| candidate.to_string() == ty)
                 .and_then(CoreType::word_bits)
                 .unwrap()
                 - 1;
@@ -5384,5 +5699,546 @@ mod tests {
             ]
         );
         assert_eq!(core.functions[1].name, "as");
+    }
+
+    fn array_of(element: CoreType, length: u32) -> CoreType {
+        CoreType::Array(ArrayType::new(element, length).unwrap())
+    }
+
+    #[test]
+    fn arrays_and_indices_build_typed_core_in_postorder() {
+        let (fixture, core) = accepted(concat!(
+            "  spec rot(x: Word[32]^4) -> Word[32]^4 { [x[1], x[2], x[3], x[0]] }\n",
+            "  spec pick(x: Word[32]^4) -> Word[32] { rot(x)[3] ^ x[0x0] }\n",
+            "  spec pair() -> Int^2 { let p: Int^2 = [1, -2,]; p }\n",
+            "  spec first() -> Int { pair()[0] }\n",
+        ));
+        let words = array_of(CoreType::Word32, 4);
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            core.functions
+                .iter()
+                .map(|function| (function.parameters.clone(), function.result_type))
+                .collect::<Vec<_>>(),
+            [
+                (vec![words], words),
+                (vec![words], CoreType::Word32),
+                (vec![], array_of(CoreType::Int, 2)),
+                (vec![], CoreType::Int),
+            ]
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[0]),
+            owned(&[
+                ("parameter 0", "x", words),
+                ("index 1", "x[1]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 2", "x[2]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 3", "x[3]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 0", "x[0]", CoreType::Word32),
+                ("array of 4", "[x[1], x[2], x[3], x[0]]", words),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[1]),
+            owned(&[
+                ("parameter 0", "x", words),
+                ("call #0 with 1", "rot(x)", words),
+                ("index 3", "rot(x)[3]", CoreType::Word32),
+                ("parameter 0", "x", words),
+                ("index 0", "x[0x0]", CoreType::Word32),
+                ("infix ^", "rot(x)[3] ^ x[0x0]", CoreType::Word32),
+            ])
+        );
+        let pair = &core.functions[2];
+        assert_eq!(pair.locals[0].ty(), array_of(CoreType::Int, 2));
+        assert_eq!(
+            expression_nodes(&fixture, &pair.locals[0].value),
+            owned(&[
+                ("literal 1", "1", CoreType::Int),
+                ("literal -2", "-2", CoreType::Int),
+                ("array of 2", "[1, -2,]", array_of(CoreType::Int, 2)),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, pair),
+            owned(&[("local 0", "p", array_of(CoreType::Int, 2))])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[3]),
+            owned(&[
+                ("call #2 with 0", "pair()", array_of(CoreType::Int, 2)),
+                ("index 0", "pair()[0]", CoreType::Int),
+            ])
+        );
+    }
+
+    #[test]
+    fn array_lengths_resolve_only_as_exact_decimals_from_1_through_256() {
+        for (length, resolved) in [
+            ("1", Some(1)),
+            ("2", Some(2)),
+            ("16", Some(16)),
+            ("255", Some(255)),
+            ("256", Some(256)),
+            ("0", None),
+            ("257", None),
+            ("1000", None),
+            ("01", None),
+            ("007", None),
+            ("0x10", None),
+            ("0b1", None),
+            ("1_6", None),
+            ("99999999999999999999", None),
+        ] {
+            let members = format!("  spec f(x: Word[8]^{length}) -> Word[8] {{ 1 }}\n");
+            let fixture = module(&members);
+            let result = fixture.analyze();
+            match resolved {
+                Some(resolved) => {
+                    assert_eq!(result.diagnostics, [], "{length}");
+                    assert_eq!(
+                        result.core.unwrap().functions[0].parameters,
+                        [array_of(CoreType::Word8, resolved)]
+                    );
+                }
+                None => {
+                    assert!(result.core.is_none(), "{length}");
+                    assert_eq!(
+                        reported(&fixture, &result),
+                        [(
+                            DiagnosticCode::UnsupportedArrayLength,
+                            length,
+                            String::from(
+                                "an array length must be a decimal integer from 1 through 256"
+                            )
+                        )],
+                        "{length}"
+                    );
+                    assert_eq!(
+                        result.diagnostics[0].notes(),
+                        ["write the length in decimal without leading zeros, as in `Word[32]^16`"]
+                    );
+                }
+            }
+        }
+        // The element type is resolved first; an unresolved element type is
+        // reported alone.
+        let (fixture, result) = rejected(concat!(
+            "  spec a(x: Bool^4) -> Int { 1 }\n",
+            "  spec b(x: Word^4) -> Int { 1 }\n",
+            "  spec c(x: Word[7]^0) -> Int { 1 }\n",
+            "  spec d() -> Int^0 { [1] }\n",
+            "  spec e() -> Int { let t: Word[8]^300 = [1]; 1 }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Bool^4",
+                    String::from("unsupported parameter type `Bool`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedWordWidth,
+                    "Word",
+                    String::from("`Word` requires an exact width of 8, 16, 32, or 64")
+                ),
+                (
+                    DiagnosticCode::UnsupportedWordWidth,
+                    "7",
+                    String::from("`Word` width must be exactly 8, 16, 32, or 64")
+                ),
+                (
+                    DiagnosticCode::UnsupportedArrayLength,
+                    "0",
+                    String::from("an array length must be a decimal integer from 1 through 256")
+                ),
+                (
+                    DiagnosticCode::UnsupportedArrayLength,
+                    "300",
+                    String::from("an array length must be a decimal integer from 1 through 256")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn array_errors_are_reported_once_in_checking_order() {
+        let (fixture, result) = rejected(concat!(
+            "  spec count(x: Word[8]) -> Word[8]^3 { [x, x] }\n",
+            "  spec one(x: Word[8]) -> Word[8]^2 { [x] }\n",
+            "  spec element(x: Word[8]) -> Word[8]^2 { [x, 256] }\n",
+            "  spec both() -> Word[8]^2 { [y, 1, 2] }\n",
+            "  spec range(x: Word[8]^4) -> Word[8] { x[4] }\n",
+            "  spec huge(x: Word[8]^4) -> Word[8] { x[99999999999999999999] }\n",
+            "  spec scalar(x: Word[8]) -> Word[8] { x[0] }\n",
+            "  spec mismatch(x: Word[8]^4) -> Word[16] { x[0] }\n",
+            "  spec mismatch_range(x: Word[8]^4) -> Word[16] { x[9] }\n",
+            "  spec unknown() -> Word[8] { z[0] }\n",
+            "  spec whole(x: Word[8]^4) -> Word[8] { x }\n",
+            "  spec other(x: Word[8]^4) -> Word[16] { x }\n",
+            "  spec literal() -> Word[8]^4 { 1 }\n",
+            "  spec array_for_scalar() -> Int { [1] }\n",
+            "  spec nested() -> Int^1 { [[1]] }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[x, x]",
+                    String::from("this array has 2 elements, but `Word[8]^3` has 3")
+                ),
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[x]",
+                    String::from("this array has 1 element, but `Word[8]^2` has 2")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "256",
+                    String::from("literal is outside the range of `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::ArrayLengthMismatch,
+                    "[y, 1, 2]",
+                    String::from("this array has 3 elements, but `Word[8]^2` has 2")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "y",
+                    String::from("`y` is not a parameter of `both`")
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "4",
+                    String::from("index `4` is out of range for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "99999999999999999999",
+                    String::from("index `99999999999999999999` is out of range for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::NotAnArray,
+                    "x",
+                    String::from("only an array can be indexed, but this has type `Word[8]`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x[0]",
+                    String::from(
+                        "this element has type `Word[8]`, but `Word[16]` is required here"
+                    )
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "9",
+                    String::from("index `9` is out of range for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x[9]",
+                    String::from(
+                        "this element has type `Word[8]`, but `Word[16]` is required here"
+                    )
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "z",
+                    String::from("`z` is not a parameter of `unknown`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x",
+                    String::from("`x` has type `Word[8]^4`, but `Word[8]` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "x",
+                    String::from("`x` has type `Word[8]^4`, but `Word[16]` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "1",
+                    String::from("an integer literal cannot have type `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "[1]",
+                    String::from("an array literal cannot have type `Int`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "[1]",
+                    String::from("an array literal cannot have type `Int`")
+                ),
+            ]
+        );
+        let notes = |index: usize| result.diagnostics[index].notes().to_vec();
+        assert_eq!(
+            notes(0),
+            ["an array literal lists every element of its type exactly once"]
+        );
+        assert_eq!(
+            result.diagnostics[5].label(),
+            "indices run from 0 through 3"
+        );
+        assert_eq!(
+            notes(5),
+            ["an index is a fixed literal; variable indices are not part of Orange 2026"]
+        );
+        assert_eq!(result.diagnostics[7].label(), "`Word[8]` has no elements");
+        assert_eq!(
+            notes(12),
+            ["select one element with an index, such as `x[0]`"]
+        );
+        assert_eq!(
+            notes(13),
+            ["Orange has no implicit conversions between types"]
+        );
+        assert_eq!(
+            notes(14),
+            ["an array value is written `[e0, e1, ...]`, one element per index"]
+        );
+        assert_eq!(
+            notes(15),
+            ["an array literal is written where an array type `T^n` is required"]
+        );
+    }
+
+    #[test]
+    fn operators_and_conversions_apply_to_elements_not_arrays() {
+        let (fixture, result) = rejected(concat!(
+            "  spec add(x: Word[8]^4) -> Word[8]^4 { x + x }\n",
+            "  spec xor(x: Word[8]^4) -> Word[8]^4 { x ^ x }\n",
+            "  spec rot(x: Word[8]^4) -> Word[8]^4 { x <<< 1 }\n",
+            "  spec not(x: Word[8]^4) -> Word[8]^4 { ~x }\n",
+            "  spec neg(x: Int^4) -> Int^4 { -x }\n",
+            "  spec convert(x: Word[8]^4) -> Int { x as Int }\n",
+            "  spec convert_call() -> Word[8] { rows() as Word[8] }\n",
+            "  spec convert_literal() -> Int { [1] as Int }\n",
+            "  spec rows() -> Word[8]^2 { [1, 2] }\n",
+        ));
+        let note = String::from(ARRAY_OPERATOR_NOTE);
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "+",
+                    String::from("`+` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "^",
+                    String::from("`^` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "<<<",
+                    String::from("`<<<` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "~",
+                    String::from("prefix `~` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "-",
+                    String::from("prefix `-` is not defined for `Int^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for `Word[8]^4`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for `Word[8]^2`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for an array")
+                ),
+            ]
+        );
+        for diagnostic in &result.diagnostics[..5] {
+            assert_eq!(diagnostic.notes(), [note.as_str()]);
+        }
+        for diagnostic in &result.diagnostics[5..] {
+            assert_eq!(
+                diagnostic.notes(),
+                ["convert each element, such as `x[0] as Int`"]
+            );
+        }
+        // Operators on elements and conversions of elements are ordinary.
+        let (fixture, core) = accepted(concat!(
+            "  spec mix(x: Word[8]^2, n: Int^2) -> Int {\n",
+            "    ((x[0] ^ ~x[1]) as Int) + -n[1] * ((x[1] <<< 3) as Int)\n",
+            "  }\n",
+        ));
+        let operations = core_nodes(&fixture, &core.functions[0])
+            .into_iter()
+            .map(|(operation, _, _)| operation)
+            .collect::<Vec<_>>();
+        assert!(
+            operations.contains(&String::from("index 1")),
+            "{operations:?}"
+        );
+    }
+
+    #[test]
+    fn array_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); the parameter's uniqueness check,
+        // name, width, and length (4); the result's name, width, and length
+        // (3); the array literal (1); the index `[1]`, its prefix and one
+        // significant digit, and its base `x` (4); and the literal `0x05`,
+        // its prefix, and one significant digit (3): 17 analysis events.
+        // Core is the module, one function node, one result-type node, one
+        // parameter-type node, and the body nodes `x`, `x[1]`, `0x05`, and
+        // the array: 8 nodes, each one more event.
+        let fixture = module("  spec f(x: Word[8]^2) -> Word[8]^2 { [x[1], 0x05] }\n");
+        let (events, nodes) = (25, 8);
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert!(exact.core.is_some());
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label);
+        }
+        // An index literal decodes against the significant-bit limit before
+        // its range is checked.
+        let fixture = module(&format!(
+            "  spec f(x: Word[8]^2) -> Word[8] {{ x[0x{}] }}\n",
+            "f".repeat(4097)
+        ));
+        let result = fixture.analyze();
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::IntegerMagnitudeLimit
+        );
+    }
+
+    #[test]
+    fn array_storage_failures_return_no_partial_core() {
+        let fixture = module("  spec f(x: Int) -> Int^2 { [x, x] }\n");
+        let first = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_node_slot =
+                |nodes| nodes.len() < 2 && nodes.try_reserve(1).is_ok();
+            analyzer.run()
+        };
+        let result = first();
+        assert_eq!(result, first());
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(
+            fixture.source().slice(diagnostic.primary_span()),
+            Some("[x, x]")
+        );
+        assert_eq!(
+            diagnostic.label(),
+            "typed Core expression storage allocation failed"
+        );
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_arrays_and_indices() {
+        let text = "edition 2026; module values { \
+                    spec value(x: Word[8]^2) -> Word[8]^2 { [x[1], x[0]] } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        let foreign_function = &second.ast.module.functions[0];
+        let foreign = match &foreign_function.body {
+            FunctionBody::Typed(body) => body,
+            FunctionBody::Empty => unreachable!(),
+        };
+        let ExpressionKind::Array(foreign_array) = &foreign.expression.kind else {
+            unreachable!();
+        };
+        let ExpressionKind::Index(foreign_index) = &foreign_array.elements[0].kind else {
+            unreachable!();
+        };
+        let foreign_length = foreign_function.parameters[0].ty.length_span;
+        let foreign_result_length = foreign.result_type.length_span;
+        fn index_mut(ast: &mut SyntaxTree) -> &mut IndexExpression {
+            let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
+                unreachable!();
+            };
+            match &mut array.elements[0].kind {
+                ExpressionKind::Index(index) => index,
+                _ => unreachable!(),
+            }
+        }
+        let mutations: [&dyn Fn(&mut SyntaxTree); 6] = [
+            &|ast| ast.module.functions[0].parameters[0].ty.length_span = foreign_length,
+            &|ast| typed_body_mut(ast).result_type.length_span = foreign_result_length,
+            &|ast| typed_body_mut(ast).expression.span = foreign.expression.span,
+            &|ast| {
+                let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
+                    unreachable!();
+                };
+                array.elements[1].span = foreign_array.elements[1].span;
+            },
+            &|ast| index_mut(ast).index_span = foreign_index.index_span,
+            &|ast| index_mut(ast).base.span = foreign_index.base.span,
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
     }
 }

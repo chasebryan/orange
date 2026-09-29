@@ -284,27 +284,27 @@ the archive tool, the bundle, the overlay and the committed run archive under
 closed of 35 required units and 105 of 105 result records. Both are
 contributor-produced and unreviewed, and both `roadmap_gate_credit` and
 `readiness_credit` remain `none`. None of these inventories contains an accepted
-D-004 decision or release evidence; D-004 remains proposed, S3b and S3c are
-implemented and await owner review under OEP-0005 and OEP-0006, and the 3-of-10
-(30%) binary gate-closure score is unchanged. D-005's protected Rust laboratory
-may construct canonical adapter requests and validate synthetic captured
-transport envelopes, enumerate the exact 192 in-memory transport identities,
-and bind a closed synthetic observation inventory to canonical raw-stream
-integrity receipts. Those receipts fix isolation to unevaluated, payload status
-to unvalidated, and evidence status to none; they do not authorize a physical
-run order or compare opaque payloads. The laboratory contains no subprocess
-launcher, candidate payload validator, result artifact, or execution authority
-and retains 0/32. The D-009 laboratory likewise retains 0/24 while admitting,
-acquiring, installing, or executing no solver, certificate checker, or proof
-tool. It validates no proof, certificate, counterexample, claim, or cache
-result and does not place any solver inside or outside the logical TCB. The
-D-004 through D-006, D-009, and D-010 policy checks share one table-driven
-identity boundary: each admitted research tree is exact, JSON is parsed through
-the bounded strict profile, reviewed canonical meanings and raw transports are
-SHA-256 bound, and every external input binding is verified from a trusted
-path. Whole-object identity drift now receives an artifact-level diagnostic
-instead of a field-specific diagnosis. D-005 additionally retains the live
-check that all five fixed historical mutations are still accepted by the
+D-004 decision or release evidence; D-004 remains proposed, S3b, S3c, and S3d
+are implemented and await owner review under OEP-0005, OEP-0006, and OEP-0007,
+and the 3-of-10 (30%) binary gate-closure score is unchanged. D-005's protected
+Rust laboratory may construct canonical adapter requests and validate synthetic
+captured transport envelopes, enumerate the exact 192 in-memory transport
+identities, and bind a closed synthetic observation inventory to canonical
+raw-stream integrity receipts. Those receipts fix isolation to unevaluated,
+payload status to unvalidated, and evidence status to none; they do not
+authorize a physical run order or compare opaque payloads. The laboratory
+contains no subprocess launcher, candidate payload validator, result artifact,
+or execution authority and retains 0/32. The D-009 laboratory likewise retains
+0/24 while admitting, acquiring, installing, or executing no solver, certificate
+checker, or proof tool. It validates no proof, certificate, counterexample,
+claim, or cache result and does not place any solver inside or outside the
+logical TCB. The D-004 through D-006, D-009, and D-010 policy checks share one
+table-driven identity boundary: each admitted research tree is exact, JSON is
+parsed through the bounded strict profile, reviewed canonical meanings and raw
+transports are SHA-256 bound, and every external input binding is verified from
+a trusted path. Whole-object identity drift now receives an artifact-level
+diagnostic instead of a field-specific diagnosis. D-005 additionally retains the
+live check that all five fixed historical mutations are still accepted by the
 historical v0.1 schema and second pass; hashes alone cannot establish that
 compatibility. This consolidation changes no research input, decision,
 execution count, evidence, gate status, or readiness credit. The S2 inventory

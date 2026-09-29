@@ -1,0 +1,11 @@
+// S3d rejection: an array literal lists exactly as many elements as its type
+// has, each of the element type, and it appears only where an array is
+// required.
+edition 2026;
+module literals {
+  spec short(x: Word[8]) -> Word[8]^3 { [x, x] }
+  spec long() -> Word[8]^1 { [1, 2] }
+  spec element() -> Word[8]^2 { [1, 256] }
+  spec scalar_for_array() -> Word[8]^2 { 1 }
+  spec array_for_scalar() -> Int { [1] }
+}

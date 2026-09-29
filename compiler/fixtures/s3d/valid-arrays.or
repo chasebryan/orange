@@ -1,0 +1,16 @@
+// S3d conformance: array types, literals, and indices in every position a
+// value can take, for `Int` and every word width.
+edition 2026;
+module arrays {
+  spec bytes() -> Word[8]^4 { [0x01, 0x20, 0xff, 7] }
+  spec last_byte() -> Word[8] { bytes()[3] }
+  spec exact() -> Int^3 { [-1, 0, 340282366920938463463374607431768211456] }
+  spec reversed(x: Word[16]^3) -> Word[16]^3 { [x[2], x[1], x[0]] }
+  spec reverse_twice() -> Word[16]^3 { reversed(reversed([0x0001, 0x0002, 0xbeef,])) }
+  spec element_arithmetic(x: Word[64]^2) -> Word[64] { (x[0] + x[1]) ^ ~x[1] }
+  spec lanes() -> Word[64] { element_arithmetic([0xfffffffffffffffe, 1]) }
+  spec widen(b: Word[8]^2) -> Word[16] { (b[0] as Word[16]) | ((b[1] as Word[16]) << 8) }
+  spec little_endian() -> Word[16] { widen([0x34, 0x12]) }
+  spec single() -> Word[32]^1 { let one: Word[32]^1 = [0x6a09e667]; one }
+  spec indexed_binding() -> Int { let p: Int^2 = [3, 4]; p[0] * p[0] + p[1] * p[1] }
+}
