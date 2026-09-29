@@ -9,7 +9,10 @@ typed-reference evaluator and continues to fail closed on unknown source,
 unexpected binaries, untracked executable paths, unratified license files,
 unapproved dependencies, and workflow drift. The validator parses every
 admitted Cargo manifest and the lock graph; only the workspace-local `orangec`
-to `orange-compiler` path dependency is allowed. Product implementation is
+to `orange-compiler` path dependency is allowed. Tabula, the Orange workbench
+in `tabula/`, is admitted as its own Cargo workspace with no dependencies; the
+gate formats, lints, and tests it next to the compiler, and its end-to-end tests
+drive the release `orangec` that the gate builds. Product implementation is
 allowed; product releases and third-party pull requests are not.
 
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Tabula">
+<title>Tabula</title>
+<rect width="32" height="32" rx="7.5" fill="#14161b"/>
+<g fill="#ff8a3d">
+<rect x="3.40" y="3.40" width="4.2" height="4.2" rx="1" fill-opacity="1"/>
+<rect x="8.65" y="3.40" width="4.2" height="4.2" rx="1" fill-opacity=".62"/>
+<rect x="13.90" y="3.40" width="4.2" height="4.2" rx="1" fill-opacity=".36"/>
+<rect x="19.15" y="3.40" width="4.2" height="4.2" rx="1" fill-opacity=".2"/>
+<rect x="24.40" y="3.40" width="4.2" height="4.2" rx="1" fill-opacity=".12"/>
+<rect x="3.40" y="8.65" width="4.2" height="4.2" rx="1" fill-opacity=".12"/>
+<rect x="8.65" y="8.65" width="4.2" height="4.2" rx="1" fill-opacity="1"/>
+<rect x="13.90" y="8.65" width="4.2" height="4.2" rx="1" fill-opacity=".62"/>
+<rect x="19.15" y="8.65" width="4.2" height="4.2" rx="1" fill-opacity=".36"/>
+<rect x="24.40" y="8.65" width="4.2" height="4.2" rx="1" fill-opacity=".2"/>
+<rect x="3.40" y="13.90" width="4.2" height="4.2" rx="1" fill-opacity=".2"/>
+<rect x="8.65" y="13.90" width="4.2" height="4.2" rx="1" fill-opacity=".12"/>
+<rect x="13.90" y="13.90" width="4.2" height="4.2" rx="1" fill-opacity="1"/>
+<rect x="19.15" y="13.90" width="4.2" height="4.2" rx="1" fill-opacity=".62"/>
+<rect x="24.40" y="13.90" width="4.2" height="4.2" rx="1" fill-opacity=".36"/>
+<rect x="3.40" y="19.15" width="4.2" height="4.2" rx="1" fill-opacity=".36"/>
+<rect x="8.65" y="19.15" width="4.2" height="4.2" rx="1" fill-opacity=".2"/>
+<rect x="13.90" y="19.15" width="4.2" height="4.2" rx="1" fill-opacity=".12"/>
+<rect x="19.15" y="19.15" width="4.2" height="4.2" rx="1" fill-opacity="1"/>
+<rect x="24.40" y="19.15" width="4.2" height="4.2" rx="1" fill-opacity=".62"/>
+<rect x="3.40" y="24.40" width="4.2" height="4.2" rx="1" fill-opacity=".62"/>
+<rect x="8.65" y="24.40" width="4.2" height="4.2" rx="1" fill-opacity=".36"/>
+<rect x="13.90" y="24.40" width="4.2" height="4.2" rx="1" fill-opacity=".2"/>
+<rect x="19.15" y="24.40" width="4.2" height="4.2" rx="1" fill-opacity=".12"/>
+<rect x="24.40" y="24.40" width="4.2" height="4.2" rx="1" fill-opacity="1"/>
+</g>
+</svg>

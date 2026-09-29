@@ -896,12 +896,13 @@ class RepositoryInventoryBoundTests(unittest.TestCase):
             for line in (root / ".gitignore").read_text(encoding="utf-8").splitlines()
             if line and not line.startswith("#")
         )
-        compiler_patterns = tuple(
-            "compiler/" + line.removeprefix("/")
-            for line in (root / "compiler/.gitignore").read_text(encoding="utf-8").splitlines()
+        nested_patterns = tuple(
+            f"{folder}/" + line.removeprefix("/")
+            for folder in ("compiler", "tabula")
+            for line in (root / folder / ".gitignore").read_text(encoding="utf-8").splitlines()
             if line and not line.startswith("#")
         )
-        self.assertEqual(GATE0_IGNORE_PATTERNS, root_patterns + compiler_patterns)
+        self.assertEqual(GATE0_IGNORE_PATTERNS, root_patterns + nested_patterns)
 
     def test_git_inventory_has_one_deadline_for_output_and_exit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
