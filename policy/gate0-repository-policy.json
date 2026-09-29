@@ -98,6 +98,18 @@
       "sha256": "41b1806fac78c66542b3b89b14d3bcefa85458321ab8d81719e3aa23730e620b",
       "role": "README conceptual-architecture snapshot for the S3a baseline at a82a5ce",
       "provenance": "Byte-for-byte import from the steward-supplied HOI_RDNWUAAcD7_.jpeg on 2026-07-26"
+    },
+    {
+      "path": "assets/brand/orange-cipher-readme-banner.png",
+      "sha256": "d4ed4c5bbde5d5bfe020562bd49f11f4c6be5698d36ffbcb0d9e8db9b494543d",
+      "role": "Official working Orange cipher README emblem and wordmark on ivory",
+      "provenance": "Owner-requested OpenAI image generation on 2026-09-28; byte-for-byte import of exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png; embedded C2PA unverified"
+    },
+    {
+      "path": "assets/brand/orange-book-cipher-cover.png",
+      "sha256": "99682f1f646868105b28f3091e3391d6532404cb0bfadaec51e109262ff7f66d",
+      "role": "Official working Orange Book cipher front cover, lossless PNG derivative",
+      "provenance": "Owner-requested OpenAI image generation on 2026-09-28; lossless PNG recompression with identical RGB pixels from exec-20007692-ab83-4401-8529-3ba127105b2c.png (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); metadata omitted"
     }
   ],
   "required_paths": [
@@ -141,6 +153,20 @@
     "assets/brand/orange.jpg",
     "assets/brand/orange.png",
     "assets/brand/orangePNG.PNG",
+    "assets/brand/orange-cipher-readme-banner.png",
+    "assets/brand/orange-book-cipher-cover.png",
+    "assets/identity/README.md",
+    "assets/identity/orange-book-cover-construction.svg",
+    "assets/identity/orange-book-cover.svg",
+    "assets/identity/orange-emblem-construction.svg",
+    "assets/identity/orange-emblem-mono.svg",
+    "assets/identity/orange-emblem-shaded.svg",
+    "assets/identity/orange-emblem.svg",
+    "assets/identity/orange-lockup.svg",
+    "assets/identity/orange-readme-banner-dark.svg",
+    "assets/identity/orange-readme-banner-light.svg",
+    "assets/identity/orange-readme-banner.svg",
+    "assets/identity/orange-wordmark.svg",
     "compiler/.gitignore",
     "compiler/Cargo.lock",
     "compiler/Cargo.toml",
@@ -409,8 +435,8 @@
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "546dc8bf2c68eacf452641fb19ef591d41228dcec43d4c028a5758ab9d9a2f82",
-    "assets/brand/manifest.json": "776173a6e2cab2f5840a5f5b882f131ee34ce1ed10a50658717361267e5d93e4",
+    "assets/brand/README.md": "0f70fc8b8610096a97f8312e1e25176ad9099718e9faf45189c409dba42277bf",
+    "assets/brand/manifest.json": "8ce296a870b0c2a6eacd40d15dd6ff3fcaffe838e322bfa898871c1eb7365d2a",
     "compiler/.gitignore": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368",
     "compiler/crates/orange-compiler/tests/d004_decision_suite.rs": "b9615fb562b492a289d510afb78f57be6a65ba26011784e90d0d11384fc36f03",
     "compiler/crates/orange-compiler/tests/d004_support/candidate_mappings.rs": "bb6c76ca7cc754f4af28ef04bbe84cc327b2e805d3750f525e3ff8afcd0401cc",

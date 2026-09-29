@@ -406,6 +406,8 @@ assets/brand/orange-handdrawn-marker-banner.png
 assets/brand/orange.jpg
 assets/brand/orange.png
 assets/brand/orangePNG.PNG
+assets/brand/orange-cipher-readme-banner.png
+assets/brand/orange-book-cipher-cover.png
 conformance/foundation/manifest.json
 conformance/foundation/README.md
 docs/DECISIONS.md
@@ -512,6 +514,8 @@ tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
 """.strip().splitlines()
 )
+_ID = "assets/identity/"
+MINIMUM_REQUIRED_PATHS |= {_ID + n for n in "README.md orange-book-cover-construction.svg orange-book-cover.svg orange-emblem-construction.svg orange-emblem-mono.svg orange-emblem-shaded.svg orange-emblem.svg orange-lockup.svg orange-readme-banner-dark.svg orange-readme-banner-light.svg orange-readme-banner.svg orange-wordmark.svg".split()}
 MINIMUM_FORBIDDEN_PATHS = set("COPYING LICENSE crates crypto formal release spec stdlib targets".split())
 MINIMUM_REQUIRED_WORKFLOWS = set("ci.yml dependency-review.yml scorecard.yml".split())
 MINIMUM_ACTION_REPOSITORIES = set(
@@ -544,7 +548,19 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
         "sha256": "41b1806fac78c66542b3b89b14d3bcefa85458321ab8d81719e3aa23730e620b",
         "role": "README conceptual-architecture snapshot for the S3a baseline at a82a5ce",
         "provenance": "Byte-for-byte import from the steward-supplied HOI_RDNWUAAcD7_.jpeg on 2026-07-26",
-    }
+    },
+    {
+        "path": "assets/brand/orange-cipher-readme-banner.png",
+        "sha256": "d4ed4c5bbde5d5bfe020562bd49f11f4c6be5698d36ffbcb0d9e8db9b494543d",
+        "role": "Official working Orange cipher README emblem and wordmark on ivory",
+        "provenance": "Owner-requested OpenAI image generation on 2026-09-28; byte-for-byte import of exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png; embedded C2PA unverified",
+    },
+    {
+        "path": "assets/brand/orange-book-cipher-cover.png",
+        "sha256": "99682f1f646868105b28f3091e3391d6532404cb0bfadaec51e109262ff7f66d",
+        "role": "Official working Orange Book cipher front cover, lossless PNG derivative",
+        "provenance": "Owner-requested OpenAI image generation on 2026-09-28; lossless PNG recompression with identical RGB pixels from exec-20007692-ab83-4401-8529-3ba127105b2c.png (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); metadata omitted",
+    },
 ]
 GATE0_BRAND_ASSET_METADATA = {
     "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
@@ -557,6 +573,8 @@ GATE0_BRAND_ASSET_METADATA = {
     "orange.png": ("image/png", 1254, 1254, False, True),
     "orange-handdrawn-marker-banner.png": ("image/png", 2048, 682, False, False),
     "orange-cryptography-handdrawn-banner.png": ("image/png", 2172, 724, False, False),
+    "orange-cipher-readme-banner.png": ("image/png", 2172, 724, False, True),
+    "orange-book-cipher-cover.png": ("image/png", 1024, 1536, False, False),
 }
 GATE0_BRAND_SOURCE_FILENAMES = {
     "orange-banner2.PNG": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
@@ -569,6 +587,11 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange.png": "orange.png",
     "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
     "orange-cryptography-handdrawn-banner.png": "exec-b489e83f-e13c-467d-85b5-c6f62fe265b7.png",
+    "orange-cipher-readme-banner.png": "exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png",
+    "orange-book-cipher-cover.png": "exec-20007692-ab83-4401-8529-3ba127105b2c.png",
+}
+GATE0_BRAND_DERIVATIONS = {
+    "orange-book-cipher-cover.png": "lossless PNG recompression of the source (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); identical dimensions and RGB pixels; metadata, including C2PA, omitted",
 }
 GATE0_EXECUTABLE_PATHS = set(
     """scripts/ci/check-external-links scripts/ci/check-repository
@@ -3857,6 +3880,8 @@ class FoundationValidator:
             }
             if has_c2pa:
                 expected_fields.add("content_credentials")
+            if name in GATE0_BRAND_DERIVATIONS:
+                expected_fields.add("derivation")
             if set(item) != expected_fields:
                 self.add("brand.manifest_fields", manifest_path, f"assets[{index}] fields must remain exact")
             if (
@@ -3870,11 +3895,13 @@ class FoundationValidator:
                 self.add("brand.manifest_metadata", manifest_path, f"assets[{index}] technical metadata is incorrect")
             if item.get("sha256") != admissions[name]["sha256"]:
                 self.add("brand.manifest_digest", manifest_path, f"assets[{index}] digest disagrees with policy")
-            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name]:
+            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name] or item.get(
+                "derivation"
+            ) != GATE0_BRAND_DERIVATIONS.get(name):
                 self.add(
                     "brand.manifest_provenance",
                     manifest_path,
-                    f"assets[{index}] source filename is incorrect",
+                    f"assets[{index}] source filename or derivation is incorrect",
                 )
             if has_c2pa and item.get("content_credentials") != (
                 "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified"
