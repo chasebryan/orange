@@ -23,6 +23,8 @@ from tools.validate_foundation import (
     GATE0_MAXIMUM_FINDING_MESSAGE_CHARACTERS,
     GATE0_MAXIMUM_FINDINGS,
     SCHEMA_DIALECT,
+    admitted_scoped_license,
+    DAYLIGHT_EXAMPLE_PATHS,
     audit_schema_vocabulary,
     canonical_json_bytes,
     duplicate_yaml_mapping_key,
@@ -60,6 +62,22 @@ def workflow_policy() -> dict[str, object]:
 def protected_file_policy() -> dict[str, object]:
     source = Path(__file__).resolve().parents[2] / "policy/gate0-repository-policy.json"
     return {"protected_file_digests": load_json(source)["protected_file_digests"]}
+
+
+class DaylightAdmissionTests(unittest.TestCase):
+    def test_license_admission_requires_exact_path_and_bytes(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        data = (root / "examples/daylight/LICENSE").read_bytes()
+        self.assertTrue(admitted_scoped_license("examples/daylight/LICENSE", data))
+        for path in ("LICENSE", "examples/other/LICENSE", "examples/daylight/COPYING"):
+            self.assertFalse(admitted_scoped_license(path, data))
+        self.assertFalse(admitted_scoped_license("examples/daylight/LICENSE", data + b"changed\n"))
+
+    def test_example_inventory_is_exact(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        files = {str(path.relative_to(root)) for path in (root / "examples/daylight").iterdir() if path.is_file()}
+        self.assertEqual(files, DAYLIGHT_EXAMPLE_PATHS)
+        self.assertNotIn("examples/daylight/unreviewed.py", DAYLIGHT_EXAMPLE_PATHS)
 
 
 class JsonHardeningTests(unittest.TestCase):

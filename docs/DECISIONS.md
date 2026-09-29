@@ -664,6 +664,16 @@ crate publication, binary distribution, and redistribution claims remain
 blocked until the owner records appropriate terms. Dependencies require an
 owner admission record; the initial compiler uses no third-party Rust crates.
 
+Owner-directed scoped admission (2026-09-29): preserve the Daylight Horizon
+v17 port and its Apache-2.0 license/attribution in
+[`examples/daylight/`](../examples/daylight/README.md), following the owner's
+explicit request to upload and merge that artifact. The upstream source is
+`chasebryan/-wuci-ji` at `fec91dc6618d477908790520118bae7e25909c43`.
+Only that folder's exact license text is admitted; no repository-wide license,
+third-party contribution policy, package publication, or production-readiness
+decision changes. The optional upstream compatibility tests use a separately
+provided checkout; Orange's permanent checks remain offline and dependency-free.
+
 ## D-019 — Governance and release authority
 
 Status: directed solo-project governance
