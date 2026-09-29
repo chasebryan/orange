@@ -177,11 +177,13 @@ tmp/
 !.env.example
 *.key
 *.pem
-compiler/target/""".splitlines()
+compiler/target/
+tabula/target/""".splitlines()
 )
 GATE0_GITIGNORE_ACTIVE_RULES = {
-    ".gitignore": GATE0_IGNORE_PATTERNS[:-1],
+    ".gitignore": GATE0_IGNORE_PATTERNS[:-2],
     "compiler/.gitignore": ("/target/",),
+    "tabula/.gitignore": ("/target/",),
 }
 GATE0_EDITORCONFIG_CONTRACT = """root = true
 
@@ -243,6 +245,7 @@ _CT = "compiler/Cargo.toml"
 _AI = "allowed_container_images"
 _OCM = "compiler/crates/orange-compiler/Cargo.toml"
 _CCM = "compiler/crates/orangec/Cargo.toml"
+_TM = "tabula/Cargo.toml"
 _OC = "orange-compiler"
 _DS = "dependencies"
 _RP = "required_paths"
@@ -392,6 +395,8 @@ assets/brand/orange-handdrawn-marker-banner.png
 assets/brand/orange.jpg
 assets/brand/orange.png
 assets/brand/orangePNG.PNG
+assets/brand/orange-cipher-readme-banner.png
+assets/brand/orange-book-cipher-cover.png
 conformance/foundation/manifest.json
 conformance/foundation/README.md
 docs/DECISIONS.md
@@ -531,7 +536,19 @@ GATE0_ALLOWED_BINARY_ARTIFACTS = [
         "sha256": "41b1806fac78c66542b3b89b14d3bcefa85458321ab8d81719e3aa23730e620b",
         "role": "README conceptual-architecture snapshot for the S3a baseline at a82a5ce",
         "provenance": "Byte-for-byte import from the steward-supplied HOI_RDNWUAAcD7_.jpeg on 2026-07-26",
-    }
+    },
+    {
+        "path": "assets/brand/orange-cipher-readme-banner.png",
+        "sha256": "d4ed4c5bbde5d5bfe020562bd49f11f4c6be5698d36ffbcb0d9e8db9b494543d",
+        "role": "Official working Orange cipher README emblem and wordmark on ivory",
+        "provenance": "Owner-requested OpenAI image generation on 2026-09-28; byte-for-byte import of exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png; embedded C2PA unverified",
+    },
+    {
+        "path": "assets/brand/orange-book-cipher-cover.png",
+        "sha256": "99682f1f646868105b28f3091e3391d6532404cb0bfadaec51e109262ff7f66d",
+        "role": "Official working Orange Book cipher front cover, lossless PNG derivative",
+        "provenance": "Owner-requested OpenAI image generation on 2026-09-28; lossless PNG recompression with identical RGB pixels from exec-20007692-ab83-4401-8529-3ba127105b2c.png (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); metadata omitted",
+    },
 ]
 GATE0_BRAND_ASSET_METADATA = {
     "orange-banner2.PNG": ("image/png", 2048, 683, False, False),
@@ -544,6 +561,8 @@ GATE0_BRAND_ASSET_METADATA = {
     "orange.png": ("image/png", 1254, 1254, False, True),
     "orange-handdrawn-marker-banner.png": ("image/png", 2048, 682, False, False),
     "orange-cryptography-handdrawn-banner.png": ("image/png", 2172, 724, False, False),
+    "orange-cipher-readme-banner.png": ("image/png", 2172, 724, False, True),
+    "orange-book-cipher-cover.png": ("image/png", 1024, 1536, False, False),
 }
 GATE0_BRAND_SOURCE_FILENAMES = {
     "orange-banner2.PNG": "1131687B-1CF6-405A-ABC6-0AF8DA9EBAC9.PNG",
@@ -556,6 +575,11 @@ GATE0_BRAND_SOURCE_FILENAMES = {
     "orange.png": "orange.png",
     "orange-handdrawn-marker-banner.png": "orange-handdrawn-marker-banner.png",
     "orange-cryptography-handdrawn-banner.png": "exec-b489e83f-e13c-467d-85b5-c6f62fe265b7.png",
+    "orange-cipher-readme-banner.png": "exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png",
+    "orange-book-cipher-cover.png": "exec-20007692-ab83-4401-8529-3ba127105b2c.png",
+}
+GATE0_BRAND_DERIVATIONS = {
+    "orange-book-cipher-cover.png": "lossless PNG recompression of the source (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); identical dimensions and RGB pixels; metadata, including C2PA, omitted",
 }
 GATE0_EXECUTABLE_PATHS = set(
     """scripts/ci/check-external-links scripts/ci/check-repository
@@ -670,7 +694,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "1deef2b3df56c97c578a480fb78870a098f99fb792d9a8d86ac030fec12eaf00"
+_PHD = "fa493ab9b1d9f882737c3c45c99dd8bf7c3bfaa75790ae9b17d03465cc189b2e"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -774,11 +798,28 @@ GATE0_RUST_MANIFESTS = {
         },
         "lints": {_WS: True},
     },
+    _TM: {
+        "package": {
+            "name": "tabula",
+            "description": "Tabula, a minimalist and mouse-first writing table for Orange",
+            "version": "0.1.0",
+            "edition": "2024",
+            "rust-version": "1.96.1",
+            "publish": False,
+        },
+        _WS: {},
+        "lints": {
+            "rust": {"missing_docs": "deny", "unsafe_code": "forbid"},
+            "clippy": {"all": "deny"},
+        },
+        "profile": {"release": {"debug-assertions": True, "overflow-checks": True}},
+    },
 }
 GATE0_RUST_MANIFEST_PACKAGES = {
     _CT: None,
     _OCM: _OC,
     _CCM: "orangec",
+    _TM: "tabula",
 }
 GATE0_RUST_WORKSPACE_MEMBERS = [
     "crates/orange-compiler",
@@ -792,6 +833,7 @@ GATE0_RUST_DEPENDENCY_TABLES = {
             _OC: {"path": "../orange-compiler"},
         },
     },
+    _TM: {},
 }
 GATE0_RUST_LOCK = {
     "version": 4,
@@ -803,6 +845,10 @@ GATE0_RUST_LOCK = {
             _DS: [_OC],
         },
     ],
+}
+GATE0_RUST_LOCKS = {
+    "compiler/Cargo.lock": GATE0_RUST_LOCK,
+    "tabula/Cargo.lock": {"version": 4, "package": [{"name": "tabula", "version": "0.1.0"}]},
 }
 _RB = {
     "compiler/crates/orange-compiler/src/source.rs": {"MAX_SOURCE_BYTES": 16 * 1024 * 1024},
@@ -1024,7 +1070,7 @@ GATE0_ALLOWED_TOP_LEVEL = set(
     """.editorconfig .gitattributes .github .gitignore .markdownlint-cli2.jsonc
 CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md Makefile
 README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
-docs policy research schemas scripts tools""".split()
+docs policy research schemas scripts tabula tools""".split()
 )
 _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
@@ -3293,7 +3339,8 @@ class FoundationValidator:
         static_paths = MINIMUM_REQUIRED_PATHS | _CIP
         for value in sorted(actual_paths - static_paths):
             if re.fullmatch(
-                r"docs/governance/(?:oeps/OEP|adrs/ADR)-[0-9]{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md",
+                r"docs/governance/(?:oeps/OEP|adrs/ADR)-[0-9]{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md|tabula/(?:(?:src|tests)/"
+                r"[a-z0-9_]+\.rs|web/[a-z0-9]+\.(?:html|css|js|svg)|README\.md|Cargo\.(?:toml|lock)|\.gitignore)",
                 value,
             ):
                 continue
@@ -3498,8 +3545,8 @@ class FoundationValidator:
             if workspace is not None:
                 if not isinstance(workspace, dict):
                     self.add("compiler.workspace", path, "Cargo workspace declaration must be a table")
-                elif value != _CT:
-                    self.add("compiler.workspace", path, "only the root manifest may declare a workspace")
+                elif value not in (_CT, _TM):
+                    self.add("compiler.workspace", path, "only a root manifest may declare a workspace")
                 elif _DS in workspace:
                     record_table("workspace.dependencies", workspace[_DS])
 
@@ -3551,18 +3598,19 @@ class FoundationValidator:
                     "workspace members must remain the exact admitted package directories with no exclusions",
                 )
 
-        lock_path = self.root / "compiler/Cargo.lock"
-        try:
-            lock = self._load_repository_toml(lock_path)
-        except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
-            self.add("compiler.lock_toml", lock_path, f"Cargo lockfile is not valid TOML: {exc}")
-            return
-        if lock != GATE0_RUST_LOCK:
-            self.add(
-                "compiler.lock_graph",
-                lock_path,
-                "Cargo lockfile must contain only the exact two first-party workspace packages and edge",
-            )
+        for value, expected_lock in GATE0_RUST_LOCKS.items():
+            lock_path = self.root / value
+            try:
+                lock = self._load_repository_toml(lock_path)
+            except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+                self.add("compiler.lock_toml", lock_path, f"Cargo lockfile is not valid TOML: {exc}")
+                continue
+            if lock != expected_lock:
+                self.add(
+                    "compiler.lock_graph",
+                    lock_path,
+                    "Cargo lockfile must contain only the exact first-party packages and edges",
+                )
 
     def _validate_compiler_language_boundary(self) -> None:
         budget_groups = (
@@ -3820,6 +3868,8 @@ class FoundationValidator:
             }
             if has_c2pa:
                 expected_fields.add("content_credentials")
+            if name in GATE0_BRAND_DERIVATIONS:
+                expected_fields.add("derivation")
             if set(item) != expected_fields:
                 self.add("brand.manifest_fields", manifest_path, f"assets[{index}] fields must remain exact")
             if (
@@ -3833,11 +3883,13 @@ class FoundationValidator:
                 self.add("brand.manifest_metadata", manifest_path, f"assets[{index}] technical metadata is incorrect")
             if item.get("sha256") != admissions[name]["sha256"]:
                 self.add("brand.manifest_digest", manifest_path, f"assets[{index}] digest disagrees with policy")
-            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name]:
+            if item.get("source_filename") != GATE0_BRAND_SOURCE_FILENAMES[name] or item.get(
+                "derivation"
+            ) != GATE0_BRAND_DERIVATIONS.get(name):
                 self.add(
                     "brand.manifest_provenance",
                     manifest_path,
-                    f"assets[{index}] source filename is incorrect",
+                    f"assets[{index}] source filename or derivation is incorrect",
                 )
             if has_c2pa and item.get("content_credentials") != (
                 "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified"

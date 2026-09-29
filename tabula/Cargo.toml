@@ -1,0 +1,21 @@
+[package]
+name = "tabula"
+description = "Tabula, a minimalist and mouse-first writing table for Orange"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96.1"
+publish = false
+
+# Tabula is its own workspace so the compiler workspace stays exactly as it is.
+[workspace]
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+
+[profile.release]
+debug-assertions = true
+overflow-checks = true
