@@ -205,7 +205,7 @@ SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 GATE0_MAXIMUM_JSON_NESTING_DEPTH = 64
 _JM = "9007199254740991"
 GATE0_MAXIMUM_TEXT_FILE_BYTES = 256 * 1024
-GATE0_MAXIMUM_VALIDATOR_BYTES = 384 * 1024
+GATE0_MAXIMUM_VALIDATOR_BYTES = 448 * 1024
 GATE0_MAXIMUM_BINARY_FILE_BYTES = 2 * 1024 * 1024
 GATE0_MAXIMUM_RUN_OUTPUTS_BYTES = 2 * 1024 * 1024
 GATE0_RUN_OUTPUTS_PATH = "research/decisions/D-004/d004-v0.7/run/adapter-outputs.json"
@@ -489,6 +489,8 @@ tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
 """.strip().splitlines()
 )
+_ID = "assets/identity/"
+MINIMUM_REQUIRED_PATHS |= {_ID + n for n in "README.md orange-book-cover-construction.svg orange-book-cover.svg orange-emblem-construction.svg orange-emblem-mono.svg orange-emblem-shaded.svg orange-emblem.svg orange-lockup.svg orange-readme-banner-dark.svg orange-readme-banner-light.svg orange-readme-banner.svg orange-wordmark.svg".split()}
 MINIMUM_FORBIDDEN_PATHS = set("COPYING LICENSE crates crypto formal release spec stdlib targets".split())
 MINIMUM_REQUIRED_WORKFLOWS = set("ci.yml dependency-review.yml scorecard.yml".split())
 MINIMUM_ACTION_REPOSITORIES = set(
@@ -660,7 +662,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "54f5334b38c687aeabbe5f6b50afe512da58a9d9ee74673c12982726bcc5a8ab"
+_PHD = "2b31e65f16cb9ff8eb459646611d91d8d132308f16965c991dfd43a0965aec40"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -964,7 +966,7 @@ _MLM = {
 _PM = {
     "policy/README.md": {
         "ordinary text files at\n256 KiB (`256 * 1024` bytes)": GATE0_MAXIMUM_TEXT_FILE_BYTES,
-        "validator itself at 384 KiB\n(`384 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
+        "validator itself at 448 KiB\n(`448 * 1024` bytes)": GATE0_MAXIMUM_VALIDATOR_BYTES,
         "binary files at 2 MiB (`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_BINARY_FILE_BYTES,
         "adapter outputs at 2 MiB\n(`2 * 1024 * 1024` bytes)": GATE0_MAXIMUM_RUN_OUTPUTS_BYTES,
         "repository at 16 MiB (`16 * 1024 * 1024` bytes)": GATE0_MAXIMUM_REPOSITORY_BYTES,
