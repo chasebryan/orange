@@ -6691,6 +6691,10 @@ mod tests {
             "  spec convert_call() -> Word[8] { rows() as Word[8] }\n",
             "  spec convert_literal() -> Int { [1] as Int }\n",
             "  spec rows() -> Word[8]^2 { [1, 2] }\n",
+            // An undefined `as` stops there, as every undefined operator
+            // does: `back()` is not examined, so it closes no cycle.
+            "  spec convert_cycle() -> Int { back() as Int }\n",
+            "  spec back() -> Word[8]^1 { [convert_cycle() as Word[8]] }\n",
         ));
         let note = String::from(ARRAY_OPERATOR_NOTE);
         assert_eq!(
@@ -6735,6 +6739,11 @@ mod tests {
                     DiagnosticCode::UnsupportedOperator,
                     "as",
                     String::from("`as` is not defined for an array")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for `Word[8]^1`")
                 ),
             ]
         );

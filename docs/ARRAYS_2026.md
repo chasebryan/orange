@@ -178,7 +178,9 @@ operator whose expected type is an array is `ORC0215` at the operator. The
 first typed leaf of a conversion operand (`BINDINGS_2026.md` section 6) may now
 be an index, whose type is its element type, so `x[0] as Int` is an ordinary
 conversion. A conversion whose first typed leaf is an array literal or has an
-array type is `ORC0215` at `as`.
+array type is `ORC0215` at `as`. Like every undefined operator
+(`EXPRESSIONS_2026.md` section 10), it stops there: its operand is not
+checked, so a call inside it is not examined and adds no call graph edge.
 
 Arrays pass through calls and bindings like any other value: a parameter,
 result, or binding may have an array type, and the S3b and S3c rules for
