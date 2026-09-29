@@ -1,7 +1,7 @@
 # Orange compiler
 
-Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b and
-S3c proposed under OEP-0005 and OEP-0006, in owner review
+Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b, S3c,
+and S3d proposed under OEP-0005, OEP-0006, and OEP-0007, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -18,8 +18,11 @@ under OEP-0005, extends it to pure typed `spec` functions: parameters, calls,
 arithmetic, bitwise operators, shifts, and rotations. The S3c slice, proposed
 in [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md) and in owner review
 under OEP-0006, adds typed `let` bindings and explicit `as` conversions among
-those five types. All three lower to a noncanonical Typed Reference Core and
-are reference-evaluated. Tuples, control flow, typed `impl`, proof checking,
+those five types. The S3d slice, proposed in
+[`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md) and in owner review under
+OEP-0007, adds fixed-length arrays `T^n` of those types, array literals, and
+literal indices. All four lower to a noncanonical Typed Reference Core and are
+reference-evaluated. Loops, control flow, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -113,10 +116,10 @@ and conclusion remain null. The v0.8 harness in `tools/d004_v08_run.py` adds
 SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
-unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b and S3c
-are implemented and await owner review under OEP-0005 and OEP-0006, both
-`roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
-(30%) binary gate-closure score is unchanged.
+unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b, S3c, and
+S3d are implemented and await owner review under OEP-0005, OEP-0006, and
+OEP-0007, both `roadmap_gate_credit` and `readiness_credit` remain `none`, and
+Orange's 3-of-10 (30%) binary gate-closure score is unchanged.
 
 ## D-005 decision laboratory
 
@@ -556,7 +559,8 @@ may improve without reusing a code for a different error.
 
 The parser accepts exactly one edition declaration followed by exactly one
 module. Empty `spec` and `impl` functions remain valid. A typed `spec` declares
-its parameters, one parsed result type, and a body of exactly one expression:
+its parameters, one result type, and a body of `let` bindings followed by one
+result expression:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
@@ -566,26 +570,34 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER "(" parameters ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 spec_tail       = empty_body | typed_tail ;
-typed_tail      = "->" parsed_type "{" expression "}" ;
+typed_tail      = "->" declared_type "{" binding* expression "}" ;
+binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
-parameter       = IDENTIFIER ":" parsed_type ;
+parameter       = IDENTIFIER ":" declared_type ;
+declared_type   = parsed_type ("^" INTEGER)? ;
 parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
 
-expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift ;
+expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
+                | conversion ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
 shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
+conversion      = prefixed "as" parsed_type ;
 prefixed        = literal | ("-" | "~") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER | call | "(" expression ")" ;
+primary         = IDENTIFIER index? | call index? | "(" expression ")"
+                | array ;
 call            = IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
+index           = "[" INTEGER "]" ;
+array           = "[" expression ("," expression)* ","? "]" ;
 ```
 
-For example:
+`let` and `as` are contextual: they are ordinary names everywhere except where
+a binding or a conversion begins. For example:
 
 ```orange
 edition 2026;
@@ -598,6 +610,11 @@ module demo {
     (x >>> 2) ^ (x >>> 13) ^ (x >>> 22)
   }
   spec sample() -> Word[32] { big_sigma0(0x6a09_e667) }
+  spec load_le16(b: Word[8]^2) -> Word[16] {
+    let low: Word[16] = b[0] as Word[16];
+    low | ((b[1] as Word[16]) << 8)
+  }
+  spec pair() -> Word[16]^2 { [load_le16([0x34, 0x12]), 0xbeef] }
 }
 ```
 
@@ -609,8 +626,8 @@ immediately before an integer token is that literal's sign, so the S3a body
 
 The parser accepts generic type syntax so unsupported forms receive semantic
 diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
-and `Word[64]`, and checks every expression against an expected type with no
-inference or coercion. `Int` is mathematical within the evaluator's resource
+and `Word[64]`, and arrays `T^n` of them with n from 1 through 256, and checks
+every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
 bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
 and `*` wrap because that is their meaning, while a literal must already fit
 and never coerces, truncates, or wraps. Shift and rotation amounts are
@@ -641,14 +658,16 @@ and words print as fixed-width lowercase hexadecimal:
 demo::answer: Int = 42
 demo::mask: Word[8] = 0xff
 demo::sample: Word[32] = 0xce20b47e
+demo::pair: Word[16]^2 = [0x1234, 0xbeef]
 ```
 
 The accepted S3a rules and non-claims are in
-[`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-and S3c rules, limits, and non-claims are in
-[`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md) and
-[`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md). None of them defines
-tuples, control flow, effects, proof meaning, implementation refinement,
+[`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b,
+S3c, and S3d rules, limits, and non-claims are in
+[`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
+[`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md), and
+[`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md). None of them defines
+loops, control flow, effects, proof meaning, implementation refinement,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
 standard's example value is not thereby a verified transcription of that
@@ -831,6 +850,27 @@ and pins the 256-binding limit at its exact boundary with a generated source.
 This corpus establishes the tested behavior of one implementation; it does not
 accept OEP-0006, prove the rules sound, or complete S3.
 
+## S3d array conformance
+
+`fixtures/s3d/` contains an exact eight-file corpus for the proposed S3d
+behavior: three fixtures must evaluate successfully and five must fail closed.
+The accepted fixtures cover array types, literals, and indices for `Int` and
+every word width, the whole ChaCha20 block function checked against the
+serialized block of RFC 8439 section 2.3.2, and the SHA-256 message schedule
+and first two rounds of the FIPS 180-4 "abc" example with the working
+variables as one `Word[32]^8`. The rejected fixtures cover array syntax,
+lengths, literal counts and kinds, indices, and operators and conversions on
+whole arrays.
+
+`crates/orangec/tests/s3d_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3c runner. It parses the 17-rule S3d index in
+`docs/ARRAYS_2026.md`, binds every rule to named CLI, generated-CLI,
+parser-unit, or unit tests declared exactly once at their harness locations,
+and pins the 256-element literal limit and the 256 length limit at their exact
+boundaries with generated sources. This corpus establishes the tested behavior
+of one implementation; it does not accept OEP-0007, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -852,9 +892,12 @@ accept OEP-0006, prove the rules sound, or complete S3.
   rule-index, and resource-limit runner;
 - `crates/orangec/tests/s3c_conformance.rs`: exact repeatable S3c corpus,
   rule-index, and binding-limit runner;
+- `crates/orangec/tests/s3d_conformance.rs`: exact repeatable S3d corpus,
+  rule-index, and element- and length-limit runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
 - `fixtures/s3b/`: exact five-positive/nine-negative S3b CLI fixture corpus;
+- `fixtures/s3c/`: exact five-positive/five-negative S3c CLI fixture corpus;
   and
-- `fixtures/s3c/`: exact five-positive/five-negative S3c CLI fixture corpus.
+- `fixtures/s3d/`: exact three-positive/five-negative S3d CLI fixture corpus.

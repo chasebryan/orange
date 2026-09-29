@@ -1,0 +1,9 @@
+// S3d rejection: operators and conversions apply to elements, never to a
+// whole array.
+edition 2026;
+module operators {
+  spec add(x: Word[32]^4, y: Word[32]^4) -> Word[32]^4 { x + y }
+  spec rotate(x: Word[32]^4) -> Word[32]^4 { x <<< 7 }
+  spec complement(x: Word[8]^2) -> Word[8]^2 { ~x }
+  spec convert(x: Word[8]^4) -> Word[32] { x as Word[32] }
+}

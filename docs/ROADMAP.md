@@ -389,9 +389,19 @@ implemented and tested, and its acceptance requires the owner's acceptance of
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 which bounds the S3c surface in [`BINDINGS_2026.md`](BINDINGS_2026.md) and
 builds on OEP-0005. Like S3b, it assumes only pure, total, deterministic
-meaning, so the placement D-004 decides changes no S3c source either. Tuples or
-fixed-size records, so that one function can return a whole round, are the
-next candidate slice.
+meaning, so the placement D-004 decides changes no S3c source either.
+
+S3d follows S3c. It adds fixed-length arrays `T^n` of `Int` or word values,
+array literals, and indices that are literals the analyzer proves in range,
+so that a specification can hold a cipher's whole state as one value. The
+ChaCha20 block function of RFC 8439 and the first SHA-256 rounds of FIPS 180-4
+are now whole Orange programs that reproduce the standards' example values. It
+is implemented and tested, and its acceptance requires the owner's acceptance
+of [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
+which bounds the S3d surface in [`ARRAYS_2026.md`](ARRAYS_2026.md) and builds
+on OEP-0006. It too assumes only pure, total, deterministic meaning. Bounded
+loops, so that ten double rounds are one expression, and a functional update
+of one element are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -437,9 +447,9 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b and S3c are implemented and await owner review under OEP-0005
-and OEP-0006, and Orange remains 30% complete by its unchanged 3-of-10 binary
-gate-closure score.
+incomplete, S3b, S3c, and S3d are implemented and await owner review under
+OEP-0005, OEP-0006, and OEP-0007, and Orange remains 30% complete by its
+unchanged 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
 

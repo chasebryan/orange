@@ -301,56 +301,52 @@ pub enum CoreNodeKind {
         /// The operand's type.
         from: CoreType,
     },
+    /// An array of this node's type built from its element subtrees, one
+    /// per element, in index order.
+    Array {
+        /// The number of element subtrees.
+        elements: u32,
+    },
+    /// The element at a fixed index of one array operand subtree.
+    Index {
+        /// The zero-based index, less than the operand's length.
+        index: u32,
+    },
 }
 
-macro_rules! define_core_types {
-    ($($(#[$variant_doc:meta])* $variant:ident => $name:literal,)+) => {
-        /// Types admitted by the first typed expression fragment.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum CoreType {
-            $($(#[$variant_doc])* $variant,)+
-        }
-
-        impl CoreType {
-            /// Returns the stable printable Core type name.
-            #[must_use]
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $name,)+
-                }
-            }
-
-            #[cfg(test)]
-            const ALL: &'static [Self] = &[$(Self::$variant,)+];
-        }
-
-        impl fmt::Display for CoreType {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str(self.as_str())
-            }
-        }
-    }
-}
-
-define_core_types! {
+/// Types admitted by the typed expression fragment: `Int`, the four word
+/// types, and fixed-length arrays of them.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CoreType {
     /// An exact, signed mathematical integer.
-    Int => "Int",
+    Int,
     /// An element of the integers modulo 2^8.
-    Word8 => "Word[8]",
+    Word8,
     /// An element of the integers modulo 2^16.
-    Word16 => "Word[16]",
+    Word16,
     /// An element of the integers modulo 2^32.
-    Word32 => "Word[32]",
+    Word32,
     /// An element of the integers modulo 2^64.
-    Word64 => "Word[64]",
+    Word64,
+    /// A fixed-length array of one scalar type, written `T^n`.
+    Array(ArrayType),
 }
 
 impl CoreType {
-    /// Returns the width of a word type, or `None` for `Int`.
+    #[cfg(test)]
+    const SCALARS: &'static [Self] = &[
+        Self::Int,
+        Self::Word8,
+        Self::Word16,
+        Self::Word32,
+        Self::Word64,
+    ];
+
+    /// Returns the width of a word type, or `None` for `Int` and arrays.
     #[must_use]
     pub const fn word_bits(self) -> Option<u32> {
         match self {
-            Self::Int => None,
+            Self::Int | Self::Array(_) => None,
             Self::Word8 => Some(8),
             Self::Word16 => Some(16),
             Self::Word32 => Some(32),
@@ -369,6 +365,95 @@ impl CoreType {
             _ => None,
         }
     }
+
+    /// Returns whether this is `Int` or a word type rather than an array.
+    #[must_use]
+    pub const fn is_scalar(self) -> bool {
+        !matches!(self, Self::Array(_))
+    }
+
+    /// Returns the array type, or `None` for `Int` and the word types.
+    #[must_use]
+    pub const fn as_array(self) -> Option<ArrayType> {
+        match self {
+            Self::Array(array) => Some(array),
+            Self::Int | Self::Word8 | Self::Word16 | Self::Word32 | Self::Word64 => None,
+        }
+    }
+}
+
+impl fmt::Display for CoreType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Int => formatter.write_str("Int"),
+            Self::Word8 => formatter.write_str("Word[8]"),
+            Self::Word16 => formatter.write_str("Word[16]"),
+            Self::Word32 => formatter.write_str("Word[32]"),
+            Self::Word64 => formatter.write_str("Word[64]"),
+            Self::Array(array) => write!(formatter, "{}^{}", array.element(), array.length()),
+        }
+    }
+}
+
+/// Longest admitted array type.
+pub const MAX_ARRAY_LENGTH: u32 = 256;
+
+/// A fixed-length array type `T^n`: `n` values of the scalar type `T`, for
+/// `n` from 1 through [`MAX_ARRAY_LENGTH`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ArrayType {
+    element: Scalar,
+    length: u32,
+}
+
+/// The scalar element type of an array, kept separate so that `CoreType`
+/// stays a small copyable value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Scalar {
+    Int,
+    Word8,
+    Word16,
+    Word32,
+    Word64,
+}
+
+impl ArrayType {
+    /// Returns the array type of `length` elements of `element`, or `None`
+    /// when `element` is an array or `length` is outside 1 through
+    /// [`MAX_ARRAY_LENGTH`].
+    #[must_use]
+    pub const fn new(element: CoreType, length: u32) -> Option<Self> {
+        let element = match element {
+            CoreType::Int => Scalar::Int,
+            CoreType::Word8 => Scalar::Word8,
+            CoreType::Word16 => Scalar::Word16,
+            CoreType::Word32 => Scalar::Word32,
+            CoreType::Word64 => Scalar::Word64,
+            CoreType::Array(_) => return None,
+        };
+        if length == 0 || length > MAX_ARRAY_LENGTH {
+            return None;
+        }
+        Some(Self { element, length })
+    }
+
+    /// Returns the scalar element type.
+    #[must_use]
+    pub const fn element(self) -> CoreType {
+        match self.element {
+            Scalar::Int => CoreType::Int,
+            Scalar::Word8 => CoreType::Word8,
+            Scalar::Word16 => CoreType::Word16,
+            Scalar::Word32 => CoreType::Word32,
+            Scalar::Word64 => CoreType::Word64,
+        }
+    }
+
+    /// Returns the number of elements.
+    #[must_use]
+    pub const fn length(self) -> u32 {
+        self.length
+    }
 }
 
 /// Values admitted by the typed expression fragment.
@@ -384,6 +469,38 @@ pub enum CoreValue {
     Word32(u32),
     /// An element of the integers modulo 2^64.
     Word64(u64),
+    /// A fixed-length array of scalar values.
+    Array(CoreArray),
+}
+
+/// An array value: its type and exactly that many elements of its element
+/// type, in index order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreArray {
+    ty: ArrayType,
+    elements: Vec<CoreValue>,
+}
+
+impl CoreArray {
+    /// Returns the array of type `ty` holding `elements`, or `None` unless
+    /// there are exactly `ty.length()` elements, each of `ty.element()`.
+    pub(crate) fn new(ty: ArrayType, elements: Vec<CoreValue>) -> Option<Self> {
+        let length_matches = usize::try_from(ty.length()).ok() == Some(elements.len());
+        (length_matches && elements.iter().all(|element| element.ty() == ty.element()))
+            .then_some(Self { ty, elements })
+    }
+
+    /// Returns the array's type.
+    #[must_use]
+    pub const fn ty(&self) -> ArrayType {
+        self.ty
+    }
+
+    /// Returns the elements in index order.
+    #[must_use]
+    pub fn elements(&self) -> &[CoreValue] {
+        &self.elements
+    }
 }
 
 impl CoreValue {
@@ -396,15 +513,16 @@ impl CoreValue {
             Self::Word16(_) => CoreType::Word16,
             Self::Word32(_) => CoreType::Word32,
             Self::Word64(_) => CoreType::Word64,
+            Self::Array(array) => CoreType::Array(array.ty),
         }
     }
 
     /// Returns the word of type `ty` whose value is `value` reduced modulo
-    /// its width, or `None` when `ty` is `Int`.
+    /// its width, or `None` when `ty` is `Int` or an array.
     pub(crate) fn word_from_u64(ty: CoreType, value: u64) -> Option<Self> {
         let [b0, b1, b2, b3, b4, b5, b6, b7] = value.to_le_bytes();
         match ty {
-            CoreType::Int => None,
+            CoreType::Int | CoreType::Array(_) => None,
             CoreType::Word8 => Some(Self::Word8(b0)),
             CoreType::Word16 => Some(Self::Word16(u16::from_le_bytes([b0, b1]))),
             CoreType::Word32 => Some(Self::Word32(u32::from_le_bytes([b0, b1, b2, b3]))),
@@ -414,10 +532,11 @@ impl CoreValue {
         }
     }
 
-    /// Returns a word's value as an unsigned integer, or `None` for `Int`.
+    /// Returns a word's value as an unsigned integer, or `None` for `Int`
+    /// and arrays.
     pub(crate) fn word_as_u64(&self) -> Option<u64> {
         match self {
-            Self::Int(_) => None,
+            Self::Int(_) | Self::Array(_) => None,
             Self::Word8(value) => Some(u64::from(*value)),
             Self::Word16(value) => Some(u64::from(*value)),
             Self::Word32(value) => Some(u64::from(*value)),
@@ -434,6 +553,16 @@ impl fmt::Display for CoreValue {
             Self::Word16(value) => write!(formatter, "0x{value:04x}"),
             Self::Word32(value) => write!(formatter, "0x{value:08x}"),
             Self::Word64(value) => write!(formatter, "0x{value:016x}"),
+            Self::Array(array) => {
+                formatter.write_str("[")?;
+                for (index, element) in array.elements.iter().enumerate() {
+                    if index != 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    element.fmt(formatter)?;
+                }
+                formatter.write_str("]")
+            }
         }
     }
 }
@@ -1018,7 +1147,7 @@ mod tests {
     #[test]
     fn core_type_inventory_and_display_are_exact() {
         assert_eq!(
-            CoreType::ALL,
+            CoreType::SCALARS,
             &[
                 CoreType::Int,
                 CoreType::Word8,
@@ -1028,24 +1157,80 @@ mod tests {
             ]
         );
         assert_eq!(
-            CoreType::ALL
+            CoreType::SCALARS
                 .iter()
-                .map(|result_type| result_type.as_str())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>(),
             ["Int", "Word[8]", "Word[16]", "Word[32]", "Word[64]"]
         );
-        for ty in CoreType::ALL {
+        for ty in CoreType::SCALARS {
             assert_eq!(
                 ty.word_bits().and_then(CoreType::word_of_width),
                 (*ty != CoreType::Int).then_some(*ty)
             );
+            assert!(ty.is_scalar());
+            assert_eq!(ty.as_array(), None);
         }
         assert_eq!(CoreType::word_of_width(12), None);
-        assert!(
-            CoreType::ALL
-                .iter()
-                .all(|result_type| result_type.to_string() == result_type.as_str())
+    }
+
+    #[test]
+    fn array_types_hold_one_to_256_scalars_and_display_as_powers() {
+        for element in CoreType::SCALARS {
+            for length in [1, 2, 16, MAX_ARRAY_LENGTH] {
+                let array = ArrayType::new(*element, length).unwrap();
+                assert_eq!(array.element(), *element);
+                assert_eq!(array.length(), length);
+                let ty = CoreType::Array(array);
+                assert!(!ty.is_scalar());
+                assert_eq!(ty.as_array(), Some(array));
+                assert_eq!(ty.word_bits(), None);
+                assert_eq!(ty.to_string(), format!("{element}^{length}"));
+            }
+            assert_eq!(ArrayType::new(*element, 0), None);
+            assert_eq!(ArrayType::new(*element, MAX_ARRAY_LENGTH + 1), None);
+            assert_eq!(ArrayType::new(*element, u32::MAX), None);
+        }
+        let array = CoreType::Array(ArrayType::new(CoreType::Word32, 4).unwrap());
+        assert_eq!(ArrayType::new(array, 2), None);
+        assert_eq!(array.to_string(), "Word[32]^4");
+    }
+
+    #[test]
+    fn array_values_require_their_exact_length_and_element_type() {
+        let ty = ArrayType::new(CoreType::Word8, 2).unwrap();
+        let array =
+            CoreArray::new(ty, vec![CoreValue::Word8(0x0f), CoreValue::Word8(0xf0)]).unwrap();
+        assert_eq!(array.ty(), ty);
+        assert_eq!(array.elements().len(), 2);
+        let value = CoreValue::Array(array);
+        assert_eq!(value.ty(), CoreType::Array(ty));
+        assert_eq!(value.to_string(), "[0x0f, 0xf0]");
+        assert_eq!(value.word_as_u64(), None);
+        assert_eq!(CoreValue::word_from_u64(CoreType::Array(ty), 1), None);
+
+        assert_eq!(CoreArray::new(ty, vec![CoreValue::Word8(1)]), None);
+        assert_eq!(
+            CoreArray::new(ty, vec![CoreValue::Word8(1), CoreValue::Word16(1)]),
+            None
         );
+        let integers = ArrayType::new(CoreType::Int, 3).unwrap();
+        let negative = ExactInteger::new(
+            true,
+            Magnitude::from_u64(7, |limbs, count| limbs.try_reserve_exact(count).is_ok()).unwrap(),
+        );
+        let value = CoreValue::Array(
+            CoreArray::new(
+                integers,
+                vec![
+                    CoreValue::Int(ExactInteger::new(false, Magnitude::zero())),
+                    CoreValue::Int(negative),
+                    CoreValue::Int(ExactInteger::new(false, Magnitude::zero())),
+                ],
+            )
+            .unwrap(),
+        );
+        assert_eq!(value.to_string(), "[0, -7, 0]");
     }
 
     #[test]
@@ -1209,7 +1394,8 @@ mod tests {
                         | CoreValue::Word8(_)
                         | CoreValue::Word16(_)
                         | CoreValue::Word32(_)
-                        | CoreValue::Word64(_),
+                        | CoreValue::Word64(_)
+                        | CoreValue::Array(_),
                     )
                     | CoreNodeKind::Parameter(_)
                     | CoreNodeKind::Local(_)
@@ -1217,14 +1403,17 @@ mod tests {
                     | CoreNodeKind::Unary(_)
                     | CoreNodeKind::Binary(_)
                     | CoreNodeKind::Shift { .. }
-                    | CoreNodeKind::Convert { .. } => {}
+                    | CoreNodeKind::Convert { .. }
+                    | CoreNodeKind::Array { .. }
+                    | CoreNodeKind::Index { .. } => {}
                 }
                 match ty {
                     CoreType::Int
                     | CoreType::Word8
                     | CoreType::Word16
                     | CoreType::Word32
-                    | CoreType::Word64 => {}
+                    | CoreType::Word64
+                    | CoreType::Array(_) => {}
                 }
             }
         }

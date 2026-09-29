@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-28
 
-Manuscript version: 0.5
+Manuscript version: 0.6
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -92,9 +92,10 @@ and a deliberately small Orange 2026 grammar. The accepted S3a slice adds
 bounded semantic checking and reference evaluation for closed typed `spec`
 literals. The S3b slice, implemented and awaiting the owner's acceptance of its
 specification, extends them to pure functions over integers and 8- to 64-bit
-words, and the S3c slice, likewise implemented and in review, adds named
-intermediate values and explicit conversions between those types. None of them
-adds control flow, typed implementations, refinement, code
+words, the S3c slice, likewise implemented and in review, adds named
+intermediate values and explicit conversions between those types, and the S3d
+slice adds fixed-length arrays, so that a cipher's whole state is one value.
+None of them adds loops or other control flow, typed implementations, refinement, code
 generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
@@ -289,8 +290,9 @@ Orange 2026 parser recognizes exactly one edition declaration followed by one
 module. Legacy empty `spec` and `impl` functions remain valid. The accepted
 S3a slice adds closed typed-literal specifications, the S3b slice, whose
 specification is in the owner's review, adds pure functions over integers and
-machine words, and the S3c slice, also in review, adds `let` bindings and
-explicit `as` conversions:
+machine words, the S3c slice, also in review, adds `let` bindings and
+explicit `as` conversions, and the S3d slice, also in review, adds fixed-length
+arrays of those types.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -773,16 +775,17 @@ namespaces, so a module may contain both `spec rounds` and `impl rounds`
 without a conflict while two `spec rounds` declarations are an error. The words
 `game`, `proof`, and `claim` are reserved and introduce nothing. Only typed
 specifications have meaning: pure `spec` functions over `Int` and `Word[8]`
-through `Word[64]`, built from literals, parameters, calls, operators, `let`
-bindings, and explicit conversions. An `impl` body must still be empty.
+through `Word[64]` and fixed-length arrays of them, built from literals,
+parameters, calls, operators, `let` bindings, explicit conversions, array
+literals, and literal indices. An `impl` body must still be empty.
 
 Even that small surface already follows the chapter's rules. `Int` and each
 word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
-pretends to be a Spec Core, and the Core records no claim. The expression and
-binding slices were built to fit inside every candidate's specification
-stratum: they are pure, total, and deterministic, so the strata decision can
+pretends to be a Spec Core, and the Core records no claim. The expression,
+binding, and array slices were built to fit inside every candidate's
+specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
 ### Beauty as a constraint
@@ -1020,11 +1023,11 @@ number and relationships.
 
 ### The next steps of meaning
 
-The three current slices complete bounded parts of the roadmap's S3 stage:
+The four current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
-over integers and words, then `let` bindings and explicit conversions. The
-rest of S3 adds the remaining substance of a language: tuples or records,
-comparisons and control flow, and explicit failure semantics, together with
+over integers and words, then `let` bindings and explicit conversions, then
+fixed-length arrays. The rest of S3 adds the remaining substance of a language:
+bounded loops, records of mixed types, comparisons and control flow, and explicit failure semantics, together with
 one conformance case per normative rule. Each addition follows the same
 pattern as the slices before it: a normative rule, a diagnostic for
 every way to break it, a bound on the work it can cause, and a reference result
@@ -1529,11 +1532,13 @@ compute, and the precise places where it stops. It is **current** throughout,
 and every example in it was run against the compiler in this repository. The
 normative sources are the [lexical and grammar specification](LANGUAGE_2026.md),
 the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
-[pure expression specification](EXPRESSIONS_2026.md) of S3b, and the
-[bindings and conversions specification](BINDINGS_2026.md) of S3c. S3b and S3c
-are implemented and tested, but their specifications are **proposed**:
-[OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md) and
-[OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)
+[pure expression specification](EXPRESSIONS_2026.md) of S3b, the
+[bindings and conversions specification](BINDINGS_2026.md) of S3c, and the
+[arrays specification](ARRAYS_2026.md) of S3d. S3b, S3c, and S3d are
+implemented and tested, but their specifications are **proposed**:
+[OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
+[OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
+and [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)
 are in the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1622,7 +1627,7 @@ tokenizes, with exact byte spans.
 
 ### The grammar
 
-The whole Orange 2026 grammar fits in twenty-six lines:
+The whole Orange 2026 grammar fits in thirty lines:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
@@ -1632,11 +1637,12 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER "(" parameters ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 spec_tail       = empty_body | typed_tail ;
-typed_tail      = "->" parsed_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" parsed_type "=" expression ";" ;
+typed_tail      = "->" declared_type "{" binding* expression "}" ;
+binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
-parameter       = IDENTIFIER ":" parsed_type ;
+parameter       = IDENTIFIER ":" declared_type ;
+declared_type   = parsed_type ("^" INTEGER)? ;
 parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
@@ -1649,7 +1655,10 @@ shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
 prefixed        = literal | ("-" | "~") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER | call | "(" expression ")" ;
+primary         = IDENTIFIER index? | call index? | "(" expression ")"
+                | array ;
+index           = "[" INTEGER "]" ;
+array           = "[" expression ("," expression)* ","? "]" ;
 call            = IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
@@ -1659,8 +1668,8 @@ must spell `2026` exactly. `let` and `as` are the only contextual words: `let`
 starts a binding only at the start of a body item and before a name, and `as`
 converts only directly after a complete operand. Anywhere else they are
 ordinary names, so no program that used them as names changed meaning when
-they gained a role. One source holds one
-module. A typed `impl` is a syntax error, not a feature waiting to be switched
+they gained a role. After a declared type, `^` and a length make it an array
+type; everywhere else `^` is exclusive or. One source holds one module. A typed `impl` is a syntax error, not a feature waiting to be switched
 on, and a `spec` with parameters must declare a result type and a body. A `-`
 written directly before an integer is that literal's sign, so the S3a body
 `{ -42 }` is still one literal and means what it always meant.
@@ -1764,6 +1773,81 @@ readings differ: for bytes `x` and `y`, `(x + y) as Word[32]` adds modulo 2^8
 and then widens, while `(x as Word[32]) + (y as Word[32])` adds modulo 2^32.
 The parentheses say which one the standard means.
 
+### A state as one value
+
+A cipher does not work on loose words. It works on a state: ChaCha20 on
+sixteen 32-bit words laid out as a 4 by 4 matrix, SHA-256 on eight working
+variables and a sixteen-word message block. The S3d slice lets a specification
+hold such a state as one value. `Word[32]^16` is sixteen 32-bit words, written
+the way the mathematics writes (Z/2^32 Z)^16. An array literal lists every
+element, and an index selects one. With both, the quarter round returns all
+four of its words, and the double round of RFC 8439 section 2.3 reads as the
+RFC describes it, four column rounds and then four diagonal rounds:
+
+```orange
+spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+  let a1: Word[32] = a + b;
+  let d1: Word[32] = (d ^ a1) <<< 16;
+  let c1: Word[32] = c + d1;
+  let b1: Word[32] = (b ^ c1) <<< 12;
+  let a2: Word[32] = a1 + b1;
+  let d2: Word[32] = (d1 ^ a2) <<< 8;
+  let c2: Word[32] = c1 + d2;
+  let b2: Word[32] = (b1 ^ c2) <<< 7;
+  [a2, b2, c2, d2]
+}
+
+spec double_round(x: Word[32]^16) -> Word[32]^16 {
+  let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
+  let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
+  let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
+  let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
+  let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
+  let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
+  let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
+  let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+  [
+    d0[0], d1[0], d2[0], d3[0],
+    d3[1], d0[1], d1[1], d2[1],
+    d2[2], d3[2], d0[2], d1[2],
+    d1[3], d2[3], d3[3], d0[3],
+  ]
+}
+```
+
+The last literal is the one place the text asks for care: it puts each
+diagonal round's four words back where the state keeps them, and a reader can
+check every position against the RFC's matrix. The
+[ChaCha20 fixture](../compiler/fixtures/s3d/valid-chacha20-block.or) adds the
+rest of the block function, the constants, the key and nonce read as
+little-endian words, ten double rounds, and the final addition, and
+`orangec eval` prints the serialized block of section 2.3.2 word for word:
+
+```text
+chacha20::test_vector: Word[32]^16 = [0xe4e7f110, 0x15593bd1, 0x1fdd0f50, 0xc47120a3, 0xc7f4d1c7, 0x0368c033, 0x9aaa2204, 0x4e6cd4c3, 0x466482d2, 0x09aa9f07, 0x05d7c214, 0xa2028bd9, 0xd19c12b5, 0xb94e16de, 0xe883d0cb, 0x4e3c50a2]
+```
+
+Three rules keep arrays as plain as the words inside them. Every length is
+written: a type states it, from 1 through 256, and a literal lists exactly that
+many elements. Every position is visible: an index is a literal, checked
+against the length before anything runs, so there is no out-of-range read at
+run time and no variable index at all:
+
+```text
+error[ORC0223]: index `16` is out of range for `Word[32]^16`
+ --> <stdin>:4:7
+  |
+4 |     x[16]
+  |       ^^ indices run from 0 through 15
+  = note: an index is a fixed literal; variable indices are not part of Orange 2026
+```
+
+And operators act on elements: `x ^ y` on two arrays is `ORC0215`, so an
+operator always means one ring operation on one pair of values. There are no
+arrays of arrays and no empty arrays yet. The absence that shows is loops: the
+fixture's ten double rounds are ten bindings, and a bounded loop is the obvious
+next step.
+
 ### From bytes to a value
 
 It is worth following one line through the compiler, because each step is a
@@ -1845,7 +1929,9 @@ The binding slice adds `ORC0219` for a name bound twice and `ORC0220` for a
 conversion whose operand has no type of its own, such as `(1 + 2) as Word[8]`,
 where nothing says which ring the addition belongs to. A name used before its
 binding is `ORC0211`, and the error also points at the binding that comes
-too late.
+too late. The array slice adds `ORC0221` for an unsupported length, `ORC0222`
+for a literal with the wrong number of elements, `ORC0223` for an index past
+the end, and `ORC0224` for an index on a value that is not an array.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -1889,7 +1975,11 @@ checked against the values published with the standards, and generated
 sources pin every resource limit at its exact boundary. The binding and
 conversion specification adds 17 rule identifiers and ten sources, five valid
 and five invalid, including SHA-256 message words and round 0 of the "abc"
-example and the ChaCha20 quarter round written with named steps. The complete
+example and the ChaCha20 quarter round written with named steps. The array
+specification adds 17 rule identifiers and eight sources, three valid and five
+invalid, including the whole ChaCha20 block function, checked against the
+serialized block of RFC 8439 section 2.3.2, and the SHA-256 message schedule and
+first two rounds of the "abc" example over a `Word[32]^8` state. The complete
 test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
@@ -1904,8 +1994,8 @@ compiler.
 The list of absences is long, and it is printed in the specifications rather
 than hidden: imports, multiple modules, attributes, visibility, generic
 arguments, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, tuples, arrays, booleans, comparisons,
-conditionals, loops, division, remainder, signed words, variable shift and
+shadowing, type inference, mixed-type tuples, arrays of arrays, variable
+indices, booleans, comparisons, conditionals, loops, division, remainder, signed words, variable shift and
 rotation amounts, recursion, typed implementations,
 failure values, secrecy labels, proof terms, claims, games, targets, layout,
 ABI, leakage behavior, lowering, optimization, code generation, packaging, and
@@ -1919,12 +2009,14 @@ strata decision described in
 [Chapter 3](#chapter-3-one-language-several-semantic-worlds), and it assumes
 only what every candidate gives the specification stratum: pure, total,
 deterministic meaning over mathematical values. Accepting it is the owner's
-decision, through OEP-0005, and S3c's, which builds on it, through OEP-0006.
+decision, through OEP-0005, S3c's, which builds on it, through OEP-0006, and
+S3d's, which builds on S3c, through OEP-0007.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. Both migrations so far are small: every source that S3a
-accepted still has the same values and prints the same bytes under S3b, and
-every source S3b accepted does the same under S3c.
+documented migration. All three migrations so far are small: every source
+that S3a accepted still has the same values and prints the same bytes under
+S3b, every source S3b accepted does the same under S3c, and every source S3c
+accepted does the same under S3d.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -2567,8 +2659,9 @@ the quarter round produces `a = 0xea2a92f4`, `b = 0xcb1cf8ce`,
 `c = 0x4581472e`, and `d = 0x5881c4bb`.
 
 The compiler can already express those twelve operations, and with the
-binding slice it names them the way the RFC does. Orange 2026 has no tuples
-yet, so each output word is its own function. The first reads:
+binding slice it names them the way the RFC does. The binding slice had no
+arrays, so its fixture computes each output word in its own function. The
+first reads:
 
 ```orange
 spec quarter_a(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
@@ -2605,10 +2698,14 @@ SHA-2 and ChaCha20 are built from: addition modulo a word size, rotation,
 shifts, exclusive or, and the other bitwise operations. The compiler's
 fixtures already evaluate the SHA-256 round functions, round 0 of the "abc"
 example, and the ChaCha20 quarter round against published values, and the
-binding slice added named steps and the conversions that byte order needs. A
-whole primitive is still out of reach. Orange 2026 has no tuples, no arrays or
-byte strings, no loops, and no state, so a message schedule or sixty-four
-rounds of compression cannot yet be written in any readable form. The corpus remains a set of research inputs rather than promises.
+binding slice added named steps and the conversions that byte order needs. The
+array slice then gave Orange a state. The quarter round now returns all four
+words as one `Word[32]^4`, and the whole ChaCha20 block function, the core of
+the cipher, evaluates to the serialized block RFC 8439 publishes. A complete
+hash is still out of reach: Orange 2026 has no loops, no byte strings, and no
+message of variable length, so sixty-four rounds of compression over an
+arbitrary message cannot yet be written in a readable form. The corpus remains
+a set of research inputs rather than promises.
 
 The acceptance test will run for the first time when a complete primitive can
 be written in the specification stratum, admitted with its provenance, and
@@ -3518,9 +3615,10 @@ of it can be checked.
 This appendix restates the implemented Orange 2026 surface for convenience.
 The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [typed-literal semantics](SEMANTICS_2026.md) are normative, and the
-[pure expression specification](EXPRESSIONS_2026.md) and the
-[bindings and conversions specification](BINDINGS_2026.md) are proposed under
-OEP-0005 and OEP-0006 and in the owner's review. Where this summary and those
+[pure expression specification](EXPRESSIONS_2026.md), the
+[bindings and conversions specification](BINDINGS_2026.md), and the
+[arrays specification](ARRAYS_2026.md) are proposed under OEP-0005, OEP-0006,
+and OEP-0007 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -3536,11 +3634,12 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER "(" parameters ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 spec_tail       = empty_body | typed_tail ;
-typed_tail      = "->" parsed_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" parsed_type "=" expression ";" ;
+typed_tail      = "->" declared_type "{" binding* expression "}" ;
+binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
-parameter       = IDENTIFIER ":" parsed_type ;
+parameter       = IDENTIFIER ":" declared_type ;
+declared_type   = parsed_type ("^" INTEGER)? ;
 parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
@@ -3553,7 +3652,10 @@ shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
 prefixed        = literal | ("-" | "~") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER | call | "(" expression ")" ;
+primary         = IDENTIFIER index? | call index? | "(" expression ")"
+                | array ;
+index           = "[" INTEGER "]" ;
+array           = "[" expression ("," expression)* ","? "]" ;
 call            = IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
@@ -3567,9 +3669,12 @@ before a name, and `as` converts only after a complete operand. Line and
 nested block comments are trivia. `<<`, `>>`, `<<<`, and `>>>` are single
 tokens, matched longest first. Operators from different groups, or two shifts,
 may not share a level without parentheses, and a conversion shares a level with
-no operator and no other conversion. Expressions may nest at most 64 levels
-deep and reach height 256; a function declares at most 64 parameters and 256
-bindings, and a call supplies at most 256 arguments.
+no operator and no other conversion. `^` after a declared type gives its array
+length; anywhere else it is exclusive or. Expressions may nest at most 64
+levels deep, counting groups, calls, arrays, and prefix operators, and reach
+height 256; a function declares at most 64 parameters and 256 bindings, a call
+supplies at most 256 arguments, and an array literal lists at most 256
+elements.
 
 ### Types and values
 
@@ -3580,12 +3685,16 @@ bindings, and a call supplies at most 256 arguments.
 | `Word[16]` | The integers modulo 2^16 | `0x` and 4 lowercase hex digits |
 | `Word[32]` | The integers modulo 2^32 | `0x` and 8 lowercase hex digits |
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
+| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 256 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
 
-No other type or width is accepted. Word literals are never wrapped, truncated,
+No other type, width, or length is accepted. Word literals are never wrapped, truncated,
 saturated, or coerced, and no value changes type implicitly. `e as T` converts
 between any two of these types: it takes the integer value of `e` and, for
 `Word[n]`, its residue modulo 2^n. The operand's type comes from its first
-name, call, or conversion, so a conversion of literals alone is an error.
+name, call, conversion, or index, so a conversion of literals alone is an
+error. An array literal lists exactly as many elements as its type, and `x[k]`
+selects the element at a literal index below the length. No operator or
+conversion applies to a whole array, and an array's elements are never arrays.
 
 ### Operators
 
@@ -3627,7 +3736,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0008` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0220` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type |
+| `ORC0201`–`ORC0224` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1008` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit |
 
@@ -3740,6 +3849,9 @@ part are listed here so a reader can move from explanation to authority.
 - **Chapters 4 and 8:** the [grammar specification](LANGUAGE_2026.md), the
   [typed-literal semantics](SEMANTICS_2026.md),
   [OEP-0003](governance/oeps/OEP-0003-orange-2026-typed-literals.md), the
+  proposed [expression](EXPRESSIONS_2026.md),
+  [binding and conversion](BINDINGS_2026.md), and [array](ARRAYS_2026.md)
+  specifications under OEP-0005 through OEP-0007, the
   [compiler guide](../compiler/README.md), and the compiler's own behavior at
   the book's snapshot.
 - **Chapters 5 and 6:** the [architecture](ARCHITECTURE.md), the
@@ -3778,24 +3890,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.5 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.6 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.5 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.5 | Accepted typed-literal Core and evaluator exist; expression and binding slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.6 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.6 | Accepted typed-literal Core and evaluator exist; expression, binding, and array slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.5 | Current parser, accepted typed-literal semantics, and the proposed expression and binding slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.6 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, and array slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.5 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.6 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
 | V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.5 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A and B revised in v0.5 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendix A revised in v0.6 and Appendix B in v0.5 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -3828,7 +3940,9 @@ decision suites under `docs/`. Version 0.4 adds the
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md), and
 version 0.5 adds the
 [bindings and conversions specification](BINDINGS_2026.md) and
-[OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md).
+[OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
+and version 0.6 adds the [arrays specification](ARRAYS_2026.md) and
+[OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -3864,6 +3978,13 @@ under Chase Bryan's direction on 2026-09-28, and every Orange example it adds
 was run against the compiler at the revision that introduced it. That check is
 not independent review, and the same authorship, review, evidence, and
 provenance boundaries apply.
+
+Manuscript version 0.6 revised the preface, Chapters 1, 3, 4, 8, and 12, and
+Appendix A for the S3d array slice, and added the Chapter 8 section "A state
+as one value". It was drafted with Claude Code under Chase Bryan's direction on
+2026-09-28, and every Orange example it adds was run against the compiler at
+the revision that introduced it. That check is not independent review, and the
+same authorship, review, evidence, and provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

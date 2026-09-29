@@ -1,0 +1,89 @@
+// S3d conformance: the whole ChaCha20 block function of RFC 8439 section 2.3,
+// with the state as one `Word[32]^16`, checked against the serialized block
+// of section 2.3.2. The quarter round returns its four words as one array,
+// and the double round names the column and diagonal rounds.
+edition 2026;
+module chacha20 {
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2, b2, c2, d2]
+  }
+
+  spec double_round(x: Word[32]^16) -> Word[32]^16 {
+    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
+    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
+    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
+    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
+    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
+    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
+    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
+    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+    [
+      d0[0], d1[0], d2[0], d3[0],
+      d3[1], d0[1], d1[1], d2[1],
+      d2[2], d3[2], d0[2], d1[2],
+      d1[3], d2[3], d3[3], d0[3],
+    ]
+  }
+
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
+    let s0: Word[32]^16 = [
+      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+      load_le32(key[0], key[1], key[2], key[3]),
+      load_le32(key[4], key[5], key[6], key[7]),
+      load_le32(key[8], key[9], key[10], key[11]),
+      load_le32(key[12], key[13], key[14], key[15]),
+      load_le32(key[16], key[17], key[18], key[19]),
+      load_le32(key[20], key[21], key[22], key[23]),
+      load_le32(key[24], key[25], key[26], key[27]),
+      load_le32(key[28], key[29], key[30], key[31]),
+      counter,
+      load_le32(nonce[0], nonce[1], nonce[2], nonce[3]),
+      load_le32(nonce[4], nonce[5], nonce[6], nonce[7]),
+      load_le32(nonce[8], nonce[9], nonce[10], nonce[11]),
+    ];
+    let s1: Word[32]^16 = double_round(s0);
+    let s2: Word[32]^16 = double_round(s1);
+    let s3: Word[32]^16 = double_round(s2);
+    let s4: Word[32]^16 = double_round(s3);
+    let s5: Word[32]^16 = double_round(s4);
+    let s6: Word[32]^16 = double_round(s5);
+    let s7: Word[32]^16 = double_round(s6);
+    let s8: Word[32]^16 = double_round(s7);
+    let s9: Word[32]^16 = double_round(s8);
+    let s10: Word[32]^16 = double_round(s9);
+    [
+      s10[0] + s0[0], s10[1] + s0[1], s10[2] + s0[2], s10[3] + s0[3],
+      s10[4] + s0[4], s10[5] + s0[5], s10[6] + s0[6], s10[7] + s0[7],
+      s10[8] + s0[8], s10[9] + s0[9], s10[10] + s0[10], s10[11] + s0[11],
+      s10[12] + s0[12], s10[13] + s0[13], s10[14] + s0[14], s10[15] + s0[15],
+    ]
+  }
+
+  // RFC 8439 section 2.3.2: key 00:01:...:1f, block count 1, nonce
+  // 00:00:00:09:00:00:00:4a:00:00:00:00.
+  spec test_vector() -> Word[32]^16 {
+    block(
+      [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+      ],
+      1,
+      [0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x4a, 0x00, 0x00, 0x00, 0x00],
+    )
+  }
+}
