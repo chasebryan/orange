@@ -1,0 +1,9 @@
+// S3c rejection: `as` converts exactly one operand, so a conversion beside an
+// operator or another conversion needs parentheses.
+edition 2026;
+module grouping {
+  spec before(x: Word[8], y: Word[8]) -> Word[32] { x + y as Word[32] }
+  spec after(x: Word[8]) -> Word[32] { x as Word[32] << 8 }
+  spec chained(x: Word[8]) -> Int { x as Word[32] as Int }
+  spec grouped(x: Word[8], y: Word[8]) -> Word[32] { (x + y) as Word[32] }
+}

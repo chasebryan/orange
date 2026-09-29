@@ -20,6 +20,11 @@ documents are read through it. Until then, the compiler behavior it describes
 exists so that the proposal can be reviewed against running code, and it
 establishes no accepted language meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`BINDINGS_2026.md`](BINDINGS_2026.md), proposed under OEP-0006, extends this
+> document with typed `let` bindings and explicit `as` conversions. Every
+> source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

@@ -1,7 +1,7 @@
 # Orange compiler
 
-Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b
-proposed under OEP-0005, in owner review
+Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b and
+S3c proposed under OEP-0005 and OEP-0006, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -15,10 +15,12 @@ semantic validation. The accepted S3a slice assigns meaning to closed typed
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md) and in owner review
 under OEP-0005, extends it to pure typed `spec` functions: parameters, calls,
 `Int` and `Word[8]` through `Word[64]`, exact integer arithmetic, word ring
-arithmetic, bitwise operators, shifts, and rotations. Both lower to a
-noncanonical Typed Reference Core and are reference-evaluated. Local bindings,
-control flow, typed `impl`, proof checking, verified lowering, and code
-generation do not exist.
+arithmetic, bitwise operators, shifts, and rotations. The S3c slice, proposed
+in [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md) and in owner review
+under OEP-0006, adds typed `let` bindings and explicit `as` conversions among
+those five types. All three lower to a noncanonical Typed Reference Core and
+are reference-evaluated. Tuples, control flow, typed `impl`, proof checking,
+verified lowering, and code generation do not exist.
 
 This boundary was merged by
 [PR #9](https://github.com/chasebryan/orange/pull/9) as commit
@@ -111,10 +113,10 @@ and conclusion remain null. The v0.8 harness in `tools/d004_v08_run.py` adds
 SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
-unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b is
-implemented and awaits owner review under OEP-0005, both `roadmap_gate_credit`
-and `readiness_credit` remain `none`, and Orange's 3-of-10 (30%) binary
-gate-closure score is unchanged.
+unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b and S3c
+are implemented and await owner review under OEP-0005 and OEP-0006, both
+`roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
+(30%) binary gate-closure score is unchanged.
 
 ## D-005 decision laboratory
 
@@ -643,9 +645,10 @@ demo::sample: Word[32] = 0xce20b47e
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-rules, limits, and non-claims are in
-[`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md). Neither defines
-bindings, control flow, effects, proof meaning, implementation refinement,
+and S3c rules, limits, and non-claims are in
+[`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md) and
+[`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md). None of them defines
+tuples, control flow, effects, proof meaning, implementation refinement,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
 standard's example value is not thereby a verified transcription of that
@@ -808,6 +811,26 @@ rotation tokens are checked for longest-match lexing. This corpus establishes
 the tested behavior of one implementation; it does not accept OEP-0005, prove
 the rules sound, or complete S3.
 
+## S3c binding and conversion conformance
+
+`fixtures/s3c/` contains an exact ten-file corpus for the proposed S3c
+behavior: five fixtures must evaluate successfully and five must fail closed.
+The accepted fixtures cover widening, narrowing, and the residue rule, byte
+and word order in the little-endian convention of RFC 8439 and the big-endian
+convention of FIPS 180-4, `let` and `as` used as ordinary names, the ChaCha20
+quarter round written with named steps, and SHA-256 message words and round 0
+of the "abc" example. The rejected fixtures cover binding syntax, duplicate
+and late names, binding types, conversion targets and operands, and ungrouped
+conversions.
+
+`crates/orangec/tests/s3c_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3b runner. It parses the 17-rule S3c index in
+`docs/BINDINGS_2026.md`, binds every rule to named CLI, generated-CLI,
+parser-unit, or unit tests declared exactly once at their harness locations,
+and pins the 256-binding limit at its exact boundary with a generated source.
+This corpus establishes the tested behavior of one implementation; it does not
+accept OEP-0006, prove the rules sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -827,8 +850,11 @@ the rules sound, or complete S3.
   corpus runner;
 - `crates/orangec/tests/s3b_conformance.rs`: exact repeatable S3b corpus,
   rule-index, and resource-limit runner;
+- `crates/orangec/tests/s3c_conformance.rs`: exact repeatable S3c corpus,
+  rule-index, and binding-limit runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
+- `fixtures/s3b/`: exact five-positive/nine-negative S3b CLI fixture corpus;
   and
-- `fixtures/s3b/`: exact five-positive/nine-negative S3b CLI fixture corpus.
+- `fixtures/s3c/`: exact five-positive/five-negative S3c CLI fixture corpus.

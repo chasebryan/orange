@@ -1,0 +1,40 @@
+// S3c conformance: the ChaCha20 quarter round of RFC 8439 section 2.1, with
+// each intermediate value named, checked against the test vector of section
+// 2.1.1. Orange 2026 has no tuples yet, so each output word is one function,
+// and each follows the round exactly as far as its word needs.
+edition 2026;
+module chacha20 {
+  spec quarter_a(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    a1 + b1
+  }
+
+  spec quarter_d(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    (d1 ^ a2) <<< 8
+  }
+
+  spec quarter_c(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let d1: Word[32] = (d ^ (a + b)) <<< 16;
+    let c1: Word[32] = c + d1;
+    c1 + quarter_d(a, b, c, d)
+  }
+
+  spec quarter_b(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {
+    let d1: Word[32] = (d ^ (a + b)) <<< 16;
+    let b1: Word[32] = (b ^ (c + d1)) <<< 12;
+    (b1 ^ quarter_c(a, b, c, d)) <<< 7
+  }
+
+  spec a() -> Word[32] { quarter_a(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec b() -> Word[32] { quarter_b(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec c() -> Word[32] { quarter_c(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+  spec d() -> Word[32] { quarter_d(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567) }
+}

@@ -26,6 +26,9 @@ are now Accepted at exact decision revision
 S3b remains unauthorized, and the displayed 30% is binary gate closure rather
 than release readiness.
 
+The owner removed this snapshot from the README on 2026-09-28. It stays here
+as a historical record of the S3a baseline.
+
 This visual is explanatory and non-normative. The governing status remains in
 the decision register, roadmap, accepted OEPs, and repository policy.
 

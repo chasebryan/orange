@@ -1,0 +1,10 @@
+// S3c rejection: parameters and bindings share one set of names with no
+// shadowing, and a binding is in scope only after its own `;`.
+edition 2026;
+module names {
+  spec parameter_reused(x: Int) -> Int { let x: Int = 1; x }
+  spec binding_reused() -> Int { let t: Int = 1; let t: Int = 2; t }
+  spec too_early() -> Int { let a: Int = b; let b: Int = 1; a }
+  spec self_reference() -> Int { let n: Int = n + 1; n }
+  spec unknown(x: Int) -> Int { let a: Int = x; b }
+}

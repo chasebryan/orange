@@ -1,0 +1,8 @@
+// S3c rejection: every binding states its type and ends with `;`, and a
+// body ends with the expression that gives its value.
+edition 2026;
+module syntax {
+  spec untyped() -> Int { let n = 1; n }
+  spec unterminated() -> Int { let n: Int = 1 n }
+  spec no_result() -> Int { let n: Int = 1; }
+}

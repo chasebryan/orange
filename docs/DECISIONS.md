@@ -168,9 +168,9 @@ subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. Integrity parsing and structural oracles ratify no
 Orange semantics. D-004 remains proposed pending owner review of these results,
-S3b is implemented and awaits owner review under OEP-0005, and Orange's 3-of-10
-(30%) binary gate-closure score remains unchanged; that mechanical score is not
-release readiness.
+S3b and S3c are implemented and await owner review under OEP-0005 and OEP-0006,
+and Orange's 3-of-10 (30%) binary gate-closure score remains unchanged; that
+mechanical score is not release readiness.
 
 ## D-005 — Public assurance model
 

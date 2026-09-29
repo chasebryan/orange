@@ -29,9 +29,11 @@ cryptographic validity has not yet been independently verified.
 - [`orange.png`](orange.png) is the primary emblem for a light background.
 - [`orange-erased.PNG`](orange-erased.PNG) is the primary transparent emblem.
 - [`orange-cryptography-handdrawn-banner.png`](orange-cryptography-handdrawn-banner.png)
-  is the primary repository README banner on a light background.
-- [`orange-handdrawn-marker-banner.png`](orange-handdrawn-marker-banner.png) is
-  the primary hand-drawn banner for The Orange Book on a light background.
+  was the repository README banner on a light background, and
+  [`orange-handdrawn-marker-banner.png`](orange-handdrawn-marker-banner.png) was
+  the hand-drawn banner for The Orange Book. On 2026-09-28 the owner chose the
+  [Orange identity](../identity/README.md) for both; these files stay as the
+  original artwork.
 - [`orange-banner.png`](orange-banner.png) is the provenance-bearing horizontal
   emblem and wordmark lockup for a light background.
 - [`orange-banner2-erased.PNG`](orange-banner2-erased.PNG) is the transparent
@@ -52,6 +54,10 @@ generation and admitted to the working project identity:
 | --- | --- | --- |
 | [Cipher README banner](orange-cipher-readme-banner.png) | 2172 x 724 | Emblem, wordmark, and tagline on ivory |
 | [Orange Book cover](orange-book-cipher-cover.png) | 1024 x 1536 | Flat front cover, titled The Orange Book, by Chase Bryan |
+
+On 2026-09-29 the owner chose the [Orange identity](../identity/README.md) for
+the README banner and the book cover. The cipher artwork stays here as saved
+work and is not displayed.
 
 The banner is a byte-for-byte import of
 `exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png`. Its embedded C2PA container is
