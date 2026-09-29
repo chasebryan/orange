@@ -357,6 +357,13 @@ fn digits(value: &ExactInteger) -> usize {
     value.magnitude_digits()
 }
 
+/// The steps of an `update` or `fill` of `length` elements: one, and one
+/// more for each 64 elements it writes, so that a step stays about as much
+/// work as one limb operation.
+const fn bulk_cost(length: usize) -> usize {
+    length.div_ceil(64).saturating_add(1)
+}
+
 fn word_mask(ty: CoreType) -> Option<u64> {
     match ty {
         CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
@@ -1121,8 +1128,8 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Update => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
-                // One step per element copied.
-                self.charge(length)?;
+                // One step, and one more per 64 elements copied.
+                self.charge(bulk_cost(length))?;
                 if self
                     .stack
                     .len()
@@ -1153,8 +1160,8 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Fill => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
-                // One step per element.
-                self.charge(length)?;
+                // One step, and one more per 64 elements written.
+                self.charge(bulk_cost(length))?;
                 if self.stack.len() <= floor {
                     return Err(Stop::InconsistentCore);
                 }
@@ -2269,10 +2276,16 @@ mod tests {
                  for i in 0..2 with s: Word[8] = 0 { s ^ t[i] } }\n",
                 18,
             ),
-            // An update or fill of n elements costs n steps beyond its
-            // operands'.
-            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 11),
-            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 5),
+            // An update or fill of n elements costs 1 + ceil(n / 64) steps
+            // beyond its operands'.
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 10),
+            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 3),
+            ("  spec a() -> Word[8]^64 { [7; 64] }\n", 3),
+            ("  spec a() -> Word[8]^65 { [7; 65] }\n", 4),
+            (
+                "  spec a() -> Word[8]^256 { [7; 256] with [255] = 1 }\n",
+                13,
+            ),
             // `true`, `false`, `!`, `&&`, `||`, and every comparison of
             // words or `Bool` values cost one step; comparing integers
             // costs 1 + max(d1, d2).

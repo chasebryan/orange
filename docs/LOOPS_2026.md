@@ -307,8 +307,9 @@ and its accumulator type. Its step's nodes count as any others. Each
 **Evaluation.** A loop costs one step and one more per iteration, beyond its
 first value's and every step's. A `loop_index` or `accumulator` read costs
 one step, and so does a `select`. An `update` or `fill` of an array of n
-elements costs n steps. A loop's steps run within the call of their function
-and add no call depth.
+elements costs 1 + ⌈n/64⌉ steps, as [`LOOKUPS_2026.md`](LOOKUPS_2026.md)
+section 8 amends this rule (OEP-0008 first charged n). A loop's steps run
+within the call of their function and add no call depth.
 
 Exhausting any budget, and any allocation failure, yields one resource
 diagnostic, no Core, and no value line. The deepest sources the limits admit,
