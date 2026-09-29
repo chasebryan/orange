@@ -1,0 +1,14 @@
+// S3b rejection: diagnostics follow source order within each function, an
+// error is never reported twice through its consequences, and call cycles are
+// reported after every function body.
+edition 2026;
+module order {
+  spec loop_a() -> Int { loop_b() }
+  spec loop_b() -> Int { loop_a() }
+  spec byte(x: Word[8]) -> Word[8] { x }
+  spec wrong_result_and_argument(n: Int) -> Int { byte(256) + n }
+  spec unsupported_parameter(x: Word[12]) -> Word[8] { x }
+  spec calls_unsupported() -> Word[8] { unsupported_parameter(1) }
+  spec unsupported_result() -> Word[7] { nothing }
+  spec operator_stops(n: Int) -> Int { (n & missing) + unknown }
+}

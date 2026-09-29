@@ -295,8 +295,8 @@ No superseded archive is committed.
 Any later change to the adapter, the run harness, the bundle, the overlay or
 their bound inputs starts a new epoch; this one stays reproducible only from
 these bytes. D-004 remains proposed pending owner review of these results,
-S3b remains blocked, and Orange's binary gate-closure score remains 3 of 10
-(30%).
+S3b is implemented and awaits owner review under OEP-0005, and Orange's binary
+gate-closure score remains 3 of 10 (30%).
 
 ## Stored S3a inputs
 
@@ -509,6 +509,6 @@ with its packet before it runs that `verify`.
 
 Any later change to the v0.8 adapter, the v0.8 harness, the v0.8 documents,
 the v0.7 bundle or overlay they bind, or their inputs starts a new epoch. D-004
-remains proposed pending owner review of both runs, S3b remains blocked by
-D-004 in the decision register, and Orange's binary gate-closure score remains
-3 of 10 (30%).
+remains proposed pending owner review of both runs, S3b is implemented and
+awaits owner review under OEP-0005, and Orange's binary gate-closure score
+remains 3 of 10 (30%).

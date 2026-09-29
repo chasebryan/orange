@@ -1,0 +1,9 @@
+// S3b rejection: operators from different groups, and chained shifts, need
+// parentheses. Each ungrouped expression is reported once.
+edition 2026;
+module ungrouped {
+  spec mixed_bitwise(x: Word[8], y: Word[8]) -> Word[8] { x ^ y & x }
+  spec arithmetic_then_bitwise(x: Word[8], y: Word[8]) -> Word[8] { x + y ^ x }
+  spec chained_shift(x: Word[8]) -> Word[8] { x << 1 << 2 }
+  spec grouped(x: Word[8], y: Word[8]) -> Word[8] { (x ^ y) & x }
+}

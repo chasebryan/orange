@@ -1,0 +1,10 @@
+// S3b rejection: a shift or rotation amount is an unsigned integer literal
+// less than the operand's width.
+edition 2026;
+module amounts {
+  spec full_width(x: Word[8]) -> Word[8] { x << 8 }
+  spec hexadecimal_width(x: Word[32]) -> Word[32] { x >>> 0x20 }
+  spec negative(x: Word[16]) -> Word[16] { x >> -1 }
+  spec variable(x: Word[64], n: Word[64]) -> Word[64] { x <<< n }
+  spec computed(x: Word[64]) -> Word[64] { x <<< (1 + 1) }
+}

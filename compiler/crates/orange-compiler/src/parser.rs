@@ -18,6 +18,26 @@ pub const MAX_PARSE_EVENTS_PER_SOURCE: usize = 1_048_576;
 /// Maximum delimiter nesting inspected while recovering from malformed syntax.
 pub const MAX_RECOVERY_DELIMITER_DEPTH: usize = 64;
 
+/// Maximum groups, call argument lists, and prefix operators enclosing any
+/// one subexpression.
+///
+/// This bounds the parser's recursion. Like C's minimum of 63 nested
+/// parenthesized expressions, it is far beyond what readable source needs.
+pub const MAX_EXPRESSION_NESTING: usize = 64;
+
+/// Maximum height of one expression tree, counting every operator, group,
+/// and call as one level above its tallest operand.
+///
+/// Long operator chains grow a tree's height without nesting, so this bounds
+/// every later traversal separately from [`MAX_EXPRESSION_NESTING`].
+pub const MAX_EXPRESSION_HEIGHT: usize = 256;
+
+/// Maximum parameters declared by one function.
+pub const MAX_PARAMETERS_PER_FUNCTION: usize = 64;
+
+/// Maximum arguments supplied by one call.
+pub const MAX_ARGUMENTS_PER_CALL: usize = 256;
+
 /// A complete minimal Orange source file.
 ///
 /// Parsed nodes are read-only outside this crate so later stages can rely on
@@ -122,7 +142,7 @@ impl ModuleDeclaration {
     }
 }
 
-/// A parameterless function declaration in the current Orange 2026 grammar.
+/// A function declaration in the current Orange 2026 grammar.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionDeclaration {
     /// Full function extent.
@@ -131,7 +151,9 @@ pub struct FunctionDeclaration {
     pub(crate) kind: FunctionKind,
     /// Function name.
     pub(crate) name: Identifier,
-    /// Empty legacy syntax or the typed literal body available to `spec`.
+    /// Parameters in source order; nonempty only for a typed `spec`.
+    pub(crate) parameters: Vec<Parameter>,
+    /// Empty legacy syntax or the typed body available to `spec`.
     pub(crate) body: FunctionBody,
 }
 
@@ -154,10 +176,47 @@ impl FunctionDeclaration {
         &self.name
     }
 
-    /// Returns the empty legacy syntax or typed literal body.
+    /// Returns parameters in source order.
+    #[must_use]
+    pub fn parameters(&self) -> &[Parameter] {
+        &self.parameters
+    }
+
+    /// Returns the empty legacy syntax or typed body.
     #[must_use]
     pub const fn body(&self) -> &FunctionBody {
         &self.body
+    }
+}
+
+/// One `name: Type` parameter of a typed `spec` function.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Parameter {
+    /// Extent from the parameter name through its type.
+    pub(crate) span: Span,
+    /// Parameter name.
+    pub(crate) name: Identifier,
+    /// Syntactic parameter type; semantic analysis resolves its meaning.
+    pub(crate) ty: TypeSyntax,
+}
+
+impl Parameter {
+    /// Returns the extent from the parameter name through its type.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the parameter name.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Returns the syntactic parameter type.
+    #[must_use]
+    pub const fn ty(&self) -> &TypeSyntax {
+        &self.ty
     }
 }
 
@@ -196,22 +255,22 @@ define_function_kinds! {
 pub enum FunctionBody {
     /// The legacy `{}` form, which remains syntax-only.
     Empty,
-    /// A result type and signed integer literal, admitted only for `spec`.
-    TypedLiteral(TypedLiteralBody),
+    /// A result type and one body expression, admitted only for `spec`.
+    Typed(Box<TypedBody>),
 }
 
-/// The complete typed tail of a literal `spec`, from `->` through `}`.
+/// The complete typed tail of a `spec`, from `->` through `}`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TypedLiteralBody {
+pub struct TypedBody {
     /// Full extent from the `->` token through the body's closing brace.
     pub(crate) span: Span,
     /// Syntactic result type; semantic analysis resolves its meaning.
     pub(crate) result_type: TypeSyntax,
-    /// The function body's sole signed integer literal.
-    pub(crate) literal: IntegerLiteral,
+    /// The function body's sole expression.
+    pub(crate) expression: Expression,
 }
 
-impl TypedLiteralBody {
+impl TypedBody {
     /// Returns the full extent from `->` through the body's closing brace.
     #[must_use]
     pub const fn span(&self) -> Span {
@@ -224,14 +283,256 @@ impl TypedLiteralBody {
         &self.result_type
     }
 
-    /// Returns the function body's sole signed integer literal.
+    /// Returns the function body's sole expression.
     #[must_use]
-    pub const fn literal(&self) -> &IntegerLiteral {
-        &self.literal
+    pub const fn expression(&self) -> &Expression {
+        &self.expression
     }
 }
 
-/// A syntactic result type name with an optional integer width argument.
+/// One syntactic expression and its exact source extent.
+///
+/// Expression trees are at most [`MAX_EXPRESSION_HEIGHT`] levels high, so
+/// every later traversal is bounded by the parser.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Expression {
+    /// Full expression extent, including any grouping parentheses.
+    pub(crate) span: Span,
+    /// Expression form.
+    pub(crate) kind: ExpressionKind,
+}
+
+impl Expression {
+    /// Returns the full expression extent, including grouping parentheses.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the expression form.
+    #[must_use]
+    pub const fn kind(&self) -> &ExpressionKind {
+        &self.kind
+    }
+}
+
+/// The expression forms of the Orange 2026 grammar.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExpressionKind {
+    /// An integer literal, optionally with a sign written directly before it.
+    Literal(IntegerLiteral),
+    /// A bare identifier, which names a parameter.
+    Name(Identifier),
+    /// A call of a named function.
+    Call(CallExpression),
+    /// A prefix operator and its operand.
+    Unary(UnaryExpression),
+    /// An infix operator and its two operands.
+    Binary(BinaryExpression),
+    /// An expression enclosed in grouping parentheses.
+    Parenthesized(Box<Expression>),
+}
+
+/// A call `name(arguments)`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallExpression {
+    /// Called function name.
+    pub(crate) callee: Identifier,
+    /// Arguments in source order.
+    pub(crate) arguments: Vec<Expression>,
+}
+
+impl CallExpression {
+    /// Returns the called function name.
+    #[must_use]
+    pub const fn callee(&self) -> &Identifier {
+        &self.callee
+    }
+
+    /// Returns arguments in source order.
+    #[must_use]
+    pub fn arguments(&self) -> &[Expression] {
+        &self.arguments
+    }
+}
+
+/// A prefix operator applied to one operand.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnaryExpression {
+    /// The operator.
+    pub(crate) operator: UnaryOperator,
+    /// Exact extent of the operator token.
+    pub(crate) operator_span: Span,
+    /// The operand.
+    pub(crate) operand: Box<Expression>,
+}
+
+impl UnaryExpression {
+    /// Returns the operator.
+    #[must_use]
+    pub const fn operator(&self) -> UnaryOperator {
+        self.operator
+    }
+
+    /// Returns the exact extent of the operator token.
+    #[must_use]
+    pub const fn operator_span(&self) -> Span {
+        self.operator_span
+    }
+
+    /// Returns the operand.
+    #[must_use]
+    pub fn operand(&self) -> &Expression {
+        &self.operand
+    }
+}
+
+/// An infix operator applied to two operands.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BinaryExpression {
+    /// The operator.
+    pub(crate) operator: BinaryOperator,
+    /// Exact extent of the operator token.
+    pub(crate) operator_span: Span,
+    /// The left operand.
+    pub(crate) left: Box<Expression>,
+    /// The right operand, or the amount of a shift or rotation.
+    pub(crate) right: Box<Expression>,
+}
+
+impl BinaryExpression {
+    /// Returns the operator.
+    #[must_use]
+    pub const fn operator(&self) -> BinaryOperator {
+        self.operator
+    }
+
+    /// Returns the exact extent of the operator token.
+    #[must_use]
+    pub const fn operator_span(&self) -> Span {
+        self.operator_span
+    }
+
+    /// Returns the left operand.
+    #[must_use]
+    pub fn left(&self) -> &Expression {
+        &self.left
+    }
+
+    /// Returns the right operand, or the amount of a shift or rotation.
+    #[must_use]
+    pub fn right(&self) -> &Expression {
+        &self.right
+    }
+}
+
+macro_rules! define_operators {
+    (
+        $(#[$enum_doc:meta])* $name:ident {
+            $($(#[$variant_doc:meta])* $variant:ident => $spelling:literal,)+
+        }
+    ) => {
+        $(#[$enum_doc])*
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum $name {
+            $($(#[$variant_doc])* $variant,)+
+        }
+
+        impl $name {
+            /// Returns the exact source spelling of this operator.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $spelling,)+
+                }
+            }
+
+            #[cfg(test)]
+            const ALL: &'static [Self] = &[$(Self::$variant,)+];
+        }
+    };
+}
+
+define_operators! {
+    /// A prefix operator.
+    UnaryOperator {
+        /// `-`: exact negation.
+        Negate => "-",
+        /// `~`: bitwise complement.
+        Complement => "~",
+    }
+}
+
+define_operators! {
+    /// An infix operator.
+    BinaryOperator {
+        /// `+`: addition.
+        Add => "+",
+        /// `-`: subtraction.
+        Subtract => "-",
+        /// `*`: multiplication.
+        Multiply => "*",
+        /// `&`: bitwise and.
+        And => "&",
+        /// `|`: bitwise inclusive or.
+        Or => "|",
+        /// `^`: bitwise exclusive or.
+        Xor => "^",
+        /// `<<`: logical shift left.
+        ShiftLeft => "<<",
+        /// `>>`: logical shift right.
+        ShiftRight => ">>",
+        /// `<<<`: rotation left.
+        RotateLeft => "<<<",
+        /// `>>>`: rotation right.
+        RotateRight => ">>>",
+    }
+}
+
+impl BinaryOperator {
+    /// Returns whether this operator is a shift or rotation, whose right
+    /// operand is an amount rather than a value.
+    #[must_use]
+    pub const fn is_shift_or_rotation(self) -> bool {
+        matches!(
+            self,
+            Self::ShiftLeft | Self::ShiftRight | Self::RotateLeft | Self::RotateRight
+        )
+    }
+
+    const fn token_kind(self) -> TokenKind {
+        match self {
+            Self::Add => TokenKind::Plus,
+            Self::Subtract => TokenKind::Minus,
+            Self::Multiply => TokenKind::Star,
+            Self::And => TokenKind::Ampersand,
+            Self::Or => TokenKind::Pipe,
+            Self::Xor => TokenKind::Caret,
+            Self::ShiftLeft => TokenKind::LessLess,
+            Self::ShiftRight => TokenKind::GreaterGreater,
+            Self::RotateLeft => TokenKind::LessLessLess,
+            Self::RotateRight => TokenKind::GreaterGreaterGreater,
+        }
+    }
+
+    const fn from_token(kind: TokenKind) -> Option<Self> {
+        Some(match kind {
+            TokenKind::Plus => Self::Add,
+            TokenKind::Minus => Self::Subtract,
+            TokenKind::Star => Self::Multiply,
+            TokenKind::Ampersand => Self::And,
+            TokenKind::Pipe => Self::Or,
+            TokenKind::Caret => Self::Xor,
+            TokenKind::LessLess => Self::ShiftLeft,
+            TokenKind::GreaterGreater => Self::ShiftRight,
+            TokenKind::LessLessLess => Self::RotateLeft,
+            TokenKind::GreaterGreaterGreater => Self::RotateRight,
+            _ => return None,
+        })
+    }
+}
+
+/// A syntactic type name with an optional integer width argument.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeSyntax {
     /// Full type extent, including `[WIDTH]` when present.
@@ -453,12 +754,22 @@ struct Parser<'source, 'tokens> {
     halted: bool,
     limits: Limits,
     reserve_function_slot: fn(&mut Vec<FunctionDeclaration>) -> bool,
+    reserve_parameter_slot: fn(&mut Vec<Parameter>) -> bool,
+    reserve_argument_slot: fn(&mut Vec<Expression>) -> bool,
     reserve_identifier_text: fn(&mut String, usize) -> bool,
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
 }
 
 fn reserve_function_slot(functions: &mut Vec<FunctionDeclaration>) -> bool {
     functions.try_reserve(1).is_ok()
+}
+
+fn reserve_parameter_slot(parameters: &mut Vec<Parameter>) -> bool {
+    parameters.try_reserve(1).is_ok()
+}
+
+fn reserve_argument_slot(arguments: &mut Vec<Expression>) -> bool {
+    arguments.try_reserve(1).is_ok()
 }
 
 fn reserve_identifier_text(text: &mut String, bytes: usize) -> bool {
@@ -484,6 +795,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             halted: false,
             limits,
             reserve_function_slot,
+            reserve_parameter_slot,
+            reserve_argument_slot,
             reserve_identifier_text,
             reserve_diagnostic_slots,
         }
@@ -687,7 +1000,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                         "expected a `spec` or `impl` function declaration",
                         self.current_span(),
                         "this token cannot begin a module member",
-                        "Orange 2026 admits empty functions and typed literal `spec` functions",
+                        "Orange 2026 admits empty functions and typed `spec` functions",
                     );
                     self.recover_to(&[
                         TokenKind::KwSpec,
@@ -755,7 +1068,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let left_paren = self.consume_or_recover(
             TokenKind::LeftParen,
             "`(` after the function name",
-            "functions in this grammar have an empty parameter list",
+            "a function name is followed by its parameter list",
             &[
                 TokenKind::RightParen,
                 TokenKind::Arrow,
@@ -766,10 +1079,15 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 TokenKind::Eof,
             ],
         );
+        let parameters = if left_paren.is_some() && self.current_kind() == TokenKind::Identifier {
+            self.parse_parameter_list()
+        } else {
+            Some(Vec::new())
+        };
         let right_paren = self.consume_or_recover(
             TokenKind::RightParen,
-            "`)` after `(`",
-            "parameters are not part of the minimal grammar",
+            "`)` to close the parameter list",
+            "parameters are written `name: Type` and separated by commas",
             &[
                 TokenKind::Arrow,
                 TokenKind::LeftBrace,
@@ -779,16 +1097,44 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 TokenKind::Eof,
             ],
         );
+        let has_parameters = parameters.as_ref().is_some_and(|list| !list.is_empty());
+        if kind == FunctionKind::Impl
+            && let Some(first) = parameters.as_ref().and_then(|list| list.first())
+        {
+            self.report(
+                DiagnosticCode::ExpectedSyntax,
+                "`impl` functions have an empty parameter list",
+                first.span,
+                "parameters are allowed only on typed `spec` functions",
+                "keep the legacy `impl name() {}` form until implementation semantics are defined",
+            );
+        }
 
         let (body, body_end) = match self.current_kind() {
+            TokenKind::LeftBrace if kind == FunctionKind::Spec && has_parameters => {
+                self.report(
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `->` after the parameter list",
+                    self.current_span(),
+                    "a `spec` with parameters needs a result type and a body expression",
+                    "write `spec name(x: Type) -> Type { expression }`",
+                );
+                self.recover_to(&[
+                    TokenKind::KwSpec,
+                    TokenKind::KwImpl,
+                    TokenKind::RightBrace,
+                    TokenKind::Eof,
+                ]);
+                (None, None)
+            }
             TokenKind::LeftBrace => self.parse_empty_function_body(),
-            TokenKind::Arrow if kind == FunctionKind::Spec => self.parse_typed_literal_body(),
+            TokenKind::Arrow if kind == FunctionKind::Spec => self.parse_typed_body(),
             TokenKind::Arrow => {
                 self.report(
                     DiagnosticCode::ExpectedSyntax,
-                    "typed literal bodies are allowed only on `spec` functions",
+                    "typed bodies are allowed only on `spec` functions",
                     self.current_span(),
-                    "an `impl` function cannot have a typed literal body",
+                    "an `impl` function cannot have a typed body",
                     "keep the legacy `impl name() {}` form until implementation semantics are defined",
                 );
                 self.recover_to(&[
@@ -807,7 +1153,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                         "`{` to begin the empty `impl` body"
                     },
                     if kind == FunctionKind::Spec {
-                        "a `spec` is either legacy-empty or has a typed literal body"
+                        "a `spec` is either legacy-empty or has a typed body"
                     } else {
                         "typed `impl` bodies are not part of this syntax"
                     },
@@ -822,17 +1168,86 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
         };
 
-        match (name, left_paren, right_paren, body, body_end) {
-            (Some(name), Some(_), Some(_), Some(body), Some(body_end)) if self.record_node() => {
+        match (name, left_paren, parameters, right_paren, body, body_end) {
+            (Some(name), Some(_), Some(parameters), Some(_), Some(body), Some(body_end))
+                if self.record_node() =>
+            {
                 Some(FunctionDeclaration {
                     span: self.join(keyword.span, body_end.span),
                     kind,
                     name,
+                    parameters,
                     body,
                 })
             }
             _ => None,
         }
+    }
+
+    fn parse_parameter_list(&mut self) -> Option<Vec<Parameter>> {
+        let mut parameters = Vec::new();
+        let mut complete = true;
+        loop {
+            match self.parse_parameter() {
+                Some(parameter) => {
+                    if parameters.len() >= MAX_PARAMETERS_PER_FUNCTION {
+                        self.resource_limit_at(
+                            format!(
+                                "function declares more than {MAX_PARAMETERS_PER_FUNCTION} parameters"
+                            ),
+                            parameter.span,
+                        );
+                        return None;
+                    }
+                    if !(self.reserve_parameter_slot)(&mut parameters) {
+                        self.resource_limit_at(
+                            "parser could not allocate parameter storage",
+                            parameter.span,
+                        );
+                        return None;
+                    }
+                    parameters.push(parameter);
+                }
+                None => {
+                    complete = false;
+                    self.recover_to(&[
+                        TokenKind::Comma,
+                        TokenKind::RightParen,
+                        TokenKind::Arrow,
+                        TokenKind::LeftBrace,
+                        TokenKind::KwSpec,
+                        TokenKind::KwImpl,
+                        TokenKind::RightBrace,
+                        TokenKind::Eof,
+                    ]);
+                }
+            }
+            if self.halted || self.current_kind() != TokenKind::Comma {
+                break;
+            }
+            self.bump();
+            // A trailing comma before `)` is permitted.
+            if self.current_kind() == TokenKind::RightParen {
+                break;
+            }
+        }
+        complete.then_some(parameters)
+    }
+
+    fn parse_parameter(&mut self) -> Option<Parameter> {
+        let name = self.parse_identifier("parameter name")?;
+        if self.current_kind() == TokenKind::Colon {
+            self.bump();
+        } else {
+            self.expected(
+                "`:` after the parameter name",
+                "parameters are written `name: Type`",
+            );
+            return None;
+        }
+        let ty = self.parse_type_syntax("parameter type")?;
+        let span = self.join(name.span, ty.span);
+        self.record_node().then_some(Parameter { span, name, ty })
     }
 
     fn parse_empty_function_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
@@ -863,9 +1278,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    fn parse_typed_literal_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
+    fn parse_typed_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
         let arrow = self.bump();
-        let result_type = self.parse_type_syntax();
+        let result_type = self.parse_type_syntax("result type");
         if result_type.is_none()
             && !matches!(
                 self.current_kind(),
@@ -888,18 +1303,20 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let left_brace = self.consume_or_recover(
             TokenKind::LeftBrace,
             "`{` after the result type",
-            "typed `spec` bodies contain exactly one signed integer literal",
+            "a typed `spec` body contains exactly one expression",
             &[
-                TokenKind::Minus,
-                TokenKind::Integer,
                 TokenKind::RightBrace,
                 TokenKind::KwSpec,
                 TokenKind::KwImpl,
                 TokenKind::Eof,
             ],
         );
-        let literal = self.parse_integer_literal();
-        if literal.is_none()
+        let expression = if left_brace.is_some() {
+            self.parse_expression(0).map(|(expression, _)| expression)
+        } else {
+            None
+        };
+        if expression.is_none()
             && !matches!(
                 self.current_kind(),
                 TokenKind::RightBrace | TokenKind::KwSpec | TokenKind::KwImpl | TokenKind::Eof
@@ -916,10 +1333,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let right_brace = if self.current_kind() == TokenKind::RightBrace {
             self.bump()
         } else {
-            self.expected(
-                "`}` immediately after the integer literal",
-                "typed `spec` bodies contain exactly one signed integer literal",
-            );
+            if expression.is_some() {
+                self.expected(
+                    "`}` after the body expression",
+                    "a typed `spec` body contains exactly one expression",
+                );
+            }
             self.recover_to(&[
                 TokenKind::RightBrace,
                 TokenKind::KwSpec,
@@ -933,16 +1352,16 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
         };
 
-        match (arrow, result_type, left_brace, literal, right_brace) {
-            (Some(arrow), Some(result_type), Some(_), Some(literal), Some(right_brace))
+        match (arrow, result_type, left_brace, expression, right_brace) {
+            (Some(arrow), Some(result_type), Some(_), Some(expression), Some(right_brace))
                 if self.record_node() =>
             {
                 (
-                    Some(FunctionBody::TypedLiteral(TypedLiteralBody {
+                    Some(FunctionBody::Typed(Box::new(TypedBody {
                         span: self.join(arrow.span, right_brace.span),
                         result_type,
-                        literal,
-                    })),
+                        expression,
+                    }))),
                     Some(right_brace),
                 )
             }
@@ -950,8 +1369,353 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    fn parse_type_syntax(&mut self) -> Option<TypeSyntax> {
-        let name = self.parse_identifier("result type")?;
+    /// Parses one expression enclosed by `level` groups, call argument
+    /// lists, and prefix operators.
+    ///
+    /// Returns the expression and its tree height. The first binary operator
+    /// after the first operand selects the expression's operator group;
+    /// operators from another group must be parenthesized.
+    ///
+    /// Recursion happens only where a new nesting level opens, and every
+    /// opener checks [`MAX_EXPRESSION_NESTING`] first, so the parser's stack
+    /// use is bounded independently of expression length. Operator chains are
+    /// parsed by loops.
+    fn parse_expression(&mut self, level: usize) -> Option<(Expression, usize)> {
+        if level > MAX_EXPRESSION_NESTING {
+            self.nesting_limit(self.current_span());
+            return None;
+        }
+        let mut expression = self.parse_unary(level)?;
+        let Some(group) = BinaryOperator::from_token(self.current_kind()) else {
+            return Some(expression);
+        };
+        let mut previous = group;
+        match group {
+            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => {
+                // `*` binds tighter than `+` and `-`; each is left-associative.
+                // `sum` holds the completed terms and the additive operator
+                // awaiting the current product.
+                let mut sum: Option<((Expression, usize), BinaryOperator, Span)> = None;
+                loop {
+                    let operator = match self.current_kind() {
+                        TokenKind::Star => BinaryOperator::Multiply,
+                        TokenKind::Plus => BinaryOperator::Add,
+                        TokenKind::Minus => BinaryOperator::Subtract,
+                        _ => break,
+                    };
+                    previous = operator;
+                    let operator_span = self.bump()?.span;
+                    let operand = self.parse_unary(level)?;
+                    if operator == BinaryOperator::Multiply {
+                        expression =
+                            self.binary_node(expression, operator, operator_span, operand)?;
+                    } else {
+                        let term = match sum.take() {
+                            Some((left, pending, pending_span)) => {
+                                self.binary_node(left, pending, pending_span, expression)?
+                            }
+                            None => expression,
+                        };
+                        sum = Some((term, operator, operator_span));
+                        expression = operand;
+                    }
+                }
+                if let Some((left, pending, pending_span)) = sum {
+                    expression = self.binary_node(left, pending, pending_span, expression)?;
+                }
+            }
+            BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Xor => {
+                while self.current_kind() == group.token_kind() {
+                    let operator_span = self.bump()?.span;
+                    let operand = self.parse_unary(level)?;
+                    expression = self.binary_node(expression, group, operator_span, operand)?;
+                }
+            }
+            BinaryOperator::ShiftLeft
+            | BinaryOperator::ShiftRight
+            | BinaryOperator::RotateLeft
+            | BinaryOperator::RotateRight => {
+                let operator_span = self.bump()?.span;
+                let amount = self.parse_unary(level)?;
+                expression = self.binary_node(expression, group, operator_span, amount)?;
+            }
+        }
+
+        if let Some(ungrouped) = BinaryOperator::from_token(self.current_kind()) {
+            self.report_ungrouped(ungrouped, previous);
+            // Continue through the remaining operators so that one ungrouped
+            // expression produces one diagnostic and parsing stays aligned.
+            while let Some(operator) = BinaryOperator::from_token(self.current_kind()) {
+                let operator_span = self.bump()?.span;
+                let operand = self.parse_unary(level)?;
+                expression = self.binary_node(expression, operator, operator_span, operand)?;
+            }
+        }
+        Some(expression)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_ungrouped(&mut self, ungrouped: BinaryOperator, previous: BinaryOperator) {
+        let span = self.current_span();
+        self.report_lazy(span, || {
+            Diagnostic::error(
+                DiagnosticCode::UngroupedOperators,
+                format!(
+                    "`{}` follows `{}` without grouping parentheses",
+                    ungrouped.as_str(),
+                    previous.as_str()
+                ),
+                span,
+            )
+            .with_label("ungrouped operator")
+            .with_note(
+                if previous.is_shift_or_rotation() && ungrouped.is_shift_or_rotation() {
+                    "a shift or rotation takes exactly two operands; parenthesize one of them"
+                } else {
+                    "operators from different groups have no relative precedence in Orange; \
+                     parenthesize the part that applies first"
+                },
+            )
+        });
+    }
+
+    #[inline(never)]
+    fn binary_node(
+        &mut self,
+        (left, left_height): (Expression, usize),
+        operator: BinaryOperator,
+        operator_span: Span,
+        (right, right_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let height = self.node_height(left_height.max(right_height), operator_span)?;
+        let span = self.join(left.span, right.span);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Binary(BinaryExpression {
+                    operator,
+                    operator_span,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }),
+            },
+            height,
+        ))
+    }
+
+    fn node_height(&mut self, child_height: usize, span: Span) -> Option<usize> {
+        let height = child_height.saturating_add(1);
+        if height > MAX_EXPRESSION_HEIGHT {
+            self.height_limit(span);
+            return None;
+        }
+        Some(height)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn nesting_limit(&mut self, span: Span) {
+        self.resource_limit_at(
+            format!(
+                "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
+                 for groups, calls, and prefix operators"
+            ),
+            span,
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn height_limit(&mut self, span: Span) {
+        self.resource_limit_at(
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit"),
+            span,
+        );
+    }
+
+    /// Opens one nesting level at the current token, or reports the limit.
+    fn open_level(&mut self, level: usize) -> Option<usize> {
+        let inner = level.saturating_add(1);
+        if inner > MAX_EXPRESSION_NESTING {
+            self.nesting_limit(self.current_span());
+            return None;
+        }
+        Some(inner)
+    }
+
+    fn parse_unary(&mut self, level: usize) -> Option<(Expression, usize)> {
+        let operator = match self.current_kind() {
+            // A sign written directly before an integer token is part of the
+            // literal, exactly as in the S3a typed-literal body.
+            TokenKind::Minus if self.next_kind() == TokenKind::Integer => {
+                return self.parse_literal_expression();
+            }
+            TokenKind::Minus => UnaryOperator::Negate,
+            TokenKind::Tilde => UnaryOperator::Complement,
+            _ => return self.parse_primary(level),
+        };
+        let inner = self.open_level(level)?;
+        let operator_span = self.bump()?.span;
+        let operand = self.parse_unary(inner)?;
+        self.unary_node(operator, operator_span, operand)
+    }
+
+    #[inline(never)]
+    fn unary_node(
+        &mut self,
+        operator: UnaryOperator,
+        operator_span: Span,
+        (operand, operand_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let height = self.node_height(operand_height, operator_span)?;
+        let span = self.join(operator_span, operand.span);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Unary(UnaryExpression {
+                    operator,
+                    operator_span,
+                    operand: Box::new(operand),
+                }),
+            },
+            height,
+        ))
+    }
+
+    fn parse_primary(&mut self, level: usize) -> Option<(Expression, usize)> {
+        match self.current_kind() {
+            TokenKind::Integer => self.parse_literal_expression(),
+            TokenKind::Identifier if self.next_kind() == TokenKind::LeftParen => {
+                self.parse_call(level)
+            }
+            TokenKind::Identifier => self.parse_name_expression(),
+            TokenKind::LeftParen => {
+                let inner = self.open_level(level)?;
+                let left_paren = self.bump()?.span;
+                let group = self.parse_expression(inner)?;
+                self.finish_group(left_paren, group)
+            }
+            _ => {
+                self.expected(
+                    "an expression",
+                    "an expression is an integer literal, a parameter, a call, a prefix \
+                     operator, or a parenthesized expression",
+                );
+                None
+            }
+        }
+    }
+
+    #[inline(never)]
+    fn parse_literal_expression(&mut self) -> Option<(Expression, usize)> {
+        let literal = self.parse_integer_literal()?;
+        Some((
+            Expression {
+                span: literal.span,
+                kind: ExpressionKind::Literal(literal),
+            },
+            1,
+        ))
+    }
+
+    #[inline(never)]
+    fn parse_name_expression(&mut self) -> Option<(Expression, usize)> {
+        let name = self.parse_identifier("parameter")?;
+        Some((
+            Expression {
+                span: name.span,
+                kind: ExpressionKind::Name(name),
+            },
+            1,
+        ))
+    }
+
+    #[inline(never)]
+    fn finish_group(
+        &mut self,
+        left_paren: Span,
+        (inner, inner_height): (Expression, usize),
+    ) -> Option<(Expression, usize)> {
+        let right_paren = self.consume_or_recover(
+            TokenKind::RightParen,
+            "`)` to close the group",
+            "every `(` in an expression needs a matching `)`",
+            &[
+                TokenKind::RightBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::Eof,
+            ],
+        )?;
+        let height = self.node_height(inner_height, left_paren)?;
+        let span = self.join(left_paren, right_paren.span);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Parenthesized(Box::new(inner)),
+            },
+            height,
+        ))
+    }
+
+    fn parse_call(&mut self, level: usize) -> Option<(Expression, usize)> {
+        let inner = self.open_level(level)?;
+        let callee = self.parse_identifier("called function")?;
+        self.bump()?;
+        let mut arguments = Vec::new();
+        let mut argument_height = 0_usize;
+        while self.current_kind() != TokenKind::RightParen {
+            let argument = self.parse_expression(inner)?;
+            argument_height = argument_height.max(argument.1);
+            if !self.push_argument(&mut arguments, argument.0) {
+                return None;
+            }
+            match self.current_kind() {
+                TokenKind::Comma => {
+                    self.bump()?;
+                }
+                TokenKind::RightParen => break,
+                _ => {
+                    self.expected(
+                        "`,` or `)` after the argument",
+                        "arguments are separated by commas",
+                    );
+                    return None;
+                }
+            }
+        }
+        let right_paren = self.bump()?;
+        let height = self.node_height(argument_height, callee.span)?;
+        let span = self.join(callee.span, right_paren.span);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Call(CallExpression { callee, arguments }),
+            },
+            height,
+        ))
+    }
+
+    #[inline(never)]
+    fn push_argument(&mut self, arguments: &mut Vec<Expression>, argument: Expression) -> bool {
+        if arguments.len() >= MAX_ARGUMENTS_PER_CALL {
+            self.resource_limit_at(
+                format!("call supplies more than {MAX_ARGUMENTS_PER_CALL} arguments"),
+                argument.span,
+            );
+            return false;
+        }
+        if !(self.reserve_argument_slot)(arguments) {
+            self.resource_limit_at("parser could not allocate argument storage", argument.span);
+            return false;
+        }
+        arguments.push(argument);
+        true
+    }
+
+    fn parse_type_syntax(&mut self, role: &str) -> Option<TypeSyntax> {
+        let name = self.parse_identifier(role)?;
         let mut end = name.span;
         let mut width_span = None;
 
@@ -1012,8 +1776,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         };
         if self.current_kind() != TokenKind::Integer {
             self.expected(
-                "an integer literal in the typed `spec` body",
-                "the body contains exactly one optionally negative integer literal",
+                "an integer literal",
+                "a sign is part of a literal only when an integer follows it",
             );
             return None;
         }
@@ -1153,6 +1917,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             .map_or(TokenKind::Eof, |token| token.kind)
     }
 
+    fn next_kind(&self) -> TokenKind {
+        self.tokens
+            .get(self.cursor.saturating_add(1))
+            .map_or(TokenKind::Eof, |token| token.kind)
+    }
+
     fn current_span(&self) -> Span {
         self.tokens
             .get(self.cursor)
@@ -1259,6 +2029,13 @@ mod tests {
         );
     }
 
+    fn literal_of(body: &TypedBody) -> &IntegerLiteral {
+        match &body.expression.kind {
+            ExpressionKind::Literal(literal) => literal,
+            other => panic!("expected a literal body, found {other:?}"),
+        }
+    }
+
     fn parse_text(text: &str) -> (SourceMap, Lexed, ParseResult) {
         let mut sources = SourceMap::new();
         let id = sources.add("test.or", text).unwrap();
@@ -1315,23 +2092,21 @@ mod tests {
             source.slice(answer.span),
             Some("spec answer() -> Int { -0x2a }")
         );
-        let FunctionBody::TypedLiteral(answer_body) = &answer.body else {
-            panic!("expected a typed literal body");
+        let FunctionBody::Typed(answer_body) = &answer.body else {
+            panic!("expected a typed body");
         };
+        let answer_literal = literal_of(answer_body);
         assert_eq!(source.slice(answer_body.span), Some("-> Int { -0x2a }"));
         assert_eq!(source.slice(answer_body.result_type.span), Some("Int"));
         assert_eq!(answer_body.result_type.name.text, "Int");
         assert_eq!(answer_body.result_type.width_span, None);
-        assert_eq!(source.slice(answer_body.literal.span), Some("-0x2a"));
-        assert_eq!(
-            source.slice(answer_body.literal.magnitude_span),
-            Some("0x2a")
-        );
-        assert!(answer_body.literal.negative);
+        assert_eq!(source.slice(answer_literal.span), Some("-0x2a"));
+        assert_eq!(source.slice(answer_literal.magnitude_span), Some("0x2a"));
+        assert!(answer_literal.negative);
 
         let byte = &ast.module.functions[1];
-        let FunctionBody::TypedLiteral(byte_body) = &byte.body else {
-            panic!("expected a typed literal body");
+        let FunctionBody::Typed(byte_body) = &byte.body else {
+            panic!("expected a typed body");
         };
         assert_eq!(source.slice(byte_body.result_type.span), Some("Word[8]"));
         assert_eq!(byte_body.result_type.name.text, "Word");
@@ -1342,8 +2117,8 @@ mod tests {
                 .and_then(|span| source.slice(span)),
             Some("8")
         );
-        assert_eq!(source.slice(byte_body.literal.span), Some("255"));
-        assert!(!byte_body.literal.negative);
+        assert_eq!(source.slice(literal_of(byte_body).span), Some("255"));
+        assert!(!literal_of(byte_body).negative);
         assert_eq!(ast.module.functions[2].body, FunctionBody::Empty);
     }
 
@@ -1355,8 +2130,8 @@ mod tests {
         assert!(parsed.diagnostics.is_empty());
         let source = sources.iter().next().unwrap();
         let function = &parsed.ast.unwrap().module.functions[0];
-        let FunctionBody::TypedLiteral(body) = &function.body else {
-            panic!("expected a typed literal body");
+        let FunctionBody::Typed(body) = &function.body else {
+            panic!("expected a typed body");
         };
 
         assert_eq!(body.result_type.name.text, "FutureType");
@@ -1370,8 +2145,8 @@ mod tests {
                 .and_then(|span| source.slice(span)),
             Some("0x10")
         );
-        assert_eq!(source.slice(body.literal.span), Some("-1_000"));
-        assert!(body.literal.negative);
+        assert_eq!(source.slice(literal_of(body).span), Some("-1_000"));
+        assert!(literal_of(body).negative);
     }
 
     #[test]
@@ -1492,7 +2267,7 @@ mod tests {
         assert_eq!(first.diagnostics[0].code(), DiagnosticCode::ExpectedSyntax);
         assert_eq!(
             first.diagnostics[0].message(),
-            "typed literal bodies are allowed only on `spec` functions"
+            "typed bodies are allowed only on `spec` functions"
         );
     }
 
@@ -2020,6 +2795,647 @@ mod tests {
                 parsed.diagnostics[0].code(),
                 DiagnosticCode::ParserResourceLimit
             );
+        }
+    }
+
+    #[test]
+    fn operator_inventories_spellings_and_tokens_are_exact() {
+        assert_eq!(
+            UnaryOperator::ALL
+                .iter()
+                .map(|operator| operator.as_str())
+                .collect::<Vec<_>>(),
+            ["-", "~"]
+        );
+        assert_eq!(
+            BinaryOperator::ALL
+                .iter()
+                .map(|operator| operator.as_str())
+                .collect::<Vec<_>>(),
+            ["+", "-", "*", "&", "|", "^", "<<", ">>", "<<<", ">>>"]
+        );
+        for operator in BinaryOperator::ALL {
+            assert_eq!(
+                BinaryOperator::from_token(operator.token_kind()),
+                Some(*operator)
+            );
+            assert_eq!(
+                operator.is_shift_or_rotation(),
+                operator.as_str().starts_with("<<") || operator.as_str().starts_with(">>"),
+                "{operator:?}"
+            );
+        }
+        for kind in [
+            TokenKind::Tilde,
+            TokenKind::Arrow,
+            TokenKind::Comma,
+            TokenKind::LeftParen,
+            TokenKind::Identifier,
+            TokenKind::Integer,
+        ] {
+            assert_eq!(BinaryOperator::from_token(kind), None, "{kind:?}");
+        }
+    }
+
+    /// Wraps `body` in a four-parameter `Word[32]` spec named `f`.
+    fn spec_source(body: &str) -> String {
+        format!(
+            "edition 2026; module m {{ \
+             spec f(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32] {{ {body} }} }}"
+        )
+    }
+
+    fn body_expression(text: &str) -> (SourceMap, Expression) {
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty(), "{text:?}");
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "{text:?}: {:?}",
+            parsed.diagnostics
+        );
+        let function = parsed.ast.unwrap().module.functions.pop().unwrap();
+        let FunctionBody::Typed(body) = function.body else {
+            panic!("expected a typed body in {text:?}");
+        };
+        (sources, body.expression)
+    }
+
+    /// Renders an expression tree with explicit structure: binary and unary
+    /// nodes in parentheses, source groups in brackets, and literals exactly
+    /// as spelled.
+    fn shape(source: &SourceFile, expression: &Expression) -> String {
+        match &expression.kind {
+            ExpressionKind::Literal(literal) => source.slice(literal.span).unwrap().to_owned(),
+            ExpressionKind::Name(name) => name.text.clone(),
+            ExpressionKind::Call(call) => format!(
+                "{}({})",
+                call.callee.text,
+                call.arguments
+                    .iter()
+                    .map(|argument| shape(source, argument))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            ExpressionKind::Unary(unary) => format!(
+                "({}{})",
+                unary.operator.as_str(),
+                shape(source, &unary.operand)
+            ),
+            ExpressionKind::Binary(binary) => format!(
+                "({} {} {})",
+                shape(source, &binary.left),
+                binary.operator.as_str(),
+                shape(source, &binary.right)
+            ),
+            ExpressionKind::Parenthesized(inner) => format!("[{}]", shape(source, inner)),
+        }
+    }
+
+    fn tree_height(expression: &Expression) -> usize {
+        1 + match &expression.kind {
+            ExpressionKind::Literal(_) | ExpressionKind::Name(_) => 0,
+            ExpressionKind::Call(call) => call.arguments.iter().map(tree_height).max().unwrap_or(0),
+            ExpressionKind::Unary(unary) => tree_height(&unary.operand),
+            ExpressionKind::Binary(binary) => {
+                tree_height(&binary.left).max(tree_height(&binary.right))
+            }
+            ExpressionKind::Parenthesized(inner) => tree_height(inner),
+        }
+    }
+
+    #[test]
+    fn builds_parameters_calls_and_operators_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module sha { ",
+            "spec big_sigma0(x: Word[32]) -> Word[32] ",
+            "{ (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) } ",
+            "spec apply(x: Word[32], y: Int,) -> Word[32] { big_sigma0(~x) } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+
+        let sigma = &ast.module.functions[0];
+        assert_eq!(sigma.parameters.len(), 1);
+        assert_eq!(source.slice(sigma.parameters[0].span), Some("x: Word[32]"));
+        assert_eq!(sigma.parameters[0].name.text, "x");
+        assert_eq!(source.slice(sigma.parameters[0].ty.span), Some("Word[32]"));
+        let FunctionBody::Typed(body) = &sigma.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(
+            source.slice(body.span),
+            Some("-> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }")
+        );
+        assert_eq!(
+            source.slice(body.expression.span),
+            Some("(x >>> 2) ^ (x >>> 13) ^ (x >>> 22)")
+        );
+        assert_eq!(
+            shape(source, &body.expression),
+            "(([(x >>> 2)] ^ [(x >>> 13)]) ^ [(x >>> 22)])"
+        );
+        let ExpressionKind::Binary(outer) = &body.expression.kind else {
+            panic!("expected a binary root");
+        };
+        assert_eq!(outer.operator, BinaryOperator::Xor);
+        assert_eq!(source.slice(outer.operator_span), Some("^"));
+        assert_eq!(
+            outer.operator_span.start(),
+            TextOffset::new(u32::try_from(text.rfind('^').unwrap()).unwrap())
+        );
+        assert_eq!(
+            source.slice(outer.left.span),
+            Some("(x >>> 2) ^ (x >>> 13)")
+        );
+        assert_eq!(source.slice(outer.right.span), Some("(x >>> 22)"));
+        let ExpressionKind::Parenthesized(group) = &outer.right.kind else {
+            panic!("expected a parenthesized right operand");
+        };
+        assert_eq!(source.slice(group.span), Some("x >>> 22"));
+        let ExpressionKind::Binary(rotation) = &group.kind else {
+            panic!("expected a rotation");
+        };
+        assert_eq!(rotation.operator, BinaryOperator::RotateRight);
+        assert_eq!(source.slice(rotation.operator_span), Some(">>>"));
+
+        let apply = &ast.module.functions[1];
+        assert_eq!(
+            apply
+                .parameters
+                .iter()
+                .map(|parameter| (
+                    parameter.name.text.as_str(),
+                    source.slice(parameter.ty.span).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [("x", "Word[32]"), ("y", "Int")]
+        );
+        let FunctionBody::Typed(apply_body) = &apply.body else {
+            panic!("expected a typed body");
+        };
+        let ExpressionKind::Call(call) = &apply_body.expression.kind else {
+            panic!("expected a call");
+        };
+        assert_eq!(call.callee.text, "big_sigma0");
+        assert_eq!(source.slice(call.callee.span), Some("big_sigma0"));
+        assert_eq!(
+            source.slice(apply_body.expression.span),
+            Some("big_sigma0(~x)")
+        );
+        assert_eq!(call.arguments.len(), 1);
+        let ExpressionKind::Unary(complement) = &call.arguments[0].kind else {
+            panic!("expected a complement argument");
+        };
+        assert_eq!(complement.operator, UnaryOperator::Complement);
+        assert_eq!(source.slice(complement.operator_span), Some("~"));
+        assert_eq!(source.slice(call.arguments[0].span), Some("~x"));
+    }
+
+    #[test]
+    fn groups_arithmetic_by_precedence_and_every_operator_leftward() {
+        let cases = [
+            ("a + b * c - d", "((a + (b * c)) - d)"),
+            ("a * b + c", "((a * b) + c)"),
+            ("a * b * c", "((a * b) * c)"),
+            ("a - b - c", "((a - b) - c)"),
+            ("a - b + c * d * a", "((a - b) + ((c * d) * a))"),
+            ("a ^ b ^ c", "((a ^ b) ^ c)"),
+            ("a & b & c & d", "(((a & b) & c) & d)"),
+            ("a | b | c", "((a | b) | c)"),
+            ("(a ^ b) & c", "([(a ^ b)] & c)"),
+            ("a & (b | c)", "(a & [(b | c)])"),
+            ("(a + b) * c", "([(a + b)] * c)"),
+            ("a << 3", "(a << 3)"),
+            ("a >> 0x1f", "(a >> 0x1f)"),
+            ("a <<< 7", "(a <<< 7)"),
+            ("a >>> 1_0", "(a >>> 1_0)"),
+            ("(a <<< 7) ^ b", "([(a <<< 7)] ^ b)"),
+            ("a << (1 + 2)", "(a << [(1 + 2)])"),
+            ("~a & b", "((~a) & b)"),
+            ("-a * b", "((-a) * b)"),
+            ("-1 * a", "(-1 * a)"),
+            ("- 1", "- 1"),
+            ("a - -1", "(a - -1)"),
+            ("a -1", "(a - 1)"),
+            ("a - - b", "(a - (-b))"),
+            ("- -a", "(-(-a))"),
+            ("~~a", "(~(~a))"),
+            ("-(a)", "(-[a])"),
+            ("((a))", "[[a]]"),
+            ("g()", "g()"),
+            ("g(a, b + 1, h())", "g(a, (b + 1), h())"),
+            ("g(a, b,)", "g(a, b)"),
+            ("g(h(i(a)))", "g(h(i(a)))"),
+            ("g(a ^ b, (c))", "g((a ^ b), [c])"),
+            ("g(a) * g(b) + 1", "((g(a) * g(b)) + 1)"),
+            ("0", "0"),
+            ("a", "a"),
+        ];
+        for (body, expected) in cases {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+            assert_eq!(source.slice(expression.span), Some(body), "{body:?}");
+        }
+    }
+
+    #[test]
+    fn requires_parentheses_between_operator_groups_with_one_diagnostic() {
+        let cases = [
+            ("a ^ b & c", 6, "&", "^", false),
+            ("a & b ^ c", 6, "^", "&", false),
+            ("a | b & c", 6, "&", "|", false),
+            ("a + b ^ c", 6, "^", "+", false),
+            ("a * b & c", 6, "&", "*", false),
+            ("a & b + c", 6, "+", "&", false),
+            ("a & b * c", 6, "*", "&", false),
+            ("a + b * c | d", 10, "|", "*", false),
+            ("a >>> 1 + b", 8, "+", ">>>", false),
+            ("a ^ b << 1", 6, "<<", "^", false),
+            ("a << 1 << 2", 7, "<<", "<<", true),
+            ("a <<< 1 >>> 2", 8, ">>>", "<<<", true),
+            ("a >> 1 << 2", 7, "<<", ">>", true),
+            ("a ^ b & c | d + a", 6, "&", "^", false),
+            ("g(a ^ b & c)", 8, "&", "^", false),
+            ("(a ^ b & c)", 7, "&", "^", false),
+        ];
+        for (body, offset, ungrouped, previous, both_shifts) in cases {
+            let text = spec_source(body);
+            let (sources, lexed, parsed) = parse_text(&text);
+            let source = sources.iter().next().unwrap();
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "{body:?}");
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{body:?}: {:?}",
+                parsed.diagnostics
+            );
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::UngroupedOperators,
+                "{body:?}"
+            );
+            assert_eq!(
+                diagnostic.message(),
+                format!("`{ungrouped}` follows `{previous}` without grouping parentheses"),
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.label(), "ungrouped operator");
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(ungrouped));
+            let expected = text.find(body).unwrap() + offset;
+            assert_eq!(
+                diagnostic.primary_span().start(),
+                TextOffset::new(u32::try_from(expected).unwrap()),
+                "{body:?}"
+            );
+            assert_eq!(
+                diagnostic.notes(),
+                [if both_shifts {
+                    "a shift or rotation takes exactly two operands; parenthesize one of them"
+                } else {
+                    "operators from different groups have no relative precedence in Orange; \
+                     parenthesize the part that applies first"
+                }],
+                "{body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ungrouped_operators_do_not_cascade_across_functions() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec f(a: Word[8], b: Word[8]) -> Word[8] { a ^ b & a | b } ",
+            "spec g(a: Word[8], b: Word[8]) -> Word[8] { a + b ^ a } ",
+            "spec h(a: Word[8]) -> Word[8] { (a ^ a) & a } ",
+            "}"
+        );
+        let (sources, _, parsed) = parse_text(text);
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.code(),
+                    source.slice(diagnostic.primary_span()).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::UngroupedOperators, "&"),
+                (DiagnosticCode::UngroupedOperators, "^"),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_parameters_calls_and_expressions() {
+        let cases = [
+            "spec f(a) -> Int { a }",
+            "spec f(a:) -> Int { a }",
+            "spec f(: Int) -> Int { 1 }",
+            "spec f(a Int) -> Int { a }",
+            "spec f(a: Int b: Int) -> Int { a }",
+            "spec f(a: Int,,) -> Int { a }",
+            "spec f(,) -> Int { 1 }",
+            "spec f(a: Word[]) -> Int { 1 }",
+            "spec f(spec: Int) -> Int { 1 }",
+            "spec f(a: Int) {}",
+            "spec f(a: Int) { a }",
+            "impl f(a: Int) {}",
+            "spec f() -> Int { g(1 2) }",
+            "spec f() -> Int { g(,) }",
+            "spec f() -> Int { g(1,,) }",
+            "spec f() -> Int { g( }",
+            "spec f() -> Int { g(1 }",
+            "spec f() -> Int { (1 }",
+            "spec f() -> Int { () }",
+            "spec f() -> Int { 1 + }",
+            "spec f() -> Int { * 1 }",
+            "spec f() -> Int { ~ }",
+            "spec f() -> Int { - }",
+            "spec f() -> Int { a b }",
+            "spec f() -> Int { 1 (2) }",
+            "spec f() -> Int { g h() }",
+            "spec f() -> Int { 1 ~ 2 }",
+            "spec f() -> Int { 1 } }",
+            "spec f() -> Int { 1 + 2 -> }",
+            "spec f() -> Int { proof(1) }",
+            "spec f() -> Int { claim }",
+        ];
+        for member in cases {
+            let text = format!("edition 2026; module m {{ {member} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{member:?}");
+            assert!(parsed.ast.is_none(), "accepted {member:?}");
+            assert!(!parsed.diagnostics.is_empty(), "{member:?}");
+            assert!(
+                parsed.diagnostics.iter().all(|diagnostic| diagnostic.code()
+                    == DiagnosticCode::ExpectedSyntax
+                    || diagnostic.code() == DiagnosticCode::TrailingSyntax),
+                "{member:?}: {:?}",
+                parsed.diagnostics
+            );
+        }
+    }
+
+    #[test]
+    fn parameters_are_rejected_on_impl_and_untyped_spec_forms() {
+        let (sources, _, parsed) = parse_text(concat!(
+            "edition 2026; module m { ",
+            "impl f(a: Int) {} ",
+            "spec g(b: Int) {} ",
+            "spec ok() -> Int { 1 } ",
+            "}"
+        ));
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.message(),
+                    source.slice(diagnostic.primary_span()).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("`impl` functions have an empty parameter list", "a: Int"),
+                ("expected `->` after the parameter list", "{"),
+            ]
+        );
+    }
+
+    fn nested(prefix: &str, count: usize, core: &str, suffix: &str) -> String {
+        format!("{}{core}{}", prefix.repeat(count), suffix.repeat(count))
+    }
+
+    fn assert_resource_limited(body: &str, message: &str, at: &str) {
+        let text = spec_source(body);
+        let (sources, lexed, parsed) = parse_text(&text);
+        let source = sources.iter().next().unwrap();
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+        let diagnostic = &parsed.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+        assert_eq!(diagnostic.message(), message);
+        assert_eq!(
+            source.slice(diagnostic.primary_span()),
+            Some(at),
+            "{body:?}"
+        );
+    }
+
+    #[test]
+    fn bounds_expression_nesting_for_every_opener() {
+        let message = format!(
+            "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
+             for groups, calls, and prefix operators"
+        );
+        type Form = (&'static str, fn(usize) -> String, &'static str);
+        let forms: [Form; 5] = [
+            ("groups", |count| nested("(", count, "a", ")"), "("),
+            ("complements", |count| nested("~", count, "a", ""), "~"),
+            ("negations", |count| nested("-", count, "a", ""), "-"),
+            ("calls", |count| nested("g(", count, "a", ")"), "g"),
+            (
+                "operands",
+                |count| nested("a + a * (", count, "a", ")"),
+                "(",
+            ),
+        ];
+        for (name, build, opener) in forms {
+            let (_, expression) = body_expression(&spec_source(&build(MAX_EXPRESSION_NESTING)));
+            assert!(tree_height(&expression) > MAX_EXPRESSION_NESTING, "{name}");
+            assert_resource_limited(&build(MAX_EXPRESSION_NESTING + 1), &message, opener);
+        }
+
+        // Every opener draws on one budget.
+        let mixed = |groups: usize, complements: usize| {
+            nested("(", groups, &nested("~", complements, "a", ""), ")")
+        };
+        let (_, expression) = body_expression(&spec_source(&mixed(32, 32)));
+        assert_eq!(tree_height(&expression), 65);
+        assert_resource_limited(&mixed(32, 33), &message, "~");
+        assert_resource_limited(&mixed(33, 32), &message, "~");
+
+        // Sibling groups do not nest.
+        let siblings = vec![nested("(", MAX_EXPRESSION_NESTING, "a", ")"); 4].join(" ^ ");
+        let (_, expression) = body_expression(&spec_source(&siblings));
+        assert_eq!(tree_height(&expression), MAX_EXPRESSION_NESTING + 4);
+
+        // Wide calls are not deep.
+        let wide = format!("g({})", vec!["a"; MAX_ARGUMENTS_PER_CALL].join(", "));
+        let (_, expression) = body_expression(&spec_source(&wide));
+        assert_eq!(tree_height(&expression), 2);
+    }
+
+    #[test]
+    fn bounds_expression_tree_height_for_operator_chains() {
+        let message =
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
+        let chains: [(&str, &str); 4] =
+            [(" ^ a", "^"), (" + a", "+"), (" * a", "*"), (" - 1", "-")];
+        for (link, operator) in chains {
+            let chain = |count: usize| format!("a{}", link.repeat(count));
+            let (_, expression) = body_expression(&spec_source(&chain(MAX_EXPRESSION_HEIGHT - 1)));
+            assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT, "{link:?}");
+            assert_resource_limited(&chain(MAX_EXPRESSION_HEIGHT), &message, operator);
+        }
+
+        // A tall operand raises the height of every node above it.
+        let tall = format!("(a{})", " ^ a".repeat(MAX_EXPRESSION_HEIGHT - 2));
+        let (_, expression) = body_expression(&spec_source(&tall));
+        assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
+        for (body, at) in [
+            (format!("a | {tall}"), "|"),
+            (format!("{tall} * a"), "*"),
+            (format!("({tall})"), "("),
+            (format!("g({tall})"), "g"),
+            (format!("~{tall}"), "~"),
+        ] {
+            assert_resource_limited(&body, &message, at);
+        }
+    }
+
+    #[test]
+    fn bounds_parameters_per_function_and_arguments_per_call() {
+        let parameters = |count: usize| {
+            (0..count)
+                .map(|index| format!("p{index}: Int"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let accepted = format!(
+            "edition 2026; module m {{ spec f({}) -> Int {{ 1 }} }}",
+            parameters(MAX_PARAMETERS_PER_FUNCTION)
+        );
+        let (_, _, parsed) = parse_text(&accepted);
+        assert!(parsed.diagnostics.is_empty());
+        assert_eq!(
+            parsed.ast.unwrap().module.functions[0].parameters.len(),
+            MAX_PARAMETERS_PER_FUNCTION
+        );
+
+        let rejected = format!(
+            "edition 2026; module m {{ spec f({}) -> Int {{ 1 }} }}",
+            parameters(MAX_PARAMETERS_PER_FUNCTION + 1)
+        );
+        let (sources, _, parsed) = parse_text(&rejected);
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(
+            parsed.diagnostics[0].code(),
+            DiagnosticCode::ParserResourceLimit
+        );
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            format!("function declares more than {MAX_PARAMETERS_PER_FUNCTION} parameters")
+        );
+        assert_eq!(
+            source.slice(parsed.diagnostics[0].primary_span()),
+            Some(format!("p{MAX_PARAMETERS_PER_FUNCTION}: Int").as_str())
+        );
+
+        let call = |count: usize| spec_source(&format!("g({})", vec!["1"; count].join(", ")));
+        let (_, expression) = body_expression(&call(MAX_ARGUMENTS_PER_CALL));
+        let ExpressionKind::Call(parsed_call) = expression.kind else {
+            panic!("expected a call");
+        };
+        assert_eq!(parsed_call.arguments.len(), MAX_ARGUMENTS_PER_CALL);
+
+        let (_, _, parsed) = parse_text(&call(MAX_ARGUMENTS_PER_CALL + 1));
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(
+            parsed.diagnostics[0].code(),
+            DiagnosticCode::ParserResourceLimit
+        );
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            format!("call supplies more than {MAX_ARGUMENTS_PER_CALL} arguments")
+        );
+    }
+
+    #[test]
+    fn parameter_and_argument_reservation_failures_return_no_partial_ast() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add(
+                "test.or",
+                "edition 2026; module m { spec f(x: Int) -> Int { g(x) } }",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+
+        let parameter_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_parameter_slot = |_| false;
+            parser.run()
+        };
+        let argument_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_argument_slot = |_| false;
+            parser.run()
+        };
+        for (run, message, span) in [
+            (
+                &parameter_failure as &dyn Fn() -> ParseResult,
+                "parser could not allocate parameter storage",
+                "x: Int",
+            ),
+            (
+                &argument_failure,
+                "parser could not allocate argument storage",
+                "x",
+            ),
+        ] {
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.ast.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            let diagnostic = &first.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+            assert_eq!(diagnostic.message(), message);
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(span));
+        }
+    }
+
+    #[test]
+    fn expression_parsing_is_repeatable_and_malformed_expressions_never_panic() {
+        let bodies = [
+            "(((((",
+            ")))))",
+            "a ^ ^ b",
+            "a <<<< 1",
+            "a >>>> 1",
+            "g(((a, b), c)",
+            "~-~-~-",
+            "a + b ^ c & d | e << 1 >>> 2",
+            "g(g(g(g(g(",
+            "1 2 3 4",
+            ",,,,",
+            "a -> b",
+            "a :: b",
+        ];
+        for body in bodies {
+            let mut sources = SourceMap::new();
+            let id = sources.add("test.or", spec_source(body)).unwrap();
+            let source = sources.get(id).unwrap();
+            let lexed = lex(source, Edition::E2026);
+            let first = parse(source, &lexed);
+            assert_eq!(first, parse(source, &lexed), "{body:?}");
+            assert!(first.ast.is_none(), "{body:?}");
         }
     }
 }

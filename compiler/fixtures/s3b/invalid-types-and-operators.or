@@ -1,0 +1,14 @@
+// S3b rejection: types never convert implicitly, and each operator is
+// defined only for its types.
+edition 2026;
+module types {
+  spec byte(x: Word[8]) -> Word[8] { x }
+  spec integer() -> Int { 1 }
+  spec wider(x: Word[16]) -> Word[8] { x }
+  spec wrong_result() -> Word[8] { integer() }
+  spec wrong_argument(x: Word[32]) -> Word[8] { byte(x) }
+  spec negate_word(x: Word[8]) -> Word[8] { -x }
+  spec complement_int(n: Int) -> Int { ~n }
+  spec bitwise_int(n: Int) -> Int { n & 1 }
+  spec rotate_int(n: Int) -> Int { n <<< 1 }
+}

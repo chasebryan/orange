@@ -1,0 +1,16 @@
+// S3b rejection: bare names are parameters, calls name typed `spec`
+// functions, and every parameter receives exactly one argument.
+edition 2026;
+module names {
+  spec helper(x: Int) -> Int { x }
+  spec legacy() {}
+  impl body() {}
+  spec unknown_name(x: Int) -> Int { y }
+  spec function_as_name() -> Int { helper }
+  spec unknown_call() -> Int { missing(1) }
+  spec untyped_call() -> Int { legacy() }
+  spec impl_call() -> Int { body() }
+  spec too_few() -> Int { helper() }
+  spec too_many() -> Int { helper(1, 2) }
+  spec repeated(x: Int, x: Int) -> Int { x }
+}

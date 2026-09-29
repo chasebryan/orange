@@ -1,0 +1,16 @@
+// S3b conformance: calls resolve in any source order, parameters bind by
+// position, and only parameterless specifications produce values.
+edition 2026;
+module calls {
+  spec before() -> Word[16] { middle(3, 4) }
+  spec middle(x: Word[16], y: Word[16],) -> Word[16] { leaf(x) * leaf(y) }
+  spec leaf(x: Word[16]) -> Word[16] { (x + 1) <<< 4 }
+  spec after() -> Word[16] { middle(leaf(0), 0xffff) }
+  spec diamond() -> Int { left() + right() }
+  spec left() -> Int { base(2) }
+  spec right() -> Int { base(3) }
+  spec base(n: Int) -> Int { n * n * n }
+  spec unused(n: Int) -> Int { -n }
+  spec legacy() {}
+  impl legacy() {}
+}
