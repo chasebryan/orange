@@ -502,6 +502,8 @@ tools/tests/test_validate_foundation.py
 tools/tests/test_validate_foundation_hardening.py
 """.strip().splitlines()
 )
+_ID = "assets/identity/"
+MINIMUM_REQUIRED_PATHS |= {_ID + n for n in "README.md orange-book-cover-construction.svg orange-book-cover.svg orange-emblem-construction.svg orange-emblem-mono.svg orange-emblem-shaded.svg orange-emblem.svg orange-lockup.svg orange-readme-banner-dark.svg orange-readme-banner-light.svg orange-readme-banner.svg orange-wordmark.svg".split()}
 MINIMUM_FORBIDDEN_PATHS = set("COPYING LICENSE crates crypto formal release spec stdlib targets".split())
 MINIMUM_REQUIRED_WORKFLOWS = set("ci.yml dependency-review.yml scorecard.yml".split())
 MINIMUM_ACTION_REPOSITORIES = set(
