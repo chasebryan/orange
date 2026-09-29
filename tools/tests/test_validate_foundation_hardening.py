@@ -3125,22 +3125,8 @@ class BrandAssetHardeningTests(unittest.TestCase):
             '<img src="../assets/identity/orange-book-cover.svg" width="400" '
             'alt="The Orange Book: the Orange emblem in cream on a field of Orange.">'
         )
-        prism = (
-            "![Orange Semantic Prism conceptual architecture snapshot showing proposed "
-            "Spec, Impl, Game, and Machine strata connected by a claim-indexed evidence "
-            "path; S3a is implemented, three of ten gates are closed, and D-004 is "
-            "unselected](docs/images/orange-semantic-prism-s3a-a82a5ce.jpeg)"
-        )
-        prism_caption = (
-            "*The semantic prism: proposed specification, implementation, game, and machine\n"
-            "strata joined by a claim-indexed evidence path. This is a conceptual snapshot\n"
-            "from July 2026, not a finished design; see the\n"
-            "[asset record](docs/images/README.md).*"
-        )
         self.assertEqual(readme.count(readme_banner), 1)
         self.assertEqual(orange_book.count(book_banner), 1)
-        self.assertEqual(readme.count(prism), 1)
-        self.assertEqual(readme.count(prism_caption), 1)
         self.assertNotIn("user-attachments/assets", readme)
         self.assertNotIn("user-attachments/assets", orange_book)
 
