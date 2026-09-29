@@ -431,11 +431,11 @@
     "DEPENDENCY_POLICY.md": "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438",
     "GOVERNANCE.md": "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103",
     "Makefile": "4c885f6ac2c85f68cb2cc3e15de3bfae9793690831cc260347c4501410ac2cf5",
-    "README.md": "2c98f75edcd3125485905ca2f5f0598680364faa234f483c3588d2d1b069a154",
+    "README.md": "d98b27a3dfb1bf5a216fbc726601ec7df0c6df71a39b1fcf808f15cf64f018f2",
     "RELEASE_POLICY.md": "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45",
     "SECURITY.md": "1a801158996153650a2d94a4dbf5043d0a08ce9b96e4aefa9abdcd66344a0ede",
     "SUPPORT.md": "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db",
-    "assets/brand/README.md": "0f70fc8b8610096a97f8312e1e25176ad9099718e9faf45189c409dba42277bf",
+    "assets/brand/README.md": "1271227a497a0e72ad331b4369320a23fda6a42463ad02d8996c3304c8ed3d48",
     "assets/brand/manifest.json": "8ce296a870b0c2a6eacd40d15dd6ff3fcaffe838e322bfa898871c1eb7365d2a",
     "compiler/.gitignore": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368",
     "compiler/crates/orange-compiler/tests/d004_decision_suite.rs": "b9615fb562b492a289d510afb78f57be6a65ba26011784e90d0d11384fc36f03",
@@ -503,7 +503,7 @@
     "docs/DECISIONS.md": "9425d25467bbfbd8cd0736d09019e4c4eea3d289309ffbcdbd85d6353fcedaaf",
     "docs/LANGUAGE_2026.md": "5aa4b496308c8ebc5aecaac0de54b41ac4374ff904c4f2a21ee68a43015b5983",
     "docs/SEMANTICS_2026.md": "ab957c035638031e7c3e5114c852a164b5b08762f590681b6b6ccbd4d3ba5ca8",
-    "docs/images/README.md": "37e8f88f6ffdc200a43bab0680c42ce7e32e616a3c63c5aa9325537dedd1e1e2",
+    "docs/images/README.md": "16819ad2f9bb83a3b8d5d66bfaece0b162418b31fb74f525ade473aa13a4cf78",
     "docs/operations/CI_DEPENDENCIES.md": "bce779b06cb2db4ceda0cb68808a52d0bc759823c4c5a098c2601a6c30379338",
     "docs/operations/GITHUB_CONTROLS.md": "f86bdf0234e9db17256f4be07e20e65a9913de45e96e1fdd55e2c57d056ae94b",
     "docs/security/OSPS_BASELINE.md": "f912af598fcbe2a76b3b774fab5358b8c63aa68794a209b33f3418e656fdda78",
@@ -576,7 +576,7 @@
     "tools/tests/test_d009_draft_packet.py": "6f035771df07d9c7bfc741ddfc08311ca63ac1f345764437d320e6c4f93b91cd",
     "tools/tests/test_d010_draft_packet.py": "46d93cf9d07813ec6b053d4a46af1d88c3e6f2ab5d814c6eea1799696d9b2bc6",
     "tools/tests/test_validate_foundation.py": "d707a3fb24159bde40e0f22e829f33b67bb0d103faacd30dddbdc375ae64f416",
-    "tools/tests/test_validate_foundation_hardening.py": "a3cebdd23b5cc53b1283bb1ad6c98bcabb83ea2789591e62a9caa4eea11dfcbb"
+    "tools/tests/test_validate_foundation_hardening.py": "415f2d0dfc1a2d35216faf9120098e035edc80b470ee36468c168f711d4c8af5"
   },
   "executable_paths": [
     "scripts/ci/check-external-links",

@@ -642,7 +642,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "2ffcb4c8e92fbbc06ab397854d17413cb3a1b87f84ff42dba5c9850f8e79df78"
+_RDC = "d98b27a3dfb1bf5a216fbc726601ec7df0c6df71a39b1fcf808f15cf64f018f2"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -708,7 +708,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "ddfe523b98d8aed357e6d3c8b4cce401580a7033c5b195f59126bdcce0359203"
+_PHD = "8acd03e1fa0b86f8700966f3214bbbbd464c33e86813e9aaf645aff8aec7324b"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
