@@ -8893,6 +8893,162 @@ mod tests {
     }
 
     #[test]
+    fn word_indices_range_over_their_types_and_narrow_through_operators() {
+        let spec = |length: u32, index: &str| {
+            format!(
+                "  spec f(t: Word[8]^{length}, x: Word[8], y: Word[16], z: Word[64]) -> Word[8] {{ t[{index}] }}\n"
+            )
+        };
+        for (length, index) in [
+            // A word index ranges over its type.
+            (256, "x"),
+            (256, "z >> 56"),
+            (256, "y >> 8"),
+            (256, "y as Word[8]"),
+            (256, "x + x"),
+            (256, "x - 1"),
+            // `&`, `|`, `^`, `~`, `/`, `%`, and literal shifts narrow it.
+            (64, "(x >> 2) & 63"),
+            (64, "x >> 2"),
+            (16, "x & 15"),
+            (16, "15 & x"),
+            (16, "x >> 4"),
+            (16, "x % 16"),
+            (16, "y % 16"),
+            (16, "(x >> 4) ^ (x & 15)"),
+            (16, "(x & 7) | 8"),
+            (16, "x / 16"),
+            (16, "(x & 63) / 4"),
+            (32, "~(x | 224)"),
+            (32, "(x & 15) << 1"),
+            // `+`, `-`, and `*` narrow only where they cannot wrap.
+            (32, "(x & 15) + 16"),
+            (32, "(x & 15) * 2"),
+            (32, "31 - (x & 15)"),
+            // A wider word converted from a narrower one keeps its range.
+            (16, "(x & 15) as Word[16]"),
+            // Conditionals join their branches.
+            (16, "if x < 3 { x & 7 } else { 15 }"),
+            // An `Int` index may convert words.
+            (256, "((x as Int) / 2) + 128"),
+            (4, "(x as Int) % 4"),
+            (4, "(x & 3) as Int"),
+            (256, "(y as Int) / 256"),
+            (16, "if x < 3 { 0 } else { (x as Int) / 16 }"),
+        ] {
+            let (_, core) = accepted(&spec(length, index));
+            // A word index is proved in range and then converted to `Int`,
+            // so every selection takes an `Int` position.
+            let [.., root, position, select] = core.functions()[0].body().nodes() else {
+                panic!("{index}");
+            };
+            assert!(matches!(select.kind(), CoreNodeKind::Select), "{index}");
+            assert_eq!(position.ty(), CoreType::Int, "{index}");
+            if !index.contains("as Int") {
+                let CoreNodeKind::Convert { from } = position.kind() else {
+                    panic!("{index}");
+                };
+                assert_eq!(root.ty(), *from, "{index}");
+                assert_eq!(root.span(), position.span(), "{index}");
+            }
+        }
+        for (length, index, message) in [
+            (
+                16,
+                "x",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                255,
+                "x",
+                "this index runs from 0 through 255, out of range for `Word[8]^255`",
+            ),
+            (
+                256,
+                "z",
+                "this index runs from 0 through 18446744073709551615, out of range for `Word[8]^256`",
+            ),
+            (
+                16,
+                "x & 31",
+                "this index runs from 0 through 31, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "(x & 15) + 1",
+                "this index runs from 1 through 16, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "(x & 15) - 1",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "x % 17",
+                "this index runs from 0 through 16, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "x % (x & 15)",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "(x & 15) << 5",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "y as Word[8]",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "if x < 3 { x & 7 } else { 16 }",
+                "this index runs from 0 through 16, out of range for `Word[8]^16`",
+            ),
+            (
+                256,
+                "(x as Int) + 1",
+                "this index runs from 1 through 256, out of range for `Word[8]^256`",
+            ),
+            (
+                256,
+                "(x as Int) - 1",
+                "this index runs from -1 through 254, out of range for `Word[8]^256`",
+            ),
+        ] {
+            let (fixture, result) = rejected(&spec(length, index));
+            assert_eq!(
+                reported(&fixture, &result),
+                [(DiagnosticCode::IndexOutOfRange, index, message.to_owned())],
+                "{index}"
+            );
+        }
+        // An `Int` parameter has no bound, and neither does a word
+        // converted to `Int` and then multiplied by one.
+        for (index, part) in [("n", "n"), ("(x as Int) * n", "n")] {
+            let (fixture, result) = rejected(&format!(
+                "  spec f(t: Word[8]^4, x: Word[8], n: Int) -> Word[8] {{ t[{index}] }}\n"
+            ));
+            assert_eq!(
+                reported(&fixture, &result),
+                [(
+                    DiagnosticCode::NonStaticIndex,
+                    part,
+                    String::from(
+                        "an `Int` index may use only integer literals, loop indices, and words \
+                         converted with `as Int`"
+                    )
+                )],
+                "{index}"
+            );
+            assert_eq!(result.diagnostics[0].notes(), [STATIC_INDEX_NOTE]);
+        }
+    }
+
+    #[test]
     fn condition_events_and_core_nodes_follow_the_normative_accounting() {
         // Lookup and installation (2); the parameter's uniqueness check and
         // name (2); the result's name (1); the arm's `if` (1); the condition
