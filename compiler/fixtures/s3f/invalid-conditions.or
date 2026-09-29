@@ -1,0 +1,16 @@
+// S3f rejection: conditions are `Bool`, both branches of a conditional have
+// the required type, `Bool` has only `!`, `&&`, `||`, `==`, and `!=`, and
+// `as` does not convert to or from `Bool`.
+edition 2026;
+module conditions {
+  spec condition(x: Int) -> Int { if x { 1 } else { 0 } }
+  spec branches(c: Bool) -> Int { if c { 1 } else { true } }
+  spec literal() -> Bool { 1 }
+  spec ordered(a: Bool, b: Bool) -> Bool { a < b }
+  spec added(a: Bool, b: Bool) -> Bool { a + b }
+  spec bitwise(a: Bool, b: Bool) -> Bool { a & b }
+  spec logical(x: Word[8], y: Word[8]) -> Word[8] { x && y }
+  spec negated(x: Word[8]) -> Word[8] { !x }
+  spec to_int(c: Bool) -> Int { c as Int }
+  spec from_int(x: Int) -> Bool { x as Bool }
+}

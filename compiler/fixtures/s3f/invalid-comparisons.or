@@ -1,0 +1,11 @@
+// S3f rejection: a comparison gives `Bool`, its operands take the type of its
+// first typed operand, ordering applies to numbers, and arrays compare element
+// by element.
+edition 2026;
+module comparisons {
+  spec gives(x: Int) -> Int { x < 1 }
+  spec untyped() -> Bool { 1 < 2 }
+  spec mixed(x: Word[8], y: Int) -> Bool { x == y }
+  spec arrays(x: Word[8]^2, y: Word[8]^2) -> Bool { x == y }
+  spec unknown() -> Bool { z == 1 }
+}

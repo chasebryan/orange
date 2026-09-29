@@ -1793,6 +1793,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 TokenKind::Eof,
             ],
         );
+        let body_start = self.cursor;
         let bindings = if left_brace.is_some() {
             self.parse_bindings()
         } else {
@@ -1811,18 +1812,26 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             Some(_) => self.parse_expression(0).map(|(expression, _)| expression),
             None => None,
         };
-        if expression.is_none()
-            && !matches!(
-                self.current_kind(),
-                TokenKind::RightBrace | TokenKind::KwSpec | TokenKind::KwImpl | TokenKind::Eof
-            )
-        {
-            self.recover_to(&[
-                TokenKind::RightBrace,
-                TokenKind::KwSpec,
-                TokenKind::KwImpl,
-                TokenKind::Eof,
-            ]);
+        if expression.is_none() {
+            // An error inside a loop's step or a conditional's branch leaves
+            // their braces open; recovery skips to the body's own `}`.
+            let open = self.open_braces_since(body_start);
+            if open > 0
+                || !matches!(
+                    self.current_kind(),
+                    TokenKind::RightBrace | TokenKind::KwSpec | TokenKind::KwImpl | TokenKind::Eof
+                )
+            {
+                self.recover_to_depth(
+                    &[
+                        TokenKind::RightBrace,
+                        TokenKind::KwSpec,
+                        TokenKind::KwImpl,
+                        TokenKind::Eof,
+                    ],
+                    open,
+                );
+            }
         }
 
         let right_brace = if self.current_kind() == TokenKind::RightBrace {
@@ -3074,7 +3083,28 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     }
 
     fn recover_to(&mut self, recovery: &[TokenKind]) {
-        let mut depth = 0_usize;
+        self.recover_to_depth(recovery, 0);
+    }
+
+    /// Returns the number of `{` tokens from `start` up to the cursor that
+    /// are not closed before it.
+    #[inline(never)]
+    fn open_braces_since(&self, start: usize) -> usize {
+        self.tokens
+            .get(start..self.cursor)
+            .unwrap_or_default()
+            .iter()
+            .fold(0_usize, |open, token| match token.kind {
+                TokenKind::LeftBrace => open.saturating_add(1),
+                TokenKind::RightBrace => open.saturating_sub(1),
+                _ => open,
+            })
+    }
+
+    /// Skips tokens until one of `recovery` at delimiter depth zero, starting
+    /// `depth` delimiters deep.
+    fn recover_to_depth(&mut self, recovery: &[TokenKind], depth: usize) {
+        let mut depth = depth;
         while !self.halted && self.current_kind() != TokenKind::Eof {
             let kind = self.current_kind();
             if depth == 0 && recovery.contains(&kind) {
@@ -5849,6 +5879,50 @@ mod tests {
             assert_eq!(source.slice(diagnostic.primary_span()), Some(ungrouped));
             assert_eq!(diagnostic.notes(), [note], "{body:?}");
         }
+    }
+
+    #[test]
+    fn errors_inside_branches_and_steps_recover_to_the_next_function() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec f(c: Bool) -> Int { if c { 1, 2 } else { 3 } } ",
+            "spec g() -> Int { for i in 0..2 with s: Int = 0 { if true { s } else { s i } } } ",
+            "spec h(c: Bool) -> Int { let a: Int = if c { 1 } else { (2 }; a } ",
+            "spec k(c: Bool) -> Int { if c { 1 } else { 2 } } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        let source = sources.iter().next().unwrap();
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.code(),
+                    diagnostic.message(),
+                    source.slice(diagnostic.primary_span()).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `}` after the value",
+                    ","
+                ),
+                (
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `}` after the value",
+                    "i"
+                ),
+                (
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `)` to close the group",
+                    "}"
+                ),
+            ]
+        );
     }
 
     #[test]
