@@ -278,8 +278,8 @@ const CASES: [Case; 7] = [
                 "5:55", "6:61", "7:42", "9:82", "10:86", "11:90", "12:83", "13:46",
             ],
             messages: &[
-                "an index may use only integer literals and loop indices",
-                "not known when the program is checked",
+                "an `Int` index may use only integer literals, loop indices, and words converted",
+                "this `Int` has no bound",
                 "this index runs from 0 through 4, out of range for `Word[8]^4`",
                 "this index runs from -1 through 2, out of range for `Word[8]^4`",
                 "this index runs from -3 through 3, out of range for `Word[8]^4`",
