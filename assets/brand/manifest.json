@@ -107,6 +107,28 @@
       "alpha": false,
       "role": "primary-readme-cryptography-hand-drawn-horizontal-lockup-on-light",
       "sha256": "143f44c591001f9aec2b94723520a49dd484f2ae26208885e4e849b9db6ef1ff"
+    },
+    {
+      "path": "orange-cipher-readme-banner.png",
+      "source_filename": "exec-91b6ccc2-38d1-4556-9c89-952958ed4881.png",
+      "media_type": "image/png",
+      "width": 2172,
+      "height": 724,
+      "alpha": false,
+      "role": "cipher-readme-emblem-and-wordmark-on-ivory",
+      "content_credentials": "embedded-c2pa-openai-trainedAlgorithmicMedia-unverified",
+      "sha256": "d4ed4c5bbde5d5bfe020562bd49f11f4c6be5698d36ffbcb0d9e8db9b494543d"
+    },
+    {
+      "path": "orange-book-cipher-cover.png",
+      "source_filename": "exec-20007692-ab83-4401-8529-3ba127105b2c.png",
+      "media_type": "image/png",
+      "width": 1024,
+      "height": 1536,
+      "alpha": false,
+      "role": "orange-book-cipher-front-cover-lossless-derived",
+      "derivation": "lossless PNG recompression of the source (SHA-256 c649240aef81d3a4dba6d3be7322d362a398f83ee0725778f32fbdf5aa5e0771); identical dimensions and RGB pixels; metadata, including C2PA, omitted",
+      "sha256": "99682f1f646868105b28f3091e3391d6532404cb0bfadaec51e109262ff7f66d"
     }
   ]
 }
