@@ -548,9 +548,7 @@ DAYLIGHT_EXAMPLE_PATHS = set(
 examples/daylight/NOTICE
 examples/daylight/README.md
 examples/daylight/daylight-horizon.or
-examples/daylight/daylight.or
 examples/daylight/daylight.py
-examples/daylight/emit_example.py
 examples/daylight/test_daylight.py
 examples/daylight/validation.txt""".splitlines()
 )
