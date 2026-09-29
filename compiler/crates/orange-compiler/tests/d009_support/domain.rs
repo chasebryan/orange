@@ -320,7 +320,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: None,
         section_start_heading: None,
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "702a16030a66f27025cc0b07f6e2d470370f6a9f965c4d5c06a4dcca4c132950",
+        normalized_sha256: "2b895bffbd301e7d3565e482f89fbf6e252a77023a7b22a344f67c369e41dd0a",
     },
     SemanticBinding {
         id: SemanticBindingId::DecisionRegisterD009,
@@ -338,7 +338,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: None,
         section_start_heading: None,
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "103b770f500825b846192263ac3f21b0224de0203a33889969b8ee1f82d7cf51",
+        normalized_sha256: "58cfad73cb9373d179130acfd3d2a3457c9ac5f412ed758770d2fb5682f12ee8",
     },
     SemanticBinding {
         id: SemanticBindingId::RoadmapS4,
