@@ -134,7 +134,7 @@ The length must be a decimal spelling with no base prefix, separator, sign, or
 leading zero, exactly as a word width is. `Word[32]^16` is admitted;
 `Word[32]^0`, `Word[32]^257`, `Word[32]^0x10`, `Word[32]^016`, and
 `Word[32]^1_6` are `ORC0221`, reported at the length. The element type is
-resolved first: `Word^4` is `ORC0204` and `Bool^4` is `ORC0203`, and neither
+resolved first: `Word^4` is `ORC0204` and `Float^4` is `ORC0203`, and neither
 is reported again for its length.
 
 Two array types are equal exactly when their element types and lengths are

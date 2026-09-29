@@ -2,7 +2,7 @@
 // value is checked against that type exactly.
 edition 2026;
 module types {
-  spec unsupported() -> Int { let flag: Bool = 1; 0 }
+  spec unsupported() -> Int { let flag: Float = 1; 0 }
   spec mismatch(x: Word[8]) -> Int { let n: Int = x; n }
   spec out_of_range() -> Word[8] { let b: Word[8] = 256; b }
   spec missing_width() -> Int { let w: Word = 1; 0 }

@@ -4,17 +4,17 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    ArrayType, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreLoop, CoreModule,
-    CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH,
+    ArrayType, CoreConditional, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreLoop,
+    CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH,
     MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, Magnitude,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
     ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
-    ConversionExpression, Expression, ExpressionKind, FillExpression, FunctionBody,
-    FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral, LoopExpression,
-    MAX_ARRAY_ELEMENTS, Parameter, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression,
-    UnaryOperator, UpdateExpression,
+    ConditionalExpression, ConversionExpression, Expression, ExpressionKind, FillExpression,
+    FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral,
+    LoopExpression, MAX_ARRAY_ELEMENTS, Parameter, SyntaxTree, TypeSyntax, TypedBody,
+    UnaryExpression, UnaryOperator, UpdateExpression,
 };
 use crate::source::{SourceFile, Span};
 
@@ -37,11 +37,13 @@ const _: () = assert!(MAX_ARRAY_ELEMENTS == 256 && MAX_ARRAY_LENGTH == 256);
 
 const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
 const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
-const ADMITTED_TYPES: &str = "`Int`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
+const ADMITTED_TYPES: &str = "`Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
 const ARRAY_OPERATOR_NOTE: &str =
-    "operators apply to `Int` and word values; apply them to elements, such as `x[0]`";
+    "operators apply to `Int`, `Bool`, and word values; apply them to elements, such as `x[0]`";
 const STATIC_INDEX_NOTE: &str = "an index is built from integer literals and loop indices with \
-     `+`, `-`, and `*`, so that every index is known to be in range when the program is checked";
+     `+`, `-`, `*`, `/`, and `%`, so that every index is known to be in range when the program \
+     is checked";
+const BOOL_OPERATOR_NOTE: &str = "the operators on `Bool` are `!`, `&&`, `||`, `==`, and `!=`";
 
 /// The complete result of semantic analysis.
 ///
@@ -207,6 +209,15 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && expression_belongs(&r#loop.init, belongs)
                     && expression_belongs(&r#loop.step, belongs)
             }
+            ExpressionKind::Conditional(conditional) => {
+                belongs(conditional.else_span)
+                    && conditional.arms.iter().all(|arm| {
+                        belongs(arm.keyword_span)
+                            && expression_belongs(&arm.condition, belongs)
+                            && expression_belongs(&arm.value, belongs)
+                    })
+                    && expression_belongs(&conditional.otherwise, belongs)
+            }
         }
 }
 
@@ -278,6 +289,7 @@ struct PendingFunction {
     locals: Vec<CoreLocal>,
     nodes: Vec<CoreNode>,
     loops: Vec<CoreLoop>,
+    conditionals: Vec<CoreConditional>,
 }
 
 /// The silently resolved signature of one typed `spec`, used to check calls
@@ -328,6 +340,9 @@ struct BodyContext<'ast> {
     /// Checked loops of the function, by number. A loop's number is taken
     /// when its check starts, and its entry is filled once it is well formed.
     loops: Vec<Option<CoreLoop>>,
+    /// Checked conditionals of the function, by number, taken and filled as
+    /// loops' are.
+    conditionals: Vec<Option<CoreConditional>>,
 }
 
 /// A loop whose index and accumulator are in scope.
@@ -355,6 +370,9 @@ enum NameResolution<'ast> {
     LoopIndex(usize),
     /// The accumulator of the loop scope at this position.
     Accumulator(usize),
+    /// The `Bool` literal `true` or `false`, where no name of its spelling
+    /// is in scope.
+    BoolLiteral(bool),
     /// A binding of this body whose scope has not started.
     LaterBinding(&'ast Binding),
     Unknown,
@@ -386,6 +404,11 @@ impl<'ast> BodyContext<'ast> {
                 return NameResolution::Accumulator(position);
             }
         }
+        match name {
+            "true" => return NameResolution::BoolLiteral(true),
+            "false" => return NameResolution::BoolLiteral(false),
+            _ => {}
+        }
         later
             .iter()
             .find(|binding| binding.name.text == name)
@@ -401,6 +424,7 @@ impl<'ast> BodyContext<'ast> {
             NameResolution::Accumulator(position) => {
                 self.loop_scopes.get(position).map(|scope| scope.ty)
             }
+            NameResolution::BoolLiteral(_) => Some(CoreType::Bool),
             NameResolution::LaterBinding(_) | NameResolution::Unknown => None,
         }
     }
@@ -434,14 +458,17 @@ impl<'ast> BodyContext<'ast> {
     }
 }
 
-/// Returns the first name, call, conversion, index, or array literal of
-/// `expression`, from left to right, outside call arguments and shift amounts.
+/// Returns the first name, call, conversion, index, array literal, or
+/// comparison of `expression`, from left to right, outside call arguments,
+/// shift amounts, and the conditions of conditionals.
 ///
-/// Every operator gives its result the type of its operands, and a shift or
-/// rotation amount is a literal, so this leaf's type is the type of the whole
-/// expression. Literals take their type from their context and are skipped.
-/// An array literal ends the search so that a conversion can reject it.
-/// Parser-established expression height bounds this recursion.
+/// Every other operator gives its result the type of its operands, a shift
+/// or rotation amount is a literal, and a conditional has the type of its
+/// values, so this leaf's type is the type of the whole expression. A
+/// comparison is a leaf of type `Bool`. Integer literals take their type from
+/// their context and are skipped. An array literal ends the search so that a
+/// conversion can reject it. Parser-established expression height bounds this
+/// recursion.
 fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
     match &expression.kind {
         ExpressionKind::Literal(_) => None,
@@ -456,6 +483,7 @@ fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
         // An update has the type of the array it updates.
         ExpressionKind::Update(update) => first_typed_leaf(&update.base),
         ExpressionKind::Unary(unary) => first_typed_leaf(&unary.operand),
+        ExpressionKind::Binary(binary) if binary.operator.is_comparison() => Some(expression),
         ExpressionKind::Binary(binary) => {
             let left = first_typed_leaf(&binary.left);
             if binary.operator.is_shift_or_rotation() {
@@ -464,6 +492,11 @@ fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
                 left.or_else(|| first_typed_leaf(&binary.right))
             }
         }
+        ExpressionKind::Conditional(conditional) => conditional
+            .arms
+            .iter()
+            .find_map(|arm| first_typed_leaf(&arm.value))
+            .or_else(|| first_typed_leaf(&conditional.otherwise)),
     }
 }
 
@@ -550,6 +583,7 @@ fn array_length(source: &SourceFile, span: Span) -> Option<u32> {
 fn classify_scalar_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
     match (syntax.name.text.as_str(), syntax.width_span) {
         ("Int", None) => TypeClass::Resolved(CoreType::Int),
+        ("Bool", None) => TypeClass::Resolved(CoreType::Bool),
         ("Word", Some(width_span)) => {
             let width = match source.slice(width_span) {
                 Some("8") => Some(8),
@@ -623,9 +657,126 @@ fn reserve_range_limbs(limbs: &mut Vec<u32>, count: usize) -> bool {
     limbs.try_reserve_exact(count).is_ok()
 }
 
+/// Returns the range of `left / right` or `left % right` under the total
+/// Euclidean rules of S3f, for exact operand ranges, or `None` when storage
+/// cannot be reserved. Positive, zero, and negative divisors are considered
+/// separately and their ranges joined.
+fn divide_ranges(
+    operator: BinaryOperator,
+    left: &IndexRange,
+    (divisor_low, divisor_high): &IndexRange,
+    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+) -> Option<IndexRange> {
+    let one = ExactInteger::from_u64(1, reserve_limbs)?;
+    let minus_one = one.try_clone_with_reservation(reserve_limbs)?.negated();
+    let zero = ExactInteger::from_u64(0, reserve_limbs)?;
+    let copy = |value: &ExactInteger| value.try_clone_with_reservation(reserve_limbs);
+    let mut parts: [Option<IndexRange>; 3] = [None, None, None];
+    if divisor_high.compare(&one) != Ordering::Less {
+        let lowest = if divisor_low.compare(&one) == Ordering::Less {
+            copy(&one)?
+        } else {
+            copy(divisor_low)?
+        };
+        parts[0] = Some(positive_divisor_range(
+            operator,
+            left,
+            (&lowest, divisor_high),
+            reserve_limbs,
+        )?);
+    }
+    if divisor_low.compare(&zero) != Ordering::Greater
+        && divisor_high.compare(&zero) != Ordering::Less
+    {
+        // x / 0 = 0 and x % 0 = x.
+        parts[1] = Some(if operator == BinaryOperator::Divide {
+            (copy(&zero)?, copy(&zero)?)
+        } else {
+            (copy(&left.0)?, copy(&left.1)?)
+        });
+    }
+    if divisor_low.compare(&minus_one) != Ordering::Greater {
+        // For d < 0, x / d = -(x / -d) and x % d = x % -d.
+        let nearest = if divisor_high.compare(&minus_one) == Ordering::Greater {
+            copy(&one)?
+        } else {
+            copy(divisor_high)?.negated()
+        };
+        let farthest = copy(divisor_low)?.negated();
+        let (low, high) =
+            positive_divisor_range(operator, left, (&nearest, &farthest), reserve_limbs)?;
+        parts[2] = Some(if operator == BinaryOperator::Divide {
+            (high.negated(), low.negated())
+        } else {
+            (low, high)
+        });
+    }
+    parts
+        .into_iter()
+        .flatten()
+        .reduce(|(low, high), (part_low, part_high)| {
+            (
+                if part_low.compare(&low) == Ordering::Less {
+                    part_low
+                } else {
+                    low
+                },
+                if part_high.compare(&high) == Ordering::Greater {
+                    part_high
+                } else {
+                    high
+                },
+            )
+        })
+}
+
+/// Returns the range of `left / d` or `left % d` over divisors d from
+/// `divisor_low` through `divisor_high`, where `1 <= divisor_low`, or `None`
+/// when storage cannot be reserved.
+fn positive_divisor_range(
+    operator: BinaryOperator,
+    (low, high): &IndexRange,
+    (divisor_low, divisor_high): (&ExactInteger, &ExactInteger),
+    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+) -> Option<IndexRange> {
+    let divide = |value: &ExactInteger, divisor: &ExactInteger| {
+        value.divide_euclid(divisor, reserve_limbs)
+    };
+    if operator == BinaryOperator::Divide {
+        // The quotient grows with x, and for a fixed x it moves toward zero
+        // as d grows, so its extremes are at the corners.
+        let mut corners = [
+            divide(low, divisor_low)?.0,
+            divide(low, divisor_high)?.0,
+            divide(high, divisor_low)?.0,
+            divide(high, divisor_high)?.0,
+        ];
+        corners.sort_unstable_by(ExactInteger::compare);
+        let [least, _, _, greatest] = corners;
+        return Some((least, greatest));
+    }
+    // With one divisor and one quotient, the remainder grows with x.
+    if divisor_low.compare(divisor_high) == Ordering::Equal {
+        let (low_quotient, low_remainder) = divide(low, divisor_low)?;
+        let (high_quotient, high_remainder) = divide(high, divisor_low)?;
+        if low_quotient.compare(&high_quotient) == Ordering::Equal {
+            return Some((low_remainder, high_remainder));
+        }
+    }
+    // Otherwise 0 <= r < d, and r <= x when x is not negative.
+    let one = ExactInteger::from_u64(1, reserve_limbs)?;
+    let largest = divisor_high.subtract(&one, reserve_limbs)?;
+    let greatest = if !low.is_negative() && high.compare(&largest) == Ordering::Less {
+        high.try_clone_with_reservation(reserve_limbs)?
+    } else {
+        largest
+    };
+    Some((ExactInteger::from_u64(0, reserve_limbs)?, greatest))
+}
+
 fn word_maximum(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int | CoreType::Array(_) => None,
+        CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -788,6 +939,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     binding_types: Vec::new(),
                     loop_scopes: Vec::new(),
                     loops: Vec::new(),
+                    conditionals: Vec::new(),
                 };
                 let scope = ModuleScope {
                     declarations: &declarations,
@@ -979,8 +1131,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return None;
         }
         let nodes = output.nodes;
-        // Every loop of a well-formed function is well formed.
+        // Every loop and conditional of a well-formed function is well formed.
         let loops = context.loops.into_iter().collect::<Option<Vec<_>>>()?;
+        let conditionals = context
+            .conditionals
+            .into_iter()
+            .collect::<Option<Vec<_>>>()?;
         let parameters = context
             .parameter_types
             .iter()
@@ -996,6 +1152,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             locals,
             nodes,
             loops,
+            conditionals,
         })
     }
 
@@ -1078,9 +1235,17 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         }
         match &expression.kind {
-            ExpressionKind::Literal(literal) if !expected.is_scalar() => {
+            ExpressionKind::Literal(literal) if !expected.is_number() => {
                 if self.event(literal.span) {
-                    self.report_scalar_for_array(expression.span, "an integer literal", expected);
+                    if expected == CoreType::Bool {
+                        self.report_integer_for_bool(expression.span);
+                    } else {
+                        self.report_scalar_for_array(
+                            expression.span,
+                            "an integer literal",
+                            expected,
+                        );
+                    }
                 }
                 false
             }
@@ -1169,9 +1334,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 self.check_loop(expression, r#loop, expected, context, scope, output)
             }
+            ExpressionKind::Conditional(conditional) => {
+                self.check_conditional(expression, conditional, expected, context, scope, output)
+            }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
                     return false;
+                }
+                if binary.operator.is_comparison() {
+                    return self
+                        .check_comparison(expression, binary, expected, context, scope, output);
                 }
                 if !self.binary_is_defined(binary, expected) {
                     return false;
@@ -1235,6 +1407,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 ),
                 None => (None, Ok(CoreNodeKind::Accumulator(0))),
             },
+            NameResolution::BoolLiteral(value) => (
+                Some(Some(CoreType::Bool)),
+                Ok(CoreNodeKind::Literal(CoreValue::Bool(value))),
+            ),
             NameResolution::LaterBinding(binding) => {
                 if self.begin_report(name.span) {
                     let spelling = identifier_spelling_for_diagnostic(&name.text);
@@ -1417,6 +1593,24 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             self.check_expression(leaf, expected, context, scope, output);
             return false;
         };
+        if from == CoreType::Bool || target == Some(CoreType::Bool) {
+            let span = conversion.keyword_span;
+            if self.begin_report(span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::UnsupportedOperator,
+                        "`as` does not convert to or from `Bool`",
+                        span,
+                    )
+                    .with_label("`as` converts one `Int` or word value")
+                    .with_note(
+                        "choose a number with a conditional, such as `if b { 1 } else { 0 }`, \
+                         or compare a number, such as `x != 0`",
+                    ),
+                );
+            }
+            return false;
+        }
         let operand = self.check_expression(&conversion.operand, from, context, scope, output);
         operand
             && target_matches
@@ -1455,12 +1649,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Update(update) => {
                 self.leaf_type(first_typed_leaf(&update.base)?, context, scope)
             }
+            ExpressionKind::Binary(binary) if binary.operator.is_comparison() => {
+                Some(CoreType::Bool)
+            }
             ExpressionKind::Literal(_)
             | ExpressionKind::Unary(_)
             | ExpressionKind::Binary(_)
             | ExpressionKind::Parenthesized(_)
             | ExpressionKind::Array(_)
-            | ExpressionKind::Fill(_) => None,
+            | ExpressionKind::Fill(_)
+            | ExpressionKind::Conditional(_) => None,
         }
     }
 
@@ -1678,11 +1876,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     }
 
     /// Returns the least and greatest values of a well-typed index built
-    /// from literals, loop indices, parentheses, negation, `+`, `-`, and
-    /// `*`, computed exactly, or `None` when a bound's magnitude exceeds the
-    /// integer limit or storage cannot be reserved (which is reported as a
-    /// resource limit). Anything else is returned as the span of the first
-    /// such part.
+    /// from literals, loop indices, parentheses, negation, `+`, `-`, `*`,
+    /// `/`, and `%`, computed exactly, or `None` when a bound's magnitude
+    /// exceeds the integer limit or storage cannot be reserved (which is
+    /// reported as a resource limit). Anything else is returned as the span
+    /// of the first such part.
     ///
     /// Parser-established expression height bounds this recursion.
     fn static_range(
@@ -1723,6 +1921,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     return Ok(None);
                 };
                 combine_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
+            }
+            ExpressionKind::Binary(binary) if binary.operator.is_division() => {
+                let left = self.static_range(&binary.left, context)?;
+                let right = self.static_range(&binary.right, context)?;
+                let (Some(left), Some(right)) = (left, right) else {
+                    return Ok(None);
+                };
+                divide_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
             }
             _ => return Err(index.span),
         };
@@ -2123,6 +2329,301 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         decoded
     }
 
+    /// Checks a comparison `left op right` against `expected`, which must be
+    /// `Bool`. Both operands have the type of the first typed leaf of the
+    /// left operand, or else of the right operand, as a conversion operand
+    /// has.
+    fn check_comparison(
+        &mut self,
+        expression: &'ast Expression,
+        binary: &'ast BinaryExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let operator = binary.operator.as_str();
+        let result_matches = expected == CoreType::Bool;
+        if !result_matches && self.begin_report(expression.span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!("a comparison gives `Bool`, but `{expected}` is required here"),
+                    expression.span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("a conditional `if c { a } else { b }` chooses a value by a `Bool`"),
+            );
+        }
+        let Some(leaf) = first_typed_leaf(&binary.left).or_else(|| first_typed_leaf(&binary.right))
+        else {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::UntypedComparison,
+                        format!("the operands of `{operator}` have no type of their own"),
+                        expression.span,
+                    )
+                    .with_label("a literal takes its type from where it is used")
+                    .with_note(
+                        "compare with a typed operand, such as a name, or give the literal a \
+                         type with a `let` binding",
+                    ),
+                );
+            }
+            return false;
+        };
+        let Some(operand) = self.leaf_type(leaf, context, scope) else {
+            // The leaf's own check reports why it has no type.
+            self.check_expression(leaf, expected, context, scope, output);
+            return false;
+        };
+        let defined = match binary.operator {
+            BinaryOperator::Equal | BinaryOperator::NotEqual => operand.is_scalar(),
+            _ => operand.is_number(),
+        };
+        if !defined {
+            if self.begin_report(binary.operator_span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::UnsupportedOperator,
+                        format!("`{operator}` is not defined for `{operand}`"),
+                        binary.operator_span,
+                    )
+                    .with_label(format!("the operands have type `{operand}`"))
+                    .with_note(if operand.is_scalar() {
+                        "`Bool` values are compared with `==` and `!=`; they have no order"
+                    } else {
+                        "compare elements, such as `x[0] == y[0]`"
+                    }),
+                );
+            }
+            return false;
+        }
+        let left = self.check_expression(&binary.left, operand, context, scope, output);
+        if self.halted {
+            return false;
+        }
+        let right = self.check_expression(&binary.right, operand, context, scope, output);
+        left && right
+            && result_matches
+            && self.push_node(
+                output,
+                expression.span,
+                CoreType::Bool,
+                CoreNodeKind::Compare {
+                    operator: binary.operator,
+                    operand,
+                },
+            )
+    }
+
+    /// Checks `if c0 { v0 } else if c1 { v1 } ... else { w }` against
+    /// `expected`.
+    ///
+    /// Each arm is a conditional of its own and takes its number when its
+    /// check starts, so conditionals are numbered in source order of their
+    /// `if` keywords. Every condition is checked as a `Bool` and every value
+    /// against `expected`. The first condition's nodes join the enclosing
+    /// expression, followed by the first arm's `choose` node; each later
+    /// condition's nodes and its arm's `choose` node form the previous arm's
+    /// `else` branch. Arms are checked in a loop, so a chain of any length
+    /// adds no recursion.
+    fn check_conditional(
+        &mut self,
+        expression: &'ast Expression,
+        conditional: &'ast ConditionalExpression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let arm_count = conditional.arms.len();
+        let mut arms: Vec<(u32, Span, Vec<CoreNode>)> = Vec::new();
+        let mut else_branches: Vec<Vec<CoreNode>> = Vec::new();
+        if arms.try_reserve_exact(arm_count).is_err()
+            || else_branches.try_reserve_exact(arm_count).is_err()
+        {
+            self.resource_limit(expression.span, "conditional storage allocation failed");
+            return false;
+        }
+        let mut well_formed = true;
+        for (position, arm) in conditional.arms.iter().enumerate() {
+            if !self.event(arm.keyword_span) {
+                return false;
+            }
+            let Ok(id) = u32::try_from(context.conditionals.len()) else {
+                self.resource_limit(
+                    arm.keyword_span,
+                    "conditional count exceeds the u32 representation limit",
+                );
+                return false;
+            };
+            if context.conditionals.try_reserve(1).is_err() {
+                self.resource_limit(arm.keyword_span, "conditional storage allocation failed");
+                return false;
+            }
+            context.conditionals.push(None);
+            let condition = if position == 0 {
+                self.check_expression(&arm.condition, CoreType::Bool, context, scope, output)
+            } else {
+                let mut branch = BodyOutput {
+                    nodes: Vec::new(),
+                    call_edges: &mut *output.call_edges,
+                };
+                let checked = self.check_expression(
+                    &arm.condition,
+                    CoreType::Bool,
+                    context,
+                    scope,
+                    &mut branch,
+                );
+                else_branches.push(branch.nodes);
+                checked
+            };
+            if self.halted {
+                return false;
+            }
+            let mut branch = BodyOutput {
+                nodes: Vec::new(),
+                call_edges: &mut *output.call_edges,
+            };
+            let value = self.check_expression(&arm.value, expected, context, scope, &mut branch);
+            if self.halted {
+                return false;
+            }
+            well_formed = well_formed && condition && value;
+            arms.push((id, arm.keyword_span, branch.nodes));
+        }
+        let mut branch = BodyOutput {
+            nodes: Vec::new(),
+            call_edges: &mut *output.call_edges,
+        };
+        let otherwise = self.check_expression(
+            &conditional.otherwise,
+            expected,
+            context,
+            scope,
+            &mut branch,
+        );
+        if !(well_formed && otherwise) || self.halted {
+            return false;
+        }
+        else_branches.push(branch.nodes);
+        self.record_conditionals(expression, expected, arms, else_branches, context, output)
+    }
+
+    /// Fills the table entries of a well-formed conditional's arms and
+    /// appends the first arm's `choose` node to `output`.
+    fn record_conditionals(
+        &mut self,
+        expression: &Expression,
+        expected: CoreType,
+        arms: Vec<(u32, Span, Vec<CoreNode>)>,
+        else_branches: Vec<Vec<CoreNode>>,
+        context: &mut BodyContext<'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Ok(visible_locals) = u32::try_from(context.binding_types.len()) else {
+            self.resource_limit(
+                expression.span,
+                "binding count exceeds the u32 representation limit",
+            );
+            return false;
+        };
+        let spans = arms
+            .iter()
+            .map(|(id, keyword_span, _)| {
+                (
+                    *id,
+                    self.source
+                        .span(keyword_span.start(), expression.span.end())
+                        .unwrap_or(expression.span),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut later_arms = spans.iter().skip(1);
+        for ((id, _, then_nodes), else_nodes) in arms.into_iter().zip(else_branches) {
+            let mut else_branch = BodyOutput {
+                nodes: else_nodes,
+                call_edges: &mut *output.call_edges,
+            };
+            if let Some((next, next_span)) = later_arms.next()
+                && !self.push_node(
+                    &mut else_branch,
+                    *next_span,
+                    expected,
+                    CoreNodeKind::Choose(*next),
+                )
+            {
+                return false;
+            }
+            let mut loop_scope = Vec::new();
+            if loop_scope
+                .try_reserve_exact(context.loop_scopes.len())
+                .is_err()
+            {
+                self.resource_limit(expression.span, "conditional scope allocation failed");
+                return false;
+            }
+            loop_scope.extend(context.loop_scopes.iter().map(|scope| scope.id));
+            let span = spans
+                .iter()
+                .find(|(candidate, _)| *candidate == id)
+                .map_or(expression.span, |(_, span)| *span);
+            let Some(entry) = usize::try_from(id)
+                .ok()
+                .and_then(|id| context.conditionals.get_mut(id))
+            else {
+                self.resource_limit(
+                    expression.span,
+                    "semantic conditional table is inconsistent",
+                );
+                return false;
+            };
+            *entry = Some(CoreConditional {
+                span,
+                ty: expected,
+                visible_locals,
+                scope: loop_scope,
+                then_branch: CoreExpression { nodes: then_nodes },
+                else_branch: CoreExpression {
+                    nodes: else_branch.nodes,
+                },
+            });
+        }
+        let Some((first, _)) = spans.first() else {
+            self.resource_limit(
+                expression.span,
+                "semantic conditional table is inconsistent",
+            );
+            return false;
+        };
+        self.push_node(
+            output,
+            expression.span,
+            expected,
+            CoreNodeKind::Choose(*first),
+        )
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_integer_for_bool(&mut self, span: Span) {
+        if !self.begin_report(span) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeMismatch,
+                "an integer literal cannot have type `Bool`",
+                span,
+            )
+            .with_label("expected `Bool`")
+            .with_note("the `Bool` values are written `true` and `false`"),
+        );
+    }
+
     #[cold]
     #[inline(never)]
     fn report_scalar_for_array(&mut self, span: Span, what: &str, expected: CoreType) {
@@ -2301,13 +2802,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let defined = match unary.operator {
             UnaryOperator::Negate => expected == CoreType::Int,
             UnaryOperator::Complement => expected.word_bits().is_some(),
+            UnaryOperator::Not => expected == CoreType::Bool,
         };
         if !defined && self.begin_report(unary.operator_span) {
             let operator = unary.operator.as_str();
             let note = match (unary.operator, expected.word_bits()) {
                 _ if !expected.is_scalar() => String::from(ARRAY_OPERATOR_NOTE),
+                _ if expected == CoreType::Bool => String::from(BOOL_OPERATOR_NOTE),
                 (UnaryOperator::Negate, Some(bits)) => {
                     format!("write `0 - x` for negation modulo 2^{bits}")
+                }
+                (UnaryOperator::Not, Some(_)) => {
+                    String::from("`!` negates a `Bool`; `~` is the bitwise complement of a word")
+                }
+                (UnaryOperator::Not, None) => {
+                    String::from("`!` negates a `Bool`; `-` negates an `Int`")
                 }
                 _ => String::from("bitwise operators apply only to `Word[n]` values"),
             };
@@ -2326,9 +2835,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     fn binary_is_defined(&mut self, binary: &BinaryExpression, expected: CoreType) -> bool {
         let defined = match binary.operator {
-            BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply => {
-                expected.is_scalar()
-            }
+            BinaryOperator::Add
+            | BinaryOperator::Subtract
+            | BinaryOperator::Multiply
+            | BinaryOperator::Divide
+            | BinaryOperator::Remainder => expected.is_number(),
             BinaryOperator::And
             | BinaryOperator::Or
             | BinaryOperator::Xor
@@ -2336,6 +2847,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             | BinaryOperator::ShiftRight
             | BinaryOperator::RotateLeft
             | BinaryOperator::RotateRight => expected.word_bits().is_some(),
+            BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => expected == CoreType::Bool,
+            // A comparison is checked by `check_comparison`.
+            BinaryOperator::Equal
+            | BinaryOperator::NotEqual
+            | BinaryOperator::Less
+            | BinaryOperator::LessEqual
+            | BinaryOperator::Greater
+            | BinaryOperator::GreaterEqual => false,
         };
         if !defined && self.begin_report(binary.operator_span) {
             let operator = binary.operator.as_str();
@@ -2348,6 +2867,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .with_label(format!("`{expected}` is required here"))
                 .with_note(if !expected.is_scalar() {
                     ARRAY_OPERATOR_NOTE
+                } else if expected == CoreType::Bool {
+                    BOOL_OPERATOR_NOTE
+                } else if binary.operator.is_logical() {
+                    "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators \
+                     on words"
                 } else if binary.operator.is_shift_or_rotation() {
                     "shifts and rotations apply only to `Word[n]` values"
                 } else {
@@ -2616,6 +3140,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .saturating_add(r#loop.step.nodes.len())
                         .saturating_add(2)
                 });
+            // Each conditional contributes one table entry and its branches'
+            // nodes.
+            let node_count =
+                pending_function
+                    .conditionals
+                    .iter()
+                    .fold(node_count, |count, conditional| {
+                        count
+                            .saturating_add(conditional.then_branch.nodes.len())
+                            .saturating_add(conditional.else_branch.nodes.len())
+                            .saturating_add(1)
+                    });
             for _ in 0..node_count {
                 if !self.record_core_node(pending_function.span) {
                     return None;
@@ -2640,6 +3176,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     nodes: pending_function.nodes,
                 },
                 loops: pending_function.loops,
+                conditionals: pending_function.conditionals,
             });
         }
         Some(CoreModule {
@@ -5110,6 +5647,10 @@ mod tests {
                     CoreNodeKind::Fold(id) => format!("loop #{id}"),
                     CoreNodeKind::LoopIndex(id) => format!("index of loop #{id}"),
                     CoreNodeKind::Accumulator(id) => format!("accumulator of loop #{id}"),
+                    CoreNodeKind::Compare { operator, operand } => {
+                        format!("compare {} on {operand}", operator.as_str())
+                    }
+                    CoreNodeKind::Choose(id) => format!("choose #{id}"),
                 };
                 (
                     operation,
@@ -6162,7 +6703,7 @@ mod tests {
             "  spec range(x: Word[8]) -> Int { (x + 256) as Int }\n",
             "  spec both(x: Word[8]) -> Word[8] { (x + y) as Word[16] }\n",
             "  spec callee() -> Int { missing() as Int }\n",
-            "  spec untyped_binding() -> Int { let q: Bool = 1; q as Int }\n",
+            "  spec untyped_binding() -> Int { let q: Float = 1; q as Int }\n",
             "  spec inner(x: Word[8]) -> Int { (x as Word[7]) as Int }\n",
         ));
         assert_eq!(
@@ -6219,8 +6760,8 @@ mod tests {
                 ),
                 (
                     DiagnosticCode::UnsupportedType,
-                    "Bool",
-                    String::from("unsupported binding type `Bool`")
+                    "Float",
+                    String::from("unsupported binding type `Float`")
                 ),
                 (
                     DiagnosticCode::UnsupportedWordWidth,
@@ -6553,7 +7094,7 @@ mod tests {
         // The element type is resolved first; an unresolved element type is
         // reported alone.
         let (fixture, result) = rejected(concat!(
-            "  spec a(x: Bool^4) -> Int { 1 }\n",
+            "  spec a(x: Float^4) -> Int { 1 }\n",
             "  spec b(x: Word^4) -> Int { 1 }\n",
             "  spec c(x: Word[7]^0) -> Int { 1 }\n",
             "  spec d() -> Int^0 { [1] }\n",
@@ -6564,8 +7105,8 @@ mod tests {
             [
                 (
                     DiagnosticCode::UnsupportedType,
-                    "Bool^4",
-                    String::from("unsupported parameter type `Bool`")
+                    "Float^4",
+                    String::from("unsupported parameter type `Float`")
                 ),
                 (
                     DiagnosticCode::UnsupportedWordWidth,
@@ -7580,6 +8121,653 @@ mod tests {
                 };
                 index.index.span = foreign_index.index.span;
             }),
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
+    }
+
+    /// Renders a function's conditionals as `(source, type, visible
+    /// bindings, scope)`.
+    fn conditional_headers<'text>(
+        fixture: &'text Fixture,
+        function: &CoreFunction,
+    ) -> Vec<(&'text str, CoreType, u32, Vec<u32>)> {
+        function
+            .conditionals
+            .iter()
+            .map(|conditional| {
+                (
+                    fixture.source().slice(conditional.span()).unwrap(),
+                    conditional.ty(),
+                    conditional.visible_locals(),
+                    conditional.scope().to_vec(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn conditions_comparisons_and_divisions_build_typed_core_in_postorder() {
+        let (fixture, core) = accepted(concat!(
+            "  spec pick(c: Bool, x: Int) -> Int { if c { x } else if x < 0 { 0 - x } else { 7 } }\n",
+            "  spec differ(a: Word[8], b: Word[8]) -> Bool { !(a == b) && true }\n",
+            "  spec split(x: Int) -> Int^2 { [x / 3, x % 3] }\n",
+            "  spec evens() -> Int {\n",
+            "    let two: Int = 2;\n",
+            "    for i in 0..4 with s: Int = 0 { if (i % two) == 0 { s + i } else { s } }\n",
+            "  }\n",
+        ));
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        let whole = "if c { x } else if x < 0 { 0 - x } else { 7 }";
+        let later = "if x < 0 { 0 - x } else { 7 }";
+
+        let pick = &core.functions[0];
+        assert_eq!(
+            core_nodes(&fixture, pick),
+            owned(&[
+                ("parameter 0", "c", CoreType::Bool),
+                ("choose #0", whole, CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            conditional_headers(&fixture, pick),
+            [
+                (whole, CoreType::Int, 0, vec![]),
+                (later, CoreType::Int, 0, vec![])
+            ]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, pick.conditionals[0].then_branch()),
+            owned(&[("parameter 1", "x", CoreType::Int)])
+        );
+        // The later arm's condition and choice are the first arm's `else`.
+        assert_eq!(
+            expression_nodes(&fixture, pick.conditionals[0].else_branch()),
+            owned(&[
+                ("parameter 1", "x", CoreType::Int),
+                ("literal 0", "0", CoreType::Int),
+                ("compare < on Int", "x < 0", CoreType::Bool),
+                ("choose #1", later, CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            expression_nodes(&fixture, pick.conditionals[1].then_branch()),
+            owned(&[
+                ("literal 0", "0", CoreType::Int),
+                ("parameter 1", "x", CoreType::Int),
+                ("infix -", "0 - x", CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            expression_nodes(&fixture, pick.conditionals[1].else_branch()),
+            owned(&[("literal 7", "7", CoreType::Int)])
+        );
+
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[1]),
+            owned(&[
+                ("parameter 0", "a", CoreType::Word8),
+                ("parameter 1", "b", CoreType::Word8),
+                ("compare == on Word[8]", "a == b", CoreType::Bool),
+                ("prefix !", "!(a == b)", CoreType::Bool),
+                ("literal true", "true", CoreType::Bool),
+                ("infix &&", "!(a == b) && true", CoreType::Bool),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[2]),
+            owned(&[
+                ("parameter 0", "x", CoreType::Int),
+                ("literal 3", "3", CoreType::Int),
+                ("infix /", "x / 3", CoreType::Int),
+                ("parameter 0", "x", CoreType::Int),
+                ("literal 3", "3", CoreType::Int),
+                ("infix %", "x % 3", CoreType::Int),
+                ("array of 2", "[x / 3, x % 3]", array_of(CoreType::Int, 2)),
+            ])
+        );
+
+        // A conditional in a loop's step records the loop and the bindings
+        // in scope.
+        let evens = &core.functions[3];
+        assert_eq!(
+            conditional_headers(&fixture, evens),
+            [(
+                "if (i % two) == 0 { s + i } else { s }",
+                CoreType::Int,
+                1,
+                vec![0]
+            )]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, evens.loops[0].step()),
+            owned(&[
+                ("index of loop #0", "i", CoreType::Int),
+                ("local 0", "two", CoreType::Int),
+                ("infix %", "i % two", CoreType::Int),
+                ("literal 0", "0", CoreType::Int),
+                ("compare == on Int", "(i % two) == 0", CoreType::Bool),
+                (
+                    "choose #0",
+                    "if (i % two) == 0 { s + i } else { s }",
+                    CoreType::Int
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn conditionals_are_numbered_in_source_order_of_their_if_keywords() {
+        let (fixture, core) = accepted(concat!(
+            "  spec f(a: Bool, b: Bool) -> Int {\n",
+            "    if (if a { b } else { false }) { if b { 1 } else { 2 } } else if a { 3 } else { 4 }\n",
+            "  }\n",
+        ));
+        assert_eq!(
+            conditional_headers(&fixture, &core.functions[0])
+                .into_iter()
+                .map(|(source, ty, _, _)| (source, ty))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "if (if a { b } else { false }) { if b { 1 } else { 2 } } else if a { 3 } else { 4 }",
+                    CoreType::Int
+                ),
+                ("if a { b } else { false }", CoreType::Bool),
+                ("if b { 1 } else { 2 }", CoreType::Int),
+                ("if a { 3 } else { 4 }", CoreType::Int),
+            ]
+        );
+        // A comparison's operands and a conversion's operand may be
+        // conditionals; their type comes from their first typed value.
+        accepted(concat!(
+            "  spec g(c: Bool, x: Word[8]) -> Bool { (if c { 1 } else { x }) < 3 }\n",
+            "  spec h(c: Bool, x: Word[8]) -> Int { (if c { 1 } else { x }) as Int }\n",
+            "  spec k(c: Bool, x: Int) -> Bool { 3 == (if c { x } else { 1 }) }\n",
+        ));
+    }
+
+    #[test]
+    fn bool_literals_resolve_only_where_no_name_of_their_spelling_is_in_scope() {
+        let (fixture, core) = accepted(concat!(
+            "  spec parameter(true: Int) -> Int { true }\n",
+            "  spec binding() -> Int { let false: Int = 5; false }\n",
+            "  spec index() -> Int { for true in 0..3 with s: Int = 0 { s + true } }\n",
+            "  spec before() -> Bool { let x: Bool = true; let true: Bool = false; x && true }\n",
+            "  spec named(if: Int) -> Int { if + 1 }\n",
+        ));
+        let operations = |index: usize| {
+            core_nodes(&fixture, &core.functions[index])
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(operations(0), ["parameter 0"]);
+        assert_eq!(operations(1), ["local 0"]);
+        assert_eq!(
+            expression_nodes(&fixture, core.functions[2].loops[0].step())
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["accumulator of loop #0", "index of loop #0", "infix +"]
+        );
+        // `true` in the first binding is the literal: the binding named
+        // `true` starts after it.
+        assert_eq!(
+            expression_nodes(&fixture, &core.functions[3].locals[0].value)
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>(),
+            ["literal true"]
+        );
+        assert_eq!(operations(3), ["local 0", "local 1", "infix &&"]);
+        assert_eq!(operations(4), ["parameter 0", "literal 1", "infix +"]);
+    }
+
+    #[test]
+    fn condition_and_comparison_errors_are_reported_once_in_checking_order() {
+        let (fixture, result) = rejected(concat!(
+            "  spec gives(x: Int) -> Int { x < 1 }\n",
+            "  spec untyped() -> Bool { 1 < 2 }\n",
+            "  spec order(a: Bool, b: Bool) -> Bool { a < b }\n",
+            "  spec arrays(x: Word[8]^2, y: Word[8]^2) -> Bool { x == y }\n",
+            "  spec mixed(x: Word[8], y: Int) -> Bool { x == y }\n",
+            "  spec literal() -> Bool { 1 }\n",
+            "  spec both() -> Bool { true && 1 }\n",
+            "  spec not(x: Word[8]) -> Word[8] { !x }\n",
+            "  spec negate(b: Bool) -> Bool { -b }\n",
+            "  spec sum(a: Bool, b: Bool) -> Bool { a + b }\n",
+            "  spec bits(a: Bool, b: Bool) -> Bool { a & b }\n",
+            "  spec logic(x: Word[8], y: Word[8]) -> Word[8] { x && y }\n",
+            "  spec cond(x: Int) -> Int { if x { 1 } else { 0 } }\n",
+            "  spec branches(c: Bool) -> Int { if c { 1 } else { true } }\n",
+            "  spec to(c: Bool) -> Int { c as Int }\n",
+            "  spec from(x: Int) -> Bool { x as Bool }\n",
+            "  spec divide(a: Bool) -> Bool { a / a }\n",
+            "  spec later() -> Bool { let x: Bool = y; let y: Bool = true; x }\n",
+            "  spec unknown() -> Bool { z == 1 }\n",
+            "  spec every(c: Bool, x: Int) -> Int { if x { y } else if c { 1 < 2 } else { c } }\n",
+        ));
+        let rows = [
+            (
+                DiagnosticCode::TypeMismatch,
+                "x < 1",
+                "a comparison gives `Bool`, but `Int` is required here",
+            ),
+            (
+                DiagnosticCode::UntypedComparison,
+                "1 < 2",
+                "the operands of `<` have no type of their own",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "<",
+                "`<` is not defined for `Bool`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "==",
+                "`==` is not defined for `Word[8]^2`",
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "y",
+                "`y` has type `Int`, but `Word[8]` is required here",
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "1",
+                "an integer literal cannot have type `Bool`",
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "1",
+                "an integer literal cannot have type `Bool`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "!",
+                "prefix `!` is not defined for `Word[8]`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "-",
+                "prefix `-` is not defined for `Bool`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "+",
+                "`+` is not defined for `Bool`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "&",
+                "`&` is not defined for `Bool`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "&&",
+                "`&&` is not defined for `Word[8]`",
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "x",
+                "`x` has type `Int`, but `Bool` is required here",
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "true",
+                "`true` has type `Bool`, but `Int` is required here",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "as",
+                "`as` does not convert to or from `Bool`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "as",
+                "`as` does not convert to or from `Bool`",
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "/",
+                "`/` is not defined for `Bool`",
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "y",
+                "`y` is used before it is bound",
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "z",
+                "`z` is not a parameter of `unknown`",
+            ),
+            // Every part of a conditional is checked, in source order.
+            (
+                DiagnosticCode::TypeMismatch,
+                "x",
+                "`x` has type `Int`, but `Bool` is required here",
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "y",
+                "`y` is not a parameter of `every`",
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "1 < 2",
+                "a comparison gives `Bool`, but `Int` is required here",
+            ),
+            (
+                DiagnosticCode::UntypedComparison,
+                "1 < 2",
+                "the operands of `<` have no type of their own",
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "c",
+                "`c` has type `Bool`, but `Int` is required here",
+            ),
+        ];
+        assert_eq!(
+            reported(&fixture, &result),
+            rows.iter()
+                .map(|(code, source, message)| (*code, *source, (*message).to_owned()))
+                .collect::<Vec<_>>()
+        );
+        let notes = |index: usize| result.diagnostics[index].notes().to_vec();
+        assert_eq!(
+            notes(2),
+            ["`Bool` values are compared with `==` and `!=`; they have no order"]
+        );
+        assert_eq!(notes(3), ["compare elements, such as `x[0] == y[0]`"]);
+        assert_eq!(
+            notes(5),
+            ["the `Bool` values are written `true` and `false`"]
+        );
+        assert_eq!(
+            notes(7),
+            ["`!` negates a `Bool`; `~` is the bitwise complement of a word"]
+        );
+        assert_eq!(notes(9), [BOOL_OPERATOR_NOTE]);
+        assert_eq!(
+            notes(11),
+            [
+                "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators on words"
+            ]
+        );
+    }
+
+    #[test]
+    fn index_ranges_follow_euclidean_division_and_its_total_rules() {
+        for (range, index) in [
+            ("0..8", "x[i / 2]"),
+            ("0..100", "x[i % 4]"),
+            ("0..100", "x[(i + 3) % 4]"),
+            ("0..100", "x[-i % 4]"),
+            ("0..100", "x[(0 - i) % -4]"),
+            ("1..4", "x[7 / (i + 1)]"),
+            ("0..4", "x[i % 0]"),
+            ("0..4", "x[i / 0]"),
+            ("0..3", "x[(i - 3) / -1]"),
+            ("4..8", "x[i % 4]"),
+        ] {
+            accepted(&format!(
+                "  spec f(x: Word[8]^4) -> Word[8] {{ for i in {range} with s: Word[8] = 0 {{ s ^ {index} }} }}\n"
+            ));
+        }
+        for (range, index, message) in [
+            (
+                "0..9",
+                "x[i / 2]",
+                "this index runs from 0 through 4, out of range for `Word[8]^4`",
+            ),
+            (
+                "0..100",
+                "x[i % 5]",
+                "this index runs from 0 through 4, out of range for `Word[8]^4`",
+            ),
+            (
+                "0..4",
+                "x[i / (i - i)]",
+                "this index runs from -3 through 3, out of range for `Word[8]^4`",
+            ),
+            (
+                "0..8",
+                "x[i % 0]",
+                "this index runs from 0 through 7, out of range for `Word[8]^4`",
+            ),
+            (
+                "0..4",
+                "x[i / -1]",
+                "this index runs from -3 through 0, out of range for `Word[8]^4`",
+            ),
+            (
+                "0..4",
+                "x[9 % 5]",
+                "index 4 is out of range for `Word[8]^4`",
+            ),
+            (
+                "0..4",
+                "x[-1 / 2]",
+                "index -1 is out of range for `Word[8]^4`",
+            ),
+        ] {
+            let (fixture, result) = rejected(&format!(
+                "  spec f(x: Word[8]^4) -> Word[8] {{ for i in {range} with s: Word[8] = 0 {{ s ^ {index} }} }}\n"
+            ));
+            assert_eq!(
+                result.diagnostics.len(),
+                1,
+                "{index}: {:?}",
+                result.diagnostics
+            );
+            let diagnostic = &result.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::IndexOutOfRange,
+                "{index}"
+            );
+            assert_eq!(diagnostic.message(), message, "{index}");
+            assert_eq!(
+                Some(format!(
+                    "x[{}]",
+                    fixture.source().slice(diagnostic.primary_span()).unwrap()
+                )),
+                Some(index.to_owned())
+            );
+        }
+        // Division by a parameter is not static.
+        let (fixture, result) = rejected(
+            "  spec f(x: Word[8]^4, n: Int) -> Word[8] { for i in 0..4 with s: Word[8] = 0 { s ^ x[i / n] } }\n",
+        );
+        assert_eq!(
+            reported(&fixture, &result),
+            [(
+                DiagnosticCode::NonStaticIndex,
+                "n",
+                String::from("an index may use only integer literals and loop indices")
+            )]
+        );
+        assert_eq!(result.diagnostics[0].notes(), [STATIC_INDEX_NOTE]);
+    }
+
+    #[test]
+    fn condition_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); the parameter's uniqueness check and
+        // name (2); the result's name (1); the arm's `if` (1); the condition
+        // `c` (1); and the values `1` and `2` (literal, prefix, and one
+        // digit: 3 each): 13 analysis events. Core is the module, one
+        // function node, one result-type node, one parameter-type node, the
+        // body nodes `c` and the choice, one conditional node, and the
+        // branch nodes `1` and `2`: 9 nodes, each one more event.
+        let conditional = module("  spec f(c: Bool) -> Int { if c { 1 } else { 2 } }\n");
+        // Lookup and installation (2); the parameter's uniqueness check,
+        // name, and width (3); the result's name (1); the comparison (1);
+        // `x` (1); and `1` (3): 11 events. Core is the module, the function,
+        // the result and parameter types, and `x`, `1`, and the comparison:
+        // 7 nodes.
+        let comparison = module("  spec g(x: Word[8]) -> Bool { x < 1 }\n");
+        for (fixture, events, nodes) in [(&conditional, 22, 9), (&comparison, 18, 7)] {
+            let exact = fixture.analyze_with(Limits {
+                events,
+                nodes,
+                ..Limits::DEFAULT
+            });
+            assert_eq!(exact.diagnostics, []);
+            assert!(exact.core.is_some());
+            for (limits, label) in [
+                (
+                    Limits {
+                        events: events - 1,
+                        nodes,
+                        ..Limits::DEFAULT
+                    },
+                    "semantic event budget exhausted",
+                ),
+                (
+                    Limits {
+                        events,
+                        nodes: nodes - 1,
+                        ..Limits::DEFAULT
+                    },
+                    "typed Core node budget exhausted",
+                ),
+            ] {
+                let first = fixture.analyze_with(limits);
+                assert_eq!(first, fixture.analyze_with(limits));
+                assert!(first.core.is_none());
+                assert_eq!(first.diagnostics.len(), 1);
+                assert_eq!(
+                    first.diagnostics[0].code(),
+                    DiagnosticCode::SemanticResourceLimit
+                );
+                assert_eq!(first.diagnostics[0].label(), label);
+            }
+        }
+        // Each arm of a chain is one event and one conditional node, and
+        // each later arm's condition and choice are nodes of the earlier
+        // arm's `else` branch: 2 + 2 + 1 events for the signature, 3 for
+        // the arms, 3 for the conditions, and 12 for the four values; 4
+        // nodes for the module and signature, 2 in the body, 4 for each of
+        // the first two conditionals, and 3 for the last.
+        let chain = module(
+            "  spec f(c: Bool) -> Int { if c { 1 } else if c { 2 } else if c { 3 } else { 4 } }\n",
+        );
+        let (events, nodes) = (23 + 17, 17);
+        let exact = chain.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert_eq!(exact.core.unwrap().functions[0].conditionals.len(), 3);
+        for limits in [
+            Limits {
+                events: events - 1,
+                nodes,
+                ..Limits::DEFAULT
+            },
+            Limits {
+                events,
+                nodes: nodes - 1,
+                ..Limits::DEFAULT
+            },
+        ] {
+            assert!(chain.analyze_with(limits).core.is_none());
+        }
+    }
+
+    #[test]
+    fn branch_storage_failures_return_no_partial_core() {
+        let fixture = module("  spec f(c: Bool, x: Int) -> Int { if c { x + 1 } else { x } }\n");
+        let first = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_core_node_slot =
+                |nodes| nodes.len() < 2 && nodes.try_reserve(1).is_ok();
+            analyzer.run()
+        };
+        let result = first();
+        assert_eq!(result, first());
+        assert!(result.core.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        let diagnostic = &result.diagnostics[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(
+            fixture.source().slice(diagnostic.primary_span()),
+            Some("x + 1")
+        );
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_conditionals() {
+        let text = "edition 2026; module values { \
+                    spec value(c: Bool, x: Int) -> Int { \
+                    if c { x } else if x < 1 { x / 2 } else { 0 } } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        fn conditional_of(ast: &SyntaxTree) -> &ConditionalExpression {
+            let FunctionBody::Typed(body) = &ast.module.functions[0].body else {
+                unreachable!();
+            };
+            let ExpressionKind::Conditional(conditional) = &body.expression.kind else {
+                unreachable!();
+            };
+            conditional
+        }
+        fn conditional_mut(ast: &mut SyntaxTree) -> &mut ConditionalExpression {
+            let ExpressionKind::Conditional(conditional) = &mut typed_body_mut(ast).expression.kind
+            else {
+                unreachable!();
+            };
+            conditional
+        }
+        let foreign = conditional_of(&second.ast).clone();
+        type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
+        let mutations: Vec<Mutation<'_>> = vec![
+            Box::new(|ast| conditional_mut(ast).else_span = foreign.else_span),
+            Box::new(|ast| {
+                conditional_mut(ast).arms[0].keyword_span = foreign.arms[0].keyword_span;
+            }),
+            Box::new(|ast| {
+                conditional_mut(ast).arms[1].keyword_span = foreign.arms[1].keyword_span;
+            }),
+            Box::new(|ast| {
+                conditional_mut(ast).arms[0].condition.span = foreign.arms[0].condition.span;
+            }),
+            Box::new(|ast| {
+                let ExpressionKind::Binary(binary) =
+                    &mut conditional_mut(ast).arms[1].condition.kind
+                else {
+                    unreachable!();
+                };
+                let ExpressionKind::Binary(foreign_binary) = &foreign.arms[1].condition.kind else {
+                    unreachable!();
+                };
+                binary.operator_span = foreign_binary.operator_span;
+            }),
+            Box::new(|ast| {
+                conditional_mut(ast).arms[1].value.span = foreign.arms[1].value.span;
+            }),
+            Box::new(|ast| conditional_mut(ast).otherwise.span = foreign.otherwise.span),
         ];
         assert!(analyze(first.source(), &first.ast).core.is_some());
         for (case_index, mutate) in mutations.iter().enumerate() {

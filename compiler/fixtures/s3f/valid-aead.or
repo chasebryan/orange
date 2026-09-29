@@ -1,0 +1,167 @@
+// S3f conformance: the ChaCha20-Poly1305 AEAD of RFC 8439 section 2.8.
+// ChaCha20 with block counter 0 makes the one-time Poly1305 key, the
+// plaintext is encrypted from counter 1, and Poly1305 authenticates the
+// additional data, the ciphertext, and both lengths. Sealing the "sunscreen"
+// plaintext of section 2.8.2 gives the RFC's ciphertext and tag byte for byte.
+edition 2026;
+module aead {
+  // Section 2.1.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2, b2, c2, d2]
+  }
+
+  // Section 2.3: a column round, then a diagonal round.
+  spec double_round(x: Word[32]^16) -> Word[32]^16 {
+    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
+    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
+    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
+    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
+    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
+    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
+    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
+    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+    [
+      d0[0], d1[0], d2[0], d3[0],
+      d3[1], d0[1], d1[1], d2[1],
+      d2[2], d3[2], d0[2], d1[2],
+      d1[3], d2[3], d3[3], d0[3],
+    ]
+  }
+
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+
+  spec le_bytes(x: Word[32]) -> Word[8]^4 {
+    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
+  }
+
+  // Section 2.3: the block function. Words 4 through 11 are the key and
+  // words 13 through 15 the nonce, each read little-endian.
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
+    let constants: Word[32]^16 = [
+      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      counter, 0, 0, 0,
+    ];
+    let keyed: Word[32]^16 = for i in 0..8 with s: Word[32]^16 = constants {
+      s with [4 + i] = load_le32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
+    };
+    let initial: Word[32]^16 = for i in 0..3 with s: Word[32]^16 = keyed {
+      s with [13 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
+    };
+    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
+    for i in 0..16 with s: Word[32]^16 = mixed { s with [i] = s[i] + initial[i] }
+  }
+
+  // Section 2.3: the state serialized as 64 little-endian bytes.
+  spec serialize(s: Word[32]^16) -> Word[8]^64 {
+    for i in 0..16 with bytes: Word[8]^64 = [0; 64] {
+      for j in 0..4 with b: Word[8]^64 = bytes { b with [4 * i + j] = le_bytes(s[i])[j] }
+    }
+  }
+
+  // Section 2.4: encryption of a 114-byte message from initial counter 1,
+  // with the keystream of blocks 1 and 2.
+  spec encrypt(key: Word[8]^32, nonce: Word[8]^12, plaintext: Word[8]^114) -> Word[8]^114 {
+    let first: Word[8]^64 = serialize(block(key, 1, nonce));
+    let second: Word[8]^64 = serialize(block(key, 2, nonce));
+    let head: Word[8]^114 = for n in 0..64 with c: Word[8]^114 = plaintext {
+      c with [n] = plaintext[n] ^ first[n]
+    };
+    for n in 64..114 with c: Word[8]^114 = head { c with [n] = plaintext[n] ^ second[n - 64] }
+  }
+
+  // Poly1305, section 2.5: p = 2^130 - 5.
+  spec prime() -> Int { 1361129467683753853853498429727072845819 }
+
+  spec absorb(a: Int, r: Int, block: Int) -> Int { ((a + block) * r) % prime() }
+
+  // 256^i for 0 <= i < 16.
+  spec byte_weight(i: Int) -> Int {
+    for j in 0..16 with w: Int = 1 { if j < i { w * 256 } else { w } }
+  }
+
+  // Section 2.5.1 for ten whole blocks: each is its sixteen bytes,
+  // little-endian, with the byte 0x01 above them.
+  spec mac(key: Word[8]^32, m: Word[8]^160) -> Word[8]^16 {
+    let clamp: Word[8]^16 = [
+      0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+      0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+    ];
+    let r: Int = for i in 0..16 with n: Int = 0 { n * 256 + ((key[15 - i] & clamp[15 - i]) as Int) };
+    let s: Int = for i in 0..16 with n: Int = 0 { n * 256 + (key[31 - i] as Int) };
+    let a: Int = for j in 0..10 with a: Int = 0 {
+      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (m[16 * j + 15 - i] as Int) })
+    };
+    for i in 0..16 with t: Word[8]^16 = [0; 16] {
+      t with [i] = ((a + s) / byte_weight(i)) as Word[8]
+    }
+  }
+
+  // Section 2.8: 12 bytes of additional data padded to 16, 114 bytes of
+  // ciphertext padded to 128, and both lengths as 64-bit little-endian
+  // integers: ten blocks.
+  spec mac_data(aad: Word[8]^12, ciphertext: Word[8]^114) -> Word[8]^160 {
+    let head: Word[8]^160 = for i in 0..12 with d: Word[8]^160 = [0; 160] { d with [i] = aad[i] };
+    let body: Word[8]^160 = for i in 0..114 with d: Word[8]^160 = head {
+      d with [16 + i] = ciphertext[i]
+    };
+    (body with [144] = 12) with [152] = 114
+  }
+
+  // Section 2.8: the ciphertext followed by the tag.
+  spec seal(
+    key: Word[8]^32,
+    nonce: Word[8]^12,
+    aad: Word[8]^12,
+    plaintext: Word[8]^114,
+  ) -> Word[8]^130 {
+    let one_time: Word[8]^64 = serialize(block(key, 0, nonce));
+    let otk: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = one_time[i] };
+    let ciphertext: Word[8]^114 = encrypt(key, nonce, plaintext);
+    let tag: Word[8]^16 = mac(otk, mac_data(aad, ciphertext));
+    let sealed: Word[8]^130 = for i in 0..114 with out: Word[8]^130 = [0; 130] {
+      out with [i] = ciphertext[i]
+    };
+    for i in 0..16 with out: Word[8]^130 = sealed { out with [114 + i] = tag[i] }
+  }
+
+  spec sunscreen() -> Word[8]^114 {
+    [
+      0x4c, 0x61, 0x64, 0x69, 0x65, 0x73, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x47,
+      0x65, 0x6e, 0x74, 0x6c, 0x65, 0x6d, 0x65, 0x6e, 0x20, 0x6f, 0x66, 0x20,
+      0x74, 0x68, 0x65, 0x20, 0x63, 0x6c, 0x61, 0x73, 0x73, 0x20, 0x6f, 0x66,
+      0x20, 0x27, 0x39, 0x39, 0x3a, 0x20, 0x49, 0x66, 0x20, 0x49, 0x20, 0x63,
+      0x6f, 0x75, 0x6c, 0x64, 0x20, 0x6f, 0x66, 0x66, 0x65, 0x72, 0x20, 0x79,
+      0x6f, 0x75, 0x20, 0x6f, 0x6e, 0x6c, 0x79, 0x20, 0x6f, 0x6e, 0x65, 0x20,
+      0x74, 0x69, 0x70, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x74, 0x68, 0x65, 0x20,
+      0x66, 0x75, 0x74, 0x75, 0x72, 0x65, 0x2c, 0x20, 0x73, 0x75, 0x6e, 0x73,
+      0x63, 0x72, 0x65, 0x65, 0x6e, 0x20, 0x77, 0x6f, 0x75, 0x6c, 0x64, 0x20,
+      0x62, 0x65, 0x20, 0x69, 0x74, 0x2e,
+    ]
+  }
+
+  // Section 2.8.2.
+  spec sealed_sunscreen() -> Word[8]^130 {
+    seal(
+      [
+        0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f,
+        0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f,
+      ],
+      [0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47],
+      [0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7],
+      sunscreen(),
+    )
+  }
+}
