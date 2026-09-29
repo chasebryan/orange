@@ -727,7 +727,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "919ba7d65341c2989ca2b69e580e27993a5772f9ad6b5d79783e60fa8f19615c"
+_PHD = "c2101efb0132ee4dab6efc67dadbd4b44829dc5fb172fcde33198c6f4b666e54"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1315,8 +1315,25 @@ DECISION_LABORATORY_SPECS["d004"] = {
 _D004_BASE = "research/decisions/D-004/baseline/"
 _D004_REBOUND = {p for p, _ in DECISION_LABORATORY_SPECS["d004"]["raw_bindings"] if not p.startswith(("research/", "docs/SEMANTIC_STRATA"))}
 MINIMUM_REQUIRED_PATHS |= {_D004_BASE + p for p in _D004_REBOUND}
+_D006_V03 = {"research/decisions/D-006/d006-v0.3/" + n for n in "protocol/suite-overlay.json protocol/toolchains.json".split() + ["shared-inputs/" + m for m in "manifest.json semantics.md taxonomy.json ds01-core-fragment.json ds02-sieve.json ds03-canonical-records.json ds04-lrat-obligation.json ds04-carry-save.cnf ds04-carry-save-unshifted.cnf ds04-carry-save-golden.lrat ds05-standalone-checker.json ds06-measurement.json ds07-owner-tasks.json".split()]}
+MINIMUM_REQUIRED_PATHS |= _D006_V03 | {"tools/d006_shared.py", "tools/tests/test_d006_shared.py"}
+DECISION_LABORATORY_SPECS["d006"]["inventory"] = DECISION_LABORATORY_SPECS["d006"]["inventory"] | _D006_V03
+DECISION_LABORATORY_SPECS["d006"]["json_identities"] += tuple(("research/decisions/D-006/d006-v0.3/" + n, f"v03_{i}_", f"v03_{i}_missing", c, r, True) for i, (n, c, r) in enumerate((
+ ("protocol/suite-overlay.json", "6bbe827744ca0008f62df2d8426fa2f210d5f4407c94ac0fc87d656dedfd2166", "0050c48391815ac9d27c82b66c36e3c940900b29ac398d76fb13c04df66f9864"),
+ ("protocol/toolchains.json", "4746d069981994e89533d16b931a2417e4af4e7999b5fc7f0be5855106984d4e", "9f083f33b5635958eb879275af15a40c9718064356ef9e710c8d51d3cfd95299"),
+ ("shared-inputs/manifest.json", "fcc3852eea3a01b582cc3c4c52c69b559a1b4539be8ec4e1f62438aacacbcc29", "d6aed8aeebf2d523334c0d25ccd0cd81e2f9eb975de7de1413f63c052e549b30"),
+ ("shared-inputs/taxonomy.json", "95dede0dab94185944e44707a9dbbc257a3d43b18ae3d971ec546bfb31952fa6", "dc49a902501daa4db325a39ac502a9129b8d3f004b23288923b976c78ed25622"),
+ ("shared-inputs/ds01-core-fragment.json", "bf85429fbb8644e4f5117f7794923c75c3733d3630ee5a62d4ec969432e104e4", "87c15fae3b015bb5e9433ae4208488cf1c9145289cbb60d58bab54305c51a33d"),
+ ("shared-inputs/ds02-sieve.json", "2cdc4de9c70ab5085c9d7d7ccb7115ef2085491f5fe07e3d0283812eb6ca72f2", "8150807f612c766e0c2543a8f159dcbb083af80c07fac74e0b6ba75040f1e944"),
+ ("shared-inputs/ds03-canonical-records.json", "a9dcda2e3e297298f026d778f471efc3e03861b8189d07913f1be541efef199e", "22508acd1573961b54a5a4482b82e77bbc1521b4e4c0bf3041aee06095cd614c"),
+ ("shared-inputs/ds04-lrat-obligation.json", "53b4ff7de35f001263f9a0a8270bd68cca25fbcf129ea5a2d9a9c68c868ddcd5", "0c70568f0fd39db9b712a1ddfefdcd2b3f9bd3d76c13270702bdb3d117af432b"),
+ ("shared-inputs/ds05-standalone-checker.json", "840510fd84e54d4805dea5f8e370635a1a1ac1e720ebcb146f3d38a46ab245cf", "3a1e901195a8427bc6c796598c47264a92c7942471399c13854d2bfee8909e81"),
+ ("shared-inputs/ds06-measurement.json", "247de71ae9fae6b132169f980a8c766219de55972d281b4ebbb388e0cff5142a", "2ed8ddc9c591a540f0c24969ee9aca6c0df841d8facc6f8104afde81b4290ea6"),
+ ("shared-inputs/ds07-owner-tasks.json", "edb735e5795cae6976ebac8c454ad510562095a6071e1d542591d543a17c7b87", "b7961471b0059d760926f5addacc35217f234641c87abd2e71c32903c86f4f59"),
+))) # d006-v0.3 identities end
 DECISION_LABORATORY_SPECS["d004"]["inventory"] |= {_D004_BASE + p for p in _D004_REBOUND}
 DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
+DECISION_LABORATORY_INVARIANTS["research/decisions/D-006/"] = (13, 2, True, None)
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-004/"] = (
     18,
     23,
