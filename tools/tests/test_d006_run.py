@@ -45,6 +45,14 @@ class D006RunnerContractTests(unittest.TestCase):
         self.assertEqual(argv[sandbox - 3], "/usr/bin/env")
         self.assertEqual(argv[argv.index("--", sandbox):], ["--", "/opt/tool", "x"])
 
+    def test_programs_are_resolved_as_execvp_would(self) -> None:
+        resolve = run.Launcher.resolve
+        env = {"PATH": "/usr/bin:/bin"}
+        self.assertEqual(resolve(["mkdir", "-p", "x"], env, Path("/w"))[0], run.shutil.which("mkdir", path="/usr/bin:/bin"))
+        self.assertEqual(resolve(["./tool", "a"], env, Path("/w")), ["/w/tool", "a"])
+        self.assertEqual(resolve(["/opt/x"], env, None), ["/opt/x"])
+        self.assertEqual(resolve(["no-such-program-d006"], env, None), ["/usr/bin/no-such-program-d006"])
+
     def test_the_default_plan_is_the_preregistered_protocol(self) -> None:
         plan = run.Plan()
         self.assertEqual((plan.cold_runs, plan.replay_runs, plan.timed_pairs), (5, 3, 30))

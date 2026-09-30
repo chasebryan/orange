@@ -295,7 +295,22 @@ class Launcher:
     base_ro: list[str] = field(default_factory=lambda: ["/usr", "/proc", "/sys/devices/system/cpu", "/dev/urandom"])
     on_step: Callable[[dict[str, Any]], None] | None = None
 
-    def argv(self, command: list[str], env: dict[str, str], box: Sandbox) -> list[str]:
+    @staticmethod
+    def resolve(command: list[str], env: dict[str, str], cwd: Path | None) -> list[str]:
+        """The sandbox takes an absolute program path: search the step's PATH as execvp would."""
+
+        program = command[0]
+        if program.startswith("/"):
+            return command
+        if "/" in program:
+            return [str((cwd or Path("/")) / program), *command[1:]]
+        directories = [d for d in env.get("PATH", "").split(":") if d.startswith("/")]
+        found = shutil.which(program, path=":".join(directories))
+        # Not found: the first PATH entry, so the step fails with ENOENT as execvp's would.
+        return [found or f"{(directories or ['/usr/bin'])[0]}/{program}", *command[1:]]
+
+    def argv(self, command: list[str], env: dict[str, str], box: Sandbox, cwd: Path | None = None) -> list[str]:
+        command = self.resolve(command, env, cwd)
         rules = ["--dir", "/"]
         for root in [*self.base_ro, *box.read_only]:
             rules += ["--ro", root]
@@ -313,7 +328,7 @@ class Launcher:
         meter = CgroupMeter(ceiling, cpus)
         started = time.monotonic_ns()
         try:
-            process = subprocess.Popen(self.argv(command, env, box), cwd=cwd, env={"PATH": "/usr/bin:/bin"},
+            process = subprocess.Popen(self.argv(command, env, box, cwd), cwd=cwd, env={"PATH": "/usr/bin:/bin"},
                                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        preexec_fn=meter.preexec)
         except OSError as exc:
