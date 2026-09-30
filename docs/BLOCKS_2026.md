@@ -30,8 +30,10 @@ meaning. It accepts no D-004 candidate.
 > adds byte strings, `++`, and slices, so that a step may take one block of a
 > message as `m[16 * j..16 * j + 16]`, and [`SIZES_2026.md`](SIZES_2026.md),
 > proposed under OEP-0016, lets a loop's bounds be sizes, as `for b in
-> 0..blocks`. Every source this document accepts keeps its meaning under all
-> three.
+> 0..blocks`, and [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017,
+> lets a step read a block of a message as words in one conversion, as `m[16 *
+> j..16 * j + 16] as little Word[64]^2`. Every source this document accepts
+> keeps its meaning under all four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

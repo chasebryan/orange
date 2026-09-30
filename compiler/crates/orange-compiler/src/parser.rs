@@ -1127,13 +1127,16 @@ impl ConditionalArm {
     }
 }
 
-/// An explicit conversion `operand as Type`.
+/// An explicit conversion `operand as Type`, or `operand as big Type` and
+/// `operand as little Type` with a byte order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConversionExpression {
     /// The converted operand.
     pub(crate) operand: Expression,
     /// Exact extent of the `as` keyword.
     pub(crate) keyword_span: Span,
+    /// The byte order and the exact extent of its word, if one is named.
+    pub(crate) order: Option<(ByteOrder, Span)>,
     /// Syntactic target type; semantic analysis resolves its meaning.
     pub(crate) target: TypeSyntax,
 }
@@ -1149,6 +1152,18 @@ impl ConversionExpression {
     #[must_use]
     pub const fn keyword_span(&self) -> Span {
         self.keyword_span
+    }
+
+    /// Returns the byte order, if one is named.
+    #[must_use]
+    pub fn order(&self) -> Option<ByteOrder> {
+        self.order.map(|(order, _)| order)
+    }
+
+    /// Returns the exact extent of the byte order's word, if one is named.
+    #[must_use]
+    pub fn order_span(&self) -> Option<Span> {
+        self.order.map(|(_, span)| span)
     }
 
     /// Returns the syntactic target type.
@@ -1316,6 +1331,18 @@ define_operators! {
         Complement => "~",
         /// `!`: logical negation.
         Not => "!",
+    }
+}
+
+define_operators! {
+    /// The byte order of a conversion that packs words into words of another
+    /// width or into a number, or unpacks them: the order in which the
+    /// elements of an array of words stand in the number they spell.
+    ByteOrder {
+        /// `big`: the first element is the most significant.
+        Big => "big",
+        /// `little`: the first element is the least significant.
+        Little => "little",
     }
 }
 
@@ -3120,6 +3147,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     "`with` updates exactly one array; parenthesize the update or the \
                      expression it updates"
                 }
+                (Joiner::As, Joiner::Binary(BinaryOperator::Xor)) => {
+                    "`as` converts exactly one operand; parenthesize the conversion or the \
+                     expression it converts. For an array type, name a byte order first, as \
+                     in `as big Word[32]^16`"
+                }
                 (Joiner::As, _) | (_, Joiner::As) => {
                     "`as` converts exactly one operand; parenthesize the conversion or the \
                      expression it converts"
@@ -3164,7 +3196,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses `as Type` after a complete operand.
+    /// Parses `as Type`, `as big Type`, or `as little Type` after a
+    /// complete operand. Only a conversion with a byte order may name an
+    /// array type, so that `x as Word[8] ^ y` stays an ungrouped operator.
     #[inline(never)]
     fn parse_conversion(
         &mut self,
@@ -3172,7 +3206,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         level: usize,
     ) -> Option<(Expression, usize)> {
         let keyword_span = self.bump()?.span;
-        let (target, target_height) = self.parse_type_syntax("conversion type", false, level)?;
+        let order = match self.byte_order() {
+            Some(order) => Some((order, self.bump()?.span)),
+            None => None,
+        };
+        let (target, target_height) =
+            self.parse_type_syntax("conversion type", order.is_some(), level)?;
         let height = self.node_height(operand_height.max(target_height), keyword_span)?;
         let span = self.join(operand.span, target.span);
         self.record_node().then_some((
@@ -3181,11 +3220,34 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 kind: ExpressionKind::Conversion(Box::new(ConversionExpression {
                     operand,
                     keyword_span,
+                    order,
                     target,
                 })),
             },
             height,
         ))
+    }
+
+    /// Returns the byte order the current token names after `as`: an
+    /// identifier spelled `big` or `little` followed by the start of a type,
+    /// `(` or an identifier other than `as` and `with`. Anything else after
+    /// `as` is the type itself, so a type named `big` is still converted to
+    /// with `as big`.
+    fn byte_order(&self) -> Option<ByteOrder> {
+        let order = if self.current_is_word("big") {
+            ByteOrder::Big
+        } else if self.current_is_word("little") {
+            ByteOrder::Little
+        } else {
+            return None;
+        };
+        let next = self.cursor.saturating_add(1);
+        let starts_type = match self.kind_at(next) {
+            TokenKind::LeftParen => true,
+            TokenKind::Identifier => !self.is_word_at(next, "as") && !self.is_word_at(next, "with"),
+            _ => false,
+        };
+        starts_type.then_some(order)
     }
 
     /// Parses `with [index] = value` or `with [start..end] = value` after a
@@ -5810,6 +5872,13 @@ mod tests {
     #[test]
     fn operator_inventories_spellings_and_tokens_are_exact() {
         assert_eq!(
+            ByteOrder::ALL
+                .iter()
+                .map(|order| order.as_str())
+                .collect::<Vec<_>>(),
+            ["big", "little"]
+        );
+        assert_eq!(
             UnaryOperator::ALL
                 .iter()
                 .map(|operator| operator.as_str())
@@ -5925,8 +5994,11 @@ mod tests {
             ),
             ExpressionKind::Parenthesized(inner) => format!("[{}]", shape(source, inner)),
             ExpressionKind::Conversion(conversion) => format!(
-                "({} as {})",
+                "({} as {}{})",
                 shape(source, &conversion.operand),
+                conversion
+                    .order()
+                    .map_or_else(String::new, |order| format!("{} ", order.as_str())),
                 source.slice(conversion.target.span).unwrap()
             ),
             ExpressionKind::Array(array) => format!(
@@ -6793,6 +6865,131 @@ mod tests {
         // A conversion is one level above its operand.
         let (_, expression) = body_expression(&spec_source("a as Int"));
         assert_eq!(tree_height(&expression), 2);
+    }
+
+    #[test]
+    fn byte_orders_follow_as_when_a_type_follows_them() {
+        let cases = [
+            (
+                "b as big Word[32]",
+                "(b as big Word[32])",
+                Some(ByteOrder::Big),
+            ),
+            (
+                "b as little Word[8]^4",
+                "(b as little Word[8]^4)",
+                Some(ByteOrder::Little),
+            ),
+            (
+                "b as big Word[8]^(4 * n)",
+                "(b as big Word[8]^(4 * n))",
+                Some(ByteOrder::Big),
+            ),
+            ("b as big Int", "(b as big Int)", Some(ByteOrder::Big)),
+            (
+                "b as little Mod[(1 << 130) - 5]",
+                "(b as little Mod[(1 << 130) - 5])",
+                Some(ByteOrder::Little),
+            ),
+            (
+                "b as big (Int, Int)",
+                "(b as big (Int, Int))",
+                Some(ByteOrder::Big),
+            ),
+            (
+                "b as little Block",
+                "(b as little Block)",
+                Some(ByteOrder::Little),
+            ),
+            // An array type follows only a byte order, so `^` after its
+            // element type starts the length.
+            (
+                "b as big Word[8] ^ n",
+                "(b as big Word[8] ^ n)",
+                Some(ByteOrder::Big),
+            ),
+            // Without a type after it, `big` or `little` is the type.
+            ("b as big", "(b as big)", None),
+            ("b as little", "(b as little)", None),
+            ("(b as big) + c", "([(b as big)] + c)", None),
+            ("g(b as little, c)", "g((b as little), c)", None),
+            ("big as big big", "(big as big big)", Some(ByteOrder::Big)),
+            ("little as little", "(little as little)", None),
+            (
+                "g(b as big Word[8]^4, c)",
+                "g((b as big Word[8]^4), c)",
+                Some(ByteOrder::Big),
+            ),
+            (
+                "(b as little Word[32]^2) as big Word[64]",
+                "([(b as little Word[32]^2)] as big Word[64])",
+                Some(ByteOrder::Big),
+            ),
+        ];
+        for (body, expected, order) in cases {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+            assert_eq!(source.slice(expression.span), Some(body), "{body:?}");
+            let conversion = expression_conversion(&expression);
+            assert_eq!(conversion.order(), order, "{body:?}");
+            assert_eq!(
+                conversion.order_span().and_then(|span| source.slice(span)),
+                order.map(ByteOrder::as_str),
+                "{body:?}"
+            );
+        }
+        // The order's word is a token of the conversion, which stays one
+        // level above its operand.
+        let (_, expression) = body_expression(&spec_source("a as big Int"));
+        assert_eq!(tree_height(&expression), 2);
+    }
+
+    /// Returns the conversion an expression is, looking through groups.
+    fn expression_conversion(expression: &Expression) -> &ConversionExpression {
+        match &expression.kind {
+            ExpressionKind::Conversion(conversion) => conversion,
+            ExpressionKind::Parenthesized(inner) => expression_conversion(inner),
+            ExpressionKind::Binary(binary) => expression_conversion(&binary.left),
+            ExpressionKind::Call(call) => expression_conversion(&call.arguments[0]),
+            _ => panic!("expected a conversion"),
+        }
+    }
+
+    #[test]
+    fn an_array_type_after_as_without_a_byte_order_is_ungrouped() {
+        let cases = [
+            ("a as Word[8]^4", 12, "^", "as", true),
+            ("a as big as Int", 9, "as", "as", false),
+        ];
+        for (body, offset, ungrouped, previous, array) in cases {
+            let text = spec_source(body);
+            let (sources, _, parsed) = parse_text(&text);
+            let source = sources.iter().next().unwrap();
+            assert_eq!(parsed.diagnostics.len(), 1, "{body:?}");
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::UngroupedOperators);
+            assert_eq!(
+                diagnostic.message(),
+                format!("`{ungrouped}` follows `{previous}` without grouping parentheses"),
+            );
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(ungrouped));
+            let expected = text.find(body).unwrap() + offset;
+            assert_eq!(
+                diagnostic.primary_span().start(),
+                TextOffset::new(u32::try_from(expected).unwrap()),
+                "{body:?}"
+            );
+            let note = if array {
+                "`as` converts exactly one operand; parenthesize the conversion or the \
+                 expression it converts. For an array type, name a byte order first, as in \
+                 `as big Word[32]^16`"
+            } else {
+                "`as` converts exactly one operand; parenthesize the conversion or the \
+                 expression it converts"
+            };
+            assert_eq!(diagnostic.notes(), [note], "{body:?}");
+        }
     }
 
     #[test]

@@ -10,6 +10,10 @@
 // is verified.
 edition 2026;
 module chacha20_poly1305 {
+  // Poly1305's field, the integers modulo p = 2^130 - 5 (RFC 8439 section
+  // 2.5.1).
+  type P = Mod[1361129467683753853853498429727072845819];
+
   // ---- ChaCha20, section 2 ----
 
   // Section 2.1.
@@ -43,113 +47,63 @@ module chacha20_poly1305 {
     ]
   }
 
-  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
-    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
-      | ((b3 as Word[32]) << 24)
-  }
-
-  spec le_bytes(x: Word[32]) -> Word[8]^4 {
-    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
-  }
-
-  // Section 2.3: the block function. Words 4 through 11 are the key and
-  // words 13 through 15 the nonce, each read little-endian.
+  // Section 2.3: the block function. The state is the constant
+  // "expand 32-byte k", the key, the block counter and the nonce, read as
+  // sixteen little-endian words.
   spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
-    let constants: Word[32]^16 = [
-      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
-      0, 0, 0, 0,
-      0, 0, 0, 0,
-      counter, 0, 0, 0,
-    ];
-    let keyed: Word[32]^16 = for i in 0..8 with s: Word[32]^16 = constants {
-      s with [4 + i] = load_le32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
-    };
-    let initial: Word[32]^16 = for i in 0..3 with s: Word[32]^16 = keyed {
-      s with [13 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
-    };
+    let initial: Word[32]^16 =
+      ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
     let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
     for i in 0..16 with s: Word[32]^16 = mixed { s with [i] = s[i] + initial[i] }
   }
 
-  // Section 2.3: the state serialized as 64 little-endian bytes.
-  spec serialize(s: Word[32]^16) -> Word[8]^64 {
-    for i in 0..64 with b: Word[8]^64 = [0; 64] { b with [i] = le_bytes(s[i / 4])[i % 4] }
+  // Section 2.4: the keystream of a chunk, blocks 1 through 4 serialized
+  // little-endian (section 2.3) and read as 32 little-endian 64-bit words, so
+  // that a chunk's 240 bytes are its first 30.
+  spec keystream(key: Word[8]^32, nonce: Word[8]^12) -> Word[64]^32 {
+    (block(key, 1, nonce) ++ block(key, 2, nonce) ++ block(key, 3, nonce) ++ block(key, 4, nonce))
+      as little Word[64]^32
   }
 
-  // Section 2.4: the keystream of a chunk, blocks 1 through 4 as 64 words.
-  // Byte n of the stream is byte n % 4 of word n / 4; a chunk uses the first
-  // 240.
-  spec keystream(key: Word[8]^32, nonce: Word[8]^12) -> Word[32]^64 {
-    let b1: Word[32]^16 = block(key, 1, nonce);
-    let b2: Word[32]^16 = block(key, 2, nonce);
-    let b3: Word[32]^16 = block(key, 3, nonce);
-    let b4: Word[32]^16 = block(key, 4, nonce);
-    let s1: Word[32]^64 = for w in 0..16 with s: Word[32]^64 = [0; 64] { s with [w] = b1[w] };
-    let s2: Word[32]^64 = for w in 0..16 with s: Word[32]^64 = s1 { s with [16 + w] = b2[w] };
-    let s3: Word[32]^64 = for w in 0..16 with s: Word[32]^64 = s2 { s with [32 + w] = b3[w] };
-    for w in 0..16 with s: Word[32]^64 = s3 { s with [48 + w] = b4[w] }
+  // Section 2.4: a chunk exclusive-ored with its keystream, eight bytes at a
+  // time.
+  spec xor_stream(key: Word[8]^32, nonce: Word[8]^12, text: Word[8]^240) -> Word[8]^240 {
+    let s: Word[64]^32 = keystream(key, nonce);
+    let t: Word[64]^30 = text as little Word[64]^30;
+    let x: Word[64]^30 = for i in 0..30 with x: Word[64]^30 = t { x with [i] = x[i] ^ s[i] };
+    x as little Word[8]^240
   }
 
   // ---- Poly1305, section 2.5 ----
 
-  // p = 2^130 - 5.
-  spec prime() -> Int { 1361129467683753853853498429727072845819 }
-
-  // Section 2.5.1: add one block to the accumulator and multiply by r.
-  spec absorb(a: Int, r: Int, block: Int) -> Int { ((a + block) * r) % prime() }
-
-  // Section 2.5: r is the first sixteen key bytes, little-endian, with
-  // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff.
-  spec poly_r(key: Word[8]^32) -> Int {
-    let clamp: Word[8]^16 = [
-      0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
-      0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
-    ];
-    for i in 0..16 with n: Int = 0 { n * 256 + ((key[15 - i] & clamp[15 - i]) as Int) }
-  }
-
-  // Section 2.5: s is the other sixteen key bytes, little-endian.
-  spec poly_s(key: Word[8]^32) -> Int {
-    for i in 0..16 with n: Int = 0 { n * 256 + (key[31 - i] as Int) }
-  }
-
-  // 256^k for 0 <= k < 16: the weight of byte k of a little-endian integer.
-  spec byte_weight(k: Int) -> Int {
-    for j in 0..16 with w: Int = 1 { if j < k { w * 256 } else { w } }
-  }
-
-  // Section 2.5.1: the tag is the low 128 bits of the accumulator plus s,
-  // little-endian.
-  spec tag_bytes(x: Int) -> Word[8]^16 {
-    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (x / byte_weight(i)) as Word[8] }
-  }
+  // Section 2.5.1: a whole block is its sixteen bytes, little-endian, with
+  // the byte 0x01 above them.
+  spec poly_block(b: Word[8]^16) -> P { (b ++ hex"01") as little P }
 
   // ---- The AEAD construction, section 2.8 ----
 
   // Section 2.6: the one-time Poly1305 key is the first 32 bytes of block 0.
   spec one_time_key(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
-    let block0: Word[8]^64 = serialize(block(key, 0, nonce));
-    for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = block0[i] }
+    block(key, 0, nonce)[..8] as little Word[8]^32
   }
 
-  // Section 2.8: Poly1305 under the one-time key of the associated data, the
-  // ciphertext, and both lengths as 64-bit little-endian integers. Each
-  // whole block is its sixteen bytes, little-endian, with the byte 0x01 above
-  // them (section 2.5.1), read straight from `ad` and `sealed`: four blocks,
-  // fifteen blocks, and the lengths 64 and 240. The tag bytes of `sealed`
-  // are not read.
-  spec tag(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^16 {
-    let otk: Word[8]^32 = one_time_key(key, nonce);
-    let r: Int = poly_r(otk);
-    let a: Int = for j in 0..4 with x: Int = 0 {
-      absorb(x, r, for i in 0..16 with n: Int = 1 { n * 256 + (ad[16 * j + 15 - i] as Int) })
+  // Section 2.8: Poly1305 (section 2.5) under the one-time key of the
+  // associated data, the ciphertext, and both lengths as 64-bit
+  // little-endian integers: four blocks, fifteen blocks, and the lengths 64
+  // and 240, with no padding. r is the key's first sixteen bytes,
+  // little-endian, with r &= 0x0ffffffc0ffffffc0ffffffc0fffffff, and s the
+  // other sixteen.
+  spec tag(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, ciphertext: Word[8]^240) -> Word[8]^16 {
+    let otk: Word[64]^4 = one_time_key(key, nonce) as little Word[64]^4;
+    let r: P = [otk[0] & 0x0ffffffc0fffffff, otk[1] & 0x0ffffffc0ffffffc] as little P;
+    let s: Int = otk[2..] as little Int;
+    let a: P = for j in 0..4 with a: P = 0 { (a + poly_block(ad[16 * j..16 * j + 16])) * r };
+    let c: P = for j in 0..15 with c: P = a {
+      (c + poly_block(ciphertext[16 * j..16 * j + 16])) * r
     };
-    let c: Int = for j in 0..15 with x: Int = a {
-      absorb(x, r, for i in 0..16 with n: Int = 1 { n * 256 + (sealed[16 * j + 15 - i] as Int) })
-    };
-    let lengths: Word[8]^16 = [64, 0, 0, 0, 0, 0, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0];
-    let l: Int = absorb(c, r, for i in 0..16 with n: Int = 1 { n * 256 + (lengths[15 - i] as Int) });
-    tag_bytes(l + poly_s(otk))
+    let lengths: Word[64]^2 = [64, 240];
+    let l: P = (c + poly_block(lengths as little Word[8]^16)) * r;
+    ((l as Int) + s) as little Word[8]^16
   }
 
   // Interface.
@@ -157,24 +111,21 @@ module chacha20_poly1305 {
   // Section 2.8: the plaintext is encrypted from counter 1 (section 2.4),
   // and the tag follows the ciphertext.
   spec seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
-    let s: Word[32]^64 = keystream(key, nonce);
-    let body: Word[8]^256 = for i in 0..240 with c: Word[8]^256 = [0; 256] {
-      c with [i] = plaintext[i] ^ le_bytes(s[i / 4])[i % 4]
-    };
-    let t: Word[8]^16 = tag(key, nonce, ad, body);
-    for i in 0..16 with c: Word[8]^256 = body { c with [240 + i] = t[i] }
+    let ciphertext: Word[8]^240 = xor_stream(key, nonce, plaintext);
+    ciphertext ++ tag(key, nonce, ad, ciphertext)
   }
 
-  // The tag is recomputed and compared byte by byte with no early exit.
+  // The tag is recomputed and compared as two 64-bit words with no early
+  // exit.
   spec authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
-    let t: Word[8]^16 = tag(key, nonce, ad, sealed);
-    (for i in 0..16 with d: Word[8] = 0 { d | (t[i] ^ sealed[240 + i]) }) == 0
+    let t: Word[64]^2 = tag(key, nonce, ad, sealed[..240]) as little Word[64]^2;
+    let u: Word[64]^2 = sealed[240..] as little Word[64]^2;
+    ((t[0] ^ u[0]) | (t[1] ^ u[1])) == 0
   }
 
   // Section 2.4: decryption is the same exclusive-or with the keystream.
   spec open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
-    let s: Word[32]^64 = keystream(key, nonce);
-    for i in 0..240 with p: Word[8]^240 = [0; 240] { p with [i] = sealed[i] ^ le_bytes(s[i / 4])[i % 4] }
+    xor_stream(key, nonce, sealed[..240])
   }
 
   // Known answers.
@@ -183,7 +134,7 @@ module chacha20_poly1305 {
   // the nonce 00 00 00 09 00 00 00 4a 00 00 00 00.
   spec rfc8439_2_3_2() -> Bool {
     let key: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = i as Word[8] };
-    let got: Word[8]^64 = serialize(block(key, 1, [0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x4a, 0x00, 0x00, 0x00, 0x00]));
+    let got: Word[8]^64 = block(key, 1, hex"000000090000004a00000000") as little Word[8]^64;
     let expected: Word[8]^64 = [
       0x10, 0xf1, 0xe7, 0xe4, 0xd1, 0x3b, 0x59, 0x15, 0x50, 0x0f, 0xdd, 0x1f, 0xa3, 0x20, 0x71, 0xc4,
       0xc7, 0xd1, 0xf4, 0xc7, 0x33, 0xc0, 0x68, 0x03, 0x04, 0x22, 0xaa, 0x9a, 0xc3, 0xd4, 0x6c, 0x4e,

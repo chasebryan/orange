@@ -71,10 +71,13 @@ single-bit change to the ciphertext, tag, associated data, or nonce tried was
 rejected. `crates/orangec/tests/crypt.rs` opens files sealed by an independent
 Python implementation of format 1 for every built-in scheme.
 
-The evaluator runs about 44,000 to 55,000 steps to seal one chunk (`orangec
+The evaluator runs about 24,000 to 28,000 steps to seal one chunk (`orangec
 schemes` prints the exact count). `orangec` evaluates chunks on every core of
 the machine, one evaluator per core; on four cores, sealing or opening a
-megabyte takes about two and a half seconds.
+megabyte takes about one second. Each scheme reads its bytes as words, and
+writes words as bytes, with the byte-order conversions of S3n (`as little`),
+which does in one step what a loop over bytes did in many; that made every
+scheme about three times as fast, and each still gives the same bytes.
 
 ## The scheme interface
 

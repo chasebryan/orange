@@ -1,0 +1,58 @@
+// S3n conformance: Poly1305 of RFC 8439 section 2.5 for every message of 1
+// through 255 bytes, reading its numbers as the RFC does, least significant
+// byte first. The key's halves r and s, each block of the message, and the
+// tag are little-endian numbers: r is clamped as two little-endian 64-bit
+// words, each block is read as a residue modulo 2^130 - 5, and the tag is
+// the low 128 bits of the accumulator plus s, which is what writing that
+// sum as sixteen little-endian bytes keeps. The tag of the section 2.5.2
+// example, "Cryptographic Forum Research Group", matches the RFC byte for
+// byte.
+edition 2026;
+module poly1305 {
+  type P = Mod[(1 << 130) - 5];
+
+  // 256^k as a residue, for 0 <= k <= 16: the weight of the byte 01 that
+  // follows the k bytes of a block.
+  spec weight(k: Int) -> P {
+    for i in 0..16 with w: P = 1 { if i < k { w * 256 } else { w } }
+  }
+
+  // Section 2.5.1 for a message of `len` bytes: ((len + 15) / 16) blocks,
+  // the last holding len - 16 * (blocks - 1) of the message's bytes.
+  spec mac[len in 1..256](key: Word[8]^32, m: Word[8]^len) -> Word[8]^16 {
+    // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff, on its two 64-bit halves.
+    let half: Word[64]^2 = key[..16] as little Word[64]^2;
+    let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+    let s: Int = key[16..] as little Int;
+    let padded: Word[8]^(16 * ((len / 16) + 1)) = m ++ [0; (16 - (len % 16))];
+    let a: P = for j in 0..((len + 15) / 16) with a: P = 0 {
+      let held: Int = if j == (((len + 15) / 16) - 1) { len - (16 * j) } else { 16 };
+      (a + (padded[16 * j..16 * j + 16] as little P) + weight(held)) * r
+    };
+    ((a as Int) + s) as little Word[8]^16
+  }
+
+  // Section 2.5.2.
+  spec example() -> Word[8]^16 {
+    mac(
+      hex"85d6be78 57556d33 7f4452fe 42d506a8 0103808a fb0db2fd 4abff6af 4149f51b",
+      "Cryptographic Forum Research Group",
+    )
+  }
+
+  // Appendix A.3, test vectors 5 and 6: one whole block, and a sum of the
+  // accumulator and s that passes 2^128 and keeps only its low 128 bits.
+  spec whole_block() -> Word[8]^16 {
+    mac(
+      hex"02000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000",
+      hex"ffffffff ffffffff ffffffff ffffffff",
+    )
+  }
+
+  spec wraps() -> Word[8]^16 {
+    mac(
+      hex"02000000 00000000 00000000 00000000 ffffffff ffffffff ffffffff ffffffff",
+      hex"02000000 00000000 00000000 00000000",
+    )
+  }
+}

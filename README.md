@@ -152,8 +152,9 @@ chacha20::key_word0: Word[32] = 0x03020100
 A binding never shadows another name, and `as` converts exactly one operand.
 `x + y as Word[32]` is an error, because for bytes `x` and `y` the two
 readings, `(x + y) as Word[32]` and `(x as Word[32]) + (y as Word[32])`, are
-different values. This slice, S3c, is implemented and tested; its
-specification is in review as
+different values. Since [S3n](#words-in-either-byte-order), the four bytes
+of `load_le32` are one conversion, `b as little Word[32]` for `b: Word[8]^4`.
+This slice, S3c, is implemented and tested; its specification is in review as
 [OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md).
 
 ### A whole state as one value
@@ -675,6 +676,101 @@ depends on data, and a function has at most 256 instances. This slice, S3m,
 is implemented and tested; its specification is in review as
 [OEP-0016](docs/governance/oeps/OEP-0016-orange-2026-sizes.md).
 
+### Words in either byte order
+
+A standard prints bytes and computes on words, and it says in a few words how
+one becomes the other: SHA-256 reads each 64-byte block as sixteen big-endian
+32-bit words, and ChaCha20 reads its key and nonce as little-endian ones.
+Orange says it the same way. A conversion may name a **byte order**, `as big`
+or `as little`, and then reads a word or an array of words as the words of
+another width, as an `Int`, or as a residue, and writes a number as words,
+the first word most significant with `big` and least significant with
+`little`:
+
+```orange
+edition 2026;
+module order {
+  spec big_word() -> Word[32] { hex"01020304" as big Word[32] }
+  spec little_word() -> Word[32] { hex"01020304" as little Word[32] }
+  spec text() -> Word[32] { "abcd" as big Word[32] }
+  spec bytes() -> Word[8]^4 { let w: Word[32] = 0xdeadbeef; w as big Word[8]^4 }
+  spec number() -> Int { hex"0100" as big Int }
+  spec minus_one() -> Word[8]^4 { let n: Int = -1; n as big Word[8]^4 }
+}
+```
+
+```console
+$ orangec eval order.or
+order::big_word: Word[32] = 0x01020304
+order::little_word: Word[32] = 0x04030201
+order::text: Word[32] = 0x61626364
+order::bytes: Word[8]^4 = [0xde, 0xad, 0xbe, 0xef]
+order::number: Int = 256
+order::minus_one: Word[8]^4 = [0xff, 0xff, 0xff, 0xff]
+```
+
+SHA-256 then reads its blocks and writes its padding's length exactly as FIPS
+180-4 describes them, and Poly1305 reads its key and each block of the message
+as RFC 8439 section 2.5 does, as little-endian numbers, the block straight into
+the field of integers modulo 2^130 − 5:
+
+```orange
+// Section 5.1.1: the message, the bit 1 and then zeros, as a byte 80 and
+// zero bytes, and the message's length in bits as a big-endian 64-bit
+// number fill ((len + 8) / 64) + 1 blocks.
+spec pad[len in 1..120](m: Word[8]^len) -> Word[8]^(64 * (((len + 8) / 64) + 1)) {
+  m ++ ([0; ((64 * (((len + 8) / 64) + 1)) - len - 8)] with [0] = 0x80)
+    ++ ((8 * len) as big Word[8]^8)
+}
+
+// Section 6.2.2, step 1: the message schedule of one 64-byte block. Its
+// first sixteen words are the block itself, read as big-endian words.
+spec schedule(block: Word[8]^64) -> Word[32]^64 {
+  let head: Word[32]^16 = block as big Word[32]^16;
+  for t in 16..64 with w: Word[32]^64 = head ++ [0; 48] {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+```
+
+```orange
+type P = Mod[(1 << 130) - 5];
+
+spec mac[len in 1..256](key: Word[8]^32, m: Word[8]^len) -> Word[8]^16 {
+  // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff, on its two 64-bit halves.
+  let half: Word[64]^2 = key[..16] as little Word[64]^2;
+  let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+  let s: Int = key[16..] as little Int;
+  let padded: Word[8]^(16 * ((len / 16) + 1)) = m ++ [0; (16 - (len % 16))];
+  let a: P = for j in 0..((len + 15) / 16) with a: P = 0 {
+    let held: Int = if j == (((len + 15) / 16) - 1) { len - (16 * j) } else { 16 };
+    (a + (padded[16 * j..16 * j + 16] as little P) + weight(held)) * r
+  };
+  ((a as Int) + s) as little Word[8]^16
+}
+```
+
+```text
+poly1305::example: Word[8]^16 = [0xa8, 0x06, 0x1d, 0xc1, 0x30, 0x51, 0x36, 0xc6, 0xc2, 0x2b, 0x8b, 0xaf, 0x0c, 0x01, 0x27, 0xa9]
+```
+
+The tag is the low 128 bits of the accumulator plus s, which is exactly what
+writing that sum as sixteen bytes keeps: a number becomes words by its residue,
+as `as Word[32]` already wraps one word. Words convert only to words of the
+same number of bits, so `Word[8]^3 as big Word[32]` is an error that counts
+both sides' bits, and `big` and `little` are words only directly after `as`
+and before a type, so no program that used them as names changes meaning. The
+fixtures of [SHA-256](compiler/fixtures/s3n/valid-sha256.or),
+[SHA-512](compiler/fixtures/s3n/valid-sha512.or),
+[ChaCha20](compiler/fixtures/s3n/valid-chacha20.or),
+[Poly1305](compiler/fixtures/s3n/valid-poly1305.or), and
+[X25519](compiler/fixtures/s3n/valid-x25519.or) reproduce FIPS 180-4's, RFC
+8439's, and RFC 7748's published values. The three schemes of `orangec enc`
+read and write their words the same way, and seal a megabyte in about a third
+of the time they took, with the same bytes. This slice, S3n, is implemented
+and tested; its specification is in review as
+[OEP-0017](docs/governance/oeps/OEP-0017-orange-2026-byte-order.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -705,6 +801,7 @@ cryptography.
 | Tuples, `.k`, and tuple patterns, so that a function gives several values and a loop carries several accumulators | Working; specification in review ([OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md)) |
 | Byte strings `"..."` and `hex"..."`, `++` joins, and slices at bounds proved in range | Working; specification in review ([OEP-0015](docs/governance/oeps/OEP-0015-orange-2026-bytes.md)) |
 | Size parameters: one `spec` for every length in a range, each instance checked before anything runs | Working; specification in review ([OEP-0016](docs/governance/oeps/OEP-0016-orange-2026-sizes.md)) |
+| Byte orders: `as big` and `as little` read words as words of another width, a number, or a residue, and write numbers as words | Working; specification in review ([OEP-0017](docs/governance/oeps/OEP-0017-orange-2026-byte-order.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Functions generic over a modulus, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
@@ -787,7 +884,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, and sizes in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, and byte orders in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -814,8 +911,9 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [programs of more than one module](docs/MODULES_2026.md),
   [integers modulo a constant](docs/MODULAR_2026.md),
   [blocks](docs/BLOCKS_2026.md), [tuples](docs/TUPLES_2026.md),
-  [bytes](docs/BYTES_2026.md), and [sizes](docs/SIZES_2026.md): the
-  definition of what the compiler accepts today.
+  [bytes](docs/BYTES_2026.md), [sizes](docs/SIZES_2026.md), and
+  [byte order](docs/ORDER_2026.md): the definition of what the compiler
+  accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

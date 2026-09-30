@@ -96,6 +96,13 @@ unresolved.
 > for one function for each of their values, each checked as if written out. It
 > adds no token and no reserved word: `in` is a name except between a size
 > parameter's name and its first bound.
+>
+> The S3n slice proposed in [`ORDER_2026.md`](ORDER_2026.md) under OEP-0017,
+> also in review, builds on S3m with byte orders: `x as big T` and
+> `x as little T` read words as words of another width, as a number, or as a
+> residue, and write a number as words, first word most significant or least.
+> It adds no token and no reserved word: `big` and `little` are names except
+> directly after `as` and before a type.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

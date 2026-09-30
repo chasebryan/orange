@@ -34,8 +34,10 @@ meaning. It accepts no D-004 candidate.
 > joins, and slices, which cross a module boundary as the arrays they are, and
 > [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds sized
 > functions, whose instances are called across a module boundary as
-> `sha256::sha256(m)` or `m::f[2](x)`. Every source this document accepts keeps
-> its meaning under all five.
+> `sha256::sha256(m)` or `m::f[2](x)`, and [`ORDER_2026.md`](ORDER_2026.md),
+> proposed under OEP-0017, adds conversions in a byte order, which convert
+> values of every module's types alike. Every source this document accepts keeps
+> its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

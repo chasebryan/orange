@@ -28,7 +28,10 @@ meaning. It accepts no D-004 candidate.
 > document with size parameters: a size parameter's name counts as an integer
 > literal in a slice's bounds, as `x[n - 2..]`, and a byte string, a join, or a
 > slice may stand where a sized function's parameter of that length is required.
-> Every source this document accepts keeps its meaning under it.
+> [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, lifts this
+> document's exclusion of conversions between bytes and words: `hex"01020304" as
+> big Word[32]` is `0x01020304`. Every source this document accepts keeps its
+> meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -37,8 +37,10 @@ meaning. It accepts no D-004 candidate.
 > [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds `++`, whose
 > group mixes with no comparison or logical operator without parentheses, and
 > [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, computes sizes with
-> the same total, Euclidean `/` and `%`. Every source this document accepts
-> keeps its meaning under all seven.
+> the same total, Euclidean `/` and `%`, and [`ORDER_2026.md`](ORDER_2026.md),
+> proposed under OEP-0017, adds conversions in a byte order, which are total and
+> have no failure. Every source this document accepts keeps its meaning under
+> all eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

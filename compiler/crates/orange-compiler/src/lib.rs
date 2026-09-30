@@ -32,10 +32,10 @@ pub use lexer::{
     Token, TokenKind, lex,
 };
 pub use parser::{
-    ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression, ConditionalArm,
-    ConditionalExpression, ConversionExpression, EditionDeclaration, Expression, ExpressionKind,
-    FillExpression, FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression,
-    IntegerLiteral, LoopExpression, MAX_ARGUMENTS_PER_CALL, MAX_ARRAY_ELEMENTS,
+    ArrayExpression, BinaryExpression, BinaryOperator, Binding, ByteOrder, CallExpression,
+    ConditionalArm, ConditionalExpression, ConversionExpression, EditionDeclaration, Expression,
+    ExpressionKind, FillExpression, FunctionBody, FunctionDeclaration, FunctionKind, Identifier,
+    IndexExpression, IntegerLiteral, LoopExpression, MAX_ARGUMENTS_PER_CALL, MAX_ARRAY_ELEMENTS,
     MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING,
     MAX_PARAMETERS_PER_FUNCTION, MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE,
     MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE, MAX_TYPES_PER_MODULE,

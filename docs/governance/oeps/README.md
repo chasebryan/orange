@@ -119,3 +119,4 @@ success does not establish technical soundness or authority approval.
 | [OEP-0014](OEP-0014-orange-2026-tuples.md) | Review | Orange 2026 tuples: tuple types, tuples, `.k`, and tuple patterns, so that a function gives several values and a loop carries several accumulators (S3k) |
 | [OEP-0015](OEP-0015-orange-2026-bytes.md) | Review | Orange 2026 bytes: byte strings and hex strings, `++` joins, and slices `x[a..b]` and slice updates at bounds proved in range before a program runs (S3l) |
 | [OEP-0016](OEP-0016-orange-2026-sizes.md) | Review | Orange 2026 sizes: size parameters with finite ranges, sizes in lengths and loop bounds, and calls that name one instance, each instance checked as if written out (S3m) |
+| [OEP-0017](OEP-0017-orange-2026-byte-order.md) | Review | Orange 2026 byte order: conversions `as big` and `as little` that read words as words of another width, a number, or a residue, and write numbers as words (S3n) |

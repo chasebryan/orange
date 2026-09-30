@@ -40,8 +40,11 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds byte strings,
 > the concatenation operator `++` in a group of its own, and slices, and
 > [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds size
-> parameters to a `spec` and sizes to its calls, as `sha256[2](m)`. Every source
-> this document accepts keeps its meaning under all eleven.
+> parameters to a `spec` and sizes to its calls, as `sha256[2](m)`, and
+> [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, lets `as` name a
+> byte order, as `block as big Word[32]^16`, which reads words as words of
+> another width or as one number. Every source this document accepts keeps its
+> meaning under all twelve.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
