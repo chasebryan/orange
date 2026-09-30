@@ -722,7 +722,7 @@ schemas/gate0/standards-provenance-v0.1.schema.json schemas/gate0/trust-inventor
 _WI = set(
     "ci.yml dependency-review.yml external-links.yml scorecard.yml workflow-online-audit.yml".split()
 )
-_WT = {"ci.yml": 15, _DR: 10, _EL: 15, _SC: 20, _O: 15}
+_WT = {"ci.yml": 30, _DR: 10, _EL: 15, _SC: 20, _O: 15}
 _IFD = {
     "conduct-contact.yml": "93f6aeacff7e7fe45c94ee1f5fbaf95c1d49c90c11e5887fe955e3fd92915541",
     "oep-proposal.yml": "7fa038f4caf7efb85bb05a98bb180b3d160f205aa54a0ae32afe7805a55222f8",
@@ -815,7 +815,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "8a03728d110f84ca0b792e12c561f6a4f25f26870398bf03c01a8c5afda261af"
+_PHD = "2847f75018e756d0f53fd8c9db8d17c96291cb327fa6abac7a9445bc382e0f08"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1103,7 +1103,7 @@ _LM = {
 _WM = {
     "docs/operations/CI_DEPENDENCIES.md": {
         (
-            "Job deadlines are exact: `ci.yml`, `external-links.yml`, and\n"
+            "Job deadlines are exact: `ci.yml` permits 30 minutes; `external-links.yml` and\n"
             "`workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits\n"
             "10 minutes; and `scorecard.yml` permits 20 minutes."
         ): tuple(_WT[value] for value in sorted(_WT)),
