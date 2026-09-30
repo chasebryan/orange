@@ -20,6 +20,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,8 +29,8 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import d006_render as R  # noqa: E402
 
-# The repository this file sits in; ORANGE_REPO points a development copy of the tools at a checkout.
-REPO = Path(os.environ.get("ORANGE_REPO") or Path(__file__).resolve().parents[1])
+# The repository this file sits in.
+REPO = Path(__file__).resolve().parents[1]
 SHARED = REPO / "research/decisions/D-006/d006-v0.3/shared-inputs"
 TOOLCHAINS = {"rocq": "/opt/d006/rocq-9.2.0", "lean4": "/opt/d006/lean-4.34.1-linux"}
 TOOLCHAINS_AARCH64 = {"rocq": "/opt/d006/ocaml-4.14.1-aarch64", "lean4": "/opt/d006/lean-4.34.1-linux_aarch64"}
@@ -804,14 +805,24 @@ def main(argv: list[str]) -> int:
         print("usage: d006_check.py dev CANDIDATE_DIR CASE... [--no-build] [--only ID,...] [--negatives-only|--positives-only]\n"
               "       (DS-04 --run-time also runs D4-R02 to D4-R05; DS-05 builds and runs the standalone checker: [--host H-01|H-02] [--fresh])", file=sys.stderr)
         return 2
-    root = Path(argv[1]).resolve()
+    # A candidate lives inside the repository and its work directory under the system temporary directory.
+    candidate = os.path.realpath(argv[1])
+    if not candidate.startswith(str(REPO) + os.sep):
+        print(f"d006_check.py: the candidate directory must be inside {REPO}", file=sys.stderr)
+        return 2
+    temporary = os.path.realpath(tempfile.gettempdir())
+    work_base = os.path.realpath(os.environ.get("D006_WORK", os.path.join(temporary, "d006-dev")))
+    if not work_base.startswith(temporary + os.sep):
+        print(f"d006_check.py: D006_WORK must be inside {temporary}", file=sys.stderr)
+        return 2
+    root = Path(candidate)
     flags = [a for a in argv[2:] if a.startswith("--")]
     cases = [a for a in argv[2:] if not a.startswith("--") and a.startswith("DS-")]
     only = None
     for i, a in enumerate(argv):
         if a == "--only":
             only = set(argv[i + 1].split(","))
-    work = Path(os.environ.get("D006_WORK", "/tmp/d006-dev")) / root.name
+    work = Path(work_base) / root.name
     cand = load_candidate(root, work)
     if "--no-build" not in flags:
         cand.prepare()

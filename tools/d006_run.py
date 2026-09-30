@@ -1335,7 +1335,7 @@ def option(argv: list[str], name: str) -> str | None:
 
 
 def main(argv: list[str]) -> int:
-    repo = Path(os.environ.get("ORANGE_REPO", HERE.parent)).resolve()
+    repo = HERE.parent.resolve()
     if not argv:
         print(USAGE, file=sys.stderr)
         return 2

@@ -43,9 +43,10 @@ It copies the candidate into a fresh work directory, runs the adapter's
 `build.serial` steps, renders one check file per case (parity for every
 theorem, M-01 instance checks, one proof per observation by the declared
 method, a trust audit of each) and one file per negative case, runs them, and
-prints one line per item. `0 failure(s)` is the goal. Set `D006_WORK` to use a
-private work directory when several builders run at once (for example
-`D006_WORK=/tmp/d006-dev-rocq-ds02`).
+prints one line per item. `0 failure(s)` is the goal. The candidate directory
+must be inside the repository. Set `D006_WORK` to use a private work directory
+under the system temporary directory when several builders run at once (for
+example `D006_WORK=/tmp/d006-dev-rocq-ds02`).
 
 ## The adapter (`adapter.json` plus `adapter.d/*.json` in the candidate root)
 
