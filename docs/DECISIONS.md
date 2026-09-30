@@ -253,7 +253,7 @@ procedure are specified in the
 The decision is evidence-based. The owner-executable `d006-v0.2-draft` defines
 14 candidate-case runs, level-2 same-owner replay, symmetric hard gates, and
 exact `solo-reviewed` OEP acceptance without pretending that the owner is an
-independent reviewer. Current execution evidence is 0/14 candidate-case runs.
+independent reviewer. Current execution evidence is 12/14 candidate-case runs.
 D-023 permits proof-neutral compiler work while this remains open. No source or
 Core choice may make a proof foundation irreversible before the owner completes
 the suite and accepts the selected foundation through an exact-revision OEP.
@@ -266,6 +266,15 @@ unresolved coverage, and an active freeze blocker. Its deterministic 14-pair
 identity inventory is not a physical run order. The laboratory installs and
 executes no prover, freezes no epoch, creates no result or evidence, performs no
 owner review, and retains the exact 0/14 baseline and null selection.
+
+The d006-v0.3 tranche built both candidates and an isolated epoch runner. Epoch
+`d006-e-c7b6648ae3988234297f` ran DS-01 to DS-06 for both candidates on
+2026-09-30, twice: the first attempt exposed a Lean build that exceeded the
+4 GiB address-space cap, and the second is Lean's one correction round. In the
+corrected run both candidates pass hard gates 2 to 7. Hard gates 1 and 8 wait
+on the owner's DS-07 tasks, so the conclusion is inconclusive and no foundation
+is selected. That result is contributor-produced and unreviewed; the
+[D-006 laboratory](../research/decisions/D-006/README.md) records it.
 
 ## D-007 — Orange-owned proof format and checker
 

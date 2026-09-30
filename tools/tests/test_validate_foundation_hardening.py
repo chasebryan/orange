@@ -5272,7 +5272,7 @@ class PlanningTraceHardeningTests(unittest.TestCase):
                 "D-006 may be Accepted before D-004 and D-005.",
             ),
             (
-                "Current execution evidence is 0/14 candidate-case runs.",
+                "Current execution evidence is 12/14 candidate-case runs.",
                 "Current execution evidence is 14/14 candidate-case runs.",
             ),
         )
