@@ -136,10 +136,11 @@ text. In summary:
   before it is bound", and one used outside its block is "not in scope here",
   citing the binding (`ORC0211`).
 - **Typing.** Each binding's value has its declared type, and parts are
-  checked in source order, every part even after an error. Where a
-  conditional's type is needed before its branches are checked, a branch
-  whose typed leaf names one of its own bindings gives no type (`ORC0220`,
-  `ORC0227`).
+  checked in source order, every part even after an error. As for a body's
+  binding, a binding whose type does not resolve is reported once, its value
+  is not checked, and its uses are not reported again. Where a conditional's
+  type is needed before its branches are checked, a branch whose typed leaf
+  names one of its own bindings gives no type (`ORC0220`, `ORC0227`).
 - **Meaning.** A step's bindings are evaluated at every step, in order, and
   the step's value becomes the next accumulator. Only the chosen branch's
   bindings are evaluated.

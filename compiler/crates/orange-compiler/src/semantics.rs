@@ -12371,6 +12371,37 @@ mod tests {
     }
 
     #[test]
+    fn unresolved_block_binding_types_are_reported_once_without_cascades() {
+        // As for a body's binding, the value of a block binding whose type
+        // does not resolve is not checked, and its uses are not reported;
+        // the block's other parts still are.
+        let (fixture, result) = rejected(concat!(
+            "  spec step(x: Word[32]) -> Word[32] {\n",
+            "    for i in 0..2 with s: Word[32] = x {\n",
+            "      let t: Wide = missing;\n",
+            "      let u: Word[32] = t;\n",
+            "      s ^ u ^ gone\n",
+            "    }\n",
+            "  }\n",
+            "  spec branch(c: Bool) -> Int {\n",
+            "    if c { let t: Word[12] = missing; t } else { absent }\n",
+            "  }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::UnsupportedType, "Wide"),
+                (DiagnosticCode::UnknownParameter, "gone"),
+                (DiagnosticCode::UnsupportedWordWidth, "12"),
+                (DiagnosticCode::UnknownParameter, "absent"),
+            ]
+        );
+    }
+
+    #[test]
     fn block_names_are_unique_and_in_scope_only_within_their_block() {
         let (fixture, result) = rejected(concat!(
             "  spec parameter(x: Int) -> Int { for i in 0..2 with s: Int = x { let x: Int = s; x } }\n",

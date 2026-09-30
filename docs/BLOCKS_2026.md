@@ -140,17 +140,19 @@ accumulator in scope, and then `true` or `false`. Any other name is
 ## 5. Typing
 
 Each binding's declared type is resolved as a declared type of
-`ARRAYS_2026.md` section 4, as S3i extends it. If it does not resolve, its
-own error is reported, and the binding's value is still checked. The value is
-checked against the declared type. A step's value is checked against the
-loop's accumulator type, and a branch's value against the conditional's
-expected type.
+`ARRAYS_2026.md` section 4, as S3i extends it, and the binding's value is
+checked against it. If the type does not resolve, the error is reported once
+where the type is written, the value is not checked, and uses of the binding
+are not reported again, exactly as for a body's binding in `BINDINGS_2026.md`
+section 6. A step's value is checked against the loop's accumulator type, and
+a branch's value against the conditional's expected type.
 
 Parts are checked in source order. A loop checks its bounds, names, type, and
 first value as in S3e, then its step's bindings in order, then the step's
 value. Each arm of a conditional checks its condition, then its branch's
 bindings, then its value, and the final `else` branch checks its bindings and
-value last. Every part is checked even when an earlier part has an error.
+value last. Every part is checked even when an earlier part has an error,
+except the value of a binding whose type does not resolve.
 
 **Typed leaves.** Where the type of a conditional is needed before its
 branches are checked, as for the operand of a conversion or a comparison or

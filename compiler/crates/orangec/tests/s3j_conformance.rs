@@ -284,6 +284,11 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/semantics.rs",
+        test: "unresolved_block_binding_types_are_reported_once_without_cascades",
+        rules: &["S3J-TYPE-01", "S3J-COMPAT-01"],
+    },
+    TestEvidence {
+        source_path: "src/semantics.rs",
         test: "condition_and_comparison_errors_are_reported_once_in_checking_order",
         rules: &["S3J-COMPAT-01"],
     },
