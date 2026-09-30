@@ -25,11 +25,13 @@ language meaning. It accepts no D-004 candidate.
 > [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, extends this
 > document with fixed-length arrays, so that one function can return a whole
 > quarter round, [`LOOPS_2026.md`](LOOPS_2026.md), proposed under OEP-0008,
-> adds bounded loops, so that ten double rounds are one expression, and
+> adds bounded loops, so that ten double rounds are one expression,
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, adds
 > comparisons, Euclidean division, and conditionals, so that a field element
-> reduces modulo its prime. Every source this document accepts keeps its
-> meaning under all three.
+> reduces modulo its prime, and [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed
+> under OEP-0010, lets an index depend on data, so that SubBytes is one lookup
+> per byte. Every source this document accepts keeps its meaning under all
+> four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

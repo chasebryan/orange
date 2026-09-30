@@ -109,8 +109,8 @@ re-identifies six subject classes to its seven. That result is
 contributor-produced and unreviewed, and it is not a D-004 recommendation until
 the owner disposes every candidate and hard gate. The adapter runs only under
 user, mount, IPC, UTS, PID and network namespaces, `setpriv`, the Landlock
-sandbox and per-execution cgroups. D-004 remains proposed, S3b through S3f are
-implemented and await owner review under OEP-0005 through OEP-0009, and Orange's
+sandbox and per-execution cgroups. D-004 remains proposed, S3b through S3g are
+implemented and await owner review under OEP-0005 through OEP-0010, and Orange's
 binary gate-closure score remains 3 of 10 (30%); that mechanical score is not
 release readiness.
 

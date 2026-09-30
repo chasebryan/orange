@@ -357,11 +357,11 @@ fn digits(value: &ExactInteger) -> usize {
     value.magnitude_digits()
 }
 
-/// The steps of an `update` or `fill` of `length` elements: one, and one
-/// more for each 64 elements it writes, so that a step stays about as much
-/// work as one limb operation.
+/// The steps of an `update` or `fill` of `length` elements: one for each 64
+/// elements it writes, or part of 64, so that a step stays about as much
+/// work as one limb operation and never costs more than one per element.
 const fn bulk_cost(length: usize) -> usize {
-    length.div_ceil(64).saturating_add(1)
+    if length <= 64 { 1 } else { length.div_ceil(64) }
 }
 
 fn word_mask(ty: CoreType) -> Option<u64> {
@@ -1128,7 +1128,7 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Update => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
-                // One step, and one more per 64 elements copied.
+                // One step per 64 elements copied, or part of 64.
                 self.charge(bulk_cost(length))?;
                 if self
                     .stack
@@ -1160,7 +1160,7 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Fill => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
-                // One step, and one more per 64 elements written.
+                // One step per 64 elements written, or part of 64.
                 self.charge(bulk_cost(length))?;
                 if self.stack.len() <= floor {
                     return Err(Stop::InconsistentCore);
@@ -2282,15 +2282,16 @@ mod tests {
                  for i in 0..2 with s: Word[8] = 0 { s ^ t[i] } }\n",
                 18,
             ),
-            // An update or fill of n elements costs 1 + ceil(n / 64) steps
+            // An update or fill of n elements costs ceil(n / 64) steps
             // beyond its operands'.
-            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 10),
-            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 3),
-            ("  spec a() -> Word[8]^64 { [7; 64] }\n", 3),
-            ("  spec a() -> Word[8]^65 { [7; 65] }\n", 4),
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 9),
+            ("  spec a() -> Int^1 { [5; 1] with [0] = 9 }\n", 5),
+            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 2),
+            ("  spec a() -> Word[8]^64 { [7; 64] }\n", 2),
+            ("  spec a() -> Word[8]^65 { [7; 65] }\n", 3),
             (
                 "  spec a() -> Word[8]^256 { [7; 256] with [255] = 1 }\n",
-                13,
+                11,
             ),
             // `true`, `false`, `!`, `&&`, `||`, and every comparison of
             // words or `Bool` values cost one step; comparing integers

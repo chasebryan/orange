@@ -21,6 +21,12 @@ requires OEP-0008. At that point it replaces the S3e clauses listed in section
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, extends this
+> document with indices that depend on data, such as the S-box lookup of AES,
+> each proved in range from its type, and cheaper updates. Every source this
+> document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

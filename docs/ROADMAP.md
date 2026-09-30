@@ -474,8 +474,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3f are implemented and await owner review under
-OEP-0005 through OEP-0009, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3g are implemented and await owner review under
+OEP-0005 through OEP-0010, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
