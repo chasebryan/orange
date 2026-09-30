@@ -2320,12 +2320,23 @@ fn evaluate_entries(
             diagnostics,
         };
     }
-    let roots = core
-        .entry_functions()
-        .iter()
-        .filter(|function| function.parameters.is_empty() && select(function))
-        .count();
-    let capacity = roots.min(step_limit);
+    // The selector is asked once per function, so the reservation below and
+    // the evaluation that follows see the same functions.
+    let entries = core.entry_functions();
+    let mut roots = Vec::new();
+    if roots.try_reserve_exact(entries.len()).is_err() {
+        return allocation_failure(
+            diagnostics,
+            core.span,
+            "selected function list could not be reserved",
+        );
+    }
+    roots.extend(
+        entries
+            .iter()
+            .filter(|function| function.parameters.is_empty() && select(function)),
+    );
+    let capacity = roots.len().min(step_limit);
     let mut values = Vec::new();
     if !reserve_values(&mut values, capacity) {
         return evaluation_failure(
@@ -2357,11 +2368,7 @@ fn evaluate_entries(
         inner_frames: 0,
     };
     let mut shared_module = None;
-    for function in core
-        .entry_functions()
-        .iter()
-        .filter(|function| function.parameters.is_empty() && select(function))
-    {
+    for function in roots {
         let steps_before = machine.steps;
         let value = match machine.run(function, Vec::new()) {
             Ok(value) => value,
@@ -4382,6 +4389,20 @@ mod tests {
         let none = evaluate_selected(&core, 1, |_| false);
         assert_eq!(none.diagnostics(), []);
         assert_eq!(none.values(), Some(&[][..]));
+
+        // A selector with state is asked once for each function without
+        // parameters, and what it answered then is what runs.
+        let asked = std::cell::Cell::new(0_usize);
+        let alternate = |_: &CoreFunction| {
+            asked.set(asked.get() + 1);
+            asked.get() % 2 == 1
+        };
+        let alternating = evaluate_selected(&core, MAX_EVALUATION_STEPS_PER_SOURCE, alternate);
+        assert_eq!(asked.get(), 4);
+        assert_eq!(
+            rendered(&alternating),
+            owned(&[("m::a: Int = 3", 4), ("m::c[1]: Int = 2", 4)])
+        );
     }
 
     #[test]
