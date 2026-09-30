@@ -473,8 +473,8 @@ CASES = (
      "acceptance_evidence": "owner-accessible hardware evidence",
      "measures": "The laboratory records its own host (a contributor machine, never owner hardware). The "
                  "owner input names, per tuple, the devices the owner can run natively, and records the SHA-256 of "
-                 "the output of an archived driver run natively on one of them with the archived request file; "
-                 "the laboratory compares it with the emulated output. Absent owner input leaves the gate "
+                 "the output of an archived driver run natively on one of them, named, with the archived request "
+                 "file; the laboratory compares it with the emulated output. Absent owner input leaves the gate "
                  "unresolved.",
      "metrics": ["M-16"], "gates": ["HG-08"]},
     {"id": "NT-08", "name": "Resource estimate",
@@ -522,7 +522,8 @@ GATES = (
      "conflict leaves the subject unresolved."),
     ("HG-03", "Fail-closed", "NT-04",
      "Every applicable negative check passes. A check the laboratory cannot perform on the tuple (no emulated CPU "
-     "model without the extension) is unresolved until the owner attests the SIGILL on a device without it."),
+     "model without the extension) is unresolved until the owner attests, for that build's archived driver, the "
+     "SIGILL on a named device without the extension."),
     ("HG-04", "No division in kernel code", "NT-02",
      "No class A instruction in any kernel or crypto-profile object, and the division control is detected on "
      "every build (otherwise unresolved)."),
@@ -535,8 +536,8 @@ GATES = (
     ("HG-07", "ISA and ABI inventory verified", "NT-06",
      "The owner verified every required inventory row of the tuple; a rejected row fails; otherwise unresolved."),
     ("HG-08", "Owner hardware", "NT-07",
-     "The owner attests a device for the tuple and records a native run of an archived driver whose output digest "
-     "equals the emulated one. A declared absence or a disagreeing run fails; otherwise unresolved."),
+     "The owner attests a device for the tuple and records a native run of an archived driver on that device whose "
+     "output digest equals the emulated one. A declared absence or a disagreeing run fails; otherwise unresolved."),
     ("HG-09", "Resource estimate", "NT-08",
      "Every resource field is present and every build rebuilt bit for bit; a nondeterministic build fails."),
 )
@@ -1242,14 +1243,16 @@ def owner_template() -> dict[str, Any]:
         "native_runs": [],
         "native_run_example": {"tuple": "T-A64", "device": "", "driver_sha256": "", "request_file": "kat-P-BASE.bin",
                                "stdout_sha256": "",
-                               "how": "run products/<driver_sha256>.elf from the epoch archive natively with "
-                                      "products/kat-<profile>.bin on standard input and record the SHA-256 of "
-                                      "standard output"},
+                               "how": "run products/<driver_sha256>.elf from the epoch archive natively on a device "
+                                      "attested under hardware for the same tuple, with products/kat-<profile>.bin "
+                                      "on standard input, and record the device and the SHA-256 of standard "
+                                      "output"},
         "feature_negatives": [],
         "feature_negative_example": {"tuple": "T-A64", "device": "", "driver_sha256": "", "result": "SIGILL",
-                                     "how": "run a P-CRYPTO driver from the archive on a device without the "
-                                            "extension with products/feature-negative.bin on standard input and "
-                                            "record how it ends"},
+                                     "how": "for each P-CRYPTO driver whose N-12 check is unresolved, run it from "
+                                            "the archive on a named device without the extension with "
+                                            "products/feature-negative.bin on standard input and record how it "
+                                            "ends; an entry settles only the driver it names"},
         "isa_abi_verification": [{"row": row[0], "verdict": "", "note": ""} for row in INVENTORY],
         "review_scopes": [{"scope": scope[0], "done": False, "note": ""} for scope in REVIEW_SCOPES],
         "distinguishing_rule": None,
@@ -2062,12 +2065,14 @@ def host_capture() -> dict[str, Any]:
             "python": sys.version.split()[0]}
 
 
-def _version(argv: list[str]) -> str:
-    try:
-        done = subprocess.run(argv, capture_output=True, check=False, env=dict(BASE_ENV), timeout=60)
-    except (OSError, subprocess.TimeoutExpired):
+def _version(launcher: Launcher, argv: list[str], ro: Iterable[str] = ()) -> str:
+    """The first line a tool prints about its version, from a run inside the sandbox like every other tool
+    execution."""
+
+    run = launcher.run(argv, ro=ro, wall_seconds=60)
+    if run["state"] != "completed":
         return "unavailable"
-    text = (done.stdout or done.stderr).decode("utf-8", "replace").strip().splitlines()
+    text = (run["stdout"] or run["stderr"]).decode("utf-8", "replace").strip().splitlines()
     return text[0] if text else "unavailable"
 
 
@@ -2085,16 +2090,16 @@ def find_rustc() -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def tool_capture(orangec: Path | None, rustc: Path | None) -> dict[str, Any]:
+def tool_capture(launcher: Launcher, orangec: Path | None, rustc: Path | None) -> dict[str, Any]:
     tools: dict[str, Any] = {}
 
-    def add(key: str, path: str, argv: list[str] | None) -> None:
+    def add(key: str, path: str, argv: list[str] | None, ro: Iterable[str] = ()) -> None:
         real = os.path.realpath(path)
         if not os.path.isfile(real):
             tools[key] = {"path": path, "present": False}
             return
         tools[key] = {"path": path, "realpath": real, "sha256": file_sha256(Path(real)), "present": True,
-                      "version": _version(argv) if argv else ""}
+                      "version": _version(launcher, argv, ro) if argv else ""}
 
     for tc in TOOLCHAINS:
         if tc["kind"] in ("gcc", "clang"):
@@ -2102,7 +2107,7 @@ def tool_capture(orangec: Path | None, rustc: Path | None) -> dict[str, Any]:
         if tc["kind"] == "gcc" and os.path.isfile(tc["path"]):
             # The driver's own programs: the compiler proper, the assembler and the linker.
             prefix = tc["path"].rsplit("-gcc", 1)[0]
-            cc1 = _version([tc["path"], "-print-prog-name=cc1"])
+            cc1 = _version(launcher, [tc["path"], "-print-prog-name=cc1"])
             if cc1.startswith("/"):
                 add(f"{tc['id']}/cc1", cc1, None)
             add(f"{tc['id']}/as", f"{prefix}-as", [f"{prefix}-as", "--version"])
@@ -2114,7 +2119,7 @@ def tool_capture(orangec: Path | None, rustc: Path | None) -> dict[str, Any]:
     for tup in TUPLES:
         add(f"TC-06/{tup['arch']}", tup["emulator"], [tup["emulator"], "--version"])
     if rustc is not None:
-        add("TC-07", str(rustc), [str(rustc), "--version"])
+        add("TC-07", str(rustc), [str(rustc), "--version"], ro=[str(rustc.parents[1])])
         # rustc links the probe with the system C driver.
         add("TC-07/linker", "/usr/bin/cc", ["/usr/bin/cc", "--version"])
     else:
@@ -2128,7 +2133,7 @@ def tool_capture(orangec: Path | None, rustc: Path | None) -> dict[str, Any]:
                       "sha256": file_sha256(Path(os.path.realpath(libcrypto))) if libcrypto else "",
                       "version": openssl_version()}
     if orangec is not None and orangec.is_file():
-        add("TC-10", str(orangec), [str(orangec), "--version"])
+        add("TC-10", str(orangec), [str(orangec), "--version"], ro=[str(orangec)])
     else:
         tools["TC-10"] = {"path": str(orangec), "present": False}
     add("TC-12/unshare", "/usr/bin/unshare", ["/usr/bin/unshare", "--version"])
@@ -2225,7 +2230,7 @@ class Lab:
                     raise RunError(f"{row['path']} changed while copying")
         sandbox, sandbox_facts = build_sandbox(self.root, self.work)
         self.launcher = Launcher(sandbox)
-        self.tools = tool_capture(self.orangec, self.rustc)
+        self.tools = tool_capture(self.launcher, self.orangec, self.rustc)
         self.tools["TC-11"] = sandbox_facts
         head, dirty = "", "unknown"
         try:
@@ -2814,19 +2819,61 @@ def owner_input_errors(content: Any) -> list[str]:
     for entry in content.get("isa_abi_verification", []):
         if entry.get("row") not in rows or entry.get("verdict") not in ("", "verified", "rejected"):
             problems.append(f"isa_abi_verification {entry.get('row')}")
+    entries: dict[str, list[dict[str, Any]]] = {}
     for group in ("hardware", "native_runs", "feature_negatives"):
+        entries[group] = []
         for entry in content.get(group, []):
             if not isinstance(entry, dict) or entry.get("tuple") not in TUPLE_IDS:
                 problems.append(f"{group} tuple")
-    for entry in content.get("native_runs", []):
+                continue
+            if not isinstance(entry.get("device"), str) or not entry["device"].strip():
+                problems.append(f"{group} device")
+                continue
+            entries[group].append(entry)
+    attested = attested_devices(entries["hardware"])
+    for entry in entries["native_runs"]:
         if not all(re.fullmatch(r"[0-9a-f]{64}", str(entry.get(k, ""))) for k in ("driver_sha256", "stdout_sha256")):
             problems.append("native_runs digests")
+        if entry["device"] not in attested.get(entry["tuple"], set()):
+            problems.append("native_runs device is not an attested device of its tuple")
+    for entry in entries["feature_negatives"]:
+        if not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("driver_sha256", ""))):
+            problems.append("feature_negatives digest")
+        if not isinstance(entry.get("result"), str) or not entry["result"]:
+            problems.append("feature_negatives result")
     if content.get("distinguishing_rule") not in (None, *[r[0] for r in RULES]):
         problems.append("distinguishing_rule")
     capacity = content.get("solo_slice_capacity")
     if capacity is not None and (not isinstance(capacity, int) or capacity < 0):
         problems.append("solo_slice_capacity")
     return problems
+
+
+def attested_devices(hardware: list[dict[str, Any]]) -> dict[str, set[str]]:
+    """Per tuple, the devices the owner attests run it natively."""
+
+    devices: dict[str, set[str]] = {}
+    for entry in hardware:
+        if entry.get("runs_natively") is True and isinstance(entry.get("device"), str) and entry["device"]:
+            devices.setdefault(entry.get("tuple"), set()).add(entry["device"])
+    return devices
+
+
+def sigill_drivers(feature_negatives: list[dict[str, Any]]) -> set[str]:
+    """Drivers the owner attests stop with SIGILL on a named device without the extension."""
+
+    return {e["driver_sha256"] for e in feature_negatives
+            if e.get("result") == "SIGILL" and isinstance(e.get("device"), str) and e["device"]
+            and isinstance(e.get("driver_sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", e["driver_sha256"])}
+
+
+def matched_native_runs(runs: list[dict[str, Any]], devices: set[str], drivers: dict[str, str],
+                        emulated_out: dict[str, str]) -> list[dict[str, Any]]:
+    """Native runs on an attested device of an archived driver whose output equals that driver's emulated
+    output."""
+
+    return [r for r in runs if r.get("device") in devices and r.get("driver_sha256") in drivers
+            and emulated_out.get(drivers[r["driver_sha256"]]) == r.get("stdout_sha256")]
 
 
 def archive_files(archive: Path) -> list[str]:
@@ -2876,13 +2923,14 @@ def _worst(pairs: list[tuple[str, str]]) -> dict[str, Any]:
 def _owner_view(content: dict[str, Any] | None) -> dict[str, Any]:
     if content is None:
         return {"verified": {}, "hardware": {}, "no_hardware": set(), "scopes_done": set(), "rule": None,
-                "capacity": None, "native_runs": {}, "feature_negatives": {}}
+                "capacity": None, "native_runs": {}, "feature_negatives": {}, "devices": {}}
     by_tuple = lambda group: {t: [e for e in content.get(group, []) if e.get("tuple") == t]  # noqa: E731
                               for t in TUPLE_IDS}
     return {"verified": {e["row"]: e["verdict"] for e in content.get("isa_abi_verification", [])},
             "native_runs": by_tuple("native_runs"), "feature_negatives": by_tuple("feature_negatives"),
             "hardware": {t: [h for h in content.get("hardware", []) if h.get("tuple") == t and h.get("runs_natively")]
                          for t in TUPLE_IDS},
+            "devices": attested_devices(content.get("hardware", [])),
             "no_hardware": set(content.get("no_hardware", [])),
             "scopes_done": {e["scope"] for e in content.get("review_scopes", []) if e.get("done") is True},
             "rule": content.get("distinguishing_rule"), "capacity": content.get("solo_slice_capacity")}
@@ -2967,10 +3015,13 @@ def summarize(records: list[dict[str, Any]], packet: dict[str, Any], profile_nam
         pairs += [("unresolved", f"oracle {s}: {o['state']}") for s, o in oracle.items() if o["state"] != "agree"]
         g["HG-02"] = _worst(pairs)
         # HG-03
+        # An N-12 the emulator cannot run is settled only by an owner attestation naming that build's driver.
         negs = of("negative", tid)
-        attested = any(e.get("result") == "SIGILL" for e in owner["feature_negatives"].get(tid, []))
+        driver_of = {b["key"]: b["link"].get("sha256") for b in planned if b["state"] == "built"}
+        attested = sigill_drivers(owner["feature_negatives"].get(tid, []))
         pairs = [(n["state"], f"{n['key']}: {n.get('reason', n['state'])}") for n in negs if n["state"] != "pass"
-                 and not (n["negative"] == "N-12" and n["state"] == "unresolved" and attested)]
+                 and not (n["negative"] == "N-12" and n["state"] == "unresolved"
+                          and driver_of.get(n["build"]) in attested)]
         if not negs:
             pairs.append(("unresolved", "no negative checks ran"))
         g["HG-03"] = _worst(pairs)
@@ -3024,12 +3075,11 @@ def summarize(records: list[dict[str, Any]], packet: dict[str, Any], profile_nam
             g["HG-07"] = _gate("pass", [])
         else:
             g["HG-07"] = _gate("unresolved", ["required inventory rows not verified by the owner"])
-        # HG-08: an attested device and a native run on it that reproduces the emulated responses
+        # HG-08: an attested device and a native run on that device that reproduces the emulated responses
         drivers = {b["link"].get("sha256"): b["key"] for b in planned if b["state"] == "built" and b["rep"] == 1}
         emulated_out = {k["build"]: k["stdout_sha256"] for k in of("kat", tid) if k["mode"] == "emulated"}
         runs = owner["native_runs"].get(tid, [])
-        matched_runs = [r for r in runs if r.get("driver_sha256") in drivers
-                        and emulated_out.get(drivers[r["driver_sha256"]]) == r.get("stdout_sha256")]
+        matched_runs = matched_native_runs(runs, owner["devices"].get(tid, set()), drivers, emulated_out)
         if tid in owner["no_hardware"]:
             g["HG-08"] = _gate("fail", ["the owner declares no device for this tuple"])
         elif runs and len(matched_runs) != len(runs):
@@ -3385,11 +3435,11 @@ def verify_epoch(name: str, epoch: dict[str, Any], packet_bytes: bytes, index: d
 # ---------------------------------------------------------------------------
 # Committed epoch exports
 #
-# An export is what the repository keeps of an epoch: epoch.json and summary.json as the archive holds them,
-# every record as one line of gzip-compressed JSON lines, and a manifest. The archive's other rows
-# (index.json, packet.json and the driver ELFs under products/) are carried in the manifest by digest: the
-# index is rebuilt from the record lines, the packet is the committed suite packet, and the products are
-# rebuilt deterministically by a later epoch rather than committed. The rebuilt archive manifest must hash to
+# An export is what the repository keeps of an epoch: epoch.json, packet.json and summary.json as the archive
+# holds them, every record as one line of gzip-compressed JSON lines, and a manifest. The archive's other rows
+# (index.json and the driver ELFs under products/) are carried in the manifest by digest: the index is rebuilt
+# from the record lines, and the products are rebuilt deterministically by a later epoch rather than
+# committed. The rebuilt archive manifest must hash to
 # the digest the export names, so the export holds exactly the archive's records and nothing else.
 
 EXPORT_SCHEMA = "d011-v0.1-export-1"
@@ -3430,6 +3480,7 @@ def export(archive: Path, out_root: Path) -> Path:
         chunks.append(pending)
     written: dict[str, bytes] = {
         "epoch.json": (archive / "epoch.json").read_bytes(),
+        "packet.json": (archive / "packet.json").read_bytes(),
         "summary.json": (archive / "summary.json").read_bytes(),
     }
     for number, chunk in enumerate(chunks, start=1):
@@ -3446,8 +3497,7 @@ def export(archive: Path, out_root: Path) -> Path:
                     and row["path"] not in written],
         "files": [{"path": name, "sha256": sha256_hex(data), "bytes": len(data)}
                   for name, data in sorted(written.items())],
-        "note": "index.json is rebuilt from the record lines, packet.json is the committed suite packet, and "
-                "products/ are named by digest only",
+        "note": "index.json is rebuilt from the record lines and products/ are named by digest only",
     }))
     return out
 
@@ -3460,6 +3510,7 @@ def verify_export(out: Path) -> list[str]:
     try:
         manifest = json.loads((out / EXPORT_MANIFEST).read_text(encoding="utf-8"))
         epoch_bytes = (out / "epoch.json").read_bytes()
+        packet_bytes = (out / "packet.json").read_bytes()
         summary_bytes = (out / "summary.json").read_bytes()
         epoch = json.loads(epoch_bytes.decode("utf-8"))
     except (OSError, ValueError) as exc:
@@ -3470,7 +3521,7 @@ def verify_export(out: Path) -> list[str]:
     lines: list[bytes] = []
     for row in manifest["files"]:
         chunk = re.fullmatch(r"records-[0-9]{2}\.jsonl\.gz", row["path"]) is not None
-        if not chunk and row["path"] not in ("epoch.json", "summary.json"):
+        if not chunk and row["path"] not in ("epoch.json", "packet.json", "summary.json"):
             problems.append(f"{row['path']!r} is not a file an export holds")
             continue
         listed.add(row["path"])
@@ -3496,7 +3547,6 @@ def verify_export(out: Path) -> list[str]:
     if len(raw_records) != len(lines):
         problems.append("a record line appears more than once")
     index = {"epoch": out.name, "records": entries}
-    packet_bytes = (REPOSITORY_ROOT / PACKET_PATH).read_bytes()
     own = {"epoch.json": epoch_bytes, "summary.json": summary_bytes, "index.json": canonical_file(index),
            "packet.json": packet_bytes}
     rows = [{"path": f"records/{digest}.json", "sha256": digest, "bytes": len(line)}

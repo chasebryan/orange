@@ -247,9 +247,46 @@ class D011LaboratoryLogicTests(unittest.TestCase):
         self.assertEqual(suite.owner_input_errors(good), [])
         self.assertEqual(suite.owner_input_errors({"schema": "other"}), ["schema"])
         bad = dict(good, distinguishing_rule="DR-9", solo_slice_capacity=-1,
-                   native_runs=[{"tuple": "T-X64", "driver_sha256": "x", "stdout_sha256": "y"}])
+                   native_runs=[{"tuple": "T-X64", "device": "d", "driver_sha256": "x", "stdout_sha256": "y"}])
         self.assertEqual(set(suite.owner_input_errors(bad)),
-                         {"distinguishing_rule", "solo_slice_capacity", "native_runs digests"})
+                         {"distinguishing_rule", "solo_slice_capacity", "native_runs digests",
+                          "native_runs device is not an attested device of its tuple"})
+
+    def test_owner_attestations_bind_their_driver_and_device(self) -> None:
+        good = suite.owner_template()
+        a, b, out = "a" * 64, "b" * 64, "c" * 64
+        hardware = [{"tuple": "T-A64", "device": "board", "cpu": "", "features": [], "runs_natively": True}]
+        run = {"tuple": "T-A64", "device": "board", "driver_sha256": a, "stdout_sha256": out}
+        content = dict(good, hardware=hardware, native_runs=[run],
+                       feature_negatives=[{"tuple": "T-A64", "device": "old board", "driver_sha256": a,
+                                           "result": "SIGILL"}])
+        self.assertEqual(suite.owner_input_errors(content), [])
+        # A run on a device the owner did not attest, and attestations without a device or driver, are refused.
+        self.assertIn("native_runs device is not an attested device of its tuple",
+                      suite.owner_input_errors(dict(content, native_runs=[dict(run, device="other")])))
+        self.assertIn("native_runs device is not an attested device of its tuple",
+                      suite.owner_input_errors(dict(content, native_runs=[dict(run, tuple="T-X64")])))
+        self.assertIn("feature_negatives device", suite.owner_input_errors(
+            dict(content, feature_negatives=[{"tuple": "T-A64", "result": "SIGILL"}])))
+        self.assertIn("feature_negatives digest", suite.owner_input_errors(
+            dict(content, feature_negatives=[{"tuple": "T-A64", "device": "d", "result": "SIGILL"}])))
+        # A SIGILL attestation settles only the driver it names.
+        self.assertEqual(suite.sigill_drivers(content["feature_negatives"]), {a})
+        self.assertEqual(suite.sigill_drivers([{"tuple": "T-A64", "result": "SIGILL"}]), set())
+        self.assertEqual(suite.sigill_drivers([{"tuple": "T-A64", "device": "d", "driver_sha256": b,
+                                                "result": "wrong answer"}]), set())
+        # A native run counts only on an attested device, for an archived driver, with the emulated output.
+        devices = suite.attested_devices(hardware)
+        self.assertEqual(devices, {"T-A64": {"board"}})
+        drivers = {a: "T-A64/TC-02/P-BASE/O2/r1"}
+        emulated = {"T-A64/TC-02/P-BASE/O2/r1": out}
+        self.assertEqual(suite.matched_native_runs([run], devices["T-A64"], drivers, emulated), [run])
+        self.assertEqual(suite.matched_native_runs([dict(run, device="other")], devices["T-A64"], drivers,
+                                                   emulated), [])
+        self.assertEqual(suite.matched_native_runs([dict(run, stdout_sha256=b)], devices["T-A64"], drivers,
+                                                   emulated), [])
+        self.assertEqual(suite.matched_native_runs([dict(run, driver_sha256=b)], devices["T-A64"], drivers,
+                                                   emulated), [])
 
     def test_only_a_completed_step_succeeds(self) -> None:
         self.assertEqual(suite.run_state(0, False, False), "completed")

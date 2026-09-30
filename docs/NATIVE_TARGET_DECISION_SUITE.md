@@ -259,7 +259,8 @@ same tampered verification to `false`. The unit tests check that the library
 oracle rejects N-01 to N-05 as well. N-12 runs under QEMU with CPU model
 `qemu64` for T-X64 and `rv64` for T-RV64. QEMU 8.2 has no AArch64 CPU model
 without FEAT_AES, so for T-A64 the check stays unresolved until the owner
-records a SIGILL on a device without the extension (gap G-09).
+records, for each crypto-profile driver, a SIGILL on a named device without
+the extension (gap G-09). An attestation settles only the driver it names.
 
 Metric M-04. Gate HG-03.
 
@@ -293,8 +294,9 @@ Acceptance evidence: owner-accessible hardware evidence.
 The laboratory records its own host as a contributor machine. The owner input
 names, per tuple, the devices the owner can run natively, and records the
 SHA-256 of the standard output of an archived driver run natively on one of
-them with the archived request file. The laboratory compares that digest with
-the emulated output of the same driver. Absent owner input leaves the gate
+them, named in the record, with the archived request file. The laboratory
+compares that digest with the emulated output of the same driver; a run on a
+device the owner did not attest for the tuple makes the owner input invalid. Absent owner input leaves the gate
 unresolved; a declared absence of hardware or a disagreeing run fails it.
 
 Metric M-16. Gate HG-08.
@@ -357,12 +359,12 @@ are all vacuous records a vacuous pass.
 | --- | --- | --- | --- |
 | HG-01 | Matrix completeness | NT-08 | Every planned build of the tuple compiled, linked and ran every case. A build failure fails; an absent toolchain (an acquisition) leaves it unresolved. |
 | HG-02 | Known answers | NT-01 | Every subject matches on every build and execution mode. A mismatch with agreeing oracles fails; an oracle conflict leaves the subject unresolved. |
-| HG-03 | Fail-closed | NT-04 | Every applicable negative check passes. A check the laboratory cannot perform on the tuple stays unresolved until the owner attests the SIGILL on a device without the extension. |
+| HG-03 | Fail-closed | NT-04 | Every applicable negative check passes. A check the laboratory cannot perform on the tuple stays unresolved until the owner attests, for that build's archived driver, the SIGILL on a named device without the extension. |
 | HG-04 | No division in kernel code | NT-02 | No class A instruction in any kernel or crypto-profile object, and the division control is detected on every build (otherwise unresolved). |
 | HG-05 | Trace equivalence | NT-03 | Every kernel trace group has one distinct trace on every build, and the first-difference control differs (otherwise unresolved). |
 | HG-06 | C ABI agreement | NT-05 | Cross-toolchain links and the Rust probe agree and the symbol surface holds. A missing second toolchain or Rust standard library leaves it unresolved. |
 | HG-07 | ISA and ABI inventory verified | NT-06 | The owner verified every required inventory row of the tuple; a rejected row fails; otherwise unresolved. |
-| HG-08 | Owner hardware | NT-07 | The owner attests a device for the tuple and records a native run of an archived driver whose output digest equals the emulated one. A declared absence or a disagreeing run fails; otherwise unresolved. |
+| HG-08 | Owner hardware | NT-07 | The owner attests a device for the tuple and records a native run of an archived driver on that device whose output digest equals the emulated one. A declared absence or a disagreeing run fails; otherwise unresolved. |
 | HG-09 | Resource estimate | NT-08 | Every resource field is present and every build rebuilt bit for bit; a nondeterministic build fails. |
 
 Anti-gaming rules:
@@ -409,8 +411,8 @@ pass. The axes describe what each candidate costs and covers.
 
 ### Isolation
 
-Every compile, link, disassembly, emulated run, native run and evaluation runs
-under the same launcher, with no network:
+Every compile, link, disassembly, emulated run, native run, evaluation and
+tool version probe runs under the same launcher, with no network:
 
 ```text
 /usr/bin/unshare --user --map-current-user --mount --ipc --uts --pid --fork
@@ -426,7 +428,9 @@ fs-sandbox --dir / --ro <inputs> --rw <outputs> --rw /dev/null -- <command>
 It closes inherited descriptors and keeps its own caps: 4 GiB of address
 space, 600 CPU seconds, 512 MiB per file and 256 processes. The laboratory adds
 a wall-clock limit per step and records each step's exit, resource use and
-output digests.
+output digests. Only the host C compiler that builds `fs-sandbox` and `git`,
+which reads the repository head, run outside the launcher; the library oracle
+is loaded into the laboratory's own process.
 
 ### Builds
 
