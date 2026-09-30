@@ -1373,7 +1373,7 @@ state, and so on the key. Under the baseline observation model that address
 is part of the trace, and on a machine with a cache it is part of the time as
 well. Table-driven AES was broken this way in practice: Bernstein's 2005
 cache-timing attack, and the cache attacks of Osvik, Shamir, and Tromer,
-recovered AES keys from the timing of its table lookups alone.
+recovered AES keys from the cache behavior of its table lookups.
 
 The constant-time alternative reads every entry. For each position j of the
 table it compares j with the index, turns the comparison into a mask, and
@@ -1389,9 +1389,10 @@ is a function from a table and a position to an element. It has no addresses,
 so it has no trace, and a specification that had to write the scan would ask
 every reviewer to recognize SubBytes inside it. Which form a machine should
 run is this chapter's question, and it belongs to the implementation and
-target strata. The plan there is that a lookup keyed by a secret is rejected
-under a constant-time policy or compiled to a scan of the whole table, with a
-claim saying which. Until those strata exist Orange claims neither: a lookup
+target strata. There, as proposed above, an index computed from a secret
+would be a type error in a claim-bearing kernel, unless the lookup is lowered
+to a scan of the whole table and the claim says so. Until those strata exist
+Orange claims neither: a lookup
 in an Orange specification says which value results, never how a machine
 would find it.
 
@@ -2184,9 +2185,8 @@ For a byte x, `x & 15` and `x >> 4` each run from 0 through 15, so either may
 index a table of 16, and `(x & 15) + 16` runs from 16 through 31. A remainder
 stays below its divisor, a conversion from a narrower word keeps its range,
 and a conditional takes the widest bounds of its values. `(x & 15) - 1` could
-wrap, because `x & 15` may be 0, so it ranges over its whole type, and an
-operator that could wrap always does. When the range does not fit, the error
-names it:
+wrap, because `x & 15` may be 0, so like every operator that could wrap it
+ranges over its whole type. When the range does not fit, the error names it:
 
 ```text
 error[ORC0223]: this index runs from 1 through 16, out of range for `Word[8]^16`
