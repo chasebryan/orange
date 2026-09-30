@@ -1,0 +1,11 @@
+--- a/D006/Sieve.lean
++++ b/D006/Sieve.lean
+@@ -182,7 +182,7 @@
+   | .seq c1 c2 => well_typed g c1 && well_typed g c2
+   | .cond e c1 c2 =>
+     match typeOf g e with
+-    | some (.ty_bool, .public) => well_typed g c1 && well_typed g c2
++    | some (.ty_bool, _) => well_typed g c1 && well_typed g c2
+     | _ => false
+   | .loop _ c => well_typed g c
+   | .declassify x e =>

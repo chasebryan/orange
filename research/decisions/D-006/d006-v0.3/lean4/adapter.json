@@ -1,0 +1,225 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-02",
+  "language": "lean4",
+  "build": {
+    "serial": [
+      [
+        "mkdir",
+        "-p",
+        ".lake/build/lib/lean/D006",
+        ".lake/build/ir/D006",
+        ".lake/build/ir/Checker"
+      ],
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads=1",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Core.olean",
+        "-c",
+        ".lake/build/ir/D006/Core.c",
+        "D006/Core.lean"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "mkdir",
+        "-p",
+        ".lake/build/lib/lean/D006",
+        ".lake/build/ir/D006",
+        ".lake/build/ir/Checker"
+      ],
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads={jobs}",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Core.olean",
+        "-c",
+        ".lake/build/ir/D006/Core.c",
+        "D006/Core.lean"
+      ]
+    ]
+  },
+  "check": {
+    "argv": [
+      "{toolchain}/bin/lean",
+      "--json",
+      "--threads=4",
+      "--tstack=65536",
+      "{file}"
+    ]
+  },
+  "environment": {
+    "LEAN_PATH": "{src}/.lake/build/lib/lean"
+  },
+  "preamble": {
+    "DS-01": "import D006.Core"
+  },
+  "literals": {
+    "nat": "({} : Nat)",
+    "str": "\"{}\""
+  },
+  "list_literal": true,
+  "symbols": {
+    "T-01": "Bool",
+    "T-02": "Nat",
+    "T-03": "D006.Word",
+    "T-04": "D006.Seq",
+    "T-05": "List",
+    "T-06": "D006.Result",
+    "T-07": "D006.DecodeError",
+    "T-08": "String",
+    "C-01": "D006.DecodeError.too_many",
+    "C-02": "D006.DecodeError.truncated",
+    "C-03": "D006.DecodeError.trailing",
+    "C-04": "D006.Result.ok",
+    "C-05": "D006.Result.err",
+    "C-06": "Bool.true",
+    "C-07": "Bool.false",
+    "C-08": "List.nil",
+    "C-09": "List.cons",
+    "F-01": "D006.word_of_nat",
+    "F-02": "D006.nat_of_word",
+    "F-03": "D006.word_add",
+    "F-04": "D006.word_xor",
+    "F-05": "D006.word_and",
+    "F-06": "D006.word_not",
+    "F-07": "D006.word_rotl",
+    "F-08": "D006.word_shl",
+    "F-09": "D006.be32_of_bytes",
+    "F-10": "D006.bytes_of_be32",
+    "F-11": "D006.le32_of_bytes",
+    "F-12": "D006.bytes_of_le32",
+    "F-13": "D006.seq_map2",
+    "F-14": "D006.decode_words",
+    "F-15": "D006.encode_words",
+    "F-16": "List.length",
+    "F-17": "D006.seq4",
+    "F-18": "D006.chacha_qr",
+    "F-19": "D006.toy_qr",
+    "F-20": "D006.seq_to_list",
+    "F-21": "Nat.pow",
+    "F-22": "List.append"
+  },
+  "modules": {
+    "M-01": {
+      "declaration": "D006.quarterRound",
+      "function": "(@D006.quarterRound {w} {r1} {r2} {r3} {r4})"
+    }
+  },
+  "theorems": {
+    "D1-TH01": "D006.word_bounded",
+    "D1-TH02": "D006.small_naturals_are_words",
+    "D1-TH03": "D006.words_are_their_values",
+    "D1-TH04": "D006.addition_commutes",
+    "D1-TH05": "D006.xor_cancels",
+    "D1-TH06": "D006.rotations_compose",
+    "D1-TH07": "D006.be32_word_round_trip",
+    "D1-TH08": "D006.be32_bytes_round_trip",
+    "D1-TH09": "D006.le32_word_round_trip",
+    "D1-TH10": "D006.decoder_inverts_encoder",
+    "D1-TH11": "D006.decoding_is_canonical",
+    "D1-TH12": "D006.sequences_have_their_index_length"
+  },
+  "methods": {
+    "observation": {
+      "default": "decide +kernel"
+    },
+    "instance": {
+      "default": "rfl"
+    },
+    "exhaustive": {
+      "default": "decide +kernel"
+    }
+  },
+  "patches": {
+    "D1-N10": "patches/D1-N10.patch"
+  },
+  "classifier": [
+    {
+      "category": "resource_exhaustion",
+      "pattern": "maximum recursion depth has been reached|deep recursion detected|\\(deterministic\\) timeout|\\(kernel\\) deterministic timeout|maximum number of heartbeats|the kernel refused to evaluate .* does not fit in|[Oo]ut of memory|std::bad_alloc|[Ss]tack overflow"
+    },
+    {
+      "category": "non_total",
+      "phases": [
+        "definition",
+        "build"
+      ],
+      "pattern": "fail to show termination|failed to prove termination|structural recursion cannot be used"
+    },
+    {
+      "category": "type_failure",
+      "phases": [
+        "statement"
+      ],
+      "pattern": "[Aa]pplication type mismatch|[Tt]ype mismatch|don't know how to synthesize (placeholder|implicit argument)|failed to synthesize|typeclass instance problem is stuck|[Ff]unction expected"
+    },
+    {
+      "category": "disproved_obligation",
+      "phases": [
+        "proof"
+      ],
+      "pattern": "Tactic `decide` (proved|evaluated) that the proposition.*is false"
+    },
+    {
+      "category": "unknown",
+      "phases": [
+        "proof"
+      ],
+      "pattern": "Tactic `decide` failed for proposition.*did not reduce to `isTrue` or `isFalse`"
+    },
+    {
+      "category": "proof_failure",
+      "phases": [
+        "build",
+        "proof"
+      ],
+      "pattern": "."
+    }
+  ],
+  "trust": {
+    "allowed_assumptions": [
+      "propext",
+      "Quot.sound"
+    ],
+    "inventory": [
+      {
+        "name": "Lean 4.34.1 kernel",
+        "kind": "kernel",
+        "reason": "type-checks every declaration and proof term, including the auxiliary lemma `decide +kernel` adds for each observation; the instance method `rfl` is a kernel definitional-equality check"
+      },
+      {
+        "name": "kernel Nat literal evaluation (GMP)",
+        "kind": "evaluator",
+        "reason": "the declared observation and exhaustive method `decide +kernel` reduces the Decidable instance inside the kernel, which computes Nat.add, sub, mul, div, mod, gcd, beq, ble, land, lor, xor, shiftLeft, shiftRight, pow and log2 on literals with GMP instead of unfolding them; every word operation reduces to these. It refuses Nat.pow when the exponent does not fit in 32 bits (the D1-N09 message)"
+      },
+      {
+        "name": "propext",
+        "kind": "axiom",
+        "reason": "propositional extensionality, one of Lean's three standard axioms; used by simp and omega in the D1-TH proofs and inside proof fields of core definitions (the bound proofs of BitVec.xor, BitVec.not and BitVec.or, Vector index proofs, the structural-recursion encoding of group4), so it also appears in the audits of observations; propositions carry no computational content, so no evaluation depends on it"
+      },
+      {
+        "name": "Quot.sound",
+        "kind": "axiom",
+        "reason": "soundness of Lean's built-in quotients (it gives funext); used by simp and omega in the D1-TH proofs and inside the same core proof fields as propext; proof-only, never evaluated"
+      },
+      {
+        "name": "core library Init and the built D006.Core (.olean files)",
+        "kind": "library",
+        "reason": "imported without re-checking at lean's default trust level; BitVec, Vector, List and Nat definitions and lemmas come from the toolchain's Init, D006.Core is checked by the same kernel when the build compiles it"
+      },
+      {
+        "name": "Lean 4.34.1 elaborator and tactics (simp, omega, decide, rfl)",
+        "kind": "elaborator",
+        "reason": "construct the proof terms; outside the trusted base because the kernel re-checks every term they produce. In DS-01 to DS-03 no native_decide and no compiler; DS-04's observations and its golden-certificate step use native_decide, declared with its own inventory entry in adapter.d/ds04.json"
+      }
+    ]
+  }
+}

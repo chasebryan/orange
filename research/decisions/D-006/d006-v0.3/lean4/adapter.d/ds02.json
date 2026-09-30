@@ -1,0 +1,156 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-02",
+  "language": "lean4",
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads=1",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Sieve.olean",
+        "D006/Sieve.lean"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads={jobs}",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Sieve.olean",
+        "D006/Sieve.lean"
+      ]
+    ]
+  },
+  "preamble": {
+    "DS-02": "import D006.Core\nimport D006.Sieve"
+  },
+  "symbols": {
+    "S-T01": "D006.Sieve.Label",
+    "S-T02": "D006.Sieve.Ty",
+    "S-T03": "D006.Sieve.Val",
+    "S-T04": "D006.Sieve.Expr",
+    "S-T05": "D006.Sieve.Cmd",
+    "S-T06": "D006.Sieve.Obs",
+    "S-T07": "D006.Sieve.VarDecl",
+    "S-T08": "D006.Sieve.ArrDecl",
+    "S-T09": "D006.Sieve.Env",
+    "S-T10": "D006.Sieve.State",
+    "S-T11": "D006.Sieve.StepResult",
+    "S-T12": "D006.Sieve.Outcome",
+    "S-C01": "D006.Sieve.Label.public",
+    "S-C02": "D006.Sieve.Label.secret",
+    "S-C03": "D006.Sieve.Ty.ty_word",
+    "S-C04": "D006.Sieve.Ty.ty_bool",
+    "S-C05": "D006.Sieve.Val.vword",
+    "S-C06": "D006.Sieve.Val.vbool",
+    "S-C07": "D006.Sieve.Expr.lit",
+    "S-C08": "D006.Sieve.Expr.var",
+    "S-C09": "D006.Sieve.Expr.add",
+    "S-C10": "D006.Sieve.Expr.xor",
+    "S-C11": "D006.Sieve.Expr.band",
+    "S-C12": "D006.Sieve.Expr.eq",
+    "S-C13": "D006.Sieve.Expr.get",
+    "S-C14": "D006.Sieve.Cmd.skip",
+    "S-C15": "D006.Sieve.Cmd.assign",
+    "S-C16": "D006.Sieve.Cmd.set",
+    "S-C17": "D006.Sieve.Cmd.seq",
+    "S-C18": "D006.Sieve.Cmd.cond",
+    "S-C19": "D006.Sieve.Cmd.loop",
+    "S-C20": "D006.Sieve.Cmd.declassify",
+    "S-C21": "D006.Sieve.Obs.read",
+    "S-C22": "D006.Sieve.Obs.write",
+    "S-C23": "D006.Sieve.Obs.branch",
+    "S-C24": "D006.Sieve.Obs.release",
+    "S-C25": "D006.Sieve.Obs.oob",
+    "S-C26": "D006.Sieve.VarDecl.vdecl",
+    "S-C27": "D006.Sieve.ArrDecl.adecl",
+    "S-C28": "D006.Sieve.Env.env",
+    "S-C29": "D006.Sieve.State.state",
+    "S-C30": "D006.Sieve.StepResult.done",
+    "S-C31": "D006.Sieve.StepResult.next",
+    "S-C32": "D006.Sieve.StepResult.fail",
+    "S-C33": "D006.Sieve.StepResult.stuck",
+    "S-C34": "D006.Sieve.Outcome.halted",
+    "S-C35": "D006.Sieve.Outcome.failed",
+    "S-C36": "D006.Sieve.Outcome.out_of_fuel",
+    "S-C37": "D006.Sieve.Outcome.wedged",
+    "S-F01": "D006.Sieve.well_typed",
+    "S-F02": "D006.Sieve.wf",
+    "S-F03": "D006.Sieve.low_eq",
+    "S-F04": "D006.Sieve.step",
+    "S-F05": "D006.Sieve.run_trace",
+    "S-F06": "D006.Sieve.run_outcome",
+    "S-F07": "D006.Sieve.outcome_low_eq"
+  },
+  "theorems": {
+    "D2-TH01": "D006.Sieve.progress",
+    "D2-TH02": "D006.Sieve.preservation",
+    "D2-TH03": "D006.Sieve.lockstep_noninterference",
+    "D2-TH04": "D006.Sieve.run_noninterference",
+    "D2-TH05": "D006.Sieve.positive_program_witness",
+    "D2-TH06": "D006.Sieve.negative_program_leaks"
+  },
+  "patches": {
+    "D2-M01": "patches/D2-M01.patch",
+    "D2-M02": "patches/D2-M02.patch",
+    "D2-M05": {
+      "artifact": ".lake/build/lib/lean/D006/Sieve.olean",
+      "check": [
+        "{toolchain}/bin/lean",
+        "--tstack=65536",
+        "--threads=1",
+        "--run",
+        "Loader/OleanCheck.lean",
+        "{artifact}"
+      ]
+    },
+    "D2-M06": "patches/D2-M06.patch"
+  },
+  "classifier": [
+    {
+      "category": "parse_failure",
+      "phases": [
+        "artifact"
+      ],
+      "pattern": "^error: .*: (malformed|incompatible) compiled module: "
+    },
+    {
+      "category": "proof_failure",
+      "phases": [
+        "artifact"
+      ],
+      "pattern": "^error: .*: kernel check failed: "
+    }
+  ],
+  "trust": {
+    "inventory": [
+      {
+        "name": "the built D006.Sieve (.olean)",
+        "kind": "library",
+        "reason": "imported by the DS-02 check file without re-checking at lean's default trust level; the same kernel checks every declaration in it when the build compiles D006/Sieve.lean"
+      },
+      {
+        "name": "propext and Quot.sound (DS-02)",
+        "kind": "axiom",
+        "reason": "already allowed by the base and the only axioms in the DS-02 audits. The D2-TH proofs use them through simp and omega; the observations inherit them from proof fields of core definitions (BitVec operations, List lookups) and from the structural-recursion encodings, never from computation. Classical.choice does not appear"
+      },
+      {
+        "name": "kernel evaluation of the Sieve interpreter",
+        "kind": "evaluator",
+        "reason": "the DS-02 observations use the base method `decide +kernel`: the kernel alone reduces `well_typed`, `step` and `run` (all structurally recursive) and the derived `DecidableEq` instances, with its GMP arithmetic for the word operations. D2-TH05 and D2-TH06 use `decide` the same way on closed facts (P+ is well typed; wf, and the traces of P- from the two fixed states)"
+      },
+      {
+        "name": "Loader/OleanCheck.lean under lean --run",
+        "kind": "loader",
+        "reason": "the independent check of the truncated artifact for D2-M05. Interpreted by lean's IR interpreter; it validates the .olean structure (header, object tiling, every reachable pointer) as bytes, and only for a sound file loads it like leanchecker and replays every declaration through the kernel (Lean.Environment.replay). It proves nothing and is outside the trusted base of every theorem"
+      }
+    ]
+  }
+}

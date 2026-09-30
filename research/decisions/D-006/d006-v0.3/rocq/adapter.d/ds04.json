@@ -1,0 +1,108 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-01",
+  "language": "rocq",
+  "symbols": {
+    "B-T01": "D006.Lrat.Obligation",
+    "B-C01": "D006.Lrat.carry_save",
+    "B-C02": "D006.Lrat.carry_save_unshifted",
+    "B-T02": "D006.Lrat.Verdict",
+    "B-C03": "D006.Lrat.accept",
+    "B-C04": "D006.Lrat.reject",
+    "B-F01": "D006.Lrat.cnf_text",
+    "B-F02": "D006.Lrat.lrat_verdict",
+    "B-F03": "D006.Lrat.holds"
+  },
+  "theorems": {
+    "D4-TH01": "D006.Lrat.carry_save_decomposition",
+    "D4-TH02": "D006.Lrat.meaning_of_carry_save",
+    "D4-TH03": "D006.Lrat.meaning_of_carry_save_unshifted",
+    "D4-TH04": "D006.Lrat.accepted_certificates_hold",
+    "D4-TH05": "D006.Lrat.unshifted_is_refuted"
+  },
+  "preamble": {
+    "DS-04": "From D006 Require Import Core Lrat.\nFrom Stdlib Require Import NArith List.\nFrom Stdlib Require PrimString.\nImport PrimString.PStringNotations."
+  },
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Lrat.v"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Lrat.v"
+      ]
+    ]
+  },
+  "trust": {
+    "allowed_assumptions": [
+      "PrimString.make",
+      "PrimString.length",
+      "PrimString.get",
+      "PrimString.compare",
+      "PrimInt63.int",
+      "PrimInt63.add",
+      "PrimInt63.eqb",
+      "PrimInt63.ltb",
+      "PrimInt63.leb"
+    ],
+    "inventory": [
+      {
+        "name": "PrimString.make",
+        "kind": "primitive operation",
+        "reason": "DS-04: cnf_text builds one-byte strings (digits, line feeds); computed by the kernel and the bytecode VM. DS-04 also uses PrimString.string (certificates and CNF text) and PrimString.cat (cnf_text), listed for DS-03"
+      },
+      {
+        "name": "PrimString.length",
+        "kind": "primitive operation",
+        "reason": "DS-04: lrat_verdict refuses certificates above 4 MiB and stops at the end of the input"
+      },
+      {
+        "name": "PrimString.get",
+        "kind": "primitive operation",
+        "reason": "DS-04: lrat_verdict reads the certificate one byte per step"
+      },
+      {
+        "name": "PrimString.compare",
+        "kind": "primitive operation",
+        "reason": "DS-04: lrat_verdict compares the given CNF text with cnf_text (PrimString.eqb); no proof depends on the comparison's result"
+      },
+      {
+        "name": "PrimInt63.int",
+        "kind": "primitive type",
+        "reason": "DS-04: byte values and positions in a primitive string are 63-bit primitive integers"
+      },
+      {
+        "name": "PrimInt63.add",
+        "kind": "primitive operation",
+        "reason": "DS-04: advancing the read position, digit bytes of cnf_text"
+      },
+      {
+        "name": "PrimInt63.eqb",
+        "kind": "primitive operation",
+        "reason": "DS-04: classifying certificate bytes"
+      },
+      {
+        "name": "PrimInt63.ltb",
+        "kind": "primitive operation",
+        "reason": "DS-04: the 4 MiB limit and the trailing-line test"
+      },
+      {
+        "name": "PrimInt63.leb",
+        "kind": "primitive operation",
+        "reason": "DS-04: the end-of-input test and the digit range"
+      }
+    ]
+  }
+}

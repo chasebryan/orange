@@ -1,0 +1,84 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-01",
+  "language": "rocq",
+  "symbols": {
+    "R-T01": "D006.Records.Record",
+    "R-T02": "D006.Records.ErrorCode",
+    "R-T03": "D006.Records.Failure",
+    "R-C01": "D006.Records.oversized",
+    "R-C02": "D006.Records.bad_magic",
+    "R-C03": "D006.Records.unknown_version",
+    "R-C04": "D006.Records.truncated",
+    "R-C05": "D006.Records.malformed_number",
+    "R-C06": "D006.Records.noncanonical_number",
+    "R-C07": "D006.Records.unknown_field",
+    "R-C08": "D006.Records.invalid_name",
+    "R-C09": "D006.Records.invalid_utf8",
+    "R-C10": "D006.Records.duplicate_name",
+    "R-C11": "D006.Records.noncanonical_order",
+    "R-C12": "D006.Records.reference_escape",
+    "R-C13": "D006.Records.cyclic_reference",
+    "R-C14": "D006.Records.reference_kind",
+    "R-C15": "D006.Records.invalid_level",
+    "R-C16": "D006.Records.trailing_data",
+    "R-C17": "D006.Records.rdef",
+    "R-C18": "D006.Records.rthm",
+    "R-C19": "D006.Records.rclaim",
+    "R-C20": "D006.Records.failure",
+    "R-F01": "D006.Records.decode_records",
+    "R-F02": "D006.Records.encode_records",
+    "R-F03": "D006.Records.records_valid",
+    "R-F04": "D006.Records.utf8_valid"
+  },
+  "theorems": {
+    "D3-TH01": "D006.Records.encoding_round_trips",
+    "D3-TH02": "D006.Records.accepted_bytes_are_canonical",
+    "D3-TH03": "D006.Records.accepted_values_are_valid",
+    "D3-TH04": "D006.Records.accepted_inputs_are_bounded",
+    "D3-TH05": "D006.Records.one_value_has_one_encoding"
+  },
+  "preamble": {
+    "DS-03": "From D006 Require Import Core Records.\nFrom Stdlib Require Import NArith List.\nFrom Stdlib Require PrimString.\nImport PrimString.PStringNotations."
+  },
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Records.v"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Records.v"
+      ]
+    ]
+  },
+  "trust": {
+    "allowed_assumptions": [
+      "PrimString.string",
+      "PrimString.cat"
+    ],
+    "inventory": [
+      {
+        "name": "PrimString.string",
+        "kind": "primitive type",
+        "reason": "T-08: the path of an R-C20 failure is a Rocq primitive string; Print Assumptions lists the primitive type of every DS-03 declaration that mentions Failure"
+      },
+      {
+        "name": "PrimString.cat",
+        "kind": "primitive operation",
+        "reason": "the DS-03 decoder builds failure paths such as records/K/refs/J by concatenation; computed by the kernel and the bytecode VM; no proof depends on a path's contents"
+      }
+    ]
+  }
+}
