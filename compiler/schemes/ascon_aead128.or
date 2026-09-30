@@ -1,144 +1,184 @@
-// DEV PLACEHOLDER: ChaCha20-Poly1305 (RFC 8439) behind the sealing interface.
+// Ascon-AEAD128, the authenticated cipher of NIST SP 800-232 (August 2025),
+// behind the sealing interface of `orangec enc` and `orangec dec`.
+//
+// The state is five 64-bit lanes S0..S4 in which bytes are little-endian
+// (section 2.1); the rate is S0 and S1, sixteen bytes. Key 128 bits, nonce
+// 128 bits, tag 128 bits. A chunk is 240 bytes of plaintext, fifteen whole
+// blocks, sealed with 64 bytes of associated data, four whole blocks.
+//
+// Reference code: the Orange evaluator is not constant-time, and nothing here
+// is verified.
 edition 2026;
 module ascon_aead128 {
-  // Section 2.1.
-  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
-    let a1: Word[32] = a + b;
-    let d1: Word[32] = (d ^ a1) <<< 16;
-    let c1: Word[32] = c + d1;
-    let b1: Word[32] = (b ^ c1) <<< 12;
-    let a2: Word[32] = a1 + b1;
-    let d2: Word[32] = (d1 ^ a2) <<< 8;
-    let c2: Word[32] = c1 + d2;
-    let b2: Word[32] = (b1 ^ c2) <<< 7;
-    [a2, b2, c2, d2]
+  // Section 3.2, Table 5: the round constants c_0 through c_11.
+  spec round_constants() -> Word[64]^12 {
+    [0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87, 0x78, 0x69, 0x5a, 0x4b]
   }
 
-  // Section 2.3: a column round, then a diagonal round.
-  spec double_round(x: Word[32]^16) -> Word[32]^16 {
-    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
-    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
-    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
-    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
-    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
-    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
-    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
-    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+  // Sections 3.2 to 3.4: one round, the constant addition p_C, the
+  // substitution layer p_S as the bitsliced 5-bit S-box, and the linear
+  // layer p_L.
+  spec round(s: Word[64]^5, c: Word[64]) -> Word[64]^5 {
+    let x0: Word[64] = s[0] ^ s[4];
+    let x1: Word[64] = s[1];
+    let x2: Word[64] = s[2] ^ c ^ s[1];
+    let x3: Word[64] = s[3];
+    let x4: Word[64] = s[4] ^ s[3];
+    let y0: Word[64] = x0 ^ ((~x1) & x2);
+    let y1: Word[64] = x1 ^ ((~x2) & x3);
+    let y2: Word[64] = x2 ^ ((~x3) & x4);
+    let y3: Word[64] = x3 ^ ((~x4) & x0);
+    let y4: Word[64] = x4 ^ ((~x0) & x1);
+    let z0: Word[64] = y0 ^ y4;
+    let z1: Word[64] = y1 ^ y0;
+    let z2: Word[64] = ~y2;
+    let z3: Word[64] = y3 ^ y2;
     [
-      d0[0], d1[0], d2[0], d3[0],
-      d3[1], d0[1], d1[1], d2[1],
-      d2[2], d3[2], d0[2], d1[2],
-      d1[3], d2[3], d3[3], d0[3],
+      z0 ^ (z0 >>> 19) ^ (z0 >>> 28),
+      z1 ^ (z1 >>> 61) ^ (z1 >>> 39),
+      z2 ^ (z2 >>> 1) ^ (z2 >>> 6),
+      z3 ^ (z3 >>> 10) ^ (z3 >>> 17),
+      y4 ^ (y4 >>> 7) ^ (y4 >>> 41),
     ]
   }
 
-  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
-    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
-      | ((b3 as Word[32]) << 24)
+  // Section 3: Ascon-p[12] and Ascon-p[8], the last eight rounds.
+  spec p12(s: Word[64]^5) -> Word[64]^5 {
+    for r in 0..12 with x: Word[64]^5 = s { round(x, round_constants()[r]) }
   }
 
-  spec le_bytes(x: Word[32]) -> Word[8]^4 {
-    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
+  spec p8(s: Word[64]^5) -> Word[64]^5 {
+    for r in 4..12 with x: Word[64]^5 = s { round(x, round_constants()[r]) }
   }
 
-  // Section 2.3: the block function. Words 4 through 11 are the key and
-  // words 13 through 15 the nonce, each read little-endian.
-  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
-    let constants: Word[32]^16 = [
-      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
-      0, 0, 0, 0,
-      0, 0, 0, 0,
-      counter, 0, 0, 0,
+  // Section 2.1: eight bytes as a little-endian lane, and back.
+  spec lane(
+    b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8],
+    b4: Word[8], b5: Word[8], b6: Word[8], b7: Word[8],
+  ) -> Word[64] {
+    (b0 as Word[64]) | ((b1 as Word[64]) << 8) | ((b2 as Word[64]) << 16)
+      | ((b3 as Word[64]) << 24) | ((b4 as Word[64]) << 32) | ((b5 as Word[64]) << 40)
+      | ((b6 as Word[64]) << 48) | ((b7 as Word[64]) << 56)
+  }
+
+  spec bytes(x: Word[64]) -> Word[8]^8 {
+    [
+      x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8],
+      (x >> 32) as Word[8], (x >> 40) as Word[8], (x >> 48) as Word[8], (x >> 56) as Word[8],
+    ]
+  }
+
+  spec pair(b: Word[8]^16) -> Word[64]^2 {
+    [
+      lane(b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]),
+      lane(b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]),
+    ]
+  }
+
+  spec ad_lanes(ad: Word[8]^64) -> Word[64]^8 {
+    for w in 0..8 with out: Word[64]^8 = [0; 8] {
+      out with [w] = lane(
+        ad[8 * w], ad[8 * w + 1], ad[8 * w + 2], ad[8 * w + 3],
+        ad[8 * w + 4], ad[8 * w + 5], ad[8 * w + 6], ad[8 * w + 7],
+      )
+    }
+  }
+
+  spec chunk_lanes(m: Word[8]^256) -> Word[64]^30 {
+    for w in 0..30 with out: Word[64]^30 = [0; 30] {
+      out with [w] = lane(
+        m[8 * w], m[8 * w + 1], m[8 * w + 2], m[8 * w + 3],
+        m[8 * w + 4], m[8 * w + 5], m[8 * w + 6], m[8 * w + 7],
+      )
+    }
+  }
+
+  // Section 4.1.1: the IV of Ascon-AEAD128, then K and N; Ascon-p[12]; and
+  // the key XORed into S3 and S4.
+  spec initialize(key: Word[8]^16, nonce: Word[8]^16) -> Word[64]^5 {
+    let k: Word[64]^2 = pair(key);
+    let n: Word[64]^2 = pair(nonce);
+    let s: Word[64]^5 = p12([0x00001000808c0001, k[0], k[1], n[0], n[1]]);
+    [s[0], s[1], s[2], s[3] ^ k[0], s[4] ^ k[1]]
+  }
+
+  // Section 4.1.2: four whole blocks of associated data, the padding block
+  // 0x01, then the domain separation bit in the top of S4.
+  spec associate(s: Word[64]^5, ad: Word[8]^64) -> Word[64]^5 {
+    let a: Word[64]^8 = ad_lanes(ad);
+    let whole: Word[64]^5 = for j in 0..4 with x: Word[64]^5 = s {
+      p8([x[0] ^ a[2 * j], x[1] ^ a[2 * j + 1], x[2], x[3], x[4]])
+    };
+    let padded: Word[64]^5 = p8([whole[0] ^ 1, whole[1], whole[2], whole[3], whole[4]]);
+    [padded[0], padded[1], padded[2], padded[3], padded[4] ^ 0x8000000000000000]
+  }
+
+  // Section 4.1.3: the rate lanes become c0 and c1, and the state is permuted.
+  // Lanes 30 through 34 of a duplex record hold the state; lanes 0 through 29
+  // the ciphertext or plaintext lanes written so far.
+  spec duplex(d: Word[64]^35, c0: Word[64], c1: Word[64]) -> Word[64]^35 {
+    let s: Word[64]^5 = p8([c0, c1, d[32], d[33], d[34]]);
+    for i in 0..5 with out: Word[64]^35 = d { out with [30 + i] = s[i] }
+  }
+
+  spec record(s: Word[64]^5) -> Word[64]^35 {
+    for i in 0..5 with out: Word[64]^35 = [0; 35] { out with [30 + i] = s[i] }
+  }
+
+  // Section 4.1.4: the key into S2 and S3, Ascon-p[12], and the tag from S3
+  // and S4 XORed with the key. The last plaintext block of a whole-block
+  // message is the padding block 0x01, which leaves no ciphertext.
+  spec finalize(d: Word[64]^35, key: Word[8]^16) -> Word[64]^2 {
+    let k: Word[64]^2 = pair(key);
+    let s: Word[64]^5 = p12([d[30] ^ 1, d[31], d[32] ^ k[0], d[33] ^ k[1], d[34]]);
+    [s[3] ^ k[0], s[4] ^ k[1]]
+  }
+
+  // Encryption of the fifteen whole blocks: C_j = S_rate xor P_j.
+  spec encrypt(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[64]^35 {
+    let p: Word[64]^30 = chunk_lanes(for i in 0..240 with m: Word[8]^256 = [0; 256] {
+      m with [i] = plaintext[i]
+    });
+    let start: Word[64]^35 = record(associate(initialize(key, nonce), ad));
+    for j in 0..15 with d: Word[64]^35 = start {
+      (duplex(d, d[30] ^ p[2 * j], d[31] ^ p[2 * j + 1]) with [2 * j] = d[30] ^ p[2 * j])
+        with [2 * j + 1] = d[31] ^ p[2 * j + 1]
+    }
+  }
+
+  // Decryption of the fifteen whole blocks: P_j = S_rate xor C_j, and the
+  // rate becomes C_j.
+  spec decrypt(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, sealed: Word[8]^256) -> Word[64]^35 {
+    let c: Word[64]^30 = chunk_lanes(sealed);
+    let start: Word[64]^35 = record(associate(initialize(key, nonce), ad));
+    for j in 0..15 with d: Word[64]^35 = start {
+      (duplex(d, c[2 * j], c[2 * j + 1]) with [2 * j] = d[30] ^ c[2 * j])
+        with [2 * j + 1] = d[31] ^ c[2 * j + 1]
+    }
+  }
+
+  // Interface.
+
+  spec seal(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
+    let d: Word[64]^35 = encrypt(key, nonce, ad, plaintext);
+    let tag: Word[64]^2 = finalize(d, key);
+    let body: Word[8]^256 = for i in 0..240 with out: Word[8]^256 = [0; 256] {
+      out with [i] = bytes(d[i / 8])[i % 8]
+    };
+    for i in 0..16 with out: Word[8]^256 = body { out with [240 + i] = bytes(tag[i / 8])[i % 8] }
+  }
+
+  spec authentic(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
+    let tag: Word[64]^2 = finalize(decrypt(key, nonce, ad, sealed), key);
+    let given: Word[64]^2 = [
+      lane(sealed[240], sealed[241], sealed[242], sealed[243], sealed[244], sealed[245], sealed[246], sealed[247]),
+      lane(sealed[248], sealed[249], sealed[250], sealed[251], sealed[252], sealed[253], sealed[254], sealed[255]),
     ];
-    let keyed: Word[32]^16 = for i in 0..8 with s: Word[32]^16 = constants {
-      s with [4 + i] = load_le32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
-    };
-    let initial: Word[32]^16 = for i in 0..3 with s: Word[32]^16 = keyed {
-      s with [13 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
-    };
-    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
-    for i in 0..16 with s: Word[32]^16 = mixed { s with [i] = s[i] + initial[i] }
+    ((tag[0] ^ given[0]) | (tag[1] ^ given[1])) == 0
   }
 
-  // Section 2.3: the state serialized as 64 little-endian bytes.
-  spec serialize(s: Word[32]^16) -> Word[8]^64 {
-    for i in 0..16 with bytes: Word[8]^64 = [0; 64] {
-      for j in 0..4 with b: Word[8]^64 = bytes { b with [4 * i + j] = le_bytes(s[i])[j] }
-    }
-  }
-
-  // Poly1305, section 2.5: p = 2^130 - 5.
-  spec prime() -> Int { 1361129467683753853853498429727072845819 }
-
-  spec absorb(a: Int, r: Int, block: Int) -> Int { ((a + block) * r) % prime() }
-
-  // 256^i for 0 <= i < 16.
-  spec byte_weight(i: Int) -> Int {
-    for j in 0..16 with w: Int = 1 { if j < i { w * 256 } else { w } }
-  }
-
-  spec clamp_r(key: Word[8]^32) -> Int {
-    let clamp: Word[8]^16 = [
-      0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
-      0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
-    ];
-    for i in 0..16 with n: Int = 0 { n * 256 + ((key[15 - i] & clamp[15 - i]) as Int) }
-  }
-
-  spec pad_s(key: Word[8]^32) -> Int {
-    for i in 0..16 with n: Int = 0 { n * 256 + (key[31 - i] as Int) }
-  }
-
-  spec one_time_key(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
-    let block0: Word[8]^64 = serialize(block(key, 0, nonce));
-    for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = block0[i] }
-  }
-
-  spec keystream(key: Word[8]^32, nonce: Word[8]^12) -> Word[32]^64 {
-    let b1: Word[32]^16 = block(key, 1, nonce);
-    let b2: Word[32]^16 = block(key, 2, nonce);
-    let b3: Word[32]^16 = block(key, 3, nonce);
-    let b4: Word[32]^16 = block(key, 4, nonce);
-    let k1: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = [0; 64] { k with [w] = b1[w] };
-    let k2: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = k1 { k with [16 + w] = b2[w] };
-    let k3: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = k2 { k with [32 + w] = b3[w] };
-    for w in 0..16 with k: Word[32]^64 = k3 { k with [48 + w] = b4[w] }
-  }
-
-  spec tag(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^16 {
-    let otk: Word[8]^32 = one_time_key(key, nonce);
-    let r: Int = clamp_r(otk);
-    let a0: Int = for j in 0..4 with a: Int = 0 {
-      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (ad[16 * j + 15 - i] as Int) })
-    };
-    let a1: Int = for j in 0..15 with a: Int = a0 {
-      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (sealed[16 * j + 15 - i] as Int) })
-    };
-    let a2: Int = absorb(a1, r, 1 * 340282366920938463463374607431768211456 + 64 + 240 * 18446744073709551616);
-    let t: Int = a2 + pad_s(otk);
-    for i in 0..16 with out: Word[8]^16 = [0; 16] {
-      out with [i] = (t / byte_weight(i)) as Word[8]
-    }
-  }
-
-  spec seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
-    let ks: Word[32]^64 = keystream(key, nonce);
-    let body: Word[8]^256 = for i in 0..240 with c: Word[8]^256 = [0; 256] {
-      c with [i] = plaintext[i] ^ le_bytes(ks[i / 4])[i % 4]
-    };
-    let t: Word[8]^16 = tag(key, nonce, ad, body);
-    for i in 0..16 with c: Word[8]^256 = body { c with [240 + i] = t[i] }
-  }
-
-  spec authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
-    let t: Word[8]^16 = tag(key, nonce, ad, sealed);
-    (for i in 0..16 with d: Word[8] = 0 { d | (t[i] ^ sealed[240 + i]) }) == 0
-  }
-
-  spec open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
-    let ks: Word[32]^64 = keystream(key, nonce);
-    for i in 0..240 with p: Word[8]^240 = [0; 240] {
-      p with [i] = sealed[i] ^ le_bytes(ks[i / 4])[i % 4]
-    }
+  spec open(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
+    let d: Word[64]^35 = decrypt(key, nonce, ad, sealed);
+    for i in 0..240 with out: Word[8]^240 = [0; 240] { out with [i] = bytes(d[i / 8])[i % 8] }
   }
 }
