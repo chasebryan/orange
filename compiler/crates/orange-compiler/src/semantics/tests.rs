@@ -8192,6 +8192,55 @@ fn slice_bounds_are_held_to_the_significant_bit_limit_of_int() {
 }
 
 #[test]
+fn every_part_of_a_slice_bound_is_held_to_the_limit_at_every_step() {
+    // The evaluator computes each sum, difference, and product of a bound,
+    // even where they cancel, so a part too large for `Int` at any step is
+    // rejected before anything runs; a part that is not static is reported
+    // first, wherever it stands.
+    let fixture = module(concat!(
+        "  spec cancelled(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[(200 * 2 - 200 * 2) + i..i + 1] }\n",
+        "  }\n",
+        "  spec indexed(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[i..(i * 200) * 2 - (i * 200) * 2 + i + 1] }\n",
+        "  }\n",
+        "  spec named(x: Word[8]^4, n: Int) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[i + (200 * 2 - n)..i + 1] }\n",
+        "  }\n",
+        "  spec small(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[(i * 100) * 2 - (i * 100) * 2 + i..i + 1] }\n",
+        "  }\n",
+    ));
+    let limits = Limits {
+        integer_bits: 8,
+        ..Limits::DEFAULT
+    };
+    let result = fixture.analyze_with(limits);
+    assert_eq!(result, fixture.analyze_with(limits));
+    assert!(result.core.is_none());
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "(200 * 2 - 200 * 2) + i",
+                String::from("a part of this bound exceeds the 8-significant-bit limit of `Int`")
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "(i * 200) * 2 - (i * 200) * 2 + i + 1",
+                String::from("a part of this bound exceeds the 8-significant-bit limit of `Int`")
+            ),
+            (
+                DiagnosticCode::NonStaticIndex,
+                "n",
+                String::from("a slice's bounds may use only integer literals and loop indices")
+            ),
+        ]
+    );
+}
+
+#[test]
 fn joins_are_checked_once_in_order() {
     let (fixture, result) = rejected(concat!(
         "  spec scalar() -> Word[32] { \"ab\" ++ \"cd\" }\n",

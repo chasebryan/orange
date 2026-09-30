@@ -317,9 +317,14 @@ and an omitted end is the length n of the array sliced.
   bound may multiply a loop index only by a constant", at its `*`, labeled
   "both operands of this `*` use a loop index".
 - A bound one of whose constants or coefficients has more significant bits
-  than the limit of `Int` (16,384, `SEMANTICS_2026.md` section 9) is
+  than the limit of `Int` (16,384, `SEMANTICS_2026.md` section 9), or one of
+  whose sums, differences, or products has a value with more at some step, is
   `ORC0223`, "a part of this bound exceeds the 16384-significant-bit limit of
-  `Int`", at the bound, labeled "this bound has no representable range".
+  `Int`", at the bound, labeled "this bound has no representable range". The
+  evaluator computes every part of a bound, so a part too large is an error
+  even where it cancels, as `(a * a - a * a) + i` does for a literal `a` of
+  more than 8,192 significant bits. A part that is not static is reported
+  before a part that is too large.
 
 Each of these has the note "a slice's position never depends on data: its
 bounds are built from integer literals and loop indices with `+`, `-`, and `*`
@@ -478,7 +483,7 @@ S3b through S3k runners.
 | `S3L-SYNTAX-01` | Section 4 | Byte strings, joins, slices, and slice updates parse with exact spans, levels, and heights; `++` is a group of its own (`ORC0108`), and malformed forms are `ORC0101` with the specified messages and notes. | CLI and parser unit |
 | `S3L-BYTES-01` | Section 5 | A byte string's bytes are its printable ASCII characters and escapes or its hex digit pairs, 1 through 256 of them (`ORC0235`, `ORC0221`), and it has type `Word[8]^n` (`ORC0214`, `ORC0222`). | CLI and unit |
 | `S3L-TYPE-01` | Section 6 | Joins, slices, and slice updates are checked against the required array type in the specified order, with found lengths and typed leaves as specified. | CLI and unit |
-| `S3L-STATIC-01` | Section 7 | A slice's bounds are static (`ORC0226`), a fixed positive distance apart (`ORC0236`), and in range at every step (`ORC0223`), within the significant-bit limit of `Int`. | CLI and unit |
+| `S3L-STATIC-01` | Section 7 | A slice's bounds are static (`ORC0226`), a fixed positive distance apart (`ORC0236`), and in range at every step (`ORC0223`), with every part of each bound within the significant-bit limit of `Int` at every step. | CLI and unit |
 | `S3L-CORE-01` | Section 9 | Core records a byte string as one array literal and joins, slices, and slice updates as `concat`, `slice`, and `slice_update` nodes after their operands, with omitted bounds as literals. | Unit and CLI observation |
 | `S3L-EVAL-01` | Section 10 | Byte strings, joins, slices, and slice updates evaluate left to right at the specified step costs; HMAC-SHA-256 and ChaCha20-Poly1305 written with them match FIPS 180-4, RFC 4231, and RFC 8439. | CLI and unit |
 | `S3L-RES-01` | Section 11 | Byte strings, joins, slices, and slice updates, their events, nodes, allocations, stack use, and inconsistent Core are bounded as specified, and foreign spans are `ORC0210`. | Generated CLI and unit |

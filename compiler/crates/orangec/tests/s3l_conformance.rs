@@ -372,6 +372,11 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/semantics/tests.rs",
+        test: "every_part_of_a_slice_bound_is_held_to_the_limit_at_every_step",
+        rules: &["S3L-STATIC-01", "S3L-RES-01", "S3L-DETERMINISM-01"],
+    },
+    TestEvidence {
+        source_path: "src/semantics/tests.rs",
         test: "joins_are_checked_once_in_order",
         rules: &["S3L-TYPE-01", "S3L-DETERMINISM-01"],
     },

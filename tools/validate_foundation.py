@@ -825,7 +825,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "39a88d0dc6492516f2b0e03360fc3331ebbc861f1ea4379d87c618f93f6c4d6c"
+_PHD = "adffdffe7da7202fd759345705f6dc9497a535f6d8bb44b02c988d1bef7859cb"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1207,8 +1207,8 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "fef72bd32c440f29d05a30e61ab01cfc797011decfa9d4dc4a1c4ad6f6c911ad"
-_D010_PACKET_RAW_SHA256 = "2f30c81e432095fc996a041527ea55c4f028c1c46861a566ba940db7486e891e"
+_D010_PACKET_CANONICAL_SHA256 = "5f6af712dfd2706600dcd6888b948ca5ac555fcaee64cf266acf1ac7f06e0ce4"
+_D010_PACKET_RAW_SHA256 = "61eaf27267c85df76c78f0ca17bd89b2a0556ac7d1fdcb3801af1abd90aeeddf"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"

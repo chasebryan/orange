@@ -152,7 +152,9 @@ In summary:
 - **Static bounds.** A slice's bounds are built from integer literals and loop
   indices with `+`, `-`, and `*` by a constant (`ORC0226`), are the same
   positive distance apart at every step (`ORC0236`), and lie within the array
-  over every value of the loop indices (`ORC0223`).
+  over every value of the loop indices (`ORC0223`); every sum, difference,
+  and product in a bound stays within the significant-bit limit of `Int` at
+  every step, even where they cancel (`ORC0223`).
 - **Core and evaluation.** A byte string is one array literal, built once and
   shared. Core gains `concat`, `slice`, and `slice_update` nodes; an omitted
   bound is a literal. A join, a slice, and a slice update cost one step per

@@ -162,6 +162,17 @@ pub(super) struct Affine {
     terms: Vec<(usize, ExactInteger)>,
 }
 
+/// Why a slice bound has no affine form.
+pub(super) enum BoundError {
+    /// This part is neither an integer literal nor a loop index.
+    NotStatic(Span),
+    /// This `*` multiplies two loop indices.
+    IndexProduct(Span),
+    /// A part of the bound, at some step, exceeds the significant-bit limit
+    /// of `Int`.
+    Oversized,
+}
+
 impl Affine {
     fn constant(value: ExactInteger) -> Self {
         Self {
@@ -1096,7 +1107,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         match self.affine_form(bound, context) {
             Ok(Some(form)) if form.within(self.limits.integer_bits) => Some(form),
-            Ok(Some(_)) => {
+            Ok(Some(_)) | Err(BoundError::Oversized) => {
                 if self.begin_report(bound.span) {
                     self.diagnostics.push(
                         Diagnostic::error(
@@ -1118,42 +1129,56 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 self.resource_limit(bound.span, "slice bound storage allocation failed");
                 None
             }
-            Err((span, product)) => {
-                if self.begin_report(span) {
-                    let (message, label) = if product {
-                        (
-                            "a slice's bound may multiply a loop index only by a constant",
-                            "both operands of this `*` use a loop index",
-                        )
-                    } else {
-                        (
-                            "a slice's bounds may use only integer literals and loop indices",
-                            "this is neither",
-                        )
-                    };
-                    self.diagnostics.push(
-                        Diagnostic::error(DiagnosticCode::NonStaticIndex, message, span)
-                            .with_label(label)
-                            .with_note(STATIC_SLICE_NOTE),
-                    );
-                }
+            Err(BoundError::NotStatic(span)) => {
+                self.report_non_static_bound(span, false);
+                None
+            }
+            Err(BoundError::IndexProduct(span)) => {
+                self.report_non_static_bound(span, true);
                 None
             }
         }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_non_static_bound(&mut self, span: Span, product: bool) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let (message, label) = if product {
+            (
+                "a slice's bound may multiply a loop index only by a constant",
+                "both operands of this `*` use a loop index",
+            )
+        } else {
+            (
+                "a slice's bounds may use only integer literals and loop indices",
+                "this is neither",
+            )
+        };
+        self.diagnostics.push(
+            Diagnostic::error(DiagnosticCode::NonStaticIndex, message, span)
+                .with_label(label)
+                .with_note(STATIC_SLICE_NOTE),
+        );
     }
 
     /// Returns the affine form of a well-typed `Int` slice bound: integer
     /// literals, loop indices, parentheses, negation, `+`, `-`, and `*` of
     /// which one operand uses no loop index. The first other part is
     /// returned as its span, with whether it is a product of two loop
-    /// indices; `Ok(None)` means storage could not be reserved.
+    /// indices, and a bound with no such part is `Oversized` when a sum,
+    /// difference, or product within it exceeds the significant-bit limit
+    /// of `Int` at some step, since the evaluator computes each of them even
+    /// where they cancel. `Ok(None)` means storage could not be reserved.
     ///
     /// Parser-established expression height bounds this recursion.
     pub(super) fn affine_form(
         &self,
         bound: &Expression,
         context: &BodyContext<'ast>,
-    ) -> Result<Option<Affine>, (Span, bool)> {
+    ) -> Result<Option<Affine>, BoundError> {
         let reserve = self.reserve_range_limbs;
         Ok(match &bound.kind {
             ExpressionKind::Literal(literal) => self.range_literal(literal).map(Affine::constant),
@@ -1165,7 +1190,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         constant,
                         terms: vec![(position, one)],
                     }),
-                _ => return Err((name.span, false)),
+                _ => return Err(BoundError::NotStatic(name.span)),
             },
             ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => self
                 .affine_form(&unary.operand, context)?
@@ -1176,23 +1201,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
                 ) =>
             {
-                let left = self.affine_form(&binary.left, context)?;
-                let right = self.affine_form(&binary.right, context)?;
+                // A part that is not static is reported before a part that
+                // is too large, wherever each stands.
+                let (left, right) = match (
+                    self.affine_form(&binary.left, context),
+                    self.affine_form(&binary.right, context),
+                ) {
+                    (Ok(left), Ok(right)) => (left, right),
+                    (Err(BoundError::Oversized), Err(error))
+                    | (Err(error), _)
+                    | (_, Err(error)) => {
+                        return Err(error);
+                    }
+                };
                 let (Some(left), Some(right)) = (left, right) else {
                     return Ok(None);
                 };
-                match binary.operator {
+                let form = match binary.operator {
                     BinaryOperator::Multiply if left.terms.is_empty() => {
                         right.scaled(&left.constant, reserve)
                     }
                     BinaryOperator::Multiply if right.terms.is_empty() => {
                         left.scaled(&right.constant, reserve)
                     }
-                    BinaryOperator::Multiply => return Err((binary.operator_span, true)),
+                    BinaryOperator::Multiply => {
+                        return Err(BoundError::IndexProduct(binary.operator_span));
+                    }
                     operator => left.combine(&right, operator == BinaryOperator::Subtract, reserve),
+                };
+                let Some(form) = form else {
+                    return Ok(None);
+                };
+                let Some((low, high)) = self.affine_range(&form, context) else {
+                    return Ok(None);
+                };
+                let bits = self.limits.integer_bits;
+                if low.magnitude_bits() > bits || high.magnitude_bits() > bits {
+                    return Err(BoundError::Oversized);
                 }
+                Some(form)
             }
-            _ => return Err((bound.span, false)),
+            _ => return Err(BoundError::NotStatic(bound.span)),
         })
     }
 
