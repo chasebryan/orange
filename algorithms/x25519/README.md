@@ -139,8 +139,9 @@ The evaluation cost was measured with a filler spec sharing the file's
 budget (`probe.py` in the scratch directory): one X25519 evaluation, from
 the vector's literals to the encoded output, costs about 568,000 of the
 1,048,576 steps of a file. One rung of the ladder costs about 1,963 steps,
-of which the ten products (65 steps each for two 8-limb numbers) and their
-ten reductions by `%` (129 steps each) are more than nine tenths; 255 rungs
+of which the ten products (65 steps each for two 8-limb numbers) and the
+nine reductions by `%` that follow all but `a24() * e` (129 steps each) are
+more than nine tenths; 255 rungs
 are about 500,000 steps. The inversion by the addition chain costs about
 59,000 steps, against about 107,000 for square-and-multiply on p - 2 as the
 S3f fixture writes it; the digit-peeling encoding costs about 4,400 steps,

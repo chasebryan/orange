@@ -204,7 +204,7 @@ python3 algorithms/verify.py algorithms/serpent
 
 Every expected value is copied from Botan's `serpent.vec` (current master,
 1,047 records). The file does not label its records; a script classified
-them, and 384 records with a single key bit set and a zero plaintext (128,
+them, and 576 records with a single key bit set and a zero plaintext (128,
 192 and 256 for the three key sizes) and 384 with a zero key and a single
 plaintext bit set (128 per key size) have exactly the structure of NESSIE's
 sets 1 and 2, whose Serpent-128 set 1 vector 0 and Serpent-256 set 1

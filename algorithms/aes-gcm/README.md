@@ -265,7 +265,7 @@ buffer, zero past the plaintext's length, followed by the 16-byte tag.
 | `nist_gcm_test_case_1` | GCM specification (McGrew and Viega 2005), Test Case 1; OpenSSL `evpciph_aes_common.txt`, GCM section | AES-128, zero key, zero 96-bit IV, empty P and A; the tag 58e2fcce...e7455a (`aes-gcm.or`) |
 | `nist_gcm_test_case_2` | GCM specification, Test Case 2; same file | AES-128, zero key and IV, one zero block of P, empty A (`aes-gcm.or`) |
 | `nist_gcm_test_case_4` | GCM specification, Test Case 4; same file | AES-128, key feffe992..., IV cafebabe...f888, 60-byte P, 20-byte A (`aes-gcm.or`) |
-| `nist_gcm_test_case_6` | GCM specification, Test Case 6; same file | as Test Case 4 with a 60-byte IV 9313225d...2cb7, so `J0` is a GHASH (`aes-gcm-iv.or`) |
+| `nist_gcm_test_case_6` | GCM specification, Test Case 6; same file | as Test Case 4 with a 60-byte IV 9313225d...a637b39b, so `J0` is a GHASH (`aes-gcm-iv.or`) |
 | `wycheproof_gcm_tc_2` | Wycheproof `testvectors_v1/aes_gcm_test.json`, tcId 2 (flag `Ktv`) | AES-128, 96-bit IV, 16-byte msg, 16-byte aad, an independent source (`aes-gcm-iv.or`) |
 | `nist_gcm_test_case_4_verify` | GCM specification, Test Case 4, decrypted | GCM-AD on the Test Case 4 ciphertext and tag: `T = T'`, `true` (`aes-gcm-ad.or`) |
 | `nist_gcm_test_case_4_plaintext` | GCM specification, Test Case 4, decrypted | GCM-AD on the Test Case 4 ciphertext: the 60-byte plaintext d9313225... (`aes-gcm-ad.or`) |

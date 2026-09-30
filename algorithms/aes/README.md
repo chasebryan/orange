@@ -172,7 +172,8 @@ orangec eval algorithms/aes/aes-modes.or
 python3 algorithms/verify.py algorithms/aes
 ```
 
-`eval` prints every parameterless spec, including the three tables; the pairs
+`eval` prints every parameterless spec, including the tables (`sbox`,
+`inv_sbox` and `rcon` in `aes.or`, `sbox` and `rcon` in `aes-modes.or`); the pairs
 below are the vectors.
 
 ### Vectors

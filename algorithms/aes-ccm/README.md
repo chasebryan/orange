@@ -262,7 +262,7 @@ it is not a corpus entry in the sense of The Orange Book chapter 12.
 - No imports: each of the three files repeats the 333 lines of AES-128 and
   CCM to add its vectors, and the step budget of 1,048,576 per file forces
   the split, since one block cipher call costs about 69,900 steps and the
-  seven pairs need 35 of them.
+  seven pairs need 34 of them.
 - Static indices only: the positions that CCM's own lengths determine (the
   length field after a nonce of `n` bytes, the first payload block after
   the associated data, the tag after `Plen` bytes of ciphertext, the last
