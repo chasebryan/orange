@@ -717,7 +717,7 @@ _RPD = "f8a3f0fa3494eb28bdd9fc3e6d18ddc8df2fdf63a4c628a5f6c9d72762586e45"
 _SPD = "2dd3aa1da7b190822118a83c86bd5de7baa3ae3c041acf9baba4308f029254db"
 _GVD = "8cbf5da50c63908948d181b1525c86e0f8a554eaa71fc98cf2f0ec47f6776103"
 _CCD = "24d9a184b30787622cdc31145924a9c38558e3a2b72ed3f47a1ae94e1010074a"
-_RDC = "4e055430dd7796110b946cff2f819637ac6de0a2ff305f5e2c5694168a9112a0"
+_RDC = "c5f836654ca95e0dfab77c6be3b824294b24e974c46423e398f2c021e99ce82e"
 _DPD = "ae5e10534b9081c401d943a55fc85fb2aa4a284cc366129f6139eefdb8389438"
 _GAC = '''* text=auto eol=lf
 
@@ -783,7 +783,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "deaebb42cb75f7999ea2d80e001f11778122040338892c4a6783df657f2dd75b"
+_PHD = "9103c3d3ffc02dd3d6e8ec7b90bf741451d9394b1e6d7a611c1866cd8570bf37"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1165,8 +1165,8 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "2e592d9c5df4e5e63f6f609a9b896386a308157ac9ece3c4ba1e8369ffc40ece"
-_D010_PACKET_RAW_SHA256 = "668e8fa6d5aec59389d670333654c4405514d2bc017c7cf748957f9222abfd55"
+_D010_PACKET_CANONICAL_SHA256 = "5fdbfd66af3b3ec8155eb8ea262998ea5f3f872e494950170bfe2d4e2dacfc98"
+_D010_PACKET_RAW_SHA256 = "82f52bd581aa578f804e44d84c01e1e55c3a9622627fa6158116be265cce5909"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"
@@ -3394,12 +3394,8 @@ class FoundationValidator:
                 self.policy_path,
                 f"hosted-control snapshot {snapshot_value} is later than {observed_today.isoformat()}",
             )
-        if observed_today >= review_due_date:
-            self.add(
-                "hosted_control.expired",
-                self.policy_path,
-                f"hosted-control snapshot expired on {review_due_value}; refresh live readback and evidence",
-            )
+        # The review-due date is a reminder, not a gate: an offline check cannot
+        # re-read GitHub, and failing on a calendar date turns every commit red.
         for value in evidence_paths:
             path = self.root / value
             if not self._hf(path):

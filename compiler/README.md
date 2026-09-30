@@ -324,10 +324,17 @@ or Rust code executes. Every copied command then runs as PID 1 with private
 mount, PID, `/proc`, network, IPC, and UTS namespaces. The UTS namespace uses
 the fixed `orange-gate` hostname, and the fresh IPC namespace starts without
 System V message queues, semaphore sets, or shared-memory segments. The gate
-uses an unprivileged user namespace when the host permits it; otherwise a fixed
-non-interactive `sudo` supervisor creates only those namespaces before
-`setpriv` restores the invoking numeric user and group, clears supplementary
-groups, and enables `no_new_privs`.
+uses an unprivileged user namespace when the host permits it. Otherwise, as on
+Ubuntu 23.10 and newer, `make` asks `sudo` for the invoking account's password
+once unless a cached credential or passwordless rule already covers it. That
+path needs a `sudo` policy that keeps the credential between commands and a host
+that allows user namespaces (`user.max_user_namespaces` above zero); otherwise
+`make` stops with a message naming the setting. A fixed `sudo` supervisor then
+creates those namespaces, switches to the invoking numeric user and group
+holding only `CAP_SYS_ADMIN`, so the invoking account owns the user namespace it
+creates next, and writes that namespace's one-line maps from outside it so they
+admit only that user and group. `setpriv` then restores that user and group,
+clears supplementary groups, and enables `no_new_privs`.
 The user-namespace path retains its namespace-granted capabilities only long
 enough for `setpriv` to remove every capability from the inheritable, permitted,
 effective, bounding, and ambient sets. The privileged supervisor removes the
@@ -348,8 +355,9 @@ closes every inherited descriptor above standard error, resets ordinary
 catchable signal dispositions to default, and empties the ordinary signal mask
 before execution. The launcher also fixes hard
 ceilings of 4 GiB of virtual address space and 600 CPU seconds per process,
-512 MiB per file, 1,024 open files, 256 processes for the real user, and zero
-core-file bytes, preserving any lower inherited hard ceiling. Copied commands
+512 MiB per file, 1,024 open files, 256 processes for the real user inside the
+gate's private user namespace (the kernel exempts the global root user, so a gate
+invoked as root has no process ceiling), and zero core-file bytes, preserving any lower inherited hard ceiling. Copied commands
 receive isolated `HOME`, `TMPDIR`, and `PATH` values, disable system Git
 configuration, and bind global Git configuration to `/dev/null`; a runtime
 assertion confirms that the original checkout is unreadable. The namespace
@@ -392,7 +400,8 @@ private System V IPC tables remain readable; representative global kernel/CPU
 and dynamic `/proc/self` content is asserted unreadable. Resource ceilings are not aggregate
 cgroup budgets: virtual address space and CPU time are limited per process,
 file size is limited per file, aggregate resident memory is not capped, and the
-process ceiling includes other processes with the same real user ID.
+process ceiling counts only processes in the gate's private user namespace, not
+other processes of the same account.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing
 inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line

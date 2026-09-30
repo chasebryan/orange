@@ -428,10 +428,14 @@ cargo test --manifest-path compiler/Cargo.toml --workspace
 scripts/ci/check-repository
 ```
 
-The repository gate runs on Linux and needs a C compiler, Python 3, user
-namespaces, and Landlock ABI 3 or newer; the [policy guide](policy/README.md)
-explains the sandbox. Markdown lint, workflow audits, and link checks run only
-in CI.
+The repository gate runs on Linux 6.2 or newer (Landlock ABI 3) and needs a C
+compiler and Python 3 (on Ubuntu, `sudo apt install build-essential`) plus
+rustup's pinned toolchain with its components (`rustup toolchain install
+1.96.1 --component clippy,rustfmt`). It builds its sandbox from user
+namespaces; where the host blocks unprivileged ones, as Ubuntu 23.10 and newer
+do, the gate (`make`, which `scripts/ci/check-repository` runs) asks for your
+sudo password once and builds the same sandbox through sudo. The [policy guide](policy/README.md) explains the sandbox.
+Markdown lint, workflow audits, and link checks run only in CI.
 
 `orangec` reads a file path, or `-` for standard input:
 
