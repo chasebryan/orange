@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3f proposed under OEP-0005 through OEP-0009, in owner review
+S3g proposed under OEP-0005 through OEP-0010, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -29,8 +29,14 @@ The S3f slice, proposed in
 [`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md) and in owner review
 under OEP-0009, adds `Bool`, comparisons, strict logical operators, total
 Euclidean division and remainder, and conditionals that always have both
-branches. All six lower to a noncanonical Typed Reference Core and are
-reference-evaluated. Unbounded loops, data-dependent indices, typed `impl`,
+branches. The S3g slice, proposed in
+[`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md) and in owner review under
+OEP-0010, lets an index depend on data: an index whose first typed leaf is a
+word ranges over its type, narrowed by its operators, an `Int` index may
+convert words with `as Int`, every index is still proved in range before
+evaluation, and an update or fill costs one step per 64 elements. All seven
+lower to a noncanonical Typed Reference Core and are reference-evaluated.
+Unbounded loops, typed `impl`,
 proof checking, verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -701,12 +707,13 @@ demo::residues: Int^2 = [1, -1]
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3f rules, limits, and non-claims are in
+through S3g rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
-[`docs/LOOPS_2026.md`](../docs/LOOPS_2026.md), and
-[`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md). None of them defines
+[`docs/LOOPS_2026.md`](../docs/LOOPS_2026.md),
+[`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md), and
+[`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -958,6 +965,29 @@ would exceed the step budget, and the same branch taken, which fails closed.
 This corpus establishes the tested behavior of one implementation; it does not
 accept OEP-0009, prove the rules sound, or complete S3.
 
+## S3g lookup conformance
+
+`fixtures/s3g/` contains an exact four-file corpus for the proposed S3g
+behavior: two fixtures must evaluate successfully and two must fail closed.
+The accepted fixtures cover lookups keyed by bytes and by nibbles, updates
+keyed by data, ranges narrowed by `&`, `>>`, `%`, conditionals, and
+conversions, `Int` indices built from converted words, a table-driven CRC-32
+against its check value, and AES-128 with its S-box derived as FIPS 197
+section 5.1.1 defines it, against the examples of Appendices B and C.1 and
+the inverse cipher. The rejected fixtures cover word indices whose type or
+range is too wide, operators that could wrap, and `Int` indices built from
+parameters, calls, or elements, or whose converted words do not fit.
+
+`crates/orangec/tests/s3g_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3f runner. It parses the 10-rule S3g index in
+`docs/LOOKUPS_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates a
+source whose updates spend the step budget exactly, the same source one step
+over, which fails closed, and the inversion of a 256-byte permutation by
+updates keyed by its own values. This corpus establishes the tested behavior
+of one implementation; it does not accept OEP-0010, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -985,6 +1015,8 @@ accept OEP-0009, prove the rules sound, or complete S3.
   rule-index, and loop-bound runner;
 - `crates/orangec/tests/s3f_conformance.rs`: exact repeatable S3f corpus,
   rule-index, and conditional-chain runner;
+- `crates/orangec/tests/s3g_conformance.rs`: exact repeatable S3g corpus,
+  rule-index, and update-cost runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -992,5 +1024,6 @@ accept OEP-0009, prove the rules sound, or complete S3.
 - `fixtures/s3c/`: exact five-positive/five-negative S3c CLI fixture corpus;
 - `fixtures/s3d/`: exact three-positive/five-negative S3d CLI fixture corpus;
 - `fixtures/s3e/`: exact three-positive/four-negative S3e CLI fixture corpus;
+- `fixtures/s3f/`: exact four-positive/four-negative S3f CLI fixture corpus;
   and
-- `fixtures/s3f/`: exact four-positive/four-negative S3f CLI fixture corpus.
+- `fixtures/s3g/`: exact two-positive/two-negative S3g CLI fixture corpus.

@@ -209,8 +209,9 @@ one event. Finding an index's type and computing its range consume no events.
 ⌈n/64⌉ steps beyond its operands', where S3e charged n: one step for up to 64
 elements, and 4 for a table of 256. A loop may therefore update a table on
 every iteration without the per-source budget of 1,048,576 steps being spent
-on copying, and no update or fill costs more than it did in S3e. A word index's `convert` node costs one step, as every conversion
-does. Every other cost of `CONDITIONS_2026.md` section 12 is unchanged.
+on copying, and no update or fill costs more than it did in S3e. A word
+index's `convert` node costs one step, as every conversion does. Every other
+cost of `CONDITIONS_2026.md` section 12 is unchanged.
 
 Exhausting any budget, and any allocation failure, yields one resource
 diagnostic, no Core, and no value line. Inconsistent Core, such as a position

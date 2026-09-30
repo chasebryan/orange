@@ -108,7 +108,7 @@ POLICY_PATH = Path("policy/gate0-repository-policy.json")
 MAKEFILE_CONTRACT_PATH = Path("policy/makefile-entrypoint-contract-v0.1.json")
 VALIDATOR_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ORANGE_BOOK_PATH = Path("docs/THE_ORANGE_BOOK.md")
-ORANGE_BOOK_VERSION = "0.8"
+ORANGE_BOOK_VERSION = "0.9"
 ORANGE_BOOK_MINIMUM_CHAPTER_WORDS = 1_200
 ORANGE_BOOK_CHAPTERS = tuple(
     f"## Chapter {number}: {title}"
@@ -353,6 +353,7 @@ compiler/crates/orangec/tests/s3c_conformance.rs
 compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/crates/orangec/tests/s3e_conformance.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
+compiler/crates/orangec/tests/s3g_conformance.rs
 compiler/fixtures/hello.or
 compiler/fixtures/s3a/invalid-duplicate-spec.or
 compiler/fixtures/s3a/invalid-int-magnitude.or
@@ -411,6 +412,10 @@ compiler/fixtures/s3f/valid-aead.or
 compiler/fixtures/s3f/valid-conditions.or
 compiler/fixtures/s3f/valid-poly1305.or
 compiler/fixtures/s3f/valid-x25519.or
+compiler/fixtures/s3g/invalid-int-indices.or
+compiler/fixtures/s3g/invalid-word-indices.or
+compiler/fixtures/s3g/valid-aes128.or
+compiler/fixtures/s3g/valid-lookups.or
 compiler/fixtures/typed-answer.or
 DEPENDENCY_POLICY.md
 GOVERNANCE.md
@@ -458,6 +463,7 @@ docs/BINDINGS_2026.md
 docs/ARRAYS_2026.md
 docs/LOOPS_2026.md
 docs/CONDITIONS_2026.md
+docs/LOOKUPS_2026.md
 docs/SEMANTICS_2026.md
 docs/THE_ORANGE_BOOK.md
 docs/governance/adrs/ADR-0000-template.md

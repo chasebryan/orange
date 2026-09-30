@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-09-29
+Snapshot: 2026-09-30
 
-Manuscript version: 0.8
+Manuscript version: 0.9
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -98,7 +98,9 @@ slice adds fixed-length arrays, so that a cipher's whole state is one value,
 the S3e slice adds loops over literal ranges, so that a standard's rounds are
 one expression, and the S3f slice adds truth values, comparisons, Euclidean
 division, and conditionals, so that a prime field and a key exchange can be
-written as their standards write them. None of them adds typed
+written as their standards write them, and the S3g slice lets an index depend
+on data, still proved in range, so that AES's S-box is a lookup, as FIPS 197
+writes it. None of them adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
@@ -296,9 +298,10 @@ specification is in the owner's review, adds pure functions over integers and
 machine words, the S3c slice, also in review, adds `let` bindings and
 explicit `as` conversions, the S3d slice, also in review, adds fixed-length
 arrays of those types, the S3e slice, also in review, adds loops over literal
-ranges, indices proved in range, and updates of one element, and the S3f
+ranges, indices proved in range, and updates of one element, the S3f
 slice, also in review, adds `Bool`, comparisons, Euclidean division, and
-conditionals.
+conditionals, and the S3g slice, also in review, lets an index depend on data
+while still proving it in range.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -340,8 +343,8 @@ demo::sample: Word[32] = 0x1f85c98c
 Empty declarations still have no type, value, or execution meaning, and a
 function with parameters runs only when it is called. The Core is noncanonical
 and carries no proof identity or relationship between a `spec` and an `impl`.
-The fragment has no bindings, control flow, recursion, general failure values,
-proof terms, targets, ABI rules, or code generation.
+The fragment has no recursion, general failure values, proof terms, targets,
+ABI rules, or code generation.
 The reserved words `game`, `proof`, and `claim` still introduce no usable
 constructs.
 
@@ -771,7 +774,13 @@ with a reduction. The first run of all 25 candidate-case units, on 2026-09-28,
 passed every case for ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR and failed every
 case for ST-HOST, whose delegated hosts depend on the open D-006 and D-011
 decisions. The cases could not tell the four passing candidates apart, so the
-run selects nothing. Its results are contributor-produced and unreviewed.
+run selects nothing. Its results are contributor-produced and unreviewed. A
+second suite adds two cases, semantic evolution and relabeling within one
+authority, and five cost measures. Its run, on the same day, closed all seven
+cases for the same four candidates, and under the isolation-first rule, which
+the owner chose knowing which candidate each offered rule would leave, only
+ST-REL remains. That result is also contributor-produced and unreviewed. It is
+not a recommendation, and D-004 remains proposed.
 
 ### What exists in the language now
 
@@ -783,15 +792,15 @@ without a conflict while two `spec rounds` declarations are an error. The words
 specifications have meaning: pure `spec` functions over `Int`, `Bool`, and
 `Word[8]` through `Word[64]` and fixed-length arrays of them, built from
 literals, parameters, calls, operators, comparisons, `let` bindings, explicit
-conversions, array literals, indices, bounded loops, updates, and
-conditionals. An `impl` body must still be empty.
+conversions, array literals, indices, including indices keyed by data, bounded
+loops, updates, and conditionals. An `impl` body must still be empty.
 
 Even that small surface already follows the chapter's rules. `Int` and each
 word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, and condition slices were built to fit inside every candidate's
+binding, array, loop, condition, and lookup slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -881,7 +890,8 @@ Parsing checks that the tokens have one of a small number of shapes. The
 parser reads them in order and never backtracks: one token of lookahead decides
 almost everything, and a second is consulted only in a few places, such as
 telling a call from a name and a literal's sign from negation. The one longer
-look is at `if` before `(`, `-`, or `[`, where the parser scans ahead, without
+look is at `if` before `(`, `-`, `[`, the word `as`, or the word `with`
+followed by `[`, where the parser scans ahead, without
 backtracking, to see whether a brace group followed by `else` makes it a
 conditional. A source is exactly one edition
 declaration, `edition 2026;`, followed by exactly one module. A module contains
@@ -917,7 +927,10 @@ the syntax tree in source order and does five things:
    inferred: a literal takes the type expected of it and must fit, a name must
    be a parameter of that type, a call must name a typed `spec` whose result is
    that type, and an operator must be defined on it. Literals are decoded
-   exactly, in base 2, 10, or 16.
+   exactly, in base 2, 10, or 16. An index is the one expression whose type
+   comes from what it contains: it is checked as the word type of its first
+   name, call, conversion, or element, or as an `Int` when that is not a
+   word, and it must be proved to select an element.
 4. It checks that the call graph is acyclic, so that every accepted program
    terminates.
 5. If no semantic diagnostic occurred, it constructs the Typed Reference Core.
@@ -1033,11 +1046,12 @@ number and relationships.
 
 ### The next steps of meaning
 
-The six current slices complete bounded parts of the roadmap's S3 stage:
+The seven current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
-range, then truth values, comparisons, Euclidean division, and conditionals.
+range, then truth values, comparisons, Euclidean division, and conditionals,
+then indices keyed by data, proved in range from their types.
 The rest of S3 adds the remaining substance of a language: records of mixed
 types, a type for integers modulo a prime, and explicit failure semantics,
 together with one conformance case per normative rule. Each addition follows the same
@@ -1350,6 +1364,37 @@ carries secret and public domains alongside an executable leakage trace. It is
 where the compiler would check that its own transformations did not introduce
 a leak.
 
+### A lookup, two ways
+
+Tables raise the same question as branches. FIPS 197 defines AES's SubBytes as
+a lookup: each byte of the state selects one of the 256 entries of the S-box.
+Written directly, the lookup reads memory at an address that depends on the
+state, and so on the key. Under the baseline observation model that address
+is part of the trace, and on a machine with a cache it is part of the time as
+well. Table-driven AES was broken this way in practice: Bernstein's 2005
+cache-timing attack, and the cache attacks of Osvik, Shamir, and Tromer,
+recovered AES keys from the timing of its table lookups alone.
+
+The constant-time alternative reads every entry. For each position j of the
+table it compares j with the index, turns the comparison into a mask, and
+accumulates the entry under that mask, so every run touches all 256 entries in
+the same order and the addresses no longer depend on the secret. The price is
+256 reads for one lookup. Bitsliced implementations go further and compute the
+S-box as a circuit of Boolean operations, with no table at all.
+
+Orange 2026 states the first form, because it is the form the standard
+states: since the [lookup slice](#tables-keyed-by-data), a specification may
+write `s[a[i]]`. That is the right place for it. A lookup in a specification
+is a function from a table and a position to an element. It has no addresses,
+so it has no trace, and a specification that had to write the scan would ask
+every reviewer to recognize SubBytes inside it. Which form a machine should
+run is this chapter's question, and it belongs to the implementation and
+target strata. The plan there is that a lookup keyed by a secret is rejected
+under a constant-time policy or compiled to a scan of the whole table, with a
+claim saying which. Until those strata exist Orange claims neither: a lookup
+in an Orange specification says which value results, never how a machine
+would find it.
+
 ### Testing finds; it does not prove
 
 Statistical timing tools such as `dudect` run code on real hardware and look
@@ -1376,7 +1421,9 @@ solo capacity requires it.
 The current compiler has no secrecy labels, no leakage semantics, no target
 model, and no code generation. It therefore makes no constant-time claim of any
 kind, and any such claim is outside its support envelope, which the claim model
-would record as `unsupported`. What exists is the commitment that when Orange
+would record as `unsupported`. Its language can now state a lookup keyed by
+data, and so by a secret, and it neither rejects such a lookup nor claims
+anything about how one would run. What exists is the commitment that when Orange
 does say something about leakage, it will say which observer, which layer,
 which target, and which evidence, and it will say nothing more.
 
@@ -1547,14 +1594,16 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [pure expression specification](EXPRESSIONS_2026.md) of S3b, the
 [bindings and conversions specification](BINDINGS_2026.md) of S3c, the
 [arrays specification](ARRAYS_2026.md) of S3d, the
-[loops specification](LOOPS_2026.md) of S3e, and the
-[conditions specification](CONDITIONS_2026.md) of S3f. S3b through S3f are
+[loops specification](LOOPS_2026.md) of S3e, the
+[conditions specification](CONDITIONS_2026.md) of S3f, and the
+[lookups specification](LOOKUPS_2026.md) of S3g. S3b through S3g are
 implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
-[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
-[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md) are in the
+[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md),
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md), and
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md) are in the
 owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1930,7 +1979,7 @@ spec schedule(m: Word[32]^16) -> Word[32]^64 {
 ```
 
 The indices `t - 2`, `t - 7`, `t - 15`, and `t - 16` are expressions, and this
-is where Orange asks something of its checker. An index may use only integer
+is where Orange asks something of its checker. These use only integer
 literals and the indices of enclosing loops, joined by `+`, `-`, and `*`. The
 checker computes the least and the greatest value each index can take over its
 loops' ranges and rejects the program unless every one selects an element. For
@@ -1952,26 +2001,22 @@ because its computed range reaches below 0. A rule that a reader can apply in
 their head is worth more here than a cleverer one that only the compiler
 understands.
 
-Two consequences follow, and both matter to a cryptographer. No index is ever
-out of range while a program runs, so evaluation has no failure to report and
-no hidden check to trust. And an index that depends on data, such as an S-box
-lookup keyed by a secret byte, cannot be written at all:
+The consequence matters to a cryptographer: no index is ever out of range
+while a program runs, so evaluation has no failure to report and no hidden
+check to trust. The price is that an index must have a bound the checker can
+see. An `Int` parameter has none, so a lookup keyed by one is refused:
 
 ```text
-error[ORC0226]: an index may use only integer literals and loop indices
+error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int`
  --> <stdin>:4:10
   |
 4 |     sbox[k]
-  |          ^ not known when the program is checked
-  = note: an index is built from integer literals and loop indices with `+`, `-`, and `*`, so that every index is known to be in range when the program is checked
+  |          ^ this `Int` has no bound
+  = note: every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals
 ```
 
-Table lookups indexed by secrets are the classic source of cache-timing leaks
-in software AES. Orange 2026 says nothing yet about timing, and this rule is
-not a constant-time claim about any compiled code, as
-[Chapter 6](#chapter-6-secrets-are-a-semantic-concern) explains. But a
-specification language in which a secret-dependent index cannot be expressed
-is one less thing a reviewer has to look for.
+A byte does have a bound, 0 through 255, and a lookup keyed by a byte is how
+[Tables keyed by data](#tables-keyed-by-data) writes AES.
 
 With loops, a whole primitive fits in one short module. The
 [SHA-256 fixture](../compiler/fixtures/s3e/valid-sha256.or) computes the
@@ -1993,9 +2038,10 @@ checker proves lies between 0 and 63. The encryption of the "sunscreen"
 plaintext of section 2.4.2 then matches the RFC's 114-byte ciphertext, byte for
 byte.
 
-One seam still shows. The quarter round names its four positions literally,
-because positions passed as parameters are not static and so cannot be used as
-indices. Positions known at every call, such as a quarter round over columns 0,
+One seam still shows. The quarter round names its four positions literally. A
+position passed as an `Int` has no bound, and one passed as a word must be
+masked to the state's size, as in `s[a & 15]`, a mask the RFC does not print.
+Positions known at every call, such as a quarter round over columns 0,
 4, 8, and 12, are the natural next step.
 
 ### Choices and prime fields
@@ -2114,6 +2160,92 @@ every `%` in these modules is written by hand. A type of integers modulo a
 declared prime, whose arithmetic reduces on its own and whose values cannot
 leave the field, is the natural next step.
 
+### Tables keyed by data
+
+Much of symmetric cryptography is written with tables. FIPS 197 defines AES's
+SubBytes by the S-box, and each byte of the state selects one of its 256
+entries. DES has eight S-boxes, Camellia, ARIA, and SM4 are specified with
+tables, and the table-driven CRC reads one entry per input byte. The S3g slice,
+proposed in the [lookups specification](LOOKUPS_2026.md), lets an index depend
+on data and keeps the rule that every index is proved in range before anything
+runs. SubBytes is then one line:
+
+```orange
+spec sub_bytes(s: Word[8]^256, a: Word[8]^16) -> Word[8]^16 {
+  for i in 0..16 with b: Word[8]^16 = a { b with [i] = s[a[i]] }
+}
+```
+
+The proof is the index's type. An index whose first name, call, conversion, or
+element is a word is checked as that word, and a word has a range: a byte runs
+from 0 through 255, so `a[i]` may select from any table of 256 entries.
+Operators narrow the range, each by one rule a reader can apply in their head.
+For a byte x, `x & 15` and `x >> 4` each run from 0 through 15, so either may
+index a table of 16, and `(x & 15) + 16` runs from 16 through 31. A remainder
+stays below its divisor, a conversion from a narrower word keeps its range,
+and a conditional takes the widest bounds of its values. `(x & 15) - 1` could
+wrap, because `x & 15` may be 0, so it ranges over its whole type, and an
+operator that could wrap always does. When the range does not fit, the error
+names it:
+
+```text
+error[ORC0223]: this index runs from 1 through 16, out of range for `Word[8]^16`
+ --> <stdin>:4:7
+  |
+4 |     t[(x & 15) + 1]
+  |       ^^^^^^^^^^^^ indices run from 0 through 15
+  = note: every value an index can take, over every loop index and word in it, must select an element
+```
+
+An `Int` index is still built from literals and loop indices, and it may now
+also convert a word with `as Int` and choose with a conditional. That is how
+the S-box itself is written. Section 5.1.1 of FIPS 197 defines it as the
+multiplicative inverse in GF(2^8) followed by an affine map, and the inverse
+of g^k, for a generator g, is g^(255 − k), read off tables of powers and
+logarithms:
+
+```orange
+spec substitute(exp: Word[8]^256, log: Word[8]^256, a: Word[8]) -> Word[8] {
+  let b: Word[8] = if a == 0 { 0 } else { exp[(255 - (log[a] as Int)) % 255] };
+  b ^ (b <<< 1) ^ (b <<< 2) ^ (b <<< 3) ^ (b <<< 4) ^ 0x63
+}
+```
+
+`log[a]` is a word index, and `(255 - (log[a] as Int)) % 255` is an `Int`
+index that runs from 0 through 254. The
+[AES-128 fixture](../compiler/fixtures/s3g/valid-aes128.or) builds the tables
+themselves with updates keyed by data: `t with [exp[i]] = i as Word[8]` stores
+each logarithm where its power points, and the inverse S-box is the S-box read
+backwards, `t with [s[i]] = i as Word[8]`. It derives all 256 entries, checks
+the example of section 5.1.1, where 0x53 becomes 0xed, encrypts the examples of
+Appendices B and C.1 to their published ciphertexts, and decrypts C.1 back to
+its plaintext:
+
+```text
+aes::example_substitution: Word[8] = 0xed
+aes::example_c1: Word[8]^16 = [0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a]
+aes::example_c1_inverse: Word[8]^16 = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+```
+
+Tables built this way take many updates, and the loop slice charged one
+evaluation step for every element an update copied. The lookup slice charges
+one step per 64 elements, or part of 64: changing one entry of a 256-entry
+table costs 4 steps rather than 256, and no update costs more than before.
+
+Two seams show. The first is timing again, and it is the sharpest yet. A lookup
+keyed by a secret byte is the pattern that made table-driven AES a textbook
+cache-timing leak, and through S3f an Orange specification could not state one
+at all. S3g states it, because it is what the standard states, and leaves the
+question where [a lookup, two ways](#a-lookup-two-ways) puts it: a
+specification's lookup has no addresses, and whether compiled code may perform
+it, must scan the whole table, or must be rejected is a decision for the
+implementation and target strata. Meanwhile a reviewer can still find every
+lookup, because every index not built from literals and loop indices is one.
+The second seam is the range rule itself. It reads only the syntax of the
+index, so `if x < 16 { t[x] } else { 0 }` is rejected for a table of 16 even
+though it never selects outside it. The same choice is written `t[x & 15]`,
+whose range a reader can see.
+
 ### From bytes to a value
 
 It is worth following one line through the compiler, because each step is a
@@ -2205,7 +2337,9 @@ for a computed index whose range leaves the array. The condition slice adds
 `ORC0227` for a comparison whose operands have no type of their own, such as
 `1 < 2`, and reuses `ORC0214` for a condition that is not a `Bool` and
 `ORC0215` for an operator that a type does not have, such as `<` on `Bool`
-values or `&&` on words.
+values or `&&` on words. The lookup slice adds no code. It narrows `ORC0226` to
+an `Int` index without a bound and reports a word index whose range leaves its
+array as `ORC0223`, naming the range.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -2269,7 +2403,11 @@ sources, four valid and four invalid, including X25519 against the first test
 vector of RFC 7748, Poly1305 against RFC 8439 section 2.5.2, and the
 ChaCha20-Poly1305 seal of section 2.8.2; generated sources run a conditional
 of 4096 arms and show that a branch the step budget could never finish costs
-nothing unless it is chosen. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+nothing unless it is chosen. The lookup specification adds 10 rule identifiers
+and four sources, two valid and two invalid, including AES-128 against FIPS 197
+and a table-driven CRC-32 against its check value; generated sources spend the
+step budget exactly and invert a permutation of 256 bytes by updates keyed by
+its own values. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -2283,8 +2421,8 @@ compiler.
 The list of absences is long, and it is printed in the specifications rather
 than hidden: imports, multiple modules, attributes, visibility, generic
 arguments, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, mixed-type tuples, arrays of arrays, indices that
-depend on data, loops over computed ranges, early exit, short-circuit
+shadowing, type inference, mixed-type tuples, arrays of arrays, indices
+narrowed by conditions, loops over computed ranges, early exit, short-circuit
 operators, conditionals without `else`, a type of integers modulo a prime,
 signed words, variable shift and rotation amounts, recursion, typed
 implementations,
@@ -2302,14 +2440,16 @@ only what every candidate gives the specification stratum: pure, total,
 deterministic meaning over mathematical values. Accepting it is the owner's
 decision, through OEP-0005, S3c's, which builds on it, through OEP-0006,
 S3d's, which builds on S3c, through OEP-0007, S3e's, which builds on S3d,
-through OEP-0008, and S3f's, which builds on S3e, through OEP-0009.
+through OEP-0008, S3f's, which builds on S3e, through OEP-0009, and S3g's,
+which builds on S3f, through OEP-0010.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All five migrations so far are small: every source
+documented migration. All six migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
-under S3e, and every source S3e accepted does the same under S3f.
+under S3e, every source S3e accepted does the same under S3f, and every
+source S3f accepted does the same under S3g, where it costs no more steps.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -3003,8 +3143,11 @@ remainder, a truth value, and a choice, which is what prime-field arithmetic
 needs. X25519 now computes the first test vector of RFC 7748 with a
 255-rung Montgomery ladder over the integers modulo 2^255 − 19, Poly1305
 reproduces the tag of RFC 8439 section 2.5.2, and ChaCha20-Poly1305 seals the
-section 2.8.2 message to its published ciphertext and tag. These are still
-fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
+section 2.8.2 message to its published ciphertext and tag. The lookup slice
+let a byte select from a table. AES-128 now derives its S-box as FIPS 197
+defines it and encrypts the examples of Appendices B and C.1 to their published
+ciphertexts, and a table-driven CRC-32 reproduces its check value. These are
+still fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
 no byte strings and no message of variable length, and no standard has been
 admitted with its provenance. The corpus remains a set of research inputs
 rather than promises.
@@ -3615,7 +3758,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3g in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -3653,9 +3796,16 @@ reviewed protocol describes five candidate graphs and a replay plan of 25
 candidate-case units, each run three times, for 75 executions. Epoch
 `d004-e-4aaf8a83a01693d543c4` ran all 75 on 2026-09-28 with byte-identical
 repetitions. Four candidates passed every case and ST-HOST failed every case,
-so the laboratory narrowed the field without choosing. The results are
-contributor-produced and unreviewed, the selection remains null, and D-004
-remains proposed.
+so the laboratory narrowed the field without choosing. A v0.8 suite then
+added two cases and five cost measures, and epoch
+`d004-e-633e0aa831615cda3e06` ran all 105 of its executions on the same day:
+the same four candidates closed all seven cases, 28 of 35 units. The owner
+chose an isolation-first rule for telling them apart, knowing which candidate
+each offered rule would leave, and it leaves only ST-REL, which ties ST-MIRROR
+at zero isolation obligations and re-identifies six subject classes to its
+seven. Both runs are contributor-produced and unreviewed, the rule's result is
+not a recommendation until the owner disposes every candidate and hard gate,
+the selection remains null, and D-004 remains proposed.
 
 Laboratories let research run ahead of commitments without becoming
 commitments. They also make the eventual decision auditable. When D-004 is
@@ -3920,16 +4070,18 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [pure expression specification](EXPRESSIONS_2026.md), the
 [bindings and conversions specification](BINDINGS_2026.md), the
 [arrays specification](ARRAYS_2026.md), the
-[loops specification](LOOPS_2026.md), and the
-[conditions specification](CONDITIONS_2026.md) are proposed under OEP-0005
-through OEP-0009 and in the owner's review. Where this summary and those
+[loops specification](LOOPS_2026.md), the
+[conditions specification](CONDITIONS_2026.md), and the
+[lookups specification](LOOKUPS_2026.md) are proposed under OEP-0005
+through OEP-0010 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
 
 The parser accepts exactly this grammar, with at most two tokens of
-lookahead, except that `if` before `(`, `-`, or `[` scans forward, without
-backtracking, for a brace group followed by `else`:
+lookahead, except that `if` before `(`, `-`, `[`, the word `as`, or the word
+`with` followed by `[` scans forward, without backtracking, for a brace group
+followed by `else`:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
@@ -4016,7 +4168,13 @@ between any two of these types other than `Bool`: it takes the integer value
 of `e` and, for `Word[n]`, its residue modulo 2^n. The operand's type comes from its first
 name, call, conversion, or index, so a conversion of literals alone is an
 error. An array literal lists exactly as many elements as its type, and `x[k]`
-selects the element at a literal index below the length. No operator or
+selects the element at position k, which must be proved below the length
+before anything runs. An index is checked as the word type of its first name,
+call, conversion, or element, and ranges over that type, narrowed by its
+operators; otherwise it is an `Int` built from integer literals, loop indices,
+and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
+conditionals. An update or fill of n elements costs one evaluation step per
+64 elements, or part of 64. No operator or
 conversion applies to a whole array, and an array's elements are never arrays.
 
 ### Operators
@@ -4068,7 +4226,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0008` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0227` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, index not built from literals and loop indices, comparison whose operands have no type |
+| `ORC0201`–`ORC0227` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1008` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit |
 
@@ -4088,7 +4246,7 @@ its gate; `investigate` means the alternatives need a reproducible comparison.
 | D-001 | Mission | Directed |
 | D-002 | No disposable prototype | Directed |
 | D-003 | Product form | Accepted: standalone Orange (PF-01) |
-| D-004 | Semantic strata | Proposed; first laboratory run recorded, contributor-produced and unreviewed; nothing selected |
+| D-004 | Semantic strata | Proposed; two laboratory runs recorded, contributor-produced and unreviewed; nothing selected |
 | D-005 | Public assurance model | Proposed |
 | D-006 | Proof foundation | Investigate |
 | D-007 | Orange-owned proof format and checker | Proposed; depends on D-006 |
@@ -4183,8 +4341,8 @@ part are listed here so a reader can move from explanation to authority.
   [OEP-0003](governance/oeps/OEP-0003-orange-2026-typed-literals.md), the
   proposed [expression](EXPRESSIONS_2026.md),
   [binding and conversion](BINDINGS_2026.md), [array](ARRAYS_2026.md), and
-  [loop](LOOPS_2026.md), and [condition](CONDITIONS_2026.md) specifications
-  under OEP-0005 through OEP-0009, the
+  [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
+  [lookup](LOOKUPS_2026.md) specifications under OEP-0005 through OEP-0010, the
   [compiler guide](../compiler/README.md), and the compiler's own behavior at
   the book's snapshot.
 - **Chapters 5 and 6:** the [architecture](ARCHITECTURE.md), the
@@ -4223,24 +4381,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.8 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.9 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.8 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.8 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, and condition slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.9 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.9 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, and lookup slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
-| II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3 | Leakage baseline and target models remain unsettled |
+| II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.8 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, and condition slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.9 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, and lookup slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.8 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.9 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.5 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.9 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A and D revised in v0.8 and Appendix B in v0.5 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -4279,7 +4437,9 @@ version 0.6 adds the [arrays specification](ARRAYS_2026.md) and
 version 0.7 adds the [loops specification](LOOPS_2026.md) and
 [OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
 version 0.8 adds the [conditions specification](CONDITIONS_2026.md) and
-[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md).
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md), and
+version 0.9 adds the [lookups specification](LOOKUPS_2026.md) and
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -4335,6 +4495,15 @@ Manuscript version 0.8 revised the preface, Chapters 1, 3, 4, 8, and 12, and
 Appendices A and D for the S3f condition slice, and added the Chapter 8
 section "Choices and prime fields". It was drafted with Claude Code under Chase
 Bryan's direction on 2026-09-29, and every Orange example it adds was run
+against the compiler at the revision that introduced it. That check is not
+independent review, and the same authorship, review, evidence, and provenance
+boundaries apply.
+
+Manuscript version 0.9 revised the preface, Chapters 1, 3, 4, 6, 8, 12, and 16,
+and Appendices A, B, and D for the S3g lookup slice and the second D-004
+laboratory run, and added the Chapter 6 section "A lookup, two ways" and the
+Chapter 8 section "Tables keyed by data". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was run
 against the compiler at the revision that introduced it. That check is not
 independent review, and the same authorship, review, evidence, and provenance
 boundaries apply.
