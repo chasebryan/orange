@@ -1,0 +1,19 @@
+// S3n conformance: conversions a byte order does not define. Words convert
+// only to words of the same number of bits, to `Int`, or to `Mod[m]`, and
+// back; an array of words converts only in a byte order.
+edition 2026;
+module order {
+  type Block = Word[32]^2;
+
+  spec short(b: Word[8]^3) -> Word[32] { b as big Word[32] }
+  spec long(x: Word[64]) -> Word[16]^2 { x as little Word[16]^2 }
+  spec numbers(x: Int) -> Mod[7] { x as big Mod[7] }
+  spec truth(x: Bool) -> Word[8] { x as big Word[8] }
+  spec to_truth(x: Word[8]^4) -> Bool { x as little Bool }
+  spec residues(x: Word[8]^2) -> Mod[7]^2 { x as big Mod[7]^2 }
+  spec integers(x: Int^2) -> Int { x as big Int }
+  spec literal() -> Word[16] { [1, 2] as big Word[16] }
+  spec wanted(x: Word[8]^4) -> Word[64] { x as big Word[32] }
+  spec unordered(x: Word[8]^4) -> Int { x as Int }
+  spec block(x: Word[8]^8) -> Block { x as Block }
+}

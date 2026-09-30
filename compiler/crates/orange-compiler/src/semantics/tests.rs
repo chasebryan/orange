@@ -2110,6 +2110,9 @@ fn expression_nodes<'text>(
                 CoreNodeKind::Parameter(index) => format!("parameter {index}"),
                 CoreNodeKind::Local(index) => format!("local {index}"),
                 CoreNodeKind::Convert { from } => format!("convert from {from}"),
+                CoreNodeKind::Pack { from, order } => {
+                    format!("pack {} from {from}", order.as_str())
+                }
                 CoreNodeKind::Call {
                     function,
                     arguments,
@@ -3846,11 +3849,16 @@ fn operators_and_conversions_apply_to_elements_not_arrays() {
     for diagnostic in &result.diagnostics[..5] {
         assert_eq!(diagnostic.notes(), [note.as_str()]);
     }
-    for diagnostic in &result.diagnostics[5..] {
-        assert_eq!(
-            diagnostic.notes(),
-            ["convert each element, such as `x[0] as Int`"]
-        );
+    // An array of words can be read in a byte order; an array literal has
+    // no type of its own to say so.
+    for (index, diagnostic) in result.diagnostics.iter().enumerate().skip(5) {
+        let note = if index == 7 {
+            "convert each element, such as `x[0] as Int`"
+        } else {
+            "name a byte order to read the words as one number or as words of another width, \
+             as in `x as big Int`, or convert each element, such as `x[0] as Int`"
+        };
+        assert_eq!(diagnostic.notes(), [note]);
     }
     // Operators on elements and conversions of elements are ordinary.
     let (fixture, core) = accepted(concat!(
@@ -9187,4 +9195,251 @@ fn rejects_foreign_size_spans() {
             "case {index}"
         );
     }
+}
+
+#[test]
+fn byte_orders_pack_words_into_words_and_numbers_and_back() {
+    let (fixture, core) = accepted(concat!(
+        "  spec load(b: Word[8]^4) -> Word[32] { b as big Word[32] }\n",
+        "  spec store(x: Word[32]) -> Word[8]^4 { x as little Word[8]^4 }\n",
+        "  spec number(b: Word[8]^16) -> Int { b as little Int }\n",
+        "  spec residue(b: Word[8]^17) -> Mod[(1 << 130) - 5] { b as little Mod[(1 << 130) - 5] }\n",
+        "  spec bytes(n: Int) -> Word[8]^32 { n as big Word[8]^32 }\n",
+        "  spec pair(x: Word[32], y: Word[32]) -> Word[64] { [x, y] as big Word[64] }\n",
+        "  spec text() -> Word[32]^2 { \"abcdefgh\" as big Word[32]^2 }\n",
+        "  spec same(x: Word[64]) -> Int { x as big Int }\n",
+        "  spec slice(b: Word[8]^8) -> Word[32] { b[4..8] as little Word[32] }\n",
+    ));
+    let roots = core
+        .functions
+        .iter()
+        .map(|function| {
+            let nodes = core_nodes(&fixture, function);
+            let (operation, text, ty) = nodes.last().unwrap().clone();
+            (operation, text, ty.to_string())
+        })
+        .collect::<Vec<_>>();
+    let expected = [
+        ("pack big from Word[8]^4", "b as big Word[32]", "Word[32]"),
+        (
+            "pack little from Word[32]",
+            "x as little Word[8]^4",
+            "Word[8]^4",
+        ),
+        ("pack little from Word[8]^16", "b as little Int", "Int"),
+        (
+            "pack little from Word[8]^17",
+            "b as little Mod[(1 << 130) - 5]",
+            "Mod[(1 << 130) - 5]",
+        ),
+        ("pack big from Int", "n as big Word[8]^32", "Word[8]^32"),
+        (
+            "pack big from Word[32]^2",
+            "[x, y] as big Word[64]",
+            "Word[64]",
+        ),
+        (
+            "pack big from Word[8]^8",
+            "\"abcdefgh\" as big Word[32]^2",
+            "Word[32]^2",
+        ),
+        ("pack big from Word[64]", "x as big Int", "Int"),
+        (
+            "pack little from Word[8]^4",
+            "b[4..8] as little Word[32]",
+            "Word[32]",
+        ),
+    ];
+    assert_eq!(
+        roots,
+        expected
+            .iter()
+            .map(|(operation, text, ty)| (String::from(*operation), *text, String::from(*ty)))
+            .collect::<Vec<_>>()
+    );
+    // An array literal packs its elements, which it checks at their own type.
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[5])
+            .into_iter()
+            .map(|(operation, _, ty)| (operation, ty.to_string()))
+            .collect::<Vec<_>>(),
+        [
+            (String::from("parameter 0"), String::from("Word[32]")),
+            (String::from("parameter 1"), String::from("Word[32]")),
+            (String::from("array of 2"), String::from("Word[32]^2")),
+            (
+                String::from("pack big from Word[32]^2"),
+                String::from("Word[64]")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn byte_orders_convert_words_of_one_width_or_a_number() {
+    let (fixture, result) = rejected(concat!(
+        "  spec short(b: Word[8]^3) -> Word[32] { b as big Word[32] }\n",
+        "  spec long(x: Word[64]) -> Word[16]^2 { x as little Word[16]^2 }\n",
+        "  spec numbers(x: Int) -> Mod[7] { x as big Mod[7] }\n",
+        "  spec truth(x: Bool) -> Word[8] { x as big Word[8] }\n",
+        "  spec to_truth(x: Word[8]^4) -> Bool { x as little Bool }\n",
+        "  spec pair(p: (Word[8], Word[8])) -> Word[16] { p as big Word[16] }\n",
+        "  spec tuple() -> Word[16] { (1, 2) as big Word[16] }\n",
+        "  spec integers(x: Int^2) -> Int { x as big Int }\n",
+        "  spec residues(x: Word[8]^2) -> Mod[7]^2 { x as big Mod[7]^2 }\n",
+        "  spec literal() -> Word[16] { [1, 2] as big Word[16] }\n",
+        "  spec wanted(x: Word[8]^4) -> Word[64] { x as big Word[32] }\n",
+        "  spec unknown() -> Int { y as little Int }\n",
+    ));
+    let bytes_note = "a byte order keeps every bit of the words it converts, so words convert \
+                      only to words of the same number of bits";
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::PackedWidth,
+                "Word[32]",
+                String::from("`Word[8]^3` and `Word[32]` have different widths")
+            ),
+            (
+                DiagnosticCode::PackedWidth,
+                "Word[16]^2",
+                String::from("`Word[64]` and `Word[16]^2` have different widths")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "big",
+                String::from("`big` orders words, but this converts `Int` to `Mod[7]`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "as",
+                String::from("`as big` does not convert `Bool`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "Bool",
+                String::from("`as little` does not convert to `Bool`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "as",
+                String::from("`as big` does not convert `(Word[8], Word[8])`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "as",
+                String::from("`as big` does not convert a tuple")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "as",
+                String::from("`as big` does not convert `Int^2`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "Mod[7]^2",
+                String::from("`as big` does not convert to `Mod[7]^2`")
+            ),
+            (
+                DiagnosticCode::UntypedConversionOperand,
+                "[1, 2]",
+                String::from("the operand of `as` has no type of its own")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "Word[32]",
+                String::from("this conversion gives `Word[32]`, but `Word[64]` is required here")
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "y",
+                String::from("`y` is not a parameter of `unknown`")
+            ),
+        ]
+    );
+    let short = &result.diagnostics[0];
+    assert_eq!(short.label(), "`Word[32]` has 32 bits");
+    assert_eq!(
+        short
+            .secondary_spans()
+            .iter()
+            .map(|secondary| (
+                fixture.source().slice(secondary.span()).unwrap(),
+                secondary.label()
+            ))
+            .collect::<Vec<_>>(),
+        [("b", "`Word[8]^3` has 24 bits")]
+    );
+    assert_eq!(short.notes(), [bytes_note]);
+    assert_eq!(result.diagnostics[1].label(), "`Word[16]^2` has 32 bits");
+    assert_eq!(
+        result.diagnostics[2].notes(),
+        ["a number converts to another without a byte order, as `x as Mod[7]`"]
+    );
+    for diagnostic in &result.diagnostics[3..9] {
+        assert_eq!(diagnostic.label(), "a byte order packs and unpacks words");
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                "`as big` and `as little` convert a word or an array of words to words of \
+                 another width, to `Int`, or to `Mod[m]`, and back"
+            ]
+        );
+    }
+}
+
+#[test]
+fn a_byte_order_is_one_semantic_event() {
+    let needed = |text: &str| {
+        let fixture = module(text);
+        (1..200)
+            .find(|limit| {
+                fixture
+                    .analyze_with(Limits {
+                        events: *limit,
+                        ..Limits::DEFAULT
+                    })
+                    .core
+                    .is_some()
+            })
+            .unwrap()
+    };
+    let ordered = needed("  spec f(x: Word[64]) -> Int { x as big Int }\n");
+    let plain = needed("  spec f(x: Word[64]) -> Int { x as Int }\n");
+    assert_eq!(ordered - plain, 1);
+    // Both build the same number of Core nodes: the parameter and the
+    // conversion.
+    let (fixture, core) = accepted("  spec f(x: Word[64]) -> Int { x as big Int }\n");
+    assert_eq!(core_nodes(&fixture, &core.functions[0]).len(), 2);
+}
+
+#[test]
+fn rejects_a_foreign_byte_order_span() {
+    let text = "  spec f(x: Word[64]) -> Int { x as little Int }\n";
+    let first = module(text);
+    let second = module("  spec g(y: Word[64]) -> Int { y as big Int }\n");
+    let mut ast = first.ast.clone();
+    let FunctionBody::Typed(body) = &mut ast.module.functions[0].body else {
+        unreachable!()
+    };
+    let FunctionBody::Typed(other) = &second.ast.module.functions[0].body else {
+        unreachable!()
+    };
+    let (ExpressionKind::Conversion(conversion), ExpressionKind::Conversion(other)) =
+        (&mut body.expression.kind, &other.expression.kind)
+    else {
+        unreachable!()
+    };
+    conversion.order = other.order;
+    let result = analyze(first.source(), &ast);
+    assert!(result.core.is_none());
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .map(Diagnostic::code)
+            .collect::<Vec<_>>(),
+        [DiagnosticCode::InvalidSemanticInput]
+    );
 }

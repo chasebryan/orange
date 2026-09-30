@@ -13,7 +13,7 @@ use crate::core::{
     ExactInteger, MAX_EXACT_INTEGER_BITS, Modulus, Residue, TupleType,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
-use crate::parser::{BinaryOperator, UnaryOperator};
+use crate::parser::{BinaryOperator, ByteOrder, UnaryOperator};
 use crate::source::Span;
 
 /// Maximum reference-evaluation steps performed for one source module.
@@ -2029,6 +2029,18 @@ impl<'core> Machine<'core> {
                 run.clone_from_slice(&value.elements);
                 self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
             }
+            CoreNodeKind::Pack { from, order } => {
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(1)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let value = self.pack(from, *order, &node.ty)?;
+                self.push(value)
+            }
             CoreNodeKind::Convert { from } => {
                 self.charge(1)?;
                 if *from == CoreType::Bool || node.ty == CoreType::Bool {
@@ -2062,6 +2074,170 @@ impl<'core> Machine<'core> {
             }
         }
     }
+}
+
+impl Machine<'_> {
+    /// Pops a value of type `from` and converts it to `to` in `order`. The
+    /// words on one side spell a number of their total width, most
+    /// significant word first for `big` and least significant first for
+    /// `little`: words convert to the words of the same number, to that
+    /// number, or to its residue modulo m, and a number converts to the
+    /// words of its residue modulo 2^width.
+    #[inline(never)]
+    fn pack(&mut self, from: &CoreType, order: ByteOrder, to: &CoreType) -> Result<Value, Stop> {
+        let (bits, count) = from
+            .words()
+            .or_else(|| to.words())
+            .ok_or(Stop::InconsistentCore)?;
+        let width = bits.checked_mul(count).ok_or(Stop::InconsistentCore)?;
+        if to
+            .words()
+            .is_some_and(|(to_bits, to_count)| to_bits.checked_mul(to_count) != Some(width))
+        {
+            return Err(Stop::InconsistentCore);
+        }
+        // One step for each 64 bits packed, or part of 64.
+        let cost = usize::try_from(width.div_ceil(64)).map_err(|_| Stop::InconsistentCore)?;
+        self.charge(cost)?;
+        let digits_needed =
+            usize::try_from(width.div_ceil(32)).map_err(|_| Stop::InconsistentCore)?;
+        let mut limbs = Vec::new();
+        if !(self.reservations.value_limbs)(&mut limbs, digits_needed) {
+            return Err(Stop::Allocation(INTEGER_STORAGE));
+        }
+        limbs.resize(digits_needed, 0);
+        if from.words().is_some() {
+            let operand = self.pop()?;
+            let words: &[Value] = match (&operand, from) {
+                (Value::Array(array), CoreType::Array(ty)) if array.ty == *ty => &array.elements,
+                (Value::Word(_), _) if from.as_array().is_none() => std::slice::from_ref(&operand),
+                _ => return Err(Stop::InconsistentCore),
+            };
+            for (index, word) in words.iter().enumerate() {
+                let Value::Word(word) = word else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let place = word_place(order, index, count)?;
+                write_word(&mut limbs, bits, place, *word)?;
+            }
+        } else {
+            let value = self.pop_integer(from)?;
+            write_residue(&mut limbs, &value, width)?;
+        }
+        match to {
+            CoreType::Int => Ok(Value::Int(Rc::new(ExactInteger::from_limbs(limbs)))),
+            CoreType::Mod(modulus) => {
+                let value = ExactInteger::from_limbs(limbs);
+                // As for `as Mod[m]`: one step per digit of the value and
+                // of m.
+                self.charge(digits(&value).saturating_mul(modulus_digits(*modulus)))?;
+                let reduced = modulus
+                    .reduce(&value, self.reservations.value_limbs)
+                    .ok_or(Stop::Allocation(INTEGER_STORAGE))?;
+                Ok(Value::Mod(Rc::new(reduced)))
+            }
+            CoreType::Array(ty) => {
+                let (bits, count) = to.words().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(count).map_err(|_| Stop::InconsistentCore)?;
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                for index in 0..length {
+                    let place = word_place(order, index, count)?;
+                    elements.push(Value::Word(read_word(&limbs, bits, place)?));
+                }
+                Ok(Value::Array(Rc::new(ArrayValue { ty: *ty, elements })))
+            }
+            CoreType::Word8 | CoreType::Word16 | CoreType::Word32 | CoreType::Word64 => {
+                let (bits, _) = to.words().ok_or(Stop::InconsistentCore)?;
+                Ok(Value::Word(read_word(&limbs, bits, 0)?))
+            }
+            CoreType::Bool | CoreType::Tuple(_) => Err(Stop::InconsistentCore),
+        }
+    }
+}
+
+/// The place of the word at `index` of `count` words in the number they
+/// spell: 0 for the least significant word.
+fn word_place(order: ByteOrder, index: usize, count: u32) -> Result<u32, Stop> {
+    let index = u32::try_from(index).map_err(|_| Stop::InconsistentCore)?;
+    match order {
+        ByteOrder::Little => Ok(index),
+        ByteOrder::Big => count
+            .checked_sub(1)
+            .and_then(|last| last.checked_sub(index))
+            .ok_or(Stop::InconsistentCore),
+    }
+}
+
+/// Writes the `bits`-bit word at `place` into `limbs`, base-2^32 digits
+/// least significant first, which hold zeros there. Each admitted width
+/// divides 64, so a word lies within one digit or fills two.
+fn write_word(limbs: &mut [u32], bits: u32, place: u32, word: u64) -> Result<(), Stop> {
+    if bits < 64 && word.checked_shr(bits) != Some(0) {
+        return Err(Stop::InconsistentCore);
+    }
+    let offset = bits.checked_mul(place).ok_or(Stop::InconsistentCore)?;
+    let digit = usize::try_from(offset / 32).map_err(|_| Stop::InconsistentCore)?;
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = word.to_le_bytes();
+    let low = u32::from_le_bytes([b0, b1, b2, b3]);
+    let high = u32::from_le_bytes([b4, b5, b6, b7]);
+    let target = limbs.get_mut(digit).ok_or(Stop::InconsistentCore)?;
+    *target |= low.checked_shl(offset % 32).ok_or(Stop::InconsistentCore)?;
+    if bits == 64 {
+        let next = digit.checked_add(1).ok_or(Stop::InconsistentCore)?;
+        *limbs.get_mut(next).ok_or(Stop::InconsistentCore)? = high;
+    }
+    Ok(())
+}
+
+/// Reads the `bits`-bit word at `place` of `limbs`, base-2^32 digits least
+/// significant first.
+fn read_word(limbs: &[u32], bits: u32, place: u32) -> Result<u64, Stop> {
+    let offset = bits.checked_mul(place).ok_or(Stop::InconsistentCore)?;
+    let digit = usize::try_from(offset / 32).map_err(|_| Stop::InconsistentCore)?;
+    let low = u64::from(*limbs.get(digit).ok_or(Stop::InconsistentCore)?);
+    if bits == 64 {
+        let next = digit.checked_add(1).ok_or(Stop::InconsistentCore)?;
+        let high = u64::from(*limbs.get(next).ok_or(Stop::InconsistentCore)?);
+        return Ok((high << 32) | low);
+    }
+    let mask = 1_u64
+        .checked_shl(bits)
+        .and_then(|bound| bound.checked_sub(1))
+        .ok_or(Stop::InconsistentCore)?;
+    let word = low.checked_shr(offset % 32).ok_or(Stop::InconsistentCore)?;
+    Ok(word & mask)
+}
+
+/// Writes the residue of `value` modulo 2^`width` into `limbs`, the
+/// `width`/32 base-2^32 digits, rounded up, least significant first, which
+/// hold zeros: a negative value's residue is its two's complement.
+fn write_residue(limbs: &mut [u32], value: &ExactInteger, width: u32) -> Result<(), Stop> {
+    for (digit, magnitude) in limbs.iter_mut().zip(value.magnitude_limbs()) {
+        *digit = *magnitude;
+    }
+    if value.is_negative() {
+        // 2^width - |value|, modulo 2^width: the complement plus one.
+        let mut carry = true;
+        for digit in limbs.iter_mut() {
+            let (sum, overflow) = (!*digit).overflowing_add(u32::from(carry));
+            *digit = sum;
+            carry = overflow;
+        }
+    }
+    let spare = width % 32;
+    if spare != 0 {
+        let top = limbs.last_mut().ok_or(Stop::InconsistentCore)?;
+        *top &= 1_u32
+            .checked_shl(spare)
+            .and_then(|bound| bound.checked_sub(1))
+            .ok_or(Stop::InconsistentCore)?;
+    }
+    Ok(())
 }
 
 fn evaluate_with_reservations(
@@ -3274,6 +3450,30 @@ mod tests {
                 "  spec a() -> Word[8]^129 { let t: Word[8]^256 = [7; 256]; t[0..129] }\n",
                 11,
             ),
+            // A conversion in a byte order costs one step for each 64 bits
+            // of its words, or part of 64, beyond its operand's, and into
+            // `Mod[m]` 1 * d * dm more, as `as Mod[m]` does.
+            (
+                "  spec w() -> Word[64] { \"abcdefgh\" as big Word[64] }\n",
+                2,
+            ),
+            (
+                "  spec w() -> Word[8]^9 { (hex\"00\" as big Word[8]^1) ++ [1; 8] }\n",
+                5,
+            ),
+            (
+                "  spec w() -> Word[32] { let b: Word[8]^4 = [1, 2, 3, 4]; b as big Word[32] }\n",
+                10,
+            ),
+            (
+                "  spec w() -> Word[8]^65 { let f: Word[8]^65 = [7; 65]; f as little Word[8]^65 }\n",
+                13,
+            ),
+            ("  spec m() -> Mod[7] { hex\"ff\" as big Mod[7] }\n", 3),
+            (
+                "  spec i() -> Int { let x: Word[8]^256 = [0xff; 256]; x as big Int }\n",
+                38,
+            ),
             // Integer division costs 1 + d1 * max(d2, 1); word division
             // costs one step.
             ("  spec i() -> Int { let a: Int = 4294967296; a / 3 }\n", 6),
@@ -3582,6 +3782,15 @@ mod tests {
                 " }".repeat(MAX_EXPRESSION_NESTING - 1),
                 last = MAX_EXPRESSION_NESTING - 2
             ),
+            // Words packed and unpacked in turn, nested in groups, and an
+            // array literal of calls packed in calls.
+            nested_by(
+                "((",
+                "x",
+                " as little Word[8]^4) as big Word[32])",
+                MAX_EXPRESSION_NESTING / 2,
+            ),
+            nested_by("g([", "x", "] as big Word[32])", MAX_EXPRESSION_NESTING / 2),
         ];
         let sources = bodies
             .iter()
@@ -3695,6 +3904,242 @@ mod tests {
             }
         }
         assert_eq!(values_of(&members), expected);
+    }
+
+    /// Renders `count` words of `bits` bits as Orange prints them: one word,
+    /// or an array when `array` is set.
+    fn render_words(bits: u32, words: &[u128], array: bool) -> String {
+        let rendered = words
+            .iter()
+            .map(|word| render_word(bits, *word))
+            .collect::<Vec<_>>();
+        if array {
+            format!("[{}]", rendered.join(", "))
+        } else {
+            rendered.concat()
+        }
+    }
+
+    /// The type of `count` words of `bits` bits: one word, or an array.
+    fn words_type(bits: u32, count: u32, array: bool) -> String {
+        if array {
+            format!("Word[{bits}]^{count}")
+        } else {
+            format!("Word[{bits}]")
+        }
+    }
+
+    /// Splits `value`, of `bits * count` bits, into its words in `order`.
+    fn split(value: u128, bits: u32, count: u32, big: bool) -> Vec<u128> {
+        let mask = if bits == 128 {
+            u128::MAX
+        } else {
+            (1 << bits) - 1
+        };
+        (0..count)
+            .map(|index| {
+                let place = if big { count - 1 - index } else { index };
+                (value >> (bits * place)) & mask
+            })
+            .collect()
+    }
+
+    #[test]
+    fn byte_orders_match_a_wide_reference_for_every_pair_of_widths() {
+        let values = [
+            0_u128,
+            1,
+            u128::MAX,
+            0x0123_4567_89ab_cdef_fedc_ba98_7654_3210,
+            0x8000_0000_0000_0000_0000_0000_0000_0001,
+            0x00ff_00ff_00ff_00ff_00ff_00ff_00ff_00ff,
+        ];
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        let mut count = 0;
+        for (_, from_bits) in WORDS {
+            for (_, to_bits) in WORDS {
+                let lcm = from_bits.max(to_bits);
+                for total in [lcm, 64.max(lcm), 128] {
+                    let mask = if total == 128 {
+                        u128::MAX
+                    } else {
+                        (1 << total) - 1
+                    };
+                    let (from_count, to_count) = (total / from_bits, total / to_bits);
+                    for (value_index, value) in values.iter().enumerate() {
+                        let value = value & mask;
+                        for big in [true, false] {
+                            // A single word is written both as a word and
+                            // as an array of one, once each.
+                            let from_array = from_count > 1 || value_index % 2 == 1;
+                            let to_array = to_count > 1 || value_index % 3 == 1;
+                            let words = split(value, from_bits, from_count, big);
+                            let literal = if from_array {
+                                format!(
+                                    "[{}]",
+                                    words
+                                        .iter()
+                                        .map(|word| format!("{word:#x}"))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
+                            } else {
+                                format!("{:#x}", words[0])
+                            };
+                            let (from, to) = (
+                                words_type(from_bits, from_count, from_array),
+                                words_type(to_bits, to_count, to_array),
+                            );
+                            let order = if big { "big" } else { "little" };
+                            let name = format!("p{count}");
+                            count += 1;
+                            members.push_str(&format!(
+                                "  spec {name}() -> {to} {{ let v: {from} = {literal}; \
+                                 v as {order} {to} }}\n"
+                            ));
+                            let result = split(value, to_bits, to_count, big);
+                            expected.push(format!(
+                                "{name} = {}",
+                                render_words(to_bits, &result, to_array)
+                            ));
+                            // The number the words spell.
+                            let name = format!("p{count}");
+                            count += 1;
+                            members.push_str(&format!(
+                                "  spec {name}() -> Int {{ let v: {from} = {literal}; \
+                                 v as {order} Int }}\n"
+                            ));
+                            expected.push(format!("{name} = {value}"));
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(values_of(&members), expected);
+    }
+
+    #[test]
+    fn byte_orders_write_numbers_as_their_residues_and_read_residues() {
+        assert_eq!(
+            values_of(concat!(
+                "  spec minus_one() -> Word[8]^3 { let n: Int = -1; n as big Word[8]^3 }\n",
+                "  spec minus_two() -> Word[16]^2 { let n: Int = -2; n as little Word[16]^2 }\n",
+                "  spec wraps() -> Word[8]^2 { let n: Int = 65539; n as big Word[8]^2 }\n",
+                "  spec negative_wraps() -> Word[32] { let n: Int = -4294967297; n as big Word[32] }\n",
+                "  spec wide() -> Word[64]^4 {\n",
+                "    let n: Int = 1606938044258990275541962092341162602522202993782792835301376;\n",
+                "    n as little Word[64]^4\n",
+                "  }\n",
+                "  spec all_ones() -> Word[64]^4 { let n: Int = -1; n as big Word[64]^4 }\n",
+                "  spec residue() -> Word[8]^2 { let m: Mod[65537] = -1; m as big Word[8]^2 }\n",
+                "  spec small_residue() -> Word[8]^2 { let m: Mod[7] = 6; m as big Word[8]^2 }\n",
+                "  spec reduced() -> Mod[7] { hex\"ff\" as big Mod[7] }\n",
+                "  spec prime() -> Mod[(1 << 130) - 5] {\n",
+                "    let b: Word[8]^17 = [0xff; 17];\n",
+                "    b as little Mod[(1 << 130) - 5]\n",
+                "  }\n",
+                "  spec round_trip() -> Word[8]^4 {\n",
+                "    let x: Word[32] = 0xdeadbeef;\n",
+                "    ((x as little Word[8]^4) as big Word[32]) as big Word[8]^4\n",
+                "  }\n",
+            )),
+            [
+                "minus_one = [0xff, 0xff, 0xff]",
+                "minus_two = [0xfffe, 0xffff]",
+                "wraps = [0x00, 0x03]",
+                "negative_wraps = 0xffffffff",
+                "wide = [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, \
+                 0x0000000000000100]",
+                "all_ones = [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, \
+                 0xffffffffffffffff]",
+                "residue = [0x00, 0x00]",
+                "small_residue = [0x00, 0x06]",
+                "reduced = 3",
+                // 2^136 - 1 modulo 2^130 - 5 is 2^136 - 1 - 64 * (2^130 - 5).
+                "prime = 319",
+                "round_trip = [0xef, 0xbe, 0xad, 0xde]",
+            ]
+        );
+    }
+
+    #[test]
+    fn byte_orders_reach_the_widest_array_and_integer() {
+        // 256 words of 64 bits spell a number of 16,384 bits, the widest an
+        // `Int` holds, and unpack back to themselves.
+        let values = values_of(concat!(
+            "  spec widest() -> Word[64]^256 {\n",
+            "    let x: Word[64]^256 = [0xffffffffffffffff; 256];\n",
+            "    (x as big Int) as little Word[64]^256\n",
+            "  }\n",
+            "  spec ones() -> Word[64]^32 {\n",
+            "    let x: Word[8]^256 = [0xff; 256];\n",
+            "    let n: Int = x as big Int;\n",
+            "    n as little Word[64]^32\n",
+            "  }\n",
+            // 2^2048 is 0 modulo 2^2048.
+            "  spec wraps() -> Word[64]^32 {\n",
+            "    let x: Word[8]^256 = [0xff; 256];\n",
+            "    let n: Int = x as big Int;\n",
+            "    (n + 1) as little Word[64]^32\n",
+            "  }\n",
+        ));
+        let ones = |count: usize| vec!["0xffffffffffffffff"; count].join(", ");
+        let zeros = vec!["0x0000000000000000"; 32].join(", ");
+        assert_eq!(
+            values,
+            [
+                format!("widest = [{}]", ones(256)),
+                format!("ones = [{}]", ones(32)),
+                format!("wraps = [{zeros}]"),
+            ]
+        );
+    }
+
+    #[test]
+    fn byte_order_limb_reservation_failure_returns_no_values() {
+        let packed = core(concat!(
+            "edition 2026; module values {\n",
+            "  spec packed() -> Word[32] { \"abcd\" as big Word[32] }\n",
+            "}\n",
+        ));
+        let result = evaluate_with_reservations(
+            &packed,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            Reservations {
+                value_limbs: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        assert!(result.values().is_none());
+        assert_eq!(result.diagnostics().len(), 1);
+        assert_eq!(
+            result.diagnostics()[0].code(),
+            DiagnosticCode::EvaluationResourceLimit
+        );
+        assert_eq!(
+            result.diagnostics()[0].label(),
+            "exact integer storage could not be reserved"
+        );
+        let array_failure = evaluate_with_reservations(
+            &core(concat!(
+                "edition 2026; module values {\n",
+                "  spec unpacked() -> Word[8]^4 { let x: Word[32] = 1; x as big Word[8]^4 }\n",
+                "}\n",
+            )),
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            Reservations {
+                array: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        assert!(array_failure.values().is_none());
+        assert_eq!(
+            array_failure.diagnostics()[0].label(),
+            "evaluation array storage could not be reserved"
+        );
     }
 
     #[test]

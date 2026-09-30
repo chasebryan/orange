@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::parser::{BinaryOperator, UnaryOperator};
+use crate::parser::{BinaryOperator, ByteOrder, UnaryOperator};
 use crate::source::Span;
 
 pub(crate) const MAX_EXACT_INTEGER_BITS: usize = 16_384;
@@ -603,6 +603,17 @@ pub enum CoreNodeKind {
         /// The operand's type.
         from: CoreType,
     },
+    /// A conversion of one operand subtree in a byte order. The operand and
+    /// this node's type are words or arrays of words of one total width, or
+    /// one of them is `Int` or `Mod[m]`: the words stand for the number they
+    /// spell in that order, which a number reduces modulo the width's power
+    /// of two and a residue modulo m.
+    Pack {
+        /// The operand's type.
+        from: CoreType,
+        /// The byte order.
+        order: ByteOrder,
+    },
     /// An array of this node's type built from its element subtrees, one
     /// per element, in index order.
     Array {
@@ -726,6 +737,20 @@ impl CoreType {
             Self::Word16 => Some(16),
             Self::Word32 => Some(32),
             Self::Word64 => Some(64),
+        }
+    }
+
+    /// Returns the width of each word and the number of words of a word
+    /// type, one word, or of an array of words, or `None` for the other
+    /// types: the words a conversion in a byte order packs or unpacks.
+    #[must_use]
+    pub fn words(&self) -> Option<(u32, u32)> {
+        match self {
+            Self::Array(array) => array
+                .element()
+                .word_bits()
+                .map(|bits| (bits, array.length())),
+            _ => self.word_bits().map(|bits| (bits, 1)),
         }
     }
 
@@ -1442,6 +1467,20 @@ impl ExactInteger {
             negative: self.negative,
             magnitude: self.magnitude.try_clone_with_reservation(reserve_limbs)?,
         })
+    }
+
+    /// Returns the magnitude's base-2^32 digits, least significant first,
+    /// without leading zero digits.
+    pub(crate) fn magnitude_limbs(&self) -> &[u32] {
+        &self.magnitude.limbs
+    }
+
+    /// Returns the nonnegative integer whose base-2^32 digits, least
+    /// significant first, are `limbs`, which may end in zero digits.
+    pub(crate) fn from_limbs(limbs: Vec<u32>) -> Self {
+        let mut magnitude = Magnitude { limbs };
+        magnitude.normalize();
+        Self::new(false, magnitude)
     }
 
     /// Returns the nonnegative integer `value`, or `None` if storage cannot
@@ -2622,6 +2661,7 @@ mod tests {
                     | CoreNodeKind::Binary(_)
                     | CoreNodeKind::Shift { .. }
                     | CoreNodeKind::Convert { .. }
+                    | CoreNodeKind::Pack { .. }
                     | CoreNodeKind::Array { .. }
                     | CoreNodeKind::Index { .. }
                     | CoreNodeKind::Select

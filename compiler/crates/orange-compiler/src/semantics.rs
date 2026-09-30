@@ -12,10 +12,10 @@ use crate::core::{
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
-    ArrayExpression, BinaryExpression, BinaryOperator, Binding, ByteString, CallExpression,
-    ConditionalExpression, ConversionExpression, Expression, ExpressionKind, FillExpression,
-    FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral,
-    LoopExpression, MAX_ARRAY_ELEMENTS, MAX_SIZES_PER_FUNCTION, Parameter, Pattern,
+    ArrayExpression, BinaryExpression, BinaryOperator, Binding, ByteOrder, ByteString,
+    CallExpression, ConditionalExpression, ConversionExpression, Expression, ExpressionKind,
+    FillExpression, FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression,
+    IntegerLiteral, LoopExpression, MAX_ARRAY_ELEMENTS, MAX_SIZES_PER_FUNCTION, Parameter, Pattern,
     ProjectExpression, Size, SizeParameter, SliceExpression, SliceRange, SliceUpdateExpression,
     SyntaxTree, TupleExpression, TypeSyntax, TypedBody, TypedName, UnaryExpression, UnaryOperator,
     UpdateExpression,
@@ -24,6 +24,7 @@ use crate::source::{SourceFile, Span, TextOffset};
 
 mod bytes;
 mod linking;
+mod order;
 mod ranges;
 mod sizes;
 mod tuples;
@@ -308,6 +309,7 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
             ExpressionKind::Parenthesized(inner) => expression_belongs(inner, belongs),
             ExpressionKind::Conversion(conversion) => {
                 belongs(conversion.keyword_span)
+                    && conversion.order.is_none_or(|(_, span)| belongs(span))
                     && type_belongs(&conversion.target, belongs)
                     && expression_belongs(&conversion.operand, belongs)
             }
@@ -2015,6 +2017,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
+        if conversion.order.is_some() {
+            return self.check_packing(expression, conversion, expected, context, scope, output);
+        }
         let target = self.analyze_type(&conversion.target, "conversion type");
         if self.halted {
             return false;
@@ -2117,6 +2122,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn report_array_operand(&mut self, span: Span, from: Option<CoreType>, tuple: bool) {
         if self.begin_report(span) {
             let tuple = tuple || from.as_ref().is_some_and(|from| from.as_tuple().is_some());
+            let words = from.as_ref().and_then(CoreType::words).is_some();
             let operand = from.map_or_else(
                 || String::from(if tuple { "a tuple" } else { "an array" }),
                 |from| format!("`{from}`"),
@@ -2130,6 +2136,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .with_label("`as` converts one `Int`, word, or residue value")
                 .with_note(if tuple {
                     "convert each element, such as `p.0 as Int`"
+                } else if words {
+                    "name a byte order to read the words as one number or as words of another \
+                     width, as in `x as big Int`, or convert each element, such as `x[0] as Int`"
                 } else {
                     "convert each element, such as `x[0] as Int`"
                 }),
@@ -2172,9 +2181,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 )
                 .with_label("`as` gives one `Int`, word, or residue value")
                 .with_note(if target.as_tuple().is_some() {
-                    "convert each element, such as `(p.0 as Int, p.1 as Int)`"
+                    String::from("convert each element, such as `(p.0 as Int, p.1 as Int)`")
+                } else if target.words().is_some() {
+                    format!(
+                        "name a byte order to write words as `{target}`, as in `as big \
+                         {target}`, or build the array from its elements"
+                    )
                 } else {
-                    "convert each element, such as `x[0] as Int`"
+                    String::from("convert each element, such as `x[0] as Int`")
                 }),
             );
         }

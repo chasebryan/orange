@@ -1,0 +1,8 @@
+// S3n conformance: an array type after `as` follows a byte order, and a
+// byte order is a word before a type, so `big` before anything else is a
+// type's name.
+edition 2026;
+module order {
+  spec array(x: Word[32]) -> Word[8]^4 { x as Word[8]^4 }
+  spec twice(x: Word[8]^4) -> Int { x as big as Int }
+}
