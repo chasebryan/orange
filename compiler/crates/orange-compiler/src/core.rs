@@ -721,7 +721,8 @@ pub struct CoreArray {
 impl CoreArray {
     /// Returns the array of type `ty` holding `elements`, or `None` unless
     /// there are exactly `ty.length()` elements, each of `ty.element()`.
-    pub(crate) fn new(ty: ArrayType, elements: Vec<CoreValue>) -> Option<Self> {
+    #[must_use]
+    pub fn new(ty: ArrayType, elements: Vec<CoreValue>) -> Option<Self> {
         let length_matches = usize::try_from(ty.length()).ok() == Some(elements.len());
         (length_matches && elements.iter().all(|element| element.ty() == ty.element()))
             .then_some(Self { ty, elements })

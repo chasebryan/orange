@@ -143,6 +143,216 @@ pub fn evaluate(core: &CoreModule) -> EvaluationResult {
     evaluate_with_limit(core, MAX_EVALUATION_STEPS_PER_SOURCE)
 }
 
+/// The result of calling one function through an [`Evaluator`].
+///
+/// ```compile_fail
+/// use orange_compiler::CallResult;
+///
+/// fn forge_steps(result: &mut CallResult) {
+///     result.steps = 0;
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallResult {
+    /// The exact result, present only when the call produced no diagnostics.
+    value: Option<CoreValue>,
+    /// Evaluation-resource diagnostics.
+    diagnostics: Vec<Diagnostic>,
+    /// Steps charged to the call, including a step that exceeded its limit.
+    steps: usize,
+}
+
+impl CallResult {
+    /// Returns the exact result, or `None` after evaluation failure.
+    #[must_use]
+    pub const fn value(&self) -> Option<&CoreValue> {
+        self.value.as_ref()
+    }
+
+    /// Consumes this result and returns its value, if produced.
+    #[must_use]
+    pub fn into_value(self) -> Option<CoreValue> {
+        self.value
+    }
+
+    /// Returns evaluation-resource diagnostics.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Returns the steps the call used; after failure, those completed
+    /// before it stopped.
+    #[must_use]
+    pub const fn steps(&self) -> usize {
+        self.steps
+    }
+
+    /// Returns whether the call did not produce a value.
+    #[must_use]
+    pub const fn has_errors(&self) -> bool {
+        self.value.is_none()
+    }
+}
+
+/// A typed Core module prepared for calls on values the host supplies.
+///
+/// [`evaluate`] evaluates every function without parameters under one budget
+/// per source. An evaluator instead calls one function at a time on
+/// arguments of exactly its parameter types, and gives every call its own
+/// step limit. Literals are prepared once and shared by every call.
+pub struct Evaluator<'core> {
+    machine: Machine<'core>,
+}
+
+impl fmt::Debug for Evaluator<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Evaluator")
+            .field("module", &self.machine.core.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'core> Evaluator<'core> {
+    /// Prepares `core` for calls, or returns `None` when storage for its
+    /// shared literals cannot be reserved.
+    #[must_use]
+    pub fn new(core: &'core CoreModule) -> Option<Self> {
+        Some(Self {
+            machine: Machine {
+                core,
+                literals: share_literals(core)?,
+                steps: 0,
+                step_limit: 0,
+                reservations: Reservations::DEFAULT,
+                stack: Vec::new(),
+                frames: Vec::new(),
+                inner_frames: 0,
+            },
+        })
+    }
+
+    /// Returns the prepared module.
+    #[must_use]
+    pub const fn module(&self) -> &'core CoreModule {
+        self.machine.core
+    }
+
+    /// Returns the module's function named `name`, if there is one.
+    #[must_use]
+    pub fn function(&self, name: &str) -> Option<&'core CoreFunction> {
+        self.machine
+            .core
+            .functions
+            .iter()
+            .find(|function| function.name == name)
+    }
+
+    /// Calls `function` on `arguments` within `step_limit` evaluation steps.
+    ///
+    /// Returns `None`, before any evaluation, unless `function` belongs to
+    /// the prepared module and `arguments` have exactly its parameter types.
+    #[must_use]
+    pub fn call(
+        &mut self,
+        function: &'core CoreFunction,
+        arguments: &[CoreValue],
+        step_limit: usize,
+    ) -> Option<CallResult> {
+        let index = usize::try_from(function.id.index()).ok()?;
+        let owned = self.machine.core.functions.get(index)?;
+        if !std::ptr::eq(owned, function)
+            || function.parameters.len() != arguments.len()
+            || function
+                .parameters
+                .iter()
+                .zip(arguments)
+                .any(|(ty, argument)| argument.ty() != *ty)
+        {
+            return None;
+        }
+        let mut diagnostics = Vec::new();
+        if !reserve_diagnostics(&mut diagnostics, 1) {
+            return Some(CallResult {
+                value: None,
+                diagnostics,
+                steps: 0,
+            });
+        }
+        let machine = &mut self.machine;
+        machine.steps = 0;
+        machine.step_limit = step_limit;
+        let value = host_values(arguments, machine.reservations)
+            .and_then(|arguments| machine.run(function, arguments))
+            .and_then(|value| result_value(value, function.result_type, machine.reservations));
+        let steps = machine.steps;
+        // Release the call's values and frames; their storage is kept.
+        machine.stack.clear();
+        machine.frames.clear();
+        machine.inner_frames = 0;
+        Some(match value {
+            Ok(value) => CallResult {
+                value: Some(value),
+                diagnostics,
+                steps,
+            },
+            Err(stop) => CallResult {
+                value: None,
+                diagnostics: stopped(diagnostics, function, stop, step_limit, steps == 0)
+                    .diagnostics,
+                steps,
+            },
+        })
+    }
+}
+
+/// Copies host values into the machine's shared representation.
+fn host_values(arguments: &[CoreValue], reservations: Reservations) -> Result<Vec<Value>, Stop> {
+    let mut values = Vec::new();
+    if !(reservations.stack)(&mut values, arguments.len()) {
+        return Err(Stop::Allocation(
+            "evaluation value stack could not be reserved",
+        ));
+    }
+    for argument in arguments {
+        values.push(host_value(argument, reservations)?);
+    }
+    Ok(values)
+}
+
+fn host_value(value: &CoreValue, reservations: Reservations) -> Result<Value, Stop> {
+    Ok(match value {
+        CoreValue::Int(value) => Value::Int(Rc::new(
+            value
+                .try_clone_with_reservation(reservations.value_limbs)
+                .ok_or(Stop::Allocation(
+                    "exact integer storage could not be reserved",
+                ))?,
+        )),
+        CoreValue::Bool(value) => Value::Bool(*value),
+        CoreValue::Array(array) => {
+            let mut elements = Vec::new();
+            if !(reservations.array)(&mut elements, array.elements().len()) {
+                return Err(Stop::Allocation(
+                    "evaluation array storage could not be reserved",
+                ));
+            }
+            for element in array.elements() {
+                if matches!(element, CoreValue::Array(_)) {
+                    return Err(Stop::InconsistentCore);
+                }
+                elements.push(host_value(element, reservations)?);
+            }
+            Value::Array(Rc::new(ArrayValue {
+                ty: array.ty(),
+                elements,
+            }))
+        }
+        word => Value::Word(word.word_as_u64().ok_or(Stop::InconsistentCore)?),
+    })
+}
+
 fn evaluate_with_limit(core: &CoreModule, step_limit: usize) -> EvaluationResult {
     evaluate_with_limit_and_reservation(core, step_limit, |values, capacity| {
         values.try_reserve_exact(capacity).is_ok()
@@ -541,11 +751,22 @@ impl<'core> Machine<'core> {
         Ok(Value::Int(Rc::new(value)))
     }
 
-    /// Evaluates one parameterless function to completion.
-    fn run(&mut self, root: &'core CoreFunction) -> Result<Value, Stop> {
+    /// Evaluates one function to completion on `arguments`, which have
+    /// exactly its parameter types.
+    fn run(&mut self, root: &'core CoreFunction, arguments: Vec<Value>) -> Result<Value, Stop> {
         self.stack.clear();
         self.frames.clear();
         self.inner_frames = 0;
+        if root.parameters.len() != arguments.len() {
+            return Err(Stop::InconsistentCore);
+        }
+        // The arguments occupy the stack from the root frame's base, 0.
+        if !(self.reservations.stack)(&mut self.stack, arguments.len()) {
+            return Err(Stop::Allocation(
+                "evaluation value stack could not be reserved",
+            ));
+        }
+        self.stack.extend(arguments);
         if !(self.reservations.frames)(&mut self.frames, 1) {
             return Err(Stop::Allocation(
                 "evaluation call stack could not be reserved",
@@ -1302,7 +1523,7 @@ fn evaluate_with_reservations(
         .filter(|function| function.parameters.is_empty())
     {
         let steps_before = machine.steps;
-        let value = match machine.run(function) {
+        let value = match machine.run(function, Vec::new()) {
             Ok(value) => value,
             Err(stop) => {
                 return stopped(
@@ -3435,5 +3656,191 @@ mod tests {
                 String::from("an array literal cannot have type `Word[32]`")
             )]
         );
+    }
+
+    fn bytes(values: &[u8]) -> CoreValue {
+        let ty = ArrayType::new(CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap();
+        CoreValue::Array(
+            CoreArray::new(
+                ty,
+                values.iter().map(|byte| CoreValue::Word8(*byte)).collect(),
+            )
+            .unwrap(),
+        )
+    }
+
+    const CALLS: &str = concat!(
+        "edition 2026; module calls {\n",
+        "  spec mix(key: Word[8]^4, data: Word[8]^4) -> Word[8]^4 {\n",
+        "    for i in 0..4 with out: Word[8]^4 = data { out with [i] = (data[i] ^ key[i]) <<< 1 }\n",
+        "  }\n",
+        "  spec scale(x: Int, flag: Bool, w: Word[64]) -> Int {\n",
+        "    if flag { x * (w as Int) } else { -x }\n",
+        "  }\n",
+        "  spec spin(n: Word[32]) -> Word[32] { for i in 0..60000 with a: Word[32] = n { a + 1 } }\n",
+        "  spec constant() -> Word[8] { 7 }\n",
+        "}\n",
+    );
+
+    #[test]
+    fn calls_run_one_function_on_host_values_with_exact_types() {
+        let core = core(CALLS);
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        assert_eq!(evaluator.module().name(), "calls");
+        let mix = evaluator.function("mix").unwrap();
+        let result = evaluator
+            .call(
+                mix,
+                &[bytes(&[1, 2, 3, 0x80]), bytes(&[0x10, 0x20, 0x30, 0x01])],
+                1_000,
+            )
+            .unwrap();
+        assert_eq!(result.diagnostics(), []);
+        assert!(!result.has_errors());
+        assert_eq!(result.value(), Some(&bytes(&[0x22, 0x44, 0x66, 0x03])));
+        assert!(result.steps() > 0);
+        let scale = evaluator.function("scale").unwrap();
+        let big = ExactInteger::from_u64(u64::MAX, reserve_value_limbs).unwrap();
+        let result = evaluator
+            .call(
+                scale,
+                &[
+                    CoreValue::Int(big),
+                    CoreValue::Bool(true),
+                    CoreValue::Word64(u64::MAX),
+                ],
+                1_000,
+            )
+            .unwrap();
+        assert_eq!(
+            result.value().unwrap().to_string(),
+            "340282366920938463426481119284349108225"
+        );
+        let negative = ExactInteger::from_u64(5, reserve_value_limbs).unwrap();
+        let result = evaluator
+            .call(
+                scale,
+                &[
+                    CoreValue::Int(negative),
+                    CoreValue::Bool(false),
+                    CoreValue::Word64(3),
+                ],
+                1_000,
+            )
+            .unwrap();
+        assert_eq!(result.into_value().unwrap().to_string(), "-5");
+        // A parameterless function can be called too.
+        let constant = evaluator.function("constant").unwrap();
+        let result = evaluator.call(constant, &[], 1).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(7)));
+        assert_eq!(result.steps(), 1);
+    }
+
+    #[test]
+    fn calls_reject_foreign_functions_and_mistyped_arguments_before_evaluation() {
+        let core = core(CALLS);
+        let other = self::core(CALLS);
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let mix = evaluator.function("mix").unwrap();
+        let foreign = other.functions().first().unwrap();
+        let key = bytes(&[0; 4]);
+        assert!(evaluator.function("absent").is_none());
+        assert!(
+            evaluator
+                .call(foreign, &[key.clone(), key.clone()], 1_000)
+                .is_none()
+        );
+        assert!(
+            evaluator
+                .call(mix, std::slice::from_ref(&key), 1_000)
+                .is_none()
+        );
+        assert!(
+            evaluator
+                .call(mix, &[key.clone(), key.clone(), key.clone()], 1_000)
+                .is_none()
+        );
+        assert!(
+            evaluator
+                .call(mix, &[key.clone(), bytes(&[0; 5])], 1_000)
+                .is_none()
+        );
+        assert!(
+            evaluator
+                .call(mix, &[key.clone(), CoreValue::Word8(0)], 1_000)
+                .is_none()
+        );
+        // The evaluator is still usable after refusals.
+        assert!(
+            evaluator
+                .call(mix, &[key.clone(), key], 1_000)
+                .unwrap()
+                .value()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn every_call_has_its_own_step_limit() {
+        let core = core(CALLS);
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let spin = evaluator.function("spin").unwrap();
+        let exact = evaluator
+            .call(spin, &[CoreValue::Word32(1)], 1_000_000)
+            .unwrap();
+        assert_eq!(exact.value(), Some(&CoreValue::Word32(60_001)));
+        let needed = exact.steps();
+        // The same call succeeds with exactly its steps, twice in a row,
+        // and fails with one fewer.
+        for _ in 0..2 {
+            let again = evaluator
+                .call(spin, &[CoreValue::Word32(1)], needed)
+                .unwrap();
+            assert_eq!(again.value(), Some(&CoreValue::Word32(60_001)));
+            assert_eq!(again.steps(), needed);
+        }
+        let short = evaluator
+            .call(spin, &[CoreValue::Word32(1)], needed - 1)
+            .unwrap();
+        assert!(short.has_errors());
+        assert_eq!(short.value(), None);
+        let [diagnostic] = short.diagnostics() else {
+            panic!("expected one diagnostic");
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation step limit exceeded"
+        );
+        // A failed call leaves the evaluator ready for the next one.
+        let after = evaluator
+            .call(spin, &[CoreValue::Word32(7)], needed)
+            .unwrap();
+        assert_eq!(after.value(), Some(&CoreValue::Word32(60_007)));
+    }
+
+    #[test]
+    fn calls_agree_with_whole_module_evaluation() {
+        let text = concat!(
+            "edition 2026; module agree {\n",
+            "  spec f(x: Word[32]) -> Word[32] { (x <<< 7) ^ 0x9e3779b9 }\n",
+            "  spec g() -> Word[32] { f(0x01234567) }\n",
+            "}\n",
+        );
+        let core = core(text);
+        let evaluated = evaluate(&core);
+        let expected = evaluated.values().unwrap().first().unwrap().value().clone();
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let f = evaluator.function("f").unwrap();
+        let g = evaluator.function("g").unwrap();
+        let direct = evaluator
+            .call(f, &[CoreValue::Word32(0x0123_4567)], 100)
+            .unwrap();
+        assert_eq!(direct.value(), Some(&expected));
+        assert_eq!(
+            evaluator.call(g, &[], 100).unwrap().value(),
+            Some(&expected)
+        );
+        assert!(format!("{evaluator:?}").contains("agree"));
     }
 }
