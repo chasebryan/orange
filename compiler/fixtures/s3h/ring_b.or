@@ -1,0 +1,6 @@
+// S3h rejection: `ring_b` and `ring_a` use each other.
+edition 2026;
+module ring_b {
+  use ring_a;
+  spec two() -> Int { ring_a::one() + 1 }
+}

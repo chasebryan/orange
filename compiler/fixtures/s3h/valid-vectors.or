@@ -1,0 +1,56 @@
+// S3h conformance: a program of four modules. This root uses `sha256`,
+// `hmac`, and `hkdf`; `hkdf` uses `hmac`, and `hmac` uses `sha256`. Each
+// module is checked once, after the modules it uses, and only the root's
+// values are printed. Orange has no strings, so every text is written as its
+// bytes, with the text in a comment.
+edition 2026;
+module vectors {
+  use sha256;
+  use hmac;
+  use hkdf;
+
+  // FIPS 180-4 example: "abc" hashes to ba7816bf ... f20015ad.
+  spec abc() -> Word[8]^32 {
+    let m: Word[8]^3 = [0x61, 0x62, 0x63];
+    sha256::hash(for i in 0..3 with b: Word[8]^64 = [0; 64] { b with [i] = m[i] }, 3)
+  }
+
+  // RFC 4231 test case 1: twenty bytes 0x0b as the key, and "Hi There".
+  spec hi_there() -> Word[8]^32 {
+    let key: Word[8]^64 = for i in 0..20 with b: Word[8]^64 = [0; 64] { b with [i] = 0x0b };
+    let data: Word[8]^8 = [0x48, 0x69, 0x20, 0x54, 0x68, 0x65, 0x72, 0x65];
+    hmac::mac(key, for i in 0..8 with b: Word[8]^64 = [0; 64] { b with [i] = data[i] }, 8)
+  }
+
+  // RFC 4231 test case 2: "Jefe" as the key, and "what do ya want for
+  // nothing?".
+  spec jefe() -> Word[8]^32 {
+    let key: Word[8]^4 = [0x4a, 0x65, 0x66, 0x65];
+    let data: Word[8]^28 = [
+      0x77, 0x68, 0x61, 0x74, 0x20, 0x64, 0x6f, 0x20, 0x79, 0x61, 0x20, 0x77, 0x61, 0x6e,
+      0x74, 0x20, 0x66, 0x6f, 0x72, 0x20, 0x6e, 0x6f, 0x74, 0x68, 0x69, 0x6e, 0x67, 0x3f,
+    ];
+    hmac::mac(
+      for i in 0..4 with b: Word[8]^64 = [0; 64] { b with [i] = key[i] },
+      for i in 0..28 with b: Word[8]^64 = [0; 64] { b with [i] = data[i] },
+      28
+    )
+  }
+
+  // RFC 5869 test case 1: IKM is 22 bytes 0x0b, the salt is 0x00 through
+  // 0x0c, and the info is 0xf0 through 0xf9.
+  spec prk() -> Word[8]^32 {
+    hkdf::extract(
+      for i in 0..13 with b: Word[8]^64 = [0; 64] { b with [i] = i as Word[8] },
+      for i in 0..22 with b: Word[8]^64 = [0; 64] { b with [i] = 0x0b },
+      22
+    )
+  }
+
+  spec okm() -> Word[8]^42 {
+    let info: Word[8]^64 = for i in 0..10 with b: Word[8]^64 = [0; 64] {
+      b with [i] = 0xf0 + (i as Word[8])
+    };
+    hkdf::expand_42(prk(), info, 10)
+  }
+}

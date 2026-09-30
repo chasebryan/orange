@@ -1613,6 +1613,83 @@ mod tests {
         root
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn used_modules_are_read_once_from_the_root_directory() {
+        let directory = unix_test_root().join(format!("orangec-modules-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let files = [
+            (
+                "base.or",
+                "edition 2026; module base { spec one() -> Int { 1 } }\n",
+            ),
+            ("left.or", "edition 2026; module left { use base; }\n"),
+            (
+                "right.or",
+                "edition 2026; module right { use base; use left; }\n",
+            ),
+        ];
+        for (name, text) in files {
+            std::fs::write(directory.join(name), text).unwrap();
+        }
+        let root_path = directory.join("root.or");
+        let load = |root_text: &str| {
+            let mut sources = SourceMap::new();
+            let id = sources.add("root.or", root_text).unwrap();
+            let source = sources.get(id).unwrap();
+            let lexed = lex(source, Edition::default());
+            let ast = parse(source, &lexed).into_ast().unwrap();
+            let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
+            let loaded = load_used_modules(
+                &root_path,
+                &ast,
+                &mut sources,
+                Edition::default(),
+                &mut remaining,
+            );
+            let loaded = loaded.map(|modules| {
+                modules
+                    .iter()
+                    .map(|(id, ast)| {
+                        (
+                            sources.get(*id).unwrap().name().to_owned(),
+                            ast.module().name().text().to_owned(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            });
+            (loaded, MAX_SOURCE_BYTES_PER_INVOCATION - remaining)
+        };
+
+        // Each module is read once, in the order a `use` first names it; the
+        // root's own name is not read.
+        let (loaded, charged) =
+            load("edition 2026; module root { use right; use root; use base; use right; }");
+        let path_of = |name: &str| directory.join(name).display().to_string();
+        assert_eq!(
+            loaded.unwrap(),
+            [
+                (path_of("right.or"), String::from("right")),
+                (path_of("base.or"), String::from("base")),
+                (path_of("left.or"), String::from("left")),
+            ]
+        );
+        assert_eq!(
+            charged,
+            files.iter().map(|(_, text)| text.len()).sum::<usize>()
+        );
+
+        let (missing, _) = load("edition 2026; module root { use left; use gone; }");
+        let group = missing.unwrap_err();
+        assert!(group.starts_with("error[ORC1001]: could not read source file `"));
+        assert!(group.contains("gone.or`"));
+        assert!(group.ends_with(
+            "  = note: `use gone;` in module `root` reads the module `gone` from this file\n"
+        ));
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
     #[test]
     fn cli_diagnostic_code_inventory_is_exact_ordered_and_unique() {
         let actual = CliDiagnosticCode::ALL
