@@ -39,7 +39,10 @@ later revision whose bound inputs are byte-identical.
 the conclusion from the latest attempt's records. `export` writes the
 committed form of a verified archive: the packet, the records and logs as
 JSON lines in chunks of at most 384 KiB, the summary and a manifest; the
-toolchain archives stay out, named by digest in the packet. `verify` checks
+toolchain archives stay out, named by digest in the packet. A record's
+projection, standalone results and candidate tree, which replays of one
+candidate repeat unchanged, are stored once by digest in `objects-NN.jsonl`
+and restored when the export is read. `verify` checks
 either form: the epoch name and seed against the packet, every file against
 its manifest, every record's epoch and projection digest, every step's logs,
 and that the summary regenerates byte for byte. On a clone that has the

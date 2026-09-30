@@ -252,6 +252,26 @@ class D006ExportTests(unittest.TestCase):
             self.assertEqual(run.load_logs(export), {run.sha256(data): data for data in texts.values()})
 
 
+    def test_repeated_fields_are_stored_once_and_restored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            export = Path(tmp)
+            projection = {"build": {"completed": True}, "cases": {"DS-01": {"positives": []}}, "artifacts": []}
+            records = [{"ordinal": n, "profile": "deterministic_replay", "projection": projection, "steps": [n]} for n in (1, 2, 3)]
+            objects: dict = {}
+            packed = [run.pack_record(r, objects) for r in records]
+            self.assertEqual(list(objects), [run.digest(projection)])
+            self.assertEqual(packed[0]["projection"], {"$object": run.digest(projection)})
+            for name, data in run.chunked([run.canonical(r) + b"\n" for r in packed], "records").items():
+                (export / name).write_bytes(data)
+            rows = [run.canonical({"sha256": k, "value": v}) + b"\n" for k, v in objects.items()]
+            for name, data in run.chunked(rows, "objects").items():
+                (export / name).write_bytes(data)
+            self.assertEqual(run.load_records(export), records)
+            (export / "objects-01.jsonl").write_bytes(b"")
+            with self.assertRaises(run.RunError):
+                run.load_records(export)
+
+
 class D006SharedReferenceBoundaryTests(unittest.TestCase):
     def test_candidates_and_archives_sit_outside_the_generated_laboratory(self) -> None:
         self.assertEqual(shared.GENERATED_ROOTS, ("shared-inputs", "protocol"))

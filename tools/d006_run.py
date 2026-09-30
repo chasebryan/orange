@@ -1428,12 +1428,41 @@ def band_label(kind: str, measure: dict[str, Any]) -> str:
     return "practically_equivalent"
 
 
+# Record fields an export stores once by digest: replays of one candidate repeat them unchanged.
+SHARED_FIELDS = ("projection", "standalone", "candidate_tree")
+
+
+def load_objects(archive: Path) -> dict[str, Any]:
+    return {row["sha256"]: row["value"] for p in sorted(archive.glob("objects-*.jsonl")) for row in map(json.loads, p.read_text().splitlines())}
+
+
+def pack_record(record: dict[str, Any], objects: dict[str, Any]) -> dict[str, Any]:
+    packed = dict(record)
+    for name in SHARED_FIELDS:
+        if isinstance(packed.get(name), (dict, list)):
+            key = digest(packed[name])
+            objects[key] = packed[name]
+            packed[name] = {"$object": key}
+    return packed
+
+
+def unpack_record(record: dict[str, Any], objects: dict[str, Any]) -> dict[str, Any]:
+    for name in SHARED_FIELDS:
+        ref = record.get(name)
+        if isinstance(ref, dict) and set(ref) == {"$object"}:
+            if ref["$object"] not in objects:
+                raise RunError(f"record {record.get('ordinal')} names a missing {name} object")
+            record[name] = objects[ref["$object"]]
+    return record
+
+
 def load_records(archive: Path) -> list[dict[str, Any]]:
-    """Records of a live archive (records/) or of its export (records-NN.jsonl)."""
+    """Records of a live archive (records/) or of its export (records-NN.jsonl with objects-NN.jsonl)."""
 
     if (archive / "records").is_dir():
         return [json.loads(p.read_text()) for p in sorted((archive / "records").glob("*.json"))]
-    return [json.loads(line) for p in sorted(archive.glob("records-*.jsonl")) for line in p.read_text().splitlines()]
+    objects = load_objects(archive)
+    return [unpack_record(json.loads(line), objects) for p in sorted(archive.glob("records-*.jsonl")) for line in p.read_text().splitlines()]
 
 
 def load_logs(archive: Path) -> dict[str, bytes]:
@@ -2052,7 +2081,9 @@ def command_export(repo: Path, archive: Path, dest: Path) -> Path:
     if dest.exists():
         raise RunError(f"{dest} already exists")
     files = {"packet.json": (archive / "packet.json").read_bytes()}
-    files.update(chunked([canonical(r) + b"\n" for r in load_records(archive)], "records"))
+    objects: dict[str, Any] = {}
+    files.update(chunked([canonical(pack_record(r, objects)) + b"\n" for r in load_records(archive)], "records"))
+    files.update(chunked([canonical({"sha256": key, "value": value}) + b"\n" for key, value in sorted(objects.items())], "objects"))
     rows = []
     for name, data in sorted(load_logs(archive).items()):
         try:
@@ -2097,7 +2128,14 @@ def command_verify(repo: Path, archive: Path) -> list[str]:
     for name, data in logs.items():
         if sha256(data) != name:
             problems.append(f"log {name[:12]} does not match its digest")
-    for record in load_records(archive):
+    for name, value in load_objects(archive).items():
+        if digest(value) != name:
+            problems.append(f"object {name[:12]} does not match its digest")
+    try:
+        records = load_records(archive)
+    except RunError as exc:
+        return problems + [str(exc)]
+    for record in records:
         for step in record.get("steps", []):
             for stream in ("stdout", "stderr"):
                 if step[stream]["sha256"] not in logs:
