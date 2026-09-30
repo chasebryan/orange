@@ -579,7 +579,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         path: &[(usize, usize)],
         names: &[(&Identifier, &Signature<'ast>, usize)],
     ) {
-        if !self.begin_report(edge.span) {
+        // Each instance of a sized function repeats its calls, so a cycle
+        // closed at a call already reported, by another instance, is not
+        // reported again.
+        if self.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code() == DiagnosticCode::CallCycle && diagnostic.primary_span() == edge.span
+        }) || !self.begin_report(edge.span)
+        {
             return;
         }
         let start = path

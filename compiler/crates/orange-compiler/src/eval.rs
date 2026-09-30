@@ -3536,6 +3536,20 @@ mod tests {
                 "h(".repeat(MAX_EXPRESSION_NESTING - 1),
                 ")[..1]".repeat(MAX_EXPRESSION_NESTING - 1)
             ),
+            // Sized calls nested in sized calls, calls without sizes that
+            // take the instance their arguments fit nested in each other,
+            // and a fill's length nested in groups.
+            nested("s[1](", "x", ")"),
+            format!(
+                "{}[x]{}[0]",
+                "t(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            format!(
+                "h([x; {}1{}])[0]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 2),
+                ")".repeat(MAX_EXPRESSION_NESTING - 2)
+            ),
             // Tuples of calls' elements nested in calls, and a tuple
             // pattern in every nested step of loops whose accumulators are
             // tuples.
@@ -3564,6 +3578,8 @@ mod tests {
                     "edition 2026; module m {{\n  spec g(x: Word[32]) -> Word[32] {{ x }}\n  \
                      spec h(x: Word[32]^1) -> Word[32]^1 {{ x }}\n  \
                      spec p(t: (Word[32], Word[32])) -> (Word[32], Word[32]) {{ t }}\n  \
+                     spec s[n in 1..2](x: Word[32]) -> Word[32] {{ x }}\n  \
+                     spec t[n in 1..3](x: Word[32]^n) -> Word[32]^n {{ x }}\n  \
                      spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
                      spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
                 )
@@ -3582,6 +3598,33 @@ mod tests {
             })
             .unwrap();
         assert_eq!(worker.join().unwrap(), vec![Some(1); bodies.len()]);
+    }
+
+    #[test]
+    fn every_instance_of_a_sized_root_is_evaluated_and_named_by_its_sizes() {
+        let (_, core) = analyzed(concat!(
+            "edition 2026; module sizes {\n",
+            "  spec zeros[n in 2..4]() -> Word[8]^n { [0; n] }\n",
+            "  spec count[a in 1..3, b in 5..6]() -> Int { (a * 100) + b }\n",
+            "  spec twice[k in 1..3](x: Word[8]^k) -> Word[8]^(2 * k) { x ++ x }\n",
+            "  spec pair() -> Word[8]^4 { twice(hex\"ab cd\") }\n",
+            "}\n"
+        ));
+        let result = evaluate(&core);
+        assert_eq!(result.diagnostics(), []);
+        let values = result.values().unwrap();
+        assert_eq!(
+            values.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            [
+                "sizes::zeros[2]: Word[8]^2 = [0x00, 0x00]",
+                "sizes::zeros[3]: Word[8]^3 = [0x00, 0x00, 0x00]",
+                "sizes::count[1, 5]: Int = 105",
+                "sizes::count[2, 5]: Int = 205",
+                "sizes::pair: Word[8]^4 = [0xab, 0xcd, 0xab, 0xcd]",
+            ]
+        );
+        assert_eq!(values[2].sizes(), [1, 5]);
+        assert_eq!(values[4].sizes(), []);
     }
 
     #[test]

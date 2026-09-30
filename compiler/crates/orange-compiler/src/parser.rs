@@ -3404,7 +3404,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 if matches!(
                     self.next_kind(),
                     TokenKind::LeftParen | TokenKind::DoubleColon
-                ) =>
+                ) || self.starts_sized_call() =>
             {
                 let call = self.parse_call(level)?;
                 self.parse_index_suffix(call, level)
@@ -3475,14 +3475,6 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
             index
         };
-        // A name followed by `[sizes](` is a call of a sized function.
-        if matches!(base.kind, ExpressionKind::Name(_))
-            && (self.current_kind() == TokenKind::Comma
-                || (self.current_kind() == TokenKind::RightBracket
-                    && self.next_kind() == TokenKind::LeftParen))
-        {
-            return self.finish_sized_call(base, (index, index_height), level);
-        }
         if self.current_kind() != TokenKind::RightBracket {
             self.expected(
                 "`]` after the index",
@@ -3514,24 +3506,6 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             },
             height,
         ))
-    }
-
-    /// Parses the rest of a call `name[sizes](arguments)` of a sized function
-    /// after its first size, and then any suffix of the call.
-    #[inline(never)]
-    fn finish_sized_call(
-        &mut self,
-        base: Expression,
-        first: (Expression, usize),
-        level: usize,
-    ) -> Option<(Expression, usize)> {
-        let inner = self.open_level(level)?;
-        let ExpressionKind::Name(callee) = base.kind else {
-            return None;
-        };
-        let sizes = self.parse_call_sizes(first, inner)?;
-        let call = self.finish_call(None, callee, sizes, inner)?;
-        self.parse_index_suffix(call, level)
     }
 
     /// Parses the rest of a slice `base[start..end]` at its `..`, after its
@@ -4239,7 +4213,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         };
         let callee = self.parse_identifier("called function")?;
         let sizes = if self.current_kind() == TokenKind::LeftBracket {
-            self.parse_qualified_sizes(inner)?
+            self.parse_call_size_list(inner)?
         } else {
             (Vec::new(), 0)
         };
@@ -4253,12 +4227,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         self.finish_call(module, callee, sizes, inner)
     }
 
-    /// Parses the sizes `[s0, s1, ...]` of a call of a function qualified by
-    /// its module, at their `[`. The sizes are at the level `inner` that the
-    /// call opens. Kept out of line so that a call's own frame, which every
-    /// nested call repeats, holds no expression.
+    /// Parses the sizes `[s0, s1, ...]` of a call at their `[`. The sizes are
+    /// at the level `inner` that the call opens. Kept out of line so that a
+    /// call's own frame, which every nested call repeats, holds no
+    /// expression.
     #[inline(never)]
-    fn parse_qualified_sizes(&mut self, inner: usize) -> Option<(Vec<Expression>, usize)> {
+    fn parse_call_size_list(&mut self, inner: usize) -> Option<(Vec<Expression>, usize)> {
         self.bump()?;
         let first = self.parse_expression(inner)?;
         self.parse_call_sizes(first, inner)
@@ -4383,6 +4357,39 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
         arguments.push(argument);
         true
+    }
+
+    /// Returns whether a name followed by `[` starts a call of a sized
+    /// function, `name[sizes](arguments)`: whether the brackets hold only
+    /// tokens a list of sizes can hold (integers, names, `+`, `-`, `*`, `/`,
+    /// `%`, parentheses, and commas) and a `(` follows them. Anything else,
+    /// such as an index that holds another index, stops the scan, so the
+    /// scans of all a source's brackets read each token at most once.
+    fn starts_sized_call(&self) -> bool {
+        if self.next_kind() != TokenKind::LeftBracket {
+            return false;
+        }
+        let mut position = self.cursor.saturating_add(2);
+        let mut depth = 0_usize;
+        loop {
+            match self.kind_at(position) {
+                TokenKind::Integer
+                | TokenKind::Identifier
+                | TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Star
+                | TokenKind::Slash
+                | TokenKind::Percent
+                | TokenKind::Comma => {}
+                TokenKind::LeftParen => depth = depth.saturating_add(1),
+                TokenKind::RightParen if depth > 0 => depth = depth.saturating_sub(1),
+                TokenKind::RightBracket if depth == 0 => {
+                    return self.kind_at(position.saturating_add(1)) == TokenKind::LeftParen;
+                }
+                _ => return false,
+            }
+            position = position.saturating_add(1);
+        }
     }
 
     /// Returns whether an arithmetic operator follows a size, as when a
@@ -6005,7 +6012,14 @@ mod tests {
     fn type_height(ty: &TypeSyntax) -> usize {
         ty.modulus()
             .map_or(0, tree_height)
+            .max(ty.length.as_ref().map_or(0, size_height))
             .max(ty.elements().iter().map(type_height).max().unwrap_or(0))
+    }
+
+    /// The height of a size: none for an integer token, else its name's or
+    /// group's.
+    fn size_height(size: &Size) -> usize {
+        size.expression().map_or(0, tree_height)
     }
 
     /// The greatest height of a pattern's types.
@@ -6061,7 +6075,13 @@ mod tests {
             ExpressionKind::SliceUpdate(update) => tree_height(&update.base)
                 .max(range_height(&update.range))
                 .max(tree_height(&update.value)),
-            ExpressionKind::Call(call) => call.arguments.iter().map(tree_height).max().unwrap_or(0),
+            ExpressionKind::Call(call) => call
+                .sizes()
+                .iter()
+                .chain(&call.arguments)
+                .map(tree_height)
+                .max()
+                .unwrap_or(0),
             ExpressionKind::Unary(unary) => tree_height(&unary.operand),
             ExpressionKind::Binary(binary) => {
                 tree_height(&binary.left).max(tree_height(&binary.right))
@@ -6073,14 +6093,16 @@ mod tests {
             ExpressionKind::Array(array) => {
                 array.elements.iter().map(tree_height).max().unwrap_or(0)
             }
-            ExpressionKind::Fill(fill) => tree_height(&fill.element),
+            ExpressionKind::Fill(fill) => tree_height(&fill.element).max(size_height(&fill.length)),
             ExpressionKind::Index(index) => tree_height(&index.base).max(tree_height(&index.index)),
             ExpressionKind::Update(update) => tree_height(&update.base)
                 .max(tree_height(&update.index))
                 .max(tree_height(&update.value)),
             ExpressionKind::Loop(r#loop) => tree_height(&r#loop.init)
                 .max(block_height(&r#loop.step_bindings, &r#loop.step))
-                .max(pattern_height(&r#loop.accumulator)),
+                .max(pattern_height(&r#loop.accumulator))
+                .max(size_height(&r#loop.start))
+                .max(size_height(&r#loop.end)),
             ExpressionKind::Tuple(tuple) => {
                 tuple.elements.iter().map(tree_height).max().unwrap_or(0)
             }
@@ -6448,7 +6470,7 @@ mod tests {
              prefix operators"
         );
         type Form = (&'static str, fn(usize) -> String, &'static str);
-        let forms: [Form; 14] = [
+        let forms: [Form; 16] = [
             (
                 "conditional values",
                 |count| nested("if a { ", count, "a", " } else { a }"),
@@ -6486,6 +6508,12 @@ mod tests {
             ("complements", |count| nested("~", count, "a", ""), "~"),
             ("negations", |count| nested("-", count, "a", ""), "-"),
             ("calls", |count| nested("g(", count, "a", ")"), "g"),
+            ("sized calls", |count| nested("g[1](", count, "a", ")"), "g"),
+            (
+                "calls with two sizes",
+                |count| nested("g[1, n](a, ", count, "a", ")"),
+                "g",
+            ),
             (
                 "operands",
                 |count| nested("a + a * (", count, "a", ")"),
@@ -7134,7 +7162,7 @@ mod tests {
             ("a[]", "expected an index after `[`"),
             ("a[b c]", "expected `]` after the index"),
             ("a[0 + 1", "expected `]` after the index"),
-            ("a[0, 1]", "expected `(` after the sizes"),
+            ("a[0, 1]", "expected `]` after the index"),
             ("a[0", "expected `]` after the index"),
             (
                 "a[0][1]",
@@ -9175,5 +9203,206 @@ mod tests {
         // A byte string is one node of height 1, whatever its length.
         let (_, expression) = body_expression(&spec_source(&format!("\"{}\"", "a".repeat(300))));
         assert_eq!(tree_height(&expression), 1);
+    }
+
+    #[test]
+    fn parses_size_parameters_sized_types_and_sized_calls_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { use n; ",
+            "spec f[len in 1..0x78, k in 0b1..3](x: Word[8]^len, y: Int^(2 * k)) ",
+            "-> Word[8]^(len + 1) { g[len, (k)](x) ++ n::h[1](y) ++ [0; (len - 1)] } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let function = &ast.module.functions[0];
+        let slice = |span: Span| source.slice(span).unwrap();
+        assert_eq!(
+            function
+                .sizes()
+                .iter()
+                .map(|size| (
+                    slice(size.span()),
+                    size.name().text(),
+                    slice(size.start_span()),
+                    slice(size.end_span())
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("len in 1..0x78", "len", "1", "0x78"),
+                ("k in 0b1..3", "k", "0b1", "3"),
+            ]
+        );
+        let lengths = function
+            .parameters
+            .iter()
+            .map(|parameter| slice(parameter.ty.length.as_ref().unwrap().span()))
+            .collect::<Vec<_>>();
+        assert_eq!(lengths, ["len", "(2 * k)"]);
+        let FunctionBody::Typed(body) = &function.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(
+            slice(body.result_type.length.as_ref().unwrap().span()),
+            "(len + 1)"
+        );
+        let ExpressionKind::Binary(outer) = &body.expression.kind else {
+            panic!("expected a join");
+        };
+        let ExpressionKind::Binary(inner) = &outer.left.kind else {
+            panic!("expected a join");
+        };
+        let ExpressionKind::Call(local) = &inner.left.kind else {
+            panic!("expected a call");
+        };
+        assert!(local.module().is_none());
+        assert_eq!(local.callee().text(), "g");
+        assert_eq!(
+            local
+                .sizes()
+                .iter()
+                .map(|size| slice(size.span))
+                .collect::<Vec<_>>(),
+            ["len", "(k)"]
+        );
+        assert_eq!(slice(inner.left.span), "g[len, (k)](x)");
+        let ExpressionKind::Call(qualified) = &inner.right.kind else {
+            panic!("expected a call");
+        };
+        assert_eq!(qualified.module().unwrap().text(), "n");
+        assert_eq!(slice(qualified.sizes()[0].span), "1");
+        assert_eq!(slice(inner.right.span), "n::h[1](y)");
+        let ExpressionKind::Fill(fill) = &outer.right.kind else {
+            panic!("expected a fill");
+        };
+        assert_eq!(slice(fill.length().span()), "(len - 1)");
+    }
+
+    #[test]
+    fn a_name_before_brackets_is_indexed_unless_a_call_follows() {
+        let shapes = [
+            ("a[1]", "index"),
+            ("a[i]", "index"),
+            ("a[1..2]", "slice"),
+            ("a[1](b)", "call 1"),
+            ("a[i](b)", "call 1"),
+            ("a[1, 2](b)", "call 2"),
+            ("a[1, i + 1, 3, 4](b)", "call 4"),
+            ("a[1](b)[0]", "index"),
+            ("a[1](b)[0..1]", "slice"),
+            ("n::a[1](b)", "call 1"),
+        ];
+        for (body, shape) in shapes {
+            let (_, expression) = body_expression(&spec_source(body));
+            let found = match &expression.kind {
+                ExpressionKind::Index(_) => String::from("index"),
+                ExpressionKind::Slice(_) => String::from("slice"),
+                ExpressionKind::Call(call) => format!("call {}", call.sizes().len()),
+                _ => String::from("other"),
+            };
+            assert_eq!(found, shape, "{body:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_sizes_with_exact_messages() {
+        let declarations = [
+            (
+                "spec f[n 1..3]() -> Int { 1 }",
+                "expected `in` after the size's name",
+            ),
+            (
+                "spec f[n in a..3]() -> Int { 1 }",
+                "expected the size's first bound",
+            ),
+            (
+                "spec f[n in 1 3]() -> Int { 1 }",
+                "expected `..` between the size's bounds",
+            ),
+            (
+                "spec f[n in 1..]() -> Int { 1 }",
+                "expected the size's second bound",
+            ),
+            (
+                "spec f[n in 1..3 m in 1..2]() -> Int { 1 }",
+                "expected `,` or `]` after the size parameter",
+            ),
+            (
+                "spec f[]() -> Int { 1 }",
+                "expected an identifier for the size parameter",
+            ),
+            (
+                "spec f[a in 1..2, b in 1..2, c in 1..2, d in 1..2, e in 1..2]() -> Int { 1 }",
+                "a function has at most 4 size parameters",
+            ),
+            (
+                "impl f[n in 1..2]() {}",
+                "`impl` functions have no size parameters",
+            ),
+            (
+                "spec f[n in 1..2]() {}",
+                "expected `->` after the parameter list",
+            ),
+        ];
+        for (declaration, message) in declarations {
+            let text = format!("edition 2026; module m {{ {declaration} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{text:?}");
+            assert!(parsed.ast.is_none(), "accepted {text:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{text:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{text:?}");
+        }
+        let calls = [
+            ("g[1, 2]", "expected `]` after the index"),
+            ("g[a[1]](b)", "expected `}` after the body expression"),
+            ("g[1, 2 3](a)", "expected `,` or `]` after the size"),
+            ("g[1, 2, 3, 4, 5](a)", "a call gives at most 4 sizes"),
+            ("n::g[1]", "expected `(` after the sizes"),
+            ("n::g[1 2](a)", "expected `,` or `]` after the size"),
+            ("n::g[](a)", "expected an expression"),
+            ("[0; n + 1]", "expected `]` after the array length"),
+        ];
+        for (body, message) in calls {
+            let (_, lexed, parsed) = parse_text(&spec_source(body));
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+        }
+    }
+
+    #[test]
+    fn sizes_count_toward_the_height_of_their_expression() {
+        // A size's group, a sized call's sizes, and a loop's computed bounds
+        // are parts of the expression that holds them.
+        for (body, height) in [
+            ("[0; ((1))]", 4),
+            ("g[((1))](a)", 4),
+            ("for i in ((1))..2 with s: Int = 0 { s }", 4),
+            ("g[1](a)", 2),
+            ("[0; n]", 2),
+        ] {
+            let (_, expression) = body_expression(&spec_source(body));
+            assert_eq!(tree_height(&expression), height, "{body:?}");
+        }
+        let message =
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
+        let size = |count: usize| format!("[0; (1{})]", " + 1".repeat(count));
+        let (_, expression) = body_expression(&spec_source(&size(MAX_EXPRESSION_HEIGHT - 3)));
+        assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
+        assert_resource_limited(&size(MAX_EXPRESSION_HEIGHT - 2), &message, "[");
     }
 }

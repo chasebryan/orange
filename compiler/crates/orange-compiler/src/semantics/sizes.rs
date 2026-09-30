@@ -268,7 +268,9 @@ impl SizeScope<'_> {
                     self.value(source, &binary.right),
                 ) {
                     (Ok(left), Ok(right)) => (left, right),
-                    (Err(SizeFault::TooLarge(_)), Err(fault))
+                    // A part that is not static is reported before a part
+                    // too large, and otherwise the leftmost fault is.
+                    (Err(SizeFault::TooLarge(_)), Err(fault @ SizeFault::NotStatic(_)))
                     | (Err(fault), _)
                     | (_, Err(fault)) => {
                         return Err(fault);
