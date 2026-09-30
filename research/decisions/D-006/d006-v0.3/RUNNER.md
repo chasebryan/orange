@@ -38,11 +38,13 @@ later revision whose bound inputs are byte-identical.
 `summarize` computes M-01 to M-18, the hard gates, the materiality labels and
 the conclusion from the latest attempt's records. `export` writes the
 committed form of a verified archive: the packet, the records and logs as
-JSON lines in chunks of at most 384 KiB, the summary and a manifest; the
-toolchain archives stay out, named by digest in the packet. A record's
-projection, standalone results and candidate tree, which replays of one
-candidate repeat unchanged, are stored once by digest in `objects-NN.jsonl`
-and restored when the export is read. `verify` checks
+JSON lines in gzip chunks (at most 8 MiB uncompressed each, compressed with
+no file name or time so the same lines give the same bytes), the summary and
+a manifest; the toolchain archives stay out, named by digest in the packet.
+A record's projection, standalone results and candidate tree, and each
+step's invocation (argv, directory, environment, ceiling class, CPU set and
+label), which every replay repeats unchanged, are stored once by digest in
+`objects-NN.jsonl.gz` and restored when the export is read. `verify` checks
 either form: the epoch name and seed against the packet, every file against
 its manifest, every record's epoch and projection digest, every step's logs,
 and that the summary regenerates byte for byte. On a clone that has the

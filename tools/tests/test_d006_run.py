@@ -237,12 +237,16 @@ class D006ArchiveVerifyTests(unittest.TestCase):
 
 
 class D006ExportTests(unittest.TestCase):
-    def test_chunks_keep_order_and_stay_under_the_cap(self) -> None:
-        lines = [(b"x" * 1000) + b"\n" for _ in range(900)]
+    def test_chunks_keep_order_stay_under_the_cap_and_are_reproducible(self) -> None:
+        lines = [(b"%06d" % n) * 200 + b"\n" for n in range(9000)]
         files = run.chunked(lines, "records")
+        self.assertGreater(len(files), 1)
         self.assertEqual(sorted(files), list(files))
-        self.assertEqual(b"".join(files.values()), b"".join(lines))
-        self.assertTrue(all(len(data) <= run.EXPORT_CHUNK for data in files.values()))
+        self.assertTrue(all(name.endswith(".jsonl.gz") for name in files))
+        plain = [run.gzip.decompress(data) for data in files.values()]
+        self.assertEqual(b"".join(plain), b"".join(lines))
+        self.assertTrue(all(len(data) <= run.EXPORT_CHUNK for data in plain))
+        self.assertEqual(run.chunked(lines, "records"), files)
 
     def test_logs_round_trip_through_the_export_layout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -264,10 +268,13 @@ class D006ExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             export = Path(tmp)
             projection = {"build": {"completed": True}, "cases": {"DS-01": {"positives": []}}, "artifacts": []}
-            records = [{"ordinal": n, "profile": "deterministic_replay", "projection": projection, "steps": [n]} for n in (1, 2, 3)]
+            invocation = {"argv": ["$TOOLCHAIN/bin/coqc", "Check.v"], "ceiling": "measured_step", "cpus": [0], "cwd": "$RUN", "environment": {"LANG": "C"}, "label": "DS-01 positive"}
+            records = [{"ordinal": n, "profile": "deterministic_replay", "projection": projection,
+                        "steps": [{**invocation, "ordinal": 1, "measured": {"wall_ms": n}}]} for n in (1, 2, 3)]
             objects: dict = {}
             packed = [run.pack_record(r, objects) for r in records]
-            self.assertEqual(list(objects), [run.digest(projection)])
+            self.assertEqual(sorted(objects), sorted([run.digest(projection), run.digest(invocation)]))
+            self.assertEqual(packed[2]["steps"], [{"ordinal": 1, "measured": {"wall_ms": 3}, "invocation": {"$object": run.digest(invocation)}}])
             self.assertEqual(packed[0]["projection"], {"$object": run.digest(projection)})
             for name, data in run.chunked([run.canonical(r) + b"\n" for r in packed], "records").items():
                 (export / name).write_bytes(data)
@@ -275,7 +282,7 @@ class D006ExportTests(unittest.TestCase):
             for name, data in run.chunked(rows, "objects").items():
                 (export / name).write_bytes(data)
             self.assertEqual(run.load_records(export), records)
-            (export / "objects-01.jsonl").write_bytes(b"")
+            (export / "objects-01.jsonl.gz").write_bytes(run.gzip.compress(b""))
             with self.assertRaises(run.RunError):
                 run.load_records(export)
 

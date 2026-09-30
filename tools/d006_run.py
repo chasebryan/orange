@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import base64
 import fnmatch
+import gzip
 import hashlib
 import json
 import math
@@ -1448,46 +1449,72 @@ SHARED_FIELDS = ("projection", "standalone", "candidate_tree")
 
 
 def load_objects(archive: Path) -> dict[str, Any]:
-    return {row["sha256"]: row["value"] for p in sorted(archive.glob("objects-*.jsonl")) for row in map(json.loads, p.read_text().splitlines())}
+    return {row["sha256"]: row["value"] for row in map(json.loads, chunk_lines(archive, "objects"))}
+
+
+# Step fields that say what ran, as opposed to what it measured; every run of a step repeats them.
+INVOCATION_FIELDS = ("argv", "ceiling", "cpus", "cwd", "environment", "label")
+
+
+def pack_value(value: Any, objects: dict[str, Any]) -> dict[str, str]:
+    key = digest(value)
+    objects[key] = value
+    return {"$object": key}
+
+
+def unpack_value(ref: Any, objects: dict[str, Any], what: str) -> Any:
+    if not (isinstance(ref, dict) and set(ref) == {"$object"}):
+        return ref
+    if ref["$object"] not in objects:
+        raise RunError(f"{what} names a missing object")
+    return objects[ref["$object"]]
 
 
 def pack_record(record: dict[str, Any], objects: dict[str, Any]) -> dict[str, Any]:
     packed = dict(record)
     for name in SHARED_FIELDS:
         if isinstance(packed.get(name), (dict, list)):
-            key = digest(packed[name])
-            objects[key] = packed[name]
-            packed[name] = {"$object": key}
+            packed[name] = pack_value(packed[name], objects)
+    if isinstance(packed.get("steps"), list):
+        steps = []
+        for step in packed["steps"]:
+            if not isinstance(step, dict):
+                steps.append(step)
+                continue
+            invocation = {k: step[k] for k in INVOCATION_FIELDS if k in step}
+            steps.append({**{k: v for k, v in step.items() if k not in INVOCATION_FIELDS}, "invocation": pack_value(invocation, objects)})
+        packed["steps"] = steps
     return packed
 
 
 def unpack_record(record: dict[str, Any], objects: dict[str, Any]) -> dict[str, Any]:
+    what = f"record {record.get('ordinal')}"
     for name in SHARED_FIELDS:
-        ref = record.get(name)
-        if isinstance(ref, dict) and set(ref) == {"$object"}:
-            if ref["$object"] not in objects:
-                raise RunError(f"record {record.get('ordinal')} names a missing {name} object")
-            record[name] = objects[ref["$object"]]
+        record[name] = unpack_value(record[name], objects, what) if name in record else None
+        if record[name] is None:
+            del record[name]
+    if isinstance(record.get("steps"), list):
+        record["steps"] = [{**{k: v for k, v in step.items() if k != "invocation"}, **unpack_value(step["invocation"], objects, what)}
+                           if isinstance(step, dict) and "invocation" in step else step for step in record["steps"]]
     return record
 
 
 def load_records(archive: Path) -> list[dict[str, Any]]:
-    """Records of a live archive (records/) or of its export (records-NN.jsonl with objects-NN.jsonl)."""
+    """Records of a live archive (records/) or of its export (records-NN.jsonl.gz with objects-NN.jsonl.gz)."""
 
     if (archive / "records").is_dir():
         return [json.loads(p.read_text()) for p in sorted((archive / "records").glob("*.json"))]
     objects = load_objects(archive)
-    return [unpack_record(json.loads(line), objects) for p in sorted(archive.glob("records-*.jsonl")) for line in p.read_text().splitlines()]
+    return [unpack_record(json.loads(line), objects) for line in chunk_lines(archive, "records")]
 
 
 def load_logs(archive: Path) -> dict[str, bytes]:
     if (archive / "logs").is_dir():
         return {p.name: p.read_bytes() for p in (archive / "logs").iterdir()}
     logs = {}
-    for path in sorted(archive.glob("logs-*.jsonl")):
-        for line in path.read_text().splitlines():
-            row = json.loads(line)
-            logs[row["sha256"]] = row["text"].encode("utf-8") if "text" in row else base64.b64decode(row["base64"])
+    for line in chunk_lines(archive, "logs"):
+        row = json.loads(line)
+        logs[row["sha256"]] = row["text"].encode("utf-8") if "text" in row else base64.b64decode(row["base64"])
     return logs
 
 
@@ -2067,24 +2094,33 @@ def build_summary(repo: Path, archive: Path) -> dict[str, Any]:
 
 
 EXPORT_SCHEMA = "d006-v0.3-export-1"
-EXPORT_CHUNK = 384 * 1024
+EXPORT_CHUNK = 8 * 1024 * 1024  # uncompressed bytes per chunk; each chunk is one gzip member
 
 
 def chunked(lines: list[bytes], stem: str) -> dict[str, bytes]:
-    """JSON lines split into files of at most EXPORT_CHUNK bytes each, in order."""
+    """JSON lines split into chunks of at most EXPORT_CHUNK uncompressed bytes, in order, each gzipped
+    without a name or time so that the same lines always give the same bytes."""
 
     files: dict[str, bytes] = {}
     current: list[bytes] = []
     size = 0
+
+    def close() -> None:
+        files[f"{stem}-{len(files) + 1:02d}.jsonl.gz"] = gzip.compress(b"".join(current), compresslevel=9, mtime=0)
+
     for line in lines:
         if current and size + len(line) > EXPORT_CHUNK:
-            files[f"{stem}-{len(files) + 1:02d}.jsonl"] = b"".join(current)
+            close()
             current, size = [], 0
         current.append(line)
         size += len(line)
     if current:
-        files[f"{stem}-{len(files) + 1:02d}.jsonl"] = b"".join(current)
+        close()
     return files
+
+
+def chunk_lines(archive: Path, stem: str) -> list[str]:
+    return [line for p in sorted(archive.glob(f"{stem}-*.jsonl.gz")) for line in gzip.decompress(p.read_bytes()).decode("utf-8").splitlines()]
 
 
 def command_export(repo: Path, archive: Path, dest: Path) -> Path:
