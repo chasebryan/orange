@@ -92,17 +92,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 from
             }
         };
-        let sides = match (Side::of(&from), target.as_ref()) {
-            (Side::Other, _) => {
-                self.report_unpacked(conversion.keyword_span, order, &format!("`{from}`"));
-                false
-            }
-            (_, Some(target)) => self.check_sides(conversion, order, &from, target),
-            (_, None) => false,
-        };
+        // Like every undefined operator, a rejected conversion stops here:
+        // its operand is checked only far enough to find its type.
+        if matches!(Side::of(&from), Side::Other) {
+            self.report_unpacked(conversion.keyword_span, order, &format!("`{from}`"));
+            return false;
+        }
+        if let Some(target) = &target
+            && !self.check_sides(conversion, order, &from, target)
+        {
+            return false;
+        }
         let operand = self.check_expression(&conversion.operand, &from, context, scope, output);
         operand
-            && sides
             && target_matches
             && self.push_node(
                 output,

@@ -9290,6 +9290,10 @@ fn byte_orders_convert_words_of_one_width_or_a_number() {
         "  spec literal() -> Word[16] { [1, 2] as big Word[16] }\n",
         "  spec wanted(x: Word[8]^4) -> Word[64] { x as big Word[32] }\n",
         "  spec unknown() -> Int { y as little Int }\n",
+        // A rejected conversion checks its operand only far enough to find
+        // its type, so the `Bool` added to a word is not reported.
+        "  spec cascade(x: Word[32], b: Bool) -> Bool { (x + b) as big Bool }\n",
+        "  spec cascade_width(x: Word[32], b: Bool) -> Word[16] { (x + b) as big Word[16] }\n",
     ));
     let bytes_note = "a byte order keeps every bit of the words it converts, so words convert \
                       only to words of the same number of bits";
@@ -9355,6 +9359,16 @@ fn byte_orders_convert_words_of_one_width_or_a_number() {
                 DiagnosticCode::UnknownParameter,
                 "y",
                 String::from("`y` is not a parameter of `unknown`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "Bool",
+                String::from("`as big` does not convert to `Bool`")
+            ),
+            (
+                DiagnosticCode::PackedWidth,
+                "Word[16]",
+                String::from("`Word[32]` and `Word[16]` have different widths")
             ),
         ]
     );
