@@ -1765,7 +1765,11 @@ mod tests {
 
     #[test]
     fn publishing_never_replaces_a_file() {
-        let folder = std::env::temp_dir().join(format!("orangec-publish-{}", std::process::id()));
+        // Under the workspace's ignored `target` folder, as Tabula's tests do.
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/orangec-unit-tests")
+            .join(format!("publish-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
         fs::create_dir_all(&folder).unwrap();
         let written = |destination: &Path, private: bool| {
             let mut pending = PendingOutput::create(destination, private).unwrap();
