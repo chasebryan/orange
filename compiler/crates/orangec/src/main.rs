@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    Edition, Lexed, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile, SourceMap,
-    analyze, evaluate, lex, parse, render_diagnostics,
+    Edition, Lexed, MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError,
+    SourceFile, SourceId, SourceMap, SyntaxTree, analyze_program, evaluate, lex, parse,
+    render_diagnostics,
 };
 
 const SUCCESS: u8 = 0;
@@ -552,7 +553,50 @@ fn compile_with_limits(
                     continue;
                 }
             };
-            let analyzed = analyze(source, ast);
+            let modules = if ast.module().uses().is_empty() {
+                Vec::new()
+            } else {
+                match load_used_modules(
+                    path,
+                    ast,
+                    &mut sources,
+                    options.edition,
+                    &mut remaining_source_bytes,
+                ) {
+                    Ok(modules) => modules,
+                    Err(group) => {
+                        compilation_failed = true;
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                        continue;
+                    }
+                }
+            };
+            let program = modules
+                .iter()
+                .filter_map(|(id, ast)| Some((sources.get(*id)?, ast)))
+                .collect::<Vec<_>>();
+            let Some(source) = sources.get(id).filter(|_| program.len() == modules.len()) else {
+                compilation_failed = true;
+                emit_error_group(
+                    standard_error,
+                    &mut standard_error_available,
+                    &mut error_group_written,
+                    &mut output_failed,
+                    &render_cli_error(
+                        CliDiagnosticCode::MissingPhaseArtifact,
+                        "source insertion succeeded without a retrievable source",
+                        "this is an internal compiler failure",
+                    ),
+                );
+                continue;
+            };
+            let analyzed = analyze_program((source, ast), &program);
             let core = match classify_phase_result(analyzed.core(), analyzed.diagnostics()) {
                 PhaseResult::Complete(core) => core,
                 PhaseResult::Diagnosed(diagnostics) => {
@@ -695,6 +739,146 @@ fn compile_with_limits(
     } else {
         SUCCESS
     }
+}
+
+/// Reads, lexes, and parses the modules that `root` uses, directly or
+/// through other modules.
+///
+/// The module `NAME` of a `use NAME;` declaration is read from the file
+/// `NAME.or` in the directory of the root file, or the current directory for
+/// standard input; a module name is an ASCII identifier, so it names a file
+/// in that directory and nothing outside it. Each module is read once, in the
+/// order in which a `use` first names it, and every read is charged to the
+/// invocation's source budget. At most one module more than a program may
+/// hold is read, so that semantic analysis reports the limit. A module that
+/// cannot be read, lexed, or parsed stops the program with its diagnostics.
+fn load_used_modules(
+    root_path: &Path,
+    root: &SyntaxTree,
+    sources: &mut SourceMap,
+    edition: Edition,
+    remaining_source_bytes: &mut usize,
+) -> Result<Vec<(SourceId, SyntaxTree)>, String> {
+    let directory = if root_path == Path::new("-") {
+        Path::new("")
+    } else {
+        root_path.parent().unwrap_or_else(|| Path::new(""))
+    };
+    let root_name = root.module().name().text();
+    let mut requested: Vec<String> = Vec::new();
+    let mut loaded: Vec<(SourceId, SyntaxTree)> = Vec::new();
+    // Module 0 is the root; module `n` is `loaded[n - 1]`.
+    let mut next_module = 0_usize;
+    loop {
+        let uses = if next_module == 0 {
+            Some(root.module().uses())
+        } else {
+            next_module
+                .checked_sub(1)
+                .and_then(|index| loaded.get(index))
+                .map(|(_, ast)| ast.module().uses())
+        };
+        let Some(uses) = uses else {
+            return Ok(loaded);
+        };
+        let user = if next_module == 0 {
+            root_name
+        } else {
+            next_module
+                .checked_sub(1)
+                .and_then(|index| loaded.get(index))
+                .map_or("", |(_, ast)| ast.module().name().text())
+        }
+        .to_owned();
+        let names = uses
+            .iter()
+            .map(|declaration| declaration.name().text())
+            .filter(|name| *name != root_name && !requested.iter().any(|seen| seen == name))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        next_module = next_module.saturating_add(1);
+        for name in names {
+            if requested.iter().any(|seen| *seen == name) {
+                continue;
+            }
+            if loaded.len() >= MAX_MODULES_PER_PROGRAM {
+                return Ok(loaded);
+            }
+            let path = directory.join(format!("{name}.or"));
+            let module = load_module(&path, sources, edition, remaining_source_bytes).map_err(
+                |mut group| {
+                    if group.starts_with("error[ORC1") {
+                        let _ = writeln!(
+                            group,
+                            "  = note: `use {name};` in module `{user}` reads the module `{name}` \
+                             from this file"
+                        );
+                    }
+                    group
+                },
+            )?;
+            requested.push(name);
+            loaded.push(module);
+        }
+    }
+}
+
+/// Reads, lexes, and parses one used module.
+fn load_module(
+    path: &Path,
+    sources: &mut SourceMap,
+    edition: Edition,
+    remaining_source_bytes: &mut usize,
+) -> Result<(SourceId, SyntaxTree), String> {
+    let display_name = stable_source_name(path).map_err(source_name_error)?;
+    // A used module is always a file, never standard input.
+    let bytes = read_source(path, &mut io::empty(), remaining_source_bytes)
+        .map_err(|error| render_read_source_error(&display_name, error))?;
+    let text = String::from_utf8(bytes).map_err(|error| {
+        render_cli_error(
+            CliDiagnosticCode::InvalidUtf8,
+            format_args!("source file `{display_name}` is not valid UTF-8"),
+            format_args!(
+                "invalid byte sequence begins at byte offset {}",
+                error.utf8_error().valid_up_to()
+            ),
+        )
+    })?;
+    let id = sources
+        .add_with_rendered_name(display_name, text)
+        .map_err(source_limit_error_without_name)?;
+    let missing = || {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "source insertion succeeded without a retrievable source",
+            "this is an internal compiler failure",
+        )
+    };
+    let source = sources.get(id).ok_or_else(missing)?;
+    let lexed = lex(source, edition);
+    if lexed.has_errors() {
+        return Err(if lexed.diagnostics().is_empty() {
+            render_cli_error(
+                CliDiagnosticCode::MissingPhaseArtifact,
+                "lexical analysis failed without a diagnostic",
+                "this is an internal compiler resource failure",
+            )
+        } else {
+            render_diagnostics(sources, lexed.diagnostics())
+        });
+    }
+    let parsed = parse(source, &lexed);
+    if !parsed.diagnostics().is_empty() {
+        return Err(render_diagnostics(sources, parsed.diagnostics()));
+    }
+    let ast = parsed.into_ast().ok_or_else(|| {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "parser returned neither a complete syntax tree nor a diagnostic",
+            "this is an internal compiler or resource failure",
+        )
+    })?;
+    Ok((id, ast))
 }
 
 fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<Cow<'static, str>> {
