@@ -15,7 +15,8 @@ use std::sync::mpsc;
 
 use orange_compiler::{
     ArrayType, CoreArray, CoreFunction, CoreModule, CoreType, CoreValue, Edition, Evaluator,
-    MAX_SOURCE_BYTES, RenderedSourceName, SourceMap, analyze, lex, parse, render_diagnostics,
+    MAX_SOURCE_BYTES, RenderedSourceName, SourceMap, analyze_program, lex, parse,
+    render_diagnostics,
 };
 
 use super::{
@@ -985,7 +986,7 @@ fn resolve_scheme(spelling: &OsStr, edition: Edition) -> Result<Scheme, String> 
         )
     })?;
     let origin = display.to_string();
-    compile_scheme(display, text, edition, origin)
+    compile_scheme(display, text, edition, origin, Some(path))
 }
 
 fn compile_builtin(builtin: &Builtin, edition: Edition) -> Result<Scheme, String> {
@@ -996,6 +997,7 @@ fn compile_builtin(builtin: &Builtin, edition: Edition) -> Result<Scheme, String
         String::from(builtin.text),
         edition,
         String::from(builtin.path),
+        None,
     )?;
     if scheme.name != builtin.name {
         return Err(inconsistent_shape());
@@ -1003,11 +1005,15 @@ fn compile_builtin(builtin: &Builtin, edition: Edition) -> Result<Scheme, String
     Ok(scheme)
 }
 
+/// Compiles a scheme program. A program read from `path` may use modules,
+/// which are read from beside it as `orangec check` reads them; a built-in
+/// scheme is one module.
 fn compile_scheme(
     display: RenderedSourceName,
     text: String,
     edition: Edition,
     origin: String,
+    path: Option<&Path>,
 ) -> Result<Scheme, String> {
     let mut sources = SourceMap::try_new().map_err(super::source_name_error)?;
     let id = sources
@@ -1026,7 +1032,22 @@ fn compile_scheme(
         }
         PhaseResult::Missing => return Err(inconsistent_shape()),
     };
-    let analyzed = analyze(source, ast);
+    let modules = match path {
+        Some(path) if !ast.module().uses().is_empty() => {
+            let mut remaining = MAX_SOURCE_BYTES;
+            super::load_used_modules(path, ast, &mut sources, edition, &mut remaining)?
+        }
+        _ => Vec::new(),
+    };
+    let program = modules
+        .iter()
+        .filter_map(|(id, ast)| Some((sources.get(*id)?, ast)))
+        .collect::<Vec<_>>();
+    let source = sources
+        .get(id)
+        .filter(|_| program.len() == modules.len())
+        .ok_or_else(inconsistent_shape)?;
+    let analyzed = analyze_program((source, ast), &program);
     if !analyzed.diagnostics().is_empty() {
         return Err(render_diagnostics(&sources, analyzed.diagnostics()));
     }
@@ -1060,7 +1081,7 @@ fn interface_shape(core: &CoreModule) -> Result<Shape, String> {
         ));
     }
     let function = |name: &str| {
-        core.functions()
+        core.entry_functions()
             .iter()
             .find(|function| function.name() == name)
             .ok_or_else(|| format!("it has no spec named `{name}`"))

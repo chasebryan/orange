@@ -820,7 +820,7 @@ fn load_used_modules(
             .collect::<Vec<_>>();
         next_module = next_module.saturating_add(1);
         for name in names {
-            if requested.iter().any(|seen| *seen == name) {
+            if requested.contains(&name) {
                 continue;
             }
             if loaded.len() >= MAX_MODULES_PER_PROGRAM {
