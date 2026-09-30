@@ -2095,6 +2095,21 @@ def find_rustc() -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+GCC_PROGRAM_ROOTS = ("/usr/libexec/gcc", "/usr/libexec/gcc-cross", "/usr/lib/gcc", "/usr/lib/gcc-cross")
+
+
+def gcc_program(reported: str) -> str | None:
+    """The installed GCC program a driver reports, as one of the files that already exist under GCC's program
+    directories. The driver's output is only compared with those entries, so it never becomes a path."""
+
+    for base in GCC_PROGRAM_ROOTS:
+        root = Path(base)
+        for candidate in sorted(root.glob("*/*/*")) if root.is_dir() else ():
+            if str(candidate) == reported and candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def tool_capture(launcher: Launcher, orangec: Path | None, rustc: Path | None) -> dict[str, Any]:
     tools: dict[str, Any] = {}
 
@@ -2112,8 +2127,8 @@ def tool_capture(launcher: Launcher, orangec: Path | None, rustc: Path | None) -
         if tc["kind"] == "gcc" and os.path.isfile(tc["path"]):
             # The driver's own programs: the compiler proper, the assembler and the linker.
             prefix = tc["path"].rsplit("-gcc", 1)[0]
-            cc1 = _version(launcher, [tc["path"], "-print-prog-name=cc1"])
-            if cc1.startswith("/"):
+            cc1 = gcc_program(_version(launcher, [tc["path"], "-print-prog-name=cc1"]))
+            if cc1 is not None:
                 add(f"{tc['id']}/cc1", cc1, None)
             add(f"{tc['id']}/as", f"{prefix}-as", [f"{prefix}-as", "--version"])
             add(f"{tc['id']}/ld", f"{prefix}-ld", [f"{prefix}-ld", "--version"])

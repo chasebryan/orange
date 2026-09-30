@@ -319,6 +319,10 @@ class D011LaboratoryLogicTests(unittest.TestCase):
                 with self.assertRaises(suite.RunError):
                     suite.existing_entry(name, root, directories=directories)
 
+    def test_a_reported_gcc_program_must_be_an_installed_one(self) -> None:
+        for reported in ("/etc/passwd", "cc1", "", "/usr/libexec/gcc/../../../etc/passwd"):
+            self.assertIsNone(suite.gcc_program(reported))
+
     def test_verify_rejects_a_file_missing_from_the_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "d011-e-test"
