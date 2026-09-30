@@ -1,0 +1,24 @@
+--- a/D006/Sieve.lean
++++ b/D006/Sieve.lean
+@@ -834,17 +834,10 @@
+         low_eq g s1' s2') ∨
+       (∃ c' s1' s2' p v1 v2, step s1 c = .next c' s1' (p ++ [.release v1]) ∧
+         step s2 c = .next c' s2' (p ++ [.release v2]) ∧ v1 ≠ v2) := by
+-  intro hc w1 w2 hlow
+-  have h := step_agree w1 w2 hlow hc
+-  revert h
+-  cases step s1 c <;> cases step s2 c <;> intro h <;> simp only [StepAgree] at h
+-  case done.done => exact .inl ⟨rfl, rfl⟩
+-  case fail.fail t1 t2 => exact .inr (.inl ⟨t1, rfl, h ▸ rfl⟩)
+-  case next.next c1 s1' t1 c2 s2' t2 =>
+-    obtain ⟨rfl, -, -, -, h⟩ := h
+-    rcases h with ⟨rfl, hl⟩ | ⟨p, v1, v2, rfl, rfl, hv⟩
+-    · exact .inr (.inr (.inl ⟨c1, s1', s2', t1, rfl, rfl, hl⟩))
+-    · exact .inr (.inr (.inr ⟨c1, s1', s2', p, v1, v2, rfl, rfl, hv⟩))
++  intro hc w hstep
++  have h := step_agree w w (low_eq_refl g s) hc
++  rw [hstep] at h
++  exact ⟨h.2.1, h.2.2.1⟩
+
+ /-! ## D2-TH04: runs -/
+

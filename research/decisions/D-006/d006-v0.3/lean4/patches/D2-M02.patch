@@ -1,0 +1,11 @@
+--- a/D006/Sieve.lean
++++ b/D006/Sieve.lean
+@@ -259,7 +259,7 @@
+   | .skip => .done
+   | .assign x e =>
+     match evalExpr s e with
+-    | .ok v t => if x < s.vars.length then .next .skip (s.setVar x v) t else .stuck
++    | .ok v t => if x < s.vars.length then .next .skip (s.setVar (x + 1) v) t else .stuck
+     | .fail t => .fail t
+     | .stuck => .stuck
+   | .set a i v =>

@@ -1,0 +1,89 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-02",
+  "language": "lean4",
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads=1",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Lrat.olean",
+        "-c",
+        ".lake/build/ir/D006/Lrat.c",
+        "D006/Lrat.lean"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/lean",
+        "--json",
+        "--threads={jobs}",
+        "--tstack=65536",
+        "--root=.",
+        "-o",
+        ".lake/build/lib/lean/D006/Lrat.olean",
+        "-c",
+        ".lake/build/ir/D006/Lrat.c",
+        "D006/Lrat.lean"
+      ]
+    ]
+  },
+  "preamble": {
+    "DS-04": "import D006.Core\nimport D006.Lrat"
+  },
+  "symbols": {
+    "B-T01": "D006.Lrat.Obligation",
+    "B-T02": "D006.Lrat.Verdict",
+    "B-C01": "D006.Lrat.Obligation.carry_save",
+    "B-C02": "D006.Lrat.Obligation.carry_save_unshifted",
+    "B-C03": "D006.Lrat.Verdict.accept",
+    "B-C04": "D006.Lrat.Verdict.reject",
+    "B-F01": "D006.Lrat.cnf_text",
+    "B-F02": "D006.Lrat.lrat_verdict",
+    "B-F03": "D006.Lrat.holds"
+  },
+  "theorems": {
+    "D4-TH01": "D006.Lrat.carry_save_identity",
+    "D4-TH02": "D006.Lrat.holds_carry_save",
+    "D4-TH03": "D006.Lrat.holds_carry_save_unshifted",
+    "D4-TH04": "D006.Lrat.accepted_certificate_proves",
+    "D4-TH05": "D006.Lrat.carry_save_unshifted_refuted"
+  },
+  "methods": {
+    "observation": {
+      "DS-04": "native_decide"
+    }
+  },
+  "trust": {
+    "allowed_assumption_patterns": [
+      {
+        "pattern": "[A-Za-z0-9_.]+\\._native\\.native_decide\\.ax_[0-9]+_[0-9]+",
+        "cases": [
+          "DS-04"
+        ],
+        "reason": "Lean 4.34.1's native_decide adds one fresh axiom `<decl>._native.native_decide.ax_N_M : e = true` at each use, after the compiled decision procedure has evaluated `e` to true; the pattern admits exactly that name shape (the `_native.native_decide` infix is reserved for it) and stands for the native evaluator entry in the inventory. In DS-04 it appears only in the observation audits and, through `golden_certificate_accepted`, in D4-TH01"
+      }
+    ],
+    "inventory": [
+      {
+        "name": "Lean 4.34.1 compiler, code generator, IR interpreter and runtime (native_decide, DS-04)",
+        "kind": "evaluator",
+        "reason": "widens the trusted base for DS-04 only. The observation method native_decide, and the single step `golden_certificate_accepted` (lrat_verdict carry_save (cnf_text carry_save) golden = accept) that D4-TH01 goes through, are decided by compiling the Decidable instance to IR and running it in the elaborator: the IR interpreter runs the D006.Lrat definitions (cnf_text, the LRAT parser and checker) and calls the compiled C of Init for String, ByteArray, List and GMP Nat primitives (String.toUTF8, utf8ByteSize, String.decEq, Nat.repr). The kernel does not re-run that evaluation; it accepts the fresh axiom above. Lean.ofReduceBool is deprecated in 4.34.1 and does not appear in the audits. Why not the kernel: a String literal reaches the kernel as String.ofList of its characters and its bytes come out of a push/append chain that is quadratic under kernel whnf, so `decide +kernel` cannot read a certificate: utf8ByteSize of a 16 KB literal took 23 s and 2.27 GB (1 KB: 3.4 s, 589 MB; the same file without the literal: 1.8 s, 469 MB), counting newlines in a 7.7 KB literal 68 s and 3.7 GB; the 62 KB golden certificate as per-line literals ran 600 s and 13.6 GB without finishing (left-nested join) or ran out of a 6 GB cap in 62 s (right-nested); as a 62 K-element UInt8 list it hit the heartbeat limit in 50 s; as Nat chunks, decoding plus length alone took 19 s and 1.7 GB and a newline count 56 s and 3 GB. The 4.2 MB V-08 literal is some 70 times larger. The soundness argument (D4-TH04, D4-TH02, D4-TH03, D4-TH05) is kernel-checked and native-free"
+      },
+      {
+        "name": "the built D006.Lrat (.olean)",
+        "kind": "library",
+        "reason": "imported by the DS-04 check file without re-checking at lean's default trust level; the same kernel checks every declaration in it when the build compiles D006/Lrat.lean, and its IR is what native_decide interprets for the observations"
+      },
+      {
+        "name": "propext and Quot.sound (DS-04)",
+        "kind": "axiom",
+        "reason": "already allowed by the base. D4-TH02, D4-TH03, D4-TH05 and D4-TH04 (with the whole checker soundness proof and the CNF correspondence) audit to propext and Quot.sound only; they enter through simp, omega and core lemmas. Classical.choice is kept out on purpose: omega only closes atomic goals and the classical core lemmas (Nat.mod_pow_succ, List.filter_eq_nil_iff, BitVec.carry_succ) are replaced by constructive proofs. D4-TH01 adds the native_decide axiom of golden_certificate_accepted"
+      }
+    ]
+  }
+}

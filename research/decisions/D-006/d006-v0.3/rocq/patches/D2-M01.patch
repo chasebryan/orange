@@ -1,0 +1,11 @@
+--- a/theories/Sieve.v
++++ b/theories/Sieve.v
+@@ -165,7 +165,7 @@
+   | Cseq c1 c2 => well_typed g c1 && well_typed g c2
+   | Ccond e c1 c2 =>
+       match type_expr g e with
+-      | Some (ty_bool, public) => well_typed g c1 && well_typed g c2
++      | Some (ty_bool, _) => well_typed g c1 && well_typed g c2
+       | _ => false
+       end
+   | Cloop _ c1 => well_typed g c1

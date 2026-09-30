@@ -1,0 +1,122 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-01",
+  "language": "rocq",
+  "symbols": {
+    "S-T01": "D006.Sieve.Label",
+    "S-T02": "D006.Sieve.Ty",
+    "S-T03": "D006.Sieve.Val",
+    "S-T04": "D006.Sieve.Expr",
+    "S-T05": "D006.Sieve.Cmd",
+    "S-T06": "D006.Sieve.Obs",
+    "S-T07": "D006.Sieve.VarDecl",
+    "S-T08": "D006.Sieve.ArrDecl",
+    "S-T09": "D006.Sieve.Env",
+    "S-T10": "D006.Sieve.State",
+    "S-T11": "D006.Sieve.StepResult",
+    "S-T12": "D006.Sieve.Outcome",
+    "S-C01": "D006.Sieve.public",
+    "S-C02": "D006.Sieve.secret",
+    "S-C03": "D006.Sieve.ty_word",
+    "S-C04": "D006.Sieve.ty_bool",
+    "S-C05": "D006.Sieve.vword",
+    "S-C06": "D006.Sieve.vbool",
+    "S-C07": "D006.Sieve.Elit",
+    "S-C08": "D006.Sieve.Evar",
+    "S-C09": "D006.Sieve.Eadd",
+    "S-C10": "D006.Sieve.Exor",
+    "S-C11": "D006.Sieve.Eband",
+    "S-C12": "D006.Sieve.Eeq",
+    "S-C13": "D006.Sieve.Eget",
+    "S-C14": "D006.Sieve.Cskip",
+    "S-C15": "D006.Sieve.Cassign",
+    "S-C16": "D006.Sieve.Cset",
+    "S-C17": "D006.Sieve.Cseq",
+    "S-C18": "D006.Sieve.Ccond",
+    "S-C19": "D006.Sieve.Cloop",
+    "S-C20": "D006.Sieve.Cdeclassify",
+    "S-C21": "D006.Sieve.Oread",
+    "S-C22": "D006.Sieve.Owrite",
+    "S-C23": "D006.Sieve.Obranch",
+    "S-C24": "D006.Sieve.Orelease",
+    "S-C25": "D006.Sieve.Ooob",
+    "S-C26": "D006.Sieve.vdecl",
+    "S-C27": "D006.Sieve.adecl",
+    "S-C28": "D006.Sieve.env",
+    "S-C29": "D006.Sieve.state",
+    "S-C30": "D006.Sieve.done",
+    "S-C31": "D006.Sieve.next",
+    "S-C32": "D006.Sieve.fail",
+    "S-C33": "D006.Sieve.stuck",
+    "S-C34": "D006.Sieve.halted",
+    "S-C35": "D006.Sieve.failed",
+    "S-C36": "D006.Sieve.out_of_fuel",
+    "S-C37": "D006.Sieve.wedged",
+    "S-F01": "D006.Sieve.well_typed",
+    "S-F02": "D006.Sieve.wf",
+    "S-F03": "D006.Sieve.low_eq",
+    "S-F04": "D006.Sieve.step",
+    "S-F05": "D006.Sieve.run_trace",
+    "S-F06": "D006.Sieve.run_outcome",
+    "S-F07": "D006.Sieve.outcome_low_eq"
+  },
+  "theorems": {
+    "D2-TH01": "D006.Sieve.progress",
+    "D2-TH02": "D006.Sieve.preservation",
+    "D2-TH03": "D006.Sieve.lockstep_noninterference",
+    "D2-TH04": "D006.Sieve.release_noninterference",
+    "D2-TH05": "D006.Sieve.positive_program_witness",
+    "D2-TH06": "D006.Sieve.negative_program_leaks"
+  },
+  "preamble": {
+    "DS-02": "From D006 Require Import Core Sieve.\nFrom Stdlib Require Import NArith List."
+  },
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Sieve.v"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Sieve.v"
+      ]
+    ]
+  },
+  "patches": {
+    "D2-M01": "patches/D2-M01.patch",
+    "D2-M02": "patches/D2-M02.patch",
+    "D2-M05": {
+      "artifact": "theories/Sieve.vo",
+      "check": [
+        "{toolchain}/bin/coqchk",
+        "-silent",
+        "-Q",
+        "theories",
+        "D006",
+        "-norec",
+        "{artifact}"
+      ]
+    },
+    "D2-M06": "patches/D2-M06.patch"
+  },
+  "classifier": [
+    {
+      "category": "parse_failure",
+      "phases": [
+        "artifact"
+      ],
+      "pattern": "premature end of file"
+    }
+  ]
+}

@@ -160,7 +160,7 @@ folding and Unicode precomposition are pinned off so distinct worktree names
 remain visible to the validator's own collision and NFC checks. One
 30-second deadline covers the complete inventory stream and process exit;
 selector descriptor-range failures become fail-closed findings. Discovery
-admits at most 512 files, at most 1,024 bytes per raw path, at most 1 MiB
+admits at most 1,024 files, at most 1,024 bytes per raw path, at most 1 MiB
 (`1024 * 1024` bytes) of raw path metadata, and at most 4,096 entries in one
 fallback directory. If
 Git is unavailable for an exported tree with no `.git` entry, the bounded
@@ -213,7 +213,7 @@ entry must still match that snapshot. Preflight caps ordinary text files at
 512 KiB (`512 * 1024` bytes), the validator itself at 448 KiB
 (`448 * 1024` bytes), approved binary files at 2 MiB (`2 * 1024 * 1024` bytes),
 each committed D-004 run's generated and hash-pinned adapter outputs at 2 MiB
-(`2 * 1024 * 1024` bytes), and the complete repository at 24 MiB (`24 * 1024 * 1024` bytes). Returned
+(`2 * 1024 * 1024` bytes), and the complete repository at 48 MiB (`48 * 1024 * 1024` bytes). Returned
 payload bytes consume the aggregate read allowance as soon as they enter the
 bounded reader; each read uses at most one additional byte only to detect
 overflow. A later snapshot or representation rejection cannot refund already

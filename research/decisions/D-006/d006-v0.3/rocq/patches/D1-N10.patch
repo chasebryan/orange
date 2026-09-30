@@ -1,0 +1,11 @@
+--- a/theories/Core.v	2026-09-29 01:53:18.951727133 +0000
++++ b/theories/Core.v	2026-09-29 01:53:18.953962418 +0000
+@@ -158,7 +158,7 @@
+       let have := N.of_nat (length rest) in
+       if N.ltb 16 n then err _ _ too_many
+       else if N.ltb have (4 * n) then err _ _ truncated
+-      else if N.ltb (4 * n) have then err _ _ trailing
++      else if false then err _ _ trailing
+       else ok _ _ (group4 rest)
+   end.
+
