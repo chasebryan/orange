@@ -1,0 +1,56 @@
+// S3g conformance: indices that depend on data. A word index ranges over its
+// type, and `&`, `>>`, `%`, conditionals, and conversions narrow it, so each
+// lookup below is proved in range before anything runs.
+edition 2026;
+module lookups {
+  // The high and low nibbles of a byte select its two hexadecimal digits.
+  spec hex(x: Word[8]) -> Word[8]^2 {
+    let digits: Word[8]^16 = [
+      0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+      0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+    ];
+    [digits[x >> 4], digits[x & 15]]
+  }
+  spec digits() -> Word[8]^2 { hex(0xa7) }
+
+  // An update may be keyed by data too: count the low nibbles of a message.
+  spec histogram(m: Word[8]^8) -> Int^16 {
+    for i in 0..8 with h: Int^16 = [0; 16] { h with [m[i] & 15] = h[m[i] & 15] + 1 }
+  }
+  spec counts() -> Int^16 { histogram([0x01, 0x11, 0x21, 0xff, 0x0f, 0x00, 0x7a, 0x31]) }
+
+  // Two data-dependent updates exchange two elements, as RC4's swap does.
+  spec swap(s: Word[8]^4, i: Word[8], j: Word[8]) -> Word[8]^4 {
+    (s with [i & 3] = s[j & 3]) with [j & 3] = s[i & 3]
+  }
+  spec swapped() -> Word[8]^4 { swap([1, 2, 3, 4], 1, 6) }
+
+  // A word converted with `as Int` is bounded by its type, a remainder by its
+  // divisor, and a conditional by its branches.
+  spec upper(t: Word[8]^256, x: Word[8]) -> Word[8] { t[((x & 127) as Int) + 128] }
+  spec pick(t: Word[8]^4, c: Bool) -> Word[8] { t[if c { 1 } else { 3 }] }
+  spec wide(t: Word[8]^16, x: Word[16], z: Word[64]) -> Word[8] { t[x % 16] ^ t[z >> 60] }
+  spec narrowed() -> Word[8]^3 {
+    let t: Word[8]^4 = [10, 20, 30, 40];
+    let u: Word[8]^256 = for i in 0..256 with u: Word[8]^256 = [0; 256] { u with [i] = i as Word[8] };
+    let v: Word[8]^16 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    [upper(u, 0xff), pick(t, false), wide(v, 0x1234, 0xf000000000000000)]
+  }
+
+  // The table-driven CRC-32 of ISO-HDLC, reflected with the polynomial
+  // 0xedb88320: each byte selects a table entry by the low byte of the
+  // running remainder.
+  spec crc_table(polynomial: Word[32]) -> Word[32]^256 {
+    for n in 0..256 with t: Word[32]^256 = [0; 256] {
+      t with [n] = for k in 0..8 with c: Word[32] = n as Word[32] {
+        if (c & 1) != 0 { polynomial ^ (c >> 1) } else { c >> 1 }
+      }
+    }
+  }
+  spec crc32(m: Word[8]^9) -> Word[32] {
+    let t: Word[32]^256 = crc_table(0xedb88320);
+    ~(for i in 0..9 with c: Word[32] = 0xffffffff { t[(c ^ (m[i] as Word[32])) & 0xff] ^ (c >> 8) })
+  }
+  // The check value of "123456789".
+  spec check() -> Word[32] { crc32([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]) }
+}

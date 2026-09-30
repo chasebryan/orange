@@ -1892,8 +1892,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, index.span)
                     .with_label(format!("indices run from 0 through {highest}"))
                     .with_note(
-                        "every value an index can take, over every loop index in it, must \
-                         select an element",
+                        "every value an index can take, over every loop index and word in it, \
+                         must select an element",
                     ),
             );
         }
@@ -9045,6 +9045,55 @@ mod tests {
                 "{index}"
             );
             assert_eq!(result.diagnostics[0].notes(), [STATIC_INDEX_NOTE]);
+        }
+    }
+
+    #[test]
+    fn word_index_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); `t`'s uniqueness check, name, width,
+        // and length (4); `x`'s uniqueness check, name, and width (3); the
+        // result's name and width (2); then `t` (1), the index (1), `x` (1),
+        // `&` (1), and `15` (literal, prefix, and two digits: 4): 19 analysis
+        // events. Computing the range consumes none. Core is the module, one
+        // function node, one result-type node, two parameter-type nodes, and
+        // the body nodes `t`, `x`, `15`, `&`, the conversion to `Int`, and
+        // the selection: 11 nodes, each one more event.
+        let fixture = module("  spec f(t: Word[8]^16, x: Word[8]) -> Word[8] { t[x & 15] }\n");
+        let (events, nodes) = (30, 11);
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert!(exact.core.is_some());
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label);
         }
     }
 

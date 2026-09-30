@@ -1,0 +1,14 @@
+// S3g rejection: a word index ranges over its whole type unless an operator
+// narrows it, an operator that could wrap does not narrow it, and every value
+// it can take must select an element.
+edition 2026;
+module lookups {
+  spec whole(t: Word[8]^16, x: Word[8]) -> Word[8] { t[x] }
+  spec wide(t: Word[8]^256, z: Word[16]) -> Word[8] { t[z] }
+  spec mask(t: Word[8]^16, x: Word[8]) -> Word[8] { t[x & 31] }
+  spec carry(t: Word[8]^16, x: Word[8]) -> Word[8] { t[(x & 15) + 1] }
+  spec wraps(t: Word[8]^16, x: Word[8]) -> Word[8] { t[(x & 15) - 1] }
+  spec shifted(t: Word[8]^16, x: Word[8]) -> Word[8] { t[(x & 15) << 5] }
+  spec branch(t: Word[8]^16, x: Word[8], c: Bool) -> Word[8] { t[if c { x & 7 } else { 16 }] }
+  spec update(t: Word[8]^16, x: Word[8]) -> Word[8]^16 { t with [x >> 3] = 0 }
+}

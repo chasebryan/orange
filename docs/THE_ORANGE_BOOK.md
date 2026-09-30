@@ -1943,7 +1943,7 @@ error[ORC0223]: this index runs from -1 through 46, out of range for `Word[32]^6
   |
 4 | ... ith v: Word[32]^64 = w { v with [t] = w[t - 17] }
   |                                             ^^^^^^ indices run from 0 through 63
-  = note: every value an index can take, over every loop index in it, must select an element
+  = note: every value an index can take, over every loop index and word in it, must select an element
 ```
 
 The check is deliberately simple. It bounds each side of an operator
@@ -2085,7 +2085,7 @@ error[ORC0223]: this index runs from 0 through 7, out of range for `Word[8]^4`
   |
 4 | ... r i in 0..8 with s: Word[8] = 0 { s ^ k[i % 0] }
   |                                             ^^^^^ indices run from 0 through 3
-  = note: every value an index can take, over every loop index in it, must select an element
+  = note: every value an index can take, over every loop index and word in it, must select an element
 ```
 
 The [X25519 fixture](../compiler/fixtures/s3f/valid-x25519.or) computes the
