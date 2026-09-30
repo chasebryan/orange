@@ -18,8 +18,10 @@ This runbook records GitHub-hosted controls that are not fully represented by a
 Git commit. It applies only to `https://github.com/chasebryan/orange`. A setting
 can drift independently of the repository, so this file is evidence only when
 paired with current API readback and the effective rules response.
-The repository validator deliberately expires this snapshot on its review-due
-date; a fresh readback and coordinated evidence update are then required.
+The review-due date is a reminder to re-read the live settings and update this
+evidence. The repository validator no longer fails once that date passes: an
+offline check cannot read GitHub, and a calendar-dated failure would turn every
+commit red on that day, old ones included.
 
 ## Current verified control plane
 
