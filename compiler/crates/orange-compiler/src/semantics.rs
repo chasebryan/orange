@@ -1767,7 +1767,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     }
 
     /// Evaluates the modulus of `Mod[...]`, if `syntax` has one, and enters
-    /// it in the module's table.
+    /// it in the module's table, then the moduli written within it.
     fn resolve_modulus(&mut self, syntax: &TypeSyntax) {
         let Some(expression) = syntax.modulus() else {
             return;
@@ -1789,6 +1789,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             key: span_key(expression.span),
             modulus,
         });
+        // A modulus that is not a constant may still hold a conversion or a
+        // loop whose type has a modulus of its own; that one is evaluated too.
+        self.resolve_moduli_within(expression);
     }
 
     /// Evaluates a constant: integer literals combined with `+`, `-`, `*`,
@@ -11250,6 +11253,59 @@ mod tests {
         assert_eq!(
             result.diagnostics[0].message(),
             "a modulus must be a constant from 2 through 2^521 - 1"
+        );
+    }
+
+    #[test]
+    fn moduli_written_within_a_modulus_are_evaluated_too() {
+        // A modulus that is not a constant is reported at its first part
+        // that is not, and every modulus of a conversion or loop written
+        // within it is evaluated after it, in source order.
+        let (fixture, result) = rejected(concat!(
+            "  type T = Mod[((0 as Mod[7]) as Int) + ((0 as Mod[(0 as Mod[0]) as Int]) as Int)];\n",
+            "  spec a(x: Mod[(0 as Mod[1]) as Int]) -> Int { 0 }\n",
+            "  spec b(x: Word[8]) -> Int { \
+             (x as Mod[(for i in 0..1 with s: Mod[0 - 5] = 0 { s }) as Int]) as Int }\n",
+        ));
+        assert_eq!(
+            labelled(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "(0 as Mod[7]) as Int",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "(0 as Mod[0]) as Int",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "0",
+                    String::from("this modulus is 0")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "(0 as Mod[1]) as Int",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "1",
+                    String::from("this modulus is 1")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "(for i in 0..1 with s: Mod[0 - 5] = 0 { s }) as Int",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "0 - 5",
+                    String::from("this modulus is -5")
+                ),
+            ]
         );
     }
 

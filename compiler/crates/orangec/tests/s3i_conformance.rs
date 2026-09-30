@@ -340,6 +340,11 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/semantics.rs",
+        test: "moduli_written_within_a_modulus_are_evaluated_too",
+        rules: &["S3I-MODULUS-01"],
+    },
+    TestEvidence {
+        source_path: "src/semantics.rs",
         test: "type_names_resolve_in_declaration_order_within_their_module",
         rules: &["S3I-NAMES-01", "S3I-CORE-01"],
     },
@@ -422,6 +427,11 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         source_path: "src/eval.rs",
         test: "deepest_accepted_sources_fit_in_one_mebibyte_of_stack",
         rules: &["S3I-RES-01"],
+    },
+    TestEvidence {
+        source_path: "src/eval.rs",
+        test: "deeply_nested_rejected_moduli_fit_in_one_mebibyte_of_stack",
+        rules: &["S3I-MODULUS-01", "S3I-RES-01"],
     },
     TestEvidence {
         source_path: "src/diagnostic.rs",

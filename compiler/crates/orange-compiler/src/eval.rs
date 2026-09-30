@@ -3854,6 +3854,46 @@ mod tests {
         );
     }
 
+    /// A modulus that is not a constant is rejected, but the moduli written
+    /// within it, nested as deeply as the parser admits, are still evaluated
+    /// within 1 MiB of stack.
+    #[test]
+    fn deeply_nested_rejected_moduli_fit_in_one_mebibyte_of_stack() {
+        use crate::parser::MAX_EXPRESSION_NESTING;
+        let levels = (MAX_EXPRESSION_NESTING - 2) / 2;
+        let nested = format!(
+            "{}7{}",
+            "(0 as Mod[".repeat(levels),
+            "]) as Int".repeat(levels)
+        );
+        let text = format!(
+            "edition 2026; module m {{\n  spec f(x: Mod[{nested}]) -> Int {{ 0 }}\n  \
+             spec g(x: Word[32]) -> Word[32] {{ (x as Mod[{nested}]) as Word[32] }}\n}}\n"
+        );
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                let mut sources = SourceMap::new();
+                let id = sources.add("evaluate.or", text).unwrap();
+                let source = sources.get(id).unwrap();
+                let lexed = lex(source, Edition::E2026);
+                let parsed = parse(source, &lexed);
+                assert_eq!(parsed.diagnostics(), []);
+                let analyzed = analyze(source, parsed.ast().unwrap());
+                analyzed
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| (diagnostic.code(), diagnostic.label().to_owned()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        let expected = (
+            DiagnosticCode::InvalidModulus,
+            String::from("not a constant integer expression"),
+        );
+        assert_eq!(worker.join().unwrap(), vec![expected; 2 * levels]);
+    }
+
     fn bytes(values: &[u8]) -> CoreValue {
         let ty = ArrayType::new(CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap();
         CoreValue::Array(

@@ -150,6 +150,9 @@ Every modulus written in a module's `type` declarations and typed `spec`
 functions, in their parameter, result, binding, conversion, and loop types, is
 evaluated once, in source order, before the declarations of section 5 are
 resolved and before any function is checked, and its diagnostics come first.
+A modulus written within another, in a conversion or loop inside a modulus
+that is therefore not a constant, is evaluated too, after the modulus that
+holds it.
 A modulus in an `impl` function or a function without a typed body is not
 evaluated, as the other types of those functions are not checked.
 
