@@ -100,8 +100,12 @@ pub struct CoreFunction {
     /// Source extent of the function name.
     pub(crate) name_span: Span,
     /// The values of the function's sizes in this instance, in declaration
-    /// order; empty for a function without sizes.
+    /// order, each type parameter's the position of its type in its list;
+    /// empty for a function without sizes or types.
     pub(crate) sizes: Vec<u32>,
+    /// The instance's sizes and types in brackets as a call writes them,
+    /// `[2]` or `[1, F]`; empty for a function without sizes or types.
+    pub(crate) instance: String,
     /// Parameter types in declaration order.
     pub(crate) parameters: Vec<CoreType>,
     /// Statically checked result type.
@@ -150,10 +154,20 @@ impl CoreFunction {
     }
 
     /// Returns the values of the function's sizes in this instance, in
-    /// declaration order, or an empty slice for a function without sizes.
+    /// declaration order, with each type parameter's the position of its
+    /// type in its list, or an empty slice for a function without sizes or
+    /// types.
     #[must_use]
     pub fn sizes(&self) -> &[u32] {
         &self.sizes
+    }
+
+    /// Returns the instance's sizes and types in brackets as a call writes
+    /// them, `[2]` or `[1, F]`, or an empty string for a function without
+    /// sizes or types.
+    #[must_use]
+    pub fn instance(&self) -> &str {
+        &self.instance
     }
 
     /// Returns parameter types in declaration order.
@@ -2458,6 +2472,7 @@ mod tests {
                 name: String::from("integer"),
                 name_span: span,
                 sizes: Vec::new(),
+                instance: String::new(),
                 parameters: Vec::new(),
                 result_type: CoreType::Int,
                 locals: Vec::new(),
@@ -2481,6 +2496,7 @@ mod tests {
                 name: String::from("word"),
                 name_span: span,
                 sizes: Vec::new(),
+                instance: String::new(),
                 parameters: vec![CoreType::Word32],
                 result_type: CoreType::Word8,
                 locals: vec![CoreLocal {
@@ -2585,6 +2601,7 @@ mod tests {
                 name: _,
                 name_span: _,
                 sizes: _,
+                instance: _,
                 parameters: _,
                 result_type: _,
                 locals,

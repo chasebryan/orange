@@ -42,9 +42,13 @@ pub struct EvaluatedFunction {
     module: Arc<str>,
     /// Exact ASCII function name.
     name: String,
-    /// The values of the function's sizes in the instance evaluated, empty
-    /// for a function without sizes.
+    /// The values of the function's sizes in the instance evaluated, each
+    /// type parameter's the position of its type in its list; empty for a
+    /// function without sizes or types.
     sizes: Vec<u32>,
+    /// The instance's sizes and types in brackets as a call writes them,
+    /// `[2]` or `[1, F]`; empty for a function without sizes or types.
+    instance: String,
     /// Exact evaluated value.
     value: CoreValue,
 }
@@ -69,10 +73,19 @@ impl EvaluatedFunction {
     }
 
     /// Returns the values of the function's sizes in the instance
-    /// evaluated, or an empty slice for a function without sizes.
+    /// evaluated, with each type parameter's the position of its type in
+    /// its list, or an empty slice for a function without sizes or types.
     #[must_use]
     pub fn sizes(&self) -> &[u32] {
         &self.sizes
+    }
+
+    /// Returns the instance's sizes and types in brackets as a call writes
+    /// them, `[2]` or `[1, F]`, or an empty string for a function without
+    /// sizes or types.
+    #[must_use]
+    pub fn instance(&self) -> &str {
+        &self.instance
     }
 
     /// Returns the statically checked result type.
@@ -90,16 +103,17 @@ impl EvaluatedFunction {
 
 impl fmt::Display for EvaluatedFunction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}::{}", self.module(), self.name())?;
-        // An instance of a sized function is named as a call names it.
-        if let Some((first, rest)) = self.sizes.split_first() {
-            write!(formatter, "[{first}")?;
-            for size in rest {
-                write!(formatter, ", {size}")?;
-            }
-            formatter.write_str("]")?;
-        }
-        write!(formatter, ": {} = {}", self.result_type(), self.value())
+        // An instance of a function with sizes or types is named as a call
+        // names it.
+        write!(
+            formatter,
+            "{}::{}{}: {} = {}",
+            self.module(),
+            self.name(),
+            self.instance,
+            self.result_type(),
+            self.value()
+        )
     }
 }
 
@@ -2326,6 +2340,15 @@ fn evaluate_with_reservations(
             );
         }
         sizes.extend_from_slice(&function.sizes);
+        let mut instance = String::new();
+        if !(reservations.name)(&mut instance, function.instance.len()) {
+            return allocation_failure(
+                diagnostics,
+                function.name_span,
+                "evaluated function instance storage could not be reserved",
+            );
+        }
+        instance.push_str(&function.instance);
         let value = match result_value(value, &function.result_type, reservations) {
             Ok(value) => value,
             Err(Stop::Allocation(label)) => {
@@ -2339,6 +2362,7 @@ fn evaluate_with_reservations(
             module,
             name,
             sizes,
+            instance,
             value,
         });
     }

@@ -824,7 +824,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     ) -> bool {
         let Some(base_type) = self.leaf_type(&slice.base, context, scope) else {
             // The base's own check reports why it has no type.
-            self.check_expression(&slice.base, expected, context, scope, output);
+            self.check_untyped(&slice.base, expected, context, scope, output);
             return false;
         };
         let Some(array) = base_type.as_array() else {

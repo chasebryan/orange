@@ -9457,3 +9457,575 @@ fn rejects_a_foreign_byte_order_span() {
         [DiagnosticCode::InvalidSemanticInput]
     );
 }
+
+#[test]
+fn type_parameters_take_one_core_function_per_listed_type() {
+    let (fixture, core) = accepted(concat!(
+        "  type P = Mod[65521];\n",
+        "  spec twice[K in {Int, Word[16], P}](x: K) -> K { let y: K = x; y + y }\n",
+        "  spec fill[n in 1..3, K in {Bool, Word[8]}](x: K) -> K^n { [x; n] }\n",
+        "  spec first[T in {(Int, Bool), Word[8]^4}](x: T) -> T { x }\n",
+    ));
+    assert_eq!(
+        core.functions
+            .iter()
+            .map(|function| (
+                function.name(),
+                function.instance(),
+                function.sizes().to_vec(),
+                function
+                    .parameters()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                function.result_type().to_string()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("twice", "[Int]", vec![0], vec![String::from("Int")], String::from("Int")),
+            (
+                "twice",
+                "[Word[16]]",
+                vec![1],
+                vec![String::from("Word[16]")],
+                String::from("Word[16]")
+            ),
+            (
+                "twice",
+                "[P]",
+                vec![2],
+                vec![String::from("Mod[65521]")],
+                String::from("Mod[65521]")
+            ),
+            ("fill", "[1, Bool]", vec![1, 0], vec![String::from("Bool")], String::from("Bool^1")),
+            (
+                "fill",
+                "[1, Word[8]]",
+                vec![1, 1],
+                vec![String::from("Word[8]")],
+                String::from("Word[8]^1")
+            ),
+            ("fill", "[2, Bool]", vec![2, 0], vec![String::from("Bool")], String::from("Bool^2")),
+            (
+                "fill",
+                "[2, Word[8]]",
+                vec![2, 1],
+                vec![String::from("Word[8]")],
+                String::from("Word[8]^2")
+            ),
+            (
+                "first",
+                "[(Int, Bool)]",
+                vec![0],
+                vec![String::from("(Int, Bool)")],
+                String::from("(Int, Bool)")
+            ),
+            (
+                "first",
+                "[Word[8]^4]",
+                vec![1],
+                vec![String::from("Word[8]^4")],
+                String::from("Word[8]^4")
+            ),
+        ]
+    );
+    // The binding takes the instance's type.
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[2])
+            .into_iter()
+            .map(|(operation, source, ty)| (operation, source, ty.to_string()))
+            .collect::<Vec<_>>(),
+        [
+            (String::from("local 0"), "y", String::from("Mod[65521]")),
+            (String::from("local 0"), "y", String::from("Mod[65521]")),
+            (String::from("infix +"), "y + y", String::from("Mod[65521]")),
+        ]
+    );
+}
+
+#[test]
+fn each_instance_is_checked_with_its_type_and_the_first_in_error_is_named() {
+    let (fixture, result) = rejected(concat!(
+        "  type Q = Mod[3329];\n",
+        "  spec remainder[K in {Word[8], Q}](x: K) -> K { x % x }\n",
+        "  spec mixed[n in 1..3, K in {Int, Bool}](x: K^n) -> K { x[0] + x[0] }\n",
+        "  spec value[K in {Int, Q}](x: K) -> K { K }\n",
+        "  spec fine[K in {Int, Q}](x: K) -> K { x }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "%",
+                String::from("`%` is not defined for `Mod[3329]`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "+",
+                String::from("`+` is not defined for `Bool`")
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "K",
+                String::from("`K` is not a parameter of `value`")
+            ),
+        ]
+    );
+    let notes = |index: usize| result.diagnostics[index].notes().to_vec();
+    assert_eq!(
+        notes(0).last().unwrap(),
+        "in the instance `remainder[Q]`, the first of `remainder` in error: a function is \
+         checked once for each type of its type parameters"
+    );
+    assert_eq!(
+        notes(1).last().unwrap(),
+        "in the instance `mixed[1, Bool]`, the first of `mixed` in error: a function is checked \
+         once for each value of its sizes and each type of its type parameters"
+    );
+    assert_eq!(
+        notes(2),
+        [
+            "`K` is a type parameter: it names a type, not a value, so it is written where a \
+             type is, as in `let x: K = 0;`",
+            "in the instance `value[Int]`, the first of `value` in error: a function is checked \
+             once for each type of its type parameters",
+        ]
+    );
+}
+
+#[test]
+fn type_parameters_list_distinct_types_under_names_of_their_own() {
+    let (fixture, result) = rejected(concat!(
+        "  type F = Mod[(1 << 255) - 19];\n",
+        "  type Q = Mod[3329];\n",
+        "  type G = Mod[3329];\n",
+        "  spec twice[K in {F, Q, G}](x: K) -> K { x }\n",
+        "  spec words[K in {Word[32], Word[32]}](x: K) -> K { x }\n",
+        "  spec builtin[Int in {F, Q}](x: F) -> F { x }\n",
+        "  spec declared[F in {Q}](x: Q) -> Q { x }\n",
+        "  spec repeated[K in {F}, K in {Q}](x: F) -> F { x }\n",
+        "  spec mixed[n in 1..3, n in {Q}](x: Q) -> Q { x }\n",
+        "  spec values[K in {Q}](K: Q) -> Q { K }\n",
+        "  spec unknown[K in {Word[7], Mod[1], H}](x: Int) -> Int { x }\n",
+        "  spec many[K in {Int, Bool}, n in 0..200]() -> Int { n }\n",
+        "  spec most[K in {Int, Bool}, n in 0..128]() -> Int { n }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            // Every modulus is resolved before any type.
+            (
+                DiagnosticCode::InvalidModulus,
+                "1",
+                String::from("a modulus must be a constant from 2 through 2^521 - 1")
+            ),
+            (
+                DiagnosticCode::TypeParameter,
+                "G",
+                String::from("`K` lists the type `Mod[3329]` twice")
+            ),
+            (
+                DiagnosticCode::TypeParameter,
+                "Word[32]",
+                String::from("`K` lists the type `Word[32]` twice")
+            ),
+            (
+                DiagnosticCode::DuplicateTypeName,
+                "Int",
+                String::from("`Int` is a built-in type")
+            ),
+            (
+                DiagnosticCode::DuplicateTypeName,
+                "F",
+                String::from("duplicate type name `F`")
+            ),
+            (
+                DiagnosticCode::DuplicateParameter,
+                "K",
+                String::from("duplicate parameter `K`")
+            ),
+            (
+                DiagnosticCode::DuplicateParameter,
+                "n",
+                String::from("duplicate parameter `n`")
+            ),
+            (
+                DiagnosticCode::UnsupportedWordWidth,
+                "7",
+                String::from("`Word` width must be exactly 8, 16, 32, or 64")
+            ),
+            (
+                DiagnosticCode::UnsupportedType,
+                "H",
+                String::from("unsupported listed type `H`")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "K in {Int, Bool}, n in 0..200",
+                String::from("`many` has 400 instances, but a function has at most 256")
+            ),
+        ]
+    );
+    let twice = &result.diagnostics[1];
+    assert_eq!(twice.label(), "this is the same type as an earlier one");
+    assert_eq!(
+        twice
+            .secondary_spans()
+            .iter()
+            .map(|secondary| (
+                fixture.source().slice(secondary.span()).unwrap(),
+                secondary.label()
+            ))
+            .collect::<Vec<_>>(),
+        [("Q", "first listed here")]
+    );
+    assert_eq!(result.diagnostics[5].label(), "this name is already a parameter in brackets");
+    assert_eq!(
+        result.diagnostics[5].notes(),
+        ["each size and type parameter in a function's brackets has a name of its own"]
+    );
+    assert_eq!(
+        result.diagnostics[9].notes(),
+        [
+            "a function has one instance for each combination of its sizes' values and its type \
+             parameters' types, at most 256 in all"
+        ]
+    );
+}
+
+#[test]
+fn calls_name_an_instance_by_its_types_or_fit_one_by_argument_and_result_types() {
+    let (fixture, core) = accepted(concat!(
+        "  type P = Mod[65521];\n",
+        "  type W = Word[16];\n",
+        "  spec square[K in {Int, Word[16], P}](x: K) -> K { x * x }\n",
+        "  spec zero[K in {Int, Word[16], P}]() -> K { 0 }\n",
+        "  spec sum[K in {Word[16], P}, n in 1..4](x: K^n) -> K {\n",
+        "    for i in 0..n with s: K = 0 { s + x[i] }\n",
+        "  }\n",
+        "  spec first[T in {Word[8]^4, Bool}](x: T) -> T { x }\n",
+        "  spec calls[K in {Word[16], P}](x: K) -> K {\n",
+        "    square(x) + square[K](x) + zero() + sum([x, x]) + sum[K, 3]([0; 3])\n",
+        "  }\n",
+        "  spec named(p: P) -> (Int, W, P, Word[8]^4, Bool) {\n",
+        "    (square(2), square[W](2), square(p), first[Word[8]^4](hex\"00010203\"), first(true))\n",
+        "  }\n",
+    ));
+    let calls = |index: usize| {
+        core_nodes(&fixture, &core.functions[index])
+            .into_iter()
+            .filter(|(operation, _, _)| operation.starts_with("call"))
+            .map(|(operation, source, _)| (operation, source))
+            .collect::<Vec<_>>()
+    };
+    // square[Int, Word[16], P] are #0-#2, zero #3-#5, sum[Word[16], 1..=3]
+    // #6-#8 and sum[P, 1..=3] #9-#11, first #12 and #13, calls #14 and #15,
+    // and named #16.
+    assert_eq!(
+        calls(15),
+        [
+            (String::from("call #2 with 1"), "square(x)"),
+            (String::from("call #2 with 1"), "square[K](x)"),
+            (String::from("call #5 with 0"), "zero()"),
+            (String::from("call #10 with 1"), "sum([x, x])"),
+            (String::from("call #11 with 1"), "sum[K, 3]([0; 3])"),
+        ]
+    );
+    assert_eq!(
+        calls(16),
+        [
+            (String::from("call #0 with 1"), "square(2)"),
+            (String::from("call #1 with 1"), "square[W](2)"),
+            (String::from("call #2 with 1"), "square(p)"),
+            (String::from("call #12 with 1"), "first[Word[8]^4](hex\"00010203\")"),
+            (String::from("call #13 with 1"), "first(true)"),
+        ]
+    );
+}
+
+#[test]
+fn calls_that_give_no_listed_type_are_reported_at_the_call() {
+    let (fixture, result) = rejected(concat!(
+        "  type F = Mod[(1 << 255) - 19];\n",
+        "  type Q = Mod[3329];\n",
+        "  spec square[K in {F, Q}](x: K) -> K { x * x }\n",
+        "  spec sized[n in 1..3, K in {F, Q}](x: K^n) -> K { x[0] }\n",
+        "  spec a() -> Int { square[Int](3) }\n",
+        "  spec b(x: F) -> F { square[x](x) }\n",
+        "  spec c() -> F { square[F, Q](3) }\n",
+        "  spec d() -> Int { square(3) as Int }\n",
+        "  spec e(x: Word[32]) -> Word[32] { square(x) }\n",
+        "  spec f(x: F) -> Q { square(x) }\n",
+        "  spec g() -> F { square[Word[8]^300](3) }\n",
+        "  spec h() -> F { sized[1]([3]) }\n",
+        "  spec i(x: F) -> F { sized([x, x, x]) }\n",
+        "  spec j() -> F { sized([3]) as F }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::TypeParameter,
+                "Int",
+                String::from("`square` is defined for `K` in {F, Q}")
+            ),
+            (
+                DiagnosticCode::TypeParameter,
+                "x",
+                String::from("`square` takes a type for `K` here")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "square[F, Q](3)",
+                String::from("`square` takes 1 type in brackets, but this call gives 2")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "square(3)",
+                String::from(
+                    "this call fits more than one instance of `square`, among them `square[F]` \
+                     and `square[Q]`"
+                )
+            ),
+            (
+                DiagnosticCode::TypeParameter,
+                "square(x)",
+                String::from("no instance of `square` takes arguments of these types")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "square(x)",
+                String::from("`square` returns `Mod[(1 << 255) - 19]`, but `Mod[3329]` is required here")
+            ),
+            (
+                DiagnosticCode::TypeParameter,
+                "Word[8]^300",
+                String::from("`square` takes a type for `K` here")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "sized[1]([3])",
+                String::from("`sized` takes 1 size and 1 type in brackets, but this call gives 1")
+            ),
+            (
+                DiagnosticCode::TypeParameter,
+                "sized([x, x, x])",
+                String::from("no instance of `sized` takes arguments of these types")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "sized([3])",
+                String::from(
+                    "this call fits more than one instance of `sized`, among them `sized[1, F]` \
+                     and `sized[1, Q]`"
+                )
+            ),
+        ]
+    );
+    let label = |index: usize| result.diagnostics[index].label().to_owned();
+    assert_eq!(label(0), "this type is not listed");
+    assert_eq!(label(1), "this is not a type");
+    assert_eq!(label(3), "write the types in brackets");
+    assert_eq!(label(4), "an argument of type `Word[32]` is given");
+    assert_eq!(label(8), "an argument of type `Mod[(1 << 255) - 19]^3` is given");
+    assert_eq!(
+        result.diagnostics[4].notes()[0],
+        "`square` is defined for `K` in {F, Q}"
+    );
+    assert_eq!(
+        result.diagnostics[8].notes()[0],
+        "`sized` is defined for `n` in 1..3, `K` in {F, Q}"
+    );
+}
+
+#[test]
+fn a_call_whose_type_only_its_place_would_choose_is_reported_where_its_type_is_needed() {
+    let (fixture, result) = rejected(concat!(
+        "  spec zero[K in {Word[8], Bool}]() -> K { if true { 0 } else { 0 } }\n",
+        "  spec bytes[K in {Word[8]^4, Word[8]^2}]() -> K { [0; 4] }\n",
+        "  spec pair[K in {(Word[8], Word[8]), (Word[8], Bool)}]() -> K { (0, 0) }\n",
+        "  spec a() -> Word[8] { zero() as Word[8] }\n",
+        "  spec b() -> Bool { zero() == 0 }\n",
+        "  spec c() -> Word[8] { bytes()[0] }\n",
+        "  spec d() -> Word[8]^2 { bytes()[0..2] }\n",
+        "  spec e() -> Word[8] { pair().0 }\n",
+        "  spec f() -> Word[32] { bytes() as big Word[32] }\n",
+    ));
+    let fits = |name: &str, first: &str, second: &str| {
+        format!(
+            "this call fits more than one instance of `{name}`, among them `{name}[{first}]` \
+             and `{name}[{second}]`"
+        )
+    };
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::TypeMismatch,
+                "0",
+                String::from("an integer literal cannot have type `Bool`")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "0",
+                String::from("an integer literal cannot have type `Bool`")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "[0; 4]",
+                String::from("this array has 4 elements, but `Word[8]^2` has 2")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "0",
+                String::from("an integer literal cannot have type `Bool`")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "zero()",
+                fits("zero", "Word[8]", "Bool")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "zero()",
+                fits("zero", "Word[8]", "Bool")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "bytes()",
+                fits("bytes", "Word[8]^4", "Word[8]^2")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "bytes()",
+                fits("bytes", "Word[8]^4", "Word[8]^2")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "pair()",
+                fits("pair", "(Word[8], Word[8])", "(Word[8], Bool)")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "bytes()",
+                fits("bytes", "Word[8]^4", "Word[8]^2")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn typed_functions_of_used_modules_are_called_by_their_instances() {
+    let program = Program::new(&[
+        concat!(
+            "edition 2026; module main { use field; ",
+            "type Kyber = Mod[3329]; ",
+            "spec by_argument(x: Kyber) -> Kyber { field::cube(x) } ",
+            "spec by_name() -> Kyber { field::cube[Kyber](5) } ",
+            "spec by_place() -> Kyber { field::one() } ",
+            "}"
+        ),
+        concat!(
+            "edition 2026; module field { ",
+            "type P = Mod[(1 << 130) - 5]; type Q = Mod[3329]; ",
+            "spec cube[K in {P, Q}](x: K) -> K { x * x * x } ",
+            "spec one[K in {P, Q}]() -> K { 1 } ",
+            "}"
+        ),
+    ]);
+    let result = program.analyze();
+    assert_eq!(result.diagnostics(), []);
+    let core = result.core().unwrap();
+    assert_eq!(
+        core.functions()
+            .iter()
+            .map(|function| (function.module(), function.name(), function.instance()))
+            .collect::<Vec<_>>(),
+        [
+            ("field", "cube", "[P]"),
+            ("field", "cube", "[Q]"),
+            ("field", "one", "[P]"),
+            ("field", "one", "[Q]"),
+            ("main", "by_argument", ""),
+            ("main", "by_name", ""),
+            ("main", "by_place", ""),
+        ]
+    );
+    assert_eq!(call_targets(core.functions()[4].body()), [1]);
+    assert_eq!(call_targets(core.functions()[5].body()), [1]);
+    assert_eq!(call_targets(core.functions()[6].body()), [3]);
+    let evaluated = crate::eval::evaluate(core);
+    assert_eq!(
+        evaluated
+            .values()
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        [
+            "main::by_name: Mod[3329] = 125",
+            "main::by_place: Mod[3329] = 1",
+        ]
+    );
+    // The used module's listed type is named as that module writes it.
+    let unlisted = Program::new(&[
+        concat!(
+            "edition 2026; module main { use field; ",
+            "spec wrong() -> Int { field::one[Int]() } ",
+            "}"
+        ),
+        concat!(
+            "edition 2026; module field { ",
+            "type P = Mod[(1 << 130) - 5]; type Q = Mod[3329]; ",
+            "spec one[K in {P, Q}]() -> K { 1 } ",
+            "}"
+        ),
+    ]);
+    let result = unlisted.analyze();
+    assert_eq!(
+        unlisted.report(&result),
+        [(
+            DiagnosticCode::TypeParameter,
+            String::from("`one` is defined for `K` in {P, Q}"),
+            String::from("Int")
+        )]
+    );
+}
+
+#[test]
+fn rejects_foreign_listed_type_spans() {
+    let text = concat!(
+        "  spec f[K in {Int, Word[8]}](x: K) -> K { x }\n",
+        "  spec g() -> Int { f[Int](1) }\n",
+    );
+    let first = module(text);
+    let second = module(text);
+    let foreign = &second.ast.module.functions;
+    let mutations: [&dyn Fn(&mut SyntaxTree); 3] = [
+        &|ast| ast.module.functions[0].sizes[0].types[0].span = foreign[0].sizes[0].types[0].span,
+        &|ast| {
+            ast.module.functions[0].sizes[0].types[1].name.span =
+                foreign[0].sizes[0].types[1].name.span;
+        },
+        &|ast| {
+            ast.module.functions[0].sizes[0].types[1].width_span =
+                foreign[0].sizes[0].types[1].width_span;
+        },
+    ];
+    for (index, mutate) in mutations.iter().enumerate() {
+        let mut ast = first.ast.clone();
+        mutate(&mut ast);
+        let result = analyze(first.source(), &ast);
+        assert!(result.core.is_none(), "case {index}");
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(Diagnostic::code)
+                .collect::<Vec<_>>(),
+            [DiagnosticCode::InvalidSemanticInput],
+            "case {index}"
+        );
+    }
+}

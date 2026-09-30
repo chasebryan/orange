@@ -290,19 +290,23 @@ impl FunctionDeclaration {
     }
 }
 
-/// One size parameter `n in a..b` of a sized `spec`. The function is
-/// checked once for each value of `n` from `a` up to, but not including,
-/// `b`, as if it were written out once for each.
+/// One size parameter `n in a..b` of a sized `spec`, or one type
+/// parameter `K in {F, L}`. The function is checked once for each value of
+/// `n` from `a` up to, but not including, `b`, or once for each type the
+/// braces list, as if it were written out once for each.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SizeParameter {
-    /// Extent from the name through the second bound.
+    /// Extent from the name through the second bound or the closing brace.
     pub(crate) span: Span,
-    /// The size's name.
+    /// The size's or the type parameter's name.
     pub(crate) name: Identifier,
-    /// Exact extent of the first bound's integer token.
+    /// Exact extent of the first bound's integer token, or of `{`.
     pub(crate) start_span: Span,
-    /// Exact extent of the second bound's integer token.
+    /// Exact extent of the second bound's integer token, or of `}`.
     pub(crate) end_span: Span,
+    /// The listed types in source order, nonempty only for a type
+    /// parameter.
+    pub(crate) types: Vec<TypeSyntax>,
 }
 
 impl SizeParameter {
@@ -318,16 +322,31 @@ impl SizeParameter {
         &self.name
     }
 
-    /// Returns the exact extent of the first bound.
+    /// Returns the exact extent of the first bound, or of `{` for a type
+    /// parameter.
     #[must_use]
     pub const fn start_span(&self) -> Span {
         self.start_span
     }
 
-    /// Returns the exact extent of the second bound.
+    /// Returns the exact extent of the second bound, or of `}` for a type
+    /// parameter.
     #[must_use]
     pub const fn end_span(&self) -> Span {
         self.end_span
+    }
+
+    /// Returns the listed types of a type parameter in source order, or an
+    /// empty slice for a size parameter.
+    #[must_use]
+    pub fn types(&self) -> &[TypeSyntax] {
+        &self.types
+    }
+
+    /// Returns whether this is a type parameter, `K in {F, L}`.
+    #[must_use]
+    pub const fn is_type(&self) -> bool {
+        !self.types.is_empty()
     }
 }
 
@@ -1758,6 +1777,9 @@ const SIZED_CALL_NOTE: &str = "a sized function is called with its sizes in brac
 const SIZE_PARAMETER_NOTE: &str = "a sized function is written `spec f[n in 1..5](x: Word[8]^n) \
      -> Type { ... }` and checked once for each n from 1 up to, but not including, 5";
 
+const TYPE_PARAMETER_NOTE: &str = "a type parameter is written `K in {F, L}` and names each type \
+     its function is checked for, as in `spec square[K in {F, L}](x: K) -> K { x * x }`";
+
 const LOOP_SHAPE_NOTE: &str = "a loop is written `for i in 0..n with s: Type = start { step }`";
 
 const STEP_SHAPE_NOTE: &str = "a loop's step holds `let` bindings, if any, and then the \
@@ -2385,11 +2407,22 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         if kind == FunctionKind::Impl
             && let Some(first) = sizes.as_ref().and_then(|list| list.first())
         {
+            let (message, label) = if first.is_type() {
+                (
+                    "`impl` functions have no type parameters",
+                    "type parameters are allowed only on typed `spec` functions",
+                )
+            } else {
+                (
+                    "`impl` functions have no size parameters",
+                    "size parameters are allowed only on typed `spec` functions",
+                )
+            };
             self.report(
                 DiagnosticCode::ExpectedSyntax,
-                "`impl` functions have no size parameters",
+                message,
                 first.span,
-                "size parameters are allowed only on typed `spec` functions",
+                label,
                 "keep the legacy `impl name() {}` form until implementation semantics are defined",
             );
         }
@@ -2527,8 +2560,10 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses the size parameters `[n in a..b, ...]` of a function, at most
-    /// [`MAX_SIZES_PER_FUNCTION`] of them, each with integer bounds.
+    /// Parses the size and type parameters `[n in a..b, K in {F, L}, ...]`
+    /// of a function, at most [`MAX_SIZES_PER_FUNCTION`] of them, each size
+    /// with integer bounds and each type parameter with a braced list of
+    /// types.
     #[inline(never)]
     fn parse_size_parameters(&mut self) -> Option<Vec<SizeParameter>> {
         self.bump()?;
@@ -2540,6 +2575,41 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 return None;
             }
             self.bump()?;
+            if self.current_kind() == TokenKind::LeftBrace {
+                let parameter = self.parse_type_parameter(name)?;
+                if sizes.len() >= MAX_SIZES_PER_FUNCTION {
+                    self.report(
+                        DiagnosticCode::ExpectedSyntax,
+                        format!(
+                            "a function has at most {MAX_SIZES_PER_FUNCTION} size and type \
+                             parameters"
+                        ),
+                        parameter.span,
+                        "one parameter in brackets too many",
+                        TYPE_PARAMETER_NOTE,
+                    );
+                    return None;
+                }
+                if sizes.try_reserve(1).is_err() {
+                    self.resource_limit_at(
+                        "parser could not allocate size storage",
+                        parameter.name.span,
+                    );
+                    return None;
+                }
+                sizes.push(parameter);
+                match self.current_kind() {
+                    TokenKind::Comma => {
+                        self.bump()?;
+                        continue;
+                    }
+                    TokenKind::RightBracket => break,
+                    _ => {
+                        self.expected("`,` or `]` after the type parameter", TYPE_PARAMETER_NOTE);
+                        return None;
+                    }
+                }
+            }
             let start_span = self
                 .expect(
                     TokenKind::Integer,
@@ -2560,9 +2630,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 )?
                 .span;
             if sizes.len() >= MAX_SIZES_PER_FUNCTION {
+                let kinds = if sizes.iter().any(SizeParameter::is_type) {
+                    "size and type parameters"
+                } else {
+                    "size parameters"
+                };
                 self.report(
                     DiagnosticCode::ExpectedSyntax,
-                    format!("a function has at most {MAX_SIZES_PER_FUNCTION} size parameters"),
+                    format!("a function has at most {MAX_SIZES_PER_FUNCTION} {kinds}"),
                     self.join(name.span, end_span),
                     "one size parameter too many",
                     SIZE_PARAMETER_NOTE,
@@ -2579,6 +2654,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 name,
                 start_span,
                 end_span,
+                types: Vec::new(),
             });
             if !self.record_node() {
                 return None;
@@ -2596,6 +2672,72 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
         self.bump()?;
         Some(sizes)
+    }
+
+    /// Parses the braced list of a type parameter `K in {F, L}` at its `{`,
+    /// after the parameter's name and `in`: one or more types separated by
+    /// commas. After a syntax error in the list, parsing resumes after its
+    /// `}`, so that the function's `(` is found.
+    #[inline(never)]
+    fn parse_type_parameter(&mut self, name: Identifier) -> Option<SizeParameter> {
+        let parameter = self.parse_type_list(name);
+        if parameter.is_none() {
+            self.recover_to(&[
+                TokenKind::RightBrace,
+                TokenKind::LeftParen,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+            ]);
+            if self.current_kind() == TokenKind::RightBrace {
+                self.bump();
+            }
+        }
+        parameter
+    }
+
+    fn parse_type_list(&mut self, name: Identifier) -> Option<SizeParameter> {
+        let open = self.bump()?;
+        let mut types = Vec::new();
+        loop {
+            if self.current_kind() == TokenKind::RightBrace {
+                self.expected(
+                    if types.is_empty() {
+                        "a listed type after `{`"
+                    } else {
+                        "a listed type after `,`"
+                    },
+                    TYPE_PARAMETER_NOTE,
+                );
+                return None;
+            }
+            let (ty, _) = self.parse_type_syntax("listed type", true, 0)?;
+            if types.try_reserve(1).is_err() {
+                self.resource_limit_at("parser could not allocate type storage", ty.span);
+                return None;
+            }
+            types.push(ty);
+            match self.current_kind() {
+                TokenKind::Comma => {
+                    self.bump()?;
+                }
+                TokenKind::RightBrace => break,
+                _ => {
+                    self.expected("`,` or `}` after the listed type", TYPE_PARAMETER_NOTE);
+                    return None;
+                }
+            }
+        }
+        let close = self.bump()?;
+        if !self.record_node() {
+            return None;
+        }
+        Some(SizeParameter {
+            span: self.join(name.span, close.span),
+            name,
+            start_span: open.span,
+            end_span: close.span,
+            types,
+        })
     }
 
     fn parse_parameter_list(&mut self) -> Option<Vec<Parameter>> {
@@ -4421,12 +4563,13 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         true
     }
 
-    /// Returns whether a name followed by `[` starts a call of a sized
-    /// function, `name[sizes](arguments)`: whether the brackets hold only
-    /// tokens a list of sizes can hold (integers, names, `+`, `-`, `*`, `/`,
-    /// `%`, parentheses, and commas) and a `(` follows them. Anything else,
-    /// such as an index that holds another index, stops the scan, so the
-    /// scans of all a source's brackets read each token at most once.
+    /// Returns whether a name followed by `[` starts a call of a function
+    /// with sizes or types, `name[sizes](arguments)`: whether the brackets
+    /// hold only tokens a list of sizes and types can hold (integers, names,
+    /// `+`, `-`, `*`, `/`, `%`, `^`, parentheses, commas, and a name's `[n]`,
+    /// as in `Word[32]`) and a `(` follows them. Anything else, such as an
+    /// index that holds another index, stops the scan, so the scans of all
+    /// a source's brackets read each token at most twice.
     fn starts_sized_call(&self) -> bool {
         if self.next_kind() != TokenKind::LeftBracket {
             return false;
@@ -4442,9 +4585,18 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 | TokenKind::Star
                 | TokenKind::Slash
                 | TokenKind::Percent
+                | TokenKind::Caret
                 | TokenKind::Comma => {}
                 TokenKind::LeftParen => depth = depth.saturating_add(1),
                 TokenKind::RightParen if depth > 0 => depth = depth.saturating_sub(1),
+                // A word type given to a type parameter, as in `ch[Word[32]](e, f, g)`.
+                TokenKind::LeftBracket
+                    if self.kind_at(position.saturating_sub(1)) == TokenKind::Identifier
+                        && self.kind_at(position.saturating_add(1)) == TokenKind::Integer
+                        && self.kind_at(position.saturating_add(2)) == TokenKind::RightBracket =>
+                {
+                    position = position.saturating_add(2);
+                }
                 TokenKind::RightBracket if depth == 0 => {
                     return self.kind_at(position.saturating_add(1)) == TokenKind::LeftParen;
                 }
@@ -9491,6 +9643,10 @@ mod tests {
             ("a[1](b)[0]", "index"),
             ("a[1](b)[0..1]", "slice"),
             ("n::a[1](b)", "call 1"),
+            // Since S3o, a name's `[n]` and `^` may be written in a call's
+            // brackets, for a type such as `Word[8]^4`.
+            ("a[b[1]](c)", "call 1"),
+            ("a[Word[8]^4, 2](c)", "call 2"),
         ];
         for (body, shape) in shapes {
             let (_, expression) = body_expression(&spec_source(body));
@@ -9559,7 +9715,6 @@ mod tests {
         }
         let calls = [
             ("g[1, 2]", "expected `]` after the index"),
-            ("g[a[1]](b)", "expected `}` after the body expression"),
             ("g[1, 2 3](a)", "expected `,` or `]` after the size"),
             ("g[1, 2, 3, 4, 5](a)", "a call gives at most 4 sizes"),
             ("n::g[1]", "expected `(` after the sizes"),
@@ -9578,6 +9733,136 @@ mod tests {
                 "{body:?}"
             );
             assert_eq!(diagnostic.message(), message, "{body:?}");
+        }
+    }
+
+    #[test]
+    fn parses_type_parameters_as_lists_of_types_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec f[K in {F, Word[32], Mod[(1 << 130) - 5], Word[8]^4, (Int, Bool)}, n in 1..3]",
+            "(x: K) -> K { g[K, Word[16], Word[8]^4, n](x) } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let function = &ast.module.functions[0];
+        let slice = |span: Span| source.slice(span).unwrap();
+        let [typed, sized] = function.sizes() else {
+            panic!("expected two parameters in brackets");
+        };
+        assert!(typed.is_type());
+        assert!(!sized.is_type());
+        assert_eq!(
+            (
+                slice(typed.span()),
+                typed.name().text(),
+                slice(typed.start_span()),
+                slice(typed.end_span())
+            ),
+            (
+                "K in {F, Word[32], Mod[(1 << 130) - 5], Word[8]^4, (Int, Bool)}",
+                "K",
+                "{",
+                "}"
+            )
+        );
+        assert_eq!(
+            typed
+                .types()
+                .iter()
+                .map(|ty| slice(ty.span))
+                .collect::<Vec<_>>(),
+            [
+                "F",
+                "Word[32]",
+                "Mod[(1 << 130) - 5]",
+                "Word[8]^4",
+                "(Int, Bool)"
+            ]
+        );
+        assert!(sized.types().is_empty());
+        assert_eq!(slice(sized.span()), "n in 1..3");
+        let FunctionBody::Typed(body) = &function.body else {
+            panic!("expected a typed body");
+        };
+        let ExpressionKind::Call(call) = &body.expression.kind else {
+            panic!("expected a call");
+        };
+        assert_eq!(
+            call.sizes()
+                .iter()
+                .map(|size| slice(size.span))
+                .collect::<Vec<_>>(),
+            ["K", "Word[16]", "Word[8]^4", "n"]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_type_parameters_with_exact_messages() {
+        let declarations = [
+            (
+                "spec f[K in {}]() -> Int { 1 }",
+                "expected a listed type after `{`",
+            ),
+            (
+                "spec f[K in {Int,}]() -> Int { 1 }",
+                "expected a listed type after `,`",
+            ),
+            (
+                "spec f[K in {Int Bool}]() -> Int { 1 }",
+                "expected `,` or `}` after the listed type",
+            ),
+            (
+                "spec f[K in {Int]() -> Int { 1 }",
+                "expected `,` or `}` after the listed type",
+            ),
+            (
+                "spec f[K in {1}]() -> Int { 1 }",
+                "expected an identifier for the listed type",
+            ),
+            (
+                "spec f[K in {Int} n in 1..2]() -> Int { 1 }",
+                "expected `,` or `]` after the type parameter",
+            ),
+            (
+                "spec f[A in {Int}, B in {Int}, C in {Int}, D in {Int}, E in {Int}]() -> Int { 1 }",
+                "a function has at most 4 size and type parameters",
+            ),
+            (
+                "spec f[a in 1..2, B in {Int}, c in 1..2, d in 1..2, e in 1..2]() -> Int { 1 }",
+                "a function has at most 4 size and type parameters",
+            ),
+            (
+                "impl f[K in {Int}]() {}",
+                "`impl` functions have no type parameters",
+            ),
+        ];
+        for (declaration, message) in declarations {
+            let text = format!("edition 2026; module m {{ {declaration} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{text:?}");
+            assert!(parsed.ast.is_none(), "accepted {text:?}");
+            let diagnostic = parsed.diagnostics.first().unwrap();
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{text:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{text:?}");
+        }
+        // After an error in a list, parsing resumes after its `}`, so the
+        // function's parameters and the next function add no error.
+        for list in ["{}", "{Int,}", "{Int Bool}", "{Word[7] Bool}"] {
+            let text = format!(
+                "edition 2026; module m {{ spec f[K in {list}](x: Int) -> Int {{ x }} \
+                 spec g() -> Int {{ 1 }} }}"
+            );
+            let (_, _, parsed) = parse_text(&text);
+            assert_eq!(parsed.diagnostics.len(), 1, "{text:?}: {:?}", parsed.diagnostics);
         }
     }
 

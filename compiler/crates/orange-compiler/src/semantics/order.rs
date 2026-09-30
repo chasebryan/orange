@@ -86,7 +86,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 let Some(from) = self.leaf_type(leaf, context, scope) else {
                     // The leaf's own check reports why it has no type. That
                     // check stops before comparing with the type passed here.
-                    self.check_expression(leaf, expected, context, scope, output);
+                    self.check_untyped(leaf, expected, context, scope, output);
                     return false;
                 };
                 from
@@ -150,7 +150,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// Returns the type of an array literal or a fill as the operand of a
     /// conversion, without reporting: its elements' type, from the first
     /// element with a typed leaf, and its length.
-    fn literal_array_type(
+    pub(super) fn literal_array_type(
         &self,
         leaf: &Expression,
         context: &BodyContext<'ast>,

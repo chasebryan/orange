@@ -267,7 +267,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let Some(base_type) = self.leaf_type(&project.base, context, scope) else {
             // The base's own check reports why it has no type and stops
             // before comparing with the type passed here.
-            self.check_expression(&project.base, expected, context, scope, output);
+            self.check_untyped(&project.base, expected, context, scope, output);
             return false;
         };
         let Some(tuple_type) = base_type.as_tuple() else {
