@@ -773,7 +773,7 @@
     "tools/tests/test_d004_v08_run.py": "187ae025e48b2fdb9ef3221c763ff98a37e8c78f5d5c746f049636983f635f26",
     "tools/tests/test_d005_draft_packet.py": "657d5bf9468d481be3c4b7ee3143fed2b4a9f1253d21bc35477476e968017b09",
     "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
-    "tools/tests/test_d006_run.py": "db54977f9af8b8b9d80634140e96719078af3e4f26df0cda737391afb8bc5dc4",
+    "tools/tests/test_d006_run.py": "10940888d4924aff7527358f8083b57afd751a12cc6c7caea4d268d0177bbd9f",
     "tools/tests/test_d006_shared.py": "3623319acda4ecdc4f9e1f91fb092077542ee123a477595776d8b5b71addd7b1",
     "tools/tests/test_d009_draft_packet.py": "996a99b8b9283c81abd76db8c16ec901f3eeb44ea96995f6734d685bf1b98404",
     "tools/tests/test_d010_draft_packet.py": "10b1e0b3604ee2104bc2861768406c1a3d145c6e689a62fff0d09ef58fd405a4",

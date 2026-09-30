@@ -313,19 +313,41 @@ class D006EpochEvidenceTests(unittest.TestCase):
         self.assertEqual(OVERLAY["correction_window"]["rounds_per_candidate"], 1)
 
     def test_a_correction_must_change_a_candidate_with_a_round_left(self) -> None:
-        head = {cand: dict(run.tree_at(REPOSITORY_ROOT, "HEAD", cand)) for cand in ("C-01", "C-02")}
-        self.assertIn("adapter.json", head["C-02"])
-        plan = run.Plan()
-        same = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision(head["C-02"], "C-02")]
-        with self.assertRaisesRegex(run.RunError, "changes none"):
-            run.check_correction(REPOSITORY_ROOT, same, plan, "HEAD", 1)
-        older = {**head["C-02"], "adapter.json": "0" * 64}
-        first = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision(older, "C-02")]
-        run.check_correction(REPOSITORY_ROOT, first, plan, "HEAD", 1)
-        spent = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision({"x": "1"}, "C-02"),
-                 {"profile": "execution", "attempt": 2}, self.provision(head["C-01"], "C-01"), self.provision(older, "C-02")]
-        with self.assertRaisesRegex(run.RunError, "C-02 already had 1 correction round"):
-            run.check_correction(REPOSITORY_ROOT, spent, plan, "HEAD", 1)
+        # The candidate trees at the correction's revision; the check suite runs outside a git checkout.
+        head = {"C-01": {"theories/A.v": "1"}, "C-02": {"adapter.json": "2", "D006/A.lean": "1"}}
+        original = run.tree_at
+        run.tree_at = lambda repo, revision, cand: sorted(head[cand].items())
+        try:
+            plan = run.Plan()
+            same = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision(head["C-02"], "C-02")]
+            with self.assertRaisesRegex(run.RunError, "changes none"):
+                run.check_correction(REPOSITORY_ROOT, same, plan, "REV", 1)
+            older = {**head["C-02"], "adapter.json": "1"}
+            first = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision(older, "C-02")]
+            run.check_correction(REPOSITORY_ROOT, first, plan, "REV", 1)
+            spent = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision({"x": "1"}, "C-02"),
+                     {"profile": "execution", "attempt": 2}, self.provision(head["C-01"], "C-01"), self.provision(older, "C-02")]
+            with self.assertRaisesRegex(run.RunError, "C-02 already had 1 correction round"):
+                run.check_correction(REPOSITORY_ROOT, spent, plan, "REV", 1)
+        finally:
+            run.tree_at = original
+
+    def test_a_revisions_tree_is_read_from_its_git_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data = run.io.BytesIO()
+            with run.tarfile.open(fileobj=data, mode="w") as tar:
+                for name, body in ((run.CANDIDATE_DIRS["C-02"] + "/adapter.json", b"{}\n"), ("elsewhere/x", b"x"),
+                                   (run.CANDIDATE_DIRS["C-02"] + "/D006/A.lean", b"theorem\n")):
+                    info = run.tarfile.TarInfo(name)
+                    info.size = len(body)
+                    tar.addfile(info, run.io.BytesIO(body))
+            original = run.subprocess.run
+            run.subprocess.run = lambda argv, **kwargs: run.subprocess.CompletedProcess(argv, 0, data.getvalue(), b"")
+            try:
+                rows = run.tree_at(Path(tmp), "REV", "C-02")
+            finally:
+                run.subprocess.run = original
+        self.assertEqual(rows, [("D006/A.lean", run.sha256(b"theorem\n")), ("adapter.json", run.sha256(b"{}\n"))])
 
     def test_dependency_sizes_come_from_the_attempts_inventory(self) -> None:
         toolchains = {"tools": [{"id": "TC-P", "name": "P", "role": "builds", "terms": "MIT",
