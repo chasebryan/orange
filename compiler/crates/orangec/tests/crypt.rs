@@ -533,7 +533,9 @@ fn sealing_options_are_checked_before_anything_runs() {
 #[test]
 fn files_sealed_by_an_independent_implementation_open() {
     let scratch = Scratch::new("interop");
-    let cases: [(&str, Vec<u8>, &[&str], Vec<u8>); 3] = [
+    // Scheme, key, sealed file in hexadecimal, and plaintext.
+    type Case<'hex> = (&'static str, Vec<u8>, &'hex [&'hex str], Vec<u8>);
+    let cases: [Case<'_>; 3] = [
         (
             "xchacha20_poly1305",
             counting(32),

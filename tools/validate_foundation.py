@@ -344,8 +344,10 @@ compiler/crates/orange-compiler/tests/d010_support/domain.rs
 compiler/crates/orange-compiler/tests/d010_support/packet.rs
 compiler/crates/orange-compiler/tests/d010_support/runner.rs
 compiler/crates/orangec/Cargo.toml
+compiler/crates/orangec/src/crypt.rs
 compiler/crates/orangec/src/main.rs
 compiler/crates/orangec/tests/cli.rs
+compiler/crates/orangec/tests/crypt.rs
 compiler/crates/orangec/tests/s2_conformance.rs
 compiler/crates/orangec/tests/s3a_conformance.rs
 compiler/crates/orangec/tests/s3b_conformance.rs
@@ -412,6 +414,10 @@ compiler/fixtures/s3f/valid-conditions.or
 compiler/fixtures/s3f/valid-poly1305.or
 compiler/fixtures/s3f/valid-x25519.or
 compiler/fixtures/typed-answer.or
+compiler/schemes/README.md
+compiler/schemes/ascon_aead128.or
+compiler/schemes/chacha20_poly1305.or
+compiler/schemes/xchacha20_poly1305.or
 DEPENDENCY_POLICY.md
 GOVERNANCE.md
 Makefile
@@ -759,7 +765,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "15ecf19f3289f75e2c9f7de7aa02ef1c4fb0c73a5cc977efa171181e8f9a0c6d"
+_PHD = "927ca3f6d3660906c08d179c7d3f34a1014eae5987405f936b06ee5d074db6bb"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1141,8 +1147,8 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "185530ac31833262b608ba3fd6275f364cfcba86fe59537bc03ead2f70f81459"
-_D010_PACKET_RAW_SHA256 = "c27873919613675e09ec0b5b36d0f6d451552a3bc8ba5e765d1ab31d843befcb"
+_D010_PACKET_CANONICAL_SHA256 = "57eab3b86ca6a5d40ba9cd6badf331c7ad414e93d69f85b4901ee3b3c8964082"
+_D010_PACKET_RAW_SHA256 = "90db3001e1d5a91f5dd1748d3d5b90d492e6da4aa7d9c1c91b37ce4b3aa6a61b"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"

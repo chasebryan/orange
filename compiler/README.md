@@ -60,6 +60,40 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3b_conformance --locked --offline
 ```
 
+## Sealing files
+
+`orangec keygen`, `enc`, `dec`, and `schemes` seal files with authenticated
+ciphers written in Orange. XChaCha20-Poly1305 (the default),
+ChaCha20-Poly1305, and Ascon-AEAD128 are built in from [`schemes/`](schemes/),
+and any Orange program with the sealing interface is a scheme too. Every byte
+of cryptography runs on the reference evaluator through `Evaluator::call`,
+which evaluates one specification on host values under its own step budget;
+`crates/orangec/src/crypt.rs` only moves bytes, one evaluator per core.
+[`schemes/README.md`](schemes/README.md) specifies the interface, the key file,
+and sealed-file format 1, and states the limits: the evaluator is not
+constant-time, nothing is verified, and keys are stored unencrypted.
+
+```sh
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- schemes
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- keygen -o /tmp/demo.key
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- enc --key /tmp/demo.key -o /tmp/readme.orange README.md
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- dec --key /tmp/demo.key -o /tmp/readme.md /tmp/readme.orange
+cargo test --manifest-path compiler/Cargo.toml -p orangec --test crypt --locked --offline
+```
+
+A sealing command that fails exits with status 1 and one of these codes; a
+malformed command line is a usage error with status 2.
+
+| Code | Failure |
+| --- | --- |
+| `ORC1009` | A key file is missing, malformed, readable by other users, made for another scheme, or already present where `keygen` would write. |
+| `ORC1010` | A scheme is unknown, does not compile, or does not implement the sealing interface. |
+| `ORC1011` | The file to seal or open cannot be read, or is too large to seal. |
+| `ORC1012` | An output already exists or cannot be written. |
+| `ORC1013` | A sealed file has a malformed header, another format version, or ends inside a chunk. |
+| `ORC1014` | A chunk is not authentic; nothing is written. |
+| `ORC1015` | Operating-system randomness is unavailable. |
+
 ## D-004 pre-epoch decision laboratory
 
 The `orange-compiler` integration tests contain a standard-library-only,
@@ -970,7 +1004,11 @@ accept OEP-0009, prove the rules sound, or complete S3.
 - `crates/orange-compiler/tests/d006_decision_suite.rs`: input-only D-006
   pre-epoch packet, case-index, and identity-inventory checks;
 - `crates/orangec`: thin file/stdin CLI with deterministic `check`, `eval`, and
-  `lex` behavior;
+  `lex` behavior, and the sealing commands `keygen`, `enc`, `dec`, and
+  `schemes`;
+- `crates/orangec/src/crypt.rs`: the sealing commands and sealed-file format 1;
+- `crates/orangec/tests/crypt.rs`: black-box sealing tests, including files
+  sealed by an independent implementation of the format;
 - `crates/orangec/tests/s2_conformance.rs`: protected indexed S2 lexical and
   parser conformance runner;
 - `crates/orangec/tests/s3a_conformance.rs`: exact repeatable black-box S3a
@@ -992,5 +1030,8 @@ accept OEP-0009, prove the rules sound, or complete S3.
 - `fixtures/s3c/`: exact five-positive/five-negative S3c CLI fixture corpus;
 - `fixtures/s3d/`: exact three-positive/five-negative S3d CLI fixture corpus;
 - `fixtures/s3e/`: exact three-positive/four-negative S3e CLI fixture corpus;
+- `fixtures/s3f/`: exact four-positive/four-negative S3f CLI fixture corpus;
   and
-- `fixtures/s3f/`: exact four-positive/four-negative S3f CLI fixture corpus.
+- `schemes/`: the built-in sealing schemes, each an Orange program ending in
+  its known answers, and the specification of the scheme interface and
+  sealed-file format 1.
