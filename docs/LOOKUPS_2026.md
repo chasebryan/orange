@@ -25,16 +25,18 @@ meaning. It accepts no D-004 candidate.
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, extends this
 > document with programs of more than one module, in which a module names the
 > modules it uses and calls their functions by module name, as in
-> `sha256::compress(h, block)`, [`MODULAR_2026.md`](MODULAR_2026.md),
-> proposed under OEP-0012, adds residues, whose least residues index tables
-> through `as`, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
-> OEP-0013, lets a step or a branch bind a looked-up value once and read it by
-> name, and [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets
-> a word selected from a tuple, or named by a tuple pattern, index a table
-> over its type's range, and [`BYTES_2026.md`](BYTES_2026.md), proposed under
-> OEP-0015, adds slices, whose positions never depend on data: their bounds
-> are literals and loop indices, proved in range before a program runs. Every
-> source this document accepts keeps its meaning under all five.
+> `sha256::compress(h, block)`, [`MODULAR_2026.md`](MODULAR_2026.md), proposed
+> under OEP-0012, adds residues, whose least residues index tables through `as`,
+> and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, lets a step
+> or a branch bind a looked-up value once and read it by name, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets a word
+> selected from a tuple, or named by a tuple pattern, index a table over its
+> type's range, and [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015,
+> adds slices, whose positions never depend on data: their bounds are literals
+> and loop indices, proved in range before a program runs, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds sizes, which
+> are constants in each instance and so count as literals in indices and slice
+> bounds. Every source this document accepts keeps its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

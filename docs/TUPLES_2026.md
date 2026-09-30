@@ -26,8 +26,10 @@ meaning. It accepts no D-004 candidate.
 > [!NOTE]
 > [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, extends this
 > document with byte strings, the concatenation `++` of arrays, and slices,
-> which may follow a tuple's element as `p.0[..4]`. A tuple is not joined
-> with `++`. Every source this document accepts keeps its meaning under it.
+> which may follow a tuple's element as `p.0[..4]`. A tuple is not joined with
+> `++`. [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds size
+> parameters, whose instances may take and give tuples. Every source this
+> document accepts keeps its meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

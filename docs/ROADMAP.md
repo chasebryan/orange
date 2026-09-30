@@ -511,10 +511,25 @@ implemented and tested, and its acceptance requires the owner's acceptance of
 [OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), which bounds the
 S3l surface in [`BYTES_2026.md`](BYTES_2026.md) and builds on OEP-0014. Like
 the slices before it, it assumes only pure, total, deterministic meaning.
-Static parameters, so that one quarter round can act on four positions of a
-whole state and one `spec` can serve every field, conversions between bytes
-and words, and slices at positions computed from data are the next candidate
-slices.
+
+S3m follows S3l. It adds sizes: a `spec` may declare size parameters with
+finite ranges, as `spec pad[len in 1..120](m: Word[8]^len)`, and stands for
+one instance for each value of its sizes, at most 256, each checked as the
+function written out with those values; sizes built from integer literals and
+size parameters write array lengths, fill lengths, and loop bounds; and a call
+names its instance by its sizes, as `pad[3](m)`, or by its arguments' lengths.
+SHA-256 is written once for every message of 1 through 119 bytes,
+HMAC-SHA-256 once for every key of 1 through 63 bytes and message of 1
+through 55, and Poly1305 once for every message of 1 through 255 bytes, and
+each reproduces its standard's values. It is implemented and tested, and its
+acceptance requires the owner's acceptance of
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), which bounds the
+S3m surface in [`SIZES_2026.md`](SIZES_2026.md) and builds on OEP-0015. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
+Moduli written with parameters, so that one `spec` can serve every field,
+positions given as parameters, so that one quarter round can act on four
+positions of a whole state, conversions between bytes and words, and slices
+at positions computed from data are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -560,8 +575,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3l are implemented and await owner review under
-OEP-0005 through OEP-0015, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3m are implemented and await owner review under
+OEP-0005 through OEP-0016, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

@@ -31,26 +31,27 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > acceptance, the clauses listed in section 16 of that proposal are replaced.
 >
 > The S3c slice proposed in [`BINDINGS_2026.md`](BINDINGS_2026.md) under
-> OEP-0006, also in review, builds on S3b with typed `let` bindings and
-> explicit `as` conversions, and likewise keeps every value this document
-> defines. The S3d slice proposed in [`ARRAYS_2026.md`](ARRAYS_2026.md) under
-> OEP-0007 builds on S3c with fixed-length arrays and keeps them too, as does
-> the S3e slice proposed in [`LOOPS_2026.md`](LOOPS_2026.md) under OEP-0008,
-> which adds bounded loops, the S3f slice proposed in
-> [`CONDITIONS_2026.md`](CONDITIONS_2026.md) under OEP-0009, which adds
-> `Bool`, comparisons, Euclidean division, and conditionals, the S3g slice
-> proposed in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) under OEP-0010, which adds
-> indices that depend on data, the S3h slice proposed in
-> [`MODULES_2026.md`](MODULES_2026.md) under OEP-0011, which adds programs of
-> more than one module, the S3i slice proposed in
-> [`MODULAR_2026.md`](MODULAR_2026.md) under OEP-0012, which adds the integers
-> modulo a constant and `type` declarations, and the S3j slice proposed in
-> [`BLOCKS_2026.md`](BLOCKS_2026.md) under OEP-0013, which adds `let` bindings
-> at the start of a loop's step and of each branch, and the S3k slice proposed
-> in [`TUPLES_2026.md`](TUPLES_2026.md) under OEP-0014, which adds tuples and
-> tuple patterns, and the S3l slice proposed in
+> OEP-0006, also in review, builds on S3b with typed `let` bindings and explicit
+> `as` conversions, and likewise keeps every value this document defines. The
+> S3d slice proposed in [`ARRAYS_2026.md`](ARRAYS_2026.md) under OEP-0007 builds
+> on S3c with fixed-length arrays and keeps them too, as does the S3e slice
+> proposed in [`LOOPS_2026.md`](LOOPS_2026.md) under OEP-0008, which adds
+> bounded loops, the S3f slice proposed in
+> [`CONDITIONS_2026.md`](CONDITIONS_2026.md) under OEP-0009, which adds `Bool`,
+> comparisons, Euclidean division, and conditionals, the S3g slice proposed in
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md) under OEP-0010, which adds indices that
+> depend on data, the S3h slice proposed in [`MODULES_2026.md`](MODULES_2026.md)
+> under OEP-0011, which adds programs of more than one module, the S3i slice
+> proposed in [`MODULAR_2026.md`](MODULAR_2026.md) under OEP-0012, which adds
+> the integers modulo a constant and `type` declarations, and the S3j slice
+> proposed in [`BLOCKS_2026.md`](BLOCKS_2026.md) under OEP-0013, which adds
+> `let` bindings at the start of a loop's step and of each branch, and the S3k
+> slice proposed in [`TUPLES_2026.md`](TUPLES_2026.md) under OEP-0014, which
+> adds tuples and tuple patterns, and the S3l slice proposed in
 > [`BYTES_2026.md`](BYTES_2026.md) under OEP-0015, which adds byte strings,
-> `++`, and slices.
+> `++`, and slices, and the S3m slice proposed in
+> [`SIZES_2026.md`](SIZES_2026.md) under OEP-0016, which adds size parameters
+> and sized calls.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

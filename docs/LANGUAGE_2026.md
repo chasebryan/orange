@@ -89,6 +89,13 @@ unresolved.
 > takes a run of elements at bounds proved in range. It adds two tokens,
 > `HEX_STRING` and `PLUS_PLUS`, and no reserved word: `hex` is a name unless a
 > quote follows it directly.
+>
+> The S3m slice proposed in [`SIZES_2026.md`](SIZES_2026.md) under OEP-0016,
+> also in review, builds on S3l with sizes: a `spec` may declare size parameters
+> with finite ranges, as `spec pad[len in 1..120](m: Word[8]^len)`, and stands
+> for one function for each of their values, each checked as if written out. It
+> adds no token and no reserved word: `in` is a name except between a size
+> parameter's name and its first bound.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -23,6 +23,13 @@ Until then, the compiler behavior it describes exists so that the proposal can
 be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, extends this
+> document with size parameters: a size parameter's name counts as an integer
+> literal in a slice's bounds, as `x[n - 2..]`, and a byte string, a join, or a
+> slice may stand where a sized function's parameter of that length is required.
+> Every source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

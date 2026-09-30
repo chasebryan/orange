@@ -26,14 +26,16 @@ meaning. It accepts no D-004 candidate.
 > document with the integers modulo a constant, as `Mod[(1 << 255) - 19]`, and
 > with `type` declarations, which follow a module's `use` declarations. A
 > residue type crosses a module boundary by its value, and a type name stays in
-> its module. [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013,
-> lets a loop's step and each branch begin with `let` bindings, and
+> its module. [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, lets
+> a loop's step and each branch begin with `let` bindings, and
 > [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
 > whose types cross a module boundary by their elements, and
-> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds byte
-> strings, joins, and slices, which cross a module boundary as the arrays
-> they are. Every source this document accepts keeps its meaning under all
-> four.
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds byte strings,
+> joins, and slices, which cross a module boundary as the arrays they are, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds sized
+> functions, whose instances are called across a module boundary as
+> `sha256::sha256(m)` or `m::f[2](x)`. Every source this document accepts keeps
+> its meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

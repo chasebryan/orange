@@ -28,8 +28,10 @@ meaning. It accepts no D-004 candidate.
 > binding may name each element of a tuple, and a loop may carry several
 > accumulators, and [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015,
 > adds byte strings, `++`, and slices, so that a step may take one block of a
-> message as `m[16 * j..16 * j + 16]`. Every source this document accepts
-> keeps its meaning under both.
+> message as `m[16 * j..16 * j + 16]`, and [`SIZES_2026.md`](SIZES_2026.md),
+> proposed under OEP-0016, lets a loop's bounds be sizes, as `for b in
+> 0..blocks`. Every source this document accepts keeps its meaning under all
+> three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

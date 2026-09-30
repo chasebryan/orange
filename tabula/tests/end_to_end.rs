@@ -297,7 +297,9 @@ fn reads_the_book_and_manuals_from_this_checkout() {
     assert!(manual.contains("# Tabula"));
     assert!(on_disk.starts_with("# Tabula\n"));
 
-    let (_, found) = fixture.call(Method::Get, "/api/library/search?q=Word%5B8%5D", "");
+    // Results stop at 80, the Book's first, so the query is one the Book
+    // uses rarely and the language reference often, whatever the Book's length.
+    let (_, found) = fixture.call(Method::Get, "/api/library/search?q=reserved%20word", "");
     assert!(
         found.contains(r#""path":"docs/LANGUAGE_2026.md""#),
         "{found}"
