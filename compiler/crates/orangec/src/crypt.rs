@@ -202,8 +202,16 @@ fn keygen(options: &SealOptions, standard_output: &mut impl Write) -> Result<(),
     let bytes = random_bytes(scheme.shape.key)?;
     let text = key_file_text(&scheme.name, &bytes);
     let written = create_new_private(&path).and_then(|mut file| {
-        file.write_all(text.as_bytes())?;
-        file.sync_all()
+        let written = file
+            .write_all(text.as_bytes())
+            .and_then(|()| file.sync_all());
+        if written.is_err() {
+            // The file is this command's own: leave neither a truncated key
+            // nor a name that would refuse the next attempt.
+            drop(file);
+            let _ = fs::remove_file(&path);
+        }
+        written
     });
     if let Err(error) = written {
         return Err(render_cli_error(
@@ -1399,6 +1407,14 @@ fn create_new_private(path: &Path) -> io::Result<File> {
     options.open(path)
 }
 
+fn create_new_output(path: &Path, private: bool) -> io::Result<File> {
+    if private {
+        create_new_private(path)
+    } else {
+        OpenOptions::new().write(true).create_new(true).open(path)
+    }
+}
+
 fn create_private_directory(path: &Path) -> io::Result<()> {
     let mut builder = fs::DirBuilder::new();
     builder.recursive(true);
@@ -1419,6 +1435,7 @@ struct PendingOutput {
     destination: PathBuf,
     shown: String,
     partial: PathBuf,
+    private: bool,
     writer: Option<BufWriter<File>>,
 }
 
@@ -1438,15 +1455,7 @@ impl PendingOutput {
         let mut partial = destination.as_os_str().to_owned();
         partial.push(".partial");
         let partial = PathBuf::from(partial);
-        let file = if private {
-            create_new_private(&partial)
-        } else {
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&partial)
-        }
-        .map_err(|error| {
+        let file = create_new_output(&partial, private).map_err(|error| {
             render_cli_error(
                 CliDiagnosticCode::CryptOutput,
                 format_args!("could not create `{}`", shown_path(&partial)),
@@ -1457,6 +1466,7 @@ impl PendingOutput {
             destination: destination.to_path_buf(),
             shown,
             partial,
+            private,
             writer: Some(BufWriter::with_capacity(IO_BUFFER_BYTES, file)),
         })
     }
@@ -1478,23 +1488,13 @@ impl PendingOutput {
     }
 
     fn publish(mut self) -> Result<(), String> {
-        let Some(writer) = self.writer.take() else {
-            return Err(inconsistent_shape());
-        };
-        let file = writer
-            .into_inner()
-            .map_err(|error| self.write_error(error.error()))?;
-        file.sync_all().map_err(|error| self.write_error(&error))?;
-        drop(file);
+        self.finish()?;
         // A hard link publishes without replacing; where links are not
-        // supported, rename after checking that the name is still free.
+        // supported, a copy does, into a file created only if none exists.
         let published = match fs::hard_link(&self.partial, &self.destination) {
             Ok(()) => fs::remove_file(&self.partial),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(error),
-            Err(_) if self.destination.symlink_metadata().is_ok() => {
-                Err(io::Error::from(io::ErrorKind::AlreadyExists))
-            }
-            Err(_) => fs::rename(&self.partial, &self.destination),
+            Err(_) => self.copy_to_destination(),
         };
         published.map_err(|error| {
             render_cli_error(
@@ -1503,6 +1503,35 @@ impl PendingOutput {
                 reason_with_existing(&error),
             )
         })
+    }
+
+    /// Flushes and syncs the partial file and closes it.
+    fn finish(&mut self) -> Result<(), String> {
+        let Some(writer) = self.writer.take() else {
+            return Err(inconsistent_shape());
+        };
+        let file = writer
+            .into_inner()
+            .map_err(|error| self.write_error(error.error()))?;
+        file.sync_all().map_err(|error| self.write_error(&error))
+    }
+
+    /// Copies the finished partial file to the destination, which must not
+    /// exist: it is created with `create_new`, so a file that appeared after
+    /// the check in [`PendingOutput::create`] is refused, never replaced.
+    fn copy_to_destination(&self) -> io::Result<()> {
+        let mut destination = create_new_output(&self.destination, self.private)?;
+        let copied = File::open(&self.partial)
+            .and_then(|mut partial| io::copy(&mut partial, &mut destination))
+            .and_then(|_| destination.sync_all());
+        match copied {
+            Ok(()) => fs::remove_file(&self.partial),
+            Err(error) => {
+                drop(destination);
+                let _ = fs::remove_file(&self.destination);
+                Err(error)
+            }
+        }
     }
 }
 
@@ -1732,5 +1761,49 @@ mod tests {
         let other = chunk_nonce(&[5; 11], 3, false);
         assert!(!calls.authentic(&other, &sealed).unwrap());
         assert!(measure_seal(&scheme).unwrap() > 0);
+    }
+
+    #[test]
+    fn publishing_never_replaces_a_file() {
+        let folder = std::env::temp_dir().join(format!("orangec-publish-{}", std::process::id()));
+        fs::create_dir_all(&folder).unwrap();
+        let written = |destination: &Path, private: bool| {
+            let mut pending = PendingOutput::create(destination, private).unwrap();
+            pending.write(b"opened").unwrap();
+            pending
+        };
+
+        // The copy used where hard links are not supported.
+        let copied = folder.join("copied");
+        let mut pending = written(&copied, true);
+        pending.finish().unwrap();
+        pending.copy_to_destination().unwrap();
+        assert_eq!(fs::read(&copied).unwrap(), b"opened");
+        assert!(!pending.partial.exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = fs::metadata(&copied).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        // A file that appears after `create` is kept, by either path.
+        for (name, copy) in [("linked-late", false), ("copied-late", true)] {
+            let late = folder.join(name);
+            let mut pending = written(&late, false);
+            fs::write(&late, b"theirs").unwrap();
+            let partial = pending.partial.clone();
+            if copy {
+                pending.finish().unwrap();
+                let error = pending.copy_to_destination().unwrap_err();
+                assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+                drop(pending);
+            } else {
+                assert!(pending.publish().unwrap_err().contains("already exists"));
+            }
+            assert_eq!(fs::read(&late).unwrap(), b"theirs");
+            assert!(!partial.exists());
+        }
+        fs::remove_dir_all(&folder).unwrap();
     }
 }
