@@ -1,0 +1,14 @@
+// S3e rejection: an index is built from integer literals and loop indices,
+// and every value it can take over its loops selects an element.
+edition 2026;
+module indices {
+  spec parameter(x: Word[8]^4, i: Int) -> Word[8] { x[i] }
+  spec binding(x: Word[8]^4) -> Word[8] { let k: Int = 1; x[k] }
+  spec call(x: Word[8]^4) -> Word[8] { x[width()] }
+  spec width() -> Int { 4 }
+  spec accumulator(x: Word[8]^4) -> Int { for i in 0..4 with s: Int = 0 { s + (x[s] as Int) } }
+  spec past_end(x: Word[8]^4) -> Word[8] { for i in 0..5 with s: Word[8] = 0 { s + x[i] } }
+  spec before_start(x: Word[8]^4) -> Word[8] { for i in 0..4 with s: Word[8] = 0 { s + x[i - 1] } }
+  spec apart(x: Word[8]^4) -> Word[8] { for i in 1..5 with s: Word[8] = 0 { s + x[i - i] } }
+  spec constant(x: Word[8]^4) -> Word[8] { x[2 + 2] }
+}

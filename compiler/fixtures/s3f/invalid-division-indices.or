@@ -1,0 +1,11 @@
+// S3f rejection: an index may divide by literals and loop indices, and the
+// range it is proved to stay in follows Euclidean division and its total
+// rules, so every value it can take must select an element.
+edition 2026;
+module indices {
+  spec halves(x: Word[8]^4) -> Word[8] { for i in 0..9 with s: Word[8] = 0 { s ^ x[i / 2] } }
+  spec fifths(x: Word[8]^4) -> Word[8] { for i in 0..100 with s: Word[8] = 0 { s ^ x[i % 5] } }
+  spec by_zero(x: Word[8]^4) -> Word[8] { for i in 0..8 with s: Word[8] = 0 { s ^ x[i % 0] } }
+  spec negative(x: Word[8]^4) -> Word[8] { for i in 0..4 with s: Word[8] = 0 { s ^ x[i / -1] } }
+  spec parameter(x: Word[8]^4, n: Int) -> Word[8] { x[3 % n] }
+}

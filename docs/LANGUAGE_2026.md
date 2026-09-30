@@ -40,6 +40,22 @@ unresolved.
 > The S3d slice proposed in [`ARRAYS_2026.md`](ARRAYS_2026.md) under OEP-0007,
 > also in review, builds on S3c with fixed-length array types `T^n`, array
 > literals, and literal indices. It also adds no token and no reserved word.
+>
+> The S3e slice proposed in [`LOOPS_2026.md`](LOOPS_2026.md) under OEP-0008,
+> also in review, builds on S3d with bounded loops, computed indices, updates,
+> and fill literals. It adds no token and no reserved word either: `for`, `in`,
+> and `with` are recognized by position.
+>
+> The S3f slice proposed in [`CONDITIONS_2026.md`](CONDITIONS_2026.md) under
+> OEP-0009, also in review, builds on S3e with `Bool`, comparisons, logical
+> operators, Euclidean division, and conditionals. It gives meaning to tokens
+> the lexer already produces, and it adds no token and no reserved word:
+> `if` and `else` are recognized by position, and `true` and `false` by scope.
+>
+> The S3g slice proposed in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) under
+> OEP-0010, also in review, builds on S3f with indices that depend on data,
+> each proved in range from its type, and cheaper updates. It changes no
+> grammar.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

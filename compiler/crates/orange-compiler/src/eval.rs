@@ -211,6 +211,7 @@ fn reserve_frames(frames: &mut Vec<Frame<'_>>, count: usize) -> bool {
 #[derive(Clone, Debug)]
 enum Value {
     Int(Rc<ExactInteger>),
+    Bool(bool),
     Word(u64),
     Array(Rc<ArrayValue>),
 }
@@ -222,27 +223,109 @@ struct ArrayValue {
     elements: Vec<Value>,
 }
 
-/// One active function evaluation.
+/// One active function evaluation, or one active loop step or conditional
+/// branch within it.
 ///
-/// A frame's values occupy the shared stack from `base`: its arguments, then
-/// the values of its completed bindings, then intermediate values.
+/// A function frame's values occupy the shared stack from `base`: its
+/// arguments, then the values of its completed bindings, then intermediate
+/// values. A loop frame shares its function's `base` and keeps its index and
+/// accumulator itself; its step's values lie above the stack length at which
+/// the loop began. A branch frame shares its function's `base` too; its
+/// values lie above the stack length at which the branch began.
 struct Frame<'core> {
     function: &'core CoreFunction,
-    /// The expression being evaluated: a binding's index, or the number of
-    /// bindings for the body.
+    /// The expression being evaluated; see [`expression_part`].
     part: usize,
     /// Index of the next node of that expression to evaluate.
     next: usize,
-    /// Index in the shared value stack of this frame's first argument.
+    /// Index in the shared value stack of the function's first argument.
     base: usize,
+    /// What this frame evaluates.
+    kind: FrameKind,
 }
 
-/// Returns a function's binding value at `part`, or its body when `part` is
-/// the number of bindings.
+/// The expression a frame evaluates.
+enum FrameKind {
+    /// A function's bindings and body.
+    Body,
+    /// One loop's steps.
+    Loop(ActiveLoop),
+    /// One branch of a conditional.
+    Branch(ActiveBranch),
+}
+
+impl FrameKind {
+    const fn active_loop(&self) -> Option<&ActiveLoop> {
+        match self {
+            Self::Loop(active) => Some(active),
+            Self::Body | Self::Branch(_) => None,
+        }
+    }
+}
+
+/// The state of one branch being evaluated.
+struct ActiveBranch {
+    /// The conditional's number within its function.
+    id: usize,
+    /// Stack length when the branch began.
+    floor: usize,
+}
+
+/// The state of one loop between steps.
+struct ActiveLoop {
+    /// The loop's number within its function.
+    id: usize,
+    /// The current index.
+    index: u32,
+    /// The current accumulator.
+    accumulator: Value,
+    /// Stack length when the loop began.
+    floor: usize,
+}
+
+/// Returns a function's binding value at `part`, its body when `part` is
+/// the number of bindings, a loop's step for each of the next parts in loop
+/// order, and then each conditional's `then` and `else` branches in
+/// conditional order.
 fn expression_part(function: &CoreFunction, part: usize) -> Option<&CoreExpression> {
     match function.locals.get(part) {
         Some(local) => Some(&local.value),
-        None => (part == function.locals.len()).then_some(&function.body),
+        None if part == function.locals.len() => Some(&function.body),
+        None => {
+            let id = part.checked_sub(function.locals.len())?.checked_sub(1)?;
+            if let Some(r#loop) = function.loops.get(id) {
+                return Some(&r#loop.step);
+            }
+            let branch = id.checked_sub(function.loops.len())?;
+            let conditional = function.conditionals.get(branch.checked_div(2)?)?;
+            Some(if branch.checked_rem(2)? == 0 {
+                &conditional.then_branch
+            } else {
+                &conditional.else_branch
+            })
+        }
+    }
+}
+
+/// Returns the part of the branch of conditional `id` that `condition`
+/// selects.
+fn branch_part(function: &CoreFunction, id: usize, condition: bool) -> Option<usize> {
+    function
+        .locals
+        .len()
+        .checked_add(1)?
+        .checked_add(function.loops.len())?
+        .checked_add(id.checked_mul(2)?)?
+        .checked_add(usize::from(!condition))
+}
+
+/// Returns whether a value has exactly the type `ty`.
+fn has_type(value: &Value, ty: CoreType) -> bool {
+    match (value, ty) {
+        (Value::Int(_), CoreType::Int) | (Value::Bool(_), CoreType::Bool) => true,
+        (Value::Word(word), ty) => word_mask(ty).is_some_and(|mask| (*word & !mask) == 0),
+        (Value::Array(array), CoreType::Array(array_type)) => array.ty == array_type,
+        _ => false,
     }
 }
 
@@ -266,15 +349,24 @@ struct Machine<'core> {
     reservations: Reservations,
     stack: Vec<Value>,
     frames: Vec<Frame<'core>>,
+    /// The number of loop and branch frames in `frames`.
+    inner_frames: usize,
 }
 
 fn digits(value: &ExactInteger) -> usize {
     value.magnitude_digits()
 }
 
+/// The steps of an `update` or `fill` of `length` elements: one for each 64
+/// elements it writes, or part of 64, so that a step stays about as much
+/// work as one limb operation and never costs more than one per element.
+const fn bulk_cost(length: usize) -> usize {
+    if length <= 64 { 1 } else { length.div_ceil(64) }
+}
+
 fn word_mask(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int | CoreType::Array(_) => None,
+        CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -293,10 +385,21 @@ fn word_binary(operator: BinaryOperator, mask: u64, left: u64, right: u64) -> Op
         BinaryOperator::And => left & right,
         BinaryOperator::Or => left | right,
         BinaryOperator::Xor => left ^ right,
+        // The total rules x / 0 = 0 and x % 0 = x.
+        BinaryOperator::Divide => left.checked_div(right).unwrap_or(0),
+        BinaryOperator::Remainder => left.checked_rem(right).unwrap_or(left),
         BinaryOperator::ShiftLeft
         | BinaryOperator::ShiftRight
         | BinaryOperator::RotateLeft
-        | BinaryOperator::RotateRight => return None,
+        | BinaryOperator::RotateRight
+        | BinaryOperator::Equal
+        | BinaryOperator::NotEqual
+        | BinaryOperator::Less
+        | BinaryOperator::LessEqual
+        | BinaryOperator::Greater
+        | BinaryOperator::GreaterEqual
+        | BinaryOperator::LogicalAnd
+        | BinaryOperator::LogicalOr => return None,
     };
     Some(value & mask)
 }
@@ -329,8 +432,32 @@ fn word_shift(
         | BinaryOperator::Multiply
         | BinaryOperator::And
         | BinaryOperator::Or
-        | BinaryOperator::Xor => None,
+        | BinaryOperator::Xor
+        | BinaryOperator::Divide
+        | BinaryOperator::Remainder
+        | BinaryOperator::Equal
+        | BinaryOperator::NotEqual
+        | BinaryOperator::Less
+        | BinaryOperator::LessEqual
+        | BinaryOperator::Greater
+        | BinaryOperator::GreaterEqual
+        | BinaryOperator::LogicalAnd
+        | BinaryOperator::LogicalOr => None,
     }
+}
+
+/// Returns whether `ordering` satisfies the comparison `operator`.
+fn compares(operator: BinaryOperator, ordering: std::cmp::Ordering) -> Option<bool> {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    Some(match operator {
+        BinaryOperator::Equal => ordering == Equal,
+        BinaryOperator::NotEqual => ordering != Equal,
+        BinaryOperator::Less => ordering == Less,
+        BinaryOperator::LessEqual => ordering != Greater,
+        BinaryOperator::Greater => ordering == Greater,
+        BinaryOperator::GreaterEqual => ordering != Less,
+        _ => return None,
+    })
 }
 
 impl<'core> Machine<'core> {
@@ -360,14 +487,21 @@ impl<'core> Machine<'core> {
     fn pop_int(&mut self) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Int(value) => Ok(value),
-            Value::Word(_) | Value::Array(_) => Err(Stop::InconsistentCore),
+            Value::Bool(_) | Value::Word(_) | Value::Array(_) => Err(Stop::InconsistentCore),
+        }
+    }
+
+    fn pop_bool(&mut self) -> Result<bool, Stop> {
+        match self.pop()? {
+            Value::Bool(value) => Ok(value),
+            Value::Int(_) | Value::Word(_) | Value::Array(_) => Err(Stop::InconsistentCore),
         }
     }
 
     fn pop_word(&mut self) -> Result<u64, Stop> {
         match self.pop()? {
             Value::Word(value) => Ok(value),
-            Value::Int(_) | Value::Array(_) => Err(Stop::InconsistentCore),
+            Value::Int(_) | Value::Bool(_) | Value::Array(_) => Err(Stop::InconsistentCore),
         }
     }
 
@@ -389,14 +523,8 @@ impl<'core> Machine<'core> {
                 "evaluation array storage could not be reserved",
             ));
         }
-        let word = word_mask(ty.element());
         for element in self.stack.drain(start..) {
-            let consistent = match (&element, word) {
-                (Value::Int(_), None) => true,
-                (Value::Word(value), Some(mask)) => (*value & !mask) == 0,
-                _ => false,
-            };
-            if !consistent {
+            if !has_type(&element, ty.element()) {
                 return Err(Stop::InconsistentCore);
             }
             elements.push(element);
@@ -415,6 +543,7 @@ impl<'core> Machine<'core> {
     fn run(&mut self, root: &'core CoreFunction) -> Result<Value, Stop> {
         self.stack.clear();
         self.frames.clear();
+        self.inner_frames = 0;
         if !(self.reservations.frames)(&mut self.frames, 1) {
             return Err(Stop::Allocation(
                 "evaluation call stack could not be reserved",
@@ -425,6 +554,7 @@ impl<'core> Machine<'core> {
             part: 0,
             next: 0,
             base: 0,
+            kind: FrameKind::Body,
         });
         loop {
             let Some(frame) = self.frames.last() else {
@@ -434,8 +564,45 @@ impl<'core> Machine<'core> {
             let base = frame.base;
             let part = frame.part;
             let offset = frame.next;
+            // The bindings a node may read, and the stack length above which
+            // its expression's intermediate values lie.
+            let (visible, floor) = match &frame.kind {
+                FrameKind::Loop(active) => (
+                    function
+                        .loops
+                        .get(active.id)
+                        .and_then(|r#loop| usize::try_from(r#loop.visible_locals).ok())
+                        .ok_or(Stop::InconsistentCore)?,
+                    active.floor,
+                ),
+                FrameKind::Branch(active) => (
+                    function
+                        .conditionals
+                        .get(active.id)
+                        .and_then(|conditional| usize::try_from(conditional.visible_locals).ok())
+                        .ok_or(Stop::InconsistentCore)?,
+                    active.floor,
+                ),
+                FrameKind::Body => (
+                    part,
+                    base.checked_add(function.parameters.len())
+                        .and_then(|floor| floor.checked_add(part))
+                        .ok_or(Stop::InconsistentCore)?,
+                ),
+            };
             let expression = expression_part(function, part).ok_or(Stop::InconsistentCore)?;
             let Some(node) = expression.nodes.get(offset) else {
+                match frame.kind {
+                    FrameKind::Loop(_) => {
+                        self.finish_step()?;
+                        continue;
+                    }
+                    FrameKind::Branch(_) => {
+                        self.finish_branch()?;
+                        continue;
+                    }
+                    FrameKind::Body => {}
+                }
                 if part < function.locals.len() {
                     // The binding's value stays on the stack as its slot,
                     // directly after the arguments and earlier bindings.
@@ -472,8 +639,204 @@ impl<'core> Machine<'core> {
             if let Some(frame) = self.frames.last_mut() {
                 frame.next = frame.next.saturating_add(1);
             }
-            self.step(function, base, part, offset, node)?;
+            self.step(function, base, part, offset, (visible, floor), node)?;
         }
+    }
+
+    /// Completes one step of the loop in the top frame: its value becomes
+    /// the accumulator, and either the next step begins or the loop's value
+    /// replaces the loop.
+    fn finish_step(&mut self) -> Result<(), Stop> {
+        let value = self.pop()?;
+        let Some(frame) = self.frames.last_mut() else {
+            return Err(Stop::InconsistentCore);
+        };
+        let function = frame.function;
+        let FrameKind::Loop(active) = &mut frame.kind else {
+            return Err(Stop::InconsistentCore);
+        };
+        let r#loop = function
+            .loops
+            .get(active.id)
+            .ok_or(Stop::InconsistentCore)?;
+        if self.stack.len() != active.floor || !has_type(&value, r#loop.ty) {
+            return Err(Stop::InconsistentCore);
+        }
+        active.accumulator = value;
+        active.index = active.index.checked_add(1).ok_or(Stop::InconsistentCore)?;
+        if active.index < r#loop.end {
+            frame.next = 0;
+            // One step for each iteration.
+            return self.charge(1);
+        }
+        let Some(Frame {
+            kind: FrameKind::Loop(finished),
+            ..
+        }) = self.frames.pop()
+        else {
+            return Err(Stop::InconsistentCore);
+        };
+        self.inner_frames = self.inner_frames.saturating_sub(1);
+        self.push(finished.accumulator)
+    }
+
+    /// Completes the branch in the top frame: its value replaces the
+    /// conditional.
+    fn finish_branch(&mut self) -> Result<(), Stop> {
+        let value = self.pop()?;
+        let Some(Frame {
+            function,
+            kind: FrameKind::Branch(finished),
+            ..
+        }) = self.frames.pop()
+        else {
+            return Err(Stop::InconsistentCore);
+        };
+        let conditional = function
+            .conditionals
+            .get(finished.id)
+            .ok_or(Stop::InconsistentCore)?;
+        if self.stack.len() != finished.floor || !has_type(&value, conditional.ty) {
+            return Err(Stop::InconsistentCore);
+        }
+        self.inner_frames = self.inner_frames.saturating_sub(1);
+        self.push(value)
+    }
+
+    /// Returns whether the loops active in the top frames of the current
+    /// function are exactly `scope`, outermost first.
+    fn active_loops_are(&self, scope: &[u32]) -> bool {
+        let active = self
+            .frames
+            .iter()
+            .rev()
+            .take_while(|frame| !matches!(frame.kind, FrameKind::Body))
+            .filter_map(|frame| frame.kind.active_loop())
+            .map(|active| active.id);
+        active.eq(scope
+            .iter()
+            .rev()
+            .map(|id| usize::try_from(*id).unwrap_or(usize::MAX)))
+    }
+
+    /// Begins the branch of conditional `id` of `function` that the popped
+    /// condition selects.
+    fn begin_branch(
+        &mut self,
+        function: &'core CoreFunction,
+        base: usize,
+        id: u32,
+        ty: CoreType,
+    ) -> Result<(), Stop> {
+        self.charge(1)?;
+        let condition = self.pop_bool()?;
+        let index = usize::try_from(id).map_err(|_| Stop::InconsistentCore)?;
+        let conditional = function
+            .conditionals
+            .get(index)
+            .ok_or(Stop::InconsistentCore)?;
+        // The loops active in this function must be exactly those that
+        // enclose the conditional.
+        if !self.active_loops_are(&conditional.scope) || conditional.ty != ty {
+            return Err(Stop::InconsistentCore);
+        }
+        let part = branch_part(function, index, condition).ok_or(Stop::InconsistentCore)?;
+        if !(self.reservations.frames)(&mut self.frames, 1) {
+            return Err(Stop::Allocation(
+                "evaluation call stack could not be reserved",
+            ));
+        }
+        self.frames.push(Frame {
+            function,
+            part,
+            next: 0,
+            base,
+            kind: FrameKind::Branch(ActiveBranch {
+                id: index,
+                floor: self.stack.len(),
+            }),
+        });
+        self.inner_frames = self.inner_frames.saturating_add(1);
+        Ok(())
+    }
+
+    /// Returns the innermost active loop numbered `id` of the function
+    /// whose step is being evaluated.
+    fn active_loop(&self, id: u32) -> Result<&ActiveLoop, Stop> {
+        let id = usize::try_from(id).map_err(|_| Stop::InconsistentCore)?;
+        self.frames
+            .iter()
+            .rev()
+            .take_while(|frame| !matches!(frame.kind, FrameKind::Body))
+            .filter_map(|frame| frame.kind.active_loop())
+            .find(|active| active.id == id)
+            .ok_or(Stop::InconsistentCore)
+    }
+
+    /// Pops an `Int` index and returns it as a position below `length`.
+    fn pop_position(&mut self, length: usize) -> Result<usize, Stop> {
+        let index = self.pop_int()?;
+        index
+            .to_i64()
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < length)
+            .ok_or(Stop::InconsistentCore)
+    }
+
+    /// Begins the loop numbered `id` of `function` with the popped initial
+    /// accumulator.
+    fn begin_loop(
+        &mut self,
+        function: &'core CoreFunction,
+        base: usize,
+        id: u32,
+        ty: CoreType,
+    ) -> Result<(), Stop> {
+        self.charge(1)?;
+        let accumulator = self.pop()?;
+        let index = usize::try_from(id).map_err(|_| Stop::InconsistentCore)?;
+        let r#loop = function.loops.get(index).ok_or(Stop::InconsistentCore)?;
+        // The loops active in this function must be exactly those that
+        // enclose this one.
+        let enclosing = r#loop
+            .scope
+            .split_last()
+            .filter(|(last, _)| **last == id)
+            .map(|(_, enclosing)| enclosing)
+            .ok_or(Stop::InconsistentCore)?;
+        if !self.active_loops_are(enclosing)
+            || r#loop.ty != ty
+            || r#loop.start >= r#loop.end
+            || !has_type(&accumulator, ty)
+        {
+            return Err(Stop::InconsistentCore);
+        }
+        let part = function
+            .locals
+            .len()
+            .checked_add(1)
+            .and_then(|part| part.checked_add(index))
+            .ok_or(Stop::InconsistentCore)?;
+        if !(self.reservations.frames)(&mut self.frames, 1) {
+            return Err(Stop::Allocation(
+                "evaluation call stack could not be reserved",
+            ));
+        }
+        self.frames.push(Frame {
+            function,
+            part,
+            next: 0,
+            base,
+            kind: FrameKind::Loop(ActiveLoop {
+                id: index,
+                index: r#loop.start,
+                accumulator,
+                floor: self.stack.len(),
+            }),
+        });
+        self.inner_frames = self.inner_frames.saturating_add(1);
+        // One step for the first iteration.
+        self.charge(1)
     }
 
     fn step(
@@ -482,6 +845,7 @@ impl<'core> Machine<'core> {
         base: usize,
         part: usize,
         offset: usize,
+        (visible, floor): (usize, usize),
         node: &'core CoreNode,
     ) -> Result<(), Stop> {
         match &node.kind {
@@ -500,6 +864,7 @@ impl<'core> Machine<'core> {
                             .ok_or(Stop::InconsistentCore)?;
                         Value::Int(Rc::clone(shared))
                     }
+                    CoreValue::Bool(value) => Value::Bool(*value),
                     word => Value::Word(word.word_as_u64().ok_or(Stop::InconsistentCore)?),
                 };
                 self.push(value)
@@ -517,10 +882,10 @@ impl<'core> Machine<'core> {
             }
             CoreNodeKind::Local(index) => {
                 self.charge(1)?;
-                // Only a binding before the current part has a value.
+                // Only a binding before the current expression has a value.
                 let index = usize::try_from(*index)
                     .ok()
-                    .filter(|index| *index < part)
+                    .filter(|index| *index < visible)
                     .ok_or(Stop::InconsistentCore)?;
                 let slot = base
                     .checked_add(function.parameters.len())
@@ -538,7 +903,8 @@ impl<'core> Machine<'core> {
                 arguments,
             } => {
                 self.charge(1)?;
-                if self.frames.len() >= MAX_CALL_DEPTH {
+                // Loop and branch frames do not count toward the call depth.
+                if self.frames.len().saturating_sub(self.inner_frames) >= MAX_CALL_DEPTH {
                     return Err(Stop::CallDepth(node.span));
                 }
                 let callee_index =
@@ -556,7 +922,7 @@ impl<'core> Machine<'core> {
                     .stack
                     .len()
                     .checked_sub(arguments)
-                    .filter(|callee_base| *callee_base >= base)
+                    .filter(|callee_base| *callee_base >= floor)
                     .ok_or(Stop::InconsistentCore)?;
                 if !(self.reservations.frames)(&mut self.frames, 1) {
                     return Err(Stop::Allocation(
@@ -568,12 +934,17 @@ impl<'core> Machine<'core> {
                     part: 0,
                     next: 0,
                     base: callee_base,
+                    kind: FrameKind::Body,
                 });
                 Ok(())
             }
             CoreNodeKind::Unary(operator) => {
                 let value = match (operator, word_mask(node.ty)) {
-                    (UnaryOperator::Negate, None) => {
+                    (UnaryOperator::Not, None) if node.ty == CoreType::Bool => {
+                        self.charge(1)?;
+                        Value::Bool(!self.pop_bool()?)
+                    }
+                    (UnaryOperator::Negate, None) if node.ty == CoreType::Int => {
                         let operand = self.pop_int()?;
                         self.charge(digits(&operand).saturating_add(1))?;
                         let negated = operand
@@ -593,7 +964,17 @@ impl<'core> Machine<'core> {
                 self.push(value)
             }
             CoreNodeKind::Binary(operator) => {
-                let value = if let Some(mask) = word_mask(node.ty) {
+                let value = if node.ty == CoreType::Bool {
+                    self.charge(1)?;
+                    let right = self.pop_bool()?;
+                    let left = self.pop_bool()?;
+                    // Both operands are evaluated: `&&` and `||` are strict.
+                    Value::Bool(match operator {
+                        BinaryOperator::LogicalAnd => left && right,
+                        BinaryOperator::LogicalOr => left || right,
+                        _ => return Err(Stop::InconsistentCore),
+                    })
+                } else if let Some(mask) = word_mask(node.ty) {
                     self.charge(1)?;
                     let right = self.pop_word()?;
                     let left = self.pop_word()?;
@@ -622,6 +1003,31 @@ impl<'core> Machine<'core> {
                             )?;
                             left.multiply(&right, reserve)
                         }
+                        BinaryOperator::Divide | BinaryOperator::Remainder => {
+                            self.charge(
+                                digits(&left)
+                                    .checked_mul(digits(&right).max(1))
+                                    .ok_or(Stop::Steps)?
+                                    .saturating_add(1),
+                            )?;
+                            if right.is_zero() {
+                                // The total rules x / 0 = 0 and x % 0 = x.
+                                if *operator == BinaryOperator::Divide {
+                                    ExactInteger::from_u64(0, reserve)
+                                } else {
+                                    left.try_clone_with_reservation(reserve)
+                                }
+                            } else {
+                                left.divide_euclid(&right, reserve)
+                                    .map(|(quotient, remainder)| {
+                                        if *operator == BinaryOperator::Divide {
+                                            quotient
+                                        } else {
+                                            remainder
+                                        }
+                                    })
+                            }
+                        }
                         _ => return Err(Stop::InconsistentCore),
                     };
                     let result = result.ok_or(Stop::Allocation(
@@ -630,6 +1036,51 @@ impl<'core> Machine<'core> {
                     self.checked_int(result, node.span)?
                 };
                 self.push(value)
+            }
+            CoreNodeKind::Compare { operator, operand } => {
+                if node.ty != CoreType::Bool {
+                    return Err(Stop::InconsistentCore);
+                }
+                let ordering = match operand {
+                    CoreType::Int => {
+                        let right = self.pop_int()?;
+                        let left = self.pop_int()?;
+                        self.charge(digits(&left).max(digits(&right)).saturating_add(1))?;
+                        left.compare(&right)
+                    }
+                    CoreType::Bool
+                        if !matches!(
+                            operator,
+                            BinaryOperator::Equal | BinaryOperator::NotEqual
+                        ) =>
+                    {
+                        return Err(Stop::InconsistentCore);
+                    }
+                    CoreType::Bool => {
+                        self.charge(1)?;
+                        let right = self.pop_bool()?;
+                        let left = self.pop_bool()?;
+                        left.cmp(&right)
+                    }
+                    ty => {
+                        let mask = word_mask(*ty).ok_or(Stop::InconsistentCore)?;
+                        self.charge(1)?;
+                        let right = self.pop_word()?;
+                        let left = self.pop_word()?;
+                        if (left | right) & !mask != 0 {
+                            return Err(Stop::InconsistentCore);
+                        }
+                        left.cmp(&right)
+                    }
+                };
+                let value = compares(*operator, ordering).ok_or(Stop::InconsistentCore)?;
+                self.push(Value::Bool(value))
+            }
+            CoreNodeKind::Choose(id) => {
+                if self.stack.len() <= floor {
+                    return Err(Stop::InconsistentCore);
+                }
+                self.begin_branch(function, base, *id, node.ty)
             }
             CoreNodeKind::Shift { operator, amount } => {
                 self.charge(1)?;
@@ -645,14 +1096,113 @@ impl<'core> Machine<'core> {
                 let length = usize::try_from(*elements).map_err(|_| Stop::InconsistentCore)?;
                 // One step per element; an array has at least one.
                 self.charge(length.max(1))?;
-                // Elements are intermediate values above the arguments and
-                // the bindings already evaluated.
-                let floor = base
-                    .checked_add(function.parameters.len())
-                    .and_then(|floor| floor.checked_add(part))
-                    .ok_or(Stop::InconsistentCore)?;
+                // Elements are intermediate values of the current expression.
                 let array = self.build_array(ty, length, floor)?;
                 self.push(array)
+            }
+            CoreNodeKind::Select => {
+                self.charge(1)?;
+                let length = self
+                    .stack
+                    .len()
+                    .checked_sub(2)
+                    .filter(|below| *below >= floor)
+                    .and_then(|below| match self.stack.get(below) {
+                        Some(Value::Array(array)) if array.ty.element() == node.ty => {
+                            Some(array.elements.len())
+                        }
+                        _ => None,
+                    })
+                    .ok_or(Stop::InconsistentCore)?;
+                let position = self.pop_position(length)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let element = array
+                    .elements
+                    .get(position)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(element)
+            }
+            CoreNodeKind::Update => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements copied, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(3)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let value = self.pop()?;
+                let position = self.pop_position(length)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if array.ty != ty || !has_type(&value, ty.element()) {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(array.elements.iter().cloned());
+                let slot = elements.get_mut(position).ok_or(Stop::InconsistentCore)?;
+                *slot = value;
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::Fill => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements written, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self.stack.len() <= floor {
+                    return Err(Stop::InconsistentCore);
+                }
+                let element = self.pop()?;
+                if !has_type(&element, ty.element()) {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(std::iter::repeat_n(element, length));
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::Fold(id) => {
+                if self.stack.len() <= floor {
+                    return Err(Stop::InconsistentCore);
+                }
+                self.begin_loop(function, base, *id, node.ty)
+            }
+            CoreNodeKind::LoopIndex(id) => {
+                self.charge(1)?;
+                if node.ty != CoreType::Int {
+                    return Err(Stop::InconsistentCore);
+                }
+                let index = self.active_loop(*id)?.index;
+                let value = ExactInteger::from_u64(u64::from(index), self.reservations.value_limbs)
+                    .ok_or(Stop::Allocation(
+                        "exact integer storage could not be reserved",
+                    ))?;
+                self.push(Value::Int(Rc::new(value)))
+            }
+            CoreNodeKind::Accumulator(id) => {
+                self.charge(1)?;
+                let accumulator = self.active_loop(*id)?.accumulator.clone();
+                if !has_type(&accumulator, node.ty) {
+                    return Err(Stop::InconsistentCore);
+                }
+                self.push(accumulator)
             }
             CoreNodeKind::Index { index } => {
                 self.charge(1)?;
@@ -672,6 +1222,9 @@ impl<'core> Machine<'core> {
             }
             CoreNodeKind::Convert { from } => {
                 self.charge(1)?;
+                if *from == CoreType::Bool || node.ty == CoreType::Bool {
+                    return Err(Stop::InconsistentCore);
+                }
                 let value = match (word_mask(*from), word_mask(node.ty)) {
                     (None, None) => Value::Int(self.pop_int()?),
                     (None, Some(mask)) => Value::Word(self.pop_int()?.modulo_2_64() & mask),
@@ -738,6 +1291,7 @@ fn evaluate_with_reservations(
         reservations,
         stack: Vec::new(),
         frames: Vec::new(),
+        inner_frames: 0,
     };
     let mut shared_module = None;
     for function in core
@@ -797,6 +1351,7 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
             .ok_or(Stop::Allocation(
                 "evaluated exact integer storage could not be reserved",
             )),
+        (Value::Bool(value), CoreType::Bool) => Ok(CoreValue::Bool(value)),
         (Value::Word(value), ty) => {
             CoreValue::word_from_u64(ty, value).ok_or(Stop::InconsistentCore)
         }
@@ -831,6 +1386,7 @@ fn result_element(
             .ok_or(Stop::Allocation(
                 "evaluated exact integer storage could not be reserved",
             )),
+        (Value::Bool(value), CoreType::Bool) => Ok(CoreValue::Bool(*value)),
         (Value::Word(value), ty) => {
             CoreValue::word_from_u64(ty, *value).ok_or(Stop::InconsistentCore)
         }
@@ -845,13 +1401,28 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     for function in &core.functions {
         let mut parts = Vec::new();
         parts
-            .try_reserve_exact(function.locals.len().checked_add(1)?)
+            .try_reserve_exact(
+                function
+                    .locals
+                    .len()
+                    .checked_add(1)?
+                    .checked_add(function.loops.len())?
+                    .checked_add(function.conditionals.len().checked_mul(2)?)?,
+            )
             .ok()?;
+        // The parts in the order of `expression_part`.
         let expressions = function
             .locals
             .iter()
             .map(|local| &local.value)
-            .chain(std::iter::once(&function.body));
+            .chain(std::iter::once(&function.body))
+            .chain(function.loops.iter().map(|r#loop| &r#loop.step))
+            .chain(
+                function
+                    .conditionals
+                    .iter()
+                    .flat_map(|conditional| [&conditional.then_branch, &conditional.else_branch]),
+            );
         for expression in expressions {
             let mut literals = Vec::new();
             literals.try_reserve_exact(expression.nodes.len()).ok()?;
@@ -1689,6 +2260,60 @@ mod tests {
                 "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; t[1] ^ t[0] }\n",
                 9,
             ),
+            // A word index costs its steps and one more for its conversion
+            // to `Int`.
+            (
+                "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; let x: Word[8] = 3; t[x & 1] }\n",
+                11,
+            ),
+            // A loop costs one step and one more per iteration, plus its
+            // initial value's and every step's; an index or accumulator
+            // read costs one step, as does a selection.
+            (
+                "  spec f() -> Int { for i in 0..3 with s: Int = 0 { s } }\n",
+                8,
+            ),
+            (
+                "  spec f() -> Word[8] { for i in 5..6 with s: Word[8] = 1 { s } }\n",
+                4,
+            ),
+            (
+                "  spec f() -> Word[8] { let t: Word[8]^2 = [1, 2]; \
+                 for i in 0..2 with s: Word[8] = 0 { s ^ t[i] } }\n",
+                18,
+            ),
+            // An update or fill of n elements costs ceil(n / 64) steps
+            // beyond its operands'.
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 9),
+            ("  spec a() -> Int^1 { [5; 1] with [0] = 9 }\n", 5),
+            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 2),
+            ("  spec a() -> Word[8]^64 { [7; 64] }\n", 2),
+            ("  spec a() -> Word[8]^65 { [7; 65] }\n", 3),
+            (
+                "  spec a() -> Word[8]^256 { [7; 256] with [255] = 1 }\n",
+                11,
+            ),
+            // `true`, `false`, `!`, `&&`, `||`, and every comparison of
+            // words or `Bool` values cost one step; comparing integers
+            // costs 1 + max(d1, d2).
+            ("  spec b() -> Bool { !(true && false) || true }\n", 6),
+            ("  spec b() -> Bool { let a: Word[8] = 1; a < 2 }\n", 4),
+            ("  spec b() -> Bool { true != false }\n", 3),
+            ("  spec b() -> Bool { let a: Int = 1; a < 4294967296 }\n", 6),
+            // A conditional costs its condition's steps, one to choose, and
+            // the chosen branch's steps; a later arm is the earlier arm's
+            // `else` branch.
+            ("  spec i() -> Int { if true { 1 } else { 2 * 3 } }\n", 3),
+            (
+                "  spec i() -> Int { if false { 1 } else if true { 2 * 3 } else { 4 } }\n",
+                8,
+            ),
+            // Integer division costs 1 + d1 * max(d2, 1); word division
+            // costs one step.
+            ("  spec i() -> Int { let a: Int = 4294967296; a / 3 }\n", 6),
+            ("  spec i() -> Int { let a: Int = 4294967296; a % 0 }\n", 6),
+            ("  spec i() -> Int { let a: Int = 0; a / 3 }\n", 4),
+            ("  spec w() -> Word[8] { let a: Word[8] = 200; a / 7 }\n", 4),
         ] {
             let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
             let exact = evaluate_with_limit(&core, steps);
@@ -1826,6 +2451,46 @@ mod tests {
                     .map(|index| format!("let v{index}: Word[32] = {};", nested("(", "x", ")")))
                     .collect::<String>()
             ),
+            // Loops nested in steps and in initial values, updates nested in
+            // updated values, and an index nested in groups.
+            format!(
+                "{}x{}",
+                (0..MAX_EXPRESSION_NESTING)
+                    .map(|index| format!("for i{index} in 0..1 with s{index}: Word[32] = x {{ "))
+                    .collect::<String>(),
+                " }".repeat(MAX_EXPRESSION_NESTING)
+            ),
+            format!(
+                "{}x{}",
+                (0..MAX_EXPRESSION_NESTING)
+                    .map(|index| format!("for i{index} in 0..1 with s{index}: Word[32] = "))
+                    .collect::<String>(),
+                (0..MAX_EXPRESSION_NESTING)
+                    .rev()
+                    .map(|index| format!(" {{ s{index} }}"))
+                    .collect::<String>()
+            ),
+            format!(
+                "{}x{}",
+                "h([x] with [0] = ".repeat(MAX_EXPRESSION_NESTING / 2),
+                ")[0]".repeat(MAX_EXPRESSION_NESTING / 2)
+            ),
+            format!(
+                "h([x])[{}0{}]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            // Conditionals nested in values, in `else` values, and in
+            // conditions, and one `else if` chain of 4096 arms, every one of
+            // which is taken.
+            nested("if x == x { ", "x", " } else { x }"),
+            nested("if x != x { x } else { ", "x", " }"),
+            format!(
+                "if {}x == x{} {{ x }} else {{ x }}",
+                "if ".repeat(MAX_EXPRESSION_NESTING - 1),
+                " { true } else { false }".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            format!("{}{{ x }}", "if x == 0 { 0 } else ".repeat(4096)),
         ];
         let sources = bodies
             .iter()
@@ -2175,6 +2840,562 @@ mod tests {
             );
             assert_eq!(diagnostic.label(), label);
             assert_eq!(diagnostic.primary_span(), core.functions[0].name_span);
+        }
+    }
+
+    #[test]
+    fn loops_updates_and_fills_evaluate_in_index_order() {
+        let members = concat!(
+            "  spec sum() -> Int { for i in 0..10 with s: Int = 0 { s + i } }\n",
+            "  spec product() -> Int { for i in 3..5 with p: Int = 1 { p * i } }\n",
+            "  spec grid() -> Int {\n",
+            "    for i in 0..3 with s: Int = 0 { for j in 0..4 with t: Int = s { t + i * j } }\n",
+            "  }\n",
+            "  spec reversed(x: Word[8]^4) -> Word[8]^4 {\n",
+            "    for i in 0..4 with r: Word[8]^4 = x { r with [i] = x[3 - i] }\n",
+            "  }\n",
+            "  spec reverse() -> Word[8]^4 { reversed([1, 2, 3, 4]) }\n",
+            "  spec filled() -> Word[16]^3 { [0xbeef; 3] }\n",
+            "  spec updated() -> Int^3 { ([1, 2, 3] with [0] = -1) with [2] = 5 }\n",
+            "  spec inner(x: Int) -> Int { for j in 0..3 with t: Int = x { t + j } }\n",
+            "  spec outer() -> Int { for i in 0..2 with s: Int = 0 { inner(s) + i } }\n",
+            "  spec bound() -> Int { let k: Int = 5; for i in 0..3 with s: Int = k { s + k * i } }\n",
+            "  spec bound_twice() -> Int { let a: Int = for i in 0..3 with s: Int = 0 { s + i }; a * 2 }\n",
+            "  spec longest() -> Word[32] { for i in 0..65536 with s: Word[32] = 0 { s + 1 } }\n",
+            "  spec last() -> Int { for i in 65535..65536 with s: Int = 0 { i } }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "sum = 45",
+                "product = 12",
+                "grid = 18",
+                "reverse = [0x04, 0x03, 0x02, 0x01]",
+                "filled = [0xbeef, 0xbeef, 0xbeef]",
+                "updated = [-1, 2, 5]",
+                "outer = 7",
+                "bound = 20",
+                "bound_twice = 6",
+                "longest = 0x00010000",
+                "last = 65535",
+            ]
+        );
+    }
+
+    #[test]
+    fn word_indices_select_and_update_by_value() {
+        let members = concat!(
+            "  spec squares() -> Word[8]^16 {\n",
+            "    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (i as Word[8]) * (i as Word[8]) }\n",
+            "  }\n",
+            "  spec pick(x: Word[8]) -> Word[8] { squares()[x & 15] }\n",
+            "  spec low() -> Word[8] { pick(0xf7) }\n",
+            "  spec high() -> Word[8] { pick(0x0f) }\n",
+            "  spec marked() -> Word[8]^4 { let k: Word[16] = 0x2a; [9; 4] with [k % 4] = 1 }\n",
+            "  spec swap(s: Word[8]^4, i: Word[8], j: Word[8]) -> Word[8]^4 {\n",
+            "    (s with [i & 3] = s[j & 3]) with [j & 3] = s[i & 3]\n",
+            "  }\n",
+            "  spec swapped() -> Word[8]^4 { swap([1, 2, 3, 4], 4, 7) }\n",
+            "  spec wide() -> Int { let z: Word[64] = 0xff00000000000000; let t: Int^4 = [10, 20, 30, 40]; t[(z >> 62) as Int] }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "squares = [0x00, 0x01, 0x04, 0x09, 0x10, 0x19, 0x24, 0x31, 0x40, 0x51, 0x64, 0x79, 0x90, 0xa9, 0xc4, 0xe1]",
+                "low = 0x31",
+                "high = 0xe1",
+                "marked = [0x09, 0x09, 0x01, 0x09]",
+                "swapped = [0x04, 0x02, 0x03, 0x01]",
+                "wide = 40",
+            ]
+        );
+    }
+
+    #[test]
+    fn loop_frames_do_not_count_toward_the_call_depth() {
+        let mut members = String::new();
+        for index in 0..MAX_CALL_DEPTH - 1 {
+            members.push_str(&format!(
+                "  spec f{index}() -> Int {{ for i in 0..1 with s: Int = 0 {{ f{}() }} }}\n",
+                index + 1
+            ));
+        }
+        members.push_str(&format!(
+            "  spec f{}() -> Int {{ 7 }}\n",
+            MAX_CALL_DEPTH - 1
+        ));
+        let values = values_of(&members);
+        assert_eq!(values.len(), MAX_CALL_DEPTH);
+        assert!(values.iter().all(|value| value.ends_with(" = 7")));
+    }
+
+    #[test]
+    fn inconsistent_loops_updates_and_fills_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec sum() -> Int { for i in 0..3 with s: Int = 0 { s + i } }\n",
+            "  spec pick() -> Word[8] {\n",
+            "    let t: Word[8]^2 = [1, 2];\n",
+            "    for i in 0..2 with s: Word[8] = 0 { s ^ t[i] }\n",
+            "  }\n",
+            "  spec up() -> Word[8]^2 { [1, 2] with [1] = 3 }\n",
+            "  spec fill() -> Word[8]^2 { [4; 2] }\n",
+            "}\n"
+        ));
+        assert_eq!(base.functions[0].loops[0].step.nodes.len(), 3);
+        assert_eq!(base.functions[1].loops[0].step.nodes.len(), 5);
+        let mutations: [fn(&mut CoreModule); 16] = [
+            // A loop has no iterations.
+            |core| core.functions[0].loops[0].start = 3,
+            // A loop's bounds are reversed.
+            |core| {
+                core.functions[0].loops[0].start = 2;
+                core.functions[0].loops[0].end = 1;
+            },
+            // A loop has a different type than its node.
+            |core| core.functions[0].loops[0].ty = CoreType::Word8,
+            // A loop node names a loop the function lacks.
+            |core| core.functions[0].body.nodes[1].kind = CoreNodeKind::Fold(1),
+            // A loop claims an enclosing loop that is not active.
+            |core| core.functions[0].loops[0].scope = vec![0, 0],
+            // A loop's scope does not end with the loop itself.
+            |core| core.functions[0].loops[0].scope = vec![1],
+            // An index is read outside its loop.
+            |core| core.functions[0].body.nodes[0].kind = CoreNodeKind::LoopIndex(0),
+            // An accumulator is read outside its loop.
+            |core| core.functions[0].body.nodes[0].kind = CoreNodeKind::Accumulator(0),
+            // An accumulator read claims a different type.
+            |core| core.functions[0].loops[0].step.nodes[0].ty = CoreType::Word8,
+            // A step leaves no value behind.
+            |core| core.functions[0].loops[0].step.nodes.clear(),
+            // A step reads a binding that is not in scope.
+            |core| core.functions[1].loops[0].visible_locals = 0,
+            // A loop runs past the end of the array it selects from.
+            |core| core.functions[1].loops[0].end = 3,
+            // A selection claims a different element type.
+            |core| core.functions[1].loops[0].step.nodes[3].ty = CoreType::Word16,
+            // An update stores a value that does not fit its element type.
+            |core| {
+                core.functions[2].body.nodes[4].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x103));
+            },
+            // An update has a scalar type.
+            |core| core.functions[2].body.nodes[5].ty = CoreType::Word8,
+            // A fill repeats a value that does not fit its element type.
+            |core| {
+                core.functions[3].body.nodes[0].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x104));
+            },
+        ];
+        assert_eq!(base.functions[2].body.nodes[5].kind, CoreNodeKind::Update);
+        assert_eq!(base.functions[3].body.nodes[1].kind, CoreNodeKind::Fill);
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn int_division_and_comparisons_match_an_i128_reference() {
+        let corpus: [i128; 12] = [
+            0,
+            1,
+            2,
+            7,
+            -7,
+            -1,
+            4_294_967_295,
+            4_294_967_296,
+            -18_446_744_073_709_551_617,
+            170_141_183_460_469_231_731_687_303_715_884_105_727,
+            -99_999_999_999_999_999_999,
+            12_345_678_901_234_567_890,
+        ];
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        for (i, &left) in corpus.iter().enumerate() {
+            for (j, &right) in corpus.iter().enumerate() {
+                let (quotient, remainder) = if right == 0 {
+                    // The total rules: x / 0 = 0 and x % 0 = x.
+                    (0, left)
+                } else {
+                    (left.div_euclid(right), left.rem_euclid(right))
+                };
+                members.push_str(&format!(
+                    "  spec q{i}_{j}() -> Int^2 {{ let a: Int = {left}; let b: Int = {right}; \
+                     [a / b, a % b] }}\n"
+                ));
+                expected.push(format!("q{i}_{j} = [{quotient}, {remainder}]"));
+                members.push_str(&format!(
+                    "  spec c{i}_{j}() -> Bool^6 {{ let a: Int = {left}; let b: Int = {right}; \
+                     [a == b, a != b, a < b, a <= b, a > b, a >= b] }}\n"
+                ));
+                expected.push(format!(
+                    "c{i}_{j} = [{}, {}, {}, {}, {}, {}]",
+                    left == right,
+                    left != right,
+                    left < right,
+                    left <= right,
+                    left > right,
+                    left >= right
+                ));
+            }
+        }
+        assert_eq!(values_of(&members), expected);
+    }
+
+    #[test]
+    fn word_division_and_comparisons_are_unsigned_at_every_width() {
+        for (ty, bits) in WORDS {
+            let corpus = word_corpus(bits);
+            let mut members = String::new();
+            let mut expected = Vec::new();
+            for (index, (&left, &right)) in corpus.iter().zip(corpus.iter().rev()).enumerate() {
+                for (label, divisor) in [("n", right), ("z", 0)] {
+                    // Orange's total rule: x / 0 = 0 and x % 0 = x.
+                    let quotient = left.checked_div(divisor).unwrap_or(0);
+                    let remainder = left.checked_rem(divisor).unwrap_or(left);
+                    members.push_str(&format!(
+                        "  spec d{label}{index}() -> {ty}^2 {{ let a: {ty} = {left}; \
+                         [a / {divisor}, a % {divisor}] }}\n"
+                    ));
+                    expected.push(format!(
+                        "d{label}{index} = [{}, {}]",
+                        render_word(bits, quotient),
+                        render_word(bits, remainder)
+                    ));
+                }
+                members.push_str(&format!(
+                    "  spec c{index}() -> Bool^6 {{ let a: {ty} = {left}; let b: {ty} = {right}; \
+                     [a == b, a != b, a < b, a <= b, a > b, a >= b] }}\n"
+                ));
+                expected.push(format!(
+                    "c{index} = [{}, {}, {}, {}, {}, {}]",
+                    left == right,
+                    left != right,
+                    left < right,
+                    left <= right,
+                    left > right,
+                    left >= right
+                ));
+            }
+            assert_eq!(values_of(&members), expected, "{ty}");
+        }
+    }
+
+    #[test]
+    fn conditions_choose_exactly_one_branch_in_source_order() {
+        let members = concat!(
+            "  spec truth() -> Bool^2 { [true, false] }\n",
+            "  spec logic() -> Bool^6 {\n",
+            "    [true && false, true || false, !true, !(false || false), true == false, true != false]\n",
+            "  }\n",
+            "  spec sign(x: Int) -> Int { if x < 0 { -1 } else if x == 0 { 0 } else { 1 } }\n",
+            "  spec signs() -> Int^3 { [sign(-5), sign(0), sign(12)] }\n",
+            "  spec max(a: Word[8], b: Word[8]) -> Word[8] { if a < b { b } else { a } }\n",
+            "  spec larger() -> Word[8] { max(0x7f, 0x80) }\n",
+            "  spec clamp(x: Int) -> Int { let lo: Int = 0; if x < lo { lo } else if x > 255 { 255 } else { x } }\n",
+            "  spec clamps() -> Int^3 { [clamp(-3), clamp(300), clamp(42)] }\n",
+            "  spec evens() -> Int { for i in 0..10 with s: Int = 0 { if (i % 2) == 0 { s + i } else { s } } }\n",
+            "  spec ring(x: Word[8]^5) -> Word[8]^5 { for i in 0..5 with r: Word[8]^5 = x { r with [i] = x[(i + 1) % 5] } }\n",
+            "  spec rotated() -> Word[8]^5 { ring([1, 2, 3, 4, 5]) }\n",
+            "  spec nested(a: Bool, b: Bool) -> Int { if a { if b { 3 } else { 2 } } else { if b { 1 } else { 0 } } }\n",
+            "  spec table() -> Int^4 { [nested(false, false), nested(false, true), nested(true, false), nested(true, true)] }\n",
+            "  spec chosen() -> Int { let one: Int = 1; let t: Bool = one < 2; if t { 10 } else { 20 } }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "truth = [true, false]",
+                "logic = [false, true, false, true, false, true]",
+                "signs = [-1, 0, 1]",
+                "larger = 0x80",
+                "clamps = [0, 255, 42]",
+                "evens = 20",
+                "rotated = [0x02, 0x03, 0x04, 0x05, 0x01]",
+                "table = [0, 1, 2, 3]",
+                "chosen = 10",
+            ]
+        );
+    }
+
+    #[test]
+    fn only_the_chosen_branch_is_evaluated() {
+        // The untaken branch would exceed the whole step budget.
+        let members = concat!(
+            "  spec heavy(x: Int) -> Int {\n",
+            "    for i in 0..65536 with s: Int = x { for j in 0..65536 with t: Int = s { t } }\n",
+            "  }\n",
+            "  spec lazy() -> Int { if true { 1 } else { heavy(0) } }\n",
+            "  spec lazier() -> Int { let one: Int = 1; if false { heavy(0) } else if one == 1 { 2 } else { heavy(one) } }\n",
+            "  spec guarded(n: Int) -> Int { if n == 0 { 0 } else { 1000 / n } }\n",
+            "  spec guards() -> Int^2 { [guarded(0), guarded(8)] }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            ["lazy = 1", "lazier = 2", "guards = [0, 125]"]
+        );
+        // Both operands of `&&` and `||` are evaluated.
+        let (diagnostic, _, _) = single_failure(
+            concat!(
+                "  spec heavy(x: Int) -> Bool {\n",
+                "    for i in 0..65536 with s: Bool = true { for j in 0..65536 with t: Bool = s { t } }\n",
+                "  }\n",
+                "  spec strict() -> Bool { false && heavy(0) }\n",
+            ),
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+        );
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation step limit exceeded"
+        );
+    }
+
+    #[test]
+    fn branch_frames_do_not_count_toward_the_call_depth() {
+        let mut members = String::new();
+        for index in 0..MAX_CALL_DEPTH - 1 {
+            members.push_str(&format!(
+                "  spec f{index}() -> Int {{ if true {{ if false {{ 0 }} else {{ f{}() }} }} else {{ 1 }} }}\n",
+                index + 1
+            ));
+        }
+        members.push_str(&format!(
+            "  spec f{}() -> Int {{ 7 }}\n",
+            MAX_CALL_DEPTH - 1
+        ));
+        let values = values_of(&members);
+        assert_eq!(values.len(), MAX_CALL_DEPTH);
+        assert!(values.iter().all(|value| value.ends_with(" = 7")));
+    }
+
+    #[test]
+    fn inconsistent_conditions_and_comparisons_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec pick() -> Int { if true { 1 } else { 2 } }\n",
+            "  spec less() -> Bool { let a: Word[8] = 1; a < 2 }\n",
+            "  spec same() -> Bool { true == false }\n",
+            "  spec inner() -> Int {\n",
+            "    let k: Int = 3;\n",
+            "    for i in 0..2 with s: Int = 0 { if i == 0 { k } else { s } }\n",
+            "  }\n",
+            "  spec not() -> Bool { !false }\n",
+            "  spec and() -> Bool { true && false }\n",
+            "}\n"
+        ));
+        assert_eq!(
+            base.functions[0].body.nodes[1].kind,
+            CoreNodeKind::Choose(0)
+        );
+        assert!(matches!(
+            base.functions[1].body.nodes[2].kind,
+            CoreNodeKind::Compare { .. }
+        ));
+        assert!(matches!(
+            base.functions[2].body.nodes[2].kind,
+            CoreNodeKind::Compare { .. }
+        ));
+        assert_eq!(base.functions[3].loops[0].step.nodes.len(), 4);
+        assert_eq!(
+            base.functions[3].loops[0].step.nodes[3].kind,
+            CoreNodeKind::Choose(0)
+        );
+        let mutations: [fn(&mut CoreModule); 14] = [
+            // A choice names a conditional the function lacks.
+            |core| core.functions[0].body.nodes[1].kind = CoreNodeKind::Choose(1),
+            // A conditional has a different type than its node.
+            |core| core.functions[0].conditionals[0].ty = CoreType::Word8,
+            // A conditional claims an enclosing loop that is not active.
+            |core| core.functions[0].conditionals[0].scope = vec![0],
+            // A branch leaves no value behind.
+            |core| core.functions[0].conditionals[0].then_branch.nodes.clear(),
+            // A branch leaves a value of another type.
+            |core| {
+                core.functions[0].conditionals[0].then_branch.nodes[0].kind =
+                    CoreNodeKind::Literal(CoreValue::Word8(1));
+            },
+            // A condition is not a `Bool`.
+            |core| {
+                core.functions[0].body.nodes[0].kind = CoreNodeKind::Literal(CoreValue::Word8(1));
+            },
+            // A choice has nothing to choose on.
+            |core| {
+                core.functions[0].body.nodes.remove(0);
+            },
+            // A comparison claims a type other than `Bool`.
+            |core| core.functions[1].body.nodes[2].ty = CoreType::Word8,
+            // A comparison claims operands of a narrower type than they have.
+            |core| {
+                core.functions[1].body.nodes[1].kind =
+                    CoreNodeKind::Literal(CoreValue::Word16(0x100));
+            },
+            // `Bool` values are ordered.
+            |core| {
+                core.functions[2].body.nodes[2].kind = CoreNodeKind::Compare {
+                    operator: BinaryOperator::Less,
+                    operand: CoreType::Bool,
+                };
+            },
+            // A branch reads a binding that is not in scope.
+            |core| core.functions[3].conditionals[0].visible_locals = 0,
+            // A branch in a loop claims no enclosing loop.
+            |core| core.functions[3].conditionals[0].scope.clear(),
+            // `!` is applied to an integer.
+            |core| {
+                core.functions[4].body.nodes[0].kind = CoreNodeKind::Literal(CoreValue::Int(
+                    ExactInteger::from_u64(1, |limbs, count| {
+                        limbs.try_reserve_exact(count).is_ok()
+                    })
+                    .unwrap(),
+                ));
+            },
+            // `&&` is replaced by an arithmetic operator.
+            |core| core.functions[5].body.nodes[2].kind = CoreNodeKind::Binary(BinaryOperator::Add),
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn branch_and_division_reservation_failures_return_no_values() {
+        for (members, reservations, label) in [
+            // The branch's frame is the only frame after the root's.
+            (
+                "  spec f() -> Word[8] { if true { 1 } else { 2 } }\n",
+                Reservations {
+                    frames: |frames, count| {
+                        frames.is_empty() && frames.try_reserve_exact(count).is_ok()
+                    },
+                    ..Reservations::DEFAULT
+                },
+                "evaluation call stack could not be reserved",
+            ),
+            (
+                "  spec f() -> Int { let a: Int = 4294967296; a / 3 }\n",
+                Reservations {
+                    value_limbs: |limbs, _| limbs.capacity() > 0,
+                    ..Reservations::DEFAULT
+                },
+                "exact integer storage could not be reserved",
+            ),
+        ] {
+            let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+            let run = || {
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run(), "{members}");
+            assert!(first.values().is_none(), "{members}");
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label, "{members}");
+        }
+    }
+
+    thread_local! {
+        static ARRAY_RESERVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Refuses the second array reservation of the current evaluation.
+    fn refuse_second_array(elements: &mut Vec<Value>, count: usize) -> bool {
+        let calls = ARRAY_RESERVATIONS.with(|calls| {
+            calls.set(calls.get() + 1);
+            calls.get()
+        });
+        calls != 2 && elements.try_reserve_exact(count).is_ok()
+    }
+
+    #[test]
+    fn loop_update_and_fill_reservation_failures_return_no_values() {
+        for (members, reservations, label) in [
+            // The loop's frame is the only frame after the root's.
+            (
+                "  spec f() -> Word[8] { for i in 0..2 with s: Word[8] = 1 { s } }\n",
+                Reservations {
+                    frames: |frames, count| {
+                        frames.is_empty() && frames.try_reserve_exact(count).is_ok()
+                    },
+                    ..Reservations::DEFAULT
+                },
+                "evaluation call stack could not be reserved",
+            ),
+            // The index 0 needs no storage; the index 1 does.
+            (
+                "  spec f() -> Int { for i in 0..2 with s: Int = 0 { i } }\n",
+                Reservations {
+                    value_limbs: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "exact integer storage could not be reserved",
+            ),
+            // The fill is the first array and the update the second.
+            (
+                "  spec f() -> Word[8]^2 { [4; 2] with [1] = 3 }\n",
+                Reservations {
+                    array: refuse_second_array,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+            (
+                "  spec f() -> Word[8]^2 { [4; 2] }\n",
+                Reservations {
+                    array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation array storage could not be reserved",
+            ),
+        ] {
+            let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+            let run = || {
+                ARRAY_RESERVATIONS.with(|calls| calls.set(0));
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run(), "{members}");
+            assert!(first.values().is_none(), "{members}");
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label, "{members}");
         }
     }
 

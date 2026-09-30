@@ -399,9 +399,53 @@ are now whole Orange programs that reproduce the standards' example values. It
 is implemented and tested, and its acceptance requires the owner's acceptance
 of [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
 which bounds the S3d surface in [`ARRAYS_2026.md`](ARRAYS_2026.md) and builds
-on OEP-0006. It too assumes only pure, total, deterministic meaning. Bounded
-loops, so that ten double rounds are one expression, and a functional update
-of one element are the next candidate slices.
+on OEP-0006. It too assumes only pure, total, deterministic meaning.
+
+S3e follows S3d. It adds loops over literal ranges, indices built from integer
+literals and loop indices that the analyzer proves in range for every step,
+updates of one element, and fill literals, so that ten double rounds are one
+expression and a standard's "for t = 16 to 63" is written as the standard
+writes it. The whole SHA-256 hash of both FIPS 180-4 examples and the ChaCha20
+encryption of RFC 8439 section 2.4.2 are now Orange programs that reproduce the
+published digests and ciphertext. It is implemented and tested, and its
+acceptance requires the owner's acceptance of
+[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), which bounds
+the S3e surface in [`LOOPS_2026.md`](LOOPS_2026.md) and builds on OEP-0007.
+Like the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3f follows S3e. It adds the type `Bool`, comparisons, strict logical
+operators, Euclidean division and remainder that are total at zero, and
+conditionals that always have both branches, so that a field element reduces
+modulo its prime and a ladder chooses by a bit of its scalar. The X25519
+function of RFC 7748, Poly1305 of RFC 8439, and the ChaCha20-Poly1305 AEAD
+construction are now Orange programs that reproduce the published test vector,
+tag, ciphertext, and AEAD tag. It is implemented and tested, and its
+acceptance requires the owner's acceptance of
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md), which bounds
+the S3f surface in [`CONDITIONS_2026.md`](CONDITIONS_2026.md) and builds on
+OEP-0008. Like the slices before it, it assumes only pure, total,
+deterministic meaning, and it makes no timing claim: a conditional chooses a
+value, and how an implementation decides is a question for the implementation
+stratum.
+
+S3g follows S3f. It lets an index depend on data while still proving it in
+range before evaluation: an index whose first typed leaf is a word ranges over
+its type, narrowed by its operators, and an `Int` index may also convert words
+with `as Int` and choose with conditionals. Updates and fills cost one step
+per 64 elements, so that a table can change on every iteration of a loop. AES-128
+of FIPS 197, with its S-box derived from inverses in GF(2^8), and a
+table-driven CRC-32 are now Orange programs that reproduce the published
+examples and check value. It is implemented and tested, and its acceptance
+requires the owner's acceptance of
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md), which bounds the
+S3g surface in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) and builds on OEP-0009. It
+reverses the S3e rule that made lookups keyed by data inexpressible, and like
+the slices before it, it assumes only pure, total, deterministic meaning and
+makes no timing claim: how a lookup keyed by a secret is compiled is a
+question for code generation. Programs of more than one file, a type of
+integers modulo a declared prime, static index parameters, so that one quarter
+round can act on four positions of a whole state, and tuples for working
+variables of different roles are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -447,9 +491,9 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b, S3c, and S3d are implemented and await owner review under
-OEP-0005, OEP-0006, and OEP-0007, and Orange remains 30% complete by its
-unchanged 3-of-10 binary gate-closure score.
+incomplete, S3b through S3g are implemented and await owner review under
+OEP-0005 through OEP-0010, and Orange remains 30% complete by its unchanged
+3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
 

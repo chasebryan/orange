@@ -1,9 +1,9 @@
-// S3d rejection: arrays have at least one element, an index is one unsigned
-// integer literal after a name or a call, and arrays do not nest.
+// S3d rejection: arrays have at least one element, and arrays do not nest.
+// (A variable index such as `x[i]` parses since S3e and is rejected by
+// analysis; see the S3e fixtures.)
 edition 2026;
 module syntax {
   spec empty() -> Word[8]^1 { [] }
-  spec variable(x: Word[8]^4, i: Int) -> Word[8] { x[i] }
   spec twice(x: Word[8]^4) -> Word[8] { x[0][1] }
   spec nested() -> Word[8]^2^2 { [1, 2] }
 }

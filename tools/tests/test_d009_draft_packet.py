@@ -26,8 +26,8 @@ INDEX_PATH = RESEARCH_ROOT / "d009-v0.1-case-input-index.json"
 SUITE_PATH = Path("docs/SOLVER_TRUST_DECISION_SUITE.md")
 DECISIONS_PATH = Path("docs/DECISIONS.md")
 ROADMAP_PATH = Path("docs/ROADMAP.md")
-PACKET_CANONICAL_SHA256 = "07a95c39f91afd79368eed435c0c24194959942a35236357a58391d910dca38f"
-PACKET_RAW_SHA256 = "a30a1cc7cc1892cc4ca84494a8262915a886247c7d0c5858572d8df5c0ce752f"
+PACKET_CANONICAL_SHA256 = "13aff2fd4573bc99404ed9f3905ff0718d5dbe0d1fa500b3de9a58679c37b54e"
+PACKET_RAW_SHA256 = "2edccd91f94ab0c2b82502ddee72ff2af8d47fca33de0c0366049803d4217a0d"
 INDEX_CANONICAL_SHA256 = "2e55c671771d5740b0346992c8b86b9cce0571a8fc3e5b745195b0956010470e"
 INDEX_RAW_SHA256 = "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859"
 SUITE_RAW_SHA256 = "a26073e6431fb401af4aac6e57dcdfa76b27fe9451c26fb42595d7de14c2a35b"
@@ -186,7 +186,7 @@ class D009DraftPacketTests(unittest.TestCase):
                 "decision_register_document": {
                     "normalization": "markdown-prose-lines-exact-v1",
                     "normalized_sha256": (
-                        "6f2c23c90f52ad8e095adec180a8e2b827123ca02632fc94865bdb52637a89fb"
+                        "8d9b754ea9cd2f794cb51f4c77f4eab47ae8cd1d9f11dfafce3e41db05caee4c"
                     ),
                     "path": "docs/DECISIONS.md",
                     "scope": "whole_document",
@@ -206,7 +206,7 @@ class D009DraftPacketTests(unittest.TestCase):
                 "roadmap_document": {
                     "normalization": "markdown-prose-lines-exact-v1",
                     "normalized_sha256": (
-                        "0189ec842043b9fd39923fd8974ea610c3ddf49779cba97e85ef05b556fe5b15"
+                        "3c97645c43fdedf969b8bd5d805fb55685f549b2913a7e0fccb2179a593db778"
                     ),
                     "path": "docs/ROADMAP.md",
                     "scope": "whole_document",

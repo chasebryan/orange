@@ -22,10 +22,15 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 
 > [!NOTE]
 > [`BINDINGS_2026.md`](BINDINGS_2026.md), proposed under OEP-0006, extends this
-> document with typed `let` bindings and explicit `as` conversions, and
+> document with typed `let` bindings and explicit `as` conversions,
 > [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, adds
-> fixed-length arrays on top of it. Every source this document accepts keeps
-> its meaning under both.
+> fixed-length arrays on top of it, [`LOOPS_2026.md`](LOOPS_2026.md), proposed
+> under OEP-0008, adds bounded loops on top of those,
+> [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, adds
+> `Bool`, comparisons, Euclidean division, and conditionals, and
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, adds indices
+> that depend on data. Every source this document accepts keeps its meaning
+> under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

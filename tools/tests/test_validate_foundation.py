@@ -308,7 +308,7 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         path.write_bytes(b"\0" * size)
 
     def test_repository_resource_bounds_are_exact(self) -> None:
-        self.assertEqual(GATE0_MAXIMUM_TEXT_FILE_BYTES, 256 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_TEXT_FILE_BYTES, 512 * 1024)
         self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 448 * 1024)
         self.assertEqual(GATE0_MAXIMUM_BINARY_FILE_BYTES, 2 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_RUN_OUTPUTS_BYTES, 2 * 1024 * 1024)
@@ -2694,7 +2694,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-07-12
 
-Manuscript version: 0.6
+Manuscript version: 0.9
 
 This is not a normative language specification.
 
@@ -2849,11 +2849,11 @@ under Chase Bryan's direction on 2026-09-28.
 
     def test_orange_book_contract_rejects_missing_wrong_or_duplicate_version(self) -> None:
         mutations = (
-            lambda text: text.replace("Manuscript version: 0.6\n\n", "", 1),
-            lambda text: text.replace("Manuscript version: 0.6", "Manuscript version: 0.5", 1),
+            lambda text: text.replace("Manuscript version: 0.9\n\n", "", 1),
+            lambda text: text.replace("Manuscript version: 0.9", "Manuscript version: 0.8", 1),
             lambda text: text.replace(
-                "Manuscript version: 0.6",
-                "Manuscript version: 0.6\n\nManuscript version: 0.6",
+                "Manuscript version: 0.9",
+                "Manuscript version: 0.9\n\nManuscript version: 0.9",
                 1,
             ),
         )

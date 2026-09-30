@@ -91,6 +91,12 @@ pub struct CoreFunction {
     pub(crate) locals: Vec<CoreLocal>,
     /// Statically checked body.
     pub(crate) body: CoreExpression,
+    /// Loops of the bindings and the body, numbered in source order of
+    /// their `for` keywords.
+    pub(crate) loops: Vec<CoreLoop>,
+    /// Conditionals of the bindings, the body, and the loops, numbered in
+    /// source order of their `if` keywords.
+    pub(crate) conditionals: Vec<CoreConditional>,
 }
 
 impl CoreFunction {
@@ -140,6 +146,171 @@ impl CoreFunction {
     #[must_use]
     pub const fn body(&self) -> &CoreExpression {
         &self.body
+    }
+
+    /// Returns the loops of the bindings and the body, numbered in source
+    /// order of their `for` keywords.
+    #[must_use]
+    pub fn loops(&self) -> &[CoreLoop] {
+        &self.loops
+    }
+
+    /// Returns the conditionals of the bindings, the body, and the loops,
+    /// numbered in source order of their `if` keywords.
+    #[must_use]
+    pub fn conditionals(&self) -> &[CoreConditional] {
+        &self.conditionals
+    }
+}
+
+/// Highest admitted loop bound.
+pub const MAX_LOOP_BOUND: u32 = 65_536;
+
+/// One bounded loop `for i in start..end with s: T = init { step }`.
+///
+/// The loop's `Fold` node takes the initial value from its operand subtree;
+/// the step is a separate expression evaluated once for each index from
+/// `start` up to, but not including, `end`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreLoop {
+    /// Full source extent of the loop, from `for` through `}`.
+    pub(crate) span: Span,
+    /// Exact ASCII name of the loop index.
+    pub(crate) index_name: String,
+    /// Exact ASCII name of the accumulator.
+    pub(crate) accumulator_name: String,
+    /// Declared type of the accumulator and of the loop.
+    pub(crate) ty: CoreType,
+    /// First index.
+    pub(crate) start: u32,
+    /// One past the last index; greater than `start`.
+    pub(crate) end: u32,
+    /// The number of the function's bindings in scope in the step.
+    pub(crate) visible_locals: u32,
+    /// The loops whose index and accumulator are in scope in the step,
+    /// outermost first, ending with this loop.
+    pub(crate) scope: Vec<u32>,
+    /// Statically checked step.
+    pub(crate) step: CoreExpression,
+}
+
+impl CoreLoop {
+    /// Returns the full source extent of the loop.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact ASCII name of the loop index.
+    #[must_use]
+    pub fn index_name(&self) -> &str {
+        &self.index_name
+    }
+
+    /// Returns the exact ASCII name of the accumulator.
+    #[must_use]
+    pub fn accumulator_name(&self) -> &str {
+        &self.accumulator_name
+    }
+
+    /// Returns the declared type of the accumulator and of the loop.
+    #[must_use]
+    pub const fn ty(&self) -> CoreType {
+        self.ty
+    }
+
+    /// Returns the first index.
+    #[must_use]
+    pub const fn start(&self) -> u32 {
+        self.start
+    }
+
+    /// Returns one past the last index.
+    #[must_use]
+    pub const fn end(&self) -> u32 {
+        self.end
+    }
+
+    /// Returns the number of the function's bindings in scope in the step.
+    #[must_use]
+    pub const fn visible_locals(&self) -> u32 {
+        self.visible_locals
+    }
+
+    /// Returns the loops in scope in the step, outermost first, ending with
+    /// this loop.
+    #[must_use]
+    pub fn scope(&self) -> &[u32] {
+        &self.scope
+    }
+
+    /// Returns the statically checked step.
+    #[must_use]
+    pub const fn step(&self) -> &CoreExpression {
+        &self.step
+    }
+}
+
+/// One conditional `if c { a } else { b }`.
+///
+/// The conditional's `Choose` node consumes the condition, its one operand
+/// subtree; each branch is a separate expression, and only the branch the
+/// condition selects is evaluated. An `else if` arm is a conditional whose
+/// `Choose` node ends the enclosing conditional's `else` branch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreConditional {
+    /// Source extent of the conditional from this `if` through its last `}`.
+    pub(crate) span: Span,
+    /// Type of both branches and of the conditional.
+    pub(crate) ty: CoreType,
+    /// The number of the function's bindings in scope in the branches.
+    pub(crate) visible_locals: u32,
+    /// The loops whose index and accumulator are in scope in the branches,
+    /// outermost first.
+    pub(crate) scope: Vec<u32>,
+    /// The value when the condition is true.
+    pub(crate) then_branch: CoreExpression,
+    /// The value when the condition is false.
+    pub(crate) else_branch: CoreExpression,
+}
+
+impl CoreConditional {
+    /// Returns the source extent of the conditional from this `if` through
+    /// its last `}`.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the type of both branches and of the conditional.
+    #[must_use]
+    pub const fn ty(&self) -> CoreType {
+        self.ty
+    }
+
+    /// Returns the number of the function's bindings in scope in the
+    /// branches.
+    #[must_use]
+    pub const fn visible_locals(&self) -> u32 {
+        self.visible_locals
+    }
+
+    /// Returns the loops in scope in the branches, outermost first.
+    #[must_use]
+    pub fn scope(&self) -> &[u32] {
+        &self.scope
+    }
+
+    /// Returns the value when the condition is true.
+    #[must_use]
+    pub const fn then_branch(&self) -> &CoreExpression {
+        &self.then_branch
+    }
+
+    /// Returns the value when the condition is false.
+    #[must_use]
+    pub const fn else_branch(&self) -> &CoreExpression {
+        &self.else_branch
     }
 }
 
@@ -285,8 +456,16 @@ pub enum CoreNodeKind {
     },
     /// A prefix operator applied to one operand subtree.
     Unary(UnaryOperator),
-    /// An arithmetic or bitwise operator applied to two operand subtrees.
+    /// An arithmetic, bitwise, division, or logical operator applied to two
+    /// operand subtrees of this node's type.
     Binary(BinaryOperator),
+    /// A comparison of two operand subtrees of one type, giving a `Bool`.
+    Compare {
+        /// The comparison operator.
+        operator: BinaryOperator,
+        /// The type of both operands.
+        operand: CoreType,
+    },
     /// A shift or rotation of one operand subtree by a literal amount.
     Shift {
         /// The shift or rotation operator.
@@ -312,14 +491,34 @@ pub enum CoreNodeKind {
         /// The zero-based index, less than the operand's length.
         index: u32,
     },
+    /// The element of an array operand subtree at the index given by an
+    /// `Int` operand subtree, which analysis proved below the length.
+    Select,
+    /// A copy of an array operand subtree with the element at the index of
+    /// an `Int` operand subtree replaced by a third operand subtree.
+    Update,
+    /// An array of this node's type holding copies of one element subtree.
+    Fill,
+    /// The final accumulator of the function's loop at this index, whose
+    /// initial value is the one operand subtree.
+    Fold(u32),
+    /// The current index of the enclosing loop at this index, as an `Int`.
+    LoopIndex(u32),
+    /// The current accumulator of the enclosing loop at this index.
+    Accumulator(u32),
+    /// The value of the branch of the function's conditional at this index
+    /// that the one `Bool` operand subtree selects.
+    Choose(u32),
 }
 
-/// Types admitted by the typed expression fragment: `Int`, the four word
-/// types, and fixed-length arrays of them.
+/// Types admitted by the typed expression fragment: `Int`, `Bool`, the four
+/// word types, and fixed-length arrays of them.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CoreType {
     /// An exact, signed mathematical integer.
     Int,
+    /// A truth value, `true` or `false`.
+    Bool,
     /// An element of the integers modulo 2^8.
     Word8,
     /// An element of the integers modulo 2^16.
@@ -336,17 +535,19 @@ impl CoreType {
     #[cfg(test)]
     const SCALARS: &'static [Self] = &[
         Self::Int,
+        Self::Bool,
         Self::Word8,
         Self::Word16,
         Self::Word32,
         Self::Word64,
     ];
 
-    /// Returns the width of a word type, or `None` for `Int` and arrays.
+    /// Returns the width of a word type, or `None` for `Int`, `Bool`, and
+    /// arrays.
     #[must_use]
     pub const fn word_bits(self) -> Option<u32> {
         match self {
-            Self::Int | Self::Array(_) => None,
+            Self::Int | Self::Bool | Self::Array(_) => None,
             Self::Word8 => Some(8),
             Self::Word16 => Some(16),
             Self::Word32 => Some(32),
@@ -366,18 +567,27 @@ impl CoreType {
         }
     }
 
-    /// Returns whether this is `Int` or a word type rather than an array.
+    /// Returns whether this is `Int`, `Bool`, or a word type rather than an
+    /// array.
     #[must_use]
     pub const fn is_scalar(self) -> bool {
         !matches!(self, Self::Array(_))
     }
 
-    /// Returns the array type, or `None` for `Int` and the word types.
+    /// Returns whether this is `Int` or a word type: a type with arithmetic.
+    #[must_use]
+    pub const fn is_number(self) -> bool {
+        !matches!(self, Self::Bool | Self::Array(_))
+    }
+
+    /// Returns the array type, or `None` for the scalar types.
     #[must_use]
     pub const fn as_array(self) -> Option<ArrayType> {
         match self {
             Self::Array(array) => Some(array),
-            Self::Int | Self::Word8 | Self::Word16 | Self::Word32 | Self::Word64 => None,
+            Self::Int | Self::Bool | Self::Word8 | Self::Word16 | Self::Word32 | Self::Word64 => {
+                None
+            }
         }
     }
 }
@@ -386,6 +596,7 @@ impl fmt::Display for CoreType {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int => formatter.write_str("Int"),
+            Self::Bool => formatter.write_str("Bool"),
             Self::Word8 => formatter.write_str("Word[8]"),
             Self::Word16 => formatter.write_str("Word[16]"),
             Self::Word32 => formatter.write_str("Word[32]"),
@@ -411,6 +622,7 @@ pub struct ArrayType {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Scalar {
     Int,
+    Bool,
     Word8,
     Word16,
     Word32,
@@ -425,6 +637,7 @@ impl ArrayType {
     pub const fn new(element: CoreType, length: u32) -> Option<Self> {
         let element = match element {
             CoreType::Int => Scalar::Int,
+            CoreType::Bool => Scalar::Bool,
             CoreType::Word8 => Scalar::Word8,
             CoreType::Word16 => Scalar::Word16,
             CoreType::Word32 => Scalar::Word32,
@@ -442,6 +655,7 @@ impl ArrayType {
     pub const fn element(self) -> CoreType {
         match self.element {
             Scalar::Int => CoreType::Int,
+            Scalar::Bool => CoreType::Bool,
             Scalar::Word8 => CoreType::Word8,
             Scalar::Word16 => CoreType::Word16,
             Scalar::Word32 => CoreType::Word32,
@@ -461,6 +675,8 @@ impl ArrayType {
 pub enum CoreValue {
     /// An exact mathematical integer.
     Int(ExactInteger),
+    /// A truth value.
+    Bool(bool),
     /// An element of the integers modulo 2^8.
     Word8(u8),
     /// An element of the integers modulo 2^16.
@@ -509,6 +725,7 @@ impl CoreValue {
     pub const fn ty(&self) -> CoreType {
         match self {
             Self::Int(_) => CoreType::Int,
+            Self::Bool(_) => CoreType::Bool,
             Self::Word8(_) => CoreType::Word8,
             Self::Word16(_) => CoreType::Word16,
             Self::Word32(_) => CoreType::Word32,
@@ -518,11 +735,11 @@ impl CoreValue {
     }
 
     /// Returns the word of type `ty` whose value is `value` reduced modulo
-    /// its width, or `None` when `ty` is `Int` or an array.
+    /// its width, or `None` when `ty` is not a word type.
     pub(crate) fn word_from_u64(ty: CoreType, value: u64) -> Option<Self> {
         let [b0, b1, b2, b3, b4, b5, b6, b7] = value.to_le_bytes();
         match ty {
-            CoreType::Int | CoreType::Array(_) => None,
+            CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
             CoreType::Word8 => Some(Self::Word8(b0)),
             CoreType::Word16 => Some(Self::Word16(u16::from_le_bytes([b0, b1]))),
             CoreType::Word32 => Some(Self::Word32(u32::from_le_bytes([b0, b1, b2, b3]))),
@@ -532,11 +749,11 @@ impl CoreValue {
         }
     }
 
-    /// Returns a word's value as an unsigned integer, or `None` for `Int`
-    /// and arrays.
+    /// Returns a word's value as an unsigned integer, or `None` for the
+    /// other values.
     pub(crate) fn word_as_u64(&self) -> Option<u64> {
         match self {
-            Self::Int(_) | Self::Array(_) => None,
+            Self::Int(_) | Self::Bool(_) | Self::Array(_) => None,
             Self::Word8(value) => Some(u64::from(*value)),
             Self::Word16(value) => Some(u64::from(*value)),
             Self::Word32(value) => Some(u64::from(*value)),
@@ -549,6 +766,7 @@ impl fmt::Display for CoreValue {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(value) => value.fmt(formatter),
+            Self::Bool(value) => value.fmt(formatter),
             Self::Word8(value) => write!(formatter, "0x{value:02x}"),
             Self::Word16(value) => write!(formatter, "0x{value:04x}"),
             Self::Word32(value) => write!(formatter, "0x{value:08x}"),
@@ -625,6 +843,19 @@ impl ExactInteger {
         Some(Self::new(false, Magnitude::from_u64(value, reserve_limbs)?))
     }
 
+    /// Returns this integer when its magnitude has at most 63 bits.
+    pub(crate) fn to_i64(&self) -> Option<i64> {
+        if self.magnitude_bits() > 63 {
+            return None;
+        }
+        let magnitude = i64::try_from(self.magnitude.low_u64()).ok()?;
+        Some(if self.negative {
+            magnitude.checked_neg()?
+        } else {
+            magnitude
+        })
+    }
+
     /// Returns this integer modulo 2^64, as its representative from 0
     /// through 2^64 - 1.
     pub(crate) fn modulo_2_64(&self) -> u64 {
@@ -686,6 +917,43 @@ impl ExactInteger {
     ) -> Option<Self> {
         let magnitude = self.magnitude.multiply(&other.magnitude, reserve_limbs)?;
         Some(Self::new(self.negative != other.negative, magnitude))
+    }
+
+    /// Compares two integers by their exact values.
+    pub(crate) fn compare(&self, other: &Self) -> Ordering {
+        match (self.negative, other.negative) {
+            (false, true) => Ordering::Greater,
+            (true, false) => Ordering::Less,
+            (false, false) => self.magnitude.compare(&other.magnitude),
+            (true, true) => other.magnitude.compare(&self.magnitude),
+        }
+    }
+
+    /// Returns the Euclidean quotient and remainder of `self` by a nonzero
+    /// `divisor`: the unique q and r with `self = divisor * q + r` and
+    /// `0 <= r < |divisor|`. Returns `None` when `divisor` is zero or
+    /// storage cannot be reserved.
+    pub(crate) fn divide_euclid(
+        &self,
+        divisor: &Self,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<(Self, Self)> {
+        let (quotient, remainder) = self.magnitude.divide(&divisor.magnitude, reserve_limbs)?;
+        if !self.negative || remainder.is_zero() {
+            // |self| = q |d| + r, so self = d (±q) + r with the sign of q
+            // making d q nonnegative when self is, and negative otherwise.
+            let negative = self.negative != divisor.negative;
+            return Some((Self::new(negative, quotient), Self::new(false, remainder)));
+        }
+        // self = -(q |d| + r) with 0 < r < |d|, so
+        // self = -(q + 1) |d| + (|d| - r).
+        let one = Magnitude::from_u64(1, reserve_limbs)?;
+        let quotient = quotient.add(&one, reserve_limbs)?;
+        let remainder = divisor.magnitude.subtract(&remainder, reserve_limbs)?;
+        Some((
+            Self::new(!divisor.negative, quotient),
+            Self::new(false, remainder),
+        ))
     }
 }
 
@@ -888,6 +1156,87 @@ impl Magnitude {
         Some(product)
     }
 
+    /// Returns the quotient and remainder of `self` by a nonzero `divisor`,
+    /// or `None` when `divisor` is zero or storage cannot be reserved.
+    ///
+    /// This is schoolbook long division in base 2^32, Algorithm D of Knuth,
+    /// The Art of Computer Programming, volume 2, section 4.3.1: each
+    /// quotient digit is estimated from the leading digits, corrected at most
+    /// twice before the subtraction and once after it.
+    fn divide(
+        &self,
+        divisor: &Self,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<(Self, Self)> {
+        let (&top, rest) = divisor.limbs.split_last()?;
+        if self.compare(divisor) == Ordering::Less {
+            return Some((
+                Self::zero(),
+                self.try_clone_with_reservation(reserve_limbs)?,
+            ));
+        }
+        if rest.is_empty() {
+            return self.divide_by_limb(top, reserve_limbs);
+        }
+        // Normalize so that the divisor's leading digit has its top bit set;
+        // the dividend gains one leading digit for the shifted-out bits.
+        let shift = top.leading_zeros();
+        let divisor_digits =
+            shifted_left(&divisor.limbs, shift, divisor.limbs.len(), reserve_limbs)?;
+        let mut dividend = shifted_left(
+            &self.limbs,
+            shift,
+            self.limbs.len().checked_add(1)?,
+            reserve_limbs,
+        )?;
+        let length = divisor_digits.len();
+        let quotient_length = self.limbs.len().checked_sub(length)?.checked_add(1)?;
+        let mut quotient = Vec::new();
+        if !reserve_limbs(&mut quotient, quotient_length) {
+            return None;
+        }
+        quotient.resize(quotient_length, 0);
+        let leading = u64::from(*divisor_digits.last()?);
+        let second = u64::from(*divisor_digits.get(length.checked_sub(2)?)?);
+        for (position, digit) in quotient.iter_mut().enumerate().rev() {
+            let window = dividend.get_mut(position..=position.checked_add(length)?)?;
+            *digit = divide_step(window, &divisor_digits, leading, second)?;
+        }
+        let mut quotient = Self { limbs: quotient };
+        quotient.normalize();
+        // The remainder is the low digits of the dividend, shifted back.
+        dividend.truncate(length);
+        let mut remainder = Self {
+            limbs: shifted_right(&dividend, shift, reserve_limbs)?,
+        };
+        remainder.normalize();
+        Some((quotient, remainder))
+    }
+
+    /// Divides by one nonzero digit.
+    fn divide_by_limb(
+        &self,
+        divisor: u32,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<(Self, Self)> {
+        let divisor = u64::from(divisor);
+        let mut limbs = Vec::new();
+        if !reserve_limbs(&mut limbs, self.limbs.len()) {
+            return None;
+        }
+        limbs.resize(self.limbs.len(), 0);
+        let mut remainder = 0_u64;
+        for (slot, limb) in limbs.iter_mut().zip(&self.limbs).rev() {
+            // remainder < divisor < 2^32, so the dividend fits in u64.
+            let dividend = (remainder << u32::BITS) | u64::from(*limb);
+            *slot = u32::try_from(dividend.checked_div(divisor)?).ok()?;
+            remainder = dividend.checked_rem(divisor)?;
+        }
+        let mut quotient = Self { limbs };
+        quotient.normalize();
+        Some((quotient, Self::from_u64(remainder, reserve_limbs)?))
+    }
+
     fn try_clone_with_reservation(
         &self,
         reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
@@ -968,6 +1317,107 @@ impl Magnitude {
 
 fn low_limb(value: u64) -> Option<u32> {
     u32::try_from(value & u64::from(u32::MAX)).ok()
+}
+
+/// Returns `limbs` shifted left by `shift` bits, `shift < 32`, as exactly
+/// `length` digits; the digits beyond `limbs` start as zero.
+fn shifted_left(
+    limbs: &[u32],
+    shift: u32,
+    length: usize,
+    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+) -> Option<Vec<u32>> {
+    let mut shifted = Vec::new();
+    if !reserve_limbs(&mut shifted, length) {
+        return None;
+    }
+    let mut carry = 0_u32;
+    for limb in limbs {
+        let wide = u64::from(*limb) << shift;
+        shifted.push(low_limb(wide)? | carry);
+        carry = u32::try_from(wide >> u32::BITS).ok()?;
+    }
+    if shifted.len() < length {
+        shifted.push(carry);
+    } else if carry != 0 {
+        return None;
+    }
+    shifted.resize(length, 0);
+    Some(shifted)
+}
+
+/// Returns `limbs` shifted right by `shift` bits, `shift < 32`.
+fn shifted_right(
+    limbs: &[u32],
+    shift: u32,
+    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+) -> Option<Vec<u32>> {
+    let mut shifted = Vec::new();
+    if !reserve_limbs(&mut shifted, limbs.len()) {
+        return None;
+    }
+    for (position, limb) in limbs.iter().enumerate() {
+        let high = limbs.get(position.saturating_add(1)).copied().unwrap_or(0);
+        let wide = (u64::from(high) << u32::BITS) | u64::from(*limb);
+        shifted.push(low_limb(wide >> shift)?);
+    }
+    Some(shifted)
+}
+
+/// Computes one quotient digit of Knuth's Algorithm D and subtracts its
+/// multiple of the divisor from `window`, the dividend's digits
+/// `j..=j + n` for an `n`-digit normalized divisor. `leading` and `second`
+/// are the divisor's two leading digits.
+fn divide_step(window: &mut [u32], divisor: &[u32], leading: u64, second: u64) -> Option<u32> {
+    const BASE: u64 = 1 << u32::BITS;
+    let length = divisor.len();
+    let top = u64::from(*window.get(length)?);
+    let next = u64::from(*window.get(length.checked_sub(1)?)?);
+    let third = u64::from(*window.get(length.checked_sub(2)?)?);
+    // Estimate the digit from the window's two leading digits (step D3).
+    let numerator = (top << u32::BITS) | next;
+    let mut estimate = numerator.checked_div(leading)?;
+    let mut remainder = numerator.checked_rem(leading)?;
+    while estimate >= BASE || estimate.checked_mul(second)? > ((remainder << u32::BITS) | third) {
+        estimate = estimate.checked_sub(1)?;
+        remainder = remainder.checked_add(leading)?;
+        if remainder >= BASE {
+            break;
+        }
+    }
+    // Multiply and subtract (step D4).
+    let mut carry = 0_u64;
+    let mut borrow = false;
+    for (slot, digit) in window.iter_mut().zip(divisor) {
+        // estimate < 2^32, so the product plus a carry below 2^32 fits.
+        let product = estimate
+            .checked_mul(u64::from(*digit))?
+            .checked_add(carry)?;
+        carry = product >> u32::BITS;
+        let (partial, first_borrow) = slot.overflowing_sub(low_limb(product)?);
+        let (difference, second_borrow) = partial.overflowing_sub(u32::from(borrow));
+        *slot = difference;
+        borrow = first_borrow || second_borrow;
+    }
+    let last = window.get_mut(length)?;
+    let (partial, first_borrow) = last.overflowing_sub(u32::try_from(carry).ok()?);
+    let (difference, second_borrow) = partial.overflowing_sub(u32::from(borrow));
+    *last = difference;
+    if first_borrow || second_borrow {
+        // The estimate was one too large: add the divisor back (step D6).
+        estimate = estimate.checked_sub(1)?;
+        let mut carry = 0_u64;
+        for (slot, digit) in window.iter_mut().zip(divisor) {
+            let sum = u64::from(*slot)
+                .checked_add(u64::from(*digit))?
+                .checked_add(carry)?;
+            *slot = low_limb(sum)?;
+            carry = sum >> u32::BITS;
+        }
+        let last = window.get_mut(length)?;
+        *last = last.wrapping_add(u32::try_from(carry).ok()?);
+    }
+    u32::try_from(estimate).ok()
 }
 
 struct DecimalLimbs {
@@ -1150,6 +1600,7 @@ mod tests {
             CoreType::SCALARS,
             &[
                 CoreType::Int,
+                CoreType::Bool,
                 CoreType::Word8,
                 CoreType::Word16,
                 CoreType::Word32,
@@ -1161,13 +1612,15 @@ mod tests {
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
-            ["Int", "Word[8]", "Word[16]", "Word[32]", "Word[64]"]
+            ["Int", "Bool", "Word[8]", "Word[16]", "Word[32]", "Word[64]"]
         );
         for ty in CoreType::SCALARS {
+            let word = !matches!(ty, CoreType::Int | CoreType::Bool);
             assert_eq!(
                 ty.word_bits().and_then(CoreType::word_of_width),
-                (*ty != CoreType::Int).then_some(*ty)
+                word.then_some(*ty)
             );
+            assert_eq!(ty.is_number(), *ty != CoreType::Bool);
             assert!(ty.is_scalar());
             assert_eq!(ty.as_array(), None);
         }
@@ -1268,6 +1721,8 @@ mod tests {
                         ))),
                     }],
                 },
+                loops: Vec::new(),
+                conditionals: Vec::new(),
             },
             CoreFunction {
                 id: CoreFunctionId::from_index(1).unwrap(),
@@ -1305,6 +1760,8 @@ mod tests {
                         kind: CoreNodeKind::Literal(CoreValue::Word8(8)),
                     }],
                 },
+                loops: Vec::new(),
+                conditionals: Vec::new(),
             },
         ];
         let module = CoreModule {
@@ -1372,6 +1829,8 @@ mod tests {
                 result_type: _,
                 locals,
                 body,
+                loops,
+                conditionals,
             } = function;
             let local_values = locals.into_iter().map(|local| {
                 let CoreLocal {
@@ -1383,14 +1842,42 @@ mod tests {
                 } = local;
                 value
             });
+            let loop_steps = loops.into_iter().map(|r#loop| {
+                let CoreLoop {
+                    span: _,
+                    index_name: _,
+                    accumulator_name: _,
+                    ty: _,
+                    start: _,
+                    end: _,
+                    visible_locals: _,
+                    scope: _,
+                    step,
+                } = r#loop;
+                step
+            });
+            let branches = conditionals.into_iter().flat_map(|conditional| {
+                let CoreConditional {
+                    span: _,
+                    ty: _,
+                    visible_locals: _,
+                    scope: _,
+                    then_branch,
+                    else_branch,
+                } = conditional;
+                [then_branch, else_branch]
+            });
             for node in local_values
                 .chain(std::iter::once(body))
+                .chain(loop_steps)
+                .chain(branches)
                 .flat_map(|expression| expression.nodes)
             {
                 let CoreNode { span: _, ty, kind } = node;
                 match kind {
                     CoreNodeKind::Literal(
                         CoreValue::Int(_)
+                        | CoreValue::Bool(_)
                         | CoreValue::Word8(_)
                         | CoreValue::Word16(_)
                         | CoreValue::Word32(_)
@@ -1405,10 +1892,19 @@ mod tests {
                     | CoreNodeKind::Shift { .. }
                     | CoreNodeKind::Convert { .. }
                     | CoreNodeKind::Array { .. }
-                    | CoreNodeKind::Index { .. } => {}
+                    | CoreNodeKind::Index { .. }
+                    | CoreNodeKind::Select
+                    | CoreNodeKind::Update
+                    | CoreNodeKind::Fill
+                    | CoreNodeKind::Fold(_)
+                    | CoreNodeKind::LoopIndex(_)
+                    | CoreNodeKind::Accumulator(_)
+                    | CoreNodeKind::Compare { .. }
+                    | CoreNodeKind::Choose(_) => {}
                 }
                 match ty {
                     CoreType::Int
+                    | CoreType::Bool
                     | CoreType::Word8
                     | CoreType::Word16
                     | CoreType::Word32
@@ -1494,6 +1990,23 @@ mod tests {
     }
 
     #[test]
+    fn exact_integers_convert_to_i64_only_within_63_bits() {
+        let corpus = exact_corpus();
+        for &value in &corpus {
+            let expected = i64::try_from(value).ok().filter(|value| *value != i64::MIN);
+            assert_eq!(exact(value).to_i64(), expected, "{value}");
+        }
+        for value in [0, 1, -1, i128::from(i64::MAX), -i128::from(i64::MAX)] {
+            assert_eq!(exact(value).to_i64().map(i128::from), Some(value));
+        }
+        // The magnitude of -2^63 has 64 bits, so it is refused like 2^63.
+        for value in [i128::from(i64::MIN), 1 << 63, 1 << 64] {
+            assert_eq!(exact(value).to_i64(), None, "{value}");
+        }
+        assert_eq!(MAX_LOOP_BOUND, 1 << 16);
+    }
+
+    #[test]
     fn multi_limb_arithmetic_is_exact() {
         let power = |bits: usize| {
             let mut value = exact(1);
@@ -1529,6 +2042,131 @@ mod tests {
         assert_eq!(
             power(128).to_string(),
             "340282366920938463463374607431768211456"
+        );
+    }
+
+    #[test]
+    fn exact_comparison_and_euclidean_division_match_an_i128_reference() {
+        let corpus = exact_corpus();
+        for &left in &corpus {
+            for &right in &corpus {
+                let (a, b) = (exact(left), exact(right));
+                assert_eq!(a.compare(&b), left.cmp(&right), "{left} <=> {right}");
+                if right == 0 {
+                    assert_eq!(a.divide_euclid(&b, reserve), None, "{left} / 0");
+                    continue;
+                }
+                let (quotient, remainder) = a.divide_euclid(&b, reserve).unwrap();
+                assert_eq!(
+                    (quotient.to_string(), remainder.to_string()),
+                    (
+                        left.div_euclid(right).to_string(),
+                        left.rem_euclid(right).to_string()
+                    ),
+                    "{left} / {right}"
+                );
+                // Zero results are the canonical, unsigned zero.
+                assert!(!quotient.is_zero() || !quotient.is_negative());
+                assert!(!remainder.is_negative());
+            }
+        }
+    }
+
+    /// Digits that drive Algorithm D through its corner cases: an estimate
+    /// of 2^32, both corrections before the subtraction, and the rare
+    /// add-back after it.
+    const HARD_LIMBS: [u32; 6] = [0, 1, 0x7fff_ffff, 0x8000_0000, 0xffff_fffe, 0xffff_ffff];
+
+    fn magnitudes(max_digits: usize) -> Vec<Magnitude> {
+        let mut values = Vec::new();
+        for digits in 1..=max_digits.min(3) {
+            let count = HARD_LIMBS.len().pow(u32::try_from(digits).unwrap());
+            for mut code in 0..count {
+                let mut limbs = Vec::new();
+                for _ in 0..digits {
+                    limbs.push(HARD_LIMBS[code % HARD_LIMBS.len()]);
+                    code /= HARD_LIMBS.len();
+                }
+                values.push(Magnitude { limbs });
+            }
+        }
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        for digits in 1..=max_digits {
+            for _ in 0..24 {
+                let mut limbs = Vec::new();
+                for _ in 0..digits {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    limbs.push(u32::try_from(state >> 32).unwrap());
+                }
+                values.push(Magnitude { limbs });
+            }
+        }
+        for value in &mut values {
+            value.normalize();
+        }
+        values
+    }
+
+    #[test]
+    fn multi_limb_euclidean_division_satisfies_its_defining_identity() {
+        let dividends = magnitudes(9);
+        let divisors = magnitudes(4);
+        let mut checked = 0_usize;
+        for dividend in &dividends {
+            for divisor in &divisors {
+                for (left_negative, right_negative) in
+                    [(false, false), (true, false), (false, true), (true, true)]
+                {
+                    let a = ExactInteger::new(left_negative, dividend.clone());
+                    let b = ExactInteger::new(right_negative, divisor.clone());
+                    let Some((quotient, remainder)) = a.divide_euclid(&b, reserve) else {
+                        assert!(b.is_zero());
+                        continue;
+                    };
+                    // a = b q + r with 0 <= r < |b|: exactly one such q and r.
+                    let product = b.multiply(&quotient, reserve).unwrap();
+                    assert_eq!(product.add(&remainder, reserve).unwrap(), a, "{a} / {b}");
+                    assert!(!remainder.is_negative(), "{a} % {b}");
+                    let size = ExactInteger::new(false, divisor.clone());
+                    assert_eq!(remainder.compare(&size), Ordering::Less, "{a} % {b}");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 100_000, "{checked}");
+        // Two known quotients, checked against an independent computation.
+        let power = |bits: usize| {
+            let mut value = exact(1);
+            for _ in 0..bits {
+                value = value.add(&value, reserve).unwrap();
+            }
+            value
+        };
+        let big = power(521).subtract(&exact(1), reserve).unwrap();
+        let prime = power(255).subtract(&exact(19), reserve).unwrap();
+        let (quotient, remainder) = big.divide_euclid(&prime, reserve).unwrap();
+        assert_eq!(
+            (quotient.to_string(), remainder.to_string()),
+            (
+                String::from(
+                    "118571099379011784113736688648896417641748464297615937576404566024103044751333376"
+                ),
+                String::from("739327")
+            )
+        );
+        let (quotient, remainder) = big.negated().divide_euclid(&prime, reserve).unwrap();
+        assert_eq!(
+            (quotient.to_string(), remainder.to_string()),
+            (
+                String::from(
+                    "-118571099379011784113736688648896417641748464297615937576404566024103044751333377"
+                ),
+                String::from(
+                    "57896044618658097711785492504343953926634992332820282019728792003956564080622"
+                )
+            )
         );
     }
 

@@ -189,13 +189,147 @@ reads is visible and in range. This slice, S3d, is implemented and tested; its
 specification is in review as
 [OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md).
 
+### Loops the way standards write them
+
+FIPS 180-4 prepares the SHA-256 message schedule "for t = 16 to 63", and Orange
+writes exactly that. A loop runs over a range given by two literals, carries
+one accumulator of a stated type, and has that accumulator's value after its
+last step: a fold, with its count in plain sight. `w with [t] = v` is the array
+`w` with element `t` replaced, and `[0; 64]` is sixty-four zeros.
+
+```orange
+spec schedule(m: Word[32]^16) -> Word[32]^64 {
+  let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] { w with [t] = m[t] };
+  for t in 16..64 with w: Word[32]^64 = head {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+
+spec compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+  let w: Word[32]^64 = schedule(m);
+  let k: Word[32]^64 = round_constants();
+  let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h { round(v, k[t], w[t]) };
+  for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + h[i] }
+}
+```
+
+The [SHA-256 fixture](compiler/fixtures/s3e/valid-sha256.or) hashes "abc" to
+the digest FIPS 180-4 publishes, and the two-block NIST example too:
+
+```text
+sha256::abc_digest: Word[32]^8 = [0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad]
+```
+
+An index such as `w[t - 15]` may use only literals and loop indices, and the
+compiler proves, before anything runs, that it stays in range for every `t`
+from 16 to 63; `w[t - 17]` is rejected with the range it would take, -1
+through 46. In this slice an index may use only literals and loop indices;
+[S3g](#tables-keyed-by-data) lets it depend on data, still proved in range. The
+[ChaCha20 fixture](compiler/fixtures/s3e/valid-chacha20.or) loads the key and
+nonce with loops, runs the ten double rounds as one loop, and encrypts the
+"sunscreen" plaintext of RFC 8439 section 2.4.2 to the RFC's ciphertext, byte
+for byte. This slice, S3e, is implemented and tested; its specification is in
+review as
+[OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md).
+
+### Prime fields and choices
+
+RFC 7748 defines X25519 in the integers modulo 2^255 − 19: reduce after every
+product, read one bit of the scalar per rung of the Montgomery ladder, and
+swap two points when the bit is set. Orange writes each step the way the RFC
+does. `%` is Euclidean, so `a % p` is always the canonical residue from 0
+through p − 1; a comparison gives a `Bool`; and `if c { a } else { b }` chooses
+one of two values of the same type and evaluates only the one it chooses.
+
+```orange
+spec rung(x1: Int, s: Int^4, set: Bool) -> Int^4 {
+  if set { swap(ladder(x1, swap(s))) } else { ladder(x1, s) }
+}
+
+spec x25519(scalar: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+  let k: Word[8]^32 = clamp(scalar);
+  let masks: Word[8]^8 = [1, 2, 4, 8, 16, 32, 64, 128];
+  let x1: Int = decode_u(u);
+  let s: Int^4 = for i in 0..255 with s: Int^4 = [1, 0, x1, 1] {
+    rung(x1, s, (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0)
+  };
+  encode((s[0] * power(s[1], prime() - 2)) % prime())
+}
+```
+
+The [X25519 fixture](compiler/fixtures/s3f/valid-x25519.or) computes the first
+test vector of RFC 7748 section 5.2, byte for byte:
+
+```text
+x25519::test_vector: Word[8]^32 = [0xc3, 0xda, 0x55, 0x37, 0x9d, 0xe9, 0xc6, 0x90, 0x8e, 0x94, 0xea, 0x4d, 0xf2, 0x8d, 0x08, 0x4f, 0x32, 0xec, 0xcf, 0x03, 0x49, 0x1c, 0x71, 0xf7, 0x54, 0xb4, 0x07, 0x55, 0x77, 0xa2, 0x85, 0x52]
+```
+
+The index `k[(254 - i) / 8]` divides a loop index, and the compiler still
+proves it in range, 0 through 31, before anything runs. The
+[Poly1305 fixture](compiler/fixtures/s3f/valid-poly1305.or) reproduces the tag
+of RFC 8439 section 2.5.2, and the
+[AEAD fixture](compiler/fixtures/s3f/valid-aead.or) seals the section 2.8.2
+"sunscreen" message with ChaCha20-Poly1305 to the RFC's ciphertext and tag.
+Division by zero is defined (`x / 0` is 0 and `x % 0` is x), so nothing fails
+at run time, and `Bool` is not a number: it converts to nothing and has only
+`!`, `&&`, `||`, `==`, and `!=`. A conditional is a choice between values, not
+a claim about how a machine branches; RFC 7748 asks for a constant-time swap,
+and Orange makes no timing claim until it generates code. This slice, S3f, is
+implemented and tested; its specification is in review as
+[OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md).
+
+### Tables keyed by data
+
+FIPS 197 defines AES's SubBytes as a table: each byte of the state selects one
+of the 256 entries of the S-box. An Orange index may depend on data, and the
+compiler still proves it in range before anything runs. A byte runs from 0
+through 255, so it may index any table of 256 entries, and `x & 15` or
+`x >> 4` may index a table of 16:
+
+```orange
+spec sub_bytes(s: Word[8]^256, a: Word[8]^16) -> Word[8]^16 {
+  for i in 0..16 with b: Word[8]^16 = a { b with [i] = s[a[i]] }
+}
+
+spec sub_word(s: Word[8]^256, w: Word[32]) -> Word[32] {
+  ((s[w >> 24] as Word[32]) << 24)
+    | ((s[(w >> 16) & 0xff] as Word[32]) << 16)
+    | ((s[(w >> 8) & 0xff] as Word[32]) << 8)
+    | (s[w & 0xff] as Word[32])
+}
+```
+
+The [AES-128 fixture](compiler/fixtures/s3g/valid-aes128.or) does not copy the
+S-box; it derives it as FIPS 197 section 5.1.1 defines it, from inverses in
+GF(2^8) read off a table of logarithms, which is itself built by updates keyed
+by the table's own values. It then encrypts the examples of Appendix B and
+Appendix C.1 to the published ciphertexts and decrypts C.1 back to its
+plaintext:
+
+```text
+aes::example_c1: Word[8]^16 = [0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a]
+```
+
+Each operator narrows a range by one rule a reader can apply: `x & 15` runs
+from 0 through 15, `(x & 15) + 16` from 16 through 31, and `(x & 15) - 1`
+over its whole type, because it wraps. `s[x]` for a byte `x` and a table of 255
+entries is rejected with the range it would take, 0 through 255. A lookup
+keyed by a secret is the classic cache-timing leak of software AES; Orange
+states the lookup the standard states, makes no timing claim about it, and
+leaves how such a lookup is compiled to a later code-generation decision.
+Updates also cost less: changing one entry of a 256-entry table costs 4
+evaluation steps, not 256. This slice, S3g, is implemented and tested; its specification is in
+review as [OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md).
+
 ### Daylight Horizon example
 
-[`examples/daylight/`](examples/daylight/README.md) contains an owner-directed
-Orange port of Daylight Horizon v17's SHA-256, HKDF, ChaCha20 and Poly1305
-computations. It includes a standalone framed-encryption vector, a host adapter
-that preserves Horizon's existing evidence-policy checks, and interoperability
-tests. This is executable reference code, not verified production cryptography.
+[`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
+seal written as one Orange program: SHA-256, HMAC, HKDF, ChaCha20, Poly1305,
+and their AEAD, each as its standard writes it, with `seal`, `open`, and
+`authentic` on top. `orangec eval` reproduces the upstream frame byte for byte,
+and a bridge runs the upstream vault on the same specifications beneath its
+evidence checks. It is executable reference code, not verified production
+cryptography.
 
 ## What works today
 
@@ -208,8 +342,11 @@ tests. This is executable reference code, not verified production cryptography.
 | Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
+| Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
+| `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
+| Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Loops, comparisons, conditionals, mixed-type tuples | Not yet |
+| Programs of more than one file, mixed-type tuples, a type of integers modulo a prime | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -227,6 +364,8 @@ git clone https://github.com/chasebryan/orange.git
 cd orange
 
 # Build and try the compiler
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3g/valid-aes128.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3f/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
@@ -267,7 +406,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, and arrays in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, and lookups in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -286,10 +425,16 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 - [Orange 2026 language specification](docs/LANGUAGE_2026.md),
   [typed-literal semantics](docs/SEMANTICS_2026.md), and the proposed
   [pure expression semantics](docs/EXPRESSIONS_2026.md),
-  [bindings and conversions](docs/BINDINGS_2026.md), and
-  [fixed-length arrays](docs/ARRAYS_2026.md): the definition of what the
+  [bindings and conversions](docs/BINDINGS_2026.md),
+  [fixed-length arrays](docs/ARRAYS_2026.md),
+  [bounded loops](docs/LOOPS_2026.md),
+  [conditions and division](docs/CONDITIONS_2026.md), and
+  [lookups keyed by data](docs/LOOKUPS_2026.md): the definition of what the
   compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
+- [Tabula](tabula/README.md): a local workbench for writing Orange, with the
+  compiler's results and this documentation beside the editor. It is a
+  separate tool, not part of the language.
 - [Architecture](docs/ARCHITECTURE.md) and
   [assurance model](docs/ASSURANCE.md): the intended end state.
 - [Roadmap](docs/ROADMAP.md), [decision register](docs/DECISIONS.md), and
@@ -306,11 +451,12 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
 | Path | Contents |
 | --- | --- |
 | [`compiler/`](compiler/README.md) | The Rust workspace: the `orange-compiler` library and the `orangec` CLI |
+| [`tabula/`](tabula/README.md) | A local workbench for writing Orange; a separate tool, not part of the language |
 | [`docs/`](docs/) | The Orange Book, language specification, architecture, assurance, roadmap, and decisions |
 | [`research/decisions/`](research/decisions/) | Decision laboratories that compare design candidates |
 | [`schemas/`](schemas/README.md) and [`conformance/`](conformance/foundation/README.md) | Provisional evidence schemas and their test fixtures |
 | [`policy/`](policy/README.md) and [`tools/`](tools/) | Repository policy and the Python checks that enforce it |
-| [`assets/brand/`](assets/brand/README.md) | Orange emblem, wordmark, and banners |
+| [`assets/identity/`](assets/identity/README.md) and [`assets/brand/`](assets/brand/README.md) | The Orange emblem, wordmark, README banner, and book covers, and the original brand assets |
 
 ## Project status
 

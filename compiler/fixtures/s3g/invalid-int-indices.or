@@ -1,0 +1,13 @@
+// S3g rejection: an `Int` index is bounded only by literals, loop indices,
+// and words converted with `as Int`. An `Int` parameter, call, or element has
+// no bound, and a converted word's bound still has to fit the array.
+edition 2026;
+module indices {
+  spec parameter(t: Word[8]^4, n: Int) -> Word[8] { t[n] }
+  spec scaled(t: Word[8]^4, x: Word[8], n: Int) -> Word[8] { t[(x as Int) * n] }
+  spec element(t: Word[8]^4, k: Int^4) -> Word[8] { t[k[0]] }
+  spec three() -> Int { 3 }
+  spec call(t: Word[8]^4) -> Word[8] { t[three()] }
+  spec above(t: Word[8]^256, x: Word[8]) -> Word[8] { t[(x as Int) + 1] }
+  spec below(t: Word[8]^256, x: Word[8]) -> Word[8] { t[(x as Int) - 1] }
+}
