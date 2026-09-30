@@ -1266,7 +1266,8 @@ a value of another length or of a word, and a join of 300 elements.
 `eval` protocol as the S3k runner. It parses the 10-rule S3l index in
 `docs/BYTES_2026.md`, binds every rule to named CLI, generated-CLI, or unit
 tests declared exactly once at their harness locations, and generates byte
-strings and hex strings of 256 bytes and of 257. This corpus establishes the
+strings and hex strings of 256 bytes and of 257 and byte strings holding a raw
+tab and a raw delete, which the repository keeps out of its sources. This corpus establishes the
 tested behavior of one implementation; it does not accept OEP-0015, prove the
 rules sound, or complete S3.
 

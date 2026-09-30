@@ -261,7 +261,7 @@ const CASES: [Case; 6] = [
                 "this byte string has type `Word[8]^3`, but `Word[32]^3` is required here",
                 "U+00E9 is not a printable ASCII character",
                 "its UTF-8 bytes are written `hex\"c3 a9\"`",
-                "its byte is written `hex\"09\"`",
+                "its UTF-8 bytes are written `hex\"c2 b7\"`",
                 "a byte string holds at least one byte",
                 "`++` joins 3 and 2 elements, 5 in all, but `Word[8]^8` has 8",
                 "`++` joins arrays, but `Word[32]` is required here",
@@ -292,16 +292,22 @@ const CASES: [Case; 6] = [
 ];
 
 /// Generated command-line cases in this file, each run twice.
-const GENERATED_EVIDENCE: &[(&str, &[&str])] = &[(
-    "s3l_byte_strings_are_exact_at_the_limit",
-    &[
-        "S3L-LEX-01",
-        "S3L-BYTES-01",
-        "S3L-EVAL-01",
-        "S3L-RES-01",
-        "S3L-DETERMINISM-01",
-    ],
-)];
+const GENERATED_EVIDENCE: &[(&str, &[&str])] = &[
+    (
+        "s3l_byte_strings_are_exact_at_the_limit",
+        &[
+            "S3L-LEX-01",
+            "S3L-BYTES-01",
+            "S3L-EVAL-01",
+            "S3L-RES-01",
+            "S3L-DETERMINISM-01",
+        ],
+    ),
+    (
+        "s3l_control_characters_in_byte_strings_are_named_by_their_byte",
+        &["S3L-BYTES-01", "S3L-DETERMINISM-01"],
+    ),
+];
 
 const UNIT_EVIDENCE: &[TestEvidence] = &[
     TestEvidence {
@@ -790,5 +796,35 @@ fn s3l_byte_strings_are_exact_at_the_limit() {
             &context,
         );
     }
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn s3l_control_characters_in_byte_strings_are_named_by_their_byte() {
+    let directory = scratch_directory("controls");
+
+    // A tab or a delete written into a byte string is not printable ASCII;
+    // each is reported where it stands, with the hex byte to write instead.
+    // The repository keeps tabs out of its sources, so this one is generated.
+    let path = directory.join("controls.or");
+    fs::write(
+        &path,
+        "edition 2026;\nmodule controls {\n  spec tab() -> Word[8]^3 { \"a\tb\" }\n  \
+         spec delete() -> Word[8]^3 { \"a\u{7f}b\" }\n}\n",
+    )
+    .unwrap();
+    let rejected = run_twice("check", &path, "control characters");
+    assert_failure(
+        &rejected,
+        &["ORC0235", "ORC0235"],
+        &["controls.or:3:31", "controls.or:4:34"],
+        &[
+            "U+0009 is not a printable ASCII character",
+            "its byte is written `hex\"09\"`",
+            "U+007F is not a printable ASCII character",
+            "its byte is written `hex\"7f\"`",
+        ],
+        "control characters",
+    );
     fs::remove_dir_all(&directory).unwrap();
 }

@@ -8,7 +8,7 @@ module bytes_types {
   spec short() -> Word[8]^4 { "abc" }
   spec words() -> Word[32]^3 { "abc" }
   spec accented() -> Word[8]^2 { "é" }
-  spec tabbed() -> Word[8]^3 { "a	b" }
+  spec dotted() -> Word[8]^3 { "a·b" }
   spec empty() -> Word[8]^1 { "" }
   spec joined() -> Word[8]^8 { "abc" ++ "de" }
   spec scalar() -> Word[32] { "ab" ++ "cd" }

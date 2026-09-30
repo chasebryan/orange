@@ -272,11 +272,12 @@ No dependency is added.
 `compiler/crates/orangec/tests/s3l_conformance.rs` binds the 10 rules of the
 specification's index to evidence and fails on any drift. Six programs run
 through `orangec check` and `eval` twice each, and generated programs check
-byte strings and hex strings of 256 bytes and of 257. Unit tests cover the
-lexer, the parser, typing, the static rule, Core construction, evaluation and
-its step costs, the deepest admitted sources, inconsistent Core, allocation
-failure, and foreign spans. The S2 through S3k runners and the algorithms
-corpus continue to pass unchanged.
+byte strings and hex strings of 256 bytes and of 257 and byte strings holding
+a raw tab and a raw delete. Unit tests cover the lexer, the parser, typing,
+the static rule, Core construction, evaluation and its step costs, the
+deepest admitted sources, inconsistent Core, allocation failure, and foreign
+spans. The S2 through S3k runners, which now find the analyzer's unit tests
+in `semantics/tests.rs`, and the algorithms corpus continue to pass.
 
 ## Operations, release, and recovery
 
