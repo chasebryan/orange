@@ -456,10 +456,26 @@ and its acceptance requires the owner's acceptance of
 [OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md), which bounds the
 S3h surface in [`MODULES_2026.md`](MODULES_2026.md) and builds on OEP-0010.
 Like the slices before it, it assumes only pure, total, deterministic meaning.
-A type of integers modulo a declared prime, static index parameters, so that
-one quarter round can act on four positions of a whole state, tuples for
-working variables of different roles, loops with more than one accumulator,
-and array concatenation and slicing are the next candidate slices.
+
+S3i follows S3h. It adds `Mod[m]`, the integers modulo a constant m from 2
+through 2^521 - 1, whose modulus is written as its standard writes it, as
+`Mod[(1 << 255) - 19]`, and `type` declarations that name a type for the rest
+of a module. Residues reduce by themselves under `+`, `-`, and `*`, `/`
+multiplies by the inverse and gives 0 for a non-unit, two moduli are two
+types, and `as` converts among `Int`, words, and residues by least residues.
+X25519 and Poly1305 are now written over their fields with no reduction in
+sight and reproduce RFC 7748's and RFC 8439's examples, and the constants of
+ML-KEM, Ed25519, and P-256 are computed in the rings their standards define.
+It is implemented and tested, and its acceptance requires the owner's
+acceptance of
+[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md), which
+bounds the S3i surface in [`MODULAR_2026.md`](MODULAR_2026.md) and builds on
+OEP-0011. Like the slices before it, it assumes only pure, total,
+deterministic meaning, and it makes no timing claim about residue arithmetic.
+Static parameters, so that one quarter round can act on four positions of a
+whole state and one `spec` can serve every field, tuples for working variables
+of different roles, loops with more than one accumulator, and array
+concatenation and slicing are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -505,8 +521,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3h are implemented and await owner review under
-OEP-0005 through OEP-0011, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3i are implemented and await owner review under
+OEP-0005 through OEP-0012, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

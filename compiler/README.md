@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3h proposed under OEP-0005 through OEP-0011, in owner review
+S3i proposed under OEP-0005 through OEP-0012, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -39,9 +39,15 @@ slice, proposed in [`docs/MODULES_2026.md`](../docs/MODULES_2026.md) and in
 owner review under OEP-0011, lets a program span several modules, one per
 file: a module declares the modules it uses, calls their functions as
 `m::f(...)`, and is checked once, after them; `orangec` reads the module `m`
-from `m.or` beside the root. All eight lower to a noncanonical Typed Reference
-Core and are reference-evaluated. Unbounded loops, typed `impl`, proof
-checking, verified lowering, and code generation do not exist.
+from `m.or` beside the root. The S3i slice, proposed in
+[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md) and in owner review under
+OEP-0012, adds `Mod[m]`, the integers modulo a constant m from 2 through
+2^521 - 1 written as its standard writes it, as `Mod[(1 << 255) - 19]`, whose
+`+`, `-`, and `*` reduce by themselves and whose `/` multiplies by an inverse
+and gives 0 when there is none, and `type` declarations that name a type for
+the rest of a module. All nine lower to a noncanonical Typed Reference Core
+and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+verified lowering, and code generation do not exist.
 
 This boundary was merged by
 [PR #9](https://github.com/chasebryan/orange/pull/9) as commit
@@ -65,6 +71,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtur
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-chacha20-quarter-round.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
@@ -170,7 +177,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3h are implemented and await owner review under OEP-0005 through OEP-0011, both
+S3i are implemented and await owner review under OEP-0005 through OEP-0012, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -643,8 +650,9 @@ result expression:
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" use_decl* function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* function_decl* "}" ;
 use_decl        = "use" IDENTIFIER ";" ;
+type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER "(" parameters ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
@@ -655,7 +663,7 @@ empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
 declared_type   = parsed_type ("^" INTEGER)? ;
-parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
+parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | conversion | update | comparison | chain("&&")
@@ -685,16 +693,18 @@ conditional     = "if" expression "{" expression "}" "else" alternative ;
 alternative     = "{" expression "}" | conditional ;
 ```
 
-`let`, `as`, `for`, `in`, `with`, `if`, `else`, and `use` are contextual: they
-are ordinary names everywhere except where a binding, a conversion, a loop, an
-update, a conditional, or, at the head of a module, a `use` declaration
-begins. `true` and `false` are the `Bool` values only
+`let`, `as`, `for`, `in`, `with`, `if`, `else`, `use`, and `type` are
+contextual: they are ordinary names everywhere except where a binding, a
+conversion, a loop, an update, a conditional, or, at the head of a module, a
+`use` or `type` declaration begins, and `Mod` takes a modulus only when a
+bracket follows it. `true` and `false` are the `Bool` values only
 where no parameter, binding, or loop name of that spelling is in scope. For
 example:
 
 ```orange
 edition 2026;
 module demo {
+  type Z7 = Mod[7];
   spec identity() {}
   impl rounds() {}
   spec answer() -> Int { 42 }
@@ -714,6 +724,7 @@ module demo {
   spec backwards() -> Word[8]^4 { reverse([1, 2, 3, 4]) }
   spec sign(x: Int) -> Int { if x < 0 { -1 } else if x == 0 { 0 } else { 1 } }
   spec residues() -> Int^2 { [-7 % 2, sign(-7 / 2)] }
+  spec field() -> Z7^2 { [3 * 5, 1 / 3] }
 }
 ```
 
@@ -727,7 +738,8 @@ immediately before an integer token is that literal's sign, so the S3a body
 
 The parser accepts generic type syntax so unsupported forms receive semantic
 diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
-`Word[64]`, and `Bool`, and arrays `T^n` of them with n from 1 through 256, and checks
+`Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations, and
+arrays `T^n` of them with n from 1 through 256, and checks
 every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
 bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
 and `*` wrap because that is their meaning, while a literal must already fit
@@ -735,7 +747,12 @@ and never coerces, truncates, or wraps. Shift and rotation amounts are
 unsigned literals from 0 through n - 1. Division is Euclidean on `Int` and
 unsigned on words, and total: `-7 % 2` is 1, `x / 0` is 0, and `x % 0` is x.
 `Bool` has only `!`, `&&`, `||`, `==`, and `!=`, both operands of `&&` and `||`
-are always evaluated, and no conversion joins it to a number. A conditional
+are always evaluated, and no conversion joins it to a number. `Mod[m]` holds the
+least residues 0 through m - 1 of a modulus that is a constant of literals,
+`+`, `-`, `*`, `<<`, and parentheses; its literals lie strictly between -m and
+m, it has `+`, `-`, `*`, `/`, prefix `-`, `==`, and `!=` of one modulus and no
+order, and `x / y` is 0 when y has no inverse. `as` converts among `Int`,
+words, and residues by least residues, so `t[x as Int]` indexes by a residue. A conditional
 evaluates only its chosen branch. Names are the enclosing function's
 parameters and earlier bindings, and in a loop's step its index and
 accumulator; calls name typed `spec` functions of the same module, or, as
@@ -772,18 +789,20 @@ demo::sample: Word[32] = 0xce20b47e
 demo::pair: Word[16]^2 = [0x1234, 0xbeef]
 demo::backwards: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
 demo::residues: Int^2 = [1, -1]
+demo::field: Mod[7]^2 = [1, 5]
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3h rules, limits, and non-claims are in
+through S3i rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
 [`docs/LOOPS_2026.md`](../docs/LOOPS_2026.md),
 [`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md),
-[`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md), and
-[`docs/MODULES_2026.md`](../docs/MODULES_2026.md). None of them defines
+[`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md),
+[`docs/MODULES_2026.md`](../docs/MODULES_2026.md), and
+[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1082,6 +1101,31 @@ closed, a module with 65 `use` declarations, and one step budget spent across
 modules. This corpus establishes the tested behavior of one implementation; it
 does not accept OEP-0011, prove the rules sound, or complete S3.
 
+## S3i modular conformance
+
+`fixtures/s3i/` contains an exact seven-program corpus for the proposed S3i
+behavior, of which three must evaluate successfully and four must fail closed.
+The accepted programs write X25519 over `Mod[(1 << 255) - 19]` and Poly1305
+over `Mod[(1 << 130) - 5]` with no reduction in sight, reproducing the first
+test vector of RFC 7748 section 5.2 and the tag of RFC 8439 section 2.5.2, and
+compute constants in the rings their standards define: ML-KEM's zeta^128 and
+128^-1 modulo 3329, Ed25519's d and square root of -1, and P-256's generator
+on its curve. The rejected programs cover moduli that are too small, negative,
+too wide, not constant, missing, or too large to compute; `type` declarations
+out of order, naming built-in types, repeated, used before they are declared,
+or making arrays of arrays; residue literals out of range; order, remainder,
+and bitwise operators on residues; two moduli in one operator or call; `as`
+to `Bool` or an array type; and a residue used directly as an index.
+
+`crates/orangec/tests/s3i_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3h runner. It parses the 13-rule S3i index in
+`docs/MODULAR_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates 64
+`type` declarations and a 65th, the moduli 2, 2^521 - 1, and 2^521, literals
+at the edges of `Mod[3329]`, and residues as indices at the edges of their
+tables. This corpus establishes the tested behavior of one implementation; it
+does not accept OEP-0012, prove the rules sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1117,6 +1161,8 @@ does not accept OEP-0011, prove the rules sound, or complete S3.
   rule-index, and update-cost runner;
 - `crates/orangec/tests/s3h_conformance.rs`: exact repeatable S3h corpus,
   rule-index, and module-reading runner;
+- `crates/orangec/tests/s3i_conformance.rs`: exact repeatable S3i corpus,
+  rule-index, and modulus-limit runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1127,7 +1173,9 @@ does not accept OEP-0011, prove the rules sound, or complete S3.
 - `fixtures/s3f/`: exact four-positive/four-negative S3f CLI fixture corpus;
 - `fixtures/s3g/`: exact two-positive/two-negative S3g CLI fixture corpus;
 - `fixtures/s3h/`: exact one-positive/three-negative S3h CLI program corpus
-  and the six modules its programs use; and
+  and the six modules its programs use;
+- `fixtures/s3i/`: exact three-positive/four-negative S3i CLI fixture corpus;
+  and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and
   sealed-file format 1.

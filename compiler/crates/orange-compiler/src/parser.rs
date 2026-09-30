@@ -48,6 +48,9 @@ pub const MAX_ARRAY_ELEMENTS: usize = 256;
 /// Maximum `use` declarations in one module.
 pub const MAX_USES_PER_MODULE: usize = 64;
 
+/// Maximum `type` declarations in one module.
+pub const MAX_TYPES_PER_MODULE: usize = 64;
+
 /// A complete minimal Orange source file.
 ///
 /// Parsed nodes are read-only outside this crate so later stages can rely on
@@ -130,6 +133,9 @@ pub struct ModuleDeclaration {
     pub(crate) name: Identifier,
     /// `use` declarations in source order, all before the functions.
     pub(crate) uses: Vec<UseDeclaration>,
+    /// `type` declarations in source order, after the `use` declarations and
+    /// before the functions.
+    pub(crate) types: Vec<TypeDeclaration>,
     /// Functions in source order.
     pub(crate) functions: Vec<FunctionDeclaration>,
 }
@@ -151,6 +157,12 @@ impl ModuleDeclaration {
     #[must_use]
     pub fn uses(&self) -> &[UseDeclaration] {
         &self.uses
+    }
+
+    /// Returns the `type` declarations in source order.
+    #[must_use]
+    pub fn types(&self) -> &[TypeDeclaration] {
+        &self.types
     }
 
     /// Returns functions in source order.
@@ -181,6 +193,38 @@ impl UseDeclaration {
     #[must_use]
     pub const fn name(&self) -> &Identifier {
         &self.name
+    }
+}
+
+/// A `type NAME = TYPE;` declaration, which names a type for the rest of its
+/// module.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeDeclaration {
+    /// Full declaration extent, from `type` through the semicolon.
+    pub(crate) span: Span,
+    /// The declared name.
+    pub(crate) name: Identifier,
+    /// The type it names.
+    pub(crate) ty: TypeSyntax,
+}
+
+impl TypeDeclaration {
+    /// Returns the full declaration extent.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the declared name.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Returns the type the name stands for.
+    #[must_use]
+    pub const fn ty(&self) -> &TypeSyntax {
+        &self.ty
     }
 }
 
@@ -1010,8 +1054,9 @@ impl BinaryOperator {
     }
 }
 
-/// A syntactic type name with an optional integer width argument and an
-/// optional array length, as in `Word[32]^16`.
+/// A syntactic type name with an optional integer width argument or modulus
+/// and an optional array length, as in `Word[32]^16` or
+/// `Mod[(1 << 255) - 19]`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeSyntax {
     /// Full type extent, including `[WIDTH]` and `^LENGTH` when present.
@@ -1020,6 +1065,8 @@ pub struct TypeSyntax {
     pub(crate) name: Identifier,
     /// Exact span of the width integer, excluding brackets.
     pub(crate) width_span: Option<Span>,
+    /// The modulus expression of `Mod[...]`, excluding brackets.
+    pub(crate) modulus: Option<Box<Expression>>,
     /// Exact span of the array length integer, excluding `^`.
     pub(crate) length_span: Option<Span>,
 }
@@ -1048,6 +1095,12 @@ impl TypeSyntax {
     #[must_use]
     pub const fn width_span(&self) -> Option<Span> {
         self.width_span
+    }
+
+    /// Returns the modulus expression of `Mod[...]`, excluding brackets.
+    #[must_use]
+    pub fn modulus(&self) -> Option<&Expression> {
+        self.modulus.as_deref()
     }
 }
 
@@ -1505,13 +1558,30 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         };
 
         let mut uses = Vec::new();
-        // `use` is recognized by position, as `let` is: it starts a
-        // declaration only before the module's first function, where no
-        // other identifier may appear.
-        while !self.halted && self.current_is_word("use") {
+        let mut types = Vec::new();
+        // `use` and `type` are recognized by position, as `let` is: they
+        // start declarations only before the module's first function, where
+        // no other identifier may appear. The `use` declarations come first.
+        while !self.halted && (self.current_is_word("use") || self.current_is_word("type")) {
             let before = self.cursor;
-            if let Some(declaration) = self.parse_use_declaration() {
-                self.push_use(&mut uses, declaration);
+            if self.current_is_word("type") {
+                if let Some(declaration) = self.parse_type_declaration() {
+                    self.push_type(&mut types, declaration);
+                }
+            } else if types.is_empty() {
+                if let Some(declaration) = self.parse_use_declaration() {
+                    self.push_use(&mut uses, declaration);
+                }
+            } else {
+                self.report(
+                    DiagnosticCode::ExpectedFunctionDeclaration,
+                    "expected a `type` declaration or a function",
+                    self.current_span(),
+                    "a `use` declaration cannot follow a `type` declaration",
+                    "a module's `use` declarations come first, then its `type` declarations, \
+                     then its functions",
+                );
+                self.parse_use_declaration();
             }
             if !self.halted && self.cursor == before {
                 self.bump();
@@ -1530,6 +1600,21 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                         self.current_span(),
                         "a `use` declaration cannot follow a function",
                         "`use` declarations come first in a module, before its functions",
+                    );
+                    self.recover_to(&[
+                        TokenKind::KwSpec,
+                        TokenKind::KwImpl,
+                        TokenKind::RightBrace,
+                        TokenKind::Eof,
+                    ]);
+                }
+                TokenKind::Identifier if self.current_is_word("type") => {
+                    self.report(
+                        DiagnosticCode::ExpectedFunctionDeclaration,
+                        "expected a `spec` or `impl` function declaration",
+                        self.current_span(),
+                        "a `type` declaration cannot follow a function",
+                        "`type` declarations come before a module's functions",
                     );
                     self.recover_to(&[
                         TokenKind::KwSpec,
@@ -1587,6 +1672,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     span: self.join(keyword.span, right_brace.span),
                     name,
                     uses,
+                    types,
                     functions,
                 })
             }
@@ -1626,6 +1712,69 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             span: self.join(keyword.span, semicolon.span),
             name,
         })
+    }
+
+    /// Parses `type NAME = TYPE;`, with the current token the word `type`.
+    fn parse_type_declaration(&mut self) -> Option<TypeDeclaration> {
+        const SHAPE: &str = "a `type` declaration is written `type NAME = TYPE;`";
+        let recovery = [
+            TokenKind::Semicolon,
+            TokenKind::KwSpec,
+            TokenKind::KwImpl,
+            TokenKind::RightBrace,
+            TokenKind::Eof,
+        ];
+        let keyword = self.bump()?;
+        let Some(name) = self.parse_identifier("type name") else {
+            self.recover_to(&recovery);
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            }
+            return None;
+        };
+        let ty = self
+            .expect(TokenKind::Equal, "`=` after the type name", SHAPE)
+            .and_then(|_| self.parse_type_syntax("declared type", true, 0))
+            .map(|(ty, _)| ty);
+        let Some(ty) = ty else {
+            self.recover_to(&recovery);
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            }
+            return None;
+        };
+        let semicolon = self.consume_or_recover(
+            TokenKind::Semicolon,
+            "`;` after the declared type",
+            SHAPE,
+            &[
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ],
+        )?;
+        self.record_node().then(|| TypeDeclaration {
+            span: self.join(keyword.span, semicolon.span),
+            name,
+            ty,
+        })
+    }
+
+    #[inline(never)]
+    fn push_type(&mut self, types: &mut Vec<TypeDeclaration>, declaration: TypeDeclaration) {
+        if types.len() >= MAX_TYPES_PER_MODULE {
+            self.resource_limit_at(
+                format!("module has more than {MAX_TYPES_PER_MODULE} `type` declarations"),
+                declaration.span,
+            );
+            return;
+        }
+        if types.try_reserve(1).is_err() {
+            self.resource_limit_at("parser could not allocate `type` storage", declaration.span);
+            return;
+        }
+        types.push(declaration);
     }
 
     #[inline(never)]
@@ -1852,7 +2001,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             );
             return None;
         }
-        let ty = self.parse_type_syntax("parameter type", true)?;
+        let (ty, _) = self.parse_type_syntax("parameter type", true, 0)?;
         let span = self.join(name.span, ty.span);
         self.record_node().then_some(Parameter { span, name, ty })
     }
@@ -1887,7 +2036,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
 
     fn parse_typed_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
         let arrow = self.bump();
-        let result_type = self.parse_type_syntax("result type", true);
+        let result_type = self
+            .parse_type_syntax("result type", true, 0)
+            .map(|(ty, _)| ty);
         if result_type.is_none()
             && !matches!(
                 self.current_kind(),
@@ -2030,7 +2181,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`:` and the binding's type",
             "every binding states its type, as in `let t: Word[32] = x + y;`",
         )?;
-        let ty = self.parse_type_syntax("binding type", true)?;
+        let (ty, _) = self.parse_type_syntax("binding type", true, 0)?;
         self.expect(
             TokenKind::Equal,
             "`=` after the binding's type",
@@ -2228,7 +2379,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     ) -> Option<(Expression, usize)> {
         match joiner {
             Joiner::With => self.parse_update(operand, level),
-            Joiner::As | Joiner::Binary(_) => self.parse_conversion(operand),
+            Joiner::As | Joiner::Binary(_) => self.parse_conversion(operand, level),
         }
     }
 
@@ -2237,10 +2388,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn parse_conversion(
         &mut self,
         (operand, operand_height): (Expression, usize),
+        level: usize,
     ) -> Option<(Expression, usize)> {
         let keyword_span = self.bump()?.span;
-        let target = self.parse_type_syntax("conversion type", false)?;
-        let height = self.node_height(operand_height, keyword_span)?;
+        let (target, target_height) = self.parse_type_syntax("conversion type", false, level)?;
+        let height = self.node_height(operand_height.max(target_height), keyword_span)?;
         let span = self.join(operand.span, target.span);
         self.record_node().then_some((
             Expression {
@@ -2337,8 +2489,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         self.resource_limit_at(
             format!(
                 "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-                 for groups, calls, arrays, indices, loops, conditionals, updates, and prefix \
-                 operators"
+                 for groups, calls, arrays, indices, loops, conditionals, updates, moduli, and \
+                 prefix operators"
             ),
             span,
         );
@@ -2600,7 +2752,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     /// are parsed; the header and the node are built by helpers.
     fn parse_loop(&mut self, level: usize) -> Option<(Expression, usize)> {
         let inner = self.open_level(level)?;
-        let header = self.parse_loop_header()?;
+        let (header, type_height) = self.parse_loop_header(inner)?;
         let init = self.parse_expression(inner)?;
         self.expect(
             TokenKind::LeftBrace,
@@ -2608,12 +2760,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             LOOP_SHAPE_NOTE,
         )?;
         let step = self.parse_expression(inner)?;
-        self.finish_loop(header, init, step)
+        self.finish_loop(header, type_height, init, step)
     }
 
     /// Parses a loop from `for` through the `=` before its initial value.
     #[inline(never)]
-    fn parse_loop_header(&mut self) -> Option<Box<LoopExpression>> {
+    ///
+    /// Also returns the height of the accumulator type's modulus, or zero.
+    fn parse_loop_header(&mut self, level: usize) -> Option<(Box<LoopExpression>, usize)> {
         let keyword_span = self.bump()?.span;
         let index = self.parse_identifier("loop index")?;
         if !self.current_is_word("in") {
@@ -2651,7 +2805,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`:` and the accumulator's type",
             "every accumulator states its type, as in `with s: Word[32]^16 = x`",
         )?;
-        let ty = self.parse_type_syntax("accumulator type", true)?;
+        let (ty, type_height) = self.parse_type_syntax("accumulator type", true, level)?;
         self.expect(
             TokenKind::Equal,
             "`=` after the accumulator's type",
@@ -2662,16 +2816,19 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             span: keyword_span,
             kind: ExpressionKind::Name(index.clone()),
         };
-        Some(Box::new(LoopExpression {
-            keyword_span,
-            index,
-            start_span,
-            end_span,
-            accumulator,
-            ty,
-            init: placeholder.clone(),
-            step: placeholder,
-        }))
+        Some((
+            Box::new(LoopExpression {
+                keyword_span,
+                index,
+                start_span,
+                end_span,
+                accumulator,
+                ty,
+                init: placeholder.clone(),
+                step: placeholder,
+            }),
+            type_height,
+        ))
     }
 
     /// Completes a loop after its step: the closing `}`, the tree height,
@@ -2680,6 +2837,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn finish_loop(
         &mut self,
         mut header: Box<LoopExpression>,
+        type_height: usize,
         (init, init_height): (Expression, usize),
         (step, step_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
@@ -2690,7 +2848,10 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 "a loop's step is one expression that gives the accumulator's next value",
             )?
             .span;
-        let height = self.node_height(init_height.max(step_height), header.keyword_span)?;
+        let height = self.node_height(
+            init_height.max(step_height).max(type_height),
+            header.keyword_span,
+        )?;
         let span = self.join(header.keyword_span, right_brace);
         header.init = init;
         header.step = step;
@@ -3019,15 +3180,37 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         true
     }
 
-    /// Parses `Name`, `Name[WIDTH]`, and, when `array` is set, either one
-    /// followed by `^LENGTH`. A conversion target is never an array, so a `^`
-    /// after it stays an operator.
-    fn parse_type_syntax(&mut self, role: &str, array: bool) -> Option<TypeSyntax> {
+    /// Parses `Name`, `Name[WIDTH]`, `Mod[MODULUS]`, and, when `array` is
+    /// set, any of them followed by `^LENGTH`. A conversion target is never
+    /// an array, so a `^` after it stays an operator. A modulus is an
+    /// expression one nesting level deeper than `level`; its tree height, or
+    /// zero without one, is returned with the type so that an expression
+    /// holding the type counts it toward [`MAX_EXPRESSION_HEIGHT`].
+    fn parse_type_syntax(
+        &mut self,
+        role: &str,
+        array: bool,
+        level: usize,
+    ) -> Option<(TypeSyntax, usize)> {
         let name = self.parse_identifier(role)?;
         let mut end = name.span;
         let mut width_span = None;
+        let mut modulus = None;
+        let mut modulus_height = 0;
 
-        if self.current_kind() == TokenKind::LeftBracket {
+        if name.text == "Mod" && self.current_kind() == TokenKind::LeftBracket {
+            let inner = self.open_level(level)?;
+            self.bump();
+            let (expression, height) = self.parse_expression(inner)?;
+            let right_bracket = self.expect(
+                TokenKind::RightBracket,
+                "`]` after the modulus",
+                "a modulus type is written `Mod[MODULUS]`, as in `Mod[(1 << 255) - 19]`",
+            )?;
+            end = right_bracket.span;
+            modulus = Some(Box::new(expression));
+            modulus_height = height;
+        } else if self.current_kind() == TokenKind::LeftBracket {
             self.bump();
             let width = if self.current_kind() == TokenKind::Integer {
                 self.bump()
@@ -3085,19 +3268,23 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             if self.current_kind() == TokenKind::Caret {
                 self.expected(
                     "the end of the type after its array length",
-                    "an array's elements are `Int` or words; arrays of arrays are not part of \
-                     Orange 2026",
+                    "an array's elements are `Int`, `Bool`, words, or residues; arrays of \
+                     arrays are not part of Orange 2026",
                 );
                 return None;
             }
         }
 
-        self.record_node().then_some(TypeSyntax {
-            span: self.join(name.span, end),
-            name,
-            width_span,
-            length_span,
-        })
+        self.record_node().then_some((
+            TypeSyntax {
+                span: self.join(name.span, end),
+                name,
+                width_span,
+                modulus,
+                length_span,
+            },
+            modulus_height,
+        ))
     }
 
     fn parse_integer_literal(&mut self) -> Option<IntegerLiteral> {
@@ -4358,6 +4545,11 @@ mod tests {
         }
     }
 
+    /// The height of a type's modulus, or zero.
+    fn type_height(ty: &TypeSyntax) -> usize {
+        ty.modulus().map_or(0, tree_height)
+    }
+
     fn tree_height(expression: &Expression) -> usize {
         1 + match &expression.kind {
             ExpressionKind::Literal(_) | ExpressionKind::Name(_) => 0,
@@ -4367,7 +4559,9 @@ mod tests {
                 tree_height(&binary.left).max(tree_height(&binary.right))
             }
             ExpressionKind::Parenthesized(inner) => tree_height(inner),
-            ExpressionKind::Conversion(conversion) => tree_height(&conversion.operand),
+            ExpressionKind::Conversion(conversion) => {
+                tree_height(&conversion.operand).max(type_height(&conversion.target))
+            }
             ExpressionKind::Array(array) => {
                 array.elements.iter().map(tree_height).max().unwrap_or(0)
             }
@@ -4376,9 +4570,9 @@ mod tests {
             ExpressionKind::Update(update) => tree_height(&update.base)
                 .max(tree_height(&update.index))
                 .max(tree_height(&update.value)),
-            ExpressionKind::Loop(r#loop) => {
-                tree_height(&r#loop.init).max(tree_height(&r#loop.step))
-            }
+            ExpressionKind::Loop(r#loop) => tree_height(&r#loop.init)
+                .max(tree_height(&r#loop.step))
+                .max(type_height(&r#loop.ty)),
             ExpressionKind::Conditional(conditional) => conditional
                 .arms
                 .iter()
@@ -4724,8 +4918,8 @@ mod tests {
     fn bounds_expression_nesting_for_every_opener() {
         let message = format!(
             "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
-             for groups, calls, arrays, indices, loops, conditionals, updates, and prefix \
-             operators"
+             for groups, calls, arrays, indices, loops, conditionals, updates, moduli, and \
+             prefix operators"
         );
         type Form = (&'static str, fn(usize) -> String, &'static str);
         let forms: [Form; 14] = [
@@ -5453,8 +5647,8 @@ mod tests {
         assert_eq!(
             parsed.diagnostics[0].notes(),
             [
-                "an array's elements are `Int` or words; arrays of arrays are not part of Orange \
-              2026"
+                "an array's elements are `Int`, `Bool`, words, or residues; arrays of arrays are \
+                 not part of Orange 2026"
             ]
         );
     }
@@ -6329,5 +6523,247 @@ mod tests {
             source.slice(parsed.diagnostics[0].primary_span()),
             Some(format!("use u{MAX_USES_PER_MODULE};").as_str())
         );
+    }
+
+    #[test]
+    fn builds_type_declarations_and_modulus_types_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module field { use h; type F = Mod[(1 << 255) - 19]; type  V = F^4 ; ",
+            "spec g(x: V) -> Mod[7] { (x[0] as Mod[3329]) as Mod[7] } ",
+            "spec k() -> Mod[2] { let t: Mod[2]^3 = for i in 0..1 with s: Mod[2]^3 = [0; 3] { s }; t[1] } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let slice = |span: Span| source.slice(span).unwrap();
+        let modulus = |ty: &TypeSyntax| ty.modulus().map(|modulus| slice(modulus.span()));
+        assert_eq!(ast.module.uses().len(), 1);
+        assert_eq!(
+            ast.module
+                .types()
+                .iter()
+                .map(|declaration| (
+                    declaration.name().text.as_str(),
+                    slice(declaration.span()),
+                    slice(declaration.ty().span),
+                    modulus(declaration.ty()),
+                    declaration.ty().length_span.map(slice)
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "F",
+                    "type F = Mod[(1 << 255) - 19];",
+                    "Mod[(1 << 255) - 19]",
+                    Some("(1 << 255) - 19"),
+                    None
+                ),
+                ("V", "type  V = F^4 ;", "F^4", None, Some("4")),
+            ]
+        );
+        let f_modulus = ast.module.types()[0].ty().modulus().unwrap();
+        assert_eq!(shape(source, f_modulus), "([(1 << 255)] - 19)");
+
+        let [g, k] = ast.module.functions() else {
+            panic!("expected two functions");
+        };
+        let FunctionBody::Typed(body) = &g.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(modulus(&g.parameters()[0].ty), None);
+        assert_eq!(modulus(&body.result_type), Some("7"));
+        let ExpressionKind::Conversion(outer) = &body.expression.kind else {
+            panic!("expected a conversion");
+        };
+        assert_eq!(modulus(&outer.target), Some("7"));
+        let ExpressionKind::Parenthesized(inner) = &outer.operand.kind else {
+            panic!("expected a group");
+        };
+        let ExpressionKind::Conversion(inner) = &inner.kind else {
+            panic!("expected a conversion");
+        };
+        assert_eq!(slice(inner.target.span), "Mod[3329]");
+        assert_eq!(modulus(&inner.target), Some("3329"));
+        let FunctionBody::Typed(body) = &k.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(modulus(&body.bindings[0].ty), Some("2"));
+        let ExpressionKind::Loop(r#loop) = &body.bindings[0].value.kind else {
+            panic!("expected a loop");
+        };
+        assert_eq!(slice(r#loop.ty.span), "Mod[2]^3");
+        assert_eq!(modulus(&r#loop.ty), Some("2"));
+
+        // `type` is a word only at the head of a module, and `Mod` takes a
+        // modulus only when a bracket follows it.
+        let (_, lexed, parsed) = parse_text(concat!(
+            "edition 2026; module type { ",
+            "spec type(type: Int, x: Mod) -> Int { let type: Int = type; type } ",
+            "spec Mod(Mod: Int) -> Int { Mod } ",
+            "}"
+        ));
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let ast = parsed.ast.unwrap();
+        assert!(ast.module.types().is_empty());
+        assert_eq!(ast.module.functions()[0].parameters()[1].ty.modulus(), None);
+    }
+
+    #[test]
+    fn rejects_malformed_type_declarations_and_moduli() {
+        let cases = [
+            "type;",
+            "type F;",
+            "type F = ;",
+            "type F = Int",
+            "type 1 = Int;",
+            "type F = Int^2^2;",
+            "type F = Mod[];",
+            "type F = Mod[7;",
+            "type F = Mod[7]] ;",
+            "type F = Mod[7](;",
+            "spec f(x: Mod[) -> Int { 0 }",
+            "spec f(x: Mod[7 7]) -> Int { 0 }",
+            "spec f() -> Int { 0 as Mod[] }",
+        ];
+        for member in cases {
+            let text = format!("edition 2026; module m {{ {member} spec g() -> Int {{ 1 }} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{member:?}");
+            assert!(parsed.ast.is_none(), "accepted {member:?}");
+            assert!(!parsed.diagnostics.is_empty(), "{member:?}");
+            assert!(
+                parsed.diagnostics.iter().all(|diagnostic| matches!(
+                    diagnostic.code(),
+                    DiagnosticCode::ExpectedSyntax
+                        | DiagnosticCode::TrailingSyntax
+                        | DiagnosticCode::ExpectedFunctionDeclaration
+                )),
+                "{member:?}: {:?}",
+                parsed.diagnostics
+            );
+        }
+
+        let (sources, _, parsed) = parse_text(concat!(
+            "edition 2026; module m { use a; type F = Mod[7]; use b; ",
+            "spec f() -> F { 1 } type G = F; ",
+            "}"
+        ));
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.code(),
+                    diagnostic.message(),
+                    source.slice(diagnostic.primary_span()).unwrap(),
+                    diagnostic.label(),
+                    diagnostic.notes().to_vec()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    DiagnosticCode::ExpectedFunctionDeclaration,
+                    "expected a `type` declaration or a function",
+                    "use",
+                    "a `use` declaration cannot follow a `type` declaration",
+                    vec![
+                        "a module's `use` declarations come first, then its `type` declarations, \
+                         then its functions"
+                            .to_owned()
+                    ]
+                ),
+                (
+                    DiagnosticCode::ExpectedFunctionDeclaration,
+                    "expected a `spec` or `impl` function declaration",
+                    "type",
+                    "a `type` declaration cannot follow a function",
+                    vec!["`type` declarations come before a module's functions".to_owned()]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn bounds_type_declarations_per_module() {
+        let module = |count: usize| {
+            format!(
+                "edition 2026; module m {{ {} spec f() -> Int {{ 1 }} }}",
+                (0..count)
+                    .map(|index| format!("type T{index} = Mod[{}];", index + 2))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
+        };
+        let (_, _, parsed) = parse_text(&module(MAX_TYPES_PER_MODULE));
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        assert_eq!(
+            parsed.ast.unwrap().module.types().len(),
+            MAX_TYPES_PER_MODULE
+        );
+
+        let (sources, _, parsed) = parse_text(&module(MAX_TYPES_PER_MODULE + 1));
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(
+            parsed.diagnostics[0].code(),
+            DiagnosticCode::ParserResourceLimit
+        );
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            format!("module has more than {MAX_TYPES_PER_MODULE} `type` declarations")
+        );
+        assert_eq!(
+            source.slice(parsed.diagnostics[0].primary_span()),
+            Some(
+                format!(
+                    "type T{MAX_TYPES_PER_MODULE} = Mod[{}];",
+                    MAX_TYPES_PER_MODULE + 2
+                )
+                .as_str()
+            )
+        );
+    }
+
+    #[test]
+    fn a_modulus_counts_toward_nesting_and_the_height_of_its_expression() {
+        // A group, a conversion, and an outer conversion stand above the
+        // modulus `1 + 1 + ...`, whose height is one more than its additions;
+        // an accumulator's type counts toward its loop as a target does.
+        let tall = |additions: usize| format!("1{}", " + 1".repeat(additions));
+        let additions = MAX_EXPRESSION_HEIGHT - 4;
+        let forms: [fn(&str) -> String; 2] = [
+            |modulus| format!("(a as Mod[{modulus}]) as Word[32]"),
+            |modulus| format!("(for i in 0..1 with s: Mod[{modulus}] = 0 {{ s }}) as Word[32]"),
+        ];
+        let message =
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
+        for form in forms {
+            let (_, expression) = body_expression(&spec_source(&form(&tall(additions))));
+            assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
+            assert_resource_limited(&form(&tall(additions + 1)), &message, "as");
+        }
+
+        // A modulus opens one nesting level.
+        let nested = |groups: usize| {
+            format!(
+                "{}a as Mod[7]{} as Word[32]",
+                "(".repeat(groups),
+                ")".repeat(groups)
+            )
+        };
+        body_expression(&spec_source(&nested(MAX_EXPRESSION_NESTING - 1)));
+        let message = format!(
+            "expression nesting exceeds the {MAX_EXPRESSION_NESTING}-level limit \
+             for groups, calls, arrays, indices, loops, conditionals, updates, moduli, and \
+             prefix operators"
+        );
+        assert_resource_limited(&nested(MAX_EXPRESSION_NESTING), &message, "[");
     }
 }

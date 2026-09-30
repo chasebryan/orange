@@ -1,0 +1,11 @@
+// S3i conformance: a module's `use` declarations come first, then its
+// `type` declarations, then its functions; `Mod` takes one modulus in
+// brackets.
+edition 2026;
+module order {
+  type F = Mod[7];
+  use sha256;
+  spec f() -> F { 0 }
+  type G = Mod[11];
+  spec g(x: Mod[7) -> Int { 0 }
+}

@@ -274,8 +274,9 @@ Division by zero is defined (`x / 0` is 0 and `x % 0` is x), so nothing fails
 at run time, and `Bool` is not a number: it converts to nothing and has only
 `!`, `&&`, `||`, `==`, and `!=`. A conditional is a choice between values, not
 a claim about how a machine branches; RFC 7748 asks for a constant-time swap,
-and Orange makes no timing claim until it generates code. This slice, S3f, is
-implemented and tested; its specification is in review as
+and Orange makes no timing claim until it generates code.
+[S3i](#fields-as-types) puts the field in the type, so the ladder writes no
+reduction at all. This slice, S3f, is implemented and tested; its specification is in review as
 [OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md).
 
 ### Tables keyed by data
@@ -370,6 +371,61 @@ the same whoever uses it. This slice, S3h, is implemented and tested; its
 specification is in review as
 [OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md).
 
+### Fields as types
+
+RFC 7748 writes `AA = A^2` and means the square in the field of 2^255 − 19
+elements. In Orange that field is a type. `Mod[m]` holds the integers modulo
+m, its `+`, `-`, and `*` reduce by themselves, and the modulus is a constant
+written the way the standard writes it; `type` names it once for the rest of
+the module. The rung of the Montgomery ladder is then the RFC's formulas, line
+for line, with no reduction in sight:
+
+```orange
+module x25519 {
+  // RFC 7748 section 4.1: the field of p = 2^255 - 19 elements.
+  type F = Mod[(1 << 255) - 19];
+  // [x_2, z_2, x_3, z_3].
+  type Ladder = F^4;
+
+  spec ladder(x1: F, s: Ladder) -> Ladder {
+    let a: F = s[0] + s[1];
+    let aa: F = a * a;
+    let b: F = s[0] - s[1];
+    let bb: F = b * b;
+    let e: F = aa - bb;
+    let c: F = s[2] + s[3];
+    let d: F = s[2] - s[3];
+    let da: F = d * a;
+    let cb: F = c * b;
+    [aa * bb, e * (aa + 121665 * e), (da + cb) * (da + cb), x1 * ((da - cb) * (da - cb))]
+  }
+}
+```
+
+Division multiplies by the inverse, and gives 0 when there is none, which is
+exactly what the RFC's `x_2 * (z_2^(p - 2))` computes, so the ladder ends in
+`s[0] / s[1]`. The [X25519 fixture](compiler/fixtures/s3i/valid-x25519.or)
+reproduces the RFC's test vector with no `%` anywhere, the
+[Poly1305 fixture](compiler/fixtures/s3i/valid-poly1305.or) keeps its
+accumulator in `Mod[(1 << 130) - 5]`, and the
+[field fixture](compiler/fixtures/s3i/valid-fields.or) computes constants in
+the rings their standards define, from ML-KEM's modulo 3329 to the field of
+P-256:
+
+```text
+fields::d: Mod[(1 << 255) - 19] = 37095705934669439343138083508754565189542113879843219016388785533085940283555
+fields::p256_generator_on_curve: Bool = true
+```
+
+Two moduli are two types, so a residue modulo 7 never meets one modulo 11
+without an `as`, and `as` also turns a residue into its least residue as an
+`Int` or a word. Residues have no order, no remainder, and no bits: a standard
+that compares field elements compares least residues, and
+`(x as Int) < (y as Int)` says so. A modulus may be as wide as 2^521 − 1, the
+prime of P-521. This slice, S3i, is implemented and tested; its specification
+is in review as
+[OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -395,8 +451,9 @@ cryptography.
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
 | Programs of more than one module, each in its own file, with calls qualified by module | Working; specification in review ([OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md)) |
+| Integers modulo a constant, `Mod[m]`, with total division, and `type` declarations | Working; specification in review ([OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Mixed-type tuples, a type of integers modulo a prime, imports of names into scope | Not yet |
+| Mixed-type tuples, functions generic over a modulus, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -414,9 +471,9 @@ git clone https://github.com/chasebryan/orange.git
 cd orange
 
 # Build and try the compiler
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3g/valid-aes128.or
-cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3f/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
@@ -477,7 +534,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, and modules in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, and modular arithmetic in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -500,9 +557,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [fixed-length arrays](docs/ARRAYS_2026.md),
   [bounded loops](docs/LOOPS_2026.md),
   [conditions and division](docs/CONDITIONS_2026.md),
-  [lookups keyed by data](docs/LOOKUPS_2026.md), and
-  [programs of more than one module](docs/MODULES_2026.md): the definition of
-  what the compiler accepts today.
+  [lookups keyed by data](docs/LOOKUPS_2026.md),
+  [programs of more than one module](docs/MODULES_2026.md), and
+  [integers modulo a constant](docs/MODULAR_2026.md): the definition of what
+  the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

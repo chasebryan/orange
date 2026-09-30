@@ -24,10 +24,13 @@ meaning. It accepts no D-004 candidate.
 > [!NOTE]
 > [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, extends this
 > document with indices that depend on data, such as the S-box lookup of AES,
-> each proved in range from its type, and cheaper updates, and
+> each proved in range from its type, and cheaper updates,
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
-> use others and call their functions by module name. Every source this
-> document accepts keeps its meaning under both.
+> use others and call their functions by module name, and
+> [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, adds the
+> integers modulo a constant, whose division is total in the same spirit:
+> `x / y` is 0 when y has no inverse. Every source this document accepts keeps
+> its meaning under all three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
