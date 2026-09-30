@@ -4862,7 +4862,7 @@ fn condition_and_comparison_errors_are_reported_once_in_checking_order() {
         "  spec gives(x: Int) -> Int { x < 1 }\n",
         "  spec untyped() -> Bool { 1 < 2 }\n",
         "  spec order(a: Bool, b: Bool) -> Bool { a < b }\n",
-        "  spec arrays(x: Word[8]^2, y: Word[8]^2) -> Bool { x == y }\n",
+        "  spec arrays(x: Word[8]^2, y: Word[8]^2) -> Bool { x < y }\n",
         "  spec mixed(x: Word[8], y: Int) -> Bool { x == y }\n",
         "  spec literal() -> Bool { 1 }\n",
         "  spec both() -> Bool { true && 1 }\n",
@@ -4898,8 +4898,8 @@ fn condition_and_comparison_errors_are_reported_once_in_checking_order() {
         ),
         (
             DiagnosticCode::UnsupportedOperator,
-            "==",
-            "`==` is not defined for `Word[8]^2`",
+            "<",
+            "`<` is not defined for `Word[8]^2`",
         ),
         (
             DiagnosticCode::TypeMismatch,
@@ -5014,7 +5014,13 @@ fn condition_and_comparison_errors_are_reported_once_in_checking_order() {
         notes(2),
         ["`Bool` values are compared with `==` and `!=`; they have no order"]
     );
-    assert_eq!(notes(3), ["compare elements, such as `x[0] == y[0]`"]);
+    assert_eq!(
+        notes(3),
+        [
+            "arrays are compared whole with `==` and `!=`; they have no order, so compare \
+             elements, such as `x[0] < y[0]`"
+        ]
+    );
     assert_eq!(
         notes(5),
         ["the `Bool` values are written `true` and `false`"]
@@ -7534,7 +7540,7 @@ fn tuple_types_and_selections_are_checked_once_in_order() {
         "  spec selected(p: Pair) -> Bool { p.0 }\n",
         "  spec indexed(p: Pair) -> Int { p[0] }\n",
         "  spec updated(p: Pair) -> Pair { p with [0] = 1 }\n",
-        "  spec equal(p: Pair, q: Pair) -> Bool { p == q }\n",
+        "  spec equal(p: Pair, q: Pair) -> Bool { p < q }\n",
         "  spec added(p: Pair, q: Pair) -> Pair { p + q }\n",
         "  spec negated(p: Pair) -> Pair { -p }\n",
         "  spec converted(p: Pair) -> Int { p as Int }\n",
@@ -7542,8 +7548,9 @@ fn tuple_types_and_selections_are_checked_once_in_order() {
         "  spec pattern() -> Int { let (a: Int, b: Bool) = (1, 2); a }\n",
         "  spec not_a_value() -> Int { let (a: Int, b: Int) = 5; a }\n",
         "  spec nested_name() -> Int { let (a: (Int, Int), b: Int) = (1, 2); b }\n",
-        "  spec compared(p: Pair) -> Bool { (1, 2) == p }\n",
-        "  spec compared_arrays(x: Int^2) -> Bool { [1, 2] != x }\n",
+        "  spec compared(p: Pair) -> Bool { (1, 2) <= p }\n",
+        "  spec compared_arrays(x: Int^2) -> Bool { [1, 2] > x }\n",
+        "  spec written() -> Bool { (1, 2) >= (1, 2) }\n",
     ));
     assert_eq!(
         reported(&fixture, &result),
@@ -7618,8 +7625,8 @@ fn tuple_types_and_selections_are_checked_once_in_order() {
             ),
             (
                 DiagnosticCode::UnsupportedOperator,
-                "==",
-                String::from("`==` is not defined for `(Int, Int)`")
+                "<",
+                String::from("`<` is not defined for `(Int, Int)`")
             ),
             (
                 DiagnosticCode::UnsupportedOperator,
@@ -7658,13 +7665,18 @@ fn tuple_types_and_selections_are_checked_once_in_order() {
             ),
             (
                 DiagnosticCode::UnsupportedOperator,
-                "==",
-                String::from("`==` is not defined for a tuple")
+                "<=",
+                String::from("`<=` is not defined for `(Int, Int)`")
             ),
             (
                 DiagnosticCode::UnsupportedOperator,
-                "!=",
-                String::from("`!=` is not defined for an array")
+                ">",
+                String::from("`>` is not defined for `Int^2`")
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                ">=",
+                String::from("`>=` is not defined for arrays and tuples")
             ),
         ]
     );
@@ -10233,4 +10245,251 @@ fn calls_nested_in_arguments_and_branches_are_fitted_once_per_level() {
              spec f(x: Word[32]) -> Word[32] {{ {body} }}\n"
         ));
     }
+}
+
+#[test]
+fn tests_are_checked_as_truth_valued_functions_after_the_modules_own() {
+    let (fixture, core) = accepted(concat!(
+        "  spec double[n in 1..3](x: Word[8]^n) -> Word[8]^n { x }\n",
+        "  test \"doubled\" { let x: Word[8]^2 = [1, 2]; double(x) == [1, 2] }\n",
+        "  spec answer() -> Int { 42 }\n",
+        "  test \"the answer\" { answer() != 41 }\n",
+    ));
+    // The module's functions and instances keep their order and identities;
+    // the tests follow them in source order.
+    let rows = core
+        .functions
+        .iter()
+        .map(|function| {
+            (
+                function.id.index(),
+                function.name.as_str(),
+                function.instance.as_str(),
+                function.title.as_deref(),
+                fixture.source().slice(function.name_span).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rows,
+        [
+            (0, "double", "[1]", None, "double"),
+            (1, "double", "[2]", None, "double"),
+            (2, "answer", "", None, "answer"),
+            (3, "test", "", Some("doubled"), "\"doubled\""),
+            (4, "test", "", Some("the answer"), "\"the answer\""),
+        ]
+    );
+    assert_eq!(core.tests, 2);
+    assert_eq!(
+        core.entry_functions()
+            .iter()
+            .map(|function| function.name.as_str())
+            .collect::<Vec<_>>(),
+        ["double", "double", "answer"]
+    );
+    assert_eq!(
+        core.tests()
+            .iter()
+            .map(|test| test.title())
+            .collect::<Vec<_>>(),
+        [Some("doubled"), Some("the answer")]
+    );
+    let test = &core.functions[3];
+    assert!(test.parameters.is_empty());
+    assert_eq!(test.result_type, CoreType::Bool);
+    let array = array_of(CoreType::Word8, 2);
+    assert_eq!(
+        core_nodes(&fixture, test).last().unwrap(),
+        &(
+            format!("compare == on {array}"),
+            "double(x) == [1, 2]",
+            CoreType::Bool
+        )
+    );
+}
+
+#[test]
+fn whole_values_of_every_type_compare_with_equal_and_not_equal() {
+    let (fixture, core) = accepted(concat!(
+        "  type Pair = (Word[32], Word[8]^2);\n",
+        "  spec words(x: Word[8]^2, y: Word[8]^2) -> Bool { x == y }\n",
+        "  spec pairs(p: Pair) -> Bool { p != (1, [2, 3]) }\n",
+        "  spec residues(a: Mod[7]^2) -> Bool { [1, -1] == a }\n",
+        "  spec truths(t: Bool^2) -> Bool { t == [true, false] }\n",
+        "  spec numbers(n: (Int, Bool)) -> Bool { (1, true) != n }\n",
+    ));
+    let compared = core
+        .functions
+        .iter()
+        .map(|function| core_nodes(&fixture, function).pop().unwrap())
+        .collect::<Vec<_>>();
+    let array = |element: CoreType| array_of(element, 2);
+    let pair = tuple_of(&[CoreType::Word32, array(CoreType::Word8)]);
+    let numbers = tuple_of(&[CoreType::Int, CoreType::Bool]);
+    assert_eq!(
+        compared,
+        [
+            (
+                format!("compare == on {}", array(CoreType::Word8)),
+                "x == y",
+                CoreType::Bool
+            ),
+            (
+                format!("compare != on {pair}"),
+                "p != (1, [2, 3])",
+                CoreType::Bool
+            ),
+            (
+                format!("compare == on {}", array(residue_type(7))),
+                "[1, -1] == a",
+                CoreType::Bool
+            ),
+            (
+                format!("compare == on {}", array(CoreType::Bool)),
+                "t == [true, false]",
+                CoreType::Bool
+            ),
+            (
+                format!("compare != on {numbers}"),
+                "(1, true) != n",
+                CoreType::Bool
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_titles_are_checked_once_in_source_order() {
+    let long = "x".repeat(MAX_TEST_TITLE_BYTES + 1);
+    let longest = "y".repeat(MAX_TEST_TITLE_BYTES);
+    let (fixture, result) = rejected(&format!(
+        "  test \"\" {{ true }}\n  \
+         test \"{long}\" {{ true }}\n  \
+         test \"{longest}\" {{ true }}\n  \
+         test \"tab\there\" {{ true }}\n  \
+         test \"a\\\\b\" {{ true }}\n  \
+         test \"caf\u{e9}\" {{ true }}\n  \
+         test \"same\" {{ true }}\n  \
+         test \"same\" {{ 1 }}\n  \
+         test \"same\" {{ true }}\n  \
+         test \"number\" {{ 3 }}\n"
+    ));
+    let long_title = format!("\"{long}\"");
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::TestTitle,
+                "\"\"",
+                String::from("this test's title is empty")
+            ),
+            (
+                DiagnosticCode::TestTitle,
+                long_title.as_str(),
+                format!(
+                    "this test's title is {} bytes long",
+                    MAX_TEST_TITLE_BYTES + 1
+                )
+            ),
+            (
+                DiagnosticCode::TestTitle,
+                "\"tab\there\"",
+                String::from("a test's title holds U+0009, which is not printable ASCII")
+            ),
+            (
+                DiagnosticCode::TestTitle,
+                "\"a\\\\b\"",
+                String::from("a test's title holds no backslash")
+            ),
+            (
+                DiagnosticCode::TestTitle,
+                "\"caf\u{e9}\"",
+                String::from("a test's title holds U+00E9, which is not printable ASCII")
+            ),
+            (
+                DiagnosticCode::TestTitle,
+                "\"same\"",
+                String::from("two tests of this module share a title")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "1",
+                String::from("an integer literal cannot have type `Bool`")
+            ),
+            (
+                DiagnosticCode::TestTitle,
+                "\"same\"",
+                String::from("two tests of this module share a title")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "3",
+                String::from("an integer literal cannot have type `Bool`")
+            ),
+        ]
+    );
+    // A repeated title points at the first test that used it.
+    let repeat = &result.diagnostics[5];
+    let [first] = repeat.secondary_spans() else {
+        panic!("expected one secondary span: {repeat:?}");
+    };
+    assert_eq!(first.label(), "first test is here");
+    assert_eq!(fixture.source().slice(first.span()), Some("\"same\""));
+    assert!(first.span().start() < repeat.primary_span().start());
+    assert_eq!(
+        repeat.notes(),
+        [
+            "a test's title is 1 through 128 printable ASCII characters, with no \
+             backslash, and no two tests of a module share one"
+        ]
+    );
+    assert_eq!(result.diagnostics[2].label(), "at byte 3 of the title");
+}
+
+#[test]
+fn a_test_is_checked_only_in_the_module_it_is_run_from() {
+    // A used module's tests are not run from the root, so they are not
+    // checked there; its functions are, and the root's tests call them.
+    let program = Program::new(&[
+        "edition 2026; module root { use helper; \
+         test \"twice\" { helper::twice(21) == 42 } }",
+        "edition 2026; module helper { \
+         spec twice(x: Int) -> Int { x * 2 } \
+         test \"\" { 1 } }",
+    ]);
+    let result = program.analyze();
+    assert_eq!(result.diagnostics, []);
+    let core = result.core.unwrap();
+    assert_eq!(core.tests, 1);
+    assert_eq!(
+        core.tests()
+            .iter()
+            .map(|test| test.title())
+            .collect::<Vec<_>>(),
+        [Some("twice")]
+    );
+    // The same module is checked in full as the root.
+    let alone = Program::new(&["edition 2026; module helper { \
+         spec twice(x: Int) -> Int { x * 2 } \
+         test \"\" { 1 } }"]);
+    let codes = alone
+        .analyze()
+        .diagnostics
+        .iter()
+        .map(Diagnostic::code)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        codes,
+        [DiagnosticCode::TestTitle, DiagnosticCode::TypeMismatch]
+    );
+}
+
+#[test]
+fn a_tests_moduli_and_types_are_resolved_with_the_modules() {
+    let (_, core) = accepted(concat!(
+        "  type F = Mod[(1 << 255) - 19];\n",
+        "  test \"a field\" { let a: F = -1; let b: Mod[7] = 6; ((a + 1) == 0) && ((b + 1) == 0) }\n",
+    ));
+    assert_eq!(core.tests, 1);
 }

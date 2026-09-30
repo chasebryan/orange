@@ -42,8 +42,11 @@ meaning. It accepts no D-004 candidate.
 > `field::cube[Kyber](5)`: a type entry names a type in the caller's module,
 > matched by equality with the types the callee lists.
 > [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, lets `orangec
-> eval --spec` evaluate only the named functions of the root module. Every
-> source this document accepts keeps its meaning under all eight.
+> eval --spec` evaluate only the named functions of the root module.
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, adds known-answer
+> tests, of which only the root module's are checked and run: a used module's
+> tests are neither, until that module is the root. Every source this document
+> accepts keeps its meaning under all nine.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

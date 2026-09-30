@@ -541,9 +541,9 @@ designers name them, and reproduces the designers' known answers:
 chacha20::quarter_round_vector: (Word[32], Word[32], Word[32], Word[32]) = (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
 ```
 
-A tuple's elements are scalars and arrays, never tuples, and no operator
-applies to a whole tuple: `p == q` is an error, and `p.0 == q.0` says which
-element is compared. A pattern's names follow the rules of every other name,
+A tuple's elements are scalars and arrays, never tuples, and no arithmetic
+applies to a whole tuple: `p + q` is an error, and `p.0 + q.0` says which
+elements are added. Since S3q, `p == q` compares two tuples whole. A pattern's names follow the rules of every other name,
 with no shadowing. This slice, S3k, is implemented and tested; its
 specification is in review as
 [OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md).
@@ -963,6 +963,61 @@ longer number. This slice, S3p, is implemented and tested; its specification
 is in review as
 [OEP-0019](docs/governance/oeps/OEP-0019-orange-2026-lengths.md).
 
+### Known answers beside the algorithm
+
+Every standard ends in numbers: a key, a nonce, and the bytes an
+implementation must give from them. In Orange those numbers live in the
+program, as tests beside the functions they check, each titled with where its
+claim comes from:
+
+```orange
+test "2.1.1: the quarter round" {
+  quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+    == (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+}
+
+test "2.5.2: Poly1305 of the Forum's name" {
+  let key: Word[8]^32 =
+    hex"85 d6 be 78 57 55 6d 33 7f 44 52 fe 42 d5 06 a8" ++
+      hex"01 03 80 8a fb 0d b2 fd 4a bf f6 af 41 49 f5 1b";
+  let message: Word[8]^34 = "Cryptographic Forum Research Group";
+  mac(key, message ++ [0; 14], 2) == hex"a8 06 1d c1 30 51 36 c6 c2 2b 8b af 0c 01 27 a9"
+}
+```
+
+A test is a title and a claim: a `Bool` expression, with its own `let`
+bindings, over the module's functions. `==` and `!=` compare arrays and tuples
+whole, and every element is compared wherever they differ, so what a
+comparison costs says nothing about where. `orangec test` checks the program
+and runs its tests in order:
+
+```console
+$ orangec test compiler/fixtures/s3q/valid-rfc8439-tests.or
+test "2.1.1: the quarter round" ... ok
+test "2.3.2: the block function" ... ok
+test "A.1 #1: the zero key's key stream, block 0" ... ok
+test "A.1 #2: the zero key's key stream, block 1" ... ok
+test "the nonce changes every block" ... ok
+test "2.5.2: Poly1305 of the Forum's name" ... ok
+test "A.3 #1: Poly1305 of zeros under the zero key" ... ok
+7 tests: 7 passed, 0 failed
+```
+
+A claim that fails shows both sides and where they part:
+
+```text
+test "a tuple holding an array" ... FAILED
+    left:  (0x01, [0x02, 0x03, 0x04])
+    right: (0x01, [0x02, 0x03, 0x05])
+    first difference at .1[2]
+```
+
+`orangec test` exits with status 1 when any test fails, so a claim that stops
+holding stops the build. Only the tests of the file given are run, and
+`orangec eval` runs none. This slice, S3q, is implemented and tested; its
+specification is in review as
+[OEP-0020](docs/governance/oeps/OEP-0020-orange-2026-tests.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -996,6 +1051,7 @@ cryptography.
 | Byte orders: `as big` and `as little` read words as words of another width, a number, or a residue, and write numbers as words | Working; specification in review ([OEP-0017](docs/governance/oeps/OEP-0017-orange-2026-byte-order.md)) |
 | Type parameters: one `spec` for a list of types, such as several fields or word widths, each instance checked before anything runs | Working; specification in review ([OEP-0018](docs/governance/oeps/OEP-0018-orange-2026-type-parameters.md)) |
 | Arrays, literals, and byte strings of up to 65,536 elements, and `orangec eval --steps`, `--spec`, and `--stats` | Working; specification in review ([OEP-0019](docs/governance/oeps/OEP-0019-orange-2026-lengths.md)) |
+| Known-answer tests `test "TITLE" { claim }` beside the functions, `==` on whole arrays and tuples, and `orangec test` | Working; specification in review ([OEP-0020](docs/governance/oeps/OEP-0020-orange-2026-tests.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
@@ -1015,6 +1071,7 @@ git clone https://github.com/chasebryan/orange.git
 cd orange
 
 # Build and try the compiler
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --stats compiler/fixtures/s3p/valid-rfc8439.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
@@ -1044,6 +1101,7 @@ Markdown lint, workflow audits, and link checks run only in CI.
 ```text
 Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
        orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
+       orangec test [--steps <N>] [--stats] <FILE>
        orangec keygen [--scheme <NAME>] [-o <FILE>]
        orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
        orangec schemes [<NAME>...]
@@ -1052,6 +1110,7 @@ Commands:
   check    Perform lexical, syntactic, and semantic validation
   eval     Reference-evaluate one source after complete validation
   lex      Print the deterministic token stream
+  test     Run one source's known-answer tests after complete validation
   keygen   Make a secret key for a scheme [default: xchacha20_poly1305]
   enc      Seal a file with the scheme its key belongs to
   dec      Open a sealed file, writing nothing unless all of it is authentic
@@ -1080,7 +1139,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, and long arrays in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, and known-answer tests in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -1109,9 +1168,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [blocks](docs/BLOCKS_2026.md), [tuples](docs/TUPLES_2026.md),
   [bytes](docs/BYTES_2026.md), [sizes](docs/SIZES_2026.md),
   [byte order](docs/ORDER_2026.md),
-  [type parameters](docs/TYPE_PARAMETERS_2026.md), and
-  [lengths and evaluation controls](docs/LENGTHS_2026.md): the definition of
-  what the compiler accepts today.
+  [type parameters](docs/TYPE_PARAMETERS_2026.md),
+  [lengths and evaluation controls](docs/LENGTHS_2026.md), and
+  [known-answer tests](docs/TESTS_2026.md): the definition of what the
+  compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

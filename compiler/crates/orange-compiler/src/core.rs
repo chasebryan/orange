@@ -39,6 +39,8 @@ pub struct CoreModule {
     pub(crate) functions: Vec<CoreFunction>,
     /// Position of the root's first function in `functions`.
     pub(crate) entry: usize,
+    /// How many of the last functions are the root's known-answer tests.
+    pub(crate) tests: usize,
 }
 
 impl CoreModule {
@@ -55,17 +57,29 @@ impl CoreModule {
     }
 
     /// Returns every typed function of the program: the used modules'
-    /// functions in dependency order, then the root's. A function's position
-    /// is its identity's index.
+    /// functions in dependency order, then the root's, then the root's
+    /// known-answer tests. A function's position is its identity's index.
     #[must_use]
     pub fn functions(&self) -> &[CoreFunction] {
         &self.functions
     }
 
-    /// Returns the root module's typed functions in source order.
+    /// Returns the root module's typed functions in source order, without
+    /// its tests.
     #[must_use]
     pub fn entry_functions(&self) -> &[CoreFunction] {
-        self.functions.get(self.entry..).unwrap_or_default()
+        let end = self.functions.len().saturating_sub(self.tests);
+        self.functions.get(self.entry..end).unwrap_or_default()
+    }
+
+    /// Returns the root module's known-answer tests in source order: each a
+    /// function without parameters whose result type is `Bool` and which
+    /// has a [title](CoreFunction::title). Tests of the modules the root
+    /// uses are not part of its Core.
+    #[must_use]
+    pub fn tests(&self) -> &[CoreFunction] {
+        let start = self.functions.len().saturating_sub(self.tests);
+        self.functions.get(start..).unwrap_or_default()
     }
 }
 
@@ -120,6 +134,9 @@ pub struct CoreFunction {
     /// Conditionals of the bindings, the body, and the loops, numbered in
     /// source order of their `if` keywords.
     pub(crate) conditionals: Vec<CoreConditional>,
+    /// The title of a known-answer test, as written between its quotes;
+    /// `None` for every function that is not a test.
+    pub(crate) title: Option<String>,
 }
 
 impl CoreFunction {
@@ -206,6 +223,14 @@ impl CoreFunction {
     #[must_use]
     pub fn conditionals(&self) -> &[CoreConditional] {
         &self.conditionals
+    }
+
+    /// Returns the title of a known-answer test, or `None` for a function
+    /// that is not a test. A test is named `test`, has no parameters, and
+    /// has result type `Bool`.
+    #[must_use]
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
     }
 }
 
@@ -2488,6 +2513,7 @@ mod tests {
                 },
                 loops: Vec::new(),
                 conditionals: Vec::new(),
+                title: None,
             },
             CoreFunction {
                 id: CoreFunctionId::from_index(1).unwrap(),
@@ -2530,6 +2556,7 @@ mod tests {
                 },
                 loops: Vec::new(),
                 conditionals: Vec::new(),
+                title: None,
             },
         ];
         let module = CoreModule {
@@ -2537,12 +2564,15 @@ mod tests {
             name: String::from("values"),
             functions,
             entry: 1,
+            tests: 0,
         };
 
         assert_eq!(module.span(), span);
         assert_eq!(module.name(), "values");
         assert_eq!(module.functions().len(), 2);
         assert_eq!(module.entry_functions(), &module.functions()[1..]);
+        assert!(module.tests().is_empty());
+        assert_eq!(module.functions()[1].title(), None);
         assert_eq!(module.functions()[0].module(), "helpers");
         assert_eq!(module.functions()[1].module(), "values");
         assert_eq!(module.functions()[0].id().index(), 0);
@@ -2592,6 +2622,7 @@ mod tests {
             name: _,
             functions,
             entry: _,
+            tests: _,
         } = module;
         for function in functions {
             let CoreFunction {
@@ -2608,6 +2639,7 @@ mod tests {
                 body,
                 loops,
                 conditionals,
+                title: _,
             } = function;
             let local_values = locals.into_iter().map(|local| {
                 let CoreLocal {

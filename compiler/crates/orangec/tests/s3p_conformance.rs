@@ -980,23 +980,40 @@ fn s3p_stats_follow_the_values_and_apply_only_to_eval() {
         )
     );
 
-    // Each option with a command other than `eval` is a usage error, before
-    // or after the command, and even at the default budget.
-    for (arguments, name) in [
-        (&["check", "--steps", "5"][..], "--steps"),
-        (&["check", "--steps", "1048576"][..], "--steps"),
-        (&["--spec", "a", "lex"][..], "--spec"),
-        (&["check", "--stats"][..], "--stats"),
+    // Each option with a command that does not evaluate is a usage error,
+    // before or after the command, and even at the default budget. Since
+    // S3q, `test` takes `--steps` and `--stats` too, but not `--spec`.
+    for (arguments, message) in [
+        (
+            &["check", "--steps", "5"][..],
+            "`--steps` applies only to eval and test",
+        ),
+        (
+            &["check", "--steps", "1048576"][..],
+            "`--steps` applies only to eval and test",
+        ),
+        (&["--spec", "a", "lex"][..], "`--spec` applies only to eval"),
+        (
+            &["check", "--stats"][..],
+            "`--stats` applies only to eval and test",
+        ),
         (
             &["lex", "--stats", "--spec", "a", "--steps", "9"][..],
-            "--steps",
+            "`--steps` applies only to eval and test",
         ),
-        (&["enc", "--stats"][..], "--stats"),
+        (
+            &["enc", "--stats"][..],
+            "`--stats` applies only to eval and test",
+        ),
+        (
+            &["test", "--spec", "a"][..],
+            "`--spec` applies only to eval",
+        ),
     ] {
         let output = run(arguments, &path);
         assert_usage_error(
             &output,
-            &format!("option `{name}` applies only to eval"),
+            &format!("option {message}"),
             &format!("{arguments:?}"),
         );
     }

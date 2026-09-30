@@ -581,11 +581,30 @@ acceptance of
 [OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), which bounds the
 S3p surface in [`LENGTHS_2026.md`](LENGTHS_2026.md) and builds on OEP-0018.
 Like the slices before it, it assumes only pure, total, deterministic
-meaning. Moduli written with parameters, so that one `spec` can serve every
-field rather than a listed few, lists of types named once for several
-functions, positions given as parameters, so that one quarter round can act
-on four positions of a whole state, and slices and words at positions
-computed from data are the next candidate slices.
+meaning.
+
+S3q follows S3p. It adds known-answer tests: a module states what its
+functions must give as `test "TITLE" { claim }` beside them, a title of
+printable ASCII that says where the claim comes from and a `Bool` expression
+with its own `let` bindings, checked as a function without parameters and
+never called or evaluated by `orangec eval`. `==` and `!=` compare arrays and
+tuples whole, every part compared whether or not an earlier part differs, so
+a comparison costs the same wherever its operands differ. `orangec test` runs
+the root module's tests in source order under one step budget, reports each
+with both values and the first difference of a failed `left == right`, and
+exits with status 1 when any fails. Seven of RFC 8439's examples and test
+vectors are written as tests with their inputs and expected bytes as the RFC
+prints them. It is implemented and tested, and its acceptance requires the
+owner's acceptance of
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), which bounds the
+S3q surface in [`TESTS_2026.md`](TESTS_2026.md) and builds on OEP-0019. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
+Moduli written with parameters, so that one `spec` can serve every field
+rather than a listed few, lists of types named once for several functions,
+positions given as parameters, so that one quarter round can act on four
+positions of a whole state, slices and words at positions computed from data,
+and tests that claim a call stops or a source is rejected are the next
+candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -631,8 +650,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3p are implemented and await owner review under
-OEP-0005 through OEP-0019, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3q are implemented and await owner review under
+OEP-0005 through OEP-0020, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

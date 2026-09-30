@@ -253,6 +253,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             self.resolve_moduli_within(&body.expression);
         }
+        // A test's moduli are resolved only where its body is checked.
+        if self.tests {
+            for test in &module.tests {
+                let Some(body) = test.body() else {
+                    continue;
+                };
+                self.resolve_block_moduli(&body.bindings, &body.expression);
+            }
+        }
         self.types.moduli.sort_unstable_by_key(|entry| entry.key);
     }
 

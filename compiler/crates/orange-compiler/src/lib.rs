@@ -25,7 +25,7 @@ pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render
 pub use edition::{Edition, ParseEditionError};
 pub use eval::{
     CallResult, EvaluatedFunction, EvaluationResult, Evaluator, MAX_CALL_DEPTH,
-    MAX_EVALUATION_STEPS_PER_SOURCE, evaluate, evaluate_selected,
+    MAX_EVALUATION_STEPS_PER_SOURCE, TestOutcome, TestRun, evaluate, evaluate_selected, run_tests,
 };
 pub use lexer::{
     Lexed, MAX_DIAGNOSTICS_PER_SOURCE as MAX_LEXICAL_DIAGNOSTICS_PER_SOURCE, MAX_TOKENS_PER_SOURCE,
@@ -39,12 +39,14 @@ pub use parser::{
     MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING,
     MAX_PARAMETERS_PER_FUNCTION, MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE,
     MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE, MAX_TYPES_PER_MODULE,
-    MAX_USES_PER_MODULE, ModuleDeclaration, Parameter, ParseResult, SyntaxTree, TypeDeclaration,
-    TypeSyntax, TypedBody, UnaryExpression, UnaryOperator, UpdateExpression, UseDeclaration, parse,
+    MAX_USES_PER_MODULE, ModuleDeclaration, Parameter, ParseResult, SyntaxTree, TestDeclaration,
+    TestTitle, TypeDeclaration, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
+    UpdateExpression, UseDeclaration, parse,
 };
 pub use semantics::{
     AnalysisResult, MAX_CORE_NODES_PER_SOURCE, MAX_INTEGER_BITS, MAX_MODULES_PER_PROGRAM,
-    MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE, MAX_SEMANTIC_EVENTS_PER_SOURCE, analyze, analyze_program,
+    MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE, MAX_SEMANTIC_EVENTS_PER_SOURCE, MAX_TEST_TITLE_BYTES,
+    analyze, analyze_program,
 };
 pub use source::{
     LineColumn, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile, SourceId, SourceMap,

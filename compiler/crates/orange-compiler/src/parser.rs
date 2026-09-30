@@ -145,6 +145,9 @@ pub struct ModuleDeclaration {
     pub(crate) types: Vec<TypeDeclaration>,
     /// Functions in source order.
     pub(crate) functions: Vec<FunctionDeclaration>,
+    /// Known-answer tests in source order, which may stand among the
+    /// functions.
+    pub(crate) tests: Vec<TestDeclaration>,
 }
 
 impl ModuleDeclaration {
@@ -176,6 +179,79 @@ impl ModuleDeclaration {
     #[must_use]
     pub fn functions(&self) -> &[FunctionDeclaration] {
         &self.functions
+    }
+
+    /// Returns the known-answer tests in source order.
+    #[must_use]
+    pub fn tests(&self) -> &[TestDeclaration] {
+        &self.tests
+    }
+}
+
+/// A known-answer test, `test "TITLE" { BINDINGS EXPRESSION }`: a closed
+/// `Bool` expression, named by its title, that `orangec test` evaluates and
+/// that no function calls.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TestDeclaration {
+    /// Full extent, from `test` through the closing brace.
+    pub(crate) span: Span,
+    /// The title between the quotes.
+    pub(crate) title: TestTitle,
+    /// The test as a typed `spec` without parameters whose result type is
+    /// `Bool`, named `test` at the title's extent.
+    pub(crate) function: FunctionDeclaration,
+}
+
+impl TestDeclaration {
+    /// Returns the full extent, from `test` through the closing brace.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the title.
+    #[must_use]
+    pub const fn title(&self) -> &TestTitle {
+        &self.title
+    }
+
+    /// Returns the body: its `let` bindings and the `Bool` expression that
+    /// decides the test.
+    #[must_use]
+    pub fn body(&self) -> Option<&TypedBody> {
+        match &self.function.body {
+            FunctionBody::Typed(body) => Some(body),
+            FunctionBody::Empty => None,
+        }
+    }
+
+    /// Returns the test as a function without parameters whose result type
+    /// is `Bool`.
+    pub(crate) const fn function(&self) -> &FunctionDeclaration {
+        &self.function
+    }
+}
+
+/// The title of a known-answer test, as written between its quotes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TestTitle {
+    /// The exact spelling between the quotes.
+    pub(crate) text: String,
+    /// Extent of the title, including its quotes.
+    pub(crate) span: Span,
+}
+
+impl TestTitle {
+    /// Returns the exact spelling between the quotes.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// Returns the extent of the title, including its quotes.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -1765,6 +1841,29 @@ impl Limits {
 const BODY_SHAPE_NOTE: &str =
     "a typed `spec` body holds `let` bindings, if any, and then one result expression";
 
+/// What a body's diagnostics say it is: the token it follows, the shape of
+/// its contents, and what its last expression does.
+struct BodyShape {
+    opener: &'static str,
+    note: &'static str,
+    tail: &'static str,
+}
+
+const SPEC_BODY_SHAPE: BodyShape = BodyShape {
+    opener: "`{` after the result type",
+    note: BODY_SHAPE_NOTE,
+    tail: "a typed `spec` body ends with the expression that gives its value",
+};
+
+const TEST_SHAPE_NOTE: &str =
+    "a test is written `test \"TITLE\" { EXPRESSION }`, its expression a `Bool`";
+
+const TEST_BODY_SHAPE: BodyShape = BodyShape {
+    opener: "`{` after the test's title",
+    note: "a test's body holds `let` bindings, if any, and then one `Bool` expression",
+    tail: "a test's body ends with the `Bool` expression that decides it",
+};
+
 const COMPUTED_FILL_NOTE: &str =
     "a length computed from sizes is written in parentheses, as in `[0; (2 * n)]`";
 
@@ -2155,10 +2254,25 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
 
         let mut functions = Vec::new();
+        let mut tests = Vec::new();
         while !self.halted && !matches!(self.current_kind(), TokenKind::RightBrace | TokenKind::Eof)
         {
             let before = self.cursor;
             match self.current_kind() {
+                // `test` is recognized by position, as `use` and `type` are:
+                // it starts a test only where a function could start.
+                TokenKind::Identifier if self.current_is_word("test") => {
+                    if let Some(test) = self.parse_test_declaration() {
+                        if tests.try_reserve(1).is_ok() {
+                            tests.push(test);
+                        } else {
+                            self.resource_limit_at(
+                                "parser could not allocate module test storage",
+                                test.span,
+                            );
+                        }
+                    }
+                }
                 TokenKind::Identifier if self.current_is_word("use") => {
                     self.report(
                         DiagnosticCode::ExpectedFunctionDeclaration,
@@ -2240,10 +2354,95 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                     uses,
                     types,
                     functions,
+                    tests,
                 })
             }
             _ => None,
         }
+    }
+
+    /// Parses `test "TITLE" { BINDINGS EXPRESSION }`, with the current token
+    /// the word `test`. The test becomes a typed `spec` without parameters
+    /// whose result type is `Bool`, both named at the title.
+    fn parse_test_declaration(&mut self) -> Option<TestDeclaration> {
+        let keyword = self.bump()?;
+        let title = if self.current_kind() == TokenKind::String {
+            let token = self.bump()?;
+            let spelling = token.lexeme(self.source)?;
+            // An unterminated title, already reported, has no closing quote.
+            let inner = spelling.strip_prefix('"').unwrap_or(spelling);
+            let inner = inner.strip_suffix('"').unwrap_or(inner);
+            let text = self.test_text(inner, token.span)?;
+            self.record_node().then_some(TestTitle {
+                text,
+                span: token.span,
+            })
+        } else {
+            self.expected("a quoted title after `test`", TEST_SHAPE_NOTE);
+            None
+        };
+        if title.is_none() && self.current_kind() != TokenKind::LeftBrace {
+            self.recover_to(&[
+                TokenKind::LeftBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ]);
+        }
+        if title.is_none() && self.current_kind() != TokenKind::LeftBrace {
+            return None;
+        }
+        let (contents, right_brace) = self.parse_body_block(&TEST_BODY_SHAPE);
+        let (title, (bindings, expression), right_brace) = (title?, contents?, right_brace?);
+        // The result type `Bool` and the name `test` are the title's.
+        let bool_name = self.test_text("Bool", title.span)?;
+        let test_name = self.test_text("test", title.span)?;
+        let bool_type = TypeSyntax {
+            span: title.span,
+            name: Identifier {
+                text: bool_name,
+                span: title.span,
+            },
+            width_span: None,
+            modulus: None,
+            length: None,
+            elements: Vec::new(),
+        };
+        let span = self.join(keyword.span, right_brace.span);
+        let body_span = self.join(title.span, right_brace.span);
+        (self.record_node()).then(|| TestDeclaration {
+            span,
+            function: FunctionDeclaration {
+                span,
+                kind: FunctionKind::Spec,
+                name: Identifier {
+                    text: test_name,
+                    span: title.span,
+                },
+                sizes: Vec::new(),
+                parameters: Vec::new(),
+                body: FunctionBody::Typed(Box::new(TypedBody {
+                    span: body_span,
+                    result_type: bool_type,
+                    bindings,
+                    expression,
+                })),
+            },
+            title,
+        })
+    }
+
+    /// Copies text of a test declaration into storage reserved as an
+    /// identifier's is.
+    fn test_text(&mut self, text: &str, span: Span) -> Option<String> {
+        let mut owned = String::new();
+        if !(self.reserve_identifier_text)(&mut owned, text.len()) {
+            self.resource_limit_at("parser could not allocate test title storage", span);
+            return None;
+        }
+        owned.push_str(text);
+        Some(owned)
     }
 
     /// Parses `use NAME;`, with the current token the word `use`.
@@ -2834,34 +3033,17 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    fn parse_typed_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
-        let arrow = self.bump();
-        let result_type = self
-            .parse_type_syntax("result type", true, 0)
-            .map(|(ty, _)| ty);
-        if result_type.is_none()
-            && !matches!(
-                self.current_kind(),
-                TokenKind::LeftBrace
-                    | TokenKind::KwSpec
-                    | TokenKind::KwImpl
-                    | TokenKind::RightBrace
-                    | TokenKind::Eof
-            )
-        {
-            self.recover_to(&[
-                TokenKind::LeftBrace,
-                TokenKind::KwSpec,
-                TokenKind::KwImpl,
-                TokenKind::RightBrace,
-                TokenKind::Eof,
-            ]);
-        }
-
+    /// Parses a body's braces and contents, `{ BINDINGS EXPRESSION }`, with
+    /// the current token expected to be `{`. Returns the bindings and the
+    /// expression when both parsed, and the closing brace when it was found.
+    fn parse_body_block(
+        &mut self,
+        shape: &BodyShape,
+    ) -> (Option<(Vec<Binding>, Expression)>, Option<Token>) {
         let left_brace = self.consume_or_recover(
             TokenKind::LeftBrace,
-            "`{` after the result type",
-            BODY_SHAPE_NOTE,
+            shape.opener,
+            shape.note,
             &[
                 TokenKind::RightBrace,
                 TokenKind::KwSpec,
@@ -2879,10 +3061,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             Some(bindings)
                 if !bindings.is_empty() && self.current_kind() == TokenKind::RightBrace =>
             {
-                self.expected(
-                    "a result expression after the last binding",
-                    "a typed `spec` body ends with the expression that gives its value",
-                );
+                self.expected("a result expression after the last binding", shape.tail);
                 None
             }
             Some(_) => self.parse_expression(0).map(|(expression, _)| expression),
@@ -2914,7 +3093,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             self.bump()
         } else {
             if expression.is_some() {
-                self.expected("`}` after the body expression", BODY_SHAPE_NOTE);
+                self.expected("`}` after the body expression", shape.note);
             }
             self.recover_to(&[
                 TokenKind::RightBrace,
@@ -2928,6 +3107,39 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 None
             }
         };
+
+        match (bindings, expression) {
+            (Some(bindings), Some(expression)) => (Some((bindings, expression)), right_brace),
+            _ => (None, right_brace),
+        }
+    }
+
+    fn parse_typed_body(&mut self) -> (Option<FunctionBody>, Option<Token>) {
+        let arrow = self.bump();
+        let result_type = self
+            .parse_type_syntax("result type", true, 0)
+            .map(|(ty, _)| ty);
+        if result_type.is_none()
+            && !matches!(
+                self.current_kind(),
+                TokenKind::LeftBrace
+                    | TokenKind::KwSpec
+                    | TokenKind::KwImpl
+                    | TokenKind::RightBrace
+                    | TokenKind::Eof
+            )
+        {
+            self.recover_to(&[
+                TokenKind::LeftBrace,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ]);
+        }
+
+        let (contents, right_brace) = self.parse_body_block(&SPEC_BODY_SHAPE);
+        let (bindings, expression) = contents.unzip();
 
         match (arrow, result_type, bindings, expression, right_brace) {
             (
@@ -9869,6 +10081,137 @@ mod tests {
                 parsed.diagnostics
             );
         }
+    }
+
+    #[test]
+    fn parses_test_declarations_among_functions_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec one() -> Int { 1 } ",
+            "test \"one is one\" { let x: Int = one(); x == 1 } ",
+            "spec test() -> Int { 2 } ",
+            "test \"RFC 8439 2.1.1: #1\" { test() == 2 } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let ast = parsed.ast.unwrap();
+        let source = sources.iter().next().unwrap();
+
+        // A function may be named `test`: the word opens a declaration
+        // only where a function could start.
+        let names = ast
+            .module
+            .functions
+            .iter()
+            .map(|function| function.name.text.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["one", "test"]);
+        let tests = ast.module.tests();
+        assert_eq!(tests.len(), 2);
+
+        let first = &tests[0];
+        assert_eq!(
+            source.slice(first.span()),
+            Some("test \"one is one\" { let x: Int = one(); x == 1 }")
+        );
+        assert_eq!(first.title().text(), "one is one");
+        assert_eq!(source.slice(first.title().span()), Some("\"one is one\""));
+        let body = first.body().unwrap();
+        assert_eq!(body.bindings.len(), 1);
+        assert_eq!(source.slice(body.expression.span), Some("x == 1"));
+        assert!(matches!(
+            &body.expression.kind,
+            ExpressionKind::Binary(binary) if binary.operator == BinaryOperator::Equal
+        ));
+
+        // The test is checked as a `spec` without parameters named `test`,
+        // whose result type `Bool` and name are placed at its title.
+        let function = first.function();
+        assert_eq!(function.kind, FunctionKind::Spec);
+        assert_eq!(function.name.text, "test");
+        assert_eq!(function.name.span, first.title().span());
+        assert!(function.sizes.is_empty());
+        assert!(function.parameters.is_empty());
+        assert_eq!(body.result_type.name.text, "Bool");
+        assert_eq!(body.result_type.span, first.title().span());
+        assert_eq!(
+            source.slice(body.span),
+            Some("\"one is one\" { let x: Int = one(); x == 1 }")
+        );
+
+        let second = &tests[1];
+        assert_eq!(second.title().text(), "RFC 8439 2.1.1: #1");
+        assert_eq!(
+            source.slice(second.body().unwrap().expression.span),
+            Some("test() == 2")
+        );
+    }
+
+    #[test]
+    fn test_titles_are_kept_as_written_for_the_checker() {
+        // The parser keeps a title's text between its quotes as written,
+        // escapes included; the checker decides what a title may hold.
+        for (title, text) in [
+            ("\"\"", ""),
+            ("\"tab\\there\"", "tab\\there"),
+            ("\"caf\u{e9}\"", "caf\u{e9}"),
+        ] {
+            let source = format!("edition 2026; module m {{ test {title} {{ true }} }}");
+            let (_, lexed, parsed) = parse_text(&source);
+            assert!(lexed.diagnostics().is_empty(), "{source:?}");
+            assert!(parsed.diagnostics.is_empty(), "{source:?}");
+            let ast = parsed.ast.unwrap();
+            assert_eq!(ast.module.tests()[0].title().text(), text);
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_test_declarations_with_exact_messages() {
+        let declarations = [
+            ("test { true }", "expected a quoted title after `test`"),
+            ("test one { true }", "expected a quoted title after `test`"),
+            (
+                "test hex\"01\" { true }",
+                "expected a quoted title after `test`",
+            ),
+            ("test \"t\" true", "expected `{` after the test's title"),
+            ("test \"t\" { }", "expected an expression"),
+            (
+                "test \"t\" { let x: Bool = true; }",
+                "expected a result expression after the last binding",
+            ),
+            (
+                "test \"t\" { true false }",
+                "expected `}` after the body expression",
+            ),
+        ];
+        for (declaration, message) in declarations {
+            let text =
+                format!("edition 2026; module m {{ {declaration} spec g() -> Int {{ 1 }} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{text:?}");
+            assert!(parsed.ast.is_none(), "accepted {text:?}");
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{text:?}: {:?}",
+                parsed.diagnostics
+            );
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{text:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{text:?}");
+        }
+        let (_, _, parsed) = parse_text("edition 2026; module m { test { true } }");
+        assert_eq!(
+            parsed.diagnostics[0].notes(),
+            ["a test is written `test \"TITLE\" { EXPRESSION }`, its expression a `Bool`"]
+        );
     }
 
     #[test]
