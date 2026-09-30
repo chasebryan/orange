@@ -1,0 +1,11 @@
+// S3j rejection: a block's binding has its declared type and gives no type to
+// the conditional around its branch.
+edition 2026;
+module types {
+  spec narrow(x: Word[8]) -> Word[8] { for i in 0..2 with s: Word[8] = x { let t: Word[32] = s; s } }
+  spec wide(x: Word[8]) -> Word[32] { if true { let t: Word[8] = x; t } else { 0 } }
+  spec unknown(x: Int) -> Int { for i in 0..2 with s: Int = x { let t: Wide = s; s } }
+  spec untyped(c: Bool, x: Word[8]) -> Word[32] {
+    (if c { let t: Word[8] = x; t } else { let u: Word[8] = x; u }) as Word[32]
+  }
+}

@@ -422,9 +422,56 @@ without an `as`, and `as` also turns a residue into its least residue as an
 `Int` or a word. Residues have no order, no remainder, and no bits: a standard
 that compares field elements compares least residues, and
 `(x as Int) < (y as Int)` says so. A modulus may be as wide as 2^521 − 1, the
-prime of P-521. This slice, S3i, is implemented and tested; its specification
-is in review as
+prime of P-521. [S3j](#rounds-in-the-words-of-their-standard) puts the whole
+ladder in one loop, with the RFC's names inside it. This slice, S3i, is
+implemented and tested; its specification is in review as
 [OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md).
+
+### Rounds in the words of their standard
+
+FIPS 180-4 writes a round of SHA-256 as a short list of named values: the
+working variables a through h, and the temporary words T1 and T2. A loop's
+step and each branch of a conditional may begin with `let` bindings, exactly
+as a function's body does, so the round stands inside the loop that runs it
+and reads as the standard reads:
+
+```orange
+spec compress(hash: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+  let w: Word[32]^64 = schedule(m);
+  let k: Word[32]^64 = round_constants();
+  let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = hash {
+    let a: Word[32] = v[0];
+    let b: Word[32] = v[1];
+    let c: Word[32] = v[2];
+    let d: Word[32] = v[3];
+    let e: Word[32] = v[4];
+    let f: Word[32] = v[5];
+    let g: Word[32] = v[6];
+    let h: Word[32] = v[7];
+    let t1: Word[32] = h + big_sigma1(e) + ch(e, f, g) + k[t] + w[t];
+    let t2: Word[32] = big_sigma0(a) + maj(a, b, c);
+    [t1 + t2, a, b, c, d + t1, e, f, g]
+  };
+  for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + hash[i] }
+}
+```
+
+The [SHA-256 fixture](compiler/fixtures/s3j/valid-sha256.or) hashes the
+examples of FIPS 180-4 to their published digests:
+
+```text
+sha256::abc_digest: Word[32]^8 = [0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad]
+```
+
+The [X25519 fixture](compiler/fixtures/s3j/valid-x25519.or) writes the
+Montgomery ladder of RFC 7748 as one loop whose step names k_t, swap, A, AA,
+B, BB, E, C, D, DA, and CB, as the RFC does. A step's bindings are evaluated
+afresh at every step, and a branch's only when the branch is chosen. Each is
+in scope for the bindings after it and for its block's value, and nowhere
+else, and none may reuse a name already in scope: Orange has no shadowing, so
+a name means one thing wherever a reader meets it. This slice, S3j, is
+implemented and tested; its specification is in review as
+[OEP-0013](docs/governance/oeps/OEP-0013-orange-2026-blocks.md).
 
 ### Daylight Horizon example
 
@@ -452,8 +499,9 @@ cryptography.
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
 | Programs of more than one module, each in its own file, with calls qualified by module | Working; specification in review ([OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md)) |
 | Integers modulo a constant, `Mod[m]`, with total division, and `type` declarations | Working; specification in review ([OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md)) |
+| `let` bindings inside a loop's step and each branch of a conditional | Working; specification in review ([OEP-0013](docs/governance/oeps/OEP-0013-orange-2026-blocks.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Mixed-type tuples, functions generic over a modulus, imports of names into scope | Not yet |
+| Mixed-type tuples, loops with more than one accumulator, functions generic over a modulus, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -558,9 +606,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [bounded loops](docs/LOOPS_2026.md),
   [conditions and division](docs/CONDITIONS_2026.md),
   [lookups keyed by data](docs/LOOKUPS_2026.md),
-  [programs of more than one module](docs/MODULES_2026.md), and
-  [integers modulo a constant](docs/MODULAR_2026.md): the definition of what
-  the compiler accepts today.
+  [programs of more than one module](docs/MODULES_2026.md),
+  [integers modulo a constant](docs/MODULAR_2026.md), and
+  [blocks](docs/BLOCKS_2026.md): the definition of what the compiler accepts
+  today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

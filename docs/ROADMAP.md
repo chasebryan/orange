@@ -472,6 +472,18 @@ acceptance of
 bounds the S3i surface in [`MODULAR_2026.md`](MODULAR_2026.md) and builds on
 OEP-0011. Like the slices before it, it assumes only pure, total,
 deterministic meaning, and it makes no timing claim about residue arithmetic.
+
+S3j follows S3i. It lets a loop's step and each branch of a conditional begin
+with `let` bindings, as a function's body does. A step's bindings are
+evaluated afresh at every step and a branch's only when it is chosen, each is
+in scope only within its step or branch, and none may repeat a name in scope.
+SHA-256's rounds now name a through h, T1, and T2 inside the loop that runs
+them, and X25519's ladder names every value RFC 7748 names inside one loop;
+both reproduce their standards' examples. It is implemented and tested, and
+its acceptance requires the owner's acceptance of
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), which bounds the
+S3j surface in [`BLOCKS_2026.md`](BLOCKS_2026.md) and builds on OEP-0012. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
 Static parameters, so that one quarter round can act on four positions of a
 whole state and one `spec` can serve every field, tuples for working variables
 of different roles, loops with more than one accumulator, and array
@@ -521,8 +533,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3i are implemented and await owner review under
-OEP-0005 through OEP-0012, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3j are implemented and await owner review under
+OEP-0005 through OEP-0013, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

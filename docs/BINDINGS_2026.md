@@ -31,11 +31,14 @@ language meaning. It accepts no D-004 candidate.
 > reduces modulo its prime, [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed
 > under OEP-0010, lets an index depend on data, so that SubBytes is one lookup
 > per byte, [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011,
-> lets a module use others, so that HMAC calls SHA-256 by name, and
+> lets a module use others, so that HMAC calls SHA-256 by name,
 > [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, lets `as`
 > convert into and out of the integers modulo a constant, so that a field
-> element needs no reduction at all. Every source this document accepts keeps
-> its meaning under all six.
+> element needs no reduction at all, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
+> proposed under OEP-0013, lets a loop's step and each branch of a conditional
+> begin with `let` bindings, so that a round of SHA-256 names T1 and T2 as its
+> standard does. Every source this document accepts keeps its meaning under
+> all seven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -1,0 +1,49 @@
+// S3j conformance: `let` bindings at the start of a loop's step and of each
+// branch of a conditional. A step's bindings are evaluated afresh at every
+// step, a branch's only when the branch is chosen, and each is in scope for
+// the bindings after it and for its block's value, and nowhere else.
+edition 2026;
+module blocks {
+  type Zq = Mod[3329];
+
+  // The sum of the squares of 0 through 9.
+  spec squares() -> Int {
+    for i in 0..10 with s: Int = 0 { let square: Int = i * i; s + square }
+  }
+
+  // Every arm of a chain has bindings of its own, and a name bound in one
+  // branch may be bound again in another.
+  spec classify(x: Int) -> Int {
+    if x < 0 { let t: Int = -x; t * 100 }
+    else if x == 0 { 0 }
+    else { let t: Int = x + 1; let u: Int = t * t; u - t }
+  }
+
+  spec classified() -> Int^3 { [classify(-7), classify(0), classify(7)] }
+
+  // A nested step sees the enclosing step's bindings, and a branch within it
+  // sees both.
+  spec triangle() -> Int {
+    for i in 0..4 with s: Int = 0 {
+      let row: Int = i + 1;
+      s + (for j in 0..4 with t: Int = 0 {
+        let cell: Int = row * (j + 1);
+        if j < i { let doubled: Int = cell + cell; t + doubled } else { t }
+      })
+    }
+  }
+
+  // Horner's rule for 4x^3 + 3x^2 + 2x + 1 at x = 17 in the integers modulo
+  // 3329, one coefficient per step.
+  spec horner() -> Zq {
+    let coefficients: Zq^4 = [1, 2, 3, 4];
+    for i in 0..4 with acc: Zq = 0 { let c: Zq = coefficients[3 - i]; acc * 17 + c }
+  }
+
+  // Two separate steps may each bind the same name.
+  spec twice() -> Word[8] {
+    let low: Word[8] = for i in 0..4 with s: Word[8] = 1 { let t: Word[8] = s <<< 1; t ^ s };
+    let high: Word[8] = for i in 0..4 with s: Word[8] = low { let t: Word[8] = s >>> 3; t + s };
+    high
+  }
+}

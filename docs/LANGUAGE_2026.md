@@ -70,6 +70,12 @@ unresolved.
 > `Mod[(1 << 255) - 19]`, and `type` declarations at the head of a module. It
 > adds no token and no reserved word: `type` is recognized by position, and
 > `Mod` is an ordinary type name that takes an expression in brackets.
+>
+> The S3j slice proposed in [`BLOCKS_2026.md`](BLOCKS_2026.md) under
+> OEP-0013, also in review, builds on S3i with blocks: a loop's step and each
+> branch of a conditional may begin with `let` bindings, as a function's body
+> does. It adds no token and no reserved word: `let` is recognized by
+> position, as in S3c.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

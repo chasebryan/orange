@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3i proposed under OEP-0005 through OEP-0012, in owner review
+S3j proposed under OEP-0005 through OEP-0013, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -45,7 +45,12 @@ OEP-0012, adds `Mod[m]`, the integers modulo a constant m from 2 through
 2^521 - 1 written as its standard writes it, as `Mod[(1 << 255) - 19]`, whose
 `+`, `-`, and `*` reduce by themselves and whose `/` multiplies by an inverse
 and gives 0 when there is none, and `type` declarations that name a type for
-the rest of a module. All nine lower to a noncanonical Typed Reference Core
+the rest of a module. The S3j slice, proposed in
+[`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md) and in owner review under
+OEP-0013, lets a loop's step and each branch of a conditional begin with
+`let` bindings, as a body does: a step's bindings are evaluated afresh at
+every step, a branch's only when it is chosen, and each is in scope only
+within its step or branch. All ten lower to a noncanonical Typed Reference Core
 and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
@@ -177,7 +182,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3i are implemented and await owner review under OEP-0005 through OEP-0012, both
+S3j are implemented and await owner review under OEP-0005 through OEP-0013, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -687,10 +692,10 @@ index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression
-                  "{" expression "}" ;
-conditional     = "if" expression "{" expression "}" "else" alternative ;
-alternative     = "{" expression "}" | conditional ;
+                  "with" IDENTIFIER ":" declared_type "=" expression block ;
+conditional     = "if" expression block "else" alternative ;
+alternative     = block | conditional ;
+block           = "{" binding* expression "}" ;
 ```
 
 `let`, `as`, `for`, `in`, `with`, `if`, `else`, `use`, and `type` are
@@ -725,6 +730,7 @@ module demo {
   spec sign(x: Int) -> Int { if x < 0 { -1 } else if x == 0 { 0 } else { 1 } }
   spec residues() -> Int^2 { [-7 % 2, sign(-7 / 2)] }
   spec field() -> Z7^2 { [3 * 5, 1 / 3] }
+  spec squares() -> Int { for i in 0..4 with s: Int = 0 { let sq: Int = i * i; s + sq } }
 }
 ```
 
@@ -753,9 +759,11 @@ least residues 0 through m - 1 of a modulus that is a constant of literals,
 m, it has `+`, `-`, `*`, `/`, prefix `-`, `==`, and `!=` of one modulus and no
 order, and `x / y` is 0 when y has no inverse. `as` converts among `Int`,
 words, and residues by least residues, so `t[x as Int]` indexes by a residue. A conditional
-evaluates only its chosen branch. Names are the enclosing function's
-parameters and earlier bindings, and in a loop's step its index and
-accumulator; calls name typed `spec` functions of the same module, or, as
+evaluates only its chosen branch, bindings included. Names are the enclosing
+function's parameters and earlier bindings, in a loop's step its index and
+accumulator, and in a step or branch its own earlier bindings and those of the
+steps and branches around it; Orange has no shadowing, so none of these may
+repeat a name in scope. Calls name typed `spec` functions of the same module, or, as
 `m::f(...)`, of a module it uses, and each module's call graph must be
 acyclic, as must the uses of a program. A loop runs over literal bounds with
 0 ≤ a < b ≤ 65536, and every index is proved in range before evaluation: an
@@ -790,19 +798,21 @@ demo::pair: Word[16]^2 = [0x1234, 0xbeef]
 demo::backwards: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
 demo::residues: Int^2 = [1, -1]
 demo::field: Mod[7]^2 = [1, 5]
+demo::squares: Int = 14
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3i rules, limits, and non-claims are in
+through S3j rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
 [`docs/LOOPS_2026.md`](../docs/LOOPS_2026.md),
 [`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md),
 [`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md),
-[`docs/MODULES_2026.md`](../docs/MODULES_2026.md), and
-[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md). None of them defines
+[`docs/MODULES_2026.md`](../docs/MODULES_2026.md),
+[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md), and
+[`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1126,6 +1136,33 @@ at the edges of `Mod[3329]`, and residues as indices at the edges of their
 tables. This corpus establishes the tested behavior of one implementation; it
 does not accept OEP-0012, prove the rules sound, or complete S3.
 
+## S3j block conformance
+
+`fixtures/s3j/` contains an exact six-program corpus for the proposed S3j
+behavior, of which three must evaluate successfully and three must fail
+closed. The accepted programs write SHA-256 with each round's working
+variables a through h and its words T1 and T2 bound inside the loop's step,
+reproducing the digests of "abc" and of the two-block message of FIPS 180-4's
+examples; write the Montgomery ladder of X25519 as one loop whose step binds
+every value RFC 7748 names, reproducing the first test vector of section 5.2;
+and exercise steps and branches with bindings, nested blocks, a chain whose
+every arm binds, residues, and names bound again in separate blocks. The
+rejected programs cover a block with no value, a binding without its `;` or
+its type, a value before a binding; a binding that repeats a parameter, a loop
+index, an earlier binding of its block, or a body binding in scope; a name
+used before its binding or outside its block; a binding's value of another
+type, a branch whose value is a binding of another type, a binding of an
+unknown type, and a conversion of a conditional whose
+branches both end in their own bindings.
+
+`crates/orangec/tests/s3j_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3i runner. It parses the 8-rule S3j index in
+`docs/BLOCKS_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates a step
+and a branch of 256 bindings and of 257. This corpus establishes the tested
+behavior of one implementation; it does not accept OEP-0013, prove the rules
+sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1163,6 +1200,8 @@ does not accept OEP-0012, prove the rules sound, or complete S3.
   rule-index, and module-reading runner;
 - `crates/orangec/tests/s3i_conformance.rs`: exact repeatable S3i corpus,
   rule-index, and modulus-limit runner;
+- `crates/orangec/tests/s3j_conformance.rs`: exact repeatable S3j corpus,
+  rule-index, and bindings-per-block runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1175,6 +1214,7 @@ does not accept OEP-0012, prove the rules sound, or complete S3.
 - `fixtures/s3h/`: exact one-positive/three-negative S3h CLI program corpus
   and the six modules its programs use;
 - `fixtures/s3i/`: exact three-positive/four-negative S3i CLI fixture corpus;
+- `fixtures/s3j/`: exact three-positive/three-negative S3j CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

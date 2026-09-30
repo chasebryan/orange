@@ -26,11 +26,13 @@ meaning. It accepts no D-004 candidate.
 > document with indices that depend on data, such as the S-box lookup of AES,
 > each proved in range from its type, and cheaper updates,
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
-> use others and call their functions by module name, and
+> use others and call their functions by module name,
 > [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, adds the
 > integers modulo a constant, whose division is total in the same spirit:
-> `x / y` is 0 when y has no inverse. Every source this document accepts keeps
-> its meaning under all three.
+> `x / y` is 0 when y has no inverse, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
+> proposed under OEP-0013, lets each branch begin with `let` bindings, which
+> are evaluated only when their branch is chosen. Every source this document
+> accepts keeps its meaning under all four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

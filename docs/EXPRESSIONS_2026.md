@@ -31,10 +31,12 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, adds indices
 > that depend on data, [`MODULES_2026.md`](MODULES_2026.md), proposed under
 > OEP-0011, adds programs of more than one module, whose modules call each
-> other's functions by module name, and [`MODULAR_2026.md`](MODULAR_2026.md),
+> other's functions by module name, [`MODULAR_2026.md`](MODULAR_2026.md),
 > proposed under OEP-0012, adds the integers modulo a constant and `type`
-> declarations. Every source this document accepts keeps its meaning under all
-> seven.
+> declarations, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
+> OEP-0013, adds `let` bindings at the start of a loop's step and of each
+> branch. Every source this document accepts keeps its meaning under all
+> eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

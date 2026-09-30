@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.11
+Manuscript version: 0.12
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -101,9 +101,11 @@ division, and conditionals, so that a prime field and a key exchange can be
 written as their standards write them, the S3g slice lets an index depend
 on data, still proved in range, so that AES's S-box is a lookup, as FIPS 197
 writes it, the S3h slice lets a program span several modules, so that
-HMAC is written over SHA-256 by name, as RFC 2104 defines it, and the S3i
+HMAC is written over SHA-256 by name, as RFC 2104 defines it, the S3i
 slice puts a field in a type, so that X25519's ladder is written in the field
-of 2^255 − 19 with no reduction in sight, as RFC 7748 writes it. None of them
+of 2^255 − 19 with no reduction in sight, as RFC 7748 writes it, and the S3j
+slice lets a round name its values inside the loop that runs it, so that a
+round of SHA-256 names T1 and T2 where FIPS 180-4 does. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -307,8 +309,9 @@ slice, also in review, adds `Bool`, comparisons, Euclidean division, and
 conditionals, the S3g slice, also in review, lets an index depend on data
 while still proving it in range, the S3h slice, also in review, lets a
 module use other modules, each in its own file, and call their functions by
-module name, and the S3i slice, also in review, adds the integers modulo a
-constant and names for types.
+module name, the S3i slice, also in review, adds the integers modulo a
+constant and names for types, and the S3j slice, also in review, lets a
+loop's step and each branch of a conditional begin with `let` bindings.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -799,9 +802,10 @@ without a conflict while two `spec rounds` declarations are an error. The words
 specifications have meaning: pure `spec` functions over `Int`, `Bool`,
 `Word[8]` through `Word[64]`, the integers modulo a constant, and fixed-length
 arrays of them, built from
-literals, parameters, calls, operators, comparisons, `let` bindings, explicit
-conversions, array literals, indices, including indices keyed by data, bounded
-loops, updates, and conditionals. An `impl` body must still be empty. A
+literals, parameters, calls, operators, comparisons, `let` bindings, at the
+start of a body, a loop's step, or a branch, explicit conversions, array
+literals, indices, including indices keyed by data, bounded loops, updates,
+and conditionals. An `impl` body must still be empty. A
 program may span several modules, one per file: a module names the modules it
 uses at its head and calls their functions by module name, as in
 `sha256::compress(h, block)`, and nothing is imported into its scope. A
@@ -813,7 +817,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, and modular slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, and block slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -912,7 +916,9 @@ with its `use` declarations, each naming one module it uses, then its `type`
 declarations, each naming one type, and then contains `spec` and `impl`
 declarations. An `impl` has an empty parameter list and an
 empty body. A `spec` body may be empty, or the `spec` may declare parameters
-and a result type and contain exactly one expression.
+and a result type and contain `let` bindings and then exactly one expression.
+A loop's step and each branch of a conditional have the same shape: bindings,
+if any, and then a value.
 
 Parsing produces a syntax tree that records spelling and source structure
 only. It is easy to overlook what that excludes. The grammar accepts any
@@ -1042,7 +1048,10 @@ node after its operands and each call after its arguments, and every node
 carries its type. Parentheses leave no trace, because grouping is already the
 shape of the tree. A residue type records its modulus exactly, and a `type`
 declaration leaves no trace either: every declared name is replaced by the
-type it names.
+type it names. A loop records the bindings of its step, and a conditional
+those of its branches, each with the point in the step's or branch's
+postorder where its value ends, so the evaluator knows when a name takes its
+value.
 
 The Core is bounded in the same spirit as the lexer and parser: at most
 262,144 Core nodes, 1,048,576 semantic events, and 100 ordinary semantic
@@ -1096,16 +1105,18 @@ number and relationships.
 
 ### The next steps of meaning
 
-The nine current slices complete bounded parts of the roadmap's S3 stage:
+The ten current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
 range, then truth values, comparisons, Euclidean division, and conditionals,
 then indices keyed by data, proved in range from their types, then programs
 of several modules, each checked once, after the modules it uses, then the
-integers modulo a constant, with names for types.
+integers modulo a constant, with names for types, then `let` bindings inside
+a loop's step and a branch.
 The rest of S3 adds the remaining substance of a language: records of mixed
-types, functions generic over sizes and moduli, and explicit failure semantics,
+types, loops that carry more than one value, functions generic over sizes and
+moduli, and explicit failure semantics,
 together with one conformance case per normative rule. Each addition follows the same
 pattern as the slices before it: a normative rule, a diagnostic for
 every way to break it, a bound on the work it can cause, and a reference result
@@ -1650,8 +1661,9 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [loops specification](LOOPS_2026.md) of S3e, the
 [conditions specification](CONDITIONS_2026.md) of S3f, the
 [lookups specification](LOOKUPS_2026.md) of S3g, the
-[modules specification](MODULES_2026.md) of S3h, and the
-[modular arithmetic specification](MODULAR_2026.md) of S3i. S3b through S3i
+[modules specification](MODULES_2026.md) of S3h, the
+[modular arithmetic specification](MODULAR_2026.md) of S3i, and the
+[blocks specification](BLOCKS_2026.md) of S3j. S3b through S3j
 are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
@@ -1659,8 +1671,9 @@ are implemented and tested, but their specifications are **proposed**:
 [OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md),
 [OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md),
 [OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md),
-[OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md), and
-[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md) are in
+[OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md),
+[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md), and
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1792,18 +1805,17 @@ index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression
-                  "{" expression "}" ;
-conditional     = "if" expression "{" expression "}"
-                  "else" ("{" expression "}" | conditional) ;
+                  "with" IDENTIFIER ":" declared_type "=" expression block ;
+conditional     = "if" expression block "else" (block | conditional) ;
+block           = "{" binding* expression "}" ;
 call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
 
 It has no implicit semicolons. The edition declaration must be first and
 must spell `2026` exactly. `let`, `as`, `for`, `in`, and `with` are contextual
-words: `let` starts a binding only at the start of a body item and before a
-name, `as` converts only directly after a complete operand, `for` starts a loop
+words: `let` starts a binding only at the start of a body, step, or branch
+item and before a name, `as` converts only directly after a complete operand, `for` starts a loop
 only before a name, `in` and `with` are words only inside a loop's header, and
 `with` updates only directly after a complete operand and before `[`. In the
 same way, `if` starts a conditional only where a condition can follow it,
@@ -1904,7 +1916,9 @@ Where the RFC updates `a` in place, the Orange text writes `a1` and then `a2`.
 A binding never shadows a parameter or another binding, so every name in a
 body refers to exactly one thing, and a name is in scope only after its own
 semicolon. Each binding is evaluated once, in order, before the result. The
-stated type is not decoration. It is the one fact a reader checking a
+same form opens a loop's step or a branch, as
+[Rounds in the words of their standard](#rounds-in-the-words-of-their-standard)
+shows. The stated type is not decoration. It is the one fact a reader checking a
 transcription most needs, so Orange does not infer it.
 
 A conversion, written `e as T`, is the only way a value changes type, and its
@@ -2518,6 +2532,155 @@ secret is to be compiled; that belongs, like the conditional swap, to
 The slice also stops short of generic fields: `ladder` is written for one `F`,
 because a function cannot yet take its modulus as a parameter.
 
+### Rounds in the words of their standard
+
+A loop's step was one expression, and a standard's round is not. FIPS 180-4
+section 6.2.2 writes a round of SHA-256 as a short list of named values: the
+temporary words T1 and T2, and then the new working variables h through a.
+RFC 7748 writes each step of the Montgomery ladder as nine named values, A,
+AA, B, BB, E, C, D, DA, and CB, before the new coordinates. Through S3i, a
+`let` could stand only at the start of a function's body, so those names had
+to live in a helper function, apart from the loop that runs it. The
+[SHA-256 fixture](../compiler/fixtures/s3e/valid-sha256.or) of
+[Rounds as one expression](#rounds-as-one-expression) calls a `round`
+function with the state, the round's constant, and its message word, and reads
+a through h as `v[0]` through `v[7]`; the ladder of
+[Fields as types](#fields-as-types) is three functions where the RFC writes
+one loop.
+
+The S3j slice, proposed in the [blocks specification](BLOCKS_2026.md), lets a
+loop's step and each branch of a conditional begin with `let` bindings,
+exactly as a body does. The specification calls a step or a branch written
+this way a block. The round then stands where it runs, in the standard's own
+words:
+
+```orange
+spec compress(hash: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+  let w: Word[32]^64 = schedule(m);
+  let k: Word[32]^64 = round_constants();
+  let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = hash {
+    let a: Word[32] = v[0];
+    let b: Word[32] = v[1];
+    let c: Word[32] = v[2];
+    let d: Word[32] = v[3];
+    let e: Word[32] = v[4];
+    let f: Word[32] = v[5];
+    let g: Word[32] = v[6];
+    let h: Word[32] = v[7];
+    let t1: Word[32] = h + big_sigma1(e) + ch(e, f, g) + k[t] + w[t];
+    let t2: Word[32] = big_sigma0(a) + maj(a, b, c);
+    [t1 + t2, a, b, c, d + t1, e, f, g]
+  };
+  for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + hash[i] }
+}
+```
+
+The last line of the step is the standard's step 3, read left to right: the
+new a is T1 + T2, the new e is d + T1, and every other variable moves down one
+place. A reviewer comparing this text with FIPS 180-4 compares names with
+names. The [block fixtures](../compiler/fixtures/s3j/) hash the same two
+messages to the same digests as before:
+
+```text
+sha256::abc_digest: Word[32]^8 = [0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad]
+```
+
+A step's bindings are evaluated afresh at every step, in order, each seeing
+the ones before it, and then the step's value becomes the next accumulator.
+Nothing a step binds survives into the next step; only the accumulator
+carries. A branch's bindings are evaluated only when the branch is chosen, as
+its value is, so a branch that is not chosen costs nothing, however much work
+its bindings describe:
+
+```orange
+spec pick(c: Bool, x: Int) -> Int {
+  if c { let t: Int = x + 1; t * t } else { x }
+}
+```
+
+`pick(true, 6)` is 49 and `pick(false, 6)` is 6. A binding costs the steps of
+its value each time its block runs, and one step each time it is read, so a
+name costs what writing its value in place would cost, and less when the value
+is read more than once.
+
+Scope is where blocks keep Orange's promise that a name means one thing. A
+block's binding is in scope from its own semicolon to the end of its block:
+in the bindings after it, in the block's value, and in every loop and
+conditional nested there, and nowhere else. Read outside, it is an error that
+points at the binding it might have meant:
+
+```text
+error[ORC0211]: `t` is not in scope here
+ --> <stdin>:4:47
+  |
+4 | ...  c { let t: Int = x + 1; t * t } else { t }
+  |                                             ^ unknown name
+ ::: <stdin>:4:16
+  |
+4 |     if c { let t: Int = x + 1; t * t } else { t }
+  |                - a binding of this name is here
+  = note: a binding of a loop's step or a branch is in scope only within that step or branch
+```
+
+A block still cannot shadow. A binding that repeats a parameter, a binding of
+the body, a loop's index or accumulator, or a binding of an enclosing block
+is rejected, and the error names what it would have hidden:
+
+```text
+error[ORC0219]: duplicate name `t`
+ --> <stdin>:4:49
+  |
+4 | ... t in 0..64 with v: Word[32]^8 = h { let t: Word[32] = v[7]; v }
+  |                                             ^ this name repeats a name in scope
+ ::: <stdin>:4:9
+  |
+4 |     for t in 0..64 with v: Word[32]^8 = h { let t: Word[32] = v[7]; v }
+  |         - the loop index is here
+  = note: each parameter, binding, loop index, and accumulator in scope has its own name; Orange has no shadowing
+```
+
+Names whose scopes do not overlap may repeat. Two branches of one conditional
+may each bind `t`, and so may two loops, one after the other. That is what
+lets the [X25519 fixture](../compiler/fixtures/s3j/valid-x25519.or) write the
+whole ladder as the RFC does, with the conditional swap and every one of the
+RFC's names inside one loop, and still bind `x_2` and `z_2` again after it for
+the last swap:
+
+```orange
+let ladder: Ladder = for i in 0..255 with s: Ladder = [1, 0, x_1, 1] {
+  let k_t: Bool = (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0;
+  // swap ^= k_t, where swap holds bit t + 1; clamping clears bit 255.
+  let swap: Bool = k_t != ((k[(255 - i) / 8] & masks[(255 - i) % 8]) != 0);
+  let x_2: F = if swap { s[2] } else { s[0] };
+  let z_2: F = if swap { s[3] } else { s[1] };
+  let x_3: F = if swap { s[0] } else { s[2] };
+  let z_3: F = if swap { s[1] } else { s[3] };
+  let A: F = x_2 + z_2;
+  let AA: F = A * A;
+  let B: F = x_2 - z_2;
+  let BB: F = B * B;
+  let E: F = AA - BB;
+  let C: F = x_3 + z_3;
+  let D: F = x_3 - z_3;
+  let DA: F = D * A;
+  let CB: F = C * B;
+  [AA * BB, E * (AA + 121665 * E), (DA + CB) * (DA + CB), x_1 * ((DA - CB) * (DA - CB))]
+};
+```
+
+It reproduces the first test vector of RFC 7748 section 5.2, as the fixtures
+of the two earlier slices do. The RFC carries `swap` from one bit to the next
+in a variable; a step cannot, so the step reads bit t + 1 of the scalar again,
+which is the value the RFC's variable holds.
+
+That is the seam this slice leaves. A loop carries exactly one accumulator,
+so a round whose state is eight words keeps them in an array and names them
+again at the top of every step, as `let a: Word[32] = v[0]` does above. Loops
+that carry several named values, or tuples that a step can take apart, are
+the natural next step, and the roadmap lists them. A block is also not yet an
+expression of its own: bindings stand only at the start of a body, a step, or
+a branch, where braces already mark where their scope ends.
+
 ### From bytes to a value
 
 It is worth following one line through the compiler, because each step is a
@@ -2620,7 +2783,10 @@ from 2 through 2^521 − 1, or a `Mod` without one, and `ORC0233` for a `type`
 declaration that names a built-in type or repeats a name, and it reuses
 `ORC0207` for a residue literal out of range, `ORC0214` for a residue of
 another modulus, and `ORC0215` for an order, remainder, or bitwise operator
-on residues.
+on residues. The block slice adds no code: a malformed block is `ORC0101`
+with a note that describes a block, a block of more than 256 bindings is
+`ORC0106`, a binding that repeats a name in scope is `ORC0219`, and a name
+read outside its block is `ORC0211`, pointing at the binding it might mean.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -2715,7 +2881,11 @@ rule identifiers and seven sources, three valid and four invalid, including
 X25519 and Poly1305 over their fields against RFC 7748 and RFC 8439 and
 constants of ML-KEM, Ed25519, and P-256; generated sources pin 64 `type`
 declarations, the widest modulus, 2^521 − 1, and residue literals and indices
-at the edges of their ranges. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+at the edges of their ranges. The blocks specification adds 8 rule
+identifiers and six sources, three valid and three invalid, including SHA-256
+and X25519 whose rounds name their values inside their loops, against FIPS
+180-4 and RFC 7748; generated sources pin a step and a branch of 256 bindings
+and of 257. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -2731,7 +2901,8 @@ than hidden: imports of names into scope, module paths and packages, modules
 that take modules as parameters, attributes, visibility, generic arguments, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, mixed-type tuples, arrays of arrays, indices
 narrowed by conditions, loops over computed ranges, early exit, short-circuit
-operators, conditionals without `else`, moduli computed at run time,
+operators, conditionals without `else`, blocks as expressions of their own,
+loops that carry more than one value, moduli computed at run time,
 functions generic over a modulus, distinct types by declaration, extension
 fields, signed words, variable shift and rotation amounts, recursion, typed
 implementations,
@@ -2751,18 +2922,20 @@ decision, through OEP-0005, S3c's, which builds on it, through OEP-0006,
 S3d's, which builds on S3c, through OEP-0007, S3e's, which builds on S3d,
 through OEP-0008, S3f's, which builds on S3e, through OEP-0009, S3g's, which
 builds on S3f, through OEP-0010, S3h's, which builds on S3g, through
-OEP-0011, and S3i's, which builds on S3h, through OEP-0012.
+OEP-0011, S3i's, which builds on S3h, through OEP-0012, and S3j's, which
+builds on S3i, through OEP-0013.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All eight migrations so far are small: every source
+documented migration. All nine migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
 under S3e, every source S3e accepted does the same under S3f, every source
 S3f accepted does the same under S3g, where it costs no more steps, every
-source S3g accepted does the same under S3h, as a program of one module, and
+source S3g accepted does the same under S3h, as a program of one module,
 every source S3h accepted does the same under S3i, since it declares no type
-and writes no modulus.
+and writes no modulus, and every source S3i accepted does the same under S3j,
+since it binds nothing in a step or a branch.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -3467,7 +3640,10 @@ is not yet generic over its hash, as the corpus plan asks. The modular slice
 put each field in a type: X25519 and Poly1305 are now written over
 `Mod[(1 << 255) - 19]` and `Mod[(1 << 130) - 5]` with no reduction in sight
 and reproduce the same vectors, and the constants of ML-KEM, Ed25519, and
-P-256 are computed in the rings their standards define. These are
+P-256 are computed in the rings their standards define. The block slice let
+each round name its values where it runs: SHA-256's rounds name a through h,
+T1, and T2, and X25519's ladder names every value RFC 7748 names, inside one
+loop each. These are
 still fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
 no byte strings and no message of variable length, and no standard has been
 admitted with its provenance. The corpus remains a set of research inputs
@@ -4079,7 +4255,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3i in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3j in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -4394,9 +4570,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [loops specification](LOOPS_2026.md), the
 [conditions specification](CONDITIONS_2026.md), the
 [lookups specification](LOOKUPS_2026.md), the
-[modules specification](MODULES_2026.md), and the
-[modular arithmetic specification](MODULAR_2026.md) are proposed under
-OEP-0005 through OEP-0012 and in the owner's review. Where this summary and those
+[modules specification](MODULES_2026.md), the
+[modular arithmetic specification](MODULAR_2026.md), and the
+[blocks specification](BLOCKS_2026.md) are proposed under
+OEP-0005 through OEP-0013 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -4445,10 +4622,9 @@ index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression
-                  "{" expression "}" ;
-conditional     = "if" expression "{" expression "}"
-                  "else" ("{" expression "}" | conditional) ;
+                  "with" IDENTIFIER ":" declared_type "=" expression block ;
+conditional     = "if" expression block "else" (block | conditional) ;
+block           = "{" binding* expression "}" ;
 call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
@@ -4458,7 +4634,8 @@ may be decimal, `0b` binary, or `0x` hexadecimal, with single underscores
 between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 `claim` are reserved; the last three have no grammatical role yet. `let`, `as`,
 `for`, `in`, `with`, `if`, `else`, `use`, `type`, `true`, and `false` are not reserved: `let`
-starts a binding only at the start of a body item before a name, `as` converts
+starts a binding only at the start of a body, step, or branch item before a
+name, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
 `with` are words only in a loop's header, `with` updates only after a complete
 operand and before `[`, `if` starts a conditional only where a condition can
@@ -4474,7 +4651,8 @@ a level with no operator and no other conversion or update. `^` after a declared
 type gives its array length; anywhere else it is exclusive or. Expressions may
 nest at most 64 levels deep, counting groups, calls, arrays, indices, loops,
 conditionals, updates, moduli, and prefix operators, and reach height 256; a function declares at
-most 64 parameters and 256 bindings, a call supplies at most 256 arguments, an
+most 64 parameters and 256 bindings, a loop's step or a branch at most 256
+bindings, a call supplies at most 256 arguments, an
 array literal lists at most 256 elements, and a loop's bounds satisfy
 0 ≤ a < b ≤ 65536. A module declares at most 64 `use` declarations and 64
 `type` declarations, and a program holds at most 64 modules, its root
@@ -4691,9 +4869,10 @@ part are listed here so a reader can move from explanation to authority.
   proposed [expression](EXPRESSIONS_2026.md),
   [binding and conversion](BINDINGS_2026.md), [array](ARRAYS_2026.md), and
   [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
-  [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md), and
-  [modular arithmetic](MODULAR_2026.md) specifications under OEP-0005 through
-  OEP-0012, the [compiler guide](../compiler/README.md),
+  [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md),
+  [modular arithmetic](MODULAR_2026.md), and [block](BLOCKS_2026.md)
+  specifications under OEP-0005 through OEP-0013, the
+  [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
 - **Chapters 5 and 6:** the [architecture](ARCHITECTURE.md), the
@@ -4732,24 +4911,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.10 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.12 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.10 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.10 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, and module slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.12 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.12 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, and block slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.10 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, and module slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.12 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, and block slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.10 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.12 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.10 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.12 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.10 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.12 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -4793,9 +4972,11 @@ version 0.9 adds the [lookups specification](LOOKUPS_2026.md) and
 [OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md),
 version 0.10 adds the [modules specification](MODULES_2026.md),
 [OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md), and the
-[scheme guide](../compiler/schemes/README.md), and version 0.11 adds the
+[scheme guide](../compiler/schemes/README.md), version 0.11 adds the
 [modular arithmetic specification](MODULAR_2026.md) and
-[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md).
+[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md), and
+version 0.12 adds the [blocks specification](BLOCKS_2026.md) and
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -4879,6 +5060,14 @@ direction on 2026-09-30, and every Orange example it adds was run against the
 compiler at the revision that introduced it. That check is not independent
 review, and the same authorship, review, evidence, and provenance boundaries
 apply.
+
+Manuscript version 0.12 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3j block slice, and added the Chapter 8
+section "Rounds in the words of their standard". It was drafted with Claude
+Code under Chase Bryan's direction on 2026-09-30, and every Orange example it
+adds was run against the compiler at the revision that introduced it. That
+check is not independent review, and the same authorship, review, evidence,
+and provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.
