@@ -1446,21 +1446,26 @@ def parse_responses(data: bytes) -> tuple[list[tuple[str, bytes]], bool]:
     return responses, True
 
 
-EVAL_NAME = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)")
+IDENTIFIER_START = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_")
+IDENTIFIER_REST = IDENTIFIER_START | frozenset("0123456789")
+
+
+def _identifier(text: str) -> bool:
+    return bool(text) and text[0] in IDENTIFIER_START and all(c in IDENTIFIER_REST for c in text)
 
 
 def parse_eval(text: str) -> dict[str, tuple[str, str]]:
-    """`module::name: Type = value` lines, split at the first `: ` and the first ` = ` without a
-    backtracking pattern."""
+    """`module::name: Type = value` lines, split at the first `: `, `::` and ` = ` with no pattern
+    matching, so a crafted line costs time linear in its length."""
 
     values = {}
     for line in text.splitlines():
         head, colon, rest = line.partition(": ")
+        module, scope, name = head.partition("::")
         type_name, equals, value = rest.partition(" = ")
-        match = EVAL_NAME.fullmatch(head)
-        if match is None or not colon or not equals or not type_name or not value:
+        if not (colon and scope and equals and type_name and value and _identifier(module) and _identifier(name)):
             raise SuiteError(f"unrecognized evaluation line: {line[:120]}")
-        values[match.group(2)] = (type_name, value)
+        values[name] = (type_name, value)
     return values
 
 
