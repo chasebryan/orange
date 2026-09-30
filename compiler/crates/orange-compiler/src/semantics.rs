@@ -2075,12 +2075,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 ArrayType::new(&CoreType::Word8, length).map(CoreType::Array)
             }
             ExpressionKind::Slice(slice) => {
-                let element = self
-                    .leaf_type(&slice.base, context, scope)?
-                    .as_array()?
-                    .element();
-                let length = self.slice_length(&slice.range, context)?;
-                ArrayType::new(&element, length).map(CoreType::Array)
+                let base = self.leaf_type(&slice.base, context, scope)?;
+                let array = base.as_array()?;
+                let length = self.slice_length(&slice.range, array.length(), context)?;
+                ArrayType::new(&array.element(), length).map(CoreType::Array)
             }
             ExpressionKind::SliceUpdate(update) => {
                 self.leaf_type(first_typed_leaf(&update.base)?, context, scope)

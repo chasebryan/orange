@@ -1618,6 +1618,10 @@ const TUPLE_TYPE_NOTE: &str = "a tuple type is written `(T, U)` with two through
 const PATTERN_NOTE: &str = "a tuple pattern names two through 16 values, each with its type, \
      as in `let (sum: Word[64], carry: Word[64]) = add(x, y, c);`";
 
+/// The note of a hex string written with a space after `hex`.
+const SPACED_HEX_NOTE: &str =
+    "a hex string's quote follows `hex` directly, with no space, as in `hex\"00 1f a0\"`";
+
 /// The note of a malformed slice.
 const SLICE_NOTE: &str = "a slice is written `x[a..b]`, the elements of `x` from index a up to but \
      not including index b, or `x[a..]` or `x[..b]` to run to the end or from the start";
@@ -2994,7 +2998,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         start: Option<(Expression, usize)>,
         inner: usize,
     ) -> Option<(Expression, usize)> {
-        let (range, range_height) = self.parse_slice_range(start, inner)?;
+        let (range, range_height) = self.parse_slice_range(start, inner, SLICE_UPDATE_NOTE)?;
         self.expect(
             TokenKind::RightBracket,
             "`]` after the slice",
@@ -3262,7 +3266,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         start: Option<(Expression, usize)>,
         inner: usize,
     ) -> Option<(Expression, usize)> {
-        let (range, range_height) = self.parse_slice_range(start, inner)?;
+        let (range, range_height) = self.parse_slice_range(start, inner, SLICE_NOTE)?;
         if self.current_kind() != TokenKind::RightBracket {
             self.expected("`]` after the slice", SLICE_NOTE);
             return None;
@@ -3296,12 +3300,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
 
     /// Parses the bounds `start..end` of a slice at `..`, after its start
     /// when one is written, and returns them with the height of the taller
-    /// bound, or 0 when neither is written. At least one bound is required.
+    /// bound, or 0 when neither is written. At least one bound is required;
+    /// `note` shows the form when none is.
     #[inline(never)]
     fn parse_slice_range(
         &mut self,
         start: Option<(Expression, usize)>,
         inner: usize,
+        note: &str,
     ) -> Option<(SliceRange, usize)> {
         let dots_span = self.bump()?.span;
         let end = if self.current_kind() == TokenKind::RightBracket {
@@ -3310,7 +3316,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             Some(self.parse_expression(inner)?)
         };
         if start.is_none() && end.is_none() {
-            self.expected("a bound of the slice after `..`", SLICE_NOTE);
+            self.expected("a bound of the slice after `..`", note);
             return None;
         }
         let first = start.as_ref().map_or(dots_span, |(start, _)| start.span);
@@ -3880,6 +3886,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn parse_byte_string(&mut self) -> Option<(Expression, usize)> {
         let hex = self.current_kind() == TokenKind::HexString;
         let token = self.bump()?;
+        if self.current_kind() == TokenKind::LeftBracket {
+            self.expected(
+                "an operator or the end of the expression",
+                "a byte string is not indexed or sliced where it is written; bind it with `let` \
+                 to select from it",
+            );
+            return None;
+        }
         self.record_node().then_some((
             Expression {
                 span: token.span,
@@ -4348,10 +4362,17 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn expected_message(&mut self, note: &str, build_message: impl FnOnce() -> String) {
         let span = self.current_span();
         let found = self.current_kind();
+        // `hex "00"` is the identifier `hex` followed by a string, so the
+        // note says how a hex string is written.
+        let spaced_hex = found == TokenKind::String
+            && self
+                .cursor
+                .checked_sub(1)
+                .is_some_and(|previous| self.is_word_at(previous, "hex"));
         self.report_lazy(span, || {
             Diagnostic::error(DiagnosticCode::ExpectedSyntax, build_message(), span)
                 .with_label(format!("found {}", found.name()))
-                .with_note(note)
+                .with_note(if spaced_hex { SPACED_HEX_NOTE } else { note })
         });
     }
 
@@ -5567,7 +5588,6 @@ mod tests {
             .unwrap_or(0)
     }
 
-    /// The typed name of a binding or an accumulator that is one name.
     /// Renders a slice's bounds, with an omitted bound left empty.
     fn range_shape(source: &SourceFile, range: &SliceRange) -> String {
         format!(
@@ -5594,6 +5614,7 @@ mod tests {
             .unwrap_or(0)
     }
 
+    /// The typed name of a binding or an accumulator that is one name.
     fn named(pattern: &Pattern) -> &TypedName {
         let Pattern::Name(typed) = pattern else {
             panic!("expected one name");
@@ -8465,5 +8486,243 @@ mod tests {
             source.slice(result.diagnostics[0].primary_span()),
             Some("x")
         );
+    }
+
+    #[test]
+    fn builds_byte_strings_joins_and_slices_with_exact_spans() {
+        let cases = [
+            ("\"ab\"", "(bytes \"ab\")"),
+            ("hex\"00 ff\"", "(bytes hex hex\"00 ff\")"),
+            ("a ++ b ++ c", "((a ++ b) ++ c)"),
+            ("a ++ (b ++ c)", "(a ++ [(b ++ c)])"),
+            ("a[1..3]", "a[1..3]"),
+            ("a[..3]", "a[..3]"),
+            ("a[1..]", "a[1..]"),
+            ("g(a)[4 * i..4 * i + 4]", "g(a)[(4 * i)..((4 * i) + 4)]"),
+            ("p.0[1..2]", "p.0[1..2]"),
+            ("a[0..2] ++ \"xy\"", "(a[0..2] ++ (bytes \"xy\"))"),
+            ("a with [1..3] = \"xy\"", "(a with [1..3] = (bytes \"xy\"))"),
+            ("a with [..2] = b[2..]", "(a with [..2] = b[2..])"),
+            ("a with [2..] = b ++ c", "(a with [2..] = (b ++ c))"),
+            ("a with [0] = b", "(a with [0] = b)"),
+        ];
+        for (body, expected) in cases {
+            let (sources, expression) = body_expression(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert_eq!(shape(source, &expression), expected, "{body:?}");
+        }
+
+        let text = spec_source("a with [1..3] = x[0..2] ++ y[..2] ++ z[1..] ++ hex\"00\"");
+        let (sources, expression) = body_expression(&text);
+        let source = sources.iter().next().unwrap();
+        let ExpressionKind::SliceUpdate(update) = &expression.kind else {
+            panic!("expected a slice update");
+        };
+        assert_eq!(
+            source.slice(expression.span),
+            Some("a with [1..3] = x[0..2] ++ y[..2] ++ z[1..] ++ hex\"00\"")
+        );
+        assert_eq!(source.slice(update.keyword_span()), Some("with"));
+        assert_eq!(source.slice(update.range().span()), Some("1..3"));
+        assert_eq!(source.slice(update.range().dots_span()), Some(".."));
+        assert_eq!(
+            update
+                .range()
+                .start()
+                .and_then(|start| source.slice(start.span)),
+            Some("1")
+        );
+        assert_eq!(
+            update.range().end().and_then(|end| source.slice(end.span)),
+            Some("3")
+        );
+        let mut joined = update.value();
+        let mut operands = Vec::new();
+        while let ExpressionKind::Binary(binary) = &joined.kind {
+            assert!(binary.operator.is_concatenation());
+            assert_eq!(source.slice(binary.operator_span), Some("++"));
+            operands.push(&*binary.right);
+            joined = &binary.left;
+        }
+        operands.push(joined);
+        operands.reverse();
+        let slices = operands
+            .iter()
+            .map(|operand| {
+                let ExpressionKind::Slice(slice) = &operand.kind else {
+                    return (source.slice(operand.span).unwrap(), "", "");
+                };
+                (
+                    source.slice(operand.span).unwrap(),
+                    source.slice(slice.range().span()).unwrap(),
+                    source.slice(slice.base().span).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            slices,
+            [
+                ("x[0..2]", "0..2", "x"),
+                ("y[..2]", "..2", "y"),
+                ("z[1..]", "1..", "z"),
+                ("hex\"00\"", "", ""),
+            ]
+        );
+        let ExpressionKind::Bytes(bytes) = &operands[3].kind else {
+            panic!("expected a byte string");
+        };
+        assert!(bytes.is_hex());
+    }
+
+    #[test]
+    fn rejects_malformed_bytes_and_slices_with_exact_messages() {
+        let once = "a slice is taken once, from a name, a call, or a tuple's element; bind it \
+                    with `let` to select from it";
+        let cases = [
+            (
+                "a[..]",
+                "expected a bound of the slice after `..`",
+                SLICE_NOTE,
+            ),
+            (
+                "a[0..1][0]",
+                "expected an operator or the end of the expression",
+                once,
+            ),
+            (
+                "a[0..1][0..1]",
+                "expected an operator or the end of the expression",
+                once,
+            ),
+            (
+                "a[0..1].0",
+                "expected an operator or the end of the expression",
+                "a slice is an array, not a tuple, so it has no `.k`",
+            ),
+            ("a[0..1..2]", "expected `]` after the slice", SLICE_NOTE),
+            (
+                "\"ab\"[0]",
+                "expected an operator or the end of the expression",
+                "a byte string is not indexed or sliced where it is written; bind it with \
+                 `let` to select from it",
+            ),
+            (
+                "a with [..] = b",
+                "expected a bound of the slice after `..`",
+                SLICE_UPDATE_NOTE,
+            ),
+            (
+                "a with [0..2 = b",
+                "expected `]` after the slice",
+                SLICE_UPDATE_NOTE,
+            ),
+            (
+                "a with [0..2] b",
+                "expected `=` after the updated slice",
+                SLICE_UPDATE_NOTE,
+            ),
+            (
+                "hex \"00\"",
+                "expected `}` after the body expression",
+                SPACED_HEX_NOTE,
+            ),
+            (
+                "let k: Word[8]^1 = hex \"00\"; k",
+                "expected `;` after the bound expression",
+                SPACED_HEX_NOTE,
+            ),
+        ];
+        for (body, message, note) in cases {
+            let (_, lexed, parsed) = parse_text(&spec_source(body));
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{body:?}: {:?}",
+                parsed.diagnostics
+            );
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+            assert_eq!(diagnostic.notes(), [note], "{body:?}");
+        }
+
+        // `++` is a group of its own: it mixes with no other operator
+        // without parentheses.
+        for (body, ungrouped, previous) in [
+            ("a ++ b + c", "+", "++"),
+            ("a + b ++ c", "++", "+"),
+            ("a ++ b == c", "==", "++"),
+            ("a ++ b as Word[8]^2", "as", "++"),
+        ] {
+            let (sources, _, parsed) = parse_text(&spec_source(body));
+            let source = sources.iter().next().unwrap();
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            assert_eq!(parsed.diagnostics.len(), 1, "{body:?}");
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::UngroupedOperators,
+                "{body:?}"
+            );
+            assert_eq!(
+                diagnostic.message(),
+                format!("`{ungrouped}` follows `{previous}` without grouping parentheses"),
+                "{body:?}"
+            );
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(ungrouped));
+        }
+    }
+
+    #[test]
+    fn slices_and_joins_count_toward_expression_height() {
+        // A slice stands one level above the taller of its base and its
+        // bounds, a slice update one above the tallest of its base, bounds,
+        // and value, and `++` one above its taller operand.
+        let tall = |additions: usize| format!("a{}", " + a".repeat(additions));
+        type Form = (fn(&str) -> String, &'static str, usize);
+        let forms: [Form; 5] = [
+            (
+                |value| format!("x[0..{value}]"),
+                "[",
+                MAX_EXPRESSION_HEIGHT - 2,
+            ),
+            (
+                |value| format!("x[[{value}]..]"),
+                "[",
+                MAX_EXPRESSION_HEIGHT - 3,
+            ),
+            (
+                |value| format!("x with [0..{value}] = y"),
+                "with",
+                MAX_EXPRESSION_HEIGHT - 2,
+            ),
+            (
+                |value| format!("x with [..2] = [{value}]"),
+                "with",
+                MAX_EXPRESSION_HEIGHT - 3,
+            ),
+            (
+                |value| format!("x ++ [{value}]"),
+                "++",
+                MAX_EXPRESSION_HEIGHT - 3,
+            ),
+        ];
+        let message =
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
+        for (form, at, additions) in forms {
+            let (_, expression) = body_expression(&spec_source(&form(&tall(additions))));
+            assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
+            assert_resource_limited(&form(&tall(additions + 1)), &message, at);
+        }
+
+        // A byte string is one node of height 1, whatever its length.
+        let (_, expression) = body_expression(&spec_source(&format!("\"{}\"", "a".repeat(300))));
+        assert_eq!(tree_height(&expression), 1);
     }
 }

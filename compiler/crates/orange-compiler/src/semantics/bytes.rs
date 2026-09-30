@@ -9,6 +9,10 @@ const BYTE_STRING_NOTE: &str = "a byte string's characters are its bytes, so eac
      ASCII, from ` ` through `~`; write any other byte as an escape, or in a hex string joined \
      with `++`";
 
+/// The note of a slice update whose base or result is not an array.
+const SLICE_UPDATE_NOTE: &str = "`x with [a..b] = v` is the array `x` with its elements from \
+     index a up to b replaced by those of v";
+
 /// The note of a slice whose bounds are not a fixed, positive distance
 /// apart.
 const SLICE_LENGTH_NOTE: &str = "a slice `x[a..b]` holds the b - a elements from index a, and b - a \
@@ -332,7 +336,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             ),
                             at,
                         )
-                        .with_label(format!("its UTF-8 bytes are written `hex\"{hex}\"`"))
+                        .with_label(if character.is_ascii() {
+                            format!("its byte is written `hex\"{hex}\"`")
+                        } else {
+                            format!("its UTF-8 bytes are written `hex\"{hex}\"`")
+                        })
                         .with_note(BYTE_STRING_NOTE),
                     );
                 }
@@ -502,38 +510,50 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         };
+        let length = array.length();
         let Some(left) = self.array_length_of(&binary.left, context, scope) else {
-            self.report_joined_non_array(&binary.left, context, scope);
+            if let Some(ty) = self.known_non_array(&binary.left, context, scope) {
+                self.report_joined_non_array(binary.left.span, &ty);
+            } else if self.check_expression(&binary.left, expected, context, scope, output)
+                && !self.halted
+            {
+                // The left operand has no length of its own but checks as
+                // the whole array, which leaves nothing for the right.
+                self.report_left_fills_join(binary.operator_span, length, expected);
+            }
             return false;
         };
         let right = self.array_length_of(&binary.right, context, scope);
-        let length = array.length();
+        if right.is_none()
+            && let Some(ty) = self.known_non_array(&binary.right, context, scope)
+        {
+            self.report_joined_non_array(binary.right.span, &ty);
+            return false;
+        }
         let fits = match right {
             Some(right) => left.checked_add(right) == Some(length),
             None => left < length,
         };
         if !fits {
-            if self.begin_report(binary.operator_span) {
-                let message = match right {
-                    Some(right) => format!(
-                        "`++` joins {left} and {right} elements, {} in all, but `{expected}` \
-                         has {length}",
-                        u64::from(left).saturating_add(u64::from(right))
-                    ),
-                    None => format!(
-                        "the left operand of `++` has {left} elements, leaving none of the \
-                         {length} of `{expected}` for the right"
-                    ),
-                };
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::ArrayLengthMismatch,
-                        message,
-                        binary.operator_span,
-                    )
-                    .with_label(format!("expected {length} elements in all"))
-                    .with_note(CONCATENATION_NOTE),
-                );
+            match right {
+                Some(right) => {
+                    if self.begin_report(binary.operator_span) {
+                        self.diagnostics.push(
+                            Diagnostic::error(
+                                DiagnosticCode::ArrayLengthMismatch,
+                                format!(
+                                    "`++` joins {left} and {right} elements, {} in all, but \
+                                     `{expected}` has {length}",
+                                    u64::from(left).saturating_add(u64::from(right))
+                                ),
+                                binary.operator_span,
+                            )
+                            .with_label(format!("expected {length} elements in all"))
+                            .with_note(CONCATENATION_NOTE),
+                        );
+                    }
+                }
+                None => self.report_left_fills_join(binary.operator_span, left, expected),
             }
             return false;
         }
@@ -573,32 +593,54 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             )
     }
 
-    #[cold]
-    #[inline(never)]
-    fn report_joined_non_array(
-        &mut self,
+    /// Returns the type of an operand of `++` that is found without
+    /// reporting and is not an array.
+    fn known_non_array(
+        &self,
         operand: &Expression,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
-    ) {
-        if !self.begin_report(operand.span) {
+    ) -> Option<CoreType> {
+        first_typed_leaf(operand)
+            .and_then(|leaf| self.leaf_type(leaf, context, scope))
+            .filter(|ty| ty.as_array().is_none())
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_joined_non_array(&mut self, span: Span, ty: &CoreType) {
+        if !self.begin_report(span) {
             return;
         }
-        let ty = first_typed_leaf(operand).and_then(|leaf| self.leaf_type(leaf, context, scope));
-        let (message, label) = match &ty {
-            Some(ty) => (
-                format!("only arrays can be joined, but this has type `{ty}`"),
-                format!("`{ty}` is not an array"),
-            ),
-            None => (
-                String::from("only arrays can be joined, but this is not an array"),
-                String::from("not an array"),
-            ),
-        };
         self.diagnostics.push(
-            Diagnostic::error(DiagnosticCode::NotAnArray, message, operand.span)
-                .with_label(label)
-                .with_note(CONCATENATION_NOTE),
+            Diagnostic::error(
+                DiagnosticCode::NotAnArray,
+                format!("only arrays can be joined, but this has type `{ty}`"),
+                span,
+            )
+            .with_label(format!("`{ty}` is not an array"))
+            .with_note(CONCATENATION_NOTE),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_left_fills_join(&mut self, span: Span, left: u32, expected: &CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let length = expected.as_array().map_or(0, ArrayType::length);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::ArrayLengthMismatch,
+                format!(
+                    "the left operand of `++` has {left} elements, leaving none of the {length} \
+                     of `{expected}` for the right"
+                ),
+                span,
+            )
+            .with_label(format!("expected {length} elements in all"))
+            .with_note(CONCATENATION_NOTE),
         );
     }
 
@@ -715,7 +757,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if let Some(base_type) = base_type
             && base_type.as_array().is_none()
         {
-            self.report_not_an_array(update.base.span, &base_type, true);
+            self.report_not_updatable(update.base.span, &base_type);
             self.check_expression(&update.base, &base_type, context, scope, output);
             return false;
         }
@@ -728,10 +770,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         expression.span,
                     )
                     .with_label(format!("expected `{expected}`"))
-                    .with_note(
-                        "`x with [a..b] = v` is the array `x` with its elements from index a up \
-                         to b replaced by those of v",
-                    ),
+                    .with_note(SLICE_UPDATE_NOTE),
                 );
             }
             return false;
@@ -761,6 +800,32 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 expected.clone(),
                 CoreNodeKind::SliceUpdate,
             )
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_not_updatable(&mut self, span: Span, base_type: &CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let tuple = base_type.as_tuple().is_some();
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::NotAnArray,
+                format!("only an array can be updated, but this has type `{base_type}`"),
+                span,
+            )
+            .with_label(if tuple {
+                format!("`{base_type}` is a tuple, not an array")
+            } else {
+                format!("`{base_type}` has no elements")
+            })
+            .with_note(if tuple {
+                "a tuple with elements replaced is written anew, such as `(v, p.1)`"
+            } else {
+                SLICE_UPDATE_NOTE
+            }),
+        );
     }
 
     /// Checks the bounds of a slice of `array` and pushes their Core: the
@@ -951,21 +1016,26 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         })
     }
 
-    /// Returns the length of a slice without reporting, when its bounds are
-    /// static and a fixed positive distance apart. An omitted bound makes
-    /// the length depend on the array, which is not known here, so `None`
-    /// is returned unless both bounds are written or the start is omitted.
+    /// Returns the length of a slice of an array of `base_length` elements
+    /// without reporting, when its bounds are static and a fixed positive
+    /// distance apart. An omitted start is 0 and an omitted end the base's
+    /// length.
     pub(super) fn slice_length(
         &self,
         range: &SliceRange,
+        base_length: u32,
         context: &BodyContext<'ast>,
     ) -> Option<u32> {
-        let end = self.affine_form(range.end.as_ref()?, context).ok()??;
+        let reserve = self.reserve_range_limbs;
+        let end = match &range.end {
+            Some(end) => self.affine_form(end, context).ok()??,
+            None => Affine::constant(ExactInteger::from_u64(u64::from(base_length), reserve)?),
+        };
         let start = match &range.start {
             Some(start) => self.affine_form(start, context).ok()??,
-            None => Affine::constant(ExactInteger::from_u64(0, self.reserve_range_limbs)?),
+            None => Affine::constant(ExactInteger::from_u64(0, reserve)?),
         };
-        let difference = end.combine(&start, true, self.reserve_range_limbs)?;
+        let difference = end.combine(&start, true, reserve)?;
         if !difference.terms.is_empty() {
             return None;
         }
