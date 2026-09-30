@@ -6,7 +6,7 @@ use std::fmt;
 use crate::core::{
     ArrayType, CoreConditional, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreLoop,
     CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH,
-    MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, Magnitude,
+    MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, MAX_MODULUS_BITS, Magnitude, Modulus, Residue,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
@@ -42,9 +42,13 @@ const _: () = assert!(MAX_ARRAY_ELEMENTS == 256 && MAX_ARRAY_LENGTH == 256);
 const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
 const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
 const MAX_MODULES_IN_CYCLE_DIAGNOSTIC: usize = 8;
-const ADMITTED_TYPES: &str = "`Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
-const ARRAY_OPERATOR_NOTE: &str =
-    "operators apply to `Int`, `Bool`, and word values; apply them to elements, such as `x[0]`";
+const ADMITTED_TYPES: &str = "`Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, `Word[64]`, \
+     `Mod[m]`, and the names of earlier `type` declarations";
+const ARRAY_OPERATOR_NOTE: &str = "operators apply to `Int`, `Bool`, word, and residue values; \
+     apply them to elements, such as `x[0]`";
+const MODULUS_NOTE: &str = "a modulus is a constant built from integer literals with `+`, `-`, \
+     `*`, `<<`, and parentheses, as in `Mod[(1 << 255) - 19]`";
+const BUILT_IN_TYPE_NAMES: [&str; 4] = ["Int", "Bool", "Word", "Mod"];
 const STATIC_INDEX_NOTE: &str = "every index is proved in range when the program is checked: a \
      word index ranges over its type, and an `Int` index is built from integer literals, loop \
      indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals";
@@ -628,12 +632,7 @@ fn link_program<'ast>(
 fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool {
     let source_id = source.id();
     let belongs = |span: Span| span.source() == source_id;
-    let type_belongs = |ty: &TypeSyntax| {
-        belongs(ty.span)
-            && belongs(ty.name.span)
-            && ty.width_span.is_none_or(belongs)
-            && ty.length_span.is_none_or(belongs)
-    };
+    let type_belongs = |ty: &TypeSyntax| type_belongs(ty, &belongs);
 
     belongs(ast.span)
         && belongs(ast.edition.span)
@@ -645,6 +644,11 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
             .uses
             .iter()
             .all(|declaration| belongs(declaration.span) && belongs(declaration.name.span))
+        && ast.module.types.iter().all(|declaration| {
+            belongs(declaration.span)
+                && belongs(declaration.name.span)
+                && type_belongs(&declaration.ty)
+        })
         && ast.module.functions.iter().all(|function| {
             belongs(function.span)
                 && belongs(function.name.span)
@@ -668,6 +672,18 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
                     }
                 }
         })
+}
+
+/// Parser-established expression height, which counts a modulus inside an
+/// expression, bounds this recursion.
+fn type_belongs(ty: &TypeSyntax, belongs: &impl Fn(Span) -> bool) -> bool {
+    belongs(ty.span)
+        && belongs(ty.name.span)
+        && ty.width_span.is_none_or(belongs)
+        && ty.length_span.is_none_or(belongs)
+        && ty
+            .modulus()
+            .is_none_or(|modulus| expression_belongs(modulus, belongs))
 }
 
 /// Parser-established expression height bounds this recursion.
@@ -699,12 +715,8 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
             }
             ExpressionKind::Parenthesized(inner) => expression_belongs(inner, belongs),
             ExpressionKind::Conversion(conversion) => {
-                let target = &conversion.target;
                 belongs(conversion.keyword_span)
-                    && belongs(target.span)
-                    && belongs(target.name.span)
-                    && target.width_span.is_none_or(belongs)
-                    && target.length_span.is_none_or(belongs)
+                    && type_belongs(&conversion.target, belongs)
                     && expression_belongs(&conversion.operand, belongs)
             }
             ExpressionKind::Array(array) => array
@@ -725,16 +737,12 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && expression_belongs(&update.value, belongs)
             }
             ExpressionKind::Loop(r#loop) => {
-                let ty = &r#loop.ty;
                 belongs(r#loop.keyword_span)
                     && belongs(r#loop.index.span)
                     && belongs(r#loop.start_span)
                     && belongs(r#loop.end_span)
                     && belongs(r#loop.accumulator.span)
-                    && belongs(ty.span)
-                    && belongs(ty.name.span)
-                    && ty.width_span.is_none_or(belongs)
-                    && ty.length_span.is_none_or(belongs)
+                    && type_belongs(&r#loop.ty, belongs)
                     && expression_belongs(&r#loop.init, belongs)
                     && expression_belongs(&r#loop.step, belongs)
             }
@@ -810,6 +818,7 @@ struct Analyzer<'source, 'ast> {
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
     reserve_core_node_slot: fn(&mut Vec<CoreNode>) -> bool,
     reserve_call_edge_slot: fn(&mut Vec<CallEdge>) -> bool,
+    types: TypeTable<'ast>,
 }
 
 struct PendingFunction {
@@ -1112,12 +1121,73 @@ enum TypeClass {
     MissingWordWidth,
     UnsupportedWordWidth(Span),
     UnsupportedArrayLength(Span),
+    MissingModulus,
+    /// A declared name whose element type is already an array, followed by
+    /// the span of `^LENGTH`.
+    ArrayOfArrays(Span),
+    /// A modulus or declared name whose own check already failed.
+    Unresolved,
+    /// A modulus the module's table does not hold.
+    Unindexed,
     Unsupported,
 }
 
-fn classify_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
-    let scalar = classify_scalar_type(source, syntax);
+/// The types a module fixes before its functions are checked: the value of
+/// every modulus it writes, and the names of its `type` declarations.
+struct TypeTable<'ast> {
+    /// Each modulus by the extent of its expression, sorted by that key.
+    moduli: Vec<ResolvedModulus>,
+    /// Declared names in declaration order, each unique.
+    names: Vec<DeclaredType<'ast>>,
+}
+
+struct ResolvedModulus {
+    key: (u32, u32),
+    /// The modulus, or `None` when its expression was reported.
+    modulus: Option<Modulus>,
+}
+
+struct DeclaredType<'ast> {
+    name: &'ast str,
+    span: Span,
+    /// The declared type, or `None` when its declaration was reported.
+    ty: Option<CoreType>,
+}
+
+impl TypeTable<'_> {
+    const fn new() -> Self {
+        Self {
+            moduli: Vec::new(),
+            names: Vec::new(),
+        }
+    }
+
+    /// Returns the entry of the modulus written as `expression`.
+    fn modulus(&self, expression: &Expression) -> Option<&ResolvedModulus> {
+        let key = span_key(expression.span);
+        let position = self
+            .moduli
+            .binary_search_by_key(&key, |entry| entry.key)
+            .ok()?;
+        self.moduli.get(position)
+    }
+
+    /// Returns the declaration of `name`, if the module declares it.
+    fn name(&self, name: &str) -> Option<&DeclaredType<'_>> {
+        self.names.iter().find(|declared| declared.name == name)
+    }
+}
+
+fn span_key(span: Span) -> (u32, u32) {
+    (span.start().bytes(), span.end().bytes())
+}
+
+fn classify_type(source: &SourceFile, table: &TypeTable<'_>, syntax: &TypeSyntax) -> TypeClass {
+    let scalar = classify_scalar_type(source, table, syntax);
     match (scalar, syntax.length_span) {
+        (TypeClass::Resolved(CoreType::Array(_)), Some(length_span)) => {
+            TypeClass::ArrayOfArrays(length_span)
+        }
         (TypeClass::Resolved(element), Some(length_span)) => array_length(source, length_span)
             .and_then(|length| ArrayType::new(element, length))
             .map_or(TypeClass::UnsupportedArrayLength(length_span), |array| {
@@ -1140,7 +1210,23 @@ fn array_length(source: &SourceFile, span: Span) -> Option<u32> {
     spelling.parse().ok()
 }
 
-fn classify_scalar_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
+/// Classifies a type without its array length. A declared name stands for
+/// its whole type, which may be an array type.
+fn classify_scalar_type(
+    source: &SourceFile,
+    table: &TypeTable<'_>,
+    syntax: &TypeSyntax,
+) -> TypeClass {
+    if let Some(expression) = syntax.modulus() {
+        return match table.modulus(expression) {
+            Some(ResolvedModulus {
+                modulus: Some(modulus),
+                ..
+            }) => TypeClass::Resolved(CoreType::Mod(*modulus)),
+            Some(_) => TypeClass::Unresolved,
+            None => TypeClass::Unindexed,
+        };
+    }
     match (syntax.name.text.as_str(), syntax.width_span) {
         ("Int", None) => TypeClass::Resolved(CoreType::Int),
         ("Bool", None) => TypeClass::Resolved(CoreType::Bool),
@@ -1159,12 +1245,22 @@ fn classify_scalar_type(source: &SourceFile, syntax: &TypeSyntax) -> TypeClass {
                 })
         }
         ("Word", None) => TypeClass::MissingWordWidth,
+        ("Mod", None) => TypeClass::MissingModulus,
+        (name, None) => table.name(name).map_or(TypeClass::Unsupported, |declared| {
+            declared
+                .ty
+                .map_or(TypeClass::Unresolved, TypeClass::Resolved)
+        }),
         _ => TypeClass::Unsupported,
     }
 }
 
-fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
-    match classify_type(source, syntax) {
+fn silent_type(
+    source: &SourceFile,
+    table: &TypeTable<'_>,
+    syntax: &TypeSyntax,
+) -> Option<CoreType> {
+    match classify_type(source, table, syntax) {
         TypeClass::Resolved(ty) => Some(ty),
         _ => None,
     }
@@ -1344,7 +1440,7 @@ fn positive_divisor_range(
 
 fn word_maximum(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
+        CoreType::Int | CoreType::Bool | CoreType::Mod(_) | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -1373,6 +1469,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             reserve_diagnostic_slots,
             reserve_core_node_slot,
             reserve_call_edge_slot,
+            types: TypeTable::new(),
         }
     }
 
@@ -1448,6 +1545,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .then_with(|| left.name.cmp(right.name))
                 .then_with(|| left.source_index.cmp(&right.source_index))
         });
+        self.resolve_moduli();
+        self.analyze_type_declarations();
         let Some(signatures) = self.collect_signatures() else {
             return ModuleOutcome {
                 core: None,
@@ -1587,6 +1686,285 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
+    /// Evaluates every modulus written in the module's `type` declarations
+    /// and typed `spec` functions, once each and in source order, before any
+    /// type is resolved.
+    fn resolve_moduli(&mut self) {
+        let module = &self.ast.module;
+        for declaration in &module.types {
+            self.resolve_modulus(&declaration.ty);
+        }
+        for function in &module.functions {
+            let (FunctionBody::Typed(body), FunctionKind::Spec) = (&function.body, function.kind)
+            else {
+                continue;
+            };
+            for parameter in &function.parameters {
+                self.resolve_modulus(&parameter.ty);
+            }
+            self.resolve_modulus(&body.result_type);
+            for binding in &body.bindings {
+                self.resolve_modulus(&binding.ty);
+                self.resolve_moduli_within(&binding.value);
+            }
+            self.resolve_moduli_within(&body.expression);
+        }
+        self.types.moduli.sort_unstable_by_key(|entry| entry.key);
+    }
+
+    /// Evaluates the moduli of the conversions and loops of an expression.
+    ///
+    /// Parser-established expression height bounds this recursion.
+    fn resolve_moduli_within(&mut self, expression: &Expression) {
+        if self.halted {
+            return;
+        }
+        match &expression.kind {
+            ExpressionKind::Literal(_) | ExpressionKind::Name(_) => {}
+            ExpressionKind::Call(call) => {
+                for argument in &call.arguments {
+                    self.resolve_moduli_within(argument);
+                }
+            }
+            ExpressionKind::Unary(unary) => self.resolve_moduli_within(&unary.operand),
+            ExpressionKind::Binary(binary) => {
+                self.resolve_moduli_within(&binary.left);
+                self.resolve_moduli_within(&binary.right);
+            }
+            ExpressionKind::Parenthesized(inner) => self.resolve_moduli_within(inner),
+            ExpressionKind::Conversion(conversion) => {
+                self.resolve_moduli_within(&conversion.operand);
+                self.resolve_modulus(&conversion.target);
+            }
+            ExpressionKind::Array(array) => {
+                for element in &array.elements {
+                    self.resolve_moduli_within(element);
+                }
+            }
+            ExpressionKind::Fill(fill) => self.resolve_moduli_within(&fill.element),
+            ExpressionKind::Index(index) => {
+                self.resolve_moduli_within(&index.base);
+                self.resolve_moduli_within(&index.index);
+            }
+            ExpressionKind::Update(update) => {
+                self.resolve_moduli_within(&update.base);
+                self.resolve_moduli_within(&update.index);
+                self.resolve_moduli_within(&update.value);
+            }
+            ExpressionKind::Loop(r#loop) => {
+                self.resolve_modulus(&r#loop.ty);
+                self.resolve_moduli_within(&r#loop.init);
+                self.resolve_moduli_within(&r#loop.step);
+            }
+            ExpressionKind::Conditional(conditional) => {
+                for arm in &conditional.arms {
+                    self.resolve_moduli_within(&arm.condition);
+                    self.resolve_moduli_within(&arm.value);
+                }
+                self.resolve_moduli_within(&conditional.otherwise);
+            }
+        }
+    }
+
+    /// Evaluates the modulus of `Mod[...]`, if `syntax` has one, and enters
+    /// it in the module's table.
+    fn resolve_modulus(&mut self, syntax: &TypeSyntax) {
+        let Some(expression) = syntax.modulus() else {
+            return;
+        };
+        if self.halted {
+            return;
+        }
+        let modulus = self
+            .constant(expression)
+            .and_then(|value| self.checked_modulus(expression.span, &value));
+        if self.halted {
+            return;
+        }
+        if self.types.moduli.try_reserve(1).is_err() {
+            self.resource_limit(expression.span, "semantic modulus table allocation failed");
+            return;
+        }
+        self.types.moduli.push(ResolvedModulus {
+            key: span_key(expression.span),
+            modulus,
+        });
+    }
+
+    /// Evaluates a constant: integer literals combined with `+`, `-`, `*`,
+    /// `<<`, and parentheses, with every value within the exact-integer
+    /// limit. Anything else is reported, and gives `None`.
+    ///
+    /// Parser-established expression height bounds this recursion.
+    fn constant(&mut self, expression: &Expression) -> Option<ExactInteger> {
+        if !self.event(expression.span) {
+            return None;
+        }
+        let reserve = self.reserve_range_limbs;
+        let value = match &expression.kind {
+            ExpressionKind::Literal(literal) => {
+                let magnitude = self.parse_magnitude(literal, self.limits.integer_bits)?;
+                Some(ExactInteger::new(literal.negative, magnitude))
+            }
+            ExpressionKind::Parenthesized(inner) => return self.constant(inner),
+            ExpressionKind::Binary(binary) if binary.operator == BinaryOperator::ShiftLeft => {
+                let value = self.constant(&binary.left)?;
+                let amount = self.constant(&binary.right)?;
+                let bits = self.limits.integer_bits;
+                let Some(amount) = amount
+                    .to_i64()
+                    .and_then(|amount| usize::try_from(amount).ok())
+                    .filter(|amount| *amount <= bits)
+                else {
+                    self.report_invalid_modulus(
+                        binary.right.span,
+                        format!("a shift amount in a modulus is from 0 through {bits}"),
+                    );
+                    return None;
+                };
+                ExactInteger::power_of_two(amount, reserve)
+                    .and_then(|power| value.multiply(&power, reserve))
+            }
+            ExpressionKind::Binary(binary)
+                if matches!(
+                    binary.operator,
+                    BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
+                ) =>
+            {
+                let left = self.constant(&binary.left)?;
+                let right = self.constant(&binary.right)?;
+                match binary.operator {
+                    BinaryOperator::Add => left.add(&right, reserve),
+                    BinaryOperator::Subtract => left.subtract(&right, reserve),
+                    _ => left.multiply(&right, reserve),
+                }
+            }
+            _ => {
+                self.report_invalid_modulus(
+                    expression.span,
+                    String::from("not a constant integer expression"),
+                );
+                return None;
+            }
+        };
+        let Some(value) = value else {
+            self.resource_limit(expression.span, "exact integer storage allocation failed");
+            return None;
+        };
+        if value.magnitude_bits() > self.limits.integer_bits {
+            if self.begin_report(expression.span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::IntegerMagnitudeLimit,
+                        format!(
+                            "integer magnitude exceeds the {}-significant-bit limit",
+                            self.limits.integer_bits
+                        ),
+                        expression.span,
+                    )
+                    .with_label("this value of the modulus is too large")
+                    .with_note("the value is rejected rather than truncated or approximated"),
+                );
+            }
+            return None;
+        }
+        Some(value)
+    }
+
+    /// Returns `value` as a modulus, or reports why it is not one.
+    fn checked_modulus(&mut self, span: Span, value: &ExactInteger) -> Option<Modulus> {
+        if let Some(modulus) = Modulus::new(value) {
+            return Some(modulus);
+        }
+        let label = if value.magnitude_bits() > MAX_MODULUS_BITS && !value.is_negative() {
+            format!("this modulus has {} bits", value.magnitude_bits())
+        } else if value.magnitude_bits() <= 64 {
+            format!("this modulus is {value}")
+        } else {
+            String::from("this modulus is negative")
+        };
+        self.report_invalid_modulus(span, label);
+        None
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_invalid_modulus(&mut self, span: Span, label: String) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::InvalidModulus,
+                    format!("a modulus must be a constant from 2 through 2^{MAX_MODULUS_BITS} - 1"),
+                    span,
+                )
+                .with_label(label)
+                .with_note(MODULUS_NOTE),
+            );
+        }
+    }
+
+    /// Resolves the module's `type` declarations in order. Each names a type
+    /// for the whole module, written with the built-in types and the names
+    /// declared before it.
+    fn analyze_type_declarations(&mut self) {
+        let declarations = &self.ast.module.types;
+        if self
+            .types
+            .names
+            .try_reserve_exact(declarations.len())
+            .is_err()
+        {
+            self.resource_limit(
+                self.ast.module.span,
+                "semantic type name table allocation failed",
+            );
+            return;
+        }
+        for declaration in declarations {
+            // One event for the name's lookup.
+            if !self.event(declaration.name.span) {
+                return;
+            }
+            let name = declaration.name.text.as_str();
+            let span = declaration.name.span;
+            let earlier = self.types.name(name).map(|declared| declared.span);
+            if BUILT_IN_TYPE_NAMES.contains(&name) {
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::DuplicateTypeName,
+                            format!("`{name}` is a built-in type"),
+                            span,
+                        )
+                        .with_label("a `type` declaration cannot name a built-in type")
+                        .with_note("the built-in types are `Int`, `Bool`, `Word[n]`, and `Mod[m]`"),
+                    );
+                }
+            } else if let Some(first) = earlier
+                && self.begin_report(span)
+            {
+                let name = identifier_spelling_for_diagnostic(name);
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::DuplicateTypeName,
+                        format!("duplicate type name `{name}`"),
+                        span,
+                    )
+                    .with_label("this declaration repeats a type name")
+                    .with_secondary_span(first, "first declaration is here")
+                    .with_note("each `type` declaration of a module names a different type"),
+                );
+            }
+            let ty = self.analyze_type(&declaration.ty, "declared type");
+            if self.halted {
+                return;
+            }
+            if earlier.is_none() && !BUILT_IN_TYPE_NAMES.contains(&name) {
+                self.types.names.push(DeclaredType { name, span, ty });
+            }
+        }
+    }
+
     /// Resolves every typed `spec` signature without events or diagnostics.
     ///
     /// Types are reported once, in source order, when their own declaration is
@@ -1630,12 +2008,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         function
                             .parameters
                             .iter()
-                            .map(|parameter| silent_type(self.source, &parameter.ty)),
+                            .map(|parameter| silent_type(self.source, &self.types, &parameter.ty)),
                     );
                     Some(Signature {
                         id,
                         parameters,
-                        result_type: silent_type(self.source, &body.result_type),
+                        result_type: silent_type(self.source, &self.types, &body.result_type),
                     })
                 }
                 _ => None,
@@ -2179,6 +2557,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         };
+        if let Some(target) = target.filter(|target| !target.is_scalar()) {
+            self.report_array_conversion(conversion.target.span, target);
+            return false;
+        }
         let from = self.leaf_type(leaf, context, scope);
         if matches!(leaf.kind, ExpressionKind::Array(_))
             || from.is_some_and(|from| !from.is_scalar())
@@ -2193,7 +2575,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         format!("`as` is not defined for {operand}"),
                         span,
                     )
-                    .with_label("`as` converts one `Int` or word value")
+                    .with_label("`as` converts one `Int`, word, or residue value")
                     .with_note("convert each element, such as `x[0] as Int`"),
                 );
             }
@@ -2214,7 +2596,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         "`as` does not convert to or from `Bool`",
                         span,
                     )
-                    .with_label("`as` converts one `Int` or word value")
+                    .with_label("`as` converts one `Int`, word, or residue value")
                     .with_note(
                         "choose a number with a conditional, such as `if b { 1 } else { 0 }`, \
                          or compare a number, such as `x != 0`",
@@ -2234,6 +2616,22 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             )
     }
 
+    #[cold]
+    #[inline(never)]
+    fn report_array_conversion(&mut self, span: Span, target: CoreType) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedOperator,
+                    format!("`as` does not convert to the array type `{target}`"),
+                    span,
+                )
+                .with_label("`as` gives one `Int`, word, or residue value")
+                .with_note("convert each element, such as `x[0] as Int`"),
+            );
+        }
+    }
+
     /// Returns the type of a name, call, or conversion without reporting.
     fn leaf_type(
         &self,
@@ -2248,12 +2646,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 let entry = first_declaration(declarations, FunctionKind::Spec, &call.callee.text)?;
                 signatures.get(entry.source_index)?.as_ref()?.result_type
             }
-            ExpressionKind::Conversion(conversion) => silent_type(self.source, &conversion.target),
+            ExpressionKind::Conversion(conversion) => {
+                silent_type(self.source, &self.types, &conversion.target)
+            }
             ExpressionKind::Index(index) => self
                 .leaf_type(&index.base, context, scope)?
                 .as_array()
                 .map(ArrayType::element),
-            ExpressionKind::Loop(r#loop) => silent_type(self.source, &r#loop.ty),
+            ExpressionKind::Loop(r#loop) => silent_type(self.source, &self.types, &r#loop.ty),
             ExpressionKind::Update(update) => {
                 self.leaf_type(first_typed_leaf(&update.base)?, context, scope)
             }
@@ -2574,6 +2974,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     Some(CoreType::Int) => {
                         return self.static_range(&conversion.operand, context, scope);
                     }
+                    // A residue converts to its least residue, 0 through m - 1.
+                    Some(CoreType::Mod(modulus)) => {
+                        let reserve = self.reserve_range_limbs;
+                        let high = modulus
+                            .to_exact(reserve)
+                            .zip(ExactInteger::from_u64(1, reserve));
+                        ExactInteger::from_u64(0, reserve)
+                            .zip(high.and_then(|(modulus, one)| modulus.subtract(&one, reserve)))
+                    }
                     Some(from) => {
                         let Some(maximum) = word_maximum(from) else {
                             return Err(index.span);
@@ -2764,12 +3173,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .map(|value| self.word_range(value, maximum, context, scope))
                 .reduce(|(low, high), (least, greatest)| (low.min(least), high.max(greatest)))
                 .unwrap_or(whole),
-            ExpressionKind::Conversion(conversion) => first_typed_leaf(&conversion.operand)
-                .and_then(|leaf| self.leaf_type(leaf, context, scope))
-                .and_then(word_maximum)
-                .map(|from| self.word_range(&conversion.operand, u128::from(from), context, scope))
-                .filter(|(_, high)| *high <= maximum)
-                .unwrap_or(whole),
+            ExpressionKind::Conversion(conversion) => {
+                let from = first_typed_leaf(&conversion.operand)
+                    .and_then(|leaf| self.leaf_type(leaf, context, scope));
+                // A residue converts to its least residue, 0 through m - 1.
+                let range = match from.and_then(CoreType::modulus) {
+                    Some(modulus) => modulus
+                        .to_u64()
+                        .and_then(|modulus| modulus.checked_sub(1))
+                        .map(|high| (0, u128::from(high))),
+                    None => from.and_then(word_maximum).map(|from| {
+                        self.word_range(&conversion.operand, u128::from(from), context, scope)
+                    }),
+                };
+                range.filter(|(_, high)| *high <= maximum).unwrap_or(whole)
+            }
             _ => whole,
         }
     }
@@ -3228,7 +3646,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         let defined = match binary.operator {
             BinaryOperator::Equal | BinaryOperator::NotEqual => operand.is_scalar(),
-            _ => operand.is_number(),
+            _ => operand.is_ordered(),
         };
         if !defined {
             if self.begin_report(binary.operator_span) {
@@ -3239,7 +3657,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         binary.operator_span,
                     )
                     .with_label(format!("the operands have type `{operand}`"))
-                    .with_note(if operand.is_scalar() {
+                    .with_note(if operand.modulus().is_some() {
+                        "residues are compared with `==` and `!=`; they have no order, so \
+                         compare least residues, such as `(x as Int) < (y as Int)`"
+                    } else if operand.is_scalar() {
                         "`Bool` values are compared with `==` and `!=`; they have no order"
                     } else {
                         "compare elements, such as `x[0] == y[0]`"
@@ -3724,7 +4145,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     fn unary_is_defined(&mut self, unary: &UnaryExpression, expected: CoreType) -> bool {
         let defined = match unary.operator {
-            UnaryOperator::Negate => expected == CoreType::Int,
+            UnaryOperator::Negate => expected == CoreType::Int || expected.modulus().is_some(),
             UnaryOperator::Complement => expected.word_bits().is_some(),
             UnaryOperator::Not => expected == CoreType::Bool,
         };
@@ -3740,7 +4161,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     String::from("`!` negates a `Bool`; `~` is the bitwise complement of a word")
                 }
                 (UnaryOperator::Not, None) => {
-                    String::from("`!` negates a `Bool`; `-` negates an `Int`")
+                    String::from("`!` negates a `Bool`; `-` negates an `Int` or a residue")
                 }
                 _ => String::from("bitwise operators apply only to `Word[n]` values"),
             };
@@ -3762,8 +4183,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             BinaryOperator::Add
             | BinaryOperator::Subtract
             | BinaryOperator::Multiply
-            | BinaryOperator::Divide
-            | BinaryOperator::Remainder => expected.is_number(),
+            | BinaryOperator::Divide => expected.is_number(),
+            BinaryOperator::Remainder => expected.is_ordered(),
             BinaryOperator::And
             | BinaryOperator::Or
             | BinaryOperator::Xor
@@ -3793,6 +4214,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     ARRAY_OPERATOR_NOTE
                 } else if expected == CoreType::Bool {
                     BOOL_OPERATOR_NOTE
+                } else if binary.operator == BinaryOperator::Remainder {
+                    "a residue is already reduced; `%` applies to `Int` and word values, such \
+                     as `(x as Int) % 16`"
                 } else if binary.operator.is_logical() {
                     "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators \
                      on words"
@@ -4122,7 +4546,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     }
 
     fn analyze_type(&mut self, syntax: &TypeSyntax, role: &str) -> Option<CoreType> {
-        // The identifier and optional width are distinct parsed-type components.
+        // The identifier and optional width are distinct parsed-type
+        // components; a modulus was evaluated with the module's types.
         if !self.event(syntax.name.span) {
             return None;
         }
@@ -4136,8 +4561,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         {
             return None;
         }
-        match classify_type(self.source, syntax) {
+        match classify_type(self.source, &self.types, syntax) {
             TypeClass::Resolved(ty) => Some(ty),
+            TypeClass::Unresolved => None,
+            TypeClass::Unindexed => {
+                self.resource_limit(syntax.span, "semantic modulus table is inconsistent");
+                None
+            }
+            TypeClass::MissingModulus => {
+                let span = syntax.name.span;
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidModulus,
+                            "`Mod` requires a modulus",
+                            span,
+                        )
+                        .with_label("missing modulus")
+                        .with_note(MODULUS_NOTE),
+                    );
+                }
+                None
+            }
+            TypeClass::ArrayOfArrays(length_span) => {
+                if self.begin_report(syntax.span) {
+                    let name = identifier_spelling_for_diagnostic(&syntax.name.text);
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::UnsupportedType,
+                            format!("`{name}` is an array type, so this is an array of arrays"),
+                            syntax.span,
+                        )
+                        .with_label("arrays of arrays are not part of Orange 2026")
+                        .with_secondary_span(
+                            length_span,
+                            "this length would make each element an array",
+                        )
+                        .with_note("an array's elements are `Int`, `Bool`, words, or residues"),
+                    );
+                }
+                None
+            }
             TypeClass::UnsupportedArrayLength(length_span) => {
                 self.report_unsupported_array_length(length_span);
                 None
@@ -4173,7 +4637,25 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             TypeClass::Unsupported => {
                 if self.begin_report(syntax.span) {
+                    let declared_later = syntax.width_span.is_none()
+                        && self
+                            .ast
+                            .module
+                            .types
+                            .iter()
+                            .any(|declaration| declaration.name.text == syntax.name.text);
                     let name = identifier_spelling_for_diagnostic(&syntax.name.text);
+                    let note = if declared_later {
+                        format!(
+                            "`{name}` is declared by a later `type` declaration; a `type` \
+                             declaration uses only the names declared before it"
+                        )
+                    } else {
+                        String::from(
+                            "types are resolved contextually and never inferred by spelling \
+                             similarity",
+                        )
+                    };
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::UnsupportedType,
@@ -4181,9 +4663,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             syntax.span,
                         )
                         .with_label(format!("the admitted types are {ADMITTED_TYPES}"))
-                        .with_note(
-                            "types are resolved contextually and never inferred by spelling similarity",
-                        ),
+                        .with_note(note),
                     );
                 }
                 None
@@ -4223,6 +4703,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return None;
         }
         let magnitude = self.parse_magnitude(literal, self.limits.integer_bits)?;
+        if let Some(modulus) = expected.modulus() {
+            return self.residue_literal(expected, modulus, literal, magnitude);
+        }
         let Some(maximum) = word_maximum(expected) else {
             return Some(CoreValue::Int(ExactInteger::new(
                 literal.negative,
@@ -4263,6 +4746,48 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             None
         }
     }
+    /// Gives the residue of a literal of `Mod[m]`, whose magnitude n is less
+    /// than m: n itself, or m - n when the literal is negative.
+    fn residue_literal(
+        &mut self,
+        expected: CoreType,
+        modulus: Modulus,
+        literal: &IntegerLiteral,
+        magnitude: Magnitude,
+    ) -> Option<CoreValue> {
+        let reserve = self.reserve_range_limbs;
+        let value = ExactInteger::new(false, magnitude);
+        if !modulus.contains(&value) {
+            if self.begin_report(literal.magnitude_span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::WordLiteralOutOfRange,
+                        format!("literal is outside the range of `{expected}`"),
+                        literal.magnitude_span,
+                    )
+                    .with_label("the literal's magnitude is not less than the modulus")
+                    .with_note(
+                        "a literal of `Mod[m]` has a magnitude n less than m, and `-n` stands \
+                         for m - n; residues do not reduce out-of-range literals",
+                    ),
+                );
+            }
+            return None;
+        }
+        let residue = if literal.negative && !value.is_zero() {
+            modulus
+                .to_exact(reserve)
+                .and_then(|modulus| modulus.subtract(&value, reserve))
+        } else {
+            Some(value)
+        };
+        let residue = residue.and_then(|residue| Residue::new(modulus, residue));
+        if residue.is_none() {
+            self.resource_limit(literal.span, "exact integer storage allocation failed");
+        }
+        residue.map(CoreValue::Mod)
+    }
+
     fn parse_magnitude(&mut self, literal: &IntegerLiteral, bit_limit: usize) -> Option<Magnitude> {
         let Some(spelling) = self.source.slice(literal.magnitude_span) else {
             self.resource_limit(
@@ -10521,5 +11046,662 @@ mod tests {
             result.diagnostics()[0].primary_span().source(),
             first.ids[1]
         );
+    }
+
+    /// `Mod[value]` for a modulus below 2^64.
+    fn residue_type(value: u64) -> CoreType {
+        let exact = ExactInteger::from_u64(value, reserve_range_limbs).unwrap();
+        CoreType::Mod(Modulus::new(&exact).unwrap())
+    }
+
+    /// Renders diagnostics as `(code, responsible source, label)`.
+    fn labelled<'text>(
+        fixture: &'text Fixture,
+        result: &AnalysisResult,
+    ) -> Vec<(DiagnosticCode, &'text str, String)> {
+        result
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.code(),
+                    fixture.source().slice(diagnostic.primary_span()).unwrap(),
+                    diagnostic.label().to_owned(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn residues_build_typed_core_in_postorder() {
+        let (fixture, core) = accepted(concat!(
+            "  type F = Mod[7];\n",
+            "  spec f(x: F, w: Word[8]) -> F { -1 + x * (w as F) - -x }\n",
+            "  spec g(x: F) -> Int { (x / 3) as Int }\n",
+            "  spec h(x: F) -> Bool { x != 6 }\n",
+        ));
+        let f = residue_type(7);
+        assert_eq!(
+            core.functions
+                .iter()
+                .map(|function| (function.parameters.clone(), function.result_type))
+                .collect::<Vec<_>>(),
+            [
+                (vec![f, CoreType::Word8], f),
+                (vec![f], CoreType::Int),
+                (vec![f], CoreType::Bool),
+            ]
+        );
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[0]),
+            owned(&[
+                ("literal 6", "-1", f),
+                ("parameter 0", "x", f),
+                ("parameter 1", "w", CoreType::Word8),
+                ("convert from Word[8]", "w as F", f),
+                ("infix *", "x * (w as F)", f),
+                ("infix +", "-1 + x * (w as F)", f),
+                ("parameter 0", "x", f),
+                ("prefix -", "-x", f),
+                ("infix -", "-1 + x * (w as F) - -x", f),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[1]),
+            owned(&[
+                ("parameter 0", "x", f),
+                ("literal 3", "3", f),
+                ("infix /", "x / 3", f),
+                ("convert from Mod[7]", "(x / 3) as Int", CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[2]),
+            owned(&[
+                ("parameter 0", "x", f),
+                ("literal 6", "6", f),
+                ("compare != on Mod[7]", "x != 6", CoreType::Bool),
+            ])
+        );
+    }
+
+    #[test]
+    fn moduli_are_constants_from_two_through_two_to_the_521_minus_one() {
+        // Moduli are values: every spelling of 7 names one type, and the
+        // extreme moduli are admitted.
+        let (_, core) = accepted(concat!(
+            "  spec f(x: Mod[7]) -> Mod[3 + 4] { x }\n",
+            "  spec g(x: Mod[0b111]) -> Mod[(1 << 3) - 1] { f(x) * f(x) }\n",
+            "  spec two(x: Mod[2]) -> Mod[1 + 1] { x }\n",
+            "  spec wide(x: Mod[(1 << 521) - 1]) -> Mod[(1 << 521) - 1] { x }\n",
+            "  spec p256(x: Mod[(1 << 256) - (1 << 224) + (1 << 192) + (1 << 96) - 1]) -> Bool { \
+             x == -3 }\n",
+        ));
+        let seven = residue_type(7);
+        assert_eq!(core.functions[0].parameters, [seven]);
+        assert_eq!(core.functions[1].result_type, seven);
+        assert_eq!(core.functions[2].result_type, residue_type(2));
+        assert_eq!(
+            core.functions
+                .iter()
+                .skip(3)
+                .map(|function| function.parameters[0].to_string())
+                .collect::<Vec<_>>(),
+            [
+                "Mod[(1 << 521) - 1]",
+                "Mod[0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff]",
+            ]
+        );
+        let Some(CoreType::Mod(wide)) = core.functions[3].parameters.first().copied() else {
+            panic!("expected a residue type");
+        };
+        assert_eq!(wide.bits(), MAX_MODULUS_BITS);
+
+        let (fixture, result) = rejected(concat!(
+            "  spec a(x: Mod[1]) -> Int { 0 }\n",
+            "  spec b(x: Mod[0 - 5]) -> Int { 0 }\n",
+            "  spec c(x: Mod[1 << 521]) -> Int { 0 }\n",
+            "  spec d(x: Mod[q]) -> Int { 0 }\n",
+            "  spec e(x: Mod[3329 / 1]) -> Int { 0 }\n",
+            "  spec f(x: Mod[-(7)]) -> Int { 0 }\n",
+            "  spec g(x: Mod) -> Int { 0 }\n",
+            "  spec h(x: Mod[1 << 16385]) -> Int { 0 }\n",
+            "  spec i(x: Mod[(1 << 16383) * 4]) -> Int { 0 }\n",
+            "  spec j(x: Mod[0 - (1 << 100)]) -> Int { 0 }\n",
+            "  spec k(x: Word[8]) -> Int { (x as Mod[f(1)]) as Int }\n",
+            "  spec l() -> Int { (for i in 0..1 with s: Mod[0] = 0 { s }) as Int }\n",
+        ));
+        // Every modulus is evaluated before any type is resolved, so the
+        // missing modulus, found when `g`'s type is resolved, comes last.
+        assert_eq!(
+            labelled(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "1",
+                    String::from("this modulus is 1")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "0 - 5",
+                    String::from("this modulus is -5")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "1 << 521",
+                    String::from("this modulus has 522 bits")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "q",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "3329 / 1",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "-(7)",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "16385",
+                    String::from("a shift amount in a modulus is from 0 through 16384")
+                ),
+                (
+                    DiagnosticCode::IntegerMagnitudeLimit,
+                    "(1 << 16383) * 4",
+                    String::from("this value of the modulus is too large")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "0 - (1 << 100)",
+                    String::from("this modulus is negative")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "f(1)",
+                    String::from("not a constant integer expression")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "0",
+                    String::from("this modulus is 0")
+                ),
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "Mod",
+                    String::from("missing modulus")
+                ),
+            ]
+        );
+        assert!(result.diagnostics.iter().all(|diagnostic| {
+            diagnostic.code() != DiagnosticCode::InvalidModulus
+                || diagnostic.notes() == [MODULUS_NOTE]
+        }));
+        assert_eq!(
+            result.diagnostics[0].message(),
+            "a modulus must be a constant from 2 through 2^521 - 1"
+        );
+    }
+
+    #[test]
+    fn type_names_resolve_in_declaration_order_within_their_module() {
+        let (_, core) = accepted(concat!(
+            "  type F = Mod[7];\n",
+            "  type Pair = F^2;\n",
+            "  type Count = Int;\n",
+            "  spec f(p: Pair, n: Count) -> F { p[1] + (n as F) }\n",
+        ));
+        let f = residue_type(7);
+        assert_eq!(
+            core.functions[0].parameters,
+            [array_of(f, 2), CoreType::Int]
+        );
+        assert_eq!(core.functions[0].result_type, f);
+
+        let (fixture, result) = rejected(concat!(
+            "  type Int = Word[8];\n",
+            "  type Bool = Int;\n",
+            "  type Word = Int;\n",
+            "  type Mod = Mod[7];\n",
+            "  type K = Mod[7];\n",
+            "  type K = Mod[11];\n",
+            "  type L = M;\n",
+            "  type M = Word[8];\n",
+            "  type Block = Word[32]^16;\n",
+            "  type Blocks = Block^2;\n",
+            "  type N = Mod[1];\n",
+            "  spec f(x: Block^2) -> K { 0 }\n",
+            "  spec g(x: Unknown) -> K { 0 }\n",
+            "  spec h(x: K[3]) -> K { 0 }\n",
+            "  spec i(x: N) -> K { 0 }\n",
+        ));
+        // Moduli are evaluated first, then declarations are resolved in
+        // order, then functions are checked; `N`'s use is not reported again.
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::InvalidModulus,
+                    "1",
+                    String::from("a modulus must be a constant from 2 through 2^521 - 1")
+                ),
+                (
+                    DiagnosticCode::DuplicateTypeName,
+                    "Int",
+                    String::from("`Int` is a built-in type")
+                ),
+                (
+                    DiagnosticCode::DuplicateTypeName,
+                    "Bool",
+                    String::from("`Bool` is a built-in type")
+                ),
+                (
+                    DiagnosticCode::DuplicateTypeName,
+                    "Word",
+                    String::from("`Word` is a built-in type")
+                ),
+                (
+                    DiagnosticCode::DuplicateTypeName,
+                    "Mod",
+                    String::from("`Mod` is a built-in type")
+                ),
+                (
+                    DiagnosticCode::DuplicateTypeName,
+                    "K",
+                    String::from("duplicate type name `K`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "M",
+                    String::from("unsupported declared type `M`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Block^2",
+                    String::from("`Block` is an array type, so this is an array of arrays")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Block^2",
+                    String::from("`Block` is an array type, so this is an array of arrays")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Unknown",
+                    String::from("unsupported parameter type `Unknown`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "K[3]",
+                    String::from("unsupported parameter type `K`")
+                ),
+            ]
+        );
+        let duplicate = &result.diagnostics[5];
+        assert_eq!(
+            duplicate
+                .secondary_spans()
+                .iter()
+                .map(|secondary| (
+                    fixture.source().slice(secondary.span()).unwrap(),
+                    secondary.label()
+                ))
+                .collect::<Vec<_>>(),
+            [("K", "first declaration is here")]
+        );
+        assert_eq!(
+            result.diagnostics[6].notes(),
+            [
+                "`M` is declared by a later `type` declaration; a `type` declaration uses only the \
+              names declared before it"
+            ]
+        );
+        assert_eq!(
+            result.diagnostics[1].notes(),
+            ["the built-in types are `Int`, `Bool`, `Word[n]`, and `Mod[m]`"]
+        );
+    }
+
+    #[test]
+    fn residue_literals_lie_strictly_between_minus_the_modulus_and_the_modulus() {
+        let (fixture, core) = accepted(concat!(
+            "  spec f() -> Mod[7]^5 { [-6, -1, 0, -0, 6] }\n",
+            "  spec g() -> Mod[(1 << 130) - 5] { -0x3fffffffffffffffffffffffffffffffa }\n",
+        ));
+        let rendered = |function: &CoreFunction| {
+            core_nodes(&fixture, function)
+                .into_iter()
+                .map(|(operation, _, _)| operation)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rendered(&core.functions[0]),
+            [
+                "literal 1",
+                "literal 6",
+                "literal 0",
+                "literal 0",
+                "literal 6",
+                "array of 5"
+            ]
+        );
+        assert_eq!(rendered(&core.functions[1]), ["literal 1"]);
+
+        let (fixture, result) = rejected(concat!(
+            "  spec a() -> Mod[7] { 7 }\n",
+            "  spec b() -> Mod[7] { -7 }\n",
+            "  spec c() -> Mod[(1 << 130) - 5] { 0x3fffffffffffffffffffffffffffffffb }\n",
+            "  spec d() -> Mod[7] { true }\n",
+        ));
+        assert_eq!(
+            labelled(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "7",
+                    String::from("the literal's magnitude is not less than the modulus")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "7",
+                    String::from("the literal's magnitude is not less than the modulus")
+                ),
+                (
+                    DiagnosticCode::WordLiteralOutOfRange,
+                    "0x3fffffffffffffffffffffffffffffffb",
+                    String::from("the literal's magnitude is not less than the modulus")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "true",
+                    String::from("expected `Mod[7]`")
+                ),
+            ]
+        );
+        assert_eq!(
+            result.diagnostics[0].message(),
+            "literal is outside the range of `Mod[7]`"
+        );
+    }
+
+    #[test]
+    fn residues_have_ring_operators_and_equality_but_no_order_remainder_or_bits() {
+        let members = concat!(
+            "  spec a(x: Mod[7]) -> Bool { x < x }\n",
+            "  spec b(x: Mod[7]) -> Bool { x >= 1 }\n",
+            "  spec c(x: Mod[7]) -> Mod[7] { x % 2 }\n",
+            "  spec d(x: Mod[7]) -> Mod[7] { ~x }\n",
+            "  spec e(x: Mod[7]) -> Mod[7] { !x }\n",
+            "  spec f(x: Mod[7]) -> Mod[7] { x & 1 }\n",
+            "  spec g(x: Mod[7]) -> Mod[7] { x << 1 }\n",
+            "  spec h(x: Mod[7]) -> Mod[7] { x && x }\n",
+        );
+        let (fixture, result) = rejected(members);
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::UnsupportedOperator, "<"),
+                (DiagnosticCode::UnsupportedOperator, ">="),
+                (DiagnosticCode::UnsupportedOperator, "%"),
+                (DiagnosticCode::UnsupportedOperator, "~"),
+                (DiagnosticCode::UnsupportedOperator, "!"),
+                (DiagnosticCode::UnsupportedOperator, "&"),
+                (DiagnosticCode::UnsupportedOperator, "<<"),
+                (DiagnosticCode::UnsupportedOperator, "&&"),
+            ]
+        );
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.notes()[0].as_str())
+                .collect::<Vec<_>>(),
+            [
+                "residues are compared with `==` and `!=`; they have no order, so compare least \
+                 residues, such as `(x as Int) < (y as Int)`",
+                "residues are compared with `==` and `!=`; they have no order, so compare least \
+                 residues, such as `(x as Int) < (y as Int)`",
+                "a residue is already reduced; `%` applies to `Int` and word values, such as \
+                 `(x as Int) % 16`",
+                "bitwise operators apply only to `Word[n]` values",
+                "`!` negates a `Bool`; `-` negates an `Int` or a residue",
+                "bitwise operators apply only to `Word[n]` values",
+                "shifts and rotations apply only to `Word[n]` values",
+                "`&&` and `||` apply to `Bool` values; `&` and `|` are the bitwise operators on \
+                 words",
+            ]
+        );
+
+        // Two moduli are two types, whatever their values share.
+        let (fixture, result) = rejected(concat!(
+            "  spec a(x: Mod[7], y: Mod[14]) -> Mod[7] { x + y }\n",
+            "  spec b(y: Mod[14]) -> Mod[7] { (y as Mod[7]) + a(y, y) }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "y",
+                    String::from("`y` has type `Mod[14]`, but `Mod[7]` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "y",
+                    String::from("`y` has type `Mod[14]`, but `Mod[7]` is required here")
+                ),
+            ]
+        );
+
+        // Every ring operator, `==`, and `!=` are defined for a residue.
+        accepted(concat!(
+            "  type F = Mod[(1 << 255) - 19];\n",
+            "  spec f(x: F, y: F) -> F { -(x + y - x * y) / (y - x) }\n",
+            "  spec g(x: F, y: F) -> Bool { (x == y) != (-x != y) }\n",
+        ));
+    }
+
+    #[test]
+    fn residues_convert_to_and_from_numbers_and_index_through_least_residues() {
+        let (_, core) = accepted(concat!(
+            "  spec f(x: Mod[7], w: Word[8], n: Int) -> Int^3 { \
+             [x as Int, (w as Mod[7]) as Int, ((n as Mod[7]) as Word[64]) as Int] }\n",
+            "  spec g(x: Mod[7]) -> Word[8] { \
+             let t: Word[8]^7 = [1, 2, 3, 4, 5, 6, 7]; t[x as Int] + t[x as Word[8]] }\n",
+            "  spec h(x: Mod[256]) -> Word[8] { \
+             let t: Word[8]^256 = [0; 256]; t[x as Word[8]] ^ t[x as Int] }\n",
+        ));
+        assert_eq!(core.functions.len(), 3);
+
+        let (fixture, result) = rejected(concat!(
+            "  spec a(x: Mod[7]) -> Word[8] { let t: Word[8]^6 = [0; 6]; t[x as Int] }\n",
+            "  spec b(x: Mod[7]) -> Word[8] { let t: Word[8]^6 = [0; 6]; t[x as Word[8]] }\n",
+            "  spec c(x: Mod[300]) -> Word[8] { let t: Word[8]^255 = [0; 255]; t[x as Word[8]] }\n",
+            "  spec d(x: Mod[7]) -> Word[8] { let t: Word[8]^7 = [0; 7]; t[x] }\n",
+            "  spec e(x: Mod[7]) -> Bool { x as Bool }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::IndexOutOfRange, "x as Int"),
+                (DiagnosticCode::IndexOutOfRange, "x as Word[8]"),
+                (DiagnosticCode::IndexOutOfRange, "x as Word[8]"),
+                (DiagnosticCode::TypeMismatch, "x"),
+                (DiagnosticCode::UnsupportedOperator, "as"),
+            ]
+        );
+    }
+
+    #[test]
+    fn residue_types_cross_modules_by_value_and_type_names_stay_in_their_module() {
+        let lib = concat!(
+            "edition 2026; module lib { type F = Mod[(1 << 130) - 5]; ",
+            "spec square(x: F) -> F { x * x } }",
+        );
+        let main = concat!(
+            "edition 2026; module main { use lib; type P = Mod[(1 << 130) - 5]; ",
+            "spec f(x: P) -> P { lib::square(x) + lib::square(-1) } }",
+        );
+        let program = Program::new(&[main, lib]);
+        let modules = program.modules();
+        let result = analyze_program(modules[0], &modules[1..]);
+        assert_eq!(result.diagnostics(), []);
+
+        let main = concat!(
+            "edition 2026; module main { use lib; ",
+            "spec f(x: F) -> Int { 0 } }",
+        );
+        let program = Program::new(&[main, lib]);
+        let modules = program.modules();
+        let result = analyze_program(modules[0], &modules[1..]);
+        assert_eq!(
+            result
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| (diagnostic.code(), diagnostic.message()))
+                .collect::<Vec<_>>(),
+            [(
+                DiagnosticCode::UnsupportedType,
+                "unsupported parameter type `F`"
+            )]
+        );
+    }
+
+    #[test]
+    fn modulus_events_follow_the_normative_accounting() {
+        // Beside `spec f(x: Int) -> Int { 0 }`, the modulus `3 + 4` costs
+        // one event for each of its three nodes and a prefix and a digit
+        // event for each literal: 7 events. It adds no Core node.
+        let events_for = |members: &str| {
+            let fixture = module(members);
+            (1..200)
+                .find(|events| {
+                    fixture
+                        .analyze_with(Limits {
+                            events: *events,
+                            ..Limits::DEFAULT
+                        })
+                        .core
+                        .is_some()
+                })
+                .unwrap()
+        };
+        let plain = events_for("  spec f(x: Int) -> Int { 0 }\n");
+        let residue = events_for("  spec f(x: Mod[3 + 4]) -> Int { 0 }\n");
+        assert_eq!(residue, plain + 7);
+        // A `type` declaration costs one event for its name's lookup and
+        // the events of its type; a use of the name costs what `Int` does.
+        let named = events_for("  type F = Mod[3 + 4];\n  spec f(x: F) -> Int { 0 }\n");
+        assert_eq!(named, plain + 7 + 2);
+    }
+
+    #[test]
+    fn modulus_storage_failures_return_no_partial_core() {
+        for (members, responsible) in [
+            ("  spec f(x: Mod[3 + 4]) -> Int { 0 }\n", "3 + 4"),
+            ("  spec f() -> Mod[7] { -1 }\n", "-1"),
+        ] {
+            let fixture = module(members);
+            let analyze_with_failure = || {
+                let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+                analyzer.reserve_range_limbs = |_, _| false;
+                analyzer.run()
+            };
+            let first = analyze_with_failure();
+            assert_eq!(first, analyze_with_failure());
+            assert!(first.core().is_none());
+            assert_eq!(first.diagnostics().len(), 1, "{members}");
+            let diagnostic = &first.diagnostics()[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+            assert_eq!(
+                fixture.source().slice(diagnostic.primary_span()),
+                Some(responsible)
+            );
+            assert_eq!(
+                diagnostic.label(),
+                "exact integer storage allocation failed"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_type_declarations_and_moduli() {
+        let text = "edition 2026; module values { type F = Mod[7]; \
+                    spec value(x: F) -> Int { \
+                    ((for i in 0..1 with s: Mod[11] = 0 { s }) as Mod[13]) as Int } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        fn conversion_mut(ast: &mut SyntaxTree) -> &mut ConversionExpression {
+            let ExpressionKind::Conversion(outer) = &mut typed_body_mut(ast).expression.kind else {
+                unreachable!();
+            };
+            let ExpressionKind::Parenthesized(inner) = &mut outer.operand.kind else {
+                unreachable!();
+            };
+            let ExpressionKind::Conversion(conversion) = &mut inner.kind else {
+                unreachable!();
+            };
+            conversion
+        }
+        fn loop_mut(ast: &mut SyntaxTree) -> &mut LoopExpression {
+            let ExpressionKind::Parenthesized(inner) = &mut conversion_mut(ast).operand.kind else {
+                unreachable!();
+            };
+            let ExpressionKind::Loop(r#loop) = &mut inner.kind else {
+                unreachable!();
+            };
+            r#loop
+        }
+        let mut foreign = second.ast.clone();
+        let declaration = foreign.module.types[0].clone();
+        let target = conversion_mut(&mut foreign).target.clone();
+        let accumulator = loop_mut(&mut foreign).ty.clone();
+        let modulus_span = |ty: &TypeSyntax| ty.modulus().unwrap().span;
+        type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
+        let mutations: Vec<Mutation<'_>> = vec![
+            Box::new(|ast| ast.module.types[0].span = declaration.span),
+            Box::new(|ast| ast.module.types[0].name.span = declaration.name.span),
+            Box::new(|ast| ast.module.types[0].ty.span = declaration.ty.span),
+            Box::new(|ast| {
+                ast.module.types[0].ty.modulus.as_mut().unwrap().span =
+                    modulus_span(&declaration.ty);
+            }),
+            Box::new(|ast| {
+                conversion_mut(ast).target.modulus.as_mut().unwrap().span = modulus_span(&target);
+            }),
+            Box::new(|ast| {
+                loop_mut(ast).ty.modulus.as_mut().unwrap().span = modulus_span(&accumulator);
+            }),
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
     }
 }

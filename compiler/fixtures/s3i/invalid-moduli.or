@@ -1,0 +1,14 @@
+// S3i conformance: a modulus is a constant from 2 through 2^521 - 1, built
+// from integer literals with `+`, `-`, `*`, `<<`, and parentheses.
+edition 2026;
+module moduli {
+  spec one(x: Mod[1]) -> Int { 0 }
+  spec negative(x: Mod[0 - 5]) -> Int { 0 }
+  spec wide(x: Mod[1 << 521]) -> Int { 0 }
+  spec named(x: Mod[q]) -> Int { 0 }
+  spec divided(x: Mod[3329 / 1]) -> Int { 0 }
+  spec bare(x: Mod) -> Int { 0 }
+  spec far(x: Mod[1 << 16385]) -> Int { 0 }
+  spec huge(x: Mod[(1 << 16384) * 2]) -> Int { 0 }
+  spec converted(x: Word[8]) -> Int { (x as Mod[1]) as Int }
+}

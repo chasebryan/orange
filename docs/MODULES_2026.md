@@ -21,6 +21,13 @@ Until then, the compiler behavior it describes exists so that the proposal can
 be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, extends this
+> document with the integers modulo a constant, as `Mod[(1 << 255) - 19]`, and
+> with `type` declarations, which follow a module's `use` declarations. A
+> residue type crosses a module boundary by its value, and a type name stays in
+> its module. Every source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

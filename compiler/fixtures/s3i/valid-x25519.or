@@ -1,0 +1,87 @@
+// S3i conformance: X25519 of RFC 7748 over the field the RFC defines, the
+// integers modulo 2^255 - 19. The ladder's formulas are written as section 5
+// writes them, with no reduction in sight; the ladder's state is a declared
+// type; and the result x_2 / z_2 is one division, which multiplies by the
+// inverse and gives 0 for a zero denominator, exactly as the RFC's
+// x_2 * z_2^(p - 2) does. The result of the first test vector of section 5.2
+// matches the RFC byte for byte.
+edition 2026;
+module x25519 {
+  // Section 4.1: the field of p = 2^255 - 19 elements.
+  type F = Mod[(1 << 255) - 19];
+  // [x_2, z_2, x_3, z_3].
+  type Ladder = F^4;
+
+  // Section 5: the u-coordinate, little-endian, with its top bit cleared,
+  // and reduced modulo p.
+  spec decode_u(u: Word[8]^32) -> F {
+    let masked: Word[8]^32 = u with [31] = u[31] & 127;
+    for i in 0..32 with n: F = 0 { n * 256 + (masked[31 - i] as F) }
+  }
+
+  // Section 5: the scalar with its three low bits cleared, bit 255 cleared,
+  // and bit 254 set.
+  spec clamp(k: Word[8]^32) -> Word[8]^32 {
+    (k with [0] = k[0] & 248) with [31] = (k[31] & 127) | 64
+  }
+
+  // Section 5: one rung of the ladder. It doubles (x_2 : z_2) and adds it
+  // to (x_3 : z_3), whose difference is (x_1 : 1).
+  spec ladder(x1: F, s: Ladder) -> Ladder {
+    let a: F = s[0] + s[1];
+    let aa: F = a * a;
+    let b: F = s[0] - s[1];
+    let bb: F = b * b;
+    let e: F = aa - bb;
+    let c: F = s[2] + s[3];
+    let d: F = s[2] - s[3];
+    let da: F = d * a;
+    let cb: F = c * b;
+    [aa * bb, e * (aa + 121665 * e), (da + cb) * (da + cb), x1 * ((da - cb) * (da - cb))]
+  }
+
+  spec swap(s: Ladder) -> Ladder { [s[2], s[3], s[0], s[1]] }
+
+  // The RFC's conditional swap before and after the rung: a set bit works
+  // on the swapped pair.
+  spec rung(x1: F, s: Ladder, set: Bool) -> Ladder {
+    if set { swap(ladder(x1, swap(s))) } else { ladder(x1, s) }
+  }
+
+  // 256^i for 0 <= i < 32.
+  spec byte_weight(i: Int) -> Int {
+    for j in 0..32 with w: Int = 1 { if j < i { w * 256 } else { w } }
+  }
+
+  // Section 5: the least residue, little-endian.
+  spec encode(x: F) -> Word[8]^32 {
+    let n: Int = x as Int;
+    for i in 0..32 with b: Word[8]^32 = [0; 32] { b with [i] = (n / byte_weight(i)) as Word[8] }
+  }
+
+  // Section 5: the scalar's bits from 254 down to 0 drive the ladder, and
+  // the result is x_2 / z_2.
+  spec x25519(scalar: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+    let k: Word[8]^32 = clamp(scalar);
+    let masks: Word[8]^8 = [1, 2, 4, 8, 16, 32, 64, 128];
+    let x1: F = decode_u(u);
+    let s: Ladder = for i in 0..255 with s: Ladder = [1, 0, x1, 1] {
+      rung(x1, s, (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0)
+    };
+    encode(s[0] / s[1])
+  }
+
+  // Section 5.2, the first test vector.
+  spec test_vector() -> Word[8]^32 {
+    x25519(
+      [
+        0xa5, 0x46, 0xe3, 0x6b, 0xf0, 0x52, 0x7c, 0x9d, 0x3b, 0x16, 0x15, 0x4b, 0x82, 0x46, 0x5e, 0xdd,
+        0x62, 0x14, 0x4c, 0x0a, 0xc1, 0xfc, 0x5a, 0x18, 0x50, 0x6a, 0x22, 0x44, 0xba, 0x44, 0x9a, 0xc4,
+      ],
+      [
+        0xe6, 0xdb, 0x68, 0x67, 0x58, 0x30, 0x30, 0xdb, 0x35, 0x94, 0xc1, 0xa4, 0x24, 0xb1, 0x5f, 0x7c,
+        0x72, 0x66, 0x24, 0xec, 0x26, 0xb3, 0x35, 0x3b, 0x10, 0xa9, 0x03, 0xa6, 0xd0, 0xab, 0x1c, 0x4c,
+      ],
+    )
+  }
+}
