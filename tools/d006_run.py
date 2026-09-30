@@ -3,7 +3,7 @@
 Runs the preregistered D-006 protocol for the two candidates, C-01 Rocq and
 C-02 Lean 4, against the frozen shared inputs, and archives every record.
 
-* ``prepare ARCHIVE_ROOT`` binds the shared-input manifest, the suite overlay,
+* ``prepare`` binds the shared-input manifest, the suite overlay,
   the toolchain record, this runner, the harness and the sandbox by digest,
   derives the epoch identity, captures the host and writes the content-
   addressed toolchain archives the workspaces unpack.
@@ -13,8 +13,13 @@ C-02 Lean 4, against the frozen shared inputs, and archives every record.
   W2 and recreates the deterministic manifests there.
 * ``summarize ARCHIVE`` derives every metric, hard gate, materiality label and
   the suite conclusion from the archived records alone.
-* ``verify ARCHIVE`` re-checks every archived file against the archive
-  manifest and recomputes the summary.
+* ``export ARCHIVE`` writes the committed form under ``run/``, and
+  ``verify ARCHIVE_OR_EXPORT`` re-checks every file against its manifest and
+  recomputes the summary.
+
+An archive argument names an epoch under ARCHIVE_ROOT (or an export under
+``run/``) by name or path, and is only compared with directories that already
+exist there, so a command-line argument never becomes a filesystem path.
 
 Every candidate process runs through ``tools/fs_sandbox.c`` (Landlock) inside
 fresh user, mount, PID, IPC, UTS and network namespaces with no capabilities,
@@ -29,6 +34,7 @@ import base64
 import fnmatch
 import gzip
 import hashlib
+import io
 import json
 import math
 import os
@@ -41,6 +47,7 @@ import statistics
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -57,6 +64,7 @@ SHARED_DIR = f"{LAB}/shared-inputs"
 OVERLAY_PATH = f"{LAB}/protocol/suite-overlay.json"
 TOOLCHAINS_PATH = f"{LAB}/protocol/toolchains.json"
 CANDIDATE_DIRS = {"C-01": f"{LAB}/rocq", "C-02": f"{LAB}/lean4"}
+RUN_DIR = f"{LAB}/run"
 LANGUAGE = {"C-01": "rocq", "C-02": "lean4"}
 NAMES = {"C-01": "Rocq", "C-02": "Lean 4"}
 BOUND_TOOLS = (
@@ -494,6 +502,13 @@ def prepare_archives(archive: Path) -> dict[str, Any]:
     return rows
 
 
+def lab_readable(path: Path) -> None:
+    """Readable and traversable by the laboratory user through its group, and by no one else."""
+
+    os.chown(path, 0, LAB_UID)
+    os.chmod(path, 0o750)
+
+
 def lab_owned(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     os.chown(path, LAB_UID, LAB_UID)
@@ -624,8 +639,11 @@ class RunContext:
 
 def to_harness(launched: dict[str, Any]) -> H.Launched:
     state = launched["state"]["kind"]
+    # Only a completed step succeeds (AM-05): a step stopped by a limit keeps no exit status 0 even
+    # when its process exited zero, so every exit-status test in the harness sees the stop.
+    status = None if state == "timeout" or (state != "completed" and launched["exit_status"] == 0) else launched["exit_status"]
     return H.Launched(
-        launched["argv"], None if state == "timeout" else launched["exit_status"],
+        launched["argv"], status,
         launched["stdout"], launched["stderr"], state == "timeout", state == "oversized_output",
         launched["wall_ms"], state == "resource_exhaustion" or bool(OUT_OF_MEMORY.search((launched["stdout"] + launched["stderr"]).decode("utf-8", "replace"))),
     )
@@ -704,7 +722,7 @@ def provision(epoch: Epoch, name: str, candidates: Iterable[str]) -> tuple[Works
     if ws.root.exists():
         raise RunError(f"workspace {name} already exists")
     ws.root.mkdir(parents=True)
-    os.chmod(ws.root, 0o755)
+    lab_readable(ws.root)
     ws.checkout.mkdir()
     revision = epoch.checkout_revision or epoch.packet["revision"]
     archive = subprocess.run(["git", "-C", str(epoch.repo), "archive", "--format=tar", revision], capture_output=True, check=True).stdout
@@ -1239,9 +1257,9 @@ def command_prepare(repo: Path, root: Path, dev_candidates: dict[str, str] | Non
     if archive.exists():
         raise RunError(f"{archive} already exists")
     staging.rename(archive)
-    os.chmod(archive, 0o755)
+    lab_readable(archive)
     sandbox, sandbox_identity = build_sandbox(repo, archive)
-    os.chmod(sandbox, 0o755)
+    lab_readable(sandbox)
     packet = {"schema_version": "d006-v0.3-packet-1", "epoch": epoch, "revision": revision, **identity,
               "host": host_capture(), "sandbox": sandbox_identity,
               "bootstrap_seed": bootstrap_seed(identity)}
@@ -1264,24 +1282,87 @@ def load_epoch(repo: Path, archive: Path) -> Epoch:
     return Epoch(repo, archive, packet, Launcher(binary, packet["sandbox"]), ordinal=existing)
 
 
+def tree_pairs(rows: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    return sorted((row["path"], row["sha256"]) for row in rows)
+
+
+def tree_at(repo: Path, revision: str, cand: str) -> list[tuple[str, str]]:
+    """The candidate's files at a revision, as provision's checkout would see them."""
+
+    data = subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", revision, CANDIDATE_DIRS[cand]], capture_output=True, check=True).stdout
+    prefix = CANDIDATE_DIRS[cand].rstrip("/") + "/"
+    rows = []
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        for member in tar.getmembers():
+            if member.isfile() and member.name.startswith(prefix):
+                rows.append((member.name[len(prefix):], sha256(tar.extractfile(member).read())))
+    return sorted(rows)
+
+
+def correction_rounds(records: list[dict[str, Any]]) -> dict[str, int]:
+    """Correction rounds each candidate has used: attempts after the first whose W1 checkout changed
+    the candidate's own tree from the last attempt that provisioned it (the overlay's correction_window)."""
+
+    used: dict[str, int] = {}
+    last: dict[str, list[tuple[str, str]]] = {}
+    attempt = 0
+    for record in records:
+        if record.get("profile") == "execution":
+            attempt = record["attempt"]
+        elif record.get("profile") == "provision" and record.get("workspace") == "W1":
+            tree = tree_pairs(record["checkout"]["candidate_tree"])
+            cand = record["candidate"]
+            if attempt > 1 and cand in last and last[cand] != tree:
+                used[cand] = used.get(cand, 0) + 1
+            last[cand] = tree
+    return used
+
+
+def check_correction(repo: Path, records: list[dict[str, Any]], plan: Plan, revision: str, limit: int) -> None:
+    """A correction changes at least one candidate's own artifacts, and none past its round limit."""
+
+    latest: dict[str, list[tuple[str, str]]] = {}
+    for record in records:
+        if record.get("profile") == "provision" and record.get("workspace") == "W1":
+            latest[record["candidate"]] = tree_pairs(record["checkout"]["candidate_tree"])
+    changed = [cand for cand in plan.candidates if cand in latest and tree_at(repo, revision, cand) != latest[cand]]
+    if not changed:
+        raise RunError("a correction round corrects a candidate's own artifacts; this revision changes none, so it would only re-run the epoch")
+    used = correction_rounds(records)
+    spent = [cand for cand in changed if used.get(cand, 0) >= limit]
+    if spent:
+        raise RunError(f"{', '.join(spent)} already had {limit} correction round(s); a further change opens a new epoch")
+
+
 def command_execute(repo: Path, archive: Path, plan: Plan) -> None:
     epoch = load_epoch(repo, archive)
-    attempts = [r for r in load_records(archive) if r.get("profile") == "execution"] if epoch.ordinal else []
+    records = load_records(archive) if epoch.ordinal else []
+    attempts = [r for r in records if r.get("profile") == "execution"]
+    if attempts and not plan.revision and not epoch.packet.get("dev"):
+        raise RunError("the epoch has run; a further attempt is a correction round (--revision REV)")
     revision = epoch.packet["revision"]
     if plan.revision:
+        if not attempts:
+            raise RunError("a correction round follows the epoch's first run")
         # A correction round (overlay correction_window, AM-04): candidate artifacts may change,
         # every bound input may not, and the corrected revision descends from the epoch's.
-        revision = git(repo, "rev-parse", plan.revision)
+        revision = git(repo, "rev-parse", "--verify", "--end-of-options", f"{plan.revision}^{{commit}}")
         ancestor = subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", epoch.packet["revision"], revision], check=False)
         if ancestor.returncode != 0:
             raise RunError("a correction's revision must descend from the epoch's revision")
         for row in epoch.packet["bindings"]:
             if sha256(git_bytes(repo, "show", f"{revision}:{row['path']}")) != row["sha256"]:
                 raise RunError(f"{row['path']} differs at {revision[:12]}; a shared change opens a new epoch")
+        if not epoch.packet.get("dev"):
+            overlay = json.loads((repo / OVERLAY_PATH).read_text())
+            check_correction(repo, records, plan, revision, overlay["correction_window"]["rounds_per_candidate"])
     epoch.checkout_revision = revision
     epoch.write_record({"profile": "execution", "attempt": len(attempts) + 1, "revision": revision,
                         "plan": {k: list(v) if isinstance(v, tuple) else v for k, v in asdict(plan).items()}})
     ws, unpacked = provision(epoch, "W1", plan.candidates)
+    toolchains = json.loads((repo / TOOLCHAINS_PATH).read_text())
+    epoch.write_record({"profile": "host_inventory", "taken": "at_provision",
+                        **host_inventory(toolchains, (epoch.adapters[c] for c in plan.candidates))})
     for run in range(1, plan.cold_runs + 1):
         for cand_id in plan.order(run):
             cold_bootstrap(epoch, plan, ws, cand_id, run)
@@ -1311,6 +1392,53 @@ def command_execute(repo: Path, archive: Path, plan: Plan) -> None:
     write_manifest(archive)
 
 
+def command_inventory(repo: Path, archive: Path) -> dict[str, Any]:
+    """For an attempt run before the runner recorded a host inventory (H-10): the inventory, taken
+    afterwards on the host the packet recorded, and only while every package is at its pinned version."""
+
+    if not (archive / "records").is_dir():
+        raise RunError("an inventory is added to a live archive, not an export")
+    packet = json.loads((archive / "packet.json").read_text())
+    records = load_records(archive)
+    starts = [i for i, r in enumerate(records) if r.get("profile") == "execution"]
+    if not starts:
+        raise RunError("the archive has no attempt")
+    latest = records[starts[-1]:]
+    if any(r.get("profile") == "host_inventory" for r in latest):
+        raise RunError("the latest attempt already has a host inventory")
+    if host_capture() != packet["host"]:
+        raise RunError("this host differs from the one the packet recorded; only the laboratory host can take the inventory")
+    bound = {row["path"]: row["sha256"] for row in packet["bindings"]}
+    data = (repo / TOOLCHAINS_PATH).read_bytes()
+    if sha256(data) != bound[TOOLCHAINS_PATH]:
+        raise RunError(f"{TOOLCHAINS_PATH} is not the bound toolchain record")
+    toolchains = json.loads(data)
+    H.REPO, H.SHARED = repo, repo / SHARED_DIR
+    adapters = []
+    for cand in sorted({r["candidate"] for r in latest if r.get("profile") == "provision"}):
+        root = repo / CANDIDATE_DIRS[cand]
+        if not root.exists() and packet.get("dev_candidates"):
+            root = Path(packet["dev_candidates"][cand])
+        provisioned = [r for r in latest if r.get("profile") == "provision" and r.get("candidate") == cand]
+        if source_rows(root) != [(row["path"], row["sha256"]) for row in provisioned[-1]["checkout"]["candidate_tree"]]:
+            raise RunError(f"{cand}'s tree at {root} is not the tree the latest attempt provisioned")
+        adapters.append(H.load_adapter(root))
+    inventory = host_inventory(toolchains, adapters)
+    pins = {name: version for tool in toolchains["tools"] if tool["acquisition"].get("kind") == "distribution_package"
+            for name, version in tool["acquisition"]["packages"].items()}
+    drifted = sorted(name for name, row in inventory["packages"].items() if row is None or row["version"] != pins[name])
+    if drifted:
+        raise RunError(f"{', '.join(drifted)} no longer at the pinned version; an inventory taken now would not describe the attempt")
+    ordinal = len(records) + 1
+    record = {"schema_version": RECORD_SCHEMA, "suite_version": SUITE_VERSION, "epoch": packet["epoch"], "ordinal": ordinal,
+              "profile": "host_inventory", "taken": "after_attempt", **inventory}
+    target = archive / "records" / f"{ordinal:04d}-host_inventory-lab.json"
+    target.write_bytes(canonical_file(record))
+    target.chmod(0o444)
+    write_manifest(archive)
+    return record
+
+
 def write_manifest(archive: Path) -> None:
     # summary.json is derived: verify regenerates it from the records, and a correction round rewrites it (H-09).
     rows = tree_manifest(archive, exclude=lambda rel: rel.startswith("work/") or rel in ("manifest.json", "summary.json"))
@@ -1321,12 +1449,37 @@ def write_manifest(archive: Path) -> None:
 # Entry point
 
 
+def existing_archive(name: str, roots: Iterable[Path]) -> Path:
+    """The archive or export an argument names, by directory name or path. The argument is only
+    compared with directories that already exist under the runner's roots (as D-004's runner does),
+    so it never becomes part of a filesystem path."""
+
+    wanted = os.path.realpath(name)
+    for root in roots:
+        for child in sorted(root.iterdir()) if root.is_dir() else ():
+            if child.is_dir() and not child.is_symlink() and (child.name == name or os.path.realpath(child) == wanted):
+                return child
+    raise RunError(f"no archive named {name!r} under {' or '.join(str(r) for r in roots)}")
+
+
+def confined(path: str, bases: Iterable[Path]) -> Path:
+    """A directory argument resolved and kept inside one of the bases."""
+
+    resolved = os.path.realpath(path)
+    for base in bases:
+        prefix = os.path.realpath(base) + os.sep
+        if resolved.startswith(prefix):
+            return Path(resolved)
+    raise RunError(f"{path} must lie inside {' or '.join(str(b) for b in bases)}")
+
+
 USAGE = """usage:
-  d006_run.py prepare [--root DIR] [--dev-candidates DIR]
+  d006_run.py prepare [--dev-candidates DIR]
   d006_run.py execute ARCHIVE [--smoke] [--candidates C-01,C-02] [--cases DS-01,...] [--faults F,...]
                       [--no-negatives] [--revision REV]
+  d006_run.py inventory ARCHIVE
   d006_run.py summarize ARCHIVE
-  d006_run.py export ARCHIVE DEST
+  d006_run.py export ARCHIVE
   d006_run.py verify ARCHIVE_OR_EXPORT"""
 
 
@@ -1340,11 +1493,13 @@ def main(argv: list[str]) -> int:
         print(USAGE, file=sys.stderr)
         return 2
     try:
+        archives = (ARCHIVE_ROOT,)
         if argv[0] == "prepare":
-            root = Path(option(argv, "--root") or ARCHIVE_ROOT)
             dev = option(argv, "--dev-candidates")
-            dev_candidates = {cand: str(Path(dev) / Path(path).name) for cand, path in CANDIDATE_DIRS.items()} if dev else None
-            print(command_prepare(repo, root, dev_candidates))
+            if dev:
+                dev = confined(dev, (repo, Path(tempfile.gettempdir())))
+            dev_candidates = {cand: str(dev / Path(path).name) for cand, path in CANDIDATE_DIRS.items()} if dev else None
+            print(command_prepare(repo, ARCHIVE_ROOT, dev_candidates))
             return 0
         if argv[0] == "execute":
             plan = Plan()
@@ -1362,17 +1517,22 @@ def main(argv: list[str]) -> int:
                 plan.negatives = False
             if option(argv, "--revision"):
                 plan.revision = option(argv, "--revision")
-            command_execute(repo, Path(argv[1]), plan)
+            command_execute(repo, existing_archive(argv[1], archives), plan)
+            return 0
+        if argv[0] == "inventory" and len(argv) == 2:
+            record = command_inventory(repo, existing_archive(argv[1], archives))
+            print(f"record {record['ordinal']}: {len(record['packages'])} packages, {len(record['host_files'])} host files")
             return 0
         if argv[0] == "summarize":
-            summary = command_summarize(repo, Path(argv[1]))
+            summary = command_summarize(repo, existing_archive(argv[1], archives))
             print(json.dumps({"conclusion": summary["conclusion"], "reasons": summary["conclusion_reasons"]}, indent=2))
             return 0
-        if argv[0] == "export" and len(argv) == 3:
-            print(command_export(repo, Path(argv[1]), Path(argv[2])))
+        if argv[0] == "export" and len(argv) == 2:
+            archive = existing_archive(argv[1], archives)
+            print(command_export(repo, archive, repo / RUN_DIR / archive.name))
             return 0
-        if argv[0] == "verify":
-            problems = command_verify(repo, Path(argv[1]))
+        if argv[0] == "verify" and len(argv) == 2:
+            problems = command_verify(repo, existing_archive(argv[1], (*archives, repo / RUN_DIR)))
             for problem in problems:
                 print(problem)
             print("archive verified" if not problems else f"{len(problems)} problem(s)")
@@ -1767,7 +1927,7 @@ def run_standalone(epoch: Epoch, cand: H.Candidate, ctx: RunContext, cases: dict
                 got = out.rstrip("\n") if item.get("multiline") else out.strip()
                 rows.append({"id": item["id"], "expected": item["expected"] if not item.get("multiline") else sha256(item["expected"].encode()),
                              "got": got if not item.get("multiline") else sha256(got.encode()), "exit": launched["exit_status"],
-                             "matches_reference": launched["exit_status"] == 0 and got == item["expected"],
+                             "matches_reference": launched["state"]["kind"] == "completed" and got == item["expected"],
                              "in_prover": in_prover.get(item["in_prover"])})
             usage = run_checker(epoch, ctx, checker, [], corpus, f"DS-05 {host} usage")
             rows.append({"id": "D5-USAGE", "exit": usage["exit_status"], "matches_reference": usage["exit_status"] == 2 and bool(usage["stderr"].strip()) and not usage["stdout"], "in_prover": None})
@@ -1919,13 +2079,33 @@ def source_surface(root: Path, adapter: dict[str, Any]) -> dict[str, Any]:
     return rows
 
 
-def dpkg_size(package: str) -> int | None:
-    done = subprocess.run(["dpkg-query", "-W", "-f=${Installed-Size}", package], capture_output=True, text=True, check=False)
-    return int(done.stdout) * 1024 if done.returncode == 0 and done.stdout.strip().isdigit() else None
+def dpkg_row(package: str) -> dict[str, Any] | None:
+    done = subprocess.run(["dpkg-query", "-W", "-f=${Version}\t${Installed-Size}", package], capture_output=True, text=True, check=False)
+    if done.returncode != 0 or "\t" not in done.stdout:
+        return None
+    version, size = done.stdout.split("\t", 1)
+    return {"version": version, "installed_bytes": int(size) * 1024 if size.strip().isdigit() else None}
 
 
-def dependency_closure(cand: str, packet: dict[str, Any], toolchains: dict[str, Any], overlay: dict[str, Any], adapter: dict[str, Any]) -> dict[str, Any]:
-    """M-12 and M-13: every component, its role, bytes, retrievability and terms."""
+def host_inventory(toolchains: dict[str, Any], adapters: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """M-12's host side, read on the laboratory host: each distribution package's installed version
+    and size, and each declared host file's size and digest. Summaries read it from the record,
+    never from the host they run on."""
+
+    packages = {name: dpkg_row(name) for tool in toolchains["tools"] if tool["acquisition"].get("kind") == "distribution_package"
+                for name in tool["acquisition"]["packages"]}
+    files = {}
+    for adapter in adapters:
+        for path in adapter.get("host_files", []):
+            target = Path(path)
+            files[path] = {"bytes": target.stat().st_size, "sha256": file_sha256(target)} if target.is_file() else None
+    return {"packages": dict(sorted(packages.items())), "host_files": dict(sorted(files.items()))}
+
+
+def dependency_closure(cand: str, packet: dict[str, Any], toolchains: dict[str, Any], overlay: dict[str, Any], adapter: dict[str, Any],
+                       inventory: dict[str, Any] | None) -> dict[str, Any]:
+    """M-12 and M-13: every component, its role, bytes, retrievability and terms. Host-side sizes come
+    from the attempt's host_inventory record; without one they are unknown."""
 
     tools = {t["id"]: t for t in toolchains["tools"]}
     wanted = next(c["toolchain"] for c in overlay["candidates"] if c["id"] == cand)
@@ -1941,17 +2121,20 @@ def dependency_closure(cand: str, packet: dict[str, Any], toolchains: dict[str, 
             row.update(archive=part["archive"], sha256=part["sha256"], bytes=0 if shared_with and shared_with[0] < tid else part["bytes"],
                        retrievable=True, retrieval="content-addressed archive in the epoch")
         elif acquisition.get("kind") == "distribution_package":
-            sizes_ = {name: dpkg_size(name) for name in acquisition["packages"]}
-            row.update(packages=acquisition["packages"], bytes=sum(v or 0 for v in sizes_.values()),
-                       retrievable=all(v is not None for v in sizes_.values()), retrieval="Ubuntu archive, exact versions")
+            installed = {name: (inventory or {}).get("packages", {}).get(name) for name in acquisition["packages"]}
+            # Retrievable means the host had exactly the pinned version, which the Ubuntu archive keeps.
+            row.update(packages=acquisition["packages"], bytes=sum((v or {}).get("installed_bytes") or 0 for v in installed.values()),
+                       retrievable=all(v is not None and v["installed_bytes"] is not None and v["version"] == acquisition["packages"][name]
+                                       for name, v in installed.items()),
+                       retrieval="Ubuntu archive, exact versions" if inventory else "no host inventory in the attempt")
         else:
             row.update(bytes=None, retrievable=False)
         components.append(row)
     for path in adapter.get("host_files", []):
-        target = Path(path)
+        found = (inventory or {}).get("host_files", {}).get(path)
         components.append({"id": path, "name": path, "role": "host configuration", "terms": "distribution file",
-                           "bytes": target.stat().st_size if target.exists() else None, "sha256": file_sha256(target) if target.exists() else None,
-                           "retrievable": target.exists(), "retrieval": "hashed in the epoch"})
+                           "bytes": found["bytes"] if found else None, "sha256": found["sha256"] if found else None,
+                           "retrievable": found is not None, "retrieval": "hashed in the epoch" if inventory else "no host inventory in the attempt"})
     by_role: dict[str, dict[str, int]] = {}
     for row in components:
         slot = by_role.setdefault(row["role"], {"components": 0, "bytes": 0})
@@ -2053,6 +2236,8 @@ def build_summary(repo: Path, archive: Path) -> dict[str, Any]:
     overlay = json.loads((repo / OVERLAY_PATH).read_text())
     toolchains = json.loads((repo / TOOLCHAINS_PATH).read_text())
     candidates = sorted({r["candidate"] for r in records if r.get("candidate") in LANGUAGE})
+    inventories = [r for r in records if r.get("profile") == "host_inventory"]
+    inventory = inventories[-1] if inventories else None
     summaries: dict[str, Any] = {}
     for cand in candidates:
         root = repo / CANDIDATE_DIRS[cand]
@@ -2064,7 +2249,7 @@ def build_summary(repo: Path, archive: Path) -> dict[str, Any]:
             raise RunError(f"{cand}'s tree at {root} is not the tree its latest run provisioned")
         adapter = H.load_adapter(root)
         row = candidate_summary(cand, records, packet, seed)
-        row["metrics"].update(dependency_closure(cand, packet, toolchains, overlay, adapter))
+        row["metrics"].update(dependency_closure(cand, packet, toolchains, overlay, adapter, inventory))
         row["metrics"]["M-11"] = {"roles": source_surface(root, adapter), "label": "none: audit planning only"}
         row["hard_gates"] = [{"id": gid, "rule": text, "metrics": list(ids),
                               "state": combine([row["metrics"][m]["gate"] for m in ids if "gate" in row["metrics"].get(m, {})])}
@@ -2091,7 +2276,9 @@ def build_summary(repo: Path, archive: Path) -> dict[str, Any]:
         reasons.append("the owner's per-axis rationale (section 8, step 5) is absent")
     summary = {
         "schema_version": "d006-v0.3-summary-1", "suite_version": SUITE_VERSION, "epoch": packet["epoch"],
-        "revision": packet["revision"], "packet_sha256": sha256(canonical_file(gate0_numbers(packet))),
+        # The metrics are the latest attempt's, so the revision is the one that attempt ran (AM-09).
+        "revision": attempts[-1]["revision"] if attempts else packet["revision"], "epoch_revision": packet["revision"],
+        "packet_sha256": sha256(canonical_file(gate0_numbers(packet))),
         "records": len(records), "attempts": attempts, "dev": packet.get("dev", False),
         "full_protocol": full,
         "candidates": summaries, "comparative": table,
@@ -2172,6 +2359,24 @@ def command_export(repo: Path, archive: Path, dest: Path) -> Path:
     return dest
 
 
+def unlisted(archive: Path, listed: set[str], export: bool) -> list[str]:
+    """Every file or link a manifest leaves out. A live archive's manifest leaves out only its work
+    trees and the derived summary (write_manifest); anything else there, an extra record above all,
+    would feed the summary without being bound."""
+
+    derived = {"manifest.json"} if export else {"manifest.json", "summary.json"}
+    found = []
+    for top, dirs, files in os.walk(archive):
+        rel_top = Path(top).relative_to(archive).as_posix()
+        if rel_top == "." and not export:
+            dirs[:] = [d for d in dirs if d != "work"]
+        for name in [*files, *(d for d in dirs if os.path.islink(os.path.join(top, d)))]:
+            rel = name if rel_top == "." else f"{rel_top}/{name}"
+            if rel not in listed and rel not in derived:
+                found.append(rel)
+    return sorted(found)
+
+
 def command_verify(repo: Path, archive: Path) -> list[str]:
     problems = []
     packet = json.loads((archive / "packet.json").read_text())
@@ -2191,9 +2396,8 @@ def command_verify(repo: Path, archive: Path) -> list[str]:
         path = archive / row["path"]
         if not path.is_file() or file_sha256(path) != row["sha256"] or path.stat().st_size != row["size"]:
             problems.append(f"{row['path']} differs from the archive manifest")
-    if manifest.get("schema_version") == EXPORT_SCHEMA:
-        extra = sorted(p.name for p in archive.iterdir() if p.name not in listed | {"manifest.json"})
-        problems += [f"{name} is not in the export manifest" for name in extra]
+    problems += [f"{name} is not in the {'export' if manifest.get('schema_version') == EXPORT_SCHEMA else 'archive'} manifest"
+                 for name in unlisted(archive, listed, export=manifest.get("schema_version") == EXPORT_SCHEMA)]
     logs = load_logs(archive)
     for name, data in logs.items():
         if sha256(data) != name:

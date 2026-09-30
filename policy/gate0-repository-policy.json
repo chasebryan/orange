@@ -145,7 +145,7 @@
     },
     {
       "path": "research/decisions/D-006/d006-v0.3/run/d006-e-c7b6648ae3988234297f/records-04.jsonl.gz",
-      "sha256": "2a044cbb8dd37e36a5f027e57c0b97366b1923755740237686b222a1f17986e1",
+      "sha256": "9cb08a64455c0d9fa2f0561ce33cb04f06fc378b4c88ffce9d61d434dcb62c77",
       "role": "D-006 v0.3 epoch export: gzip JSON lines written by tools/d006_run.py export",
       "provenance": "Written on 2026-09-30 by the D-006 epoch run it names"
     }
@@ -720,7 +720,7 @@
     "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/satisfied-target-leakage-with-unresolved-contexts.json": "6d39a9ae51fa8c88789977a849129013f2fc23651c8939180e4c578dd017fc39",
     "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/subject-reuse-original.json": "ae981e5a6e74620117c96c720affe1f7f05f0000ef9029cbb2143a8b9119fab9",
     "research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs/substituted-subject-reuses-evidence.json": "5d1c3d90962ec5d21d3e0053e1e4b45f525db97abebda6e4ad85eb5c41333900",
-    "research/decisions/D-006/README.md": "57b446002f3adcd3730559c6de2b6bea0eaf7987efdc019d2ff472c038f36b8c",
+    "research/decisions/D-006/README.md": "48042228194c96b9733868b58fd61fecd8cad7457b4bc78e26c9041394cd822d",
     "research/decisions/D-006/d006-v0.2-case-input-index.json": "1aec6a731bef0620c8500120ec8385d584f99a528b4a03c014e8516c55cc8136",
     "research/decisions/D-006/d006-v0.2-draft-packet.json": "210eccad3a545927301d3cc147fdf918cc432fea65b8d71b79cbefc447e34bff",
     "research/decisions/D-006/d006-v0.3/protocol/suite-overlay.json": "d840d4842c926de1575320e6553cf98ac5067bb4ee036daf8b42c75ca2a4979d",
@@ -763,7 +763,7 @@
     "tools/d004_v08_run.py": "0c2c074b8c39289aeb71dc1e54384030bf011de1c7690f2ada829b5e1af4d678",
     "tools/d006_check.py": "d9b28426059729d74743be2b579d1177cebbefa7a62df461001297e9faea7cc1",
     "tools/d006_render.py": "a4fb196825d4789123f47dd3a1bc09074f23660b8d631cc7731653d8aeae7f66",
-    "tools/d006_run.py": "64c17f3448efdf97d41816301461141f9695f598d9d5b11ac94d6129740a4a3f",
+    "tools/d006_run.py": "4aa59b4c190b82402ee45d182e249a675285cf5fa9d3faec2671391d141756e6",
     "tools/d006_shared.py": "ad1a9618bc06c7b816dab252ae306443459a9ae1611471695a468f78289239d0",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_d004_archive.py": "026f3425de7eecdc8327ea59951abe0eee2bcde6afab596b4219e3e63741b90e",
@@ -773,7 +773,7 @@
     "tools/tests/test_d004_v08_run.py": "187ae025e48b2fdb9ef3221c763ff98a37e8c78f5d5c746f049636983f635f26",
     "tools/tests/test_d005_draft_packet.py": "657d5bf9468d481be3c4b7ee3143fed2b4a9f1253d21bc35477476e968017b09",
     "tools/tests/test_d006_draft_packet.py": "a83df729a9fd07ac2e8571731a2f0f5bc1e75db4651f73bbe3d52739f49aacf5",
-    "tools/tests/test_d006_run.py": "47f901a08535ec8b41cec95c879a32cf7dbafe6f7abdcdef76c6bf7e364509c7",
+    "tools/tests/test_d006_run.py": "db54977f9af8b8b9d80634140e96719078af3e4f26df0cda737391afb8bc5dc4",
     "tools/tests/test_d006_shared.py": "3623319acda4ecdc4f9e1f91fb092077542ee123a477595776d8b5b71addd7b1",
     "tools/tests/test_d009_draft_packet.py": "996a99b8b9283c81abd76db8c16ec901f3eeb44ea96995f6734d685bf1b98404",
     "tools/tests/test_d010_draft_packet.py": "10b1e0b3604ee2104bc2861768406c1a3d145c6e689a62fff0d09ef58fd405a4",

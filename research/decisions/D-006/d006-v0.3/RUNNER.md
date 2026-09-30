@@ -9,12 +9,19 @@ until the owner-performed parts of the protocol exist.
 ## Commands
 
 ```sh
-python3 tools/d006_run.py prepare [--root DIR]
+python3 tools/d006_run.py prepare [--dev-candidates DIR]
 python3 tools/d006_run.py execute ARCHIVE [--revision REV]
+python3 tools/d006_run.py inventory ARCHIVE
 python3 tools/d006_run.py summarize ARCHIVE
-python3 tools/d006_run.py export ARCHIVE DEST
+python3 tools/d006_run.py export ARCHIVE
 python3 tools/d006_run.py verify ARCHIVE_OR_EXPORT
 ```
+
+Archives live under `/tmp/orange-d006/`. An `ARCHIVE` argument is an epoch
+name or a path, and the runner only compares it with the directories that
+already exist there (and, for `verify`, under `run/`), so an argument never
+becomes a filesystem path. `--dev-candidates` must resolve inside the
+repository or the system temporary directory.
 
 `prepare` refuses a working tree with uncommitted changes, regenerates the
 shared inputs with `tools/d006_shared.py check`, stores every toolchain archive
@@ -32,11 +39,22 @@ change to anything bound opens a new epoch.
 deterministic replays in each CPU mode, one warmup and thirty timed pairs per
 case, the nine DS-06 faults, and finally two deterministic replays in a
 separately provisioned workspace W2. Candidates alternate as the overlay's
-`execution_order` says. `--revision` runs a correction round (AM-09) from a
-later revision whose bound inputs are byte-identical.
+`execution_order` says. After provisioning W1, every attempt records the host
+inventory: each pinned distribution package's installed version and size and
+each declared host file's size and digest, which M-12 reads. Once an epoch
+has run, a further attempt must be a correction round: `--revision` runs one
+(AM-09) from a later revision whose bound inputs are byte-identical, and it
+is refused unless it changes a candidate's own tree and that candidate has
+not used its one round (the overlay's `correction_window`). A candidate's
+round is used by any attempt after the first whose W1 checkout changed its
+tree. Development epochs are exempt, since they are never evidence.
+`inventory` adds a host inventory to an archive whose latest attempt ran
+without one (H-10), only on the host the packet describes and only while
+every package is at its pinned version.
 
 `summarize` computes M-01 to M-18, the hard gates, the materiality labels and
-the conclusion from the latest attempt's records. `export` writes the
+the conclusion from the latest attempt's records, and never from the host it
+runs on. `export` writes to `run/EPOCH/` the
 committed form of a verified archive: the packet, the records and logs as
 JSON lines in gzip chunks (at most 3 MiB uncompressed each, compressed with
 no file name or time so the same lines give the same bytes; export refuses a
@@ -47,7 +65,8 @@ step's invocation (argv, directory, environment, ceiling class, CPU set and
 label), which every replay repeats unchanged, are stored once by digest in
 `objects-NN.jsonl.gz` and restored when the export is read. `verify` checks
 either form: the epoch name and seed against the packet, every file against
-its manifest, every record's epoch and projection digest, every step's logs,
+its manifest and no file outside it (a live archive's work trees and derived
+summary aside), every record's epoch and projection digest, every step's logs,
 and that the summary regenerates byte for byte. On a clone that has the
 packet's revision it also checks each bound file at that revision.
 
@@ -60,9 +79,11 @@ to the overlay's allowlist plus the adapter's declared variables. Landlock
 makes `/usr`, `/proc`, `/sys/devices/system/cpu`, `/dev/urandom`, the
 toolchains, the candidate sources and the adapter's declared host files
 read-only; only the step's run root, its temporary directory and `/dev/null`
-are writable. The sandbox caps each process at 4 GiB of address space, 600
-CPU seconds, 512 MiB per file, 1024 open files and 256 processes, with no
-core files. Each step also runs in its own cgroup with the overlay's memory
+are writable. The archive, its sandbox binary and each workspace root belong
+to root with the laboratory user's group and mode 0750, so the laboratory user
+reads them and no other user does. The sandbox caps each process at 4 GiB of
+address space, 600 CPU seconds, 512 MiB per file, 1024 open files and 256
+processes, with no core files. Each step also runs in its own cgroup with the overlay's memory
 and pid ceilings; the wall ceiling kills the whole cgroup.
 
 A step ends in exactly one state: `completed`, `failed` (nonzero exit),
@@ -105,6 +126,7 @@ schema `d006-v0.3-record-1`, the epoch, an ordinal and a profile:
 | --- | --- |
 | `execution` | the attempt number, the candidates' revision and the plan |
 | `provision` | a workspace's checkout, toolchain unpack steps and candidate tree |
+| `host_inventory` | installed version and size of each pinned distribution package, and size and SHA-256 of each declared host file; `taken` is `at_provision`, or `after_attempt` when added by `inventory` |
 | `cold_bootstrap` | unpack, build and checker-build steps from an empty root, the build state, the deterministic artifact manifest and the workspace bytes |
 | `deterministic_replay` | every positive, negative and fresh-certificate outcome, DS-04's run-time cases, the DS-05 corpus verdicts, the projection and its digests |
 | `timed_replay` | one warmup or one pair member for one case: the re-check steps and their measurements |
@@ -117,7 +139,8 @@ memory, cgroup peak, process peak and temp bytes, with its logs by digest.
 
 ## Summary
 
-`summary.json` has schema `d006-v0.3-summary-1`. For each candidate it lists
+`summary.json` has schema `d006-v0.3-summary-1`. Its `revision` is the latest
+attempt's and `epoch_revision` the packet's. For each candidate it lists
 the case states, the fault verdicts, M-01 to M-18 and the eight hard gates,
 each gate `pass`, `fail` or `unresolved`. The comparative table gives each
 measured metric exactly one materiality label with its raw ratio and interval.

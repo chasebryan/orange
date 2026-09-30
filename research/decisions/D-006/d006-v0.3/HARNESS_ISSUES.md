@@ -184,3 +184,51 @@ went from `021755ccf47be23919331aa0d483a041399c94d51e8328399752fee1b2eb94cd`
 to `7cd6b81b08bcfd6e5f4d411010cf1d53ef8786ec338b36d16ff090fa3ea400f1`, which
 the export records as `archive_manifest_sha256`. No record or log changed.
 The runner the epoch bound is unchanged at the epoch's revisions.
+
+## H-10: M-12 read the host that summarized, not the epoch (fixed after the epoch)
+
+`summarize` sized each distribution package with `dpkg-query` and each
+declared host file with `stat` on whatever host ran it, so `verify` on a
+clone without the laboratory's packages regenerated a different M-12 and
+reported a summary mismatch. The runner now takes a `host_inventory` record
+after provisioning W1 in every attempt: each pinned package's installed
+version and size and each declared host file's size and SHA-256. The summary
+reads that record and never the host; a package counts as retrievable only
+when its recorded version is the pinned one.
+
+Epoch `d006-e-c7b6648ae3988234297f` ran before this record existed. Its
+inventory (record 843, marked `"taken": "after_attempt"`) was added with the
+new `inventory` command on 2026-09-30, on the host the packet recorded: the
+command refuses unless the host description (kernel, CPU, memory, OS and the
+digests of the launcher's tools) equals the packet's, the toolchain record is
+the bound one, the candidate trees are the ones attempt 2 provisioned, and
+every package is still at its pinned version. A package's installed size is
+fixed by its version, so the record gives the sizes the attempt used. M-12
+and M-13 are unchanged for both candidates. The archive manifest now lists
+the record; its SHA-256 went from
+`7cd6b81b08bcfd6e5f4d411010cf1d53ef8786ec338b36d16ff090fa3ea400f1` to
+`15b40ed8ea05c5074519e27d651c8ac89379bb4bee218a71f382276e2d40e3ca`.
+
+## H-11: review fixes that change no record (fixed after the epoch)
+
+A review of the runner found four more gaps. None changed this epoch's
+records, and each was checked against the archive:
+
+- The summary's `revision` was the packet's revision, although its metrics
+  are the latest attempt's. It now names the latest attempt's revision
+  (`754e61a3cc8b6f765e02d9b038a7bb76e15d0be5` here) and keeps the packet's
+  as `epoch_revision`.
+- Nothing enforced the overlay's one correction round per candidate.
+  `execute` now refuses a further attempt in an epoch that has run unless it
+  is a correction (`--revision`), refuses a correction that changes no
+  candidate's own tree, and refuses one that changes a candidate whose round
+  is spent. A candidate's round is spent by an attempt after the first whose
+  W1 checkout changed its tree; here only Lean's attempt 2 did.
+- A step could count as a success on exit status 0 alone, even if the
+  launcher had stopped it for its temp or output limit. Only a `completed`
+  state now succeeds, in builds and in DS-05's corpus rows. No step in this
+  epoch exited 0 in any other state.
+- `verify` compared a live archive only with the files its manifest lists,
+  so an extra record would have fed the summary unbound. It now names every
+  file a manifest leaves out, apart from a live archive's work trees and its
+  derived summary. This archive has none.

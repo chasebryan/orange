@@ -164,6 +164,19 @@ class D006SolverClaimTests(unittest.TestCase):
         self.assertEqual(claim("crash", -9, True), "unknown")
         self.assertEqual(claim("failed", 1, True), "unknown")
 
+    def test_only_a_completed_step_succeeds(self) -> None:
+        def launched(kind: str, code: int | None) -> dict:
+            return {"argv": ["build"], "exit_status": code, "stdout": b"", "stderr": b"", "wall_ms": 1, "state": {"kind": kind}}
+
+        for kind in ("resource_exhaustion", "oversized_output", "killed_by_runner"):
+            stopped = run.to_harness(launched(kind, 0))
+            self.assertIsNone(stopped.exit_status, kind)
+            self.assertFalse(run.build_state([run.to_harness(launched("completed", 0)), stopped])["completed"], kind)
+        self.assertTrue(run.to_harness(launched("oversized_output", 0)).oversized)
+        self.assertTrue(run.to_harness(launched("resource_exhaustion", 0)).memory_exhausted)
+        self.assertEqual(run.to_harness(launched("failed", 3)).exit_status, 3)
+        self.assertTrue(run.build_state([run.to_harness(launched("completed", 0))])["completed"])
+
     def test_a_step_state_record_is_refused(self) -> None:
         with self.assertRaises(TypeError):
             run.H.solver_claim({"kind": "failed", "exit_code": 20, "signal": None}, 20, True)
@@ -236,6 +249,38 @@ class D006ArchiveVerifyTests(unittest.TestCase):
             (archive / "summary.json").unlink()
             self.assertEqual(run.command_verify(REPOSITORY_ROOT, archive), [])
 
+    def test_an_unlisted_file_in_a_live_archive_is_named(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = self.make_archive(Path(tmp))
+            (archive / "work/W1").mkdir(parents=True)
+            (archive / "work/W1/scratch").write_bytes(b"work trees are not bound\n")
+            (archive / "summary.json").write_bytes(b"{}\n")
+            listed = {row["path"] for row in json.loads((archive / "manifest.json").read_text())["files"]}
+            self.assertEqual(run.unlisted(archive, listed, export=False), [])
+            (archive / "summary.json").unlink()
+            self.assertEqual(run.command_verify(REPOSITORY_ROOT, archive), [])
+            extra = archive / "records/0002-deterministic_replay-C-01.json"
+            extra.write_bytes((archive / "records/0001-deterministic_replay-C-01.json").read_bytes())
+            (archive / "stray").write_bytes(b"x\n")
+            problems = run.command_verify(REPOSITORY_ROOT, archive)
+            self.assertIn("records/0002-deterministic_replay-C-01.json is not in the archive manifest", problems)
+            self.assertIn("stray is not in the archive manifest", problems)
+            self.assertFalse([p for p in problems if p.startswith("work/")])
+
+    def test_archive_arguments_only_name_existing_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = self.make_archive(root)
+            self.assertEqual(run.existing_archive(archive.name, [root]), archive)
+            self.assertEqual(run.existing_archive(str(archive), [root]), archive)
+            for name in ("d006-e-missing", str(root / ".." / archive.name), "/etc"):
+                with self.assertRaises(run.RunError):
+                    run.existing_archive(name, [root])
+            self.assertEqual(run.confined(str(archive / "records"), [root]), (archive / "records").resolve())
+            for outside in ("/etc", str(root / ".." / "elsewhere"), str(root)):
+                with self.assertRaises(run.RunError):
+                    run.confined(outside, [root])
+
     def test_a_renamed_epoch_fails_verification(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             archive = self.make_archive(Path(tmp))
@@ -244,6 +289,66 @@ class D006ArchiveVerifyTests(unittest.TestCase):
             (archive / "packet.json").write_bytes(run.canonical_file(packet))
             problems = run.command_verify(REPOSITORY_ROOT, archive)
             self.assertIn("the packet's epoch name or bootstrap seed is not the hash of what it binds", problems)
+
+
+class D006EpochEvidenceTests(unittest.TestCase):
+    """What a summary reads comes from the epoch's records, and a correction stays inside its window."""
+
+    @staticmethod
+    def provision(attempt_tree: dict[str, str], cand: str, workspace: str = "W1") -> dict:
+        return {"profile": "provision", "workspace": workspace, "candidate": cand,
+                "checkout": {"candidate_tree": [{"path": k, "sha256": v} for k, v in sorted(attempt_tree.items())]}}
+
+    def test_correction_rounds_count_only_changed_candidate_trees(self) -> None:
+        records = [{"profile": "execution", "attempt": 1},
+                   self.provision({"a": "1"}, "C-01"), self.provision({"b": "1"}, "C-02"),
+                   {"profile": "execution", "attempt": 2},
+                   self.provision({"a": "1"}, "C-01"), self.provision({"b": "2"}, "C-02"),
+                   self.provision({"b": "3"}, "C-02", "W2")]
+        self.assertEqual(run.correction_rounds(records), {"C-02": 1})
+        records += [{"profile": "execution", "attempt": 3}, self.provision({"a": "2"}, "C-01"), self.provision({"b": "2"}, "C-02")]
+        self.assertEqual(run.correction_rounds(records), {"C-01": 1, "C-02": 1})
+
+    def test_the_overlay_allows_one_correction_round_per_candidate(self) -> None:
+        self.assertEqual(OVERLAY["correction_window"]["rounds_per_candidate"], 1)
+
+    def test_a_correction_must_change_a_candidate_with_a_round_left(self) -> None:
+        head = {cand: dict(run.tree_at(REPOSITORY_ROOT, "HEAD", cand)) for cand in ("C-01", "C-02")}
+        self.assertIn("adapter.json", head["C-02"])
+        plan = run.Plan()
+        same = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision(head["C-02"], "C-02")]
+        with self.assertRaisesRegex(run.RunError, "changes none"):
+            run.check_correction(REPOSITORY_ROOT, same, plan, "HEAD", 1)
+        older = {**head["C-02"], "adapter.json": "0" * 64}
+        first = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision(older, "C-02")]
+        run.check_correction(REPOSITORY_ROOT, first, plan, "HEAD", 1)
+        spent = [{"profile": "execution", "attempt": 1}, self.provision(head["C-01"], "C-01"), self.provision({"x": "1"}, "C-02"),
+                 {"profile": "execution", "attempt": 2}, self.provision(head["C-01"], "C-01"), self.provision(older, "C-02")]
+        with self.assertRaisesRegex(run.RunError, "C-02 already had 1 correction round"):
+            run.check_correction(REPOSITORY_ROOT, spent, plan, "HEAD", 1)
+
+    def test_dependency_sizes_come_from_the_attempts_inventory(self) -> None:
+        toolchains = {"tools": [{"id": "TC-P", "name": "P", "role": "builds", "terms": "MIT",
+                                 "acquisition": {"kind": "distribution_package", "packages": {"p": "1.0-1", "q": "2.0-1"}}}]}
+        overlay = {"candidates": [{"id": "C-01", "toolchain": ["TC-P"]}]}
+        packet = {"archives": {"C-01": []}}
+        adapter = {"host_files": ["/etc/p.conf"]}
+        inventory = {"packages": {"p": {"version": "1.0-1", "installed_bytes": 1024}, "q": {"version": "2.0-1", "installed_bytes": 2048}},
+                     "host_files": {"/etc/p.conf": {"bytes": 9, "sha256": "0" * 64}}}
+        original = run.subprocess.run
+        run.subprocess.run = None  # the summary never asks the host it runs on
+        try:
+            closure = run.dependency_closure("C-01", packet, toolchains, overlay, adapter, inventory)["M-12"]
+            drifted = {**inventory, "packages": {**inventory["packages"], "q": {"version": "2.0-2", "installed_bytes": 2048}}}
+            moved = run.dependency_closure("C-01", packet, toolchains, overlay, adapter, drifted)["M-12"]
+            missing = run.dependency_closure("C-01", packet, toolchains, overlay, adapter, None)["M-12"]
+        finally:
+            run.subprocess.run = original
+        self.assertEqual(closure["total_bytes"], 3072 + 9)
+        self.assertEqual(closure["gate"], "pass")
+        self.assertEqual(moved["gate"], "fail")
+        self.assertEqual(missing["gate"], "fail")
+        self.assertEqual(missing["total_bytes"], 0)
 
 
 class D006ExportTests(unittest.TestCase):

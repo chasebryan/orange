@@ -84,7 +84,7 @@ in the reference model.
   lab user in fresh namespaces with no network, inside the unchanged
   `tools/fs_sandbox.c` caps), the DS-04 solver runs, the archive, the export
   and the summary.
-  [`HARNESS_ISSUES.md`](d006-v0.3/HARNESS_ISSUES.md) records H-01 to H-09 and
+  [`HARNESS_ISSUES.md`](d006-v0.3/HARNESS_ISSUES.md) records H-01 to H-11 and
   [`FINDINGS.md`](d006-v0.3/FINDINGS.md) what the builders and the epoch
   found about the candidates.
 
@@ -106,8 +106,9 @@ for byte.
 - Attempt 2, at revision `754e61a3cc8b6f765e02d9b038a7bb76e15d0be5`, is
   Lean's one correction round (AM-09): `MALLOC_ARENA_MAX=2` for every Lean
   step, which keeps its builds at or under 3.30 GiB. Both candidates re-ran
-  the full plan. Both archives' records stay in the export, and the summary
-  reads the latest attempt.
+  the full plan. Both attempts' records stay in the export, and the summary
+  reads the latest attempt. The host inventory M-12 reads was added after the
+  run on the same host (H-10).
 
 In attempt 2 both candidates pass HG-2 to HG-7: 147 of 147 positive
 observations agree, 20 of 20 negatives reject in their expected category,

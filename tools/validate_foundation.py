@@ -794,7 +794,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "74b14e491bdc96b60aeb3171720afdc4da693de3e218af3706d6cac42adb0167"
+_PHD = "d6240149241282aae42b7b908c97e324cf2f4d51cbf50debd55ae6a50f55ae87"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1408,7 +1408,7 @@ GATE0_ALLOWED_BINARY_ARTIFACTS += [{"path": "research/decisions/D-006/d006-v0.3/
  ("run/d006-e-c7b6648ae3988234297f/records-01.jsonl.gz", "b4389e7eff49e5322484e24f85606654431a7be2b3c7155f66fac260a7cbf0ce"),
  ("run/d006-e-c7b6648ae3988234297f/records-02.jsonl.gz", "17320b6e95b3a0d6f290aa217005cd3ce4294791fa09981821f17fee1216dbb0"),
  ("run/d006-e-c7b6648ae3988234297f/records-03.jsonl.gz", "0ee86efd388c6b023fd0d9d29a291c84830312f7954f42944a2e969f373f7fa5"),
- ("run/d006-e-c7b6648ae3988234297f/records-04.jsonl.gz", "2a044cbb8dd37e36a5f027e57c0b97366b1923755740237686b222a1f17986e1"),
+ ("run/d006-e-c7b6648ae3988234297f/records-04.jsonl.gz", "9cb08a64455c0d9fa2f0561ce33cb04f06fc378b4c88ffce9d61d434dcb62c77"),
 )]
 # d006 epoch admissions end
 # The runner binds each D-006 candidate tree per run (AM-04) and each epoch export binds its files by digest,
