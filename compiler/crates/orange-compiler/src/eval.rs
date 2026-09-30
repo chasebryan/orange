@@ -133,9 +133,11 @@ impl EvaluationResult {
     }
 }
 
-/// Evaluates every typed Core function without parameters, in source order.
+/// Evaluates every typed Core function of the root module without
+/// parameters, in source order.
 ///
-/// Functions with parameters are evaluated only through calls.
+/// Functions with parameters, and every function of a used module, are
+/// evaluated only through calls. One step budget covers the whole program.
 #[must_use]
 pub fn evaluate(core: &CoreModule) -> EvaluationResult {
     evaluate_with_limit(core, MAX_EVALUATION_STEPS_PER_SOURCE)
@@ -1258,7 +1260,7 @@ fn evaluate_with_reservations(
         };
     }
     let roots = core
-        .functions
+        .entry_functions()
         .iter()
         .filter(|function| function.parameters.is_empty())
         .count();
@@ -1295,7 +1297,7 @@ fn evaluate_with_reservations(
     };
     let mut shared_module = None;
     for function in core
-        .functions
+        .entry_functions()
         .iter()
         .filter(|function| function.parameters.is_empty())
     {

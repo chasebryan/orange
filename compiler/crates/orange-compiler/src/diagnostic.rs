@@ -123,6 +123,14 @@ define_diagnostic_codes! {
     NonStaticIndex => "ORC0226",
     /// The operands of a comparison have no type of their own.
     UntypedComparison => "ORC0227",
+    /// A `use` declaration names no module of the program.
+    UnknownModule => "ORC0228",
+    /// A call is qualified by a module its module does not use.
+    ModuleNotUsed => "ORC0229",
+    /// A module uses itself, directly or through other modules.
+    ModuleCycle => "ORC0230",
+    /// Two modules of a program share a name, or a module uses one twice.
+    DuplicateModule => "ORC0231",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -689,7 +697,7 @@ mod tests {
             "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
             "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
             "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223", "ORC0224",
-            "ORC0225", "ORC0226", "ORC0227", "ORC0301",
+            "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

@@ -14,7 +14,8 @@ const MAX_BINARY_LIMBS: usize = MAX_EXACT_INTEGER_BITS.div_ceil(BINARY_LIMB_BITS
 // bound rather than relying on floating-point logarithms.
 const MAX_DECIMAL_LIMBS: usize = MAX_EXACT_INTEGER_BITS.div_ceil(27);
 
-/// A successfully analyzed Orange module.
+/// A successfully analyzed Orange program: a root module linked with the
+/// modules it uses.
 ///
 /// Core storage is read-only outside this crate so callers cannot reorder
 /// functions, duplicate identities, or replace a checked value.
@@ -30,33 +31,45 @@ const MAX_DECIMAL_LIMBS: usize = MAX_EXACT_INTEGER_BITS.div_ceil(27);
 pub struct CoreModule {
     /// Full source extent of the module declaration.
     pub(crate) span: Span,
-    /// Exact ASCII module name.
+    /// Exact ASCII name of the root module.
     pub(crate) name: String,
-    /// Typed functions in deterministic source order.
+    /// Typed functions of the used modules in dependency order, each module
+    /// in source order, then the root's in source order.
     pub(crate) functions: Vec<CoreFunction>,
+    /// Position of the root's first function in `functions`.
+    pub(crate) entry: usize,
 }
 
 impl CoreModule {
-    /// Returns the full source extent of the module declaration.
+    /// Returns the full source extent of the root module's declaration.
     #[must_use]
     pub const fn span(&self) -> Span {
         self.span
     }
 
-    /// Returns the exact ASCII module name.
+    /// Returns the exact ASCII name of the root module.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// Returns typed functions in deterministic source order.
+    /// Returns every typed function of the program: the used modules'
+    /// functions in dependency order, then the root's. A function's position
+    /// is its identity's index.
     #[must_use]
     pub fn functions(&self) -> &[CoreFunction] {
         &self.functions
     }
+
+    /// Returns the root module's typed functions in source order.
+    #[must_use]
+    pub fn entry_functions(&self) -> &[CoreFunction] {
+        self.functions.get(self.entry..).unwrap_or_default()
+    }
 }
 
-/// A dense, source-ordered identity within one [`CoreModule`].
+/// A dense identity within one [`CoreModule`]: the function's position in
+/// [`CoreModule::functions`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CoreFunctionId(u32);
 
@@ -65,7 +78,7 @@ impl CoreFunctionId {
         u32::try_from(index).ok().map(Self)
     }
 
-    /// Returns the zero-based source-order index.
+    /// Returns the zero-based position in the linked program.
     #[must_use]
     pub const fn index(self) -> u32 {
         self.0
@@ -75,8 +88,10 @@ impl CoreFunctionId {
 /// One typed specification function.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoreFunction {
-    /// Dense source-order identity.
+    /// Dense identity in the linked program.
     pub(crate) id: CoreFunctionId,
+    /// Exact ASCII name of the module that declares the function.
+    pub(crate) module: String,
     /// Full source extent of the function declaration.
     pub(crate) span: Span,
     /// Exact ASCII function name.
@@ -100,10 +115,16 @@ pub struct CoreFunction {
 }
 
 impl CoreFunction {
-    /// Returns the dense source-order identity.
+    /// Returns the dense identity in the linked program.
     #[must_use]
     pub const fn id(&self) -> CoreFunctionId {
         self.id
+    }
+
+    /// Returns the exact ASCII name of the module that declares the function.
+    #[must_use]
+    pub fn module(&self) -> &str {
+        &self.module
     }
 
     /// Returns the full source extent of the function declaration.
@@ -1705,6 +1726,7 @@ mod tests {
         let functions = vec![
             CoreFunction {
                 id: CoreFunctionId::from_index(0).unwrap(),
+                module: String::from("helpers"),
                 span,
                 name: String::from("integer"),
                 name_span: span,
@@ -1726,6 +1748,7 @@ mod tests {
             },
             CoreFunction {
                 id: CoreFunctionId::from_index(1).unwrap(),
+                module: String::from("values"),
                 span,
                 name: String::from("word"),
                 name_span: span,
@@ -1768,10 +1791,15 @@ mod tests {
             span,
             name: String::from("values"),
             functions,
+            entry: 1,
         };
 
         assert_eq!(module.span(), span);
         assert_eq!(module.name(), "values");
+        assert_eq!(module.functions().len(), 2);
+        assert_eq!(module.entry_functions(), &module.functions()[1..]);
+        assert_eq!(module.functions()[0].module(), "helpers");
+        assert_eq!(module.functions()[1].module(), "values");
         assert_eq!(module.functions()[0].id().index(), 0);
         assert_eq!(module.functions()[0].span(), span);
         assert_eq!(module.functions()[0].name(), "integer");
@@ -1818,10 +1846,12 @@ mod tests {
             span: _,
             name: _,
             functions,
+            entry: _,
         } = module;
         for function in functions {
             let CoreFunction {
                 id: _,
+                module: _,
                 span: _,
                 name: _,
                 name_span: _,

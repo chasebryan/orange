@@ -735,8 +735,9 @@ impl ConversionExpression {
 /// A call `name(arguments)`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallExpression {
-    /// The module named before `::`, for a call of a used module's function.
-    pub(crate) module: Option<Identifier>,
+    /// The module named before `::`, for a call of a used module's function,
+    /// boxed so that it does not enlarge every expression.
+    pub(crate) module: Option<Box<Identifier>>,
     /// Called function name.
     pub(crate) callee: Identifier,
     /// Arguments in source order.
@@ -747,8 +748,8 @@ impl CallExpression {
     /// Returns the module named before `::`, or `None` for a call of a
     /// function of the calling module.
     #[must_use]
-    pub const fn module(&self) -> Option<&Identifier> {
-        self.module.as_ref()
+    pub fn module(&self) -> Option<&Identifier> {
+        self.module.as_deref()
     }
 
     /// Returns the called function name.
@@ -2949,7 +2950,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let module = if self.next_kind() == TokenKind::DoubleColon {
             let module = self.parse_identifier("module")?;
             self.bump()?;
-            Some(module)
+            Some(Box::new(module))
         } else {
             None
         };
