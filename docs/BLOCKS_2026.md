@@ -21,6 +21,13 @@ Until then, the compiler behavior it describes exists so that the proposal can
 be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, extends this
+> document with tuples and tuple patterns, which lift the exclusion of loops
+> with more than one accumulator and of destructuring in section 12: a block's
+> binding may name each element of a tuple, and a loop may carry several
+> accumulators. Every source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

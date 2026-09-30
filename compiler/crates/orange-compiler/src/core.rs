@@ -2,6 +2,7 @@
 
 use std::cmp::Ordering;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::parser::{BinaryOperator, UnaryOperator};
 use crate::source::Span;
@@ -153,8 +154,8 @@ impl CoreFunction {
 
     /// Returns the statically checked result type.
     #[must_use]
-    pub const fn result_type(&self) -> CoreType {
-        self.result_type
+    pub fn result_type(&self) -> CoreType {
+        self.result_type.clone()
     }
 
     /// Returns the `let` bindings in source order.
@@ -243,8 +244,8 @@ impl CoreLoop {
 
     /// Returns the declared type of the accumulator and of the loop.
     #[must_use]
-    pub const fn ty(&self) -> CoreType {
-        self.ty
+    pub fn ty(&self) -> CoreType {
+        self.ty.clone()
     }
 
     /// Returns the first index.
@@ -327,8 +328,8 @@ impl CoreConditional {
 
     /// Returns the type of both branches and of the conditional.
     #[must_use]
-    pub const fn ty(&self) -> CoreType {
-        self.ty
+    pub fn ty(&self) -> CoreType {
+        self.ty.clone()
     }
 
     /// Returns the number of the function's bindings in scope in the
@@ -414,8 +415,8 @@ impl CoreBinding {
 
     /// Returns the declared type of the binding.
     #[must_use]
-    pub const fn ty(&self) -> CoreType {
-        self.ty
+    pub fn ty(&self) -> CoreType {
+        self.ty.clone()
     }
 
     /// Returns the offset in the step or branch expression just after the
@@ -466,8 +467,8 @@ impl CoreLocal {
 
     /// Returns the declared type of the binding.
     #[must_use]
-    pub const fn ty(&self) -> CoreType {
-        self.ty
+    pub fn ty(&self) -> CoreType {
+        self.ty.clone()
     }
 
     /// Returns the statically checked bound expression.
@@ -536,8 +537,8 @@ impl CoreNode {
 
     /// Returns the statically checked type of the node's value.
     #[must_use]
-    pub const fn ty(&self) -> CoreType {
-        self.ty
+    pub fn ty(&self) -> CoreType {
+        self.ty.clone()
     }
 
     /// Returns the node operation.
@@ -637,12 +638,27 @@ pub enum CoreNodeKind {
     /// The value of the branch of the function's conditional at this index
     /// that the one `Bool` operand subtree selects.
     Choose(u32),
+    /// A tuple of this node's type built from its element subtrees, one per
+    /// element, in order.
+    Tuple {
+        /// The number of element subtrees.
+        elements: u32,
+    },
+    /// The element at a fixed position of one tuple operand subtree.
+    Project {
+        /// The zero-based position, less than the operand's number of
+        /// elements.
+        index: u32,
+    },
 }
 
 /// Types admitted by the typed expression fragment: `Int`, `Bool`, the four
-/// word types, the integers modulo a constant, and fixed-length arrays of
-/// them.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// word types, the integers modulo a constant, fixed-length arrays of them,
+/// and tuples of all of these.
+///
+/// Every type but a tuple is a plain value; a tuple type shares its element
+/// list, so cloning any type never allocates.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CoreType {
     /// An exact, signed mathematical integer.
     Int,
@@ -660,6 +676,8 @@ pub enum CoreType {
     Mod(Modulus),
     /// A fixed-length array of one scalar type, written `T^n`.
     Array(ArrayType),
+    /// A tuple of scalar and array types, written `(T0, T1, ...)`.
+    Tuple(TupleType),
 }
 
 impl CoreType {
@@ -676,9 +694,9 @@ impl CoreType {
     /// Returns the width of a word type, or `None` for `Int`, `Bool`,
     /// `Mod[m]`, and arrays.
     #[must_use]
-    pub const fn word_bits(self) -> Option<u32> {
+    pub const fn word_bits(&self) -> Option<u32> {
         match self {
-            Self::Int | Self::Bool | Self::Mod(_) | Self::Array(_) => None,
+            Self::Int | Self::Bool | Self::Mod(_) | Self::Array(_) | Self::Tuple(_) => None,
             Self::Word8 => Some(8),
             Self::Word16 => Some(16),
             Self::Word32 => Some(32),
@@ -699,53 +717,74 @@ impl CoreType {
     }
 
     /// Returns whether this is `Int`, `Bool`, a word type, or `Mod[m]` rather
-    /// than an array.
+    /// than an array or a tuple.
     #[must_use]
-    pub const fn is_scalar(self) -> bool {
-        !matches!(self, Self::Array(_))
+    pub const fn is_scalar(&self) -> bool {
+        !matches!(self, Self::Array(_) | Self::Tuple(_))
     }
 
     /// Returns whether this is `Int`, a word type, or `Mod[m]`: a type with
     /// arithmetic and integer literals.
     #[must_use]
-    pub const fn is_number(self) -> bool {
-        !matches!(self, Self::Bool | Self::Array(_))
+    pub const fn is_number(&self) -> bool {
+        !matches!(self, Self::Bool | Self::Array(_) | Self::Tuple(_))
     }
 
     /// Returns whether this is `Int` or a word type: a number with an order.
     /// The integers modulo m have no order that their arithmetic respects.
     #[must_use]
-    pub const fn is_ordered(self) -> bool {
-        !matches!(self, Self::Bool | Self::Mod(_) | Self::Array(_))
+    pub const fn is_ordered(&self) -> bool {
+        !matches!(
+            self,
+            Self::Bool | Self::Mod(_) | Self::Array(_) | Self::Tuple(_)
+        )
     }
 
     /// Returns the modulus of `Mod[m]`, or `None` for the other types.
     #[must_use]
-    pub const fn modulus(self) -> Option<Modulus> {
+    pub const fn modulus(&self) -> Option<Modulus> {
         match self {
-            Self::Mod(modulus) => Some(modulus),
+            Self::Mod(modulus) => Some(*modulus),
             Self::Int
             | Self::Bool
             | Self::Word8
             | Self::Word16
             | Self::Word32
             | Self::Word64
-            | Self::Array(_) => None,
+            | Self::Array(_)
+            | Self::Tuple(_) => None,
         }
     }
 
-    /// Returns the array type, or `None` for the scalar types.
+    /// Returns the array type, or `None` for the other types.
     #[must_use]
-    pub const fn as_array(self) -> Option<ArrayType> {
+    pub const fn as_array(&self) -> Option<ArrayType> {
         match self {
-            Self::Array(array) => Some(array),
+            Self::Array(array) => Some(*array),
             Self::Int
             | Self::Bool
             | Self::Word8
             | Self::Word16
             | Self::Word32
             | Self::Word64
-            | Self::Mod(_) => None,
+            | Self::Mod(_)
+            | Self::Tuple(_) => None,
+        }
+    }
+
+    /// Returns the tuple type, or `None` for the other types.
+    #[must_use]
+    pub const fn as_tuple(&self) -> Option<&TupleType> {
+        match self {
+            Self::Tuple(tuple) => Some(tuple),
+            Self::Int
+            | Self::Bool
+            | Self::Word8
+            | Self::Word16
+            | Self::Word32
+            | Self::Word64
+            | Self::Mod(_)
+            | Self::Array(_) => None,
         }
     }
 }
@@ -761,6 +800,16 @@ impl fmt::Display for CoreType {
             Self::Word64 => formatter.write_str("Word[64]"),
             Self::Mod(modulus) => write!(formatter, "Mod[{modulus}]"),
             Self::Array(array) => write!(formatter, "{}^{}", array.element(), array.length()),
+            Self::Tuple(tuple) => {
+                formatter.write_str("(")?;
+                for (index, element) in tuple.elements().iter().enumerate() {
+                    if index != 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    element.fmt(formatter)?;
+                }
+                formatter.write_str(")")
+            }
         }
     }
 }
@@ -776,8 +825,8 @@ pub struct ArrayType {
     length: u32,
 }
 
-/// The scalar element type of an array, kept separate so that `CoreType`
-/// stays a small copyable value.
+/// The scalar element type of an array, kept separate so that an array's
+/// element is a scalar by construction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Scalar {
     Int,
@@ -791,10 +840,10 @@ enum Scalar {
 
 impl ArrayType {
     /// Returns the array type of `length` elements of `element`, or `None`
-    /// when `element` is an array or `length` is outside 1 through
-    /// [`MAX_ARRAY_LENGTH`].
+    /// when `element` is an array or a tuple or `length` is outside 1
+    /// through [`MAX_ARRAY_LENGTH`].
     #[must_use]
-    pub const fn new(element: CoreType, length: u32) -> Option<Self> {
+    pub const fn new(element: &CoreType, length: u32) -> Option<Self> {
         let element = match element {
             CoreType::Int => Scalar::Int,
             CoreType::Bool => Scalar::Bool,
@@ -802,8 +851,8 @@ impl ArrayType {
             CoreType::Word16 => Scalar::Word16,
             CoreType::Word32 => Scalar::Word32,
             CoreType::Word64 => Scalar::Word64,
-            CoreType::Mod(modulus) => Scalar::Mod(modulus),
-            CoreType::Array(_) => return None,
+            CoreType::Mod(modulus) => Scalar::Mod(*modulus),
+            CoreType::Array(_) | CoreType::Tuple(_) => return None,
         };
         if length == 0 || length > MAX_ARRAY_LENGTH {
             return None;
@@ -832,6 +881,67 @@ impl ArrayType {
     }
 }
 
+/// Most elements of a tuple type.
+pub const MAX_TUPLE_ELEMENTS: u32 = 16;
+
+/// A tuple type `(T0, T1, ...)`: from 2 through [`MAX_TUPLE_ELEMENTS`]
+/// values, each of a scalar or an array type. A tuple holds no tuple.
+///
+/// The element list is shared, so a tuple type is cloned without
+/// allocating.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TupleType {
+    elements: Arc<[CoreType]>,
+}
+
+impl TupleType {
+    /// Returns the tuple type of `elements`, or `None` when there are fewer
+    /// than two or more than [`MAX_TUPLE_ELEMENTS`] of them or one of them is
+    /// a tuple.
+    ///
+    /// The element types are copied once into the shared list. Stable Rust
+    /// cannot report the failure of that allocation, of at most
+    /// [`MAX_TUPLE_ELEMENTS`] types, so its failure aborts the process
+    /// rather than returning `None`; callers reserve their own element
+    /// storage fallibly before calling this.
+    #[must_use]
+    pub fn new(elements: &[CoreType]) -> Option<Self> {
+        let count = u32::try_from(elements.len()).ok()?;
+        let admitted = (2..=MAX_TUPLE_ELEMENTS).contains(&count)
+            && elements
+                .iter()
+                .all(|element| !matches!(element, CoreType::Tuple(_)));
+        admitted.then(|| Self {
+            elements: Arc::from(elements),
+        })
+    }
+
+    /// Returns the element types in order.
+    #[must_use]
+    pub fn elements(&self) -> &[CoreType] {
+        &self.elements
+    }
+
+    /// Returns the type of the element at `index`, if there is one.
+    #[must_use]
+    pub fn element(&self, index: u32) -> Option<&CoreType> {
+        self.elements.get(usize::try_from(index).ok()?)
+    }
+
+    /// Returns the number of elements, from 2 through
+    /// [`MAX_TUPLE_ELEMENTS`].
+    #[must_use]
+    pub fn len(&self) -> u32 {
+        u32::try_from(self.elements.len()).unwrap_or(u32::MAX)
+    }
+
+    /// Returns `false`: a tuple has at least two elements.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        false
+    }
+}
+
 /// Values admitted by the typed expression fragment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CoreValue {
@@ -851,6 +961,8 @@ pub enum CoreValue {
     Mod(Residue),
     /// A fixed-length array of scalar values.
     Array(CoreArray),
+    /// A tuple of scalar and array values.
+    Tuple(CoreTuple),
 }
 
 /// An array value: its type and exactly that many elements of its element
@@ -884,10 +996,52 @@ impl CoreArray {
     }
 }
 
+/// A tuple value: its type and exactly one value of each of its element
+/// types, in order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreTuple {
+    ty: TupleType,
+    elements: Vec<CoreValue>,
+}
+
+impl CoreTuple {
+    /// Returns the tuple of type `ty` holding `elements`, or `None` unless
+    /// there is exactly one element of each of `ty`'s element types, in
+    /// order.
+    #[must_use]
+    pub fn new(ty: TupleType, elements: Vec<CoreValue>) -> Option<Self> {
+        let matches = ty.elements().len() == elements.len()
+            && ty
+                .elements()
+                .iter()
+                .zip(&elements)
+                .all(|(expected, element)| element.ty() == *expected);
+        matches.then_some(Self { ty, elements })
+    }
+
+    /// Returns the tuple's type.
+    #[must_use]
+    pub const fn ty(&self) -> &TupleType {
+        &self.ty
+    }
+
+    /// Returns the elements in order.
+    #[must_use]
+    pub fn elements(&self) -> &[CoreValue] {
+        &self.elements
+    }
+
+    /// Returns the elements, consuming the tuple.
+    #[must_use]
+    pub fn into_elements(self) -> Vec<CoreValue> {
+        self.elements
+    }
+}
+
 impl CoreValue {
     /// Returns this value's static Core type.
     #[must_use]
-    pub const fn ty(&self) -> CoreType {
+    pub fn ty(&self) -> CoreType {
         match self {
             Self::Int(_) => CoreType::Int,
             Self::Bool(_) => CoreType::Bool,
@@ -897,15 +1051,20 @@ impl CoreValue {
             Self::Word64(_) => CoreType::Word64,
             Self::Mod(residue) => CoreType::Mod(residue.modulus),
             Self::Array(array) => CoreType::Array(array.ty),
+            Self::Tuple(tuple) => CoreType::Tuple(tuple.ty.clone()),
         }
     }
 
     /// Returns the word of type `ty` whose value is `value` reduced modulo
     /// its width, or `None` when `ty` is not a word type.
-    pub(crate) fn word_from_u64(ty: CoreType, value: u64) -> Option<Self> {
+    pub(crate) fn word_from_u64(ty: &CoreType, value: u64) -> Option<Self> {
         let [b0, b1, b2, b3, b4, b5, b6, b7] = value.to_le_bytes();
         match ty {
-            CoreType::Int | CoreType::Bool | CoreType::Mod(_) | CoreType::Array(_) => None,
+            CoreType::Int
+            | CoreType::Bool
+            | CoreType::Mod(_)
+            | CoreType::Array(_)
+            | CoreType::Tuple(_) => None,
             CoreType::Word8 => Some(Self::Word8(b0)),
             CoreType::Word16 => Some(Self::Word16(u16::from_le_bytes([b0, b1]))),
             CoreType::Word32 => Some(Self::Word32(u32::from_le_bytes([b0, b1, b2, b3]))),
@@ -919,7 +1078,7 @@ impl CoreValue {
     /// other values.
     pub(crate) fn word_as_u64(&self) -> Option<u64> {
         match self {
-            Self::Int(_) | Self::Bool(_) | Self::Mod(_) | Self::Array(_) => None,
+            Self::Int(_) | Self::Bool(_) | Self::Mod(_) | Self::Array(_) | Self::Tuple(_) => None,
             Self::Word8(value) => Some(u64::from(*value)),
             Self::Word16(value) => Some(u64::from(*value)),
             Self::Word32(value) => Some(u64::from(*value)),
@@ -947,6 +1106,16 @@ impl fmt::Display for CoreValue {
                     element.fmt(formatter)?;
                 }
                 formatter.write_str("]")
+            }
+            Self::Tuple(tuple) => {
+                formatter.write_str("(")?;
+                for (index, element) in tuple.elements.iter().enumerate() {
+                    if index != 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    element.fmt(formatter)?;
+                }
+                formatter.write_str(")")
             }
         }
     }
@@ -2059,7 +2228,7 @@ mod tests {
             let word = !matches!(ty, CoreType::Int | CoreType::Bool);
             assert_eq!(
                 ty.word_bits().and_then(CoreType::word_of_width),
-                word.then_some(*ty)
+                word.then_some(ty.clone())
             );
             assert_eq!(ty.is_number(), *ty != CoreType::Bool);
             assert!(ty.is_scalar());
@@ -2072,7 +2241,7 @@ mod tests {
     fn array_types_hold_one_to_256_scalars_and_display_as_powers() {
         for element in CoreType::SCALARS {
             for length in [1, 2, 16, MAX_ARRAY_LENGTH] {
-                let array = ArrayType::new(*element, length).unwrap();
+                let array = ArrayType::new(element, length).unwrap();
                 assert_eq!(array.element(), *element);
                 assert_eq!(array.length(), length);
                 let ty = CoreType::Array(array);
@@ -2081,18 +2250,18 @@ mod tests {
                 assert_eq!(ty.word_bits(), None);
                 assert_eq!(ty.to_string(), format!("{element}^{length}"));
             }
-            assert_eq!(ArrayType::new(*element, 0), None);
-            assert_eq!(ArrayType::new(*element, MAX_ARRAY_LENGTH + 1), None);
-            assert_eq!(ArrayType::new(*element, u32::MAX), None);
+            assert_eq!(ArrayType::new(element, 0), None);
+            assert_eq!(ArrayType::new(element, MAX_ARRAY_LENGTH + 1), None);
+            assert_eq!(ArrayType::new(element, u32::MAX), None);
         }
-        let array = CoreType::Array(ArrayType::new(CoreType::Word32, 4).unwrap());
-        assert_eq!(ArrayType::new(array, 2), None);
+        let array = CoreType::Array(ArrayType::new(&CoreType::Word32, 4).unwrap());
+        assert_eq!(ArrayType::new(&array, 2), None);
         assert_eq!(array.to_string(), "Word[32]^4");
     }
 
     #[test]
     fn array_values_require_their_exact_length_and_element_type() {
-        let ty = ArrayType::new(CoreType::Word8, 2).unwrap();
+        let ty = ArrayType::new(&CoreType::Word8, 2).unwrap();
         let array =
             CoreArray::new(ty, vec![CoreValue::Word8(0x0f), CoreValue::Word8(0xf0)]).unwrap();
         assert_eq!(array.ty(), ty);
@@ -2101,14 +2270,14 @@ mod tests {
         assert_eq!(value.ty(), CoreType::Array(ty));
         assert_eq!(value.to_string(), "[0x0f, 0xf0]");
         assert_eq!(value.word_as_u64(), None);
-        assert_eq!(CoreValue::word_from_u64(CoreType::Array(ty), 1), None);
+        assert_eq!(CoreValue::word_from_u64(&CoreType::Array(ty), 1), None);
 
         assert_eq!(CoreArray::new(ty, vec![CoreValue::Word8(1)]), None);
         assert_eq!(
             CoreArray::new(ty, vec![CoreValue::Word8(1), CoreValue::Word16(1)]),
             None
         );
-        let integers = ArrayType::new(CoreType::Int, 3).unwrap();
+        let integers = ArrayType::new(&CoreType::Int, 3).unwrap();
         let negative = ExactInteger::new(
             true,
             Magnitude::from_u64(7, |limbs, count| limbs.try_reserve_exact(count).is_ok()).unwrap(),
@@ -2125,6 +2294,80 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(value.to_string(), "[0, -7, 0]");
+    }
+
+    #[test]
+    fn tuple_types_hold_two_through_sixteen_flat_elements() {
+        let words = CoreType::Array(ArrayType::new(&CoreType::Word8, 4).unwrap());
+        let pair = TupleType::new(&[CoreType::Int, words.clone()]).unwrap();
+        assert_eq!(pair.elements(), [CoreType::Int, words.clone()]);
+        assert_eq!(pair.len(), 2);
+        assert!(!pair.is_empty());
+        assert_eq!(pair.element(1), Some(&words));
+        assert_eq!(pair.element(2), None);
+        assert_eq!(pair.element(u32::MAX), None);
+        let ty = CoreType::Tuple(pair.clone());
+        assert!(!ty.is_scalar());
+        assert!(!ty.is_number());
+        assert_eq!(ty.as_tuple(), Some(&pair));
+        assert_eq!(ty.as_array(), None);
+        assert_eq!(ty.word_bits(), None);
+        assert_eq!(ty.to_string(), "(Int, Word[8]^4)");
+        for element in CoreType::SCALARS {
+            for length in [2, 3, MAX_TUPLE_ELEMENTS] {
+                let elements = vec![element.clone(); usize::try_from(length).unwrap()];
+                assert_eq!(TupleType::new(&elements).unwrap().len(), length);
+            }
+            assert_eq!(TupleType::new(&[]), None);
+            assert_eq!(TupleType::new(std::slice::from_ref(element)), None);
+            let over = vec![element.clone(); usize::try_from(MAX_TUPLE_ELEMENTS + 1).unwrap()];
+            assert_eq!(TupleType::new(&over), None);
+        }
+        // A tuple is never an element of a tuple or of an array.
+        assert_eq!(TupleType::new(&[ty.clone(), CoreType::Int]), None);
+        assert_eq!(TupleType::new(&[CoreType::Int, ty.clone()]), None);
+        assert_eq!(ArrayType::new(&ty, 2), None);
+    }
+
+    #[test]
+    fn tuple_values_hold_one_value_of_each_element_type() {
+        let ty = TupleType::new(&[CoreType::Word8, CoreType::Bool]).unwrap();
+        let tuple = CoreTuple::new(
+            ty.clone(),
+            vec![CoreValue::Word8(0x2a), CoreValue::Bool(true)],
+        )
+        .unwrap();
+        assert_eq!(tuple.ty(), &ty);
+        assert_eq!(tuple.elements().len(), 2);
+        let value = CoreValue::Tuple(tuple.clone());
+        assert_eq!(value.ty(), CoreType::Tuple(ty.clone()));
+        assert_eq!(value.to_string(), "(0x2a, true)");
+        assert_eq!(value.word_as_u64(), None);
+        assert_eq!(
+            CoreValue::word_from_u64(&CoreType::Tuple(ty.clone()), 1),
+            None
+        );
+        assert_eq!(
+            tuple.into_elements(),
+            [CoreValue::Word8(0x2a), CoreValue::Bool(true)]
+        );
+
+        assert_eq!(CoreTuple::new(ty.clone(), vec![CoreValue::Word8(1)]), None);
+        assert_eq!(
+            CoreTuple::new(ty.clone(), vec![CoreValue::Bool(true), CoreValue::Word8(1)]),
+            None
+        );
+        assert_eq!(
+            CoreTuple::new(
+                ty,
+                vec![
+                    CoreValue::Word8(1),
+                    CoreValue::Bool(true),
+                    CoreValue::Bool(false)
+                ]
+            ),
+            None
+        );
     }
 
     #[test]
@@ -2341,7 +2584,8 @@ mod tests {
                         | CoreValue::Word32(_)
                         | CoreValue::Word64(_)
                         | CoreValue::Mod(_)
-                        | CoreValue::Array(_),
+                        | CoreValue::Array(_)
+                        | CoreValue::Tuple(_),
                     )
                     | CoreNodeKind::Parameter(_)
                     | CoreNodeKind::Local(_)
@@ -2361,7 +2605,9 @@ mod tests {
                     | CoreNodeKind::StepBinding { .. }
                     | CoreNodeKind::BranchBinding { .. }
                     | CoreNodeKind::Compare { .. }
-                    | CoreNodeKind::Choose(_) => {}
+                    | CoreNodeKind::Choose(_)
+                    | CoreNodeKind::Tuple { .. }
+                    | CoreNodeKind::Project { .. } => {}
                 }
                 match ty {
                     CoreType::Int
@@ -2371,7 +2617,8 @@ mod tests {
                     | CoreType::Word32
                     | CoreType::Word64
                     | CoreType::Mod(_)
-                    | CoreType::Array(_) => {}
+                    | CoreType::Array(_)
+                    | CoreType::Tuple(_) => {}
                 }
             }
         }
@@ -2843,7 +3090,7 @@ mod tests {
         assert_eq!(field.word_bits(), None);
         assert_eq!(field.modulus(), Some(modulus_of(&power_minus(255, 19))));
         assert_eq!(CoreType::Int.modulus(), None);
-        let array = ArrayType::new(field, 4).unwrap();
+        let array = ArrayType::new(&field, 4).unwrap();
         assert_eq!(array.element(), field);
         assert_eq!(CoreType::Array(array).to_string(), "Mod[(1 << 255) - 19]^4");
         let seven = modulus_of(&exact(7));
@@ -2851,7 +3098,7 @@ mod tests {
         assert_eq!(value.to_string(), "6");
         assert_eq!(value.ty(), CoreType::Mod(seven));
         assert_eq!(value.word_as_u64(), None);
-        assert_eq!(CoreValue::word_from_u64(CoreType::Mod(seven), 6), None);
+        assert_eq!(CoreValue::word_from_u64(&CoreType::Mod(seven), 6), None);
     }
 
     #[test]

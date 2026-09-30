@@ -857,7 +857,7 @@ impl<'scheme> Calls<'scheme> {
 }
 
 fn bytes_value(bytes: &[u8]) -> Option<CoreValue> {
-    let ty = ArrayType::new(CoreType::Word8, u32::try_from(bytes.len()).ok()?)?;
+    let ty = ArrayType::new(&CoreType::Word8, u32::try_from(bytes.len()).ok()?)?;
     let elements = bytes.iter().copied().map(CoreValue::Word8).collect();
     CoreArray::new(ty, elements).map(CoreValue::Array)
 }

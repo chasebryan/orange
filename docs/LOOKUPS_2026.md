@@ -29,7 +29,10 @@ meaning. It accepts no D-004 candidate.
 > proposed under OEP-0012, adds residues, whose least residues index tables
 > through `as`, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
 > OEP-0013, lets a step or a branch bind a looked-up value once and read it by
-> name. Every source this document accepts keeps its meaning under all three.
+> name, and [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets
+> a word selected from a tuple, or named by a tuple pattern, index a table
+> over its type's range. Every source this document accepts keeps its meaning
+> under all four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

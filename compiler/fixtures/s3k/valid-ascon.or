@@ -1,0 +1,86 @@
+// S3k conformance: Ascon-Hash256 of NIST SP 800-232 (August 2025), section
+// 5, over the permutation Ascon-p[12] of section 3. The state is five 64-bit
+// words, x0 through x4 as the Ascon designers name them, held in one tuple; a
+// round names every word of its three layers, with the substitution layer in
+// the designers' bitsliced form, and the sponge absorbs and squeezes through
+// the state's elements. The digests of the empty message, of the byte 00 and
+// of the eight bytes 00 01 ... 07 match entries 1, 2 and 9 of the designers'
+// known-answer file LWC_HASH_KAT_128_256.txt.
+edition 2026;
+module ascon {
+  type State = (Word[64], Word[64], Word[64], Word[64], Word[64]);
+
+  // Section 3.1: the round constants of Ascon-p[12].
+  spec round_constants() -> Word[64]^12 {
+    [0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87, 0x78, 0x69, 0x5a, 0x4b]
+  }
+
+  // Section 3: one round, the constant addition p_C, the substitution layer
+  // p_S in its bitsliced form, and the linear diffusion layer p_L.
+  spec round(s: State, c: Word[64]) -> State {
+    let (x0: Word[64], x1: Word[64], x2: Word[64], x3: Word[64], x4: Word[64]) = s;
+    let a0: Word[64] = x0 ^ x4;
+    let a2: Word[64] = x2 ^ c ^ x1;
+    let a4: Word[64] = x4 ^ x3;
+    let t0: Word[64] = a0 ^ (~x1 & a2);
+    let t1: Word[64] = x1 ^ (~a2 & x3);
+    let t2: Word[64] = a2 ^ (~x3 & a4);
+    let t3: Word[64] = x3 ^ (~a4 & a0);
+    let t4: Word[64] = a4 ^ (~a0 & x1);
+    let y0: Word[64] = t0 ^ t4;
+    let y1: Word[64] = t1 ^ t0;
+    let y2: Word[64] = ~t2;
+    let y3: Word[64] = t3 ^ t2;
+    let y4: Word[64] = t4;
+    (
+      y0 ^ (y0 >>> 19) ^ (y0 >>> 28),
+      y1 ^ (y1 >>> 61) ^ (y1 >>> 39),
+      y2 ^ (y2 >>> 1) ^ (y2 >>> 6),
+      y3 ^ (y3 >>> 10) ^ (y3 >>> 17),
+      y4 ^ (y4 >>> 7) ^ (y4 >>> 41),
+    )
+  }
+
+  spec p12(s: State) -> State {
+    let c: Word[64]^12 = round_constants();
+    for i in 0..12 with t: State = s { round(t, c[i]) }
+  }
+
+  // Section 5: the initial value of Ascon-Hash256.
+  spec iv() -> Word[64] { 0x0000080100cc0002 }
+
+  // Section 5, Algorithm 3: the first `count` of the padded message's
+  // 64-bit blocks enter x0, each followed by Ascon-p[12]; the digest is x0
+  // of the state and of the three states after it.
+  spec hash256(blocks: Word[64]^2, count: Int) -> Word[64]^4 {
+    let absorbed: State = for i in 0..2 with s: State = p12((iv(), 0, 0, 0, 0)) {
+      if i < count { p12((s.0 ^ blocks[i], s.1, s.2, s.3, s.4)) } else { s }
+    };
+    let h1: State = p12(absorbed);
+    let h2: State = p12(h1);
+    let h3: State = p12(h2);
+    [absorbed.0, h1.0, h2.0, h3.0]
+  }
+
+  // Section 2: a word's eight bytes, the least significant first.
+  spec le_bytes(x: Word[64]) -> Word[8]^8 {
+    [
+      x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8],
+      (x >> 32) as Word[8], (x >> 40) as Word[8], (x >> 48) as Word[8], (x >> 56) as Word[8],
+    ]
+  }
+
+  // The digest's 32 bytes.
+  spec bytes(h: Word[64]^4) -> Word[8]^32 {
+    for i in 0..32 with d: Word[8]^32 = [0; 32] { d with [i] = le_bytes(h[i / 8])[i % 8] }
+  }
+
+  // Count = 1, the empty message: one padded block, 01.
+  spec kat_count_1() -> Word[8]^32 { bytes(hash256([0x01, 0], 1)) }
+
+  // Count = 2, the message 00: one padded block, 00 01.
+  spec kat_count_2() -> Word[8]^32 { bytes(hash256([0x0100, 0], 1)) }
+
+  // Count = 9, the message 00 01 ... 07: a whole block and then 01.
+  spec kat_count_9() -> Word[8]^32 { bytes(hash256([0x0706050403020100, 0x01], 2)) }
+}

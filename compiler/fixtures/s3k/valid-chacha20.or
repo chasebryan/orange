@@ -1,0 +1,83 @@
+// S3k conformance: the ChaCha20 block function of RFC 8439 section 2.3,
+// written as the RFC writes it. The quarter round of section 2.1 takes four
+// words and gives four; a double round applies it to the columns and then to
+// the diagonals of the state, naming every word, and the 20 rounds run with
+// the sixteen words of the state as the loop's accumulators. The quarter
+// round reproduces section 2.1.1 and the block function section 2.3.2.
+edition 2026;
+module chacha20 {
+  type Quad = (Word[32], Word[32], Word[32], Word[32]);
+
+  // Section 2.1: the quarter round on four words a, b, c, d.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    (a2, b2, c2, d2)
+  }
+
+  // Section 2.1.1: the test vector for the quarter round.
+  spec quarter_round_vector() -> Quad {
+    quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+  }
+
+  // Section 2.3: the block function of a 256-bit key, a 32-bit block counter
+  // and a 96-bit nonce, as sixteen little-endian words.
+  spec block(key: Word[32]^8, counter: Word[32], nonce: Word[32]^3) -> Word[32]^16 {
+    let initial: Word[32]^16 = [
+      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+      key[0], key[1], key[2], key[3],
+      key[4], key[5], key[6], key[7],
+      counter, nonce[0], nonce[1], nonce[2],
+    ];
+    // Ten double rounds, each a column round and then a diagonal round.
+    let (x0: Word[32], x1: Word[32], x2: Word[32], x3: Word[32],
+         x4: Word[32], x5: Word[32], x6: Word[32], x7: Word[32],
+         x8: Word[32], x9: Word[32], x10: Word[32], x11: Word[32],
+         x12: Word[32], x13: Word[32], x14: Word[32], x15: Word[32]) =
+      for round in 0..10 with (
+        s0: Word[32], s1: Word[32], s2: Word[32], s3: Word[32],
+        s4: Word[32], s5: Word[32], s6: Word[32], s7: Word[32],
+        s8: Word[32], s9: Word[32], s10: Word[32], s11: Word[32],
+        s12: Word[32], s13: Word[32], s14: Word[32], s15: Word[32]
+      ) = (
+        initial[0], initial[1], initial[2], initial[3],
+        initial[4], initial[5], initial[6], initial[7],
+        initial[8], initial[9], initial[10], initial[11],
+        initial[12], initial[13], initial[14], initial[15]
+      ) {
+        let (c0: Word[32], c4: Word[32], c8: Word[32], c12: Word[32]) = quarter_round(s0, s4, s8, s12);
+        let (c1: Word[32], c5: Word[32], c9: Word[32], c13: Word[32]) = quarter_round(s1, s5, s9, s13);
+        let (c2: Word[32], c6: Word[32], c10: Word[32], c14: Word[32]) = quarter_round(s2, s6, s10, s14);
+        let (c3: Word[32], c7: Word[32], c11: Word[32], c15: Word[32]) = quarter_round(s3, s7, s11, s15);
+        let (d0: Word[32], d5: Word[32], d10: Word[32], d15: Word[32]) = quarter_round(c0, c5, c10, c15);
+        let (d1: Word[32], d6: Word[32], d11: Word[32], d12: Word[32]) = quarter_round(c1, c6, c11, c12);
+        let (d2: Word[32], d7: Word[32], d8: Word[32], d13: Word[32]) = quarter_round(c2, c7, c8, c13);
+        let (d3: Word[32], d4: Word[32], d9: Word[32], d14: Word[32]) = quarter_round(c3, c4, c9, c14);
+        (d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15)
+      };
+    // The working state is added to the initial state, word by word.
+    let working: Word[32]^16 = [
+      x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15,
+    ];
+    for i in 0..16 with out: Word[32]^16 = working { out with [i] = out[i] + initial[i] }
+  }
+
+  // Section 2.3.2: key 00:01:02:...:1f, block counter 1, and nonce
+  // 00:00:00:09:00:00:00:4a:00:00:00:00, as little-endian words.
+  spec test_key() -> Word[32]^8 {
+    [
+      0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c,
+      0x13121110, 0x17161514, 0x1b1a1918, 0x1f1e1d1c,
+    ]
+  }
+
+  spec test_nonce() -> Word[32]^3 { [0x09000000, 0x4a000000, 0x00000000] }
+
+  spec block_vector() -> Word[32]^16 { block(test_key(), 1, test_nonce()) }
+}

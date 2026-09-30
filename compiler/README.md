@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3j proposed under OEP-0005 through OEP-0013, in owner review
+S3k proposed under OEP-0005 through OEP-0014, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -50,8 +50,14 @@ the rest of a module. The S3j slice, proposed in
 OEP-0013, lets a loop's step and each branch of a conditional begin with
 `let` bindings, as a body does: a step's bindings are evaluated afresh at
 every step, a branch's only when it is chosen, and each is in scope only
-within its step or branch. All ten lower to a noncanonical Typed Reference Core
-and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+within its step or branch. The S3k slice, proposed in
+[`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md) and in owner review under
+OEP-0014, adds tuples: a tuple type `(T, U)` of two through 16 scalar or array
+elements, a tuple `(a, b)`, the selection `.k` of element k, and tuple patterns
+that name each element where a binding or a loop's accumulator is declared, so
+that a function gives several values and a loop carries several accumulators.
+All eleven lower to a noncanonical Typed Reference Core and are
+reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -182,7 +188,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3j are implemented and await owner review under OEP-0005 through OEP-0013, both
+S3k are implemented and await owner review under OEP-0005 through OEP-0014, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -663,11 +669,15 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
+binding         = "let" pattern "=" expression ";" ;
+pattern         = typed_name | "(" typed_name ("," typed_name)+ ","? ")" ;
+typed_name      = IDENTIFIER ":" declared_type ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
-declared_type   = parsed_type ("^" INTEGER)? ;
+declared_type   = element_type | tuple_type ;
+tuple_type      = "(" element_type ("," element_type)+ ","? ")" ;
+element_type    = parsed_type ("^" INTEGER)? ;
 parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
@@ -680,19 +690,21 @@ shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
 comparison      = prefixed ("==" | "!=" | "<" | "<=" | ">" | ">=") prefixed ;
 division        = prefixed ("/" | "%") prefixed ;
-conversion      = prefixed "as" parsed_type ;
+conversion      = prefixed "as" (parsed_type | tuple_type) ;
 update          = prefixed "with" "[" expression "]" "=" expression ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop | conditional ;
+primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
+                | tuple | array | fill | loop | conditional ;
+suffix          = "." INTEGER index? | index ;
+tuple           = "(" expression ("," expression)+ ","? ")" ;
 call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression block ;
+                  "with" pattern "=" expression block ;
 conditional     = "if" expression block "else" alternative ;
 alternative     = block | conditional ;
 block           = "{" binding* expression "}" ;
@@ -731,6 +743,9 @@ module demo {
   spec residues() -> Int^2 { [-7 % 2, sign(-7 / 2)] }
   spec field() -> Z7^2 { [3 * 5, 1 / 3] }
   spec squares() -> Int { for i in 0..4 with s: Int = 0 { let sq: Int = i * i; s + sq } }
+  spec divmod(a: Int, b: Int) -> (Int, Int) { (a / b, a % b) }
+  spec split() -> Int { let (q: Int, r: Int) = divmod(17, 5); q * 10 + r }
+  spec fib() -> (Int, Int) { for i in 0..10 with (a: Int, b: Int) = (0, 1) { (b, a + b) } }
 }
 ```
 
@@ -744,8 +759,9 @@ immediately before an integer token is that literal's sign, so the S3a body
 
 The parser accepts generic type syntax so unsupported forms receive semantic
 diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
-`Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations, and
-arrays `T^n` of them with n from 1 through 256, and checks
+`Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations,
+arrays `T^n` of them with n from 1 through 256, and tuples `(T, U, ...)` of two
+through 16 of those types and arrays, none of them a tuple, and checks
 every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
 bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
 and `*` wrap because that is their meaning, while a literal must already fit
@@ -758,12 +774,14 @@ least residues 0 through m - 1 of a modulus that is a constant of literals,
 `+`, `-`, `*`, `<<`, and parentheses; its literals lie strictly between -m and
 m, it has `+`, `-`, `*`, `/`, prefix `-`, `==`, and `!=` of one modulus and no
 order, and `x / y` is 0 when y has no inverse. `as` converts among `Int`,
-words, and residues by least residues, so `t[x as Int]` indexes by a residue. A conditional
+words, and residues by least residues, so `t[x as Int]` indexes by a residue.
+`p.k` selects element k of a tuple, counted from zero, and no operator,
+comparison, conversion, or index applies to a whole tuple. A conditional
 evaluates only its chosen branch, bindings included. Names are the enclosing
 function's parameters and earlier bindings, in a loop's step its index and
 accumulator, and in a step or branch its own earlier bindings and those of the
-steps and branches around it; Orange has no shadowing, so none of these may
-repeat a name in scope. Calls name typed `spec` functions of the same module, or, as
+steps and branches around it, each name of a tuple pattern among them; Orange
+has no shadowing, so none of these may repeat a name in scope. Calls name typed `spec` functions of the same module, or, as
 `m::f(...)`, of a module it uses, and each module's call graph must be
 acyclic, as must the uses of a program. A loop runs over literal bounds with
 0 ≤ a < b ≤ 65536, and every index is proved in range before evaluation: an
@@ -799,11 +817,13 @@ demo::backwards: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
 demo::residues: Int^2 = [1, -1]
 demo::field: Mod[7]^2 = [1, 5]
 demo::squares: Int = 14
+demo::split: Int = 32
+demo::fib: (Int, Int) = (55, 89)
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3j rules, limits, and non-claims are in
+through S3k rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -811,8 +831,9 @@ through S3j rules, limits, and non-claims are in
 [`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md),
 [`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md),
 [`docs/MODULES_2026.md`](../docs/MODULES_2026.md),
-[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md), and
-[`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md). None of them defines
+[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md),
+[`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md), and
+[`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1163,6 +1184,39 @@ and a branch of 256 bindings and of 257. This corpus establishes the tested
 behavior of one implementation; it does not accept OEP-0013, prove the rules
 sound, or complete S3.
 
+## S3k tuple conformance
+
+`fixtures/s3k/` contains an exact seven-program corpus for the proposed S3k
+behavior, of which four must evaluate successfully and three must fail
+closed. The accepted programs write SHA-256 with the working variables a
+through h as the loop's eight named accumulators, reproducing the digests of
+"abc" and of the two-block message of FIPS 180-4's examples; write the ChaCha20
+quarter round as a function of four words that gives four, and the block
+function with the sixteen words of its state named through each double round,
+reproducing RFC 8439's vectors of sections 2.1.1 and 2.3.2; write
+Ascon-Hash256 over a state of five named 64-bit words, reproducing entries 1,
+2, and 9 of the designers' known-answer file; and exercise a 256-bit addition
+with a sum and a carry, a pair of accumulators, the extended Euclidean
+algorithm, and tuples holding `Bool` values and chosen by conditionals. The
+rejected programs cover a tuple type of one element, a tuple type holding a
+tuple, an array of tuples, a tuple of one element, positions not written in
+decimal, a second `.k`, `.k` after an index, and patterns missing a type or a
+second name; names that repeat within a pattern, a parameter, a binding, or a
+loop index, a name read before its pattern is bound or after its loop; and
+tuples of another length or type, a tuple where a scalar is required, `.k` on
+an array or past the last element, an element of another type, an index,
+equality, arithmetic, or conversion of a whole tuple, a pattern of another
+type or of an unknown type, and comparisons of a tuple or an array written
+out.
+
+`crates/orangec/tests/s3k_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3j runner. It parses the 8-rule S3k index in
+`docs/TUPLES_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates tuple
+types, tuples, and patterns of 16 parts and of 17. This corpus establishes the
+tested behavior of one implementation; it does not accept OEP-0014, prove the
+rules sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1202,6 +1256,8 @@ sound, or complete S3.
   rule-index, and modulus-limit runner;
 - `crates/orangec/tests/s3j_conformance.rs`: exact repeatable S3j corpus,
   rule-index, and bindings-per-block runner;
+- `crates/orangec/tests/s3k_conformance.rs`: exact repeatable S3k corpus,
+  rule-index, and tuple-size runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1215,6 +1271,7 @@ sound, or complete S3.
   and the six modules its programs use;
 - `fixtures/s3i/`: exact three-positive/four-negative S3i CLI fixture corpus;
 - `fixtures/s3j/`: exact three-positive/three-negative S3j CLI fixture corpus;
+- `fixtures/s3k/`: exact four-positive/three-negative S3k CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

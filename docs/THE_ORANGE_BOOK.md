@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.12
+Manuscript version: 0.13
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -103,9 +103,11 @@ on data, still proved in range, so that AES's S-box is a lookup, as FIPS 197
 writes it, the S3h slice lets a program span several modules, so that
 HMAC is written over SHA-256 by name, as RFC 2104 defines it, the S3i
 slice puts a field in a type, so that X25519's ladder is written in the field
-of 2^255 − 19 with no reduction in sight, as RFC 7748 writes it, and the S3j
+of 2^255 − 19 with no reduction in sight, as RFC 7748 writes it, the S3j
 slice lets a round name its values inside the loop that runs it, so that a
-round of SHA-256 names T1 and T2 where FIPS 180-4 does. None of them
+round of SHA-256 names T1 and T2 where FIPS 180-4 does, and the S3k slice
+adds tuples, so that a loop carries SHA-256's eight working variables by name
+and ChaCha20's quarter round gives its four words at once. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -310,8 +312,10 @@ conditionals, the S3g slice, also in review, lets an index depend on data
 while still proving it in range, the S3h slice, also in review, lets a
 module use other modules, each in its own file, and call their functions by
 module name, the S3i slice, also in review, adds the integers modulo a
-constant and names for types, and the S3j slice, also in review, lets a
-loop's step and each branch of a conditional begin with `let` bindings.
+constant and names for types, the S3j slice, also in review, lets a loop's
+step and each branch of a conditional begin with `let` bindings, and the S3k
+slice, also in review, adds tuples and tuple patterns, so that a function
+gives several values and a loop carries several accumulators.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -800,12 +804,13 @@ namespaces, so a module may contain both `spec rounds` and `impl rounds`
 without a conflict while two `spec rounds` declarations are an error. The words
 `game`, `proof`, and `claim` are reserved and introduce nothing. Only typed
 specifications have meaning: pure `spec` functions over `Int`, `Bool`,
-`Word[8]` through `Word[64]`, the integers modulo a constant, and fixed-length
-arrays of them, built from
+`Word[8]` through `Word[64]`, the integers modulo a constant, fixed-length
+arrays of them, and tuples of those, built from
 literals, parameters, calls, operators, comparisons, `let` bindings, at the
-start of a body, a loop's step, or a branch, explicit conversions, array
-literals, indices, including indices keyed by data, bounded loops, updates,
-and conditionals. An `impl` body must still be empty. A
+start of a body, a loop's step, or a branch, tuple patterns, explicit
+conversions, array literals, tuples, indices, including indices keyed by data,
+selections by position, bounded loops, updates, and conditionals. An `impl`
+body must still be empty. A
 program may span several modules, one per file: a module names the modules it
 uses at its head and calls their functions by module name, as in
 `sha256::compress(h, block)`, and nothing is imported into its scope. A
@@ -817,7 +822,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, and block slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, and tuple slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -918,7 +923,8 @@ declarations. An `impl` has an empty parameter list and an
 empty body. A `spec` body may be empty, or the `spec` may declare parameters
 and a result type and contain `let` bindings and then exactly one expression.
 A loop's step and each branch of a conditional have the same shape: bindings,
-if any, and then a value.
+if any, and then a value. A binding or a loop's accumulator names one value or,
+with a tuple pattern, each element of a tuple.
 
 Parsing produces a syntax tree that records spelling and source structure
 only. It is easy to overlook what that excludes. The grammar accepts any
@@ -1051,7 +1057,9 @@ declaration leaves no trace either: every declared name is replaced by the
 type it names. A loop records the bindings of its step, and a conditional
 those of its branches, each with the point in the step's or branch's
 postorder where its value ends, so the evaluator knows when a name takes its
-value.
+value. A tuple pattern is one binding of a tuple type, and a read of one of
+its names reads the whole and selects the element, so tuples add only two
+nodes to the Core: one that builds a tuple and one that selects from it.
 
 The Core is bounded in the same spirit as the lexer and parser: at most
 262,144 Core nodes, 1,048,576 semantic events, and 100 ordinary semantic
@@ -1105,7 +1113,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The ten current slices complete bounded parts of the roadmap's S3 stage:
+The eleven current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1113,10 +1121,11 @@ range, then truth values, comparisons, Euclidean division, and conditionals,
 then indices keyed by data, proved in range from their types, then programs
 of several modules, each checked once, after the modules it uses, then the
 integers modulo a constant, with names for types, then `let` bindings inside
-a loop's step and a branch.
-The rest of S3 adds the remaining substance of a language: records of mixed
-types, loops that carry more than one value, functions generic over sizes and
-moduli, and explicit failure semantics,
+a loop's step and a branch, then tuples, so that a loop carries several
+values.
+The rest of S3 adds the remaining substance of a language: records with named
+fields, functions generic over sizes and moduli, and explicit failure
+semantics,
 together with one conformance case per normative rule. Each addition follows the same
 pattern as the slices before it: a normative rule, a diagnostic for
 every way to break it, a bound on the work it can cause, and a reference result
@@ -1662,8 +1671,9 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [conditions specification](CONDITIONS_2026.md) of S3f, the
 [lookups specification](LOOKUPS_2026.md) of S3g, the
 [modules specification](MODULES_2026.md) of S3h, the
-[modular arithmetic specification](MODULAR_2026.md) of S3i, and the
-[blocks specification](BLOCKS_2026.md) of S3j. S3b through S3j
+[modular arithmetic specification](MODULAR_2026.md) of S3i, the
+[blocks specification](BLOCKS_2026.md) of S3j, and the
+[tuples specification](TUPLES_2026.md) of S3k. S3b through S3k
 are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
@@ -1672,8 +1682,9 @@ are implemented and tested, but their specifications are **proposed**:
 [OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md),
 [OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md),
 [OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md),
-[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md), and
-[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md) are in
+[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md),
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), and
+[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1777,17 +1788,21 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
+binding         = "let" pattern "=" expression ";" ;
+pattern         = typed_name | "(" typed_name ("," typed_name)+ ","? ")" ;
+typed_name      = IDENTIFIER ":" declared_type ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
-declared_type   = parsed_type ("^" INTEGER)? ;
+declared_type   = element_type | tuple_type ;
+tuple_type      = "(" element_type ("," element_type)+ ","? ")" ;
+element_type    = parsed_type ("^" INTEGER)? ;
 parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
                 | conversion | update ;
-conversion      = prefixed "as" parsed_type ;
+conversion      = prefixed "as" (parsed_type | tuple_type) ;
 update          = prefixed "with" "[" expression "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
@@ -1799,13 +1814,15 @@ compare_op      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 division        = prefixed ("/" | "%") prefixed ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop | conditional ;
+primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
+                | tuple | array | fill | loop | conditional ;
+suffix          = "." INTEGER index? | index ;
+tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression block ;
+                  "with" pattern "=" expression block ;
 conditional     = "if" expression block "else" (block | conditional) ;
 block           = "{" binding* expression "}" ;
 call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
@@ -1815,7 +1832,7 @@ arguments       = expression ("," expression)* ","? ;
 It has no implicit semicolons. The edition declaration must be first and
 must spell `2026` exactly. `let`, `as`, `for`, `in`, and `with` are contextual
 words: `let` starts a binding only at the start of a body, step, or branch
-item and before a name, `as` converts only directly after a complete operand, `for` starts a loop
+item and before a name or a tuple pattern, `as` converts only directly after a complete operand, `for` starts a loop
 only before a name, `in` and `with` are words only inside a loop's header, and
 `with` updates only directly after a complete operand and before `[`. In the
 same way, `if` starts a conditional only where a condition can follow it,
@@ -2675,11 +2692,176 @@ which is the value the RFC's variable holds.
 
 That is the seam this slice leaves. A loop carries exactly one accumulator,
 so a round whose state is eight words keeps them in an array and names them
-again at the top of every step, as `let a: Word[32] = v[0]` does above. Loops
-that carry several named values, or tuples that a step can take apart, are
-the natural next step, and the roadmap lists them. A block is also not yet an
-expression of its own: bindings stand only at the start of a body, a step, or
-a branch, where braces already mark where their scope ends.
+again at the top of every step, as `let a: Word[32] = v[0]` does above. The
+next section closes it. A block is also not yet an expression of its own:
+bindings stand only at the start of a body, a step, or a branch, where braces
+already mark where their scope ends.
+
+### Several values at once
+
+Standards speak of several values at once. FIPS 180-4 carries eight working
+variables, a through h, from one round of SHA-256 to the next and assigns all
+eight at the end of every round. RFC 8439 defines the ChaCha20 quarter round
+on four words, a, b, c, and d, and gives four words back. NIST SP 800-232
+keeps the 320-bit state of Ascon as five 64-bit words. Through S3j, a function
+gave one value and a loop carried one accumulator, so each of those states had
+to become an array, and each round began by reading its words back out by
+index.
+
+The S3k slice, proposed in the [tuples specification](TUPLES_2026.md), adds
+tuples. A tuple type lists its element types in parentheses, as
+`(Word[64], Bool)`; a tuple lists its values the same way; `p.0` selects the
+first element of `p`; and a tuple pattern, written where a binding or a loop's
+accumulator names its value, names every element at once. One limb of a
+multi-precision addition gives its sum and its carry together:
+
+```orange
+type Limb = Word[64];
+type Carried = (Limb, Limb);
+
+spec add_carry(a: Limb, b: Limb, carry: Limb) -> Carried {
+  let s: Limb = a + b;
+  let t: Limb = s + carry;
+  let out: Limb = if s < a { 1 } else { 0 };
+  (t, if t < s { out + 1 } else { out })
+}
+
+spec add256(x: Limb^4, y: Limb^4) -> (Limb^4, Limb) {
+  for i in 0..4 with (sum: Limb^4, carry: Limb) = ([0; 4], 0) {
+    let (limb: Limb, out: Limb) = add_carry(x[i], y[i], carry);
+    (sum with [i] = limb, out)
+  }
+}
+```
+
+The loop's accumulator is a pattern. It carries the sum and the carry by name
+from one limb to the next, and each step gives the next pair. Adding one to
+the largest 256-bit number wraps every limb to zero and carries one out, and
+the evaluator prints the result as its type is written:
+
+```text
+tuples::wraps: (Word[64]^4, Word[64]) = ([0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000], 0x0000000000000001)
+```
+
+With a pattern for its accumulator, the round of SHA-256 from the previous
+section needs no array at all. The [tuple fixtures](../compiler/fixtures/s3k/)
+carry a through h themselves:
+
+```orange
+let (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+     e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+  for t in 0..64 with (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+                       e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+    (hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]) {
+    let t1: Word[32] = h + big_sigma1(e) + ch(e, f, g) + k[t] + w[t];
+    let t2: Word[32] = big_sigma0(a) + maj(a, b, c);
+    (t1 + t2, a, b, c, d + t1, e, f, g)
+  };
+```
+
+The loop's first value is the standard's step 2, which sets a through h to the
+previous hash value; its step is step 3; and the line after it is step 4,
+which adds each variable to its word of the hash, as `a + hash[0]`. The eight
+names appear twice, and that is not shadowing. The loop's names are in scope
+only in its step, and the body's names only after the binding's semicolon, so
+the two scopes never meet. The digests of "abc" and of the two-block message
+are the published ones, as they were.
+
+The ChaCha20 quarter round becomes a function of four words that gives four:
+
+```orange
+type Quad = (Word[32], Word[32], Word[32], Word[32]);
+
+spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+  let a1: Word[32] = a + b;
+  let d1: Word[32] = (d ^ a1) <<< 16;
+  let c1: Word[32] = c + d1;
+  let b1: Word[32] = (b ^ c1) <<< 12;
+  let a2: Word[32] = a1 + b1;
+  let d2: Word[32] = (d1 ^ a2) <<< 8;
+  let c2: Word[32] = c1 + d2;
+  let b2: Word[32] = (b1 ^ c2) <<< 7;
+  (a2, b2, c2, d2)
+}
+```
+
+The block function's loop carries the sixteen words of the state, s0 through
+s15, as one pattern, and a double round is eight lines: the column round and
+then the diagonal round, in the order of RFC 8439 section 2.3, each line naming
+the words it takes and the words it gives:
+
+```orange
+let (c0: Word[32], c4: Word[32], c8: Word[32], c12: Word[32]) = quarter_round(s0, s4, s8, s12);
+let (c1: Word[32], c5: Word[32], c9: Word[32], c13: Word[32]) = quarter_round(s1, s5, s9, s13);
+let (c2: Word[32], c6: Word[32], c10: Word[32], c14: Word[32]) = quarter_round(s2, s6, s10, s14);
+let (c3: Word[32], c7: Word[32], c11: Word[32], c15: Word[32]) = quarter_round(s3, s7, s11, s15);
+let (d0: Word[32], d5: Word[32], d10: Word[32], d15: Word[32]) = quarter_round(c0, c5, c10, c15);
+let (d1: Word[32], d6: Word[32], d11: Word[32], d12: Word[32]) = quarter_round(c1, c6, c11, c12);
+let (d2: Word[32], d7: Word[32], d8: Word[32], d13: Word[32]) = quarter_round(c2, c7, c8, c13);
+let (d3: Word[32], d4: Word[32], d9: Word[32], d14: Word[32]) = quarter_round(c3, c4, c9, c14);
+```
+
+A reader checks the diagonals against the RFC's list, 0, 5, 10, 15 and then
+1, 6, 11, 12, by reading the names. The quarter round's test vector of section
+2.1.1 comes out as the RFC prints it, and the block function reproduces
+section 2.3.2:
+
+```text
+chacha20::quarter_round_vector: (Word[32], Word[32], Word[32], Word[32]) = (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+```
+
+Ascon-Hash256 takes the same shape. Its state is a declared type of five
+words, `type State = (Word[64], Word[64], Word[64], Word[64], Word[64]);`. A
+round opens with a pattern, `let (x0: Word[64], x1: Word[64], x2: Word[64],
+x3: Word[64], x4: Word[64]) = s;`, and names every word of its constant
+addition, substitution, and linear layers before it gives the next state. The
+sponge absorbs a block into the first word by rebuilding the state around it,
+as `p12((s.0 ^ blocks[i], s.1, s.2, s.3, s.4))`. The digests of the empty
+message, of the byte 00, and of the eight bytes 00 through 07 match entries 1,
+2, and 9 of the designers' known-answer file.
+
+The rules are few, and each keeps a tuple a value rather than a place. A tuple
+has 2 through 16 elements, each `Int`, `Bool`, a word, a residue, or an array
+of one of them, and neither a tuple nor an array ever holds a tuple. `.k`
+follows a name or a call, and k is written in decimal, counted from zero. No
+operator, comparison, conversion, index, or update applies to a whole tuple,
+because each would have to choose a meaning, element by element or all at
+once, that a cryptographer should see written out. So the compiler points at
+the operator, and at a position that is not there:
+
+```text
+error[ORC0215]: `==` is not defined for `(Word[64], Word[64])`
+ --> <stdin>:4:43
+  |
+4 | ... spec same(p: Pair, q: Pair) -> Bool { p == q }
+  |                                             ^^ the operands have type `(Word[64], Word[64])`
+  = note: compare elements, such as `p.0 == q.0`
+```
+
+```text
+error[ORC0223]: `(Word[64], Word[64])` has no element 2
+ --> <stdin>:4:39
+  |
+4 |   spec third(p: Pair) -> Word[64] { p.2 }
+  |                                       ^ its elements are numbered 0 through 1
+  = note: a tuple's elements are counted from zero
+```
+
+A tuple costs what its elements cost and one step for each element, `.k` costs
+one step beyond its base, and a name bound by a pattern costs two steps to
+read: the read of the tuple and the selection from it. That is also how the
+Core stays small. A pattern is one binding of a tuple type, and each of its
+names is a read of that binding followed by a selection, so tuples add only
+two kinds of node. A tuple is shared, not copied, where it is read more than
+once, as an array is, and every source S3j accepted has the same Core, values,
+and output under S3k, since it writes no tuple.
+
+That leaves new seams. A pattern names every element, with no wildcard for
+one it does not need, and a step that changes one element of a tuple rebuilds
+the whole, as Ascon's absorption does. Nothing yet takes a size or a modulus
+as a parameter, so `add256` is written for four limbs rather than for n;
+arrays cannot yet be joined or sliced; and a message is still written as
+words, not as a string of bytes. The roadmap lists those next.
 
 ### From bytes to a value
 
@@ -2787,6 +2969,12 @@ on residues. The block slice adds no code: a malformed block is `ORC0101`
 with a note that describes a block, a block of more than 256 bindings is
 `ORC0106`, a binding that repeats a name in scope is `ORC0219`, and a name
 read outside its block is `ORC0211`, pointing at the binding it might mean.
+The tuple slice adds `ORC0234` for `.k` on a value that is not a tuple, and
+reuses `ORC0203` for a tuple of tuples or an array of tuples, `ORC0214` for a
+tuple of the wrong length or where no tuple is wanted, `ORC0223` for a
+position the tuple lacks, `ORC0215` for an operator on a whole tuple,
+`ORC0224` for an index into a tuple or an update of one, and `ORC0101` and
+`ORC0106` for a malformed or oversized tuple, tuple type, or pattern.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -2885,7 +3073,12 @@ at the edges of their ranges. The blocks specification adds 8 rule
 identifiers and six sources, three valid and three invalid, including SHA-256
 and X25519 whose rounds name their values inside their loops, against FIPS
 180-4 and RFC 7748; generated sources pin a step and a branch of 256 bindings
-and of 257. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+and of 257. The tuples specification adds 8 rule identifiers and seven
+sources, four valid and three invalid, including SHA-256 with a through h as
+eight named accumulators, the ChaCha20 quarter round and block, and
+Ascon-Hash256, against FIPS 180-4, RFC 8439, and the Ascon designers' known
+answers; generated sources pin tuple types, tuples, and patterns of 16 parts
+and of 17. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -2899,10 +3092,11 @@ compiler.
 The list of absences is long, and it is printed in the specifications rather
 than hidden: imports of names into scope, module paths and packages, modules
 that take modules as parameters, attributes, visibility, generic arguments, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, mixed-type tuples, arrays of arrays, indices
+shadowing, type inference, arrays of arrays, tuples of tuples, arrays of
+tuples, operators on whole tuples, records with named fields, indices
 narrowed by conditions, loops over computed ranges, early exit, short-circuit
 operators, conditionals without `else`, blocks as expressions of their own,
-loops that carry more than one value, moduli computed at run time,
+moduli computed at run time,
 functions generic over a modulus, distinct types by declaration, extension
 fields, signed words, variable shift and rotation amounts, recursion, typed
 implementations,
@@ -2922,11 +3116,11 @@ decision, through OEP-0005, S3c's, which builds on it, through OEP-0006,
 S3d's, which builds on S3c, through OEP-0007, S3e's, which builds on S3d,
 through OEP-0008, S3f's, which builds on S3e, through OEP-0009, S3g's, which
 builds on S3f, through OEP-0010, S3h's, which builds on S3g, through
-OEP-0011, S3i's, which builds on S3h, through OEP-0012, and S3j's, which
-builds on S3i, through OEP-0013.
+OEP-0011, S3i's, which builds on S3h, through OEP-0012, S3j's, which builds
+on S3i, through OEP-0013, and S3k's, which builds on S3j, through OEP-0014.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All nine migrations so far are small: every source
+documented migration. All ten migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -2934,8 +3128,9 @@ under S3e, every source S3e accepted does the same under S3f, every source
 S3f accepted does the same under S3g, where it costs no more steps, every
 source S3g accepted does the same under S3h, as a program of one module,
 every source S3h accepted does the same under S3i, since it declares no type
-and writes no modulus, and every source S3i accepted does the same under S3j,
-since it binds nothing in a step or a branch.
+and writes no modulus, every source S3i accepted does the same under S3j,
+since it binds nothing in a step or a branch, and every source S3j accepted
+does the same under S3k, since it writes no tuple.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -3643,7 +3838,10 @@ and reproduce the same vectors, and the constants of ML-KEM, Ed25519, and
 P-256 are computed in the rings their standards define. The block slice let
 each round name its values where it runs: SHA-256's rounds name a through h,
 T1, and T2, and X25519's ladder names every value RFC 7748 names, inside one
-loop each. These are
+loop each. The tuple slice let each round carry its state by name: SHA-256's
+loop carries a through h, ChaCha20's quarter round gives four words as RFC
+8439 writes it, and Ascon-Hash256's state is five named words; all three
+reproduce their published values. These are
 still fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
 no byte strings and no message of variable length, and no standard has been
 admitted with its provenance. The corpus remains a set of research inputs
@@ -4255,7 +4453,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3j in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3k in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -4571,9 +4769,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [conditions specification](CONDITIONS_2026.md), the
 [lookups specification](LOOKUPS_2026.md), the
 [modules specification](MODULES_2026.md), the
-[modular arithmetic specification](MODULAR_2026.md), and the
-[blocks specification](BLOCKS_2026.md) are proposed under
-OEP-0005 through OEP-0013 and in the owner's review. Where this summary and those
+[modular arithmetic specification](MODULAR_2026.md), the
+[blocks specification](BLOCKS_2026.md), and the
+[tuples specification](TUPLES_2026.md) are proposed under
+OEP-0005 through OEP-0014 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -4594,17 +4793,21 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
+binding         = "let" pattern "=" expression ";" ;
+pattern         = typed_name | "(" typed_name ("," typed_name)+ ","? ")" ;
+typed_name      = IDENTIFIER ":" declared_type ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
-declared_type   = parsed_type ("^" INTEGER)? ;
+declared_type   = element_type | tuple_type ;
+tuple_type      = "(" element_type ("," element_type)+ ","? ")" ;
+element_type    = parsed_type ("^" INTEGER)? ;
 parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
                 | conversion | update ;
-conversion      = prefixed "as" parsed_type ;
+conversion      = prefixed "as" (parsed_type | tuple_type) ;
 update          = prefixed "with" "[" expression "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
@@ -4616,13 +4819,15 @@ compare_op      = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
 division        = prefixed ("/" | "%") prefixed ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop | conditional ;
+primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
+                | tuple | array | fill | loop | conditional ;
+suffix          = "." INTEGER index? | index ;
+tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression block ;
+                  "with" pattern "=" expression block ;
 conditional     = "if" expression block "else" (block | conditional) ;
 block           = "{" binding* expression "}" ;
 call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
@@ -4635,7 +4840,7 @@ between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 `claim` are reserved; the last three have no grammatical role yet. `let`, `as`,
 `for`, `in`, `with`, `if`, `else`, `use`, `type`, `true`, and `false` are not reserved: `let`
 starts a binding only at the start of a body, step, or branch item before a
-name, `as` converts
+name or a tuple pattern, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
 `with` are words only in a loop's header, `with` updates only after a complete
 operand and before `[`, `if` starts a conditional only where a condition can
@@ -4649,11 +4854,12 @@ tokens, matched longest first. Operators from different groups, or two shifts,
 two comparisons, or two divisions, may not share a level without parentheses, and a conversion or an update shares
 a level with no operator and no other conversion or update. `^` after a declared
 type gives its array length; anywhere else it is exclusive or. Expressions may
-nest at most 64 levels deep, counting groups, calls, arrays, indices, loops,
-conditionals, updates, moduli, and prefix operators, and reach height 256; a function declares at
-most 64 parameters and 256 bindings, a loop's step or a branch at most 256
-bindings, a call supplies at most 256 arguments, an
-array literal lists at most 256 elements, and a loop's bounds satisfy
+nest at most 64 levels deep, counting groups, tuples, calls, arrays, indices,
+loops, conditionals, updates, moduli, and prefix operators, and reach height
+256; a function declares at most 64 parameters and 256 bindings, a loop's step
+or a branch at most 256 bindings, a call supplies at most 256 arguments, an
+array literal lists at most 256 elements, a tuple type, a tuple, and a tuple
+pattern hold at most 16 parts, and a loop's bounds satisfy
 0 ≤ a < b ≤ 65536. A module declares at most 64 `use` declarations and 64
 `type` declarations, and a program holds at most 64 modules, its root
 included.
@@ -4670,6 +4876,7 @@ included.
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
 | `Mod[m]` | The integers modulo a constant m from 2 through 2^521 − 1, as least residues 0 through m − 1 | Decimal |
 | `T^n` | Sequences of exactly n values of any type above, for n from 1 through 256 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `(T, U, ...)` | Tuples of 2 through 16 values, each of a scalar or array type above and never a tuple | The elements in order, separated by a comma and a space and enclosed in `(` and `)` |
 
 No other type, width, or length is accepted; a name declared by `type` stands
 for the type it names. A modulus is a constant built from integer literals
@@ -4690,6 +4897,10 @@ and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
 conditionals. An update or fill of n elements costs one evaluation step per
 64 elements, or part of 64. No operator or
 conversion applies to a whole array, and an array's elements are never arrays.
+A tuple lists exactly as many elements as its type, `p.k` selects element k,
+counted from zero, and no operator, comparison, conversion, index, or update
+applies to a whole tuple; neither a tuple's nor an array's elements are ever
+tuples.
 
 ### Operators
 
@@ -4717,7 +4928,9 @@ name typed `spec` functions of the same module, or, as `m::f(...)`, of a
 module `m` it uses, pass exactly one argument per parameter, and may not form
 a cycle; nor may the uses of a program. A `let` binding states its type, is in
 scope after its semicolon, and may not reuse the name of a parameter or another
-binding.
+binding. A tuple pattern, as in `let (s: T, c: U) = e;` or a loop's
+`with (a: T, b: U) = e`, names each element of its value and states each
+name's type, and each of its names follows the same rules.
 
 ### Commands
 
@@ -4753,7 +4966,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0008` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0233` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name |
+| `ORC0201`–`ORC0234` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1015` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness |
 
@@ -4870,8 +5083,8 @@ part are listed here so a reader can move from explanation to authority.
   [binding and conversion](BINDINGS_2026.md), [array](ARRAYS_2026.md), and
   [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
   [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md),
-  [modular arithmetic](MODULAR_2026.md), and [block](BLOCKS_2026.md)
-  specifications under OEP-0005 through OEP-0013, the
+  [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md), and
+  [tuple](TUPLES_2026.md) specifications under OEP-0005 through OEP-0014, the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
@@ -4911,24 +5124,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.12 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.13 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.12 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.12 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, and block slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.13 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.13 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, and tuple slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.12 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, and block slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.13 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, and tuple slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.12 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.13 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.12 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.13 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.12 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.13 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -4974,9 +5187,11 @@ version 0.10 adds the [modules specification](MODULES_2026.md),
 [OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md), and the
 [scheme guide](../compiler/schemes/README.md), version 0.11 adds the
 [modular arithmetic specification](MODULAR_2026.md) and
-[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md), and
+[OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md),
 version 0.12 adds the [blocks specification](BLOCKS_2026.md) and
-[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md).
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), and version 0.13
+adds the [tuples specification](TUPLES_2026.md) and
+[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -5068,6 +5283,14 @@ Code under Chase Bryan's direction on 2026-09-30, and every Orange example it
 adds was run against the compiler at the revision that introduced it. That
 check is not independent review, and the same authorship, review, evidence,
 and provenance boundaries apply.
+
+Manuscript version 0.13 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3k tuple slice, and added the Chapter 8
+section "Several values at once". It was drafted with Claude Code under Chase
+Bryan's direction on 2026-09-30, and every Orange example it adds was run
+against the compiler at the revision that introduced it. That check is not
+independent review, and the same authorship, review, evidence, and provenance
+boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

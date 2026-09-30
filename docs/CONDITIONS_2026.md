@@ -31,8 +31,10 @@ meaning. It accepts no D-004 candidate.
 > integers modulo a constant, whose division is total in the same spirit:
 > `x / y` is 0 when y has no inverse, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
 > proposed under OEP-0013, lets each branch begin with `let` bindings, which
-> are evaluated only when their branch is chosen. Every source this document
-> accepts keeps its meaning under all four.
+> are evaluated only when their branch is chosen, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> which a conditional may choose between as it chooses any value. Every source
+> this document accepts keeps its meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

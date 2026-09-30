@@ -469,9 +469,78 @@ B, BB, E, C, D, DA, and CB, as the RFC does. A step's bindings are evaluated
 afresh at every step, and a branch's only when the branch is chosen. Each is
 in scope for the bindings after it and for its block's value, and nowhere
 else, and none may reuse a name already in scope: Orange has no shadowing, so
-a name means one thing wherever a reader meets it. This slice, S3j, is
-implemented and tested; its specification is in review as
+a name means one thing wherever a reader meets it.
+[S3k](#several-values-at-once) lets the loop carry a through h themselves.
+This slice, S3j, is implemented and tested; its specification is in review as
 [OEP-0013](docs/governance/oeps/OEP-0013-orange-2026-blocks.md).
+
+### Several values at once
+
+A round keeps several values at once, and its standard names each of them. A
+**tuple** holds a fixed number of values of possibly different types: its type
+is written `(Word[32], Word[32])`, the tuple itself `(a, b)`, and `.k` selects
+element k, counted from zero. A **tuple pattern** names every element where a
+binding or a loop's accumulator is declared, so a function can give several
+values and a loop can carry several accumulators. SHA-256's compression
+function carries the working variables a through h from round to round by
+name, as FIPS 180-4 section 6.2.2 does:
+
+```orange
+spec compress(hash: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+  let w: Word[32]^64 = schedule(m);
+  let k: Word[32]^64 = round_constants();
+  let (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+       e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+    for t in 0..64 with (a: Word[32], b: Word[32], c: Word[32], d: Word[32],
+                         e: Word[32], f: Word[32], g: Word[32], h: Word[32]) =
+      (hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]) {
+      let t1: Word[32] = h + big_sigma1(e) + ch(e, f, g) + k[t] + w[t];
+      let t2: Word[32] = big_sigma0(a) + maj(a, b, c);
+      (t1 + t2, a, b, c, d + t1, e, f, g)
+    };
+  [
+    a + hash[0], b + hash[1], c + hash[2], d + hash[3],
+    e + hash[4], f + hash[5], g + hash[6], h + hash[7],
+  ]
+}
+```
+
+The quarter round of ChaCha20 takes four words and gives four, as RFC 8439
+section 2.1 writes it:
+
+```orange
+type Quad = (Word[32], Word[32], Word[32], Word[32]);
+
+spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+  let a1: Word[32] = a + b;
+  let d1: Word[32] = (d ^ a1) <<< 16;
+  let c1: Word[32] = c + d1;
+  let b1: Word[32] = (b ^ c1) <<< 12;
+  let a2: Word[32] = a1 + b1;
+  let d2: Word[32] = (d1 ^ a2) <<< 8;
+  let c2: Word[32] = c1 + d2;
+  let b2: Word[32] = (b1 ^ c2) <<< 7;
+  (a2, b2, c2, d2)
+}
+```
+
+The [SHA-256](compiler/fixtures/s3k/valid-sha256.or) and
+[ChaCha20](compiler/fixtures/s3k/valid-chacha20.or) fixtures reproduce FIPS
+180-4's digests and RFC 8439's vectors, and the
+[Ascon-Hash256 fixture](compiler/fixtures/s3k/valid-ascon.or) of NIST SP
+800-232 carries its state as five named words, x0 through x4 as the Ascon
+designers name them, and reproduces the designers' known answers:
+
+```text
+chacha20::quarter_round_vector: (Word[32], Word[32], Word[32], Word[32]) = (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+```
+
+A tuple's elements are scalars and arrays, never tuples, and no operator
+applies to a whole tuple: `p == q` is an error, and `p.0 == q.0` says which
+element is compared. A pattern's names follow the rules of every other name,
+with no shadowing. This slice, S3k, is implemented and tested; its
+specification is in review as
+[OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md).
 
 ### Daylight Horizon example
 
@@ -500,8 +569,9 @@ cryptography.
 | Programs of more than one module, each in its own file, with calls qualified by module | Working; specification in review ([OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md)) |
 | Integers modulo a constant, `Mod[m]`, with total division, and `type` declarations | Working; specification in review ([OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md)) |
 | `let` bindings inside a loop's step and each branch of a conditional | Working; specification in review ([OEP-0013](docs/governance/oeps/OEP-0013-orange-2026-blocks.md)) |
+| Tuples, `.k`, and tuple patterns, so that a function gives several values and a loop carries several accumulators | Working; specification in review ([OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Mixed-type tuples, loops with more than one accumulator, functions generic over a modulus, imports of names into scope | Not yet |
+| Functions generic over a size or a modulus, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -607,9 +677,9 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [conditions and division](docs/CONDITIONS_2026.md),
   [lookups keyed by data](docs/LOOKUPS_2026.md),
   [programs of more than one module](docs/MODULES_2026.md),
-  [integers modulo a constant](docs/MODULAR_2026.md), and
-  [blocks](docs/BLOCKS_2026.md): the definition of what the compiler accepts
-  today.
+  [integers modulo a constant](docs/MODULAR_2026.md),
+  [blocks](docs/BLOCKS_2026.md), and [tuples](docs/TUPLES_2026.md): the
+  definition of what the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

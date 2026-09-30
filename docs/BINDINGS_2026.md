@@ -37,8 +37,10 @@ language meaning. It accepts no D-004 candidate.
 > element needs no reduction at all, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
 > proposed under OEP-0013, lets a loop's step and each branch of a conditional
 > begin with `let` bindings, so that a round of SHA-256 names T1 and T2 as its
-> standard does. Every source this document accepts keeps its meaning under
-> all seven.
+> standard does, and [`TUPLES_2026.md`](TUPLES_2026.md), proposed under
+> OEP-0014, lets a binding name each element of a tuple with a pattern, as
+> `let (sum: Word[64], carry: Word[64]) = add(x, y, c);`. Every source this
+> document accepts keeps its meaning under all eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
