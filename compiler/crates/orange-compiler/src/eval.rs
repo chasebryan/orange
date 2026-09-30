@@ -620,9 +620,19 @@ enum Stop {
     InconsistentCore,
 }
 
-/// Shared `Int` literals and residue literals, indexed by function,
+/// Shared `Int`, residue, and array literals, indexed by function,
 /// expression part, and node.
-type SharedLiterals = Vec<Vec<Vec<Option<Rc<ExactInteger>>>>>;
+type SharedLiterals = Vec<Vec<Vec<Option<SharedLiteral>>>>;
+
+/// A literal built once before evaluation and shared by every evaluation
+/// of its node.
+enum SharedLiteral {
+    /// The value of an `Int` literal or the least residue of a residue
+    /// literal.
+    Integer(Rc<ExactInteger>),
+    /// An array literal, such as a byte string.
+    Array(Rc<ArrayValue>),
+}
 
 struct Machine<'core> {
     core: &'core CoreModule,
@@ -694,7 +704,8 @@ fn word_binary(operator: BinaryOperator, mask: u64, left: u64, right: u64) -> Op
         | BinaryOperator::Greater
         | BinaryOperator::GreaterEqual
         | BinaryOperator::LogicalAnd
-        | BinaryOperator::LogicalOr => return None,
+        | BinaryOperator::LogicalOr
+        | BinaryOperator::Concat => return None,
     };
     Some(value & mask)
 }
@@ -737,7 +748,8 @@ fn word_shift(
         | BinaryOperator::Greater
         | BinaryOperator::GreaterEqual
         | BinaryOperator::LogicalAnd
-        | BinaryOperator::LogicalOr => None,
+        | BinaryOperator::LogicalOr
+        | BinaryOperator::Concat => None,
     }
 }
 
@@ -1336,6 +1348,24 @@ impl<'core> Machine<'core> {
             .ok_or(Stop::InconsistentCore)
     }
 
+    /// Pops the `Int` end and then the `Int` start of a slice of `length`
+    /// elements, which analysis proved to lie `length` apart from 0 up.
+    /// The end is checked against the array when the run is taken.
+    fn pop_bounds(&mut self, length: usize) -> Result<(usize, usize), Stop> {
+        let position = |value: Rc<ExactInteger>| {
+            value
+                .to_i64()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or(Stop::InconsistentCore)
+        };
+        let end = position(self.pop_int()?)?;
+        let start = position(self.pop_int()?)?;
+        if start.checked_add(length) != Some(end) {
+            return Err(Stop::InconsistentCore);
+        }
+        Ok((start, end))
+    }
+
     /// Begins the loop numbered `id` of `function` with the popped initial
     /// accumulator.
     fn begin_loop(
@@ -1407,7 +1437,7 @@ impl<'core> Machine<'core> {
                 self.charge(1)?;
                 let literal = value;
                 let value = match literal {
-                    CoreValue::Int(_) | CoreValue::Mod(_) => {
+                    CoreValue::Int(_) | CoreValue::Mod(_) | CoreValue::Array(_) => {
                         let index = usize::try_from(function.id.index())
                             .map_err(|_| Stop::InconsistentCore)?;
                         let shared = self
@@ -1417,10 +1447,22 @@ impl<'core> Machine<'core> {
                             .and_then(|literals| literals.get(offset))
                             .and_then(Option::as_ref)
                             .ok_or(Stop::InconsistentCore)?;
-                        match literal {
-                            CoreValue::Int(_) => Value::Int(Rc::clone(shared)),
-                            _ => Value::Mod(Rc::clone(shared)),
+                        let value = match (literal, shared) {
+                            (CoreValue::Int(_), SharedLiteral::Integer(shared)) => {
+                                Value::Int(Rc::clone(shared))
+                            }
+                            (CoreValue::Mod(_), SharedLiteral::Integer(shared)) => {
+                                Value::Mod(Rc::clone(shared))
+                            }
+                            (CoreValue::Array(_), SharedLiteral::Array(shared)) => {
+                                Value::Array(Rc::clone(shared))
+                            }
+                            _ => return Err(Stop::InconsistentCore),
+                        };
+                        if !has_type(&value, &node.ty) {
+                            return Err(Stop::InconsistentCore);
                         }
+                        value
                     }
                     CoreValue::Bool(value) => Value::Bool(*value),
                     word => Value::Word(word.word_as_u64().ok_or(Stop::InconsistentCore)?),
@@ -1864,6 +1906,105 @@ impl<'core> Machine<'core> {
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(element)
             }
+            CoreNodeKind::Concat => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements written, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(2)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let (Value::Array(right), Value::Array(left)) = (self.pop()?, self.pop()?) else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if left.ty.element() != ty.element()
+                    || right.ty.element() != ty.element()
+                    || left.elements.len().checked_add(right.elements.len()) != Some(length)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(left.elements.iter().cloned());
+                elements.extend(right.elements.iter().cloned());
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::Slice => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements copied, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(3)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let (start, end) = self.pop_bounds(length)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if array.ty.element() != ty.element() {
+                    return Err(Stop::InconsistentCore);
+                }
+                let run = array
+                    .elements
+                    .get(start..end)
+                    .ok_or(Stop::InconsistentCore)?;
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(run.iter().cloned());
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::SliceUpdate => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements copied, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(4)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let Value::Array(value) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let (start, end) = self.pop_bounds(value.elements.len())?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if array.ty != ty || value.ty.element() != ty.element() {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(array.elements.iter().cloned());
+                let run = elements.get_mut(start..end).ok_or(Stop::InconsistentCore)?;
+                run.clone_from_slice(&value.elements);
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
             CoreNodeKind::Convert { from } => {
                 self.charge(1)?;
                 if *from == CoreType::Bool || node.ty == CoreType::Bool {
@@ -2133,14 +2274,27 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
             literals.try_reserve_exact(expression.nodes.len()).ok()?;
             for node in &expression.nodes {
                 literals.push(match &node.kind {
-                    CoreNodeKind::Literal(CoreValue::Int(value)) => Some(Rc::new(
-                        value.try_clone_with_reservation(reserve_value_limbs)?,
+                    CoreNodeKind::Literal(CoreValue::Int(value)) => Some(SharedLiteral::Integer(
+                        Rc::new(value.try_clone_with_reservation(reserve_value_limbs)?),
                     )),
-                    CoreNodeKind::Literal(CoreValue::Mod(residue)) => Some(Rc::new(
-                        residue
-                            .value()
-                            .try_clone_with_reservation(reserve_value_limbs)?,
-                    )),
+                    CoreNodeKind::Literal(CoreValue::Mod(residue)) => {
+                        Some(SharedLiteral::Integer(Rc::new(
+                            residue
+                                .value()
+                                .try_clone_with_reservation(reserve_value_limbs)?,
+                        )))
+                    }
+                    CoreNodeKind::Literal(CoreValue::Array(array)) => {
+                        let mut elements = Vec::new();
+                        elements.try_reserve_exact(array.elements().len()).ok()?;
+                        for element in array.elements() {
+                            elements.push(shared_element(element)?);
+                        }
+                        Some(SharedLiteral::Array(Rc::new(ArrayValue {
+                            ty: array.ty(),
+                            elements,
+                        })))
+                    }
                     _ => None,
                 });
             }
@@ -2149,6 +2303,25 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
         shared.push(parts);
     }
     Some(shared)
+}
+
+/// Returns the evaluator's value of a scalar element of an array literal,
+/// or `None` when storage cannot be reserved or the element is not a
+/// scalar.
+fn shared_element(element: &CoreValue) -> Option<Value> {
+    Some(match element {
+        CoreValue::Int(value) => Value::Int(Rc::new(
+            value.try_clone_with_reservation(reserve_value_limbs)?,
+        )),
+        CoreValue::Mod(residue) => Value::Mod(Rc::new(
+            residue
+                .value()
+                .try_clone_with_reservation(reserve_value_limbs)?,
+        )),
+        CoreValue::Bool(value) => Value::Bool(*value),
+        CoreValue::Array(_) | CoreValue::Tuple(_) => return None,
+        word => Value::Word(word.word_as_u64()?),
+    })
 }
 
 fn stopped(

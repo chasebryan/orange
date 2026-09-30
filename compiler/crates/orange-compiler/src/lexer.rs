@@ -16,6 +16,10 @@ pub const MAX_DIAGNOSTICS_PER_SOURCE: usize = 100;
 const MAX_INTEGER_SPELLING_IN_DIAGNOSTIC: usize = 80;
 const MAX_RETAINED_DIAGNOSTICS: usize = MAX_DIAGNOSTICS_PER_SOURCE.saturating_add(2);
 
+/// The note of every malformed hex string.
+const HEX_STRING_NOTE: &str = "a hex string holds bytes written as pairs of hex digits, as in \
+     `hex\"00 1f a0\"`; spaces may separate bytes but not split one";
+
 macro_rules! define_token_kinds {
     ($(#[$variant_doc:meta] $variant:ident => $name:literal,)+) => {
         /// A lexical token category.
@@ -48,6 +52,8 @@ define_token_kinds! {
     Integer => "INTEGER",
     /// A double-quoted string literal.
     String => "STRING",
+    /// A hex string `hex"..."` of hex digit pairs, optionally separated by spaces.
+    HexString => "HEX_STRING",
     /// `edition`
     KwEdition => "KW_EDITION",
     /// `module`
@@ -88,6 +94,8 @@ define_token_kinds! {
     DoubleColon => "DOUBLE_COLON",
     /// `+`
     Plus => "PLUS",
+    /// `++`
+    PlusPlus => "PLUS_PLUS",
     /// `-`
     Minus => "MINUS",
     /// `*`
@@ -426,8 +434,113 @@ impl<'source> Lexer<'source> {
             self.fail_cursor_invariant();
             return;
         };
+        // `hex` written directly before `"` opens a hex string; anywhere
+        // else it is an ordinary identifier.
+        if spelling == "hex" && self.peek_char() == Some('"') {
+            self.lex_hex_string(start);
+            return;
+        }
         let kind = keyword_kind(spelling, self.edition).unwrap_or(TokenKind::Identifier);
         self.push_token(kind, start, self.cursor);
+    }
+
+    /// Lexes the rest of a hex string after `hex`, at its opening quote.
+    ///
+    /// Its contents are hex digits in pairs, one pair per byte, and spaces,
+    /// which may separate bytes but not split one. The first character that
+    /// breaks this rule is reported; an unterminated hex string is reported
+    /// at its opening `hex"` alone.
+    fn lex_hex_string(&mut self, start: usize) {
+        if !self.advance_bytes(1) {
+            return;
+        }
+        // The first offending character, as the span of its bytes and
+        // whether it is a lone digit rather than a character that is not
+        // allowed at all.
+        let mut offense: Option<(usize, usize, bool)> = None;
+        // The start of a digit that still awaits its partner.
+        let mut pending: Option<usize> = None;
+        let mut terminated = false;
+        while let Some(character) = self.peek_char() {
+            if character == '\n' || character == '\r' {
+                break;
+            }
+            let position = self.cursor;
+            if !self.advance_char() {
+                return;
+            }
+            if character == '"' {
+                terminated = true;
+                break;
+            }
+            if offense.is_some() {
+                continue;
+            }
+            if character.is_ascii_hexdigit() {
+                pending = match pending {
+                    Some(_) => None,
+                    None => Some(position),
+                };
+            } else if character != ' ' {
+                offense = Some((position, self.cursor, false));
+            } else if let Some(lone) = pending {
+                offense = Some((lone, lone.saturating_add(1), true));
+            }
+        }
+        if !terminated {
+            let opening_end = start.saturating_add(4).min(self.text.len());
+            let span = self.span(start, opening_end);
+            self.push_ordinary_diagnostic(span, || {
+                Diagnostic::error(
+                    DiagnosticCode::UnterminatedString,
+                    "unterminated hex string",
+                    span,
+                )
+                .with_label("this hex string is never closed")
+                .with_note("pre-alpha Orange strings cannot cross a line boundary")
+            });
+        } else if let Some((offense_start, offense_end, lone)) =
+            offense.or_else(|| pending.map(|lone| (lone, lone.saturating_add(1), true)))
+        {
+            self.push_malformed_hex(offense_start, offense_end, lone);
+        }
+        self.push_token(TokenKind::HexString, start, self.cursor);
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn push_malformed_hex(&mut self, start: usize, end: usize, lone: bool) {
+        let span = self.span(start, end);
+        let Some(spelling) = self.text.get(start..end) else {
+            self.fail_cursor_invariant();
+            return;
+        };
+        let character = spelling.chars().next();
+        self.push_ordinary_diagnostic(span, move || {
+            let diagnostic = match character {
+                Some(digit) if lone => Diagnostic::error(
+                    DiagnosticCode::MalformedHexString,
+                    format!("hex digit `{digit}` has no partner"),
+                    span,
+                )
+                .with_label("a byte is written as two hex digits"),
+                Some(character) => Diagnostic::error(
+                    DiagnosticCode::MalformedHexString,
+                    format!(
+                        "{} cannot appear in a hex string",
+                        PrintableCharacter(character)
+                    ),
+                    span,
+                )
+                .with_label("not a hex digit or a space"),
+                None => Diagnostic::error(
+                    DiagnosticCode::MalformedHexString,
+                    "malformed hex string",
+                    span,
+                ),
+            };
+            diagnostic.with_note(HEX_STRING_NOTE)
+        });
     }
 
     fn lex_integer(&mut self, start: usize) {
@@ -632,8 +745,9 @@ impl<'source> Lexer<'source> {
             ("<<<", TokenKind::LessLessLess),
             (">>>", TokenKind::GreaterGreaterGreater),
         ];
-        const DOUBLE: [(&str, TokenKind); 12] = [
+        const DOUBLE: [(&str, TokenKind); 13] = [
             ("..", TokenKind::DotDot),
+            ("++", TokenKind::PlusPlus),
             ("::", TokenKind::DoubleColon),
             ("&&", TokenKind::AmpAmp),
             ("||", TokenKind::PipePipe),
@@ -954,6 +1068,7 @@ mod tests {
             "IDENTIFIER",
             "INTEGER",
             "STRING",
+            "HEX_STRING",
             "KW_EDITION",
             "KW_MODULE",
             "KW_SPEC",
@@ -974,6 +1089,7 @@ mod tests {
             "DOT_DOT",
             "DOUBLE_COLON",
             "PLUS",
+            "PLUS_PLUS",
             "MINUS",
             "STAR",
             "SLASH",

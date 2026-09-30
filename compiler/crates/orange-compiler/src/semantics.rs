@@ -4,22 +4,23 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    ArrayType, CoreBinding, CoreConditional, CoreExpression, CoreFunction, CoreFunctionId,
-    CoreLocal, CoreLoop, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger,
-    MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, MAX_MODULUS_BITS, Magnitude, Modulus,
-    Residue, TupleType,
+    ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
+    CoreFunctionId, CoreLocal, CoreLoop, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue,
+    ExactInteger, MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, MAX_MODULUS_BITS,
+    Magnitude, Modulus, Residue, TupleType,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
-    ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
+    ArrayExpression, BinaryExpression, BinaryOperator, Binding, ByteString, CallExpression,
     ConditionalExpression, ConversionExpression, Expression, ExpressionKind, FillExpression,
     FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral,
-    LoopExpression, MAX_ARRAY_ELEMENTS, Parameter, Pattern, ProjectExpression, SyntaxTree,
-    TupleExpression, TypeSyntax, TypedBody, TypedName, UnaryExpression, UnaryOperator,
-    UpdateExpression,
+    LoopExpression, MAX_ARRAY_ELEMENTS, Parameter, Pattern, ProjectExpression, SliceExpression,
+    SliceRange, SliceUpdateExpression, SyntaxTree, TupleExpression, TypeSyntax, TypedBody,
+    TypedName, UnaryExpression, UnaryOperator, UpdateExpression,
 };
-use crate::source::{SourceFile, Span};
+use crate::source::{SourceFile, Span, TextOffset};
 
+mod bytes;
 mod linking;
 mod ranges;
 mod tuples;
@@ -333,6 +334,16 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
             ExpressionKind::Project(project) => {
                 belongs(project.position_span) && expression_belongs(&project.base, belongs)
             }
+            ExpressionKind::Bytes(_) => true,
+            ExpressionKind::Slice(slice) => {
+                expression_belongs(&slice.base, belongs) && range_belongs(&slice.range, belongs)
+            }
+            ExpressionKind::SliceUpdate(update) => {
+                belongs(update.keyword_span)
+                    && expression_belongs(&update.base, belongs)
+                    && range_belongs(&update.range, belongs)
+                    && expression_belongs(&update.value, belongs)
+            }
             ExpressionKind::Conditional(conditional) => {
                 belongs(conditional.else_span)
                     && conditional.arms.iter().all(|arm| {
@@ -345,6 +356,18 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && expression_belongs(&conditional.otherwise, belongs)
             }
         }
+}
+
+/// Returns whether every span of a slice's bounds belongs.
+/// Parser-established expression height bounds the recursion through them.
+fn range_belongs(range: &SliceRange, belongs: &impl Fn(Span) -> bool) -> bool {
+    belongs(range.span)
+        && belongs(range.dots_span)
+        && range
+            .start
+            .iter()
+            .chain(&range.end)
+            .all(|bound| expression_belongs(bound, belongs))
 }
 
 /// Returns whether every span of a list of `let` bindings belongs.
@@ -797,12 +820,20 @@ fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
         | ExpressionKind::Fill(_)
         | ExpressionKind::Loop(_)
         | ExpressionKind::Tuple(_)
-        | ExpressionKind::Project(_) => Some(expression),
+        | ExpressionKind::Project(_)
+        | ExpressionKind::Bytes(_)
+        | ExpressionKind::Slice(_) => Some(expression),
         ExpressionKind::Parenthesized(inner) => first_typed_leaf(inner),
         // An update has the type of the array it updates.
         ExpressionKind::Update(update) => first_typed_leaf(&update.base),
+        ExpressionKind::SliceUpdate(update) => first_typed_leaf(&update.base),
         ExpressionKind::Unary(unary) => first_typed_leaf(&unary.operand),
-        ExpressionKind::Binary(binary) if binary.operator.is_comparison() => Some(expression),
+        // A comparison has type `Bool`, and `++` has a length of its own.
+        ExpressionKind::Binary(binary)
+            if binary.operator.is_comparison() || binary.operator.is_concatenation() =>
+        {
+            Some(expression)
+        }
         ExpressionKind::Binary(binary) => {
             let left = first_typed_leaf(&binary.left);
             if binary.operator.is_shift_or_rotation() {
@@ -834,8 +865,11 @@ fn passes_branch_binding(expression: &Expression) -> bool {
     match &expression.kind {
         ExpressionKind::Parenthesized(inner) => passes_branch_binding(inner),
         ExpressionKind::Update(update) => passes_branch_binding(&update.base),
+        ExpressionKind::SliceUpdate(update) => passes_branch_binding(&update.base),
         ExpressionKind::Unary(unary) => passes_branch_binding(&unary.operand),
-        ExpressionKind::Binary(binary) if !binary.operator.is_comparison() => {
+        ExpressionKind::Binary(binary)
+            if !binary.operator.is_comparison() && !binary.operator.is_concatenation() =>
+        {
             passes_branch_binding(&binary.left)
                 || (!binary.operator.is_shift_or_rotation() && passes_branch_binding(&binary.right))
         }
@@ -869,6 +903,7 @@ fn leaf_root_name(leaf: &Expression) -> Option<&Identifier> {
         ExpressionKind::Name(name) => Some(name),
         ExpressionKind::Index(index) => leaf_root_name(&index.base),
         ExpressionKind::Project(project) => leaf_root_name(&project.base),
+        ExpressionKind::Slice(slice) => leaf_root_name(&slice.base),
         _ => None,
     }
 }
@@ -1548,6 +1583,24 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 self.check_project(expression, project, expected, context, scope, output)
             }
+            ExpressionKind::Bytes(bytes) => {
+                if !self.event(expression.span) {
+                    return false;
+                }
+                self.check_bytes(expression, *bytes, expected, output)
+            }
+            ExpressionKind::Slice(slice) => {
+                if !self.event(slice.range.span) {
+                    return false;
+                }
+                self.check_slice(expression, slice, expected, context, scope, output)
+            }
+            ExpressionKind::SliceUpdate(update) => {
+                if !self.event(update.keyword_span) {
+                    return false;
+                }
+                self.check_slice_update(expression, update, expected, context, scope, output)
+            }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
                     return false;
@@ -1555,6 +1608,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 if binary.operator.is_comparison() {
                     return self
                         .check_comparison(expression, binary, expected, context, scope, output);
+                }
+                if binary.operator.is_concatenation() {
+                    return self
+                        .check_concatenation(expression, binary, expected, context, scope, output);
                 }
                 if !self.binary_is_defined(binary, expected) {
                     return false;
@@ -2009,6 +2066,24 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             ExpressionKind::Binary(binary) if binary.operator.is_comparison() => {
                 Some(CoreType::Bool)
+            }
+            ExpressionKind::Binary(binary) if binary.operator.is_concatenation() => {
+                self.concatenation_type(binary, context, scope)
+            }
+            ExpressionKind::Bytes(_) => {
+                let length = self.array_length_of(leaf, context, scope)?;
+                ArrayType::new(&CoreType::Word8, length).map(CoreType::Array)
+            }
+            ExpressionKind::Slice(slice) => {
+                let element = self
+                    .leaf_type(&slice.base, context, scope)?
+                    .as_array()?
+                    .element();
+                let length = self.slice_length(&slice.range, context)?;
+                ArrayType::new(&element, length).map(CoreType::Array)
+            }
+            ExpressionKind::SliceUpdate(update) => {
+                self.leaf_type(first_typed_leaf(&update.base)?, context, scope)
             }
             ExpressionKind::Literal(_)
             | ExpressionKind::Unary(_)
@@ -3423,6 +3498,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             | BinaryOperator::RotateLeft
             | BinaryOperator::RotateRight => expected.word_bits().is_some(),
             BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => *expected == CoreType::Bool,
+            // `++` is checked by `check_concatenation`.
+            BinaryOperator::Concat => false,
             // A comparison is checked by `check_comparison`.
             BinaryOperator::Equal
             | BinaryOperator::NotEqual

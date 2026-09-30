@@ -2139,6 +2139,9 @@ fn expression_nodes<'text>(
                 CoreNodeKind::Choose(id) => format!("choose #{id}"),
                 CoreNodeKind::Tuple { elements } => format!("tuple of {elements}"),
                 CoreNodeKind::Project { index } => format!("element {index}"),
+                CoreNodeKind::Concat => String::from("concat"),
+                CoreNodeKind::Slice => String::from("slice"),
+                CoreNodeKind::SliceUpdate => String::from("slice update"),
             };
             (
                 operation,
