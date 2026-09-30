@@ -28,7 +28,8 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import d006_render as R  # noqa: E402
 
-REPO = Path(os.environ.get("ORANGE_REPO", "/home/claude/orange"))
+# The repository this file sits in; ORANGE_REPO points a development copy of the tools at a checkout.
+REPO = Path(os.environ.get("ORANGE_REPO") or Path(__file__).resolve().parents[1])
 SHARED = REPO / "research/decisions/D-006/d006-v0.3/shared-inputs"
 TOOLCHAINS = {"rocq": "/opt/d006/rocq-9.2.0", "lean4": "/opt/d006/lean-4.34.1-linux"}
 TOOLCHAINS_AARCH64 = {"rocq": "/opt/d006/ocaml-4.14.1-aarch64", "lean4": "/opt/d006/lean-4.34.1-linux_aarch64"}

@@ -1101,11 +1101,10 @@ def fault_run(epoch: Epoch, plan: Plan, ws: Workspace, cand_id: str, fault: str,
     output = b""
     if built:
         output = built[-1].stdout + built[-1].stderr
-    verdict = fault_verdict(fault, build, last, projection, reference, evidence, faults, output)
     if fault == "D6-F04":
         evidence["home_unchanged"] = tree_manifest(home) == before
-        verdict = verdict and evidence["home_unchanged"]
         home.rmdir()
+    verdict = fault_verdict(fault, build, last, projection, reference, evidence, faults, output)
     record = epoch.write_record({
         "profile": "fault", "workspace": ws.name, "candidate": cand_id, "fault": fault, "mode": mode,
         "steps": ctx.recorder.steps, "totals": totals(ctx.recorder.steps), "build": build,
