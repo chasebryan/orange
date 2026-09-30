@@ -9862,7 +9862,12 @@ mod tests {
                  spec g() -> Int {{ 1 }} }}"
             );
             let (_, _, parsed) = parse_text(&text);
-            assert_eq!(parsed.diagnostics.len(), 1, "{text:?}: {:?}", parsed.diagnostics);
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{text:?}: {:?}",
+                parsed.diagnostics
+            );
         }
     }
 

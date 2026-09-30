@@ -9482,7 +9482,13 @@ fn type_parameters_take_one_core_function_per_listed_type() {
             ))
             .collect::<Vec<_>>(),
         [
-            ("twice", "[Int]", vec![0], vec![String::from("Int")], String::from("Int")),
+            (
+                "twice",
+                "[Int]",
+                vec![0],
+                vec![String::from("Int")],
+                String::from("Int")
+            ),
             (
                 "twice",
                 "[Word[16]]",
@@ -9497,7 +9503,13 @@ fn type_parameters_take_one_core_function_per_listed_type() {
                 vec![String::from("Mod[65521]")],
                 String::from("Mod[65521]")
             ),
-            ("fill", "[1, Bool]", vec![1, 0], vec![String::from("Bool")], String::from("Bool^1")),
+            (
+                "fill",
+                "[1, Bool]",
+                vec![1, 0],
+                vec![String::from("Bool")],
+                String::from("Bool^1")
+            ),
             (
                 "fill",
                 "[1, Word[8]]",
@@ -9505,7 +9517,13 @@ fn type_parameters_take_one_core_function_per_listed_type() {
                 vec![String::from("Word[8]")],
                 String::from("Word[8]^1")
             ),
-            ("fill", "[2, Bool]", vec![2, 0], vec![String::from("Bool")], String::from("Bool^2")),
+            (
+                "fill",
+                "[2, Bool]",
+                vec![2, 0],
+                vec![String::from("Bool")],
+                String::from("Bool^2")
+            ),
             (
                 "fill",
                 "[2, Word[8]]",
@@ -9607,7 +9625,9 @@ fn type_parameters_list_distinct_types_under_names_of_their_own() {
         "  spec repeated[K in {F}, K in {Q}](x: F) -> F { x }\n",
         "  spec mixed[n in 1..3, n in {Q}](x: Q) -> Q { x }\n",
         "  spec values[K in {Q}](K: Q) -> Q { K }\n",
+        "  spec bindings[K in {Q}](x: K) -> K { let K: K = x; K }\n",
         "  spec unknown[K in {Word[7], Mod[1], H}](x: Int) -> Int { x }\n",
+        "  spec sized[n in 1..3, K in {Word[8]^n}](x: Int) -> Int { x }\n",
         "  spec many[K in {Int, Bool}, n in 0..200]() -> Int { n }\n",
         "  spec most[K in {Int, Bool}, n in 0..128]() -> Int { n }\n",
     ));
@@ -9661,11 +9681,25 @@ fn type_parameters_list_distinct_types_under_names_of_their_own() {
                 String::from("unsupported listed type `H`")
             ),
             (
+                DiagnosticCode::NonStaticSize,
+                "n",
+                String::from("a size may use only integer literals and size parameters")
+            ),
+            (
                 DiagnosticCode::SizeRange,
                 "K in {Int, Bool}, n in 0..200",
                 String::from("`many` has 400 instances, but a function has at most 256")
             ),
         ]
+    );
+    // A listed type is resolved outside every instance, so a size in it
+    // has no value.
+    assert_eq!(
+        result.diagnostics[9].notes().last().map(String::as_str),
+        Some(
+            "a listed type is one type for every instance of its function, resolved before any \
+             size has a value, so its lengths are written without sizes"
+        )
     );
     let twice = &result.diagnostics[1];
     assert_eq!(twice.label(), "this is the same type as an earlier one");
@@ -9680,13 +9714,16 @@ fn type_parameters_list_distinct_types_under_names_of_their_own() {
             .collect::<Vec<_>>(),
         [("Q", "first listed here")]
     );
-    assert_eq!(result.diagnostics[5].label(), "this name is already a parameter in brackets");
+    assert_eq!(
+        result.diagnostics[5].label(),
+        "this name is already a parameter in brackets"
+    );
     assert_eq!(
         result.diagnostics[5].notes(),
         ["each size and type parameter in a function's brackets has a name of its own"]
     );
     assert_eq!(
-        result.diagnostics[9].notes(),
+        result.diagnostics[10].notes(),
         [
             "a function has one instance for each combination of its sizes' values and its type \
              parameters' types, at most 256 in all"
@@ -9738,7 +9775,10 @@ fn calls_name_an_instance_by_its_types_or_fit_one_by_argument_and_result_types()
             (String::from("call #0 with 1"), "square(2)"),
             (String::from("call #1 with 1"), "square[W](2)"),
             (String::from("call #2 with 1"), "square(p)"),
-            (String::from("call #12 with 1"), "first[Word[8]^4](hex\"00010203\")"),
+            (
+                String::from("call #12 with 1"),
+                "first[Word[8]^4](hex\"00010203\")"
+            ),
             (String::from("call #13 with 1"), "first(true)"),
         ]
     );
@@ -9796,7 +9836,9 @@ fn calls_that_give_no_listed_type_are_reported_at_the_call() {
             (
                 DiagnosticCode::TypeMismatch,
                 "square(x)",
-                String::from("`square` returns `Mod[(1 << 255) - 19]`, but `Mod[3329]` is required here")
+                String::from(
+                    "`square` returns `Mod[(1 << 255) - 19]`, but `Mod[3329]` is required here"
+                )
             ),
             (
                 DiagnosticCode::TypeParameter,
@@ -9828,7 +9870,10 @@ fn calls_that_give_no_listed_type_are_reported_at_the_call() {
     assert_eq!(label(1), "this is not a type");
     assert_eq!(label(3), "write the types in brackets");
     assert_eq!(label(4), "an argument of type `Word[32]` is given");
-    assert_eq!(label(8), "an argument of type `Mod[(1 << 255) - 19]^3` is given");
+    assert_eq!(
+        label(8),
+        "an argument of type `Mod[(1 << 255) - 19]^3` is given"
+    );
     assert_eq!(
         result.diagnostics[4].notes()[0],
         "`square` is defined for `K` in {F, Q}"
@@ -10027,5 +10072,56 @@ fn rejects_foreign_listed_type_spans() {
             [DiagnosticCode::InvalidSemanticInput],
             "case {index}"
         );
+    }
+}
+
+#[test]
+fn calls_nested_in_arguments_and_branches_are_fitted_once_per_level() {
+    // Before S3o, a sized call's argument that was a conditional was read
+    // twice when its first branch gave no length, and so was each call
+    // nested in it: 2^31 reads at this depth. The calls fit no instance, so
+    // the outermost is reported once, and quickly.
+    let depth = 31;
+    let body = format!(
+        "{}[x, x, x]{}",
+        "t(if x == x { ".repeat(depth),
+        " } else { [x, x, x] })".repeat(depth)
+    );
+    let (fixture, result) = rejected(&format!(
+        "  spec t[n in 1..3](x: Word[32]^n) -> Word[32]^n {{ x }}\n  \
+         spec f(x: Word[32]) -> Word[32]^1 {{ {body} }}\n"
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [(
+            DiagnosticCode::SizeRange,
+            body.as_str(),
+            String::from("no instance of `t` takes arguments of these lengths")
+        )]
+    );
+    // Typed calls read each argument once, for its type or its length:
+    // calls that fit by their argument's type, arrays by their elements and
+    // length, and calls that only their place chooses among, around one
+    // that only its place chooses either, or around an array whose elements
+    // have no type.
+    let nested = |prefix: &str, core: &str, suffix: &str| {
+        format!("{}{core}{}", prefix.repeat(63), suffix.repeat(63))
+    };
+    for body in [
+        nested("u(", "x", ")"),
+        format!("{}[x]{}[0]", "v(".repeat(62), ")".repeat(62)),
+        nested("u(", "z()", ")"),
+        format!(
+            "let y: Word[32]^2 = {}[0, 0]{}; y[0]",
+            "v(".repeat(62),
+            ")".repeat(62)
+        ),
+    ] {
+        accepted(&format!(
+            "  spec u[K in {{Word[16], Word[32]}}](x: K) -> K {{ x }}\n  \
+             spec v[K in {{Word[16], Word[32]}}, n in 1..3](x: K^n) -> K^n {{ x }}\n  \
+             spec z[K in {{Word[16], Word[32]}}]() -> K {{ 0 }}\n  \
+             spec f(x: Word[32]) -> Word[32] {{ {body} }}\n"
+        ));
     }
 }

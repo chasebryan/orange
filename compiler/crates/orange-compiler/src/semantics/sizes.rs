@@ -110,9 +110,41 @@ impl<'ast> Instance<'ast> {
     }
 }
 
+/// Returns the length of an array literal, a fill, a join of them, or an
+/// update of one, read from the syntax alone: the length of an argument
+/// whose elements have no type.
+///
+/// Parser-established expression height bounds this recursion.
+fn literal_length(
+    source: &SourceFile,
+    types: &TypeTable<'_>,
+    argument: &Expression,
+) -> Option<u32> {
+    match &argument.kind {
+        ExpressionKind::Parenthesized(inner) => literal_length(source, types, inner),
+        ExpressionKind::Update(update) => literal_length(source, types, &update.base),
+        ExpressionKind::SliceUpdate(update) => literal_length(source, types, &update.base),
+        ExpressionKind::Array(array) => u32::try_from(array.elements.len()).ok(),
+        ExpressionKind::Fill(fill) => match types.sizes.array_length(source, &fill.length) {
+            Length::Admitted(length) => Some(length),
+            _ => None,
+        },
+        ExpressionKind::Binary(binary) if binary.operator.is_concatenation() => literal_length(
+            source,
+            types,
+            &binary.left,
+        )?
+        .checked_add(literal_length(source, types, &binary.right)?),
+        _ => None,
+    }
+}
+
 /// Returns each listed type of `parameters` as written, with every run of
 /// whitespace written as one space, or an empty list for a size parameter.
-pub(super) fn type_spellings(source: &SourceFile, parameters: &[SizeParameter]) -> Vec<Vec<String>> {
+pub(super) fn type_spellings(
+    source: &SourceFile,
+    parameters: &[SizeParameter],
+) -> Vec<Vec<String>> {
     parameters
         .iter()
         .map(|parameter| {
@@ -120,11 +152,9 @@ pub(super) fn type_spellings(source: &SourceFile, parameters: &[SizeParameter]) 
                 .types
                 .iter()
                 .map(|ty| {
-                    source
-                        .slice(ty.span)
-                        .map_or_else(String::new, |text| {
-                            text.split_whitespace().collect::<Vec<_>>().join(" ")
-                        })
+                    source.slice(ty.span).map_or_else(String::new, |text| {
+                        text.split_whitespace().collect::<Vec<_>>().join(" ")
+                    })
                 })
                 .collect()
         })
@@ -449,7 +479,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         // Sizes evaluated without a report, such as a fill's length read to
         // infer a join's length, are charged before the scope changes.
         self.charge_size_events(self.ast.module.span);
-        self.types.sizes = self.size_scope(Instance::NONE, [const { None }; MAX_SIZES_PER_FUNCTION]);
+        self.types.sizes =
+            self.size_scope(Instance::NONE, [const { None }; MAX_SIZES_PER_FUNCTION]);
         let mut types = [const { None }; MAX_SIZES_PER_FUNCTION];
         for ((slot, parameter), value) in types
             .iter_mut()
@@ -556,7 +587,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .find(|other| other.name.text == size.name.text)
             });
             if size.is_type() {
-                valid &= self.check_type_parameter(size);
+                valid &= self.check_type_parameter(size, &function.sizes);
                 if self.halted {
                     return false;
                 }
@@ -649,8 +680,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// Checks one type parameter `K in {F, L}`: its name names no built-in
     /// or declared type, and its listed types resolve, outside every
     /// instance, to distinct types. Reports each fault and returns whether
-    /// there was none.
-    fn check_type_parameter(&mut self, parameter: &'ast SizeParameter) -> bool {
+    /// there was none. `brackets` are all the function's parameters in
+    /// brackets, whose sizes a listed type cannot use.
+    fn check_type_parameter(
+        &mut self,
+        parameter: &'ast SizeParameter,
+        brackets: &[SizeParameter],
+    ) -> bool {
         let mut valid = true;
         let name = parameter.name.text.as_str();
         let declared = self.types.name(name).map(|declared| declared.span);
@@ -664,10 +700,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         }
         for ty in &parameter.types {
+            let reported = self.diagnostics.len();
             let checked = self.analyze_type(ty, "listed type");
             if self.halted {
                 return false;
             }
+            self.note_sizes_in_listed_type(reported, brackets);
             valid &= checked.is_some();
             if let Some(checked) = &checked
                 && let Some(first) = resolved
@@ -681,6 +719,29 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             resolved.push(checked);
         }
         valid
+    }
+
+    /// Explains each size rejected in a listed type since `reported`
+    /// diagnostics were retained that names one of the function's sizes:
+    /// a listed type is one type for every instance.
+    #[cold]
+    #[inline(never)]
+    fn note_sizes_in_listed_type(&mut self, reported: usize, brackets: &[SizeParameter]) {
+        let source = self.source;
+        for diagnostic in self.diagnostics.iter_mut().skip(reported) {
+            let names_size = diagnostic.code() == DiagnosticCode::NonStaticSize
+                && source.slice(diagnostic.primary_span()).is_some_and(|text| {
+                    brackets
+                        .iter()
+                        .any(|size| !size.is_type() && size.name.text == text)
+                });
+            if names_size {
+                diagnostic.add_note(
+                    "a listed type is one type for every instance of its function, resolved \
+                     before any size has a value, so its lengths are written without sizes",
+                );
+            }
+        }
     }
 
     #[cold]
@@ -779,7 +840,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 )
                 .with_label("this name is already a parameter in brackets")
                 .with_secondary_span(earlier, "first parameter in brackets is here")
-                .with_note("each size and type parameter in a function's brackets has a name of its own"),
+                .with_note(
+                    "each size and type parameter in a function's brackets has a name of its own",
+                ),
             );
         }
     }
@@ -1101,16 +1164,6 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     ) -> Result<usize, [Option<usize>; 2]> {
         let typed = signature.sizes.iter().any(SizeParameter::is_type);
         let first = signature.instances.first().ok_or([None; 2])?;
-        let mut lengths = [None; MAX_PARAMETERS_PER_FUNCTION];
-        for ((length, argument), parameter) in
-            lengths.iter_mut().zip(&call.arguments).zip(&first.parameters)
-        {
-            // A type parameter may make a parameter an array in one
-            // instance and not in another.
-            if typed || parameter.as_ref().and_then(CoreType::as_array).is_some() {
-                *length = self.array_length_of(argument, context, scope);
-            }
-        }
         // Types are kept on the heap: this frame is on the stack of every
         // silently typed call nested in an argument.
         let mut types = Vec::new();
@@ -1121,26 +1174,44 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .map(|argument| self.argument_type(argument, context, scope)),
             );
         }
+        // Each argument is read once, for its type or for its length, so
+        // that calls nested in arguments cost work linear in their depth.
+        let mut lengths = [None; MAX_PARAMETERS_PER_FUNCTION];
+        for (position, ((length, argument), parameter)) in lengths
+            .iter_mut()
+            .zip(&call.arguments)
+            .zip(&first.parameters)
+            .enumerate()
+        {
+            if typed {
+                // An argument without a type fits by its length only when
+                // its elements have no type, as `[1, 2, 3]` or `[0; 4]`.
+                if types.get(position).is_some_and(Option::is_none) {
+                    *length = literal_length(self.source, &self.types, argument);
+                }
+            } else if parameter.as_ref().and_then(CoreType::as_array).is_some() {
+                *length = self.array_length_of(argument, context, scope);
+            }
+        }
         let mut fitting = [None; 2];
         let mut matching = [None; 2];
         let (mut found, mut matched) = (0_usize, 0_usize);
         for (index, instance) in signature.instances.iter().enumerate() {
-            let fits =
-                instance
-                    .parameters
-                    .iter()
-                    .enumerate()
-                    .all(|(position, parameter)| {
-                        let length = lengths.get(position).copied().flatten();
-                        match (parameter, types.get(position).and_then(Option::as_ref)) {
-                            (Some(parameter), Some(given)) => parameter == given,
-                            (Some(parameter), None) => match (parameter.as_array(), length) {
-                                (Some(array), Some(length)) => array.length() == length,
-                                _ => true,
-                            },
-                            (None, _) => true,
-                        }
-                    });
+            let fits = instance
+                .parameters
+                .iter()
+                .enumerate()
+                .all(|(position, parameter)| {
+                    let length = lengths.get(position).copied().flatten();
+                    match (parameter, types.get(position).and_then(Option::as_ref)) {
+                        (Some(parameter), Some(given)) => parameter == given,
+                        (Some(parameter), None) => match (parameter.as_array(), length) {
+                            (Some(array), Some(length)) => array.length() == length,
+                            _ => true,
+                        },
+                        (None, _) => true,
+                    }
+                });
             if !fits {
                 continue;
             }

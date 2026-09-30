@@ -1557,10 +1557,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return None;
             }
             let text = &typed.name.text;
+            // A type parameter names a type, not a value, so a binding may
+            // share its name, as a parameter may.
             let size = function
                 .sizes
                 .iter()
-                .find(|size| size.name.text == *text)
+                .find(|size| !size.is_type() && size.name.text == *text)
                 .map(|size| (size.name.span, "the size parameter is here"));
             let parameter = function
                 .parameters
@@ -2017,18 +2019,17 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 "`{spelling}` is a type parameter: it names a type, not a value, so it is \
                  written where a type is, as in `let x: {spelling} = 0;`"
             ))
-        } else if first_declaration(scope.declarations, FunctionKind::Spec, &name.text).is_some()
-        {
-                diagnostic.with_note(format!(
-                    "to call the function `{spelling}`, write `{spelling}()` with its arguments"
-                ))
-            } else if has_bindings {
-                diagnostic.with_note(
-                    "a bare name in a `spec` body refers to one of its parameters or bindings",
-                )
-            } else {
-                diagnostic.with_note("a bare name in a `spec` body refers to one of its parameters")
-            };
+        } else if first_declaration(scope.declarations, FunctionKind::Spec, &name.text).is_some() {
+            diagnostic.with_note(format!(
+                "to call the function `{spelling}`, write `{spelling}()` with its arguments"
+            ))
+        } else if has_bindings {
+            diagnostic.with_note(
+                "a bare name in a `spec` body refers to one of its parameters or bindings",
+            )
+        } else {
+            diagnostic.with_note("a bare name in a `spec` body refers to one of its parameters")
+        };
         self.diagnostics.push(diagnostic);
     }
 
