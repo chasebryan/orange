@@ -28,10 +28,12 @@ meaning. It accepts no D-004 candidate.
 > [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, lifts the
 > static-index limit of section 13: an index may depend on data, and is proved
 > in range from its type. [`MODULES_2026.md`](MODULES_2026.md), proposed under
-> OEP-0011, lets a module use others, and [`MODULAR_2026.md`](MODULAR_2026.md),
+> OEP-0011, lets a module use others, [`MODULAR_2026.md`](MODULAR_2026.md),
 > proposed under OEP-0012, lets a loop accumulate a residue, as a Poly1305
-> accumulator does. Every source this document accepts keeps its meaning under
-> all four.
+> accumulator does, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
+> OEP-0013, lets a step begin with `let` bindings, evaluated afresh at every
+> step, as the working variables of a SHA-256 round are. Every source this
+> document accepts keeps its meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

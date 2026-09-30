@@ -8,8 +8,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::core::{
-    ArrayType, CoreArray, CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode,
-    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Modulus, Residue,
+    ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
+    CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger,
+    MAX_EXACT_INTEGER_BITS, Modulus, Residue,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, UnaryOperator};
@@ -457,7 +458,9 @@ struct ArrayValue {
 /// values. A loop frame shares its function's `base` and keeps its index and
 /// accumulator itself; its step's values lie above the stack length at which
 /// the loop began. A branch frame shares its function's `base` too; its
-/// values lie above the stack length at which the branch began.
+/// values lie above the stack length at which the branch began. A step's or
+/// branch's `let` bindings take their slots there in order, each once its
+/// value subtree is complete, and its intermediate values lie above them.
 struct Frame<'core> {
     function: &'core CoreFunction,
     /// The expression being evaluated; see [`expression_part`].
@@ -487,14 +490,25 @@ impl FrameKind {
             Self::Body | Self::Branch(_) => None,
         }
     }
+
+    const fn active_branch(&self) -> Option<&ActiveBranch> {
+        match self {
+            Self::Branch(active) => Some(active),
+            Self::Body | Self::Loop(_) => None,
+        }
+    }
 }
 
 /// The state of one branch being evaluated.
 struct ActiveBranch {
     /// The conditional's number within its function.
     id: usize,
+    /// Whether this is the `then` branch.
+    then: bool,
     /// Stack length when the branch began.
     floor: usize,
+    /// The number of the branch's bindings whose values are in their slots.
+    bound: usize,
 }
 
 /// The state of one loop between steps.
@@ -507,6 +521,19 @@ struct ActiveLoop {
     accumulator: Value,
     /// Stack length when the loop began.
     floor: usize,
+    /// The number of the current step's bindings whose values are in their
+    /// slots.
+    bound: usize,
+}
+
+/// Returns the `let` bindings of the branch of `conditional` that
+/// `then` names.
+fn branch_bindings(conditional: &CoreConditional, then: bool) -> &[CoreBinding] {
+    if then {
+        conditional.then_bindings()
+    } else {
+        conditional.else_bindings()
+    }
 }
 
 /// Returns a function's binding value at `part`, its body when `part` is
@@ -889,32 +916,6 @@ impl<'core> Machine<'core> {
             let base = frame.base;
             let part = frame.part;
             let offset = frame.next;
-            // The bindings a node may read, and the stack length above which
-            // its expression's intermediate values lie.
-            let (visible, floor) = match &frame.kind {
-                FrameKind::Loop(active) => (
-                    function
-                        .loops
-                        .get(active.id)
-                        .and_then(|r#loop| usize::try_from(r#loop.visible_locals).ok())
-                        .ok_or(Stop::InconsistentCore)?,
-                    active.floor,
-                ),
-                FrameKind::Branch(active) => (
-                    function
-                        .conditionals
-                        .get(active.id)
-                        .and_then(|conditional| usize::try_from(conditional.visible_locals).ok())
-                        .ok_or(Stop::InconsistentCore)?,
-                    active.floor,
-                ),
-                FrameKind::Body => (
-                    part,
-                    base.checked_add(function.parameters.len())
-                        .and_then(|floor| floor.checked_add(part))
-                        .ok_or(Stop::InconsistentCore)?,
-                ),
-            };
             let expression = expression_part(function, part).ok_or(Stop::InconsistentCore)?;
             let Some(node) = expression.nodes.get(offset) else {
                 match frame.kind {
@@ -961,32 +962,151 @@ impl<'core> Machine<'core> {
                 self.push(value)?;
                 continue;
             };
+            self.bind(offset)?;
+            let scope = self.scope()?;
             if let Some(frame) = self.frames.last_mut() {
                 frame.next = frame.next.saturating_add(1);
             }
-            self.step(function, base, part, offset, (visible, floor), node)?;
+            self.step(function, base, part, offset, scope, node)?;
         }
+    }
+
+    /// Returns the number of bindings the top frame's node may read, and
+    /// the stack length above which its expression's intermediate values
+    /// lie.
+    fn scope(&self) -> Result<(usize, usize), Stop> {
+        let frame = self.frames.last().ok_or(Stop::InconsistentCore)?;
+        let function = frame.function;
+        let (visible, floor, bound) = match &frame.kind {
+            FrameKind::Loop(active) => (
+                function
+                    .loops
+                    .get(active.id)
+                    .map(|r#loop| r#loop.visible_locals),
+                active.floor,
+                active.bound,
+            ),
+            FrameKind::Branch(active) => (
+                function
+                    .conditionals
+                    .get(active.id)
+                    .map(|conditional| conditional.visible_locals),
+                active.floor,
+                active.bound,
+            ),
+            FrameKind::Body => {
+                return Ok((
+                    frame.part,
+                    frame
+                        .base
+                        .checked_add(function.parameters.len())
+                        .and_then(|floor| floor.checked_add(frame.part))
+                        .ok_or(Stop::InconsistentCore)?,
+                ));
+            }
+        };
+        let visible = visible
+            .and_then(|visible| usize::try_from(visible).ok())
+            .ok_or(Stop::InconsistentCore)?;
+        let floor = floor.checked_add(bound).ok_or(Stop::InconsistentCore)?;
+        Ok((visible, floor))
+    }
+
+    /// Gives the next binding of the step or branch in the top frame its
+    /// slot when its value subtree ends before the node at `offset`: its
+    /// value, the one value above the step's or branch's earlier bindings,
+    /// stays on the stack.
+    fn bind(&mut self, offset: usize) -> Result<(), Stop> {
+        let Some(frame) = self.frames.last_mut() else {
+            return Err(Stop::InconsistentCore);
+        };
+        let function = frame.function;
+        let (bindings, floor, bound) = match &mut frame.kind {
+            FrameKind::Body => return Ok(()),
+            FrameKind::Loop(active) => (
+                function
+                    .loops
+                    .get(active.id)
+                    .map(|r#loop| r#loop.bindings()),
+                active.floor,
+                &mut active.bound,
+            ),
+            FrameKind::Branch(active) => (
+                function
+                    .conditionals
+                    .get(active.id)
+                    .map(|conditional| branch_bindings(conditional, active.then)),
+                active.floor,
+                &mut active.bound,
+            ),
+        };
+        let bindings = bindings.ok_or(Stop::InconsistentCore)?;
+        let Some(binding) = bindings.get(*bound) else {
+            return Ok(());
+        };
+        if usize::try_from(binding.end()).ok() != Some(offset) {
+            return Ok(());
+        }
+        let slots = floor
+            .checked_add(*bound)
+            .and_then(|slots| slots.checked_add(1))
+            .ok_or(Stop::InconsistentCore)?;
+        if self.stack.len() != slots
+            || !self
+                .stack
+                .last()
+                .is_some_and(|value| has_type(value, binding.ty()))
+        {
+            return Err(Stop::InconsistentCore);
+        }
+        *bound = slots.saturating_sub(floor);
+        Ok(())
+    }
+
+    /// Pops the value of the step or branch whose bindings are `bindings`
+    /// and whose values lie above `floor`, and removes the bindings' values
+    /// once every one of them has had its slot.
+    fn finish_block(
+        &mut self,
+        bindings: &[CoreBinding],
+        floor: usize,
+        bound: usize,
+    ) -> Result<Value, Stop> {
+        let value = self.pop()?;
+        if bound != bindings.len() || floor.checked_add(bound) != Some(self.stack.len()) {
+            return Err(Stop::InconsistentCore);
+        }
+        self.stack.truncate(floor);
+        Ok(value)
     }
 
     /// Completes one step of the loop in the top frame: its value becomes
     /// the accumulator, and either the next step begins or the loop's value
     /// replaces the loop.
     fn finish_step(&mut self) -> Result<(), Stop> {
-        let value = self.pop()?;
-        let Some(frame) = self.frames.last_mut() else {
+        let Some(frame) = self.frames.last() else {
             return Err(Stop::InconsistentCore);
         };
         let function = frame.function;
-        let FrameKind::Loop(active) = &mut frame.kind else {
+        let FrameKind::Loop(active) = &frame.kind else {
             return Err(Stop::InconsistentCore);
         };
         let r#loop = function
             .loops
             .get(active.id)
             .ok_or(Stop::InconsistentCore)?;
+        let (floor, bound) = (active.floor, active.bound);
+        let value = self.finish_block(r#loop.bindings(), floor, bound)?;
+        let Some(frame) = self.frames.last_mut() else {
+            return Err(Stop::InconsistentCore);
+        };
+        let FrameKind::Loop(active) = &mut frame.kind else {
+            return Err(Stop::InconsistentCore);
+        };
         if self.stack.len() != active.floor || !has_type(&value, r#loop.ty) {
             return Err(Stop::InconsistentCore);
         }
+        active.bound = 0;
         active.accumulator = value;
         active.index = active.index.checked_add(1).ok_or(Stop::InconsistentCore)?;
         if active.index < r#loop.end {
@@ -1008,7 +1128,6 @@ impl<'core> Machine<'core> {
     /// Completes the branch in the top frame: its value replaces the
     /// conditional.
     fn finish_branch(&mut self) -> Result<(), Stop> {
-        let value = self.pop()?;
         let Some(Frame {
             function,
             kind: FrameKind::Branch(finished),
@@ -1021,6 +1140,11 @@ impl<'core> Machine<'core> {
             .conditionals
             .get(finished.id)
             .ok_or(Stop::InconsistentCore)?;
+        let value = self.finish_block(
+            branch_bindings(conditional, finished.then),
+            finished.floor,
+            finished.bound,
+        )?;
         if self.stack.len() != finished.floor || !has_type(&value, conditional.ty) {
             return Err(Stop::InconsistentCore);
         }
@@ -1078,11 +1202,50 @@ impl<'core> Machine<'core> {
             base,
             kind: FrameKind::Branch(ActiveBranch {
                 id: index,
+                then: condition,
                 floor: self.stack.len(),
+                bound: 0,
             }),
         });
         self.inner_frames = self.inner_frames.saturating_add(1);
         Ok(())
+    }
+
+    /// Returns the value of binding `index` of a step or branch whose
+    /// bindings are `bindings`, whose values lie above `floor`, and whose
+    /// first `bound` bindings have had their slots; the binding must be one
+    /// of those.
+    fn bound_value(
+        &self,
+        bindings: &[CoreBinding],
+        (floor, bound): (usize, usize),
+        index: u32,
+        ty: CoreType,
+    ) -> Result<Value, Stop> {
+        let index = usize::try_from(index)
+            .ok()
+            .filter(|index| *index < bound)
+            .ok_or(Stop::InconsistentCore)?;
+        let binding = bindings.get(index).ok_or(Stop::InconsistentCore)?;
+        let slot = floor.checked_add(index).ok_or(Stop::InconsistentCore)?;
+        let value = self.stack.get(slot).ok_or(Stop::InconsistentCore)?;
+        if binding.ty() != ty || !has_type(value, ty) {
+            return Err(Stop::InconsistentCore);
+        }
+        Ok(value.clone())
+    }
+
+    /// Returns the branch of conditional `id` being evaluated in the
+    /// function whose branch or step is being evaluated.
+    fn active_branch(&self, id: u32) -> Result<&ActiveBranch, Stop> {
+        let id = usize::try_from(id).map_err(|_| Stop::InconsistentCore)?;
+        self.frames
+            .iter()
+            .rev()
+            .take_while(|frame| !matches!(frame.kind, FrameKind::Body))
+            .filter_map(|frame| frame.kind.active_branch())
+            .find(|active| active.id == id)
+            .ok_or(Stop::InconsistentCore)
     }
 
     /// Returns the innermost active loop numbered `id` of the function
@@ -1157,6 +1320,7 @@ impl<'core> Machine<'core> {
                 index: r#loop.start,
                 accumulator,
                 floor: self.stack.len(),
+                bound: 0,
             }),
         });
         self.inner_frames = self.inner_frames.saturating_add(1);
@@ -1565,6 +1729,33 @@ impl<'core> Machine<'core> {
                     return Err(Stop::InconsistentCore);
                 }
                 self.push(accumulator)
+            }
+            CoreNodeKind::StepBinding { loop_id, index } => {
+                self.charge(1)?;
+                let active = self.active_loop(*loop_id)?;
+                let r#loop = function
+                    .loops
+                    .get(active.id)
+                    .ok_or(Stop::InconsistentCore)?;
+                let value = self.bound_value(
+                    r#loop.bindings(),
+                    (active.floor, active.bound),
+                    *index,
+                    node.ty,
+                )?;
+                self.push(value)
+            }
+            CoreNodeKind::BranchBinding { conditional, index } => {
+                self.charge(1)?;
+                let active = self.active_branch(*conditional)?;
+                let bindings = function
+                    .conditionals
+                    .get(active.id)
+                    .map(|conditional| branch_bindings(conditional, active.then))
+                    .ok_or(Stop::InconsistentCore)?;
+                let value =
+                    self.bound_value(bindings, (active.floor, active.bound), *index, node.ty)?;
+                self.push(value)
             }
             CoreNodeKind::Index { index } => {
                 self.charge(1)?;
@@ -2680,6 +2871,12 @@ mod tests {
                  for i in 0..2 with s: Word[8] = 0 { s ^ t[i] } }\n",
                 18,
             ),
+            // A step's or branch's binding costs its value's steps each time
+            // the step or branch is evaluated; each read of it costs one.
+            (
+                "  spec f() -> Int { for i in 0..3 with s: Int = 0 { let t: Int = s; t } }\n",
+                11,
+            ),
             // An update or fill of n elements costs ceil(n / 64) steps
             // beyond its operands'.
             ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 9),
@@ -2705,6 +2902,10 @@ mod tests {
             (
                 "  spec i() -> Int { if false { 1 } else if true { 2 * 3 } else { 4 } }\n",
                 8,
+            ),
+            (
+                "  spec i() -> Int { if true { let a: Int = 2; a * a } else { 1 } }\n",
+                7,
             ),
             // Integer division costs 1 + d1 * max(d2, 1); word division
             // costs one step.
@@ -2815,12 +3016,11 @@ mod tests {
     #[test]
     fn deepest_accepted_sources_fit_in_one_mebibyte_of_stack() {
         use crate::parser::{MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING};
+        let nested_by = |prefix: &str, core: &str, suffix: &str, depth: usize| {
+            format!("{}{core}{}", prefix.repeat(depth), suffix.repeat(depth))
+        };
         let nested = |prefix: &str, core: &str, suffix: &str| {
-            format!(
-                "{}{core}{}",
-                prefix.repeat(MAX_EXPRESSION_NESTING),
-                suffix.repeat(MAX_EXPRESSION_NESTING)
-            )
+            nested_by(prefix, core, suffix, MAX_EXPRESSION_NESTING)
         };
         let bodies = [
             nested("(", "x", ")"),
@@ -2909,6 +3109,54 @@ mod tests {
                 "let y: Mod[3329] = x as Mod[3329]; ({}y{}) as Word[32]",
                 "y - y * (".repeat(MAX_EXPRESSION_NESTING - 1),
                 ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            // A binding in every nested step and branch, a step and a branch
+            // of the most bindings each nested as deeply as a group can be,
+            // and bindings whose values nest.
+            format!(
+                "{}x{}",
+                (0..MAX_EXPRESSION_NESTING)
+                    .map(|index| format!(
+                        "for i{index} in 0..1 with s{index}: Word[32] = x {{ \
+                         let t{index}: Word[32] = s{index}; "
+                    ))
+                    .collect::<String>(),
+                " }".repeat(MAX_EXPRESSION_NESTING)
+            ),
+            format!(
+                "{}x{}",
+                (0..MAX_EXPRESSION_NESTING)
+                    .map(|index| format!("if x == x {{ let t{index}: Word[32] = x; "))
+                    .collect::<String>(),
+                " } else { x }".repeat(MAX_EXPRESSION_NESTING)
+            ),
+            format!(
+                "for i in 0..1 with s: Word[32] = x {{ {}s }}",
+                (0..MAX_BINDINGS_PER_BODY)
+                    .map(|index| format!(
+                        "let v{index}: Word[32] = {};",
+                        nested_by("(", "s", ")", MAX_EXPRESSION_NESTING - 1)
+                    ))
+                    .collect::<String>()
+            ),
+            format!(
+                "if x == x {{ x }} else {{ {}x }}",
+                (0..MAX_BINDINGS_PER_BODY)
+                    .map(|index| format!(
+                        "let v{index}: Word[32] = {};",
+                        nested_by("(", "x", ")", MAX_EXPRESSION_NESTING - 1)
+                    ))
+                    .collect::<String>()
+            ),
+            format!(
+                "{}x{}",
+                (0..MAX_EXPRESSION_NESTING / 2)
+                    .map(|index| format!("if x == x {{ let t{index}: Word[32] = "))
+                    .collect::<String>(),
+                (0..MAX_EXPRESSION_NESTING / 2)
+                    .rev()
+                    .map(|index| format!("; t{index} }} else {{ x }}"))
+                    .collect::<String>()
             ),
         ];
         let sources = bodies
@@ -4262,5 +4510,163 @@ mod tests {
             .unwrap(),
         );
         assert!(evaluator.call(mul, &[foreign, residue(1)], 1_000).is_none());
+    }
+
+    #[test]
+    fn block_bindings_are_evaluated_at_every_step_and_read_from_their_slots() {
+        let members = concat!(
+            "  spec mix() -> Word[32] {\n",
+            "    for i in 0..64 with s: Word[32] = 0x6a09e667 {\n",
+            "      let t: Word[32] = s ^ (i as Word[32]);\n",
+            "      let u: Word[32] = (t <<< 7) + t;\n",
+            "      u ^ (s >>> 3)\n",
+            "    }\n",
+            "  }\n",
+            "  spec pick(n: Int) -> Int {\n",
+            "    if n < 0 { let m: Int = -n; m * m }\n",
+            "    else if n == 0 { 0 }\n",
+            "    else { let d: Int = n + 1; let e: Int = d * n; e - d }\n",
+            "  }\n",
+            "  spec picks() -> Int^3 { [pick(-3), pick(0), pick(4)] }\n",
+            "  spec grid() -> Int {\n",
+            "    for i in 0..3 with s: Int = 0 {\n",
+            "      let row: Int = i * 10;\n",
+            "      s + (for j in 0..3 with t: Int = 0 {\n",
+            "        let cell: Int = row + j;\n",
+            "        if (cell % 2) == 0 { let half: Int = cell / 2; t + half } else { t }\n",
+            "      })\n",
+            "    }\n",
+            "  }\n",
+            "  spec f(x: Int) -> Int { for i in 0..2 with s: Int = x { let y: Int = g(s); y + 1 } }\n",
+            "  spec g(k: Int) -> Int { if k > 0 { let d: Int = k * 2; d } else { 0 } }\n",
+            "  spec calls() -> Int { f(1) }\n",
+            "  spec residues() -> Int {\n",
+            "    (for i in 0..3 with s: Mod[7] = 3 { let t: Mod[7] = s * s + (i as Mod[7]); t }) as Int\n",
+            "  }\n",
+        );
+        let mut mix = 0x6a09_e667_u32;
+        for i in 0..64 {
+            let t = mix ^ i;
+            let u = t.rotate_left(7).wrapping_add(t);
+            mix = u ^ mix.rotate_right(3);
+        }
+        assert_eq!(
+            values_of(members),
+            [
+                format!("mix = {}", render_word(32, u128::from(mix))),
+                String::from("picks = [9, 0, 15]"),
+                // Rows 0, 10, and 20 contribute 0 + 1, 5 + 6, and 10 + 11.
+                String::from("grid = 33"),
+                String::from("calls = 7"),
+                // 3 * 3 + 0 = 2, 2 * 2 + 1 = 5, and 5 * 5 + 2 = 6 modulo 7.
+                String::from("residues = 6"),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_the_chosen_branch_binds_its_names() {
+        // The untaken branch's binding would exceed the whole step budget.
+        let members = concat!(
+            "  spec heavy(x: Int) -> Int {\n",
+            "    for i in 0..65536 with s: Int = x { for j in 0..65536 with t: Int = s { t } }\n",
+            "  }\n",
+            "  spec lazy() -> Int { if true { let one: Int = 1; one } else { let h: Int = heavy(0); h } }\n",
+        );
+        assert_eq!(values_of(members), ["lazy = 1"]);
+    }
+
+    #[test]
+    fn inconsistent_blocks_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec step() -> Word[8] { for i in 0..2 with s: Word[8] = 1 { let t: Word[8] = s + s; t ^ s } }\n",
+            "  spec branch() -> Int { if true { let a: Int = 2; a * a } else { let b: Int = 3; b } }\n",
+            "}\n"
+        ));
+        let step = &base.functions[0].loops[0];
+        assert_eq!(step.bindings()[0].end(), 3);
+        assert_eq!(
+            step.step.nodes[3].kind,
+            CoreNodeKind::StepBinding {
+                loop_id: 0,
+                index: 0
+            }
+        );
+        let branch = &base.functions[1].conditionals[0];
+        assert_eq!(branch.then_bindings()[0].end(), 1);
+        assert_eq!(
+            branch.then_branch.nodes[1].kind,
+            CoreNodeKind::BranchBinding {
+                conditional: 0,
+                index: 0
+            }
+        );
+        let mutations: [fn(&mut CoreModule); 11] = [
+            // A step reads a binding the step lacks.
+            |core| core.functions[0].loops[0].bindings.clear(),
+            // A binding's value ends past the end of its step.
+            |core| core.functions[0].loops[0].bindings[0].end = 6,
+            // A binding's value is empty.
+            |core| core.functions[0].loops[0].bindings[0].end = 0,
+            // A binding's value has another type than the binding.
+            |core| core.functions[0].loops[0].bindings[0].ty = CoreType::Word16,
+            // A step reads a binding that has no value yet.
+            |core| {
+                core.functions[0].loops[0].step.nodes[3].kind = CoreNodeKind::StepBinding {
+                    loop_id: 0,
+                    index: 1,
+                };
+            },
+            // A read names a loop that is not active.
+            |core| {
+                core.functions[0].loops[0].step.nodes[3].kind = CoreNodeKind::StepBinding {
+                    loop_id: 1,
+                    index: 0,
+                };
+            },
+            // A read claims another type than its binding's.
+            |core| core.functions[0].loops[0].step.nodes[3].ty = CoreType::Word16,
+            // The chosen branch reads a binding only its other branch has.
+            |core| {
+                let conditional = &mut core.functions[1].conditionals[0];
+                conditional.else_bindings = std::mem::take(&mut conditional.then_bindings);
+            },
+            // A branch read names a conditional that is not being evaluated.
+            |core| {
+                core.functions[1].conditionals[0].then_branch.nodes[1].kind =
+                    CoreNodeKind::BranchBinding {
+                        conditional: 1,
+                        index: 0,
+                    };
+            },
+            // A function body reads a branch's binding.
+            |core| {
+                core.functions[1].body.nodes[0].kind = CoreNodeKind::BranchBinding {
+                    conditional: 0,
+                    index: 0,
+                };
+                core.functions[1].body.nodes[0].ty = CoreType::Int;
+            },
+            // A branch claims a binding that leaves no value of its own.
+            |core| {
+                let conditional = &mut core.functions[1].conditionals[0];
+                let mut second = conditional.then_bindings[0].clone();
+                second.end = 2;
+                conditional.then_bindings.push(second);
+            },
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
     }
 }

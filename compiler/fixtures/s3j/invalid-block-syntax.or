@@ -1,0 +1,9 @@
+// S3j rejection: a block holds `let` bindings, each ending with `;`, and then
+// its value; a block's value comes last.
+edition 2026;
+module syntax {
+  spec no_value(x: Int) -> Int { for i in 0..2 with s: Int = x { let t: Int = s; } }
+  spec no_semicolon(c: Bool, x: Int) -> Int { if c { let t: Int = x t } else { x } }
+  spec value_first(c: Bool, x: Int) -> Int { if c { x } else { x; let t: Int = x; t } }
+  spec untyped(x: Int) -> Int { for i in 0..2 with s: Int = x { let t = s; t } }
+}

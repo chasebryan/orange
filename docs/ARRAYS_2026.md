@@ -29,9 +29,11 @@ meaning. It accepts no D-004 candidate.
 > top of those, [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under
 > OEP-0010, lets an index depend on data,
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
-> use others, and [`MODULAR_2026.md`](MODULAR_2026.md), proposed under
-> OEP-0012, adds arrays of residues, as `Mod[3329]^256`. Every source this
-> document accepts keeps its meaning under all five.
+> use others, [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012,
+> adds arrays of residues, as `Mod[3329]^256`, and
+> [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, lets a loop's
+> step name the values it computes before the array it returns. Every source
+> this document accepts keeps its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
