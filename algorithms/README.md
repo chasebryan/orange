@@ -21,7 +21,58 @@ each README names, are reproduced byte for byte.
 
 ## The entries
 
-INDEX_TABLE
+Twenty entries, 240 vectors. Each row links the entry's README; the vector
+count is the number of `<name>` and `<name>_expected` pairs its sources
+reproduce, and the standing is the entry's own summary of the record as of
+September 2026.
+
+### Block ciphers
+
+| Entry | Standard | Sources | Vectors | Standing |
+| --- | --- | --- | ---: | --- |
+| [AES](aes/README.md) | FIPS 197; SP 800-38A modes | 2 | 13 | Current; no practical attack on the full cipher |
+| [Camellia](camellia/README.md) | RFC 3713 | 1 | 8 | Current; unbroken |
+| [ARIA](aria/README.md) | KS X 1213; RFC 5794 | 1 | 8 | Current; unbroken |
+| [SM4](sm4/README.md) | GB/T 32907-2016 | 1 | 6 | Current; unbroken |
+| [Serpent](serpent/README.md) | AES submission (1998) | 1 | 12 | AES finalist; unbroken |
+| [Twofish](twofish/README.md) | AES submission (1998) | 3 | 7 | AES finalist; unbroken |
+| [RC6](rc6/README.md) | AES submission, v1.1 (1998) | 1 | 12 | AES finalist; unbroken |
+| [DES and Triple DES](des/README.md) | FIPS 46-3; SP 800-67 rev. 2 | 2 | 13 | DES withdrawn and broken by key search; TDEA encryption disallowed after 2023 |
+
+### Authenticated encryption
+
+| Entry | Standard | Sources | Vectors | Standing |
+| --- | --- | --- | ---: | --- |
+| [AES-GCM](aes-gcm/README.md) | SP 800-38D | 4 | 10 | Current |
+| [AES-CCM](aes-ccm/README.md) | SP 800-38C; RFC 3610 | 3 | 7 | Current |
+| [ChaCha20-Poly1305 and XChaCha20-Poly1305](chacha20-poly1305/README.md) | RFC 8439; draft-irtf-cfrg-xchacha | 1 | 25 | Current |
+| [Ascon-AEAD128 and Ascon-Hash256](ascon/README.md) | SP 800-232 (2025) | 2 | 17 | Current |
+
+### Stream ciphers
+
+| Entry | Standard | Sources | Vectors | Standing |
+| --- | --- | --- | ---: | --- |
+| [ChaCha20 and XChaCha20](chacha20/README.md) | RFC 8439; draft-irtf-cfrg-xchacha | 1 | 20 | Current |
+| [Salsa20 and XSalsa20](salsa20/README.md) | Bernstein's specification; eSTREAM | 1 | 19 | Unbroken; Salsa20/12 in the eSTREAM portfolio |
+| [RC4](rc4/README.md) | None; RFC 6229 vectors | 2 | 5 | Broken; prohibited in TLS by RFC 7465 |
+
+### Hash functions and key derivation
+
+| Entry | Standard | Sources | Vectors | Standing |
+| --- | --- | --- | ---: | --- |
+| [SHA-256 and SHA-512](sha2/README.md) | FIPS 180-4 | 1 | 13 | Current |
+| [SHA-3 and SHAKE](sha3/README.md) | FIPS 202 | 1 | 8 | Current |
+| [HMAC-SHA-256 and HKDF](hmac-hkdf/README.md) | FIPS 198-1; RFC 4231; RFC 5869 | 2 | 16 | Current |
+
+### Public-key
+
+| Entry | Standard | Sources | Vectors | Standing |
+| --- | --- | --- | ---: | --- |
+| [X25519](x25519/README.md) | RFC 7748 | 4 | 4 | Current |
+| [HPKE](hpke/README.md) | RFC 9180 | 4 | 17 | Current |
+
+RSA-OAEP and ML-KEM-512 are being written; each joins the index when its
+README is complete and its vectors reproduce within the evaluation budget.
 
 ## How an entry is built
 
@@ -71,39 +122,44 @@ reference written for the entry and checked against a published set).
 
 ## What the entries show about Orange 2026
 
-Writing the corpus against the S3f compiler made three limits of the current
-slices concrete. Each entry records how it met them; they are listed here once.
+The entries were written against the S3f compiler, and the *Gaps* section of
+each describes the limits of that compiler. Writing them made three limits
+concrete; they are listed here once. Two have since been eased by slices now
+on `main` (proposed, like the rest, and in owner review). The entries keep
+their S3f forms, and every one evaluates unchanged under the current
+compiler.
 
-**Indices are static.** An index may use only literals and loop indices
-(`LOOPS_2026.md` section 5, `CONDITIONS_2026.md` section 9), so `sbox[x]`
-with a data byte `x` does not check. Table ciphers write the table as 32
-words of 64 bits, eight entries to a word so that each literal reads like a
-row of the standard's table, and select an entry by a 32-step loop and an
-8-arm conditional, at about 290 evaluation steps per lookup. DES packs its
+**Indices were static.** Under S3f an index may use only literals and loop
+indices (`LOOPS_2026.md` section 5, `CONDITIONS_2026.md` section 9), so
+`sbox[x]` with a data byte `x` does not check. Table ciphers write the table
+as 32 words of 64 bits, eight entries to a word so that each literal reads
+like a row of the standard's table, and select an entry by a 32-step loop and
+an 8-arm conditional, at about 290 evaluation steps per lookup. DES packs its
 6-to-4-bit boxes into four words each; RC4 keeps its permutation packed and
 writes it the same way; Serpent needs no lookup because its designers wrote
-it bitsliced. The planned S3g slice admits indices that are *bounded* rather
-than static (a `Word[8]` value indexes a 256-element array by its type), which
-turns every such selection back into `t[x]`.
+it bitsliced. S3g ([`LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md)) admits an
+index that depends on data when its type bounds it, so a `Word[8]` value
+indexes a 256-element array and each selection can be written back as
+`t[x]`. Rewriting the entries that way is later work.
 
-**The evaluation budget is per file.** All parameterless specs of one source
-share 1,048,576 evaluation steps (`EXPRESSIONS_2026.md` section 14), and an
-update of an n-element array costs n steps. Measured against that budget, an
-AES block with table lookups costs about 60,000 steps, a SHA-256 compression
-about 3,000, a Keccak-f[1600] permutation about 10,000, one X25519 about
-600,000, one 256-coefficient NTT about 460,000, and a 2048-bit RSA
-exponentiation with the public exponent about 250,000. Entries whose vectors
-do not fit together put each in its own complete file (X25519 has one vector
-per file; HPKE takes the encapsulated key from its vector and reproduces its
-derivation in the X25519 entry), and ML-KEM-512 is written whole but
-evaluated in parts. S3g lowers the cost of an update to 1 + n/64 steps and
-adds `orangec eval --steps N`, after which the split files can be folded back
-together.
+**The evaluation budget is per program.** All parameterless specs of one
+source share 1,048,576 evaluation steps (`EXPRESSIONS_2026.md` section 14).
+Under S3f an update of an n-element array cost n steps; S3g charges ⌈n/64⌉
+(`LOOKUPS_2026.md` section 8). Measured on the S3f compiler, an AES block
+with table lookups cost about 60,000 steps, a SHA-256 compression about
+3,000, a Keccak-f[1600] permutation about 10,000, and one X25519 about
+600,000. Entries whose vectors do not fit together put each in its own
+complete file: X25519 has one vector per file, and HPKE takes the
+encapsulated key from its vector and reproduces its derivation in the X25519
+entry. The budget itself is unchanged, so these splits stand.
 
-**There are no imports.** Each source is self-contained, so HPKE carries its
-own SHA-256, HMAC, HKDF, X25519, ChaCha20 and Poly1305, and AES-GCM its own
-AES. The multi-file programs planned for S3h let an entry call another's
-specs instead.
+**There were no imports.** Each source is self-contained, so HPKE carries its
+own SHA-256, HMAC, HKDF, X25519, ChaCha20 and Poly1305, and every AES-GCM
+file its own AES. S3h ([`MODULES_2026.md`](../docs/MODULES_2026.md)) lets a
+source use the modules beside it (`use aes;` reads `aes.or` from the same
+folder, and `aes::cipher(...)` calls it), so the files of one entry could
+share one copy of their cipher. A module in another folder is still out of
+reach, so an entry that needs another entry's algorithm keeps its own copy.
 
 ## Sources reachable from the build
 

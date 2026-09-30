@@ -1,5 +1,5 @@
 {
-  "policy_version": "0.2.141",
+  "policy_version": "0.2.142",
   "repository": "chasebryan/orange",
   "stage": "solo-bootstrap",
   "status": "enforced",
@@ -591,7 +591,7 @@
     "docs/security/OSPS_BASELINE.md": "f912af598fcbe2a76b3b774fab5358b8c63aa68794a209b33f3418e656fdda78",
     "docs/security/SECRETS_AND_INCIDENTS.md": "93332edb737f84c7a3f74f256b5fb603537bf6f524388f62013140cb9906f6a6",
     "docs/security/THREAT_MODEL.md": "5bfd42b6828b11a04a962cefe1286bbe86218df6809e5c7705c7fefd4f348a12",
-    "policy/README.md": "45ba70465086e158e9e48ccb01dbee1db6ce9b0696e0e05b2cb332b54aa5924c",
+    "policy/README.md": "bd2e20c87411390c756498d890ba9275d0c07809f088849f7f2db57daa084037",
     "policy/makefile-entrypoint-contract-v0.1.json": "8773b828743a1c089a896d5c4d68a1b21978118af48e8db3d2b1a4bac193171d",
     "research/decisions/D-004/README.md": "7f7e9907e8614d7948d7fef88d1a607d293ddf10f68737e18e4d2d95fbce0c18",
     "research/decisions/D-004/d004-v0.2-cross-cutting-fixture-proposals.json": "d3d58cbeb0d2a90987680cd00bc70caf53518be730a71d0d55ba2a7b50544481",
@@ -675,7 +675,7 @@
     "tools/tests/test_d009_draft_packet.py": "463d6e3a4c26490417c4732c08296f9944fa05399fd134770a4a1af124dd2c95",
     "tools/tests/test_d010_draft_packet.py": "5989f9fa7ad4c7a4e4dd6b13b1f1cc57d5e1d05fd6de476c7d929155214f6c85",
     "tools/tests/test_validate_foundation.py": "915c74f5c71d1340515b5981885d9de79c1b041197fb8e59d3c9871502350394",
-    "tools/tests/test_validate_foundation_hardening.py": "7fcc00970274871d6f23130ddab935dad985d49f54cfca99c56f5d2e2c2b93ec",
+    "tools/tests/test_validate_foundation_hardening.py": "c467620b94679e5853d9ad678159524eebaa0cc57695f18eee74f910e14a5477",
     "examples/daylight/LICENSE": "e8e1d05b7f9fa8dc94666bf015c340f2c993b7dacd0081eb7ed01b6f33fd2149"
   },
   "executable_paths": [
