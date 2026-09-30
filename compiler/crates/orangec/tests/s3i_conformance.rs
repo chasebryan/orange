@@ -16,6 +16,7 @@ const MODULAR_SPECIFICATION: &str = include_str!("../../../../docs/MODULAR_2026.
 const S3I_CONFORMANCE_SOURCE: &str = include_str!("s3i_conformance.rs");
 const PARSER_SOURCE: &str = include_str!("../../orange-compiler/src/parser.rs");
 const SEMANTICS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics.rs");
+const SEMANTICS_TESTS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics/tests.rs");
 const CORE_SOURCE: &str = include_str!("../../orange-compiler/src/core.rs");
 const EVAL_SOURCE: &str = include_str!("../../orange-compiler/src/eval.rs");
 const DIAGNOSTIC_SOURCE: &str = include_str!("../../orange-compiler/src/diagnostic.rs");
@@ -329,57 +330,57 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         rules: &["S3I-SYNTAX-01", "S3I-COMPAT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "residues_build_typed_core_in_postorder",
         rules: &["S3I-LITERAL-01", "S3I-OPERATOR-01", "S3I-CORE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "moduli_are_constants_from_two_through_two_to_the_521_minus_one",
         rules: &["S3I-MODULUS-01", "S3I-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "moduli_written_within_a_modulus_are_evaluated_too",
         rules: &["S3I-MODULUS-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "type_names_resolve_in_declaration_order_within_their_module",
         rules: &["S3I-NAMES-01", "S3I-CORE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "residue_literals_lie_strictly_between_minus_the_modulus_and_the_modulus",
         rules: &["S3I-LITERAL-01", "S3I-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "residues_have_ring_operators_and_equality_but_no_order_remainder_or_bits",
         rules: &["S3I-OPERATOR-01", "S3I-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "residues_convert_to_and_from_numbers_and_index_through_least_residues",
         rules: &["S3I-CONVERT-01", "S3I-INDEX-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "residue_types_cross_modules_by_value_and_type_names_stay_in_their_module",
         rules: &["S3I-NAMES-01", "S3I-CORE-01", "S3I-COMPAT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "modulus_events_follow_the_normative_accounting",
         rules: &["S3I-MODULUS-01", "S3I-RES-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "modulus_storage_failures_return_no_partial_core",
         rules: &["S3I-RES-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "rejects_foreign_spans_in_type_declarations_and_moduli",
         rules: &["S3I-RES-01"],
     },
@@ -580,6 +581,7 @@ fn unit_source(source_path: &str) -> &'static str {
     match source_path {
         "src/parser.rs" => PARSER_SOURCE,
         "src/semantics.rs" => SEMANTICS_SOURCE,
+        "src/semantics/tests.rs" => SEMANTICS_TESTS_SOURCE,
         "src/core.rs" => CORE_SOURCE,
         "src/eval.rs" => EVAL_SOURCE,
         "src/diagnostic.rs" => DIAGNOSTIC_SOURCE,
@@ -588,17 +590,48 @@ fn unit_source(source_path: &str) -> &'static str {
 }
 
 /// Requires `test` to be declared exactly once, as a `#[test]` function
-/// directly inside the source's single `#[cfg(test)] mod tests` module.
+/// directly inside the source's single `#[cfg(test)] mod tests` module. The
+/// module is written inline, or in its own `tests.rs` file that its parent
+/// declares once as `#[cfg(test)] mod tests;` with no other attribute.
 fn assert_unit_test_declared(source_path: &str, test: &str) {
     let source = unit_source(source_path);
-    let marker = "\n#[cfg(test)]\nmod tests {\n";
-    assert_eq!(
-        source.matches(marker).count(),
-        1,
-        "{source_path} must have exactly one unconditional test module"
-    );
-    let (_, tests) = source.split_once(marker).unwrap();
-    let declaration = format!("\n    #[test]\n    fn {test}() {{\n");
+    let (tests, declaration) = match source_path.strip_suffix("/tests.rs") {
+        Some(parent) => {
+            let parent_path = format!("{parent}.rs");
+            let parent_source = unit_source(&parent_path);
+            assert_eq!(
+                parent_source.matches("mod tests").count(),
+                1,
+                "{parent_path} must declare exactly one test module"
+            );
+            assert_eq!(
+                parent_source
+                    .matches("\n#[cfg(test)]\nmod tests;\n")
+                    .count(),
+                1,
+                "{parent_path} must declare its test module unconditionally"
+            );
+            assert!(
+                !parent_source.contains("]\n#[cfg(test)]\nmod tests;"),
+                "{parent_path} must not add an attribute to its test module"
+            );
+            assert!(
+                !source.contains("#!["),
+                "{source_path} must not carry an inner attribute"
+            );
+            (source, format!("\n#[test]\nfn {test}() {{\n"))
+        }
+        None => {
+            let marker = "\n#[cfg(test)]\nmod tests {\n";
+            assert_eq!(
+                source.matches(marker).count(),
+                1,
+                "{source_path} must have exactly one unconditional test module"
+            );
+            let (_, tests) = source.split_once(marker).unwrap();
+            (tests, format!("\n    #[test]\n    fn {test}() {{\n"))
+        }
+    };
     assert_eq!(
         tests.matches(&declaration).count(),
         1,
