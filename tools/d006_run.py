@@ -103,6 +103,8 @@ CEILINGS = {
     "solver_zero_wall": {"wall_seconds": 0, "memory_bytes": 8 << 30, "pids": 4096, "temp_bytes": 8 << 30, "output_bytes": 64 << 20},
 }
 LAUNCH_FAILURES = (b"orange filesystem sandbox failed", b"unshare:", b"setpriv:", b"/usr/bin/env:")
+# The sandbox's last stage is execv of the step's own command; its failure is the step's, not the launcher's.
+COMMAND_EXEC_FAILURE = b"orange filesystem sandbox failed at execute "
 CPUS = {"serial": (0,), "declared_parallel": (0, 1, 2, 3)}
 JOBS = {"serial": "1", "declared_parallel": "4"}
 
@@ -300,7 +302,9 @@ class Launcher:
         for root in [*box.read_write, "/dev/null"]:
             rules += ["--rw", root]
         environment = [f"{k}={v}" for k, v in sorted(env.items())]
-        return [*IDENTITY, *NAMESPACE, *PRIVILEGES, *INIT, str(self.binary), *rules, "--", "/usr/bin/env", "-i", *environment, *command]
+        # env clears the environment and execs the sandbox, which execs the command with execv: a command
+        # the host cannot execute fails with its errno instead of being retried as a shell script.
+        return [*IDENTITY, *NAMESPACE, *PRIVILEGES, *INIT, "/usr/bin/env", "-i", *environment, str(self.binary), *rules, "--", *command]
 
     def run(self, command: list[str], cwd: Path, env: dict[str, str], ceiling: dict[str, int],
             box: Sandbox, cpus: tuple[int, ...], temp: Path, watch: Callable[[], bool] | None = None) -> dict[str, Any]:
@@ -354,7 +358,7 @@ class Launcher:
         wall = (time.monotonic_ns() - started) // 1_000_000
         metered = meter.close()
         stdout, stderr = bytes(buffers["stdout"]), bytes(buffers["stderr"])
-        if stderr.startswith(LAUNCH_FAILURES):
+        if stderr.startswith(LAUNCH_FAILURES) and not stderr.startswith(COMMAND_EXEC_FAILURE):
             raise RunError(f"launcher failure: {stderr[:300].decode('utf-8', 'replace')}")
         temp_bytes = dir_bytes(temp)
         state = classify_exit(code, timed_out, oversized, killed, metered, temp_bytes > ceiling["temp_bytes"])
@@ -755,7 +759,7 @@ def fresh_certificate(epoch: Epoch, ctx: RunContext) -> tuple[str | None, dict[s
     """The run's own certificate (D4-R01): the pinned solver's LRAT for the carry-save obligation."""
 
     launched, row, certificate = solve(epoch, ctx, "D4-R01", "argv", "B-C01")
-    claim = H.solver_claim(launched["state"], launched["exit_status"], certificate.is_file())
+    claim = H.solver_claim(launched["state"]["kind"], launched["exit_status"], certificate.is_file())
     text = certificate.read_text(encoding="ascii") if claim == "certificate" else None
     ctx.fresh_text = text
     return text, {"step": row["ordinal"], "claim": claim, "sha256": sha256(text.encode("ascii")) if text else None, "bytes": len(text) if text else None}
@@ -767,7 +771,7 @@ def run_time(epoch: Epoch, cand: H.Candidate, ctx: RunContext) -> list[Any]:
     def sandboxed(ident: str, key: str, obligation: str, zero_wall: bool) -> tuple[str, int | None, bytes, Path]:
         ctx.label = f"DS-04 {ident}"
         launched, _, certificate = solve(epoch, ctx, ident, key, obligation, zero_wall)
-        return launched["state"], launched["exit_status"], launched["stdout"], certificate
+        return launched["state"]["kind"], launched["exit_status"], launched["stdout"], certificate
 
     return H.run_time_cases(sandboxed, lambda rows: check_items(cand, "DS-04", "DS-04-run-time", rows))
 
@@ -1578,7 +1582,7 @@ def candidate_summary(cand: str, records: list[dict[str, Any]], packet: dict[str
 
 EMULATOR = "/usr/bin/qemu-aarch64-static"
 STRIP = {"H-01": "/usr/bin/strip", "H-02": "/usr/bin/aarch64-linux-gnu-strip"}
-NO_TARGET = re.compile(r"Exec format error|cannot execute binary file|Could not open '|error while loading shared libraries|No such file or directory|not found")
+NO_TARGET = re.compile(r"Exec format error|cannot execute binary file|Could not open '|error while loading shared libraries|No such file or directory|not found|failed at execute \(errno (2|8|13)\)")
 
 
 def closure(binary: Path, host: str) -> list[dict[str, Any]]:
@@ -1811,7 +1815,9 @@ def source_surface(root: Path, adapter: dict[str, Any]) -> dict[str, Any]:
 
     roles = adapter.get("surface") or {
         "proof": ["theories/*.v", "D006/*.lean"],
-        "trusted": [],
+        # DS-05: entry points, extraction or compilation commands and the driver of the standalone checker
+        "checker": ["extraction/*", "Checker/**/*"],
+        "trusted": ["Loader/*"],
         "test": [],
         "generated": [],
         "glue": ["adapter.json", "adapter.d/*.json", "patches/*"],

@@ -348,6 +348,8 @@ def solver_claim(state: str, exit_status: int | None, certificate_present: bool)
     every other value is a taxonomy category that leaves the obligation unproved.
     """
 
+    if not isinstance(state, str):
+        raise TypeError(f"solver_claim takes a step state kind, not {type(state).__name__}")
     if state == "timeout":
         return "timeout"
     if state in ("resource_exhaustion", "oversized_output"):

@@ -36,6 +36,15 @@ class D006RunnerContractTests(unittest.TestCase):
         self.assertIn("--net", run.NAMESPACE)
         self.assertIn("--no-new-privs", run.PRIVILEGES)
 
+    def test_the_sandbox_execs_the_command_itself(self) -> None:
+        # env clears the environment before the sandbox; the sandbox's execv never retries a
+        # command the host cannot execute as a shell script (DS-05 negative D5-N01).
+        argv = run.Launcher(Path("/lab/fs-sandbox"), {}).argv(["/opt/tool", "x"], {"LANG": "C"}, run.Sandbox([], ["/run"]))
+        sandbox = argv.index("/lab/fs-sandbox")
+        self.assertEqual(argv[sandbox - 2:sandbox], ["-i", "LANG=C"])
+        self.assertEqual(argv[sandbox - 3], "/usr/bin/env")
+        self.assertEqual(argv[argv.index("--", sandbox):], ["--", "/opt/tool", "x"])
+
     def test_the_default_plan_is_the_preregistered_protocol(self) -> None:
         plan = run.Plan()
         self.assertEqual((plan.cold_runs, plan.replay_runs, plan.timed_pairs), (5, 3, 30))
@@ -146,6 +155,10 @@ class D006SolverClaimTests(unittest.TestCase):
         self.assertEqual(claim("resource_exhaustion", 20, True), "resource_exhaustion")
         self.assertEqual(claim("crash", -9, True), "unknown")
         self.assertEqual(claim("failed", 1, True), "unknown")
+
+    def test_a_step_state_record_is_refused(self) -> None:
+        with self.assertRaises(TypeError):
+            run.H.solver_claim({"kind": "failed", "exit_code": 20, "signal": None}, 20, True)
 
     def test_the_argv_is_the_pinned_one(self) -> None:
         spec = json.loads((REPOSITORY_ROOT / run.SHARED_DIR / "ds04-lrat-obligation.json").read_text(encoding="utf-8"))["solver"]
