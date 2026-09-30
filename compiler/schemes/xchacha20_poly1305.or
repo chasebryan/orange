@@ -1,6 +1,21 @@
-// DEV PLACEHOLDER: ChaCha20-Poly1305 (RFC 8439) behind the sealing interface.
+// XChaCha20-Poly1305, the extended-nonce ChaCha20-Poly1305 of
+// draft-irtf-cfrg-xchacha-03 over RFC 8439, behind the sealing interface of
+// `orangec enc` and `orangec dec`.
+//
+// Key 256 bits, nonce 192 bits, tag 128 bits. HChaCha20 derives a subkey from
+// the key and the first sixteen bytes of the nonce, and ChaCha20-Poly1305
+// seals under the subkey with the other eight. A chunk is 240 bytes of
+// plaintext, sealed with 64 bytes of associated data; both are whole
+// multiples of sixteen bytes, so Poly1305 reads them with no padding
+// (RFC 8439 section 2.8). Sections below are RFC 8439's unless they name the
+// draft.
+//
+// Reference code: the Orange evaluator is not constant-time, and nothing here
+// is verified.
 edition 2026;
 module xchacha20_poly1305 {
+  // ---- ChaCha20, section 2 ----
+
   // Section 2.1.
   spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
     let a1: Word[32] = a + b;
@@ -62,22 +77,34 @@ module xchacha20_poly1305 {
 
   // Section 2.3: the state serialized as 64 little-endian bytes.
   spec serialize(s: Word[32]^16) -> Word[8]^64 {
-    for i in 0..16 with bytes: Word[8]^64 = [0; 64] {
-      for j in 0..4 with b: Word[8]^64 = bytes { b with [4 * i + j] = le_bytes(s[i])[j] }
-    }
+    for i in 0..64 with b: Word[8]^64 = [0; 64] { b with [i] = le_bytes(s[i / 4])[i % 4] }
   }
 
-  // Poly1305, section 2.5: p = 2^130 - 5.
+  // Section 2.4: the keystream of a chunk, blocks 1 through 4 as 64 words.
+  // Byte n of the stream is byte n % 4 of word n / 4; a chunk uses the first
+  // 240.
+  spec keystream(key: Word[8]^32, nonce: Word[8]^12) -> Word[32]^64 {
+    let b1: Word[32]^16 = block(key, 1, nonce);
+    let b2: Word[32]^16 = block(key, 2, nonce);
+    let b3: Word[32]^16 = block(key, 3, nonce);
+    let b4: Word[32]^16 = block(key, 4, nonce);
+    let s1: Word[32]^64 = for w in 0..16 with s: Word[32]^64 = [0; 64] { s with [w] = b1[w] };
+    let s2: Word[32]^64 = for w in 0..16 with s: Word[32]^64 = s1 { s with [16 + w] = b2[w] };
+    let s3: Word[32]^64 = for w in 0..16 with s: Word[32]^64 = s2 { s with [32 + w] = b3[w] };
+    for w in 0..16 with s: Word[32]^64 = s3 { s with [48 + w] = b4[w] }
+  }
+
+  // ---- Poly1305, section 2.5 ----
+
+  // p = 2^130 - 5.
   spec prime() -> Int { 1361129467683753853853498429727072845819 }
 
+  // Section 2.5.1: add one block to the accumulator and multiply by r.
   spec absorb(a: Int, r: Int, block: Int) -> Int { ((a + block) * r) % prime() }
 
-  // 256^i for 0 <= i < 16.
-  spec byte_weight(i: Int) -> Int {
-    for j in 0..16 with w: Int = 1 { if j < i { w * 256 } else { w } }
-  }
-
-  spec clamp_r(key: Word[8]^32) -> Int {
+  // Section 2.5: r is the first sixteen key bytes, little-endian, with
+  // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff.
+  spec poly_r(key: Word[8]^32) -> Int {
     let clamp: Word[8]^16 = [
       0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
       0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
@@ -85,95 +112,183 @@ module xchacha20_poly1305 {
     for i in 0..16 with n: Int = 0 { n * 256 + ((key[15 - i] & clamp[15 - i]) as Int) }
   }
 
-  spec pad_s(key: Word[8]^32) -> Int {
+  // Section 2.5: s is the other sixteen key bytes, little-endian.
+  spec poly_s(key: Word[8]^32) -> Int {
     for i in 0..16 with n: Int = 0 { n * 256 + (key[31 - i] as Int) }
   }
 
+  // 256^k for 0 <= k < 16: the weight of byte k of a little-endian integer.
+  spec byte_weight(k: Int) -> Int {
+    for j in 0..16 with w: Int = 1 { if j < k { w * 256 } else { w } }
+  }
+
+  // Section 2.5.1: the tag is the low 128 bits of the accumulator plus s,
+  // little-endian.
+  spec tag_bytes(x: Int) -> Word[8]^16 {
+    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (x / byte_weight(i)) as Word[8] }
+  }
+
+  // ---- The AEAD construction, section 2.8 ----
+
+  // Section 2.6: the one-time Poly1305 key is the first 32 bytes of block 0.
   spec one_time_key(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
     let block0: Word[8]^64 = serialize(block(key, 0, nonce));
     for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = block0[i] }
   }
 
-  spec keystream(key: Word[8]^32, nonce: Word[8]^12) -> Word[32]^64 {
-    let b1: Word[32]^16 = block(key, 1, nonce);
-    let b2: Word[32]^16 = block(key, 2, nonce);
-    let b3: Word[32]^16 = block(key, 3, nonce);
-    let b4: Word[32]^16 = block(key, 4, nonce);
-    let k1: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = [0; 64] { k with [w] = b1[w] };
-    let k2: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = k1 { k with [16 + w] = b2[w] };
-    let k3: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = k2 { k with [32 + w] = b3[w] };
-    for w in 0..16 with k: Word[32]^64 = k3 { k with [48 + w] = b4[w] }
-  }
-
+  // Section 2.8: Poly1305 under the one-time key of the associated data, the
+  // ciphertext, and both lengths as 64-bit little-endian integers. Each
+  // whole block is its sixteen bytes, little-endian, with the byte 0x01 above
+  // them (section 2.5.1), read straight from `ad` and `sealed`: four blocks,
+  // fifteen blocks, and the lengths 64 and 240. The tag bytes of `sealed`
+  // are not read.
   spec tag(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^16 {
     let otk: Word[8]^32 = one_time_key(key, nonce);
-    let r: Int = clamp_r(otk);
-    let a0: Int = for j in 0..4 with a: Int = 0 {
-      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (ad[16 * j + 15 - i] as Int) })
+    let r: Int = poly_r(otk);
+    let a: Int = for j in 0..4 with x: Int = 0 {
+      absorb(x, r, for i in 0..16 with n: Int = 1 { n * 256 + (ad[16 * j + 15 - i] as Int) })
     };
-    let a1: Int = for j in 0..15 with a: Int = a0 {
-      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (sealed[16 * j + 15 - i] as Int) })
+    let c: Int = for j in 0..15 with x: Int = a {
+      absorb(x, r, for i in 0..16 with n: Int = 1 { n * 256 + (sealed[16 * j + 15 - i] as Int) })
     };
-    let a2: Int = absorb(a1, r, 1 * 340282366920938463463374607431768211456 + 64 + 240 * 18446744073709551616);
-    let t: Int = a2 + pad_s(otk);
-    for i in 0..16 with out: Word[8]^16 = [0; 16] {
-      out with [i] = (t / byte_weight(i)) as Word[8]
-    }
+    let lengths: Word[8]^16 = [64, 0, 0, 0, 0, 0, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0];
+    let l: Int = absorb(c, r, for i in 0..16 with n: Int = 1 { n * 256 + (lengths[15 - i] as Int) });
+    tag_bytes(l + poly_s(otk))
   }
-
-  spec chacha_seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
-    let ks: Word[32]^64 = keystream(key, nonce);
+  // Section 2.8: the plaintext is encrypted from counter 1 (section 2.4),
+  // and the tag follows the ciphertext.
+  spec aead_seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
+    let s: Word[32]^64 = keystream(key, nonce);
     let body: Word[8]^256 = for i in 0..240 with c: Word[8]^256 = [0; 256] {
-      c with [i] = plaintext[i] ^ le_bytes(ks[i / 4])[i % 4]
+      c with [i] = plaintext[i] ^ le_bytes(s[i / 4])[i % 4]
     };
     let t: Word[8]^16 = tag(key, nonce, ad, body);
     for i in 0..16 with c: Word[8]^256 = body { c with [240 + i] = t[i] }
   }
 
-  spec chacha_authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
+  // The tag is recomputed and compared byte by byte with no early exit.
+  spec aead_authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
     let t: Word[8]^16 = tag(key, nonce, ad, sealed);
     (for i in 0..16 with d: Word[8] = 0 { d | (t[i] ^ sealed[240 + i]) }) == 0
   }
 
-  spec chacha_open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
-    let ks: Word[32]^64 = keystream(key, nonce);
-    for i in 0..240 with p: Word[8]^240 = [0; 240] {
-      p with [i] = sealed[i] ^ le_bytes(ks[i / 4])[i % 4]
-    }
+  // Section 2.4: decryption is the same exclusive-or with the keystream.
+  spec aead_open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
+    let s: Word[32]^64 = keystream(key, nonce);
+    for i in 0..240 with p: Word[8]^240 = [0; 240] { p with [i] = sealed[i] ^ le_bytes(s[i / 4])[i % 4] }
   }
-  spec hchacha20(key: Word[8]^32, nonce: Word[8]^24) -> Word[8]^32 {
+
+  // ---- XChaCha20, draft-irtf-cfrg-xchacha-03 ----
+
+  // Draft section 2.2: HChaCha20 sets up the ChaCha20 state with the
+  // sixteen-byte `input` in words 12 through 15, runs the twenty rounds with
+  // no final addition, and returns words 0 through 3 and 12 through 15 as 32
+  // little-endian bytes.
+  spec hchacha20(key: Word[8]^32, input: Word[8]^16) -> Word[8]^32 {
     let constants: Word[32]^16 = [
       0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
     ];
     let keyed: Word[32]^16 = for i in 0..8 with s: Word[32]^16 = constants {
       s with [4 + i] = load_le32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
     };
     let initial: Word[32]^16 = for i in 0..4 with s: Word[32]^16 = keyed {
-      s with [12 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
+      s with [12 + i] = load_le32(input[4 * i], input[4 * i + 1], input[4 * i + 2], input[4 * i + 3])
     };
-    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
-    let low: Word[8]^32 = for i in 0..4 with out: Word[8]^32 = [0; 32] {
-      for j in 0..4 with o: Word[8]^32 = out { o with [4 * i + j] = le_bytes(mixed[i])[j] }
-    };
-    for i in 0..4 with out: Word[8]^32 = low {
-      for j in 0..4 with o: Word[8]^32 = out { o with [16 + 4 * i + j] = le_bytes(mixed[12 + i])[j] }
-    }
+    let m: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
+    let out: Word[32]^8 = [m[0], m[1], m[2], m[3], m[12], m[13], m[14], m[15]];
+    for i in 0..32 with b: Word[8]^32 = [0; 32] { b with [i] = le_bytes(out[i / 4])[i % 4] }
   }
 
+  // Draft section 2.3: the subkey is HChaCha20 of the key and nonce bytes 0
+  // through 15.
+  spec subkey(key: Word[8]^32, nonce: Word[8]^24) -> Word[8]^32 {
+    hchacha20(key, for i in 0..16 with n: Word[8]^16 = [0; 16] { n with [i] = nonce[i] })
+  }
+
+  // Draft section 2.3: the ChaCha20 nonce is four zero bytes, then nonce
+  // bytes 16 through 23.
   spec inner_nonce(nonce: Word[8]^24) -> Word[8]^12 {
     for i in 0..8 with n: Word[8]^12 = [0; 12] { n with [4 + i] = nonce[16 + i] }
   }
 
+  // Interface.
+
   spec seal(key: Word[8]^32, nonce: Word[8]^24, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
-    chacha_seal(hchacha20(key, nonce), inner_nonce(nonce), ad, plaintext)
+    aead_seal(subkey(key, nonce), inner_nonce(nonce), ad, plaintext)
   }
 
   spec authentic(key: Word[8]^32, nonce: Word[8]^24, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
-    chacha_authentic(hchacha20(key, nonce), inner_nonce(nonce), ad, sealed)
+    aead_authentic(subkey(key, nonce), inner_nonce(nonce), ad, sealed)
   }
 
   spec open(key: Word[8]^32, nonce: Word[8]^24, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
-    chacha_open(hchacha20(key, nonce), inner_nonce(nonce), ad, sealed)
+    aead_open(subkey(key, nonce), inner_nonce(nonce), ad, sealed)
+  }
+
+  // Known answers.
+
+  // Section 2.3.2: the block function on the key 00 01 ... 1f, counter 1, and
+  // the nonce 00 00 00 09 00 00 00 4a 00 00 00 00.
+  spec rfc8439_2_3_2() -> Bool {
+    let key: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = i as Word[8] };
+    let got: Word[8]^64 = serialize(block(key, 1, [0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x4a, 0x00, 0x00, 0x00, 0x00]));
+    let expected: Word[8]^64 = [
+      0x10, 0xf1, 0xe7, 0xe4, 0xd1, 0x3b, 0x59, 0x15, 0x50, 0x0f, 0xdd, 0x1f, 0xa3, 0x20, 0x71, 0xc4,
+      0xc7, 0xd1, 0xf4, 0xc7, 0x33, 0xc0, 0x68, 0x03, 0x04, 0x22, 0xaa, 0x9a, 0xc3, 0xd4, 0x6c, 0x4e,
+      0xd2, 0x82, 0x64, 0x46, 0x07, 0x9f, 0xaa, 0x09, 0x14, 0xc2, 0xd7, 0x05, 0xd9, 0x8b, 0x02, 0xa2,
+      0xb5, 0x12, 0x9c, 0xd1, 0xde, 0x16, 0x4e, 0xb9, 0xcb, 0xd0, 0x83, 0xe8, 0xa2, 0x50, 0x3c, 0x4e,
+    ];
+    (for i in 0..64 with d: Word[8] = 0 { d | (got[i] ^ expected[i]) }) == 0
+  }
+
+  // Draft section 2.2.1: HChaCha20 on the key 00 01 ... 1f and the input
+  // 00 00 00 09 00 00 00 4a 00 00 00 00 31 41 59 27.
+  spec draft_2_2_1() -> Bool {
+    let key: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = i as Word[8] };
+    let got: Word[8]^32 = hchacha20(key, [0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x4a, 0x00, 0x00, 0x00, 0x00, 0x31, 0x41, 0x59, 0x27]);
+    let expected: Word[8]^32 = [
+      0x82, 0x41, 0x3b, 0x42, 0x27, 0xb2, 0x7b, 0xfe, 0xd3, 0x0e, 0x42, 0x50, 0x8a, 0x87, 0x7d, 0x73,
+      0xa0, 0xf9, 0xe4, 0xd5, 0x8a, 0x74, 0xa8, 0x53, 0xc1, 0x2e, 0xc4, 0x13, 0x26, 0xd3, 0xec, 0xdc,
+    ];
+    (for i in 0..32 with d: Word[8] = 0 { d | (got[i] ^ expected[i]) }) == 0
+  }
+
+  // A whole chunk: the key 80 81 ... 9f, the nonce 40 41 ... 57, the
+  // associated data 00 01 ... 3f, and the plaintext 00 01 ... ef. The
+  // expected sealed chunk was computed by pycryptodome 3.23.0. `seal` must
+  // give it, `authentic` must accept it and reject it with one bit flipped,
+  // and `open` must recover the plaintext.
+  spec chunk() -> Bool {
+    let key: Word[8]^32 = for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = 0x80 + (i as Word[8]) };
+    let nonce: Word[8]^24 = for i in 0..24 with n: Word[8]^24 = [0; 24] { n with [i] = 0x40 + (i as Word[8]) };
+    let ad: Word[8]^64 = for i in 0..64 with a: Word[8]^64 = [0; 64] { a with [i] = i as Word[8] };
+    let plaintext: Word[8]^240 = for i in 0..240 with p: Word[8]^240 = [0; 240] { p with [i] = i as Word[8] };
+    let expected: Word[8]^256 = [
+      0xf1, 0x0d, 0x71, 0xf7, 0x5f, 0xf5, 0xf2, 0x5d, 0xf3, 0x1b, 0x7d, 0xd8, 0xfa, 0xa3, 0x93, 0x5a,
+      0x22, 0x56, 0x60, 0x7d, 0x11, 0x51, 0x8a, 0xfb, 0xd2, 0xa3, 0xef, 0x17, 0x5e, 0x48, 0x13, 0xd7,
+      0x20, 0x1d, 0x32, 0x5e, 0x0f, 0x48, 0xb9, 0x5a, 0x19, 0xfa, 0xcb, 0x62, 0x42, 0xbe, 0x70, 0x75,
+      0xf1, 0x20, 0x98, 0x27, 0x98, 0x0e, 0x92, 0x47, 0x96, 0xdd, 0xad, 0x6c, 0x41, 0x5b, 0xaa, 0x02,
+      0x01, 0xa1, 0xa0, 0xc7, 0x26, 0x9e, 0xfa, 0x22, 0x8d, 0x3b, 0x53, 0xd2, 0xa8, 0xe3, 0x87, 0xf1,
+      0x1b, 0x06, 0x9b, 0x58, 0xf1, 0x49, 0x6a, 0xad, 0x5c, 0x8e, 0x4e, 0x4e, 0x4a, 0xfb, 0xcf, 0xd5,
+      0x22, 0xea, 0x61, 0x4a, 0x9d, 0x26, 0x6c, 0xa1, 0x6b, 0x8d, 0x1c, 0xbd, 0x1b, 0xce, 0xc5, 0x15,
+      0xb1, 0x71, 0xb8, 0x40, 0xc2, 0x7a, 0x04, 0x31, 0xe2, 0xe2, 0xc5, 0xc8, 0x57, 0x24, 0x4b, 0xe8,
+      0xc6, 0xcb, 0xaa, 0xae, 0xf1, 0xfa, 0x57, 0x54, 0x13, 0xb0, 0x5a, 0x89, 0xd9, 0xc2, 0x0c, 0x21,
+      0xcd, 0x0b, 0x5b, 0x74, 0xc1, 0xbd, 0x54, 0x8a, 0x60, 0x45, 0x35, 0x5d, 0xeb, 0x4b, 0x4f, 0x46,
+      0x45, 0xc4, 0x6b, 0xc8, 0xe3, 0xd4, 0x53, 0x49, 0xe0, 0x05, 0xd0, 0x47, 0x84, 0x13, 0x35, 0x97,
+      0xfe, 0x88, 0x98, 0x88, 0xa8, 0x47, 0x72, 0xf6, 0x66, 0xd2, 0x6d, 0x20, 0x22, 0x06, 0xcb, 0x15,
+      0xc4, 0x78, 0x68, 0x0d, 0x7d, 0x54, 0xc3, 0x7c, 0xca, 0x76, 0x7b, 0x32, 0xcc, 0x62, 0x2d, 0x7c,
+      0x77, 0x14, 0xc4, 0x74, 0x7b, 0x38, 0x58, 0x05, 0x53, 0x49, 0x6a, 0x16, 0x92, 0x1c, 0x21, 0x84,
+      0x4d, 0x89, 0x26, 0x3f, 0x17, 0x39, 0x4a, 0x40, 0x82, 0xa2, 0x53, 0x89, 0x77, 0x26, 0xa7, 0x1d,
+      0x90, 0xb8, 0x47, 0xaa, 0x96, 0x5b, 0x78, 0xb3, 0xdb, 0x8d, 0x70, 0xe4, 0xce, 0x5f, 0x9b, 0xbc,
+    ];
+    let sealed: Word[8]^256 = seal(key, nonce, ad, plaintext);
+    let opened: Word[8]^240 = open(key, nonce, ad, expected);
+    let seals: Bool = (for i in 0..256 with d: Word[8] = 0 { d | (sealed[i] ^ expected[i]) }) == 0;
+    let opens: Bool = (for i in 0..240 with d: Word[8] = 0 { d | (opened[i] ^ plaintext[i]) }) == 0;
+    let tampered: Word[8]^256 = expected with [100] = expected[100] ^ 0x01;
+    seals && opens && authentic(key, nonce, ad, expected) && !authentic(key, nonce, ad, tampered)
   }
 }
