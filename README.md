@@ -318,8 +318,57 @@ keyed by a secret is the classic cache-timing leak of software AES; Orange
 states the lookup the standard states, makes no timing claim about it, and
 leaves how such a lookup is compiled to a later code-generation decision.
 Updates also cost less: changing one entry of a 256-entry table costs 4
-evaluation steps, not 256. This slice, S3g, is implemented and tested; its specification is in
-review as [OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md).
+evaluation steps, not 256. This slice, S3g, is implemented and tested; its
+specification is in review as
+[OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md).
+
+### Standards built on standards
+
+Cryptography is specified in layers: HMAC is defined over a hash function, and
+HKDF over HMAC. An Orange module names the modules it uses at its head and
+calls their functions by module name, so each standard is written once, in its
+own file, and read against its own text. This is HMAC as RFC 2104 defines it,
+over the SHA-256 of another file:
+
+```orange
+module hmac {
+  use sha256;
+
+  spec keyed(key: Word[8]^64, pad: Word[8]) -> Word[8]^64 {
+    for i in 0..64 with b: Word[8]^64 = key { b with [i] = key[i] ^ pad }
+  }
+
+  spec block(d: Word[8]^32) -> Word[8]^64 {
+    for i in 0..32 with b: Word[8]^64 = [0; 64] { b with [i] = d[i] }
+  }
+
+  spec mac(key: Word[8]^64, m: Word[8]^64, length: Int) -> Word[8]^32 {
+    let inner: Word[32]^8 = sha256::compress(sha256::initial(), keyed(key, 0x36));
+    let outer: Word[32]^8 = sha256::compress(sha256::initial(), keyed(key, 0x5c));
+    let text: Word[8]^32 =
+      sha256::digest(sha256::compress(inner, sha256::last_block(m, length, 64 + length)));
+    sha256::digest(sha256::compress(outer, sha256::last_block(block(text), 32, 96)))
+  }
+}
+```
+
+`orangec eval` reads `sha256.or` for `use sha256;` from beside the file that
+names it, checks every module once, after the modules it uses, and prints only
+the values of the program it was given. The
+[module fixtures](compiler/fixtures/s3h/) write SHA-256, HMAC, and HKDF as
+three modules and reproduce the SHA-256 example of FIPS 180-4, test cases 1
+and 2 of RFC 4231, and test case 1 of RFC 5869:
+
+```text
+vectors::okm: Word[8]^42 = [0x3c, 0xb2, 0x5f, 0x25, 0xfa, 0xac, 0xd5, 0x7a, 0x90, 0x43, 0x4f, 0x64, 0xd0, 0x36, 0x2f, 0x2a, 0x2d, 0x2d, 0x0a, 0x90, 0xcf, 0x1a, 0x5a, 0x4c, 0x5d, 0xb0, 0x2d, 0x56, 0xec, 0xc4, 0xc5, 0xbf, 0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65]
+```
+
+Nothing is imported into scope: a call into another module always names it,
+and a module declares every module it uses, so a reader sees where each
+function comes from. Modules may not use each other in a cycle, and each means
+the same whoever uses it. This slice, S3h, is implemented and tested; its
+specification is in review as
+[OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md).
 
 ### Daylight Horizon example
 
@@ -337,7 +386,7 @@ cryptography.
 | --- | --- |
 | Source model, UTF-8 byte spans, stable diagnostic codes | Working |
 | Deterministic lexer (`orangec lex`) | Working |
-| Orange 2026 grammar: one edition, one module, `spec` and `impl` declarations | Working |
+| Orange 2026 grammar: one edition, one module per file, `spec` and `impl` declarations | Working |
 | Typed `spec` functions: parameters, calls, `Int`, and `Word[8]` through `Word[64]` | Working; specification in review ([OEP-0005](docs/governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md)) |
 | Operators: exact `Int` arithmetic, word ring arithmetic, and, or, xor, not, shifts, rotations | Working; specification in review |
 | Typed `let` bindings and explicit `as` conversions | Working; specification in review ([OEP-0006](docs/governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md)) |
@@ -345,8 +394,9 @@ cryptography.
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
+| Programs of more than one module, each in its own file, with calls qualified by module | Working; specification in review ([OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Programs of more than one file, mixed-type tuples, a type of integers modulo a prime | Not yet |
+| Mixed-type tuples, a type of integers modulo a prime, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -364,6 +414,7 @@ git clone https://github.com/chasebryan/orange.git
 cd orange
 
 # Build and try the compiler
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3g/valid-aes128.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3f/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
@@ -406,7 +457,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, and lookups in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, and modules in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -428,9 +479,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [bindings and conversions](docs/BINDINGS_2026.md),
   [fixed-length arrays](docs/ARRAYS_2026.md),
   [bounded loops](docs/LOOPS_2026.md),
-  [conditions and division](docs/CONDITIONS_2026.md), and
-  [lookups keyed by data](docs/LOOKUPS_2026.md): the definition of what the
-  compiler accepts today.
+  [conditions and division](docs/CONDITIONS_2026.md),
+  [lookups keyed by data](docs/LOOKUPS_2026.md), and
+  [programs of more than one module](docs/MODULES_2026.md): the definition of
+  what the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

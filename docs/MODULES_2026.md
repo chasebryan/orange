@@ -29,7 +29,8 @@ Cryptography is built in layers. HMAC is defined over a hash function, HKDF
 over HMAC, and an AEAD over a cipher and an authenticator. Through S3g an
 Orange program was one module in one file, so every construction had to carry
 its own copy of every primitive beneath it: the Daylight example holds
-SHA-256, HMAC, HKDF, ChaCha20, and Poly1305 in one module of 500 lines.
+SHA-256, HMAC, HKDF, ChaCha20, and Poly1305 in one module of more than 500
+lines.
 
 S3h lets a module name the modules it builds on and call their functions by
 module name, so each standard can be written once, in its own file, and read
@@ -38,6 +39,14 @@ on its own.
 ```orange
 module hmac {
   use sha256;
+
+  spec keyed(key: Word[8]^64, pad: Word[8]) -> Word[8]^64 {
+    for i in 0..64 with b: Word[8]^64 = key { b with [i] = key[i] ^ pad }
+  }
+
+  spec block(d: Word[8]^32) -> Word[8]^64 {
+    for i in 0..32 with b: Word[8]^64 = [0; 64] { b with [i] = d[i] }
+  }
 
   spec mac(key: Word[8]^64, m: Word[8]^64, length: Int) -> Word[8]^32 {
     let inner: Word[32]^8 = sha256::compress(sha256::initial(), keyed(key, 0x36));

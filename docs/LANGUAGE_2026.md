@@ -56,6 +56,13 @@ unresolved.
 > OEP-0010, also in review, builds on S3f with indices that depend on data,
 > each proved in range from its type, and cheaper updates. It changes no
 > grammar.
+>
+> The S3h slice proposed in [`MODULES_2026.md`](MODULES_2026.md) under
+> OEP-0011, also in review, builds on S3g with programs of more than one
+> module: `use` declarations at the head of a module, and calls qualified by a
+> module name, as in `sha256::compress(h, block)`. It adds no token and no
+> reserved word: `use` is recognized by position, and `::` is the existing
+> `DOUBLE_COLON` token.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

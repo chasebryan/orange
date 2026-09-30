@@ -27,8 +27,9 @@ meaning. It accepts no D-004 candidate.
 > conditionals, and lets a static index divide a loop index.
 > [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, lifts the
 > static-index limit of section 13: an index may depend on data, and is proved
-> in range from its type. Every source this document accepts keeps its meaning
-> under both.
+> in range from its type. [`MODULES_2026.md`](MODULES_2026.md), proposed under
+> OEP-0011, lets a module use others. Every source this document accepts keeps
+> its meaning under all three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
