@@ -42,6 +42,9 @@ pub struct EvaluatedFunction {
     module: Arc<str>,
     /// Exact ASCII function name.
     name: String,
+    /// The values of the function's sizes in the instance evaluated, empty
+    /// for a function without sizes.
+    sizes: Vec<u32>,
     /// Exact evaluated value.
     value: CoreValue,
 }
@@ -65,6 +68,13 @@ impl EvaluatedFunction {
         &self.name
     }
 
+    /// Returns the values of the function's sizes in the instance
+    /// evaluated, or an empty slice for a function without sizes.
+    #[must_use]
+    pub fn sizes(&self) -> &[u32] {
+        &self.sizes
+    }
+
     /// Returns the statically checked result type.
     #[must_use]
     pub fn result_type(&self) -> CoreType {
@@ -80,14 +90,16 @@ impl EvaluatedFunction {
 
 impl fmt::Display for EvaluatedFunction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{}::{}: {} = {}",
-            self.module(),
-            self.name(),
-            self.result_type(),
-            self.value()
-        )
+        write!(formatter, "{}::{}", self.module(), self.name())?;
+        // An instance of a sized function is named as a call names it.
+        if let Some((first, rest)) = self.sizes.split_first() {
+            write!(formatter, "[{first}")?;
+            for size in rest {
+                write!(formatter, ", {size}")?;
+            }
+            formatter.write_str("]")?;
+        }
+        write!(formatter, ": {} = {}", self.result_type(), self.value())
     }
 }
 
@@ -2117,6 +2129,15 @@ fn evaluate_with_reservations(
             );
         }
         name.push_str(&function.name);
+        let mut sizes = Vec::new();
+        if sizes.try_reserve_exact(function.sizes.len()).is_err() {
+            return allocation_failure(
+                diagnostics,
+                function.name_span,
+                "evaluated function sizes could not be reserved",
+            );
+        }
+        sizes.extend_from_slice(&function.sizes);
         let value = match result_value(value, &function.result_type, reservations) {
             Ok(value) => value,
             Err(Stop::Allocation(label)) => {
@@ -2129,6 +2150,7 @@ fn evaluate_with_reservations(
             id: function.id,
             module,
             name,
+            sizes,
             value,
         });
     }

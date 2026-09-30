@@ -311,7 +311,7 @@ pub(super) fn resolve_uses(
 /// The name tables of a checked module that later modules call into.
 pub(super) struct ModuleTables<'ast> {
     pub(super) declarations: DeclarationIndex<'ast>,
-    pub(super) signatures: Vec<Option<Signature>>,
+    pub(super) signatures: Vec<Option<Signature<'ast>>>,
 }
 
 /// What analysis of one module of a program produced.
@@ -323,14 +323,14 @@ pub(super) struct ModuleOutcome<'ast> {
     pub(super) tables: Option<ModuleTables<'ast>>,
 }
 
-pub(super) fn typed_spec_count(ast: &SyntaxTree) -> usize {
+/// The number of Core function identities a module takes: one for each
+/// instance of each typed `spec`.
+pub(super) fn typed_spec_count(source: &SourceFile, ast: &SyntaxTree) -> usize {
     ast.module
         .functions
         .iter()
-        .filter(|function| {
-            function.kind == FunctionKind::Spec && matches!(function.body, FunctionBody::Typed(_))
-        })
-        .count()
+        .map(|function| instance_count(source, function))
+        .fold(0, usize::saturating_add)
 }
 
 /// Checks each reachable module in dependency order and links their Core.
@@ -385,7 +385,7 @@ pub(super) fn link_program<'ast>(
                 )
         });
         drop(imports);
-        id_offset = id_offset.saturating_add(typed_spec_count(ast));
+        id_offset = id_offset.saturating_add(typed_spec_count(source, ast));
         let Some(outcome) = outcome else {
             complete = false;
             continue;
@@ -456,10 +456,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// already counted call exactly once.
     pub(super) fn check_call_graph(
         &mut self,
-        signatures: &[Option<Signature>],
+        signatures: &[Option<Signature<'ast>>],
         edges: &[CallEdge],
     ) {
-        let function_count = signatures.iter().flatten().count();
+        // Each instance of a sized function is a node of its own.
+        let function_count = signatures
+            .iter()
+            .flatten()
+            .map(|signature| signature.instances.len())
+            .fold(0_usize, usize::saturating_add);
         let mut names = Vec::new();
         let mut offsets = Vec::new();
         let mut targets: Vec<(CoreFunctionId, usize)> = Vec::new();
@@ -482,8 +487,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .functions
                 .iter()
                 .zip(signatures)
-                .filter(|(_, signature)| signature.is_some())
-                .map(|(function, _)| &function.name),
+                .filter_map(|(function, signature)| Some((&function.name, signature.as_ref()?)))
+                .flat_map(|(name, signature)| {
+                    (0..signature.instances.len()).map(move |index| (name, signature, index))
+                }),
         );
         // Group edges by caller; within one caller, edges keep the order in
         // which their calls finished checking.
@@ -570,7 +577,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         edge: &CallEdge,
         target: usize,
         path: &[(usize, usize)],
-        names: &[&Identifier],
+        names: &[(&Identifier, &Signature<'ast>, usize)],
     ) {
         if !self.begin_report(edge.span) {
             return;
@@ -581,9 +588,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .unwrap_or(0);
         let cycle = path.get(start..).unwrap_or_default();
         let name_of = |index: usize| {
-            names.get(index).map_or_else(String::new, |name| {
-                identifier_spelling_for_diagnostic(&name.text).to_string()
-            })
+            names
+                .get(index)
+                .map_or_else(String::new, |(name, signature, instance)| {
+                    signature
+                        .ranges
+                        .and_then(|ranges| ranges.instance(signature.sizes, *instance))
+                        .unwrap_or(Instance::NONE)
+                        .label(&name.text)
+                })
         };
         let target_name = name_of(target);
         let message = if cycle.len() <= 1 {

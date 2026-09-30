@@ -99,6 +99,9 @@ pub struct CoreFunction {
     pub(crate) name: String,
     /// Source extent of the function name.
     pub(crate) name_span: Span,
+    /// The values of the function's sizes in this instance, in declaration
+    /// order; empty for a function without sizes.
+    pub(crate) sizes: Vec<u32>,
     /// Parameter types in declaration order.
     pub(crate) parameters: Vec<CoreType>,
     /// Statically checked result type.
@@ -144,6 +147,13 @@ impl CoreFunction {
     #[must_use]
     pub const fn name_span(&self) -> Span {
         self.name_span
+    }
+
+    /// Returns the values of the function's sizes in this instance, in
+    /// declaration order, or an empty slice for a function without sizes.
+    #[must_use]
+    pub fn sizes(&self) -> &[u32] {
+        &self.sizes
     }
 
     /// Returns parameter types in declaration order.
@@ -2408,6 +2418,7 @@ mod tests {
                 span,
                 name: String::from("integer"),
                 name_span: span,
+                sizes: Vec::new(),
                 parameters: Vec::new(),
                 result_type: CoreType::Int,
                 locals: Vec::new(),
@@ -2430,6 +2441,7 @@ mod tests {
                 span,
                 name: String::from("word"),
                 name_span: span,
+                sizes: Vec::new(),
                 parameters: vec![CoreType::Word32],
                 result_type: CoreType::Word8,
                 locals: vec![CoreLocal {
@@ -2533,6 +2545,7 @@ mod tests {
                 span: _,
                 name: _,
                 name_span: _,
+                sizes: _,
                 parameters: _,
                 result_type: _,
                 locals,

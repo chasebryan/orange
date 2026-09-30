@@ -143,6 +143,12 @@ define_diagnostic_codes! {
     UnprintableByteString => "ORC0235",
     /// A slice's bounds do not differ by the same positive number at every step.
     SliceLength => "ORC0236",
+    /// A size uses something other than integer literals and size parameters.
+    NonStaticSize => "ORC0237",
+    /// A size parameter's range is malformed, or a size lies outside it.
+    SizeRange => "ORC0238",
+    /// A call gives a different number of sizes than its function declares.
+    SizeCount => "ORC0239",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -251,6 +257,11 @@ impl Diagnostic {
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
         self
+    }
+
+    /// Appends an explanatory note to a diagnostic already built.
+    pub(crate) fn add_note(&mut self, note: impl Into<String>) {
+        self.notes.push(note.into());
     }
 
     /// Returns the severity.
@@ -710,7 +721,8 @@ mod tests {
             "ORC0208", "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215",
             "ORC0216", "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223",
             "ORC0224", "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231",
-            "ORC0232", "ORC0233", "ORC0234", "ORC0235", "ORC0236", "ORC0301",
+            "ORC0232", "ORC0233", "ORC0234", "ORC0235", "ORC0236", "ORC0237", "ORC0238", "ORC0239",
+            "ORC0301",
         ];
 
         assert_eq!(actual, expected);

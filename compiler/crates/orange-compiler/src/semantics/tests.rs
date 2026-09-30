@@ -3971,8 +3971,8 @@ fn rejects_foreign_spans_in_arrays_and_indices() {
     let ExpressionKind::Index(foreign_index) = &foreign_array.elements[0].kind else {
         unreachable!();
     };
-    let foreign_length = foreign_function.parameters[0].ty.length_span;
-    let foreign_result_length = foreign.result_type.length_span;
+    let foreign_length = foreign_function.parameters[0].ty.length.clone();
+    let foreign_result_length = foreign.result_type.length.clone();
     fn index_mut(ast: &mut SyntaxTree) -> &mut IndexExpression {
         let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
             unreachable!();
@@ -3983,8 +3983,8 @@ fn rejects_foreign_spans_in_arrays_and_indices() {
         }
     }
     let mutations: [&dyn Fn(&mut SyntaxTree); 6] = [
-        &|ast| ast.module.functions[0].parameters[0].ty.length_span = foreign_length,
-        &|ast| typed_body_mut(ast).result_type.length_span = foreign_result_length,
+        &|ast| ast.module.functions[0].parameters[0].ty.length = foreign_length.clone(),
+        &|ast| typed_body_mut(ast).result_type.length = foreign_result_length.clone(),
         &|ast| typed_body_mut(ast).expression.span = foreign.expression.span,
         &|ast| {
             let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
@@ -4606,19 +4606,19 @@ fn rejects_foreign_spans_in_loops_updates_and_fills() {
     let mutations: Vec<Mutation<'_>> = vec![
         Box::new(|ast| loop_mut(ast).keyword_span = foreign.keyword_span),
         Box::new(|ast| loop_mut(ast).index.span = foreign.index.span),
-        Box::new(|ast| loop_mut(ast).start_span = foreign.start_span),
-        Box::new(|ast| loop_mut(ast).end_span = foreign.end_span),
+        Box::new(|ast| loop_mut(ast).start = foreign.start.clone()),
+        Box::new(|ast| loop_mut(ast).end = foreign.end.clone()),
         Box::new(|ast| {
             named_mut(&mut loop_mut(ast).accumulator).name.span =
                 named_of(&foreign.accumulator).name.span;
         }),
         Box::new(|ast| {
-            named_mut(&mut loop_mut(ast).accumulator).ty.length_span =
-                named_of(&foreign.accumulator).ty.length_span;
+            named_mut(&mut loop_mut(ast).accumulator).ty.length =
+                named_of(&foreign.accumulator).ty.length.clone();
         }),
         Box::new(|ast| update_mut(ast).keyword_span = foreign_update.keyword_span),
         Box::new(|ast| update_mut(ast).index.span = foreign_update.index.span),
-        Box::new(|ast| fill_mut(ast).length_span = foreign_fill.length_span),
+        Box::new(|ast| fill_mut(ast).length = foreign_fill.length.clone()),
         Box::new(|ast| fill_mut(ast).element.span = foreign_fill.element.span),
         Box::new(|ast| {
             let ExpressionKind::Index(index) = &mut update_mut(ast).value.kind else {
@@ -6043,15 +6043,14 @@ fn rejects_foreign_use_and_qualifier_spans_and_foreign_modules() {
     let foreign_use = second.asts[0].module.uses[0].clone();
     let foreign_module = second.asts[0].clone();
     let mut foreign_qualifier = second.asts[0].clone();
-    let foreign_qualifier_span = call_of(&mut foreign_qualifier)
-        .module
-        .as_ref()
-        .unwrap()
-        .span;
+    let foreign_qualifier_span = call_of(&mut foreign_qualifier).module().unwrap().span;
     let mutations: [&dyn Fn(&mut SyntaxTree); 3] = [
         &|ast| ast.module.uses[0].span = foreign_use.span,
         &|ast| ast.module.uses[0].name.span = foreign_use.name.span,
-        &|ast| call_of(ast).module.as_mut().unwrap().span = foreign_qualifier_span,
+        &|ast| {
+            let qualifiers = call_of(ast).qualifiers.as_mut().unwrap();
+            qualifiers.module.as_mut().unwrap().span = foreign_qualifier_span;
+        },
     ];
     let modules = first.modules();
     for (index, mutate) in mutations.iter().enumerate() {
