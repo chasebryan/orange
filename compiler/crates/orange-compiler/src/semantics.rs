@@ -550,7 +550,10 @@ impl<'scope, 'ast> ModuleScope<'scope, 'ast> {
     fn tables_for(
         &self,
         call: &CallExpression,
-    ) -> Option<(&'scope DeclarationIndex<'ast>, &'scope [Option<Signature<'ast>>])> {
+    ) -> Option<(
+        &'scope DeclarationIndex<'ast>,
+        &'scope [Option<Signature<'ast>>],
+    )> {
         match call.module() {
             None => Some((self.declarations, self.signatures)),
             Some(module) => self
@@ -1340,9 +1343,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             );
                             return None;
                         }
-                        parameters.extend(function.parameters.iter().map(|parameter| {
-                            silent_type(self.source, &self.types, &parameter.ty)
-                        }));
+                        parameters.extend(
+                            function.parameters.iter().map(|parameter| {
+                                silent_type(self.source, &self.types, &parameter.ty)
+                            }),
+                        );
                         let result_type = silent_type(self.source, &self.types, &body.result_type);
                         // Each part of a size evaluated for a signature is
                         // one event, as when a body is checked.
@@ -1788,7 +1793,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let (whole, kind, element) = match context.resolve(&name.text) {
             // A size is an `Int` constant of the instance.
             NameResolution::Size(value) => {
-                let Some(value) = ExactInteger::from_u64(u64::from(value), self.reserve_range_limbs)
+                let Some(value) =
+                    ExactInteger::from_u64(u64::from(value), self.reserve_range_limbs)
                 else {
                     self.resource_limit(name.span, "size storage allocation failed");
                     return false;
@@ -2187,7 +2193,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 let (declarations, signatures) = scope.tables_for(call)?;
                 let entry = first_declaration(declarations, FunctionKind::Spec, &call.callee.text)?;
                 let signature = signatures.get(entry.source_index)?.as_ref()?;
-                self.silent_instance(call, signature)?.result_type.clone()
+                self.silent_instance(call, signature, context, scope)?
+                    .result_type
+                    .clone()
             }
             ExpressionKind::Conversion(conversion) => {
                 silent_type(self.source, &self.types, &conversion.target)
@@ -3476,7 +3484,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         // The instance called: its sizes are computed in the caller's
         // instance and must lie in the callee's ranges.
-        let Some((id, signature)) = self.called_instance(expression, call, signature) else {
+        let Some((id, signature)) =
+            self.called_instance(expression, call, signature, context, scope)
+        else {
             return false;
         };
         // An unresolved callee type was reported at the callee's declaration.

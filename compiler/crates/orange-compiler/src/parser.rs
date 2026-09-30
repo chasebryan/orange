@@ -2471,7 +2471,15 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
         };
 
-        match (name, sizes, left_paren, parameters, right_paren, body, body_end) {
+        match (
+            name,
+            sizes,
+            left_paren,
+            parameters,
+            right_paren,
+            body,
+            body_end,
+        ) {
             (
                 Some(name),
                 Some(sizes),
@@ -2506,7 +2514,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
             self.bump()?;
             let start_span = self
-                .expect(TokenKind::Integer, "the size's first bound", SIZE_PARAMETER_NOTE)?
+                .expect(
+                    TokenKind::Integer,
+                    "the size's first bound",
+                    SIZE_PARAMETER_NOTE,
+                )?
                 .span;
             self.expect(
                 TokenKind::DotDot,
@@ -2514,7 +2526,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 SIZE_PARAMETER_NOTE,
             )?;
             let end_span = self
-                .expect(TokenKind::Integer, "the size's second bound", SIZE_PARAMETER_NOTE)?
+                .expect(
+                    TokenKind::Integer,
+                    "the size's second bound",
+                    SIZE_PARAMETER_NOTE,
+                )?
                 .span;
             if sizes.len() >= MAX_SIZES_PER_FUNCTION {
                 self.report(
@@ -3850,7 +3866,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`..` between the loop's bounds",
             LOOP_SHAPE_NOTE,
         )?;
-        let (end, end_height) = self.parse_size(level, "the loop's second bound", LOOP_SHAPE_NOTE)?;
+        let (end, end_height) =
+            self.parse_size(level, "the loop's second bound", LOOP_SHAPE_NOTE)?;
         if self.size_continues() {
             self.expected("`with` and the loop's accumulator", COMPUTED_BOUND_NOTE);
             return None;

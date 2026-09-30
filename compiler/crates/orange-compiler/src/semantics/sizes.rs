@@ -2,6 +2,7 @@
 //! and the value of each size within one instance.
 
 use super::*;
+use crate::parser::MAX_PARAMETERS_PER_FUNCTION;
 
 /// Most instances of one function: the product of the lengths of its size
 /// parameters' ranges.
@@ -40,9 +41,7 @@ impl<'ast> Instance<'ast> {
 
     /// Returns the values of the instance's sizes, in declaration order.
     pub(super) fn values(&self) -> &[u32] {
-        self.values
-            .get(..self.parameters.len())
-            .unwrap_or_default()
+        self.values.get(..self.parameters.len()).unwrap_or_default()
     }
 
     /// Returns the instance's name as a call writes it, `f[2]` or `f[1, 3]`,
@@ -269,7 +268,9 @@ impl SizeScope<'_> {
                     self.value(source, &binary.right),
                 ) {
                     (Ok(left), Ok(right)) => (left, right),
-                    (Err(SizeFault::TooLarge(_)), Err(fault)) | (Err(fault), _) | (_, Err(fault)) => {
+                    (Err(SizeFault::TooLarge(_)), Err(fault))
+                    | (Err(fault), _)
+                    | (_, Err(fault)) => {
                         return Err(fault);
                     }
                 };
@@ -313,7 +314,9 @@ impl SizeScope<'_> {
             if character == '_' {
                 continue;
             }
-            let digit = character.to_digit(radix).ok_or(SizeFault::Storage(literal.span))?;
+            let digit = character
+                .to_digit(radix)
+                .ok_or(SizeFault::Storage(literal.span))?;
             if !magnitude.multiply_add_with_reservation(radix, digit, self.reserve_limb) {
                 return Err(SizeFault::Storage(literal.span));
             }
@@ -465,13 +468,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     );
                 }
             }
-            let earlier = function
-                .sizes
-                .get(..index)
-                .and_then(|earlier| earlier.iter().find(|other| other.name.text == size.name.text));
+            let earlier = function.sizes.get(..index).and_then(|earlier| {
+                earlier
+                    .iter()
+                    .find(|other| other.name.text == size.name.text)
+            });
             if let Some(earlier) = earlier {
                 valid = false;
-                self.report_repeated_size(&size.name, earlier.name.span, "first size parameter is here");
+                self.report_repeated_size(
+                    &size.name,
+                    earlier.name.span,
+                    "first size parameter is here",
+                );
             }
         }
         for parameter in &function.parameters {
@@ -481,7 +489,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .find(|size| size.name.text == parameter.name.text)
             {
                 valid = false;
-                self.report_repeated_size(&parameter.name, size.name.span, "the size parameter is here");
+                self.report_repeated_size(
+                    &parameter.name,
+                    size.name.span,
+                    "the size parameter is here",
+                );
             }
         }
         if valid && instances > MAX_INSTANCES_PER_FUNCTION {
@@ -573,8 +585,35 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         expression: &Expression,
         call: &CallExpression,
         signature: &'signature Signature<'_>,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
     ) -> Option<(CoreFunctionId, &'signature InstanceSignature)> {
         let ranges = signature.ranges?;
+        if call.sizes().is_empty() && ranges.count() != 0 {
+            // Every instance takes the same number of arguments; a call that
+            // gives another number is reported as such by its caller.
+            let first = signature.instances.first()?;
+            if first.parameters.len() != call.arguments.len() {
+                return Some((signature.instance_id(0)?, first));
+            }
+            return match self.fitting_instance(call, signature, context, scope) {
+                Ok(index) => Some((
+                    signature.instance_id(index)?,
+                    signature.instances.get(index)?,
+                )),
+                Err(fitting) => {
+                    self.report_unfitted_call(
+                        expression.span,
+                        call,
+                        signature,
+                        fitting,
+                        context,
+                        scope,
+                    );
+                    None
+                }
+            };
+        }
         if call.sizes().len() != ranges.count() {
             self.report_size_count(expression.span, call, ranges.count());
             return None;
@@ -591,13 +630,149 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 Some(value) => *slot = value,
                 None => {
                     let parameter = signature.sizes.get(position)?;
-                    self.report_size_outside(size.span, &call.callee, parameter, (start, end), &value);
+                    self.report_size_outside(
+                        size.span,
+                        &call.callee,
+                        parameter,
+                        (start, end),
+                        &value,
+                    );
                     return None;
                 }
             }
         }
         let index = ranges.index(values.get(..ranges.count())?)?;
-        Some((signature.instance_id(index)?, signature.instances.get(index)?))
+        Some((
+            signature.instance_id(index)?,
+            signature.instances.get(index)?,
+        ))
+    }
+
+    /// Returns the index of the one instance of a sized function whose array
+    /// parameters have the lengths of a call's arguments, for a call that
+    /// writes no sizes. An argument whose length is not known without
+    /// reporting fits every instance. Otherwise returns the indices of the
+    /// first two instances that fit, or none, without reporting.
+    fn fitting_instance(
+        &self,
+        call: &CallExpression,
+        signature: &Signature<'_>,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) -> Result<usize, [Option<usize>; 2]> {
+        let mut lengths = [None; MAX_PARAMETERS_PER_FUNCTION];
+        for ((length, argument), parameter) in lengths
+            .iter_mut()
+            .zip(&call.arguments)
+            .zip(&signature.instances.first().ok_or([None; 2])?.parameters)
+        {
+            if parameter.as_ref().and_then(CoreType::as_array).is_some() {
+                *length = self.array_length_of(argument, context, scope);
+            }
+        }
+        let mut fitting = [None; 2];
+        let mut found = 0_usize;
+        for (index, instance) in signature.instances.iter().enumerate() {
+            let fits = instance
+                .parameters
+                .iter()
+                .zip(lengths)
+                .all(|(parameter, length)| {
+                    match (parameter.as_ref().and_then(CoreType::as_array), length) {
+                        (Some(array), Some(length)) => array.length() == length,
+                        _ => true,
+                    }
+                });
+            if fits {
+                if let Some(slot) = fitting.get_mut(found) {
+                    *slot = Some(index);
+                }
+                found = found.saturating_add(1);
+                if found > 1 {
+                    break;
+                }
+            }
+        }
+        match fitting {
+            [Some(index), None] => Ok(index),
+            _ => Err(fitting),
+        }
+    }
+
+    /// Reports a call without sizes whose arguments' lengths fit no instance
+    /// of the callee, or more than one.
+    #[cold]
+    #[inline(never)]
+    fn report_unfitted_call(
+        &mut self,
+        span: Span,
+        call: &CallExpression,
+        signature: &Signature<'_>,
+        fitting: [Option<usize>; 2],
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) {
+        let Some(ranges) = signature.ranges else {
+            return;
+        };
+        if !self.begin_report(span) {
+            return;
+        }
+        let name = identifier_spelling_for_diagnostic(&call.callee.text);
+        let domain = signature
+            .sizes
+            .iter()
+            .enumerate()
+            .filter_map(|(position, size)| {
+                let (start, end) = ranges.range(position)?;
+                Some(format!(
+                    "`{}` in {start}..{end}",
+                    identifier_spelling_for_diagnostic(&size.name.text)
+                ))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let diagnostic = if let [Some(first), Some(second)] = fitting {
+            let label = |index: usize| {
+                ranges
+                    .instance(signature.sizes, index)
+                    .map_or_else(String::new, |instance| instance.label(&call.callee.text))
+            };
+            Diagnostic::error(
+                DiagnosticCode::SizeCount,
+                format!(
+                    "this call fits more than one instance of `{name}`, among them `{}` and `{}`",
+                    label(first),
+                    label(second)
+                ),
+                span,
+            )
+            .with_label("write the sizes in brackets")
+        } else {
+            let lengths = call
+                .arguments
+                .iter()
+                .filter_map(|argument| self.array_length_of(argument, context, scope))
+                .map(|length| length.to_string())
+                .collect::<Vec<_>>();
+            let label = match lengths.as_slice() {
+                [] => String::from("no instance fits these arguments"),
+                [length] => format!("an array of length {length} is given"),
+                _ => format!("arrays of lengths {} are given", lengths.join(", ")),
+            };
+            Diagnostic::error(
+                DiagnosticCode::SizeRange,
+                format!("no instance of `{name}` takes arguments of these lengths"),
+                span,
+            )
+            .with_label(label)
+            .with_note(format!("`{name}` is defined for {domain}"))
+        };
+        self.diagnostics.push(diagnostic.with_note(
+            "a call that writes no sizes calls the one instance of its function whose array \
+             parameters have the lengths of its arguments; any other call writes its sizes in \
+             brackets, as in `absorb[2](p)`",
+        ));
     }
 
     #[cold]
@@ -610,9 +785,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let given = call.sizes().len();
         let plural = |count: usize| if count == 1 { "size" } else { "sizes" };
         let message = match (declared, given) {
-            (0, _) => format!("`{spelling}` has no size parameters, but this call gives {given} {}", plural(given)),
-            (_, 0) => format!("`{spelling}` takes {declared} {}, but this call gives none", plural(declared)),
-            _ => format!("`{spelling}` takes {declared} {}, but this call gives {given}", plural(declared)),
+            (0, _) => format!(
+                "`{spelling}` has no size parameters, but this call gives {given} {}",
+                plural(given)
+            ),
+            (_, 0) => format!(
+                "`{spelling}` takes {declared} {}, but this call gives none",
+                plural(declared)
+            ),
+            _ => format!(
+                "`{spelling}` takes {declared} {}, but this call gives {given}",
+                plural(declared)
+            ),
         };
         self.diagnostics.push(
             Diagnostic::error(DiagnosticCode::SizeCount, message, span)
@@ -685,8 +869,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &self,
         call: &CallExpression,
         signature: &'signature Signature<'_>,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
     ) -> Option<&'signature InstanceSignature> {
         let ranges = signature.ranges?;
+        if call.sizes().is_empty() && ranges.count() != 0 {
+            let index = self
+                .fitting_instance(call, signature, context, scope)
+                .ok()?;
+            return signature.instances.get(index);
+        }
         if call.sizes().len() != ranges.count() {
             return None;
         }

@@ -728,11 +728,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 Diagnostic::error(
                     DiagnosticCode::UnsupportedArrayLength,
                     value.to_i64().map_or_else(
-                        || {
-                            format!(
-                                "this array length is far outside 1 through {MAX_ARRAY_LENGTH}"
-                            )
-                        },
+                        || format!("this array length is far outside 1 through {MAX_ARRAY_LENGTH}"),
                         |value| {
                             format!(
                                 "this array length is {value}, but an array has 1 through \
