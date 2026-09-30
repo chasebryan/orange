@@ -1,0 +1,477 @@
+// ARIA of RFC 5794, "A Description of the ARIA Encryption Algorithm" (Lee,
+// Lee, Kim, Kwon, Kim; March 2010; https://www.rfc-editor.org/rfc/rfc5794),
+// the block cipher of the Korean standard KS X 1213 (2004; now part 1 of
+// KS X 1213). The file
+// carries the key scheduling part of section 2.2, the data randomizing part
+// of section 2.3 for 128-, 192- and 256-bit keys (12, 14 and 16 rounds),
+// and the components of section 2.4: the round functions FO and FE, the
+// substitution layers SL1 and SL2 with the S-boxes SB1 through SB4, and the
+// diffusion layer A written as the RFC's sixteen equations. Encryption of
+// the plaintext 00112233445566778899aabbccddeeff under the three keys of
+// Appendix A gives the RFC's ciphertexts, decryption gives the plaintext
+// back, and the first block of Botan's ARIA-128 and ARIA-256 cases agrees
+// with aria.vec.
+edition 2026;
+module aria {
+  // Section 2.4.2: the S-boxes as look-up tables, packed eight entries to a
+  // 64-bit word so that each literal reads like a row of the RFC's table.
+  // SB1 is the AES S-box (the inverse in GF(2^8) modulo x^8+x^4+x^3+x+1,
+  // with 0 to 0, followed by AES's affine map); SB2 is x^247 in the same field followed
+  // by another affine map; SB3 and SB4 are their inverses, so SL2 is the
+  // inverse of SL1.
+  spec sb1() -> Word[64]^32 {
+    [
+      0x637c777bf26b6fc5, 0x3001672bfed7ab76, 0xca82c97dfa5947f0, 0xadd4a2af9ca472c0,
+      0xb7fd9326363ff7cc, 0x34a5e5f171d83115, 0x04c723c31896059a, 0x071280e2eb27b275,
+      0x09832c1a1b6e5aa0, 0x523bd6b329e32f84, 0x53d100ed20fcb15b, 0x6acbbe394a4c58cf,
+      0xd0efaafb434d3385, 0x45f9027f503c9fa8, 0x51a3408f929d38f5, 0xbcb6da2110fff3d2,
+      0xcd0c13ec5f974417, 0xc4a77e3d645d1973, 0x60814fdc222a9088, 0x46eeb814de5e0bdb,
+      0xe0323a0a4906245c, 0xc2d3ac629195e479, 0xe7c8376d8dd54ea9, 0x6c56f4ea657aae08,
+      0xba78252e1ca6b4c6, 0xe8dd741f4bbd8b8a, 0x703eb5664803f60e, 0x613557b986c11d9e,
+      0xe1f8981169d98e94, 0x9b1e87e9ce5528df, 0x8ca1890dbfe64268, 0x41992d0fb054bb16,
+    ]
+  }
+
+  spec sb2() -> Word[64]^32 {
+    [
+      0xe24e54fc94c24acc, 0x620d6a463c4d8bd1, 0x5efa64cbb497be2b, 0xbc772e03d31959c1,
+      0x1d06416b55f09969, 0xea9c18ae63dfe7bb, 0x007366fb964c85e4, 0x3a0945aa0fee10eb,
+      0x2d7ff429accfad91, 0x8d78c895f92fcecd, 0x087a88385c832a28, 0x47dbb8c793a41253,
+      0xff870e3136215848, 0x018e377432cae9b1, 0xb7ab0cd7c4564226, 0x079860d9b6b91140,
+      0xec208cbda0c98404, 0x4923f14f501f13dc, 0xd8c09e57e3c37b65, 0x3b028f3ee82592e5,
+      0x15ddfd17a9bfd49a, 0x7ec53967fe769d43, 0xa7e1d0f568f21b34, 0x7005a38ad57986a8,
+      0x30c6514b1ea627f6, 0x35d26e2416825fda, 0xe675a2ef2cb21c9f, 0x5d6f800a72449b6c,
+      0x900b5b337d5a52f3, 0x61a1f7b0d63f7c6d, 0xed14e0a53d22b3f8, 0x89de711aafbab581,
+    ]
+  }
+
+  spec sb3() -> Word[64]^32 {
+    [
+      0x52096ad53036a538, 0xbf40a39e81f3d7fb, 0x7ce339829b2fff87, 0x348e4344c4dee9cb,
+      0x547b9432a6c2233d, 0xee4c950b42fac34e, 0x082ea16628d924b2, 0x765ba2496d8bd125,
+      0x72f8f66486689816, 0xd4a45ccc5d65b692, 0x6c704850fdedb9da, 0x5e154657a78d9d84,
+      0x90d8ab008cbcd30a, 0xf7e45805b8b34506, 0xd02c1e8fca3f0f02, 0xc1afbd0301138a6b,
+      0x3a9111414f67dcea, 0x97f2cfcef0b4e673, 0x96ac7422e7ad3585, 0xe2f937e81c75df6e,
+      0x47f11a711d29c589, 0x6fb7620eaa18be1b, 0xfc563e4bc6d27920, 0x9adbc0fe78cd5af4,
+      0x1fdda8338807c731, 0xb11210592780ec5f, 0x60517fa919b54a0d, 0x2de57a9f93c99cef,
+      0xa0e03b4dae2af5b0, 0xc8ebbb3c83539961, 0x172b047eba77d626, 0xe169146355210c7d,
+    ]
+  }
+
+  spec sb4() -> Word[64]^32 {
+    [
+      0x3068991b87b92178, 0x5039dbe17209623c, 0x3e7e5e8ef1a0cca3, 0x2a1dfbb6d620c48d,
+      0x8165f589cb9d77c6, 0x57435617d4401a4d, 0xc0636ce3b7c8646a, 0x53aa38980cf49bed,
+      0x7f2276afdd3a0b58, 0x678806c3350d018b, 0x8cc2e65f02247593, 0x661ee5e254d810ce,
+      0x7ae8082c129732ab, 0xb4270a23dfefcad9, 0xb8fadc316bd1ad19, 0x49bd5196eee4a841,
+      0xdaffcd558636be61, 0x52f8bb0e8248699a, 0xe0479e5c044b3415, 0x7926a7de29ae92d7,
+      0x84e9d2ba5df3c5b0, 0xbfa43b7144462bfc, 0xeb6fd5f614fe7c70, 0x5a7dfd2f188316a5,
+      0x911f059574a9c15b, 0x4a856d13074f4e45, 0xb20fc91ca6bcec73, 0x907bcf598fa1f92d,
+      0xf2b10094379fd02e, 0x9c6e283f80f03dd3, 0x258ab5e742b3c7ea, 0xf74c113303a2ac60,
+    ]
+  }
+
+  // The byte at position k of a word holding eight table entries.
+  spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
+    if k == 0 { (w >> 56) as Word[8] }
+    else if k == 1 { (w >> 48) as Word[8] }
+    else if k == 2 { (w >> 40) as Word[8] }
+    else if k == 3 { (w >> 32) as Word[8] }
+    else if k == 4 { (w >> 24) as Word[8] }
+    else if k == 5 { (w >> 16) as Word[8] }
+    else if k == 6 { (w >> 8) as Word[8] }
+    else { w as Word[8] }
+  }
+
+  // Entry x of a 256-entry table packed eight entries to a word. An index
+  // must be static, so the word is selected by comparison and the byte by
+  // a conditional.
+  spec lookup(t: Word[64]^32, x: Word[8]) -> Word[8] {
+    let w: Word[64] = for i in 0..32 with acc: Word[64] = 0 {
+      if (x >> 3) == (i as Word[8]) { t[i] } else { acc }
+    };
+    byte_at(w, x & 7)
+  }
+
+  // Section 2.4.2: the type 1 substitution layer, SB1, SB2, SB3, SB4 across
+  // each group of four bytes.
+  spec sl1(x: Word[8]^16) -> Word[8]^16 {
+    let s1: Word[64]^32 = sb1();
+    let s2: Word[64]^32 = sb2();
+    let s3: Word[64]^32 = sb3();
+    let s4: Word[64]^32 = sb4();
+    [
+      lookup(s1, x[0]), lookup(s2, x[1]), lookup(s3, x[2]), lookup(s4, x[3]),
+      lookup(s1, x[4]), lookup(s2, x[5]), lookup(s3, x[6]), lookup(s4, x[7]),
+      lookup(s1, x[8]), lookup(s2, x[9]), lookup(s3, x[10]), lookup(s4, x[11]),
+      lookup(s1, x[12]), lookup(s2, x[13]), lookup(s3, x[14]), lookup(s4, x[15]),
+    ]
+  }
+
+  // Section 2.4.2: the type 2 substitution layer, SB3, SB4, SB1, SB2.
+  spec sl2(x: Word[8]^16) -> Word[8]^16 {
+    let s1: Word[64]^32 = sb1();
+    let s2: Word[64]^32 = sb2();
+    let s3: Word[64]^32 = sb3();
+    let s4: Word[64]^32 = sb4();
+    [
+      lookup(s3, x[0]), lookup(s4, x[1]), lookup(s1, x[2]), lookup(s2, x[3]),
+      lookup(s3, x[4]), lookup(s4, x[5]), lookup(s1, x[6]), lookup(s2, x[7]),
+      lookup(s3, x[8]), lookup(s4, x[9]), lookup(s1, x[10]), lookup(s2, x[11]),
+      lookup(s3, x[12]), lookup(s4, x[13]), lookup(s1, x[14]), lookup(s2, x[15]),
+    ]
+  }
+
+  // Section 2.4.3: the diffusion layer A, y0 through y15 as the RFC's
+  // sixteen equations. A is an involution.
+  spec diffusion(x: Word[8]^16) -> Word[8]^16 {
+    [
+      x[3] ^ x[4] ^ x[6] ^ x[8] ^ x[9] ^ x[13] ^ x[14],
+      x[2] ^ x[5] ^ x[7] ^ x[8] ^ x[9] ^ x[12] ^ x[15],
+      x[1] ^ x[4] ^ x[6] ^ x[10] ^ x[11] ^ x[12] ^ x[15],
+      x[0] ^ x[5] ^ x[7] ^ x[10] ^ x[11] ^ x[13] ^ x[14],
+      x[0] ^ x[2] ^ x[5] ^ x[8] ^ x[11] ^ x[14] ^ x[15],
+      x[1] ^ x[3] ^ x[4] ^ x[9] ^ x[10] ^ x[14] ^ x[15],
+      x[0] ^ x[2] ^ x[7] ^ x[9] ^ x[10] ^ x[12] ^ x[13],
+      x[1] ^ x[3] ^ x[6] ^ x[8] ^ x[11] ^ x[12] ^ x[13],
+      x[0] ^ x[1] ^ x[4] ^ x[7] ^ x[10] ^ x[13] ^ x[15],
+      x[0] ^ x[1] ^ x[5] ^ x[6] ^ x[11] ^ x[12] ^ x[14],
+      x[2] ^ x[3] ^ x[5] ^ x[6] ^ x[8] ^ x[13] ^ x[15],
+      x[2] ^ x[3] ^ x[4] ^ x[7] ^ x[9] ^ x[12] ^ x[14],
+      x[1] ^ x[2] ^ x[6] ^ x[7] ^ x[9] ^ x[11] ^ x[12],
+      x[0] ^ x[3] ^ x[6] ^ x[7] ^ x[8] ^ x[10] ^ x[13],
+      x[0] ^ x[3] ^ x[4] ^ x[5] ^ x[9] ^ x[11] ^ x[14],
+      x[1] ^ x[2] ^ x[4] ^ x[5] ^ x[8] ^ x[10] ^ x[15],
+    ]
+  }
+
+  // Bitwise xor of two 128-bit strings held as bytes.
+  spec xor_bytes(a: Word[8]^16, b: Word[8]^16) -> Word[8]^16 {
+    [
+      a[0] ^ b[0], a[1] ^ b[1], a[2] ^ b[2], a[3] ^ b[3],
+      a[4] ^ b[4], a[5] ^ b[5], a[6] ^ b[6], a[7] ^ b[7],
+      a[8] ^ b[8], a[9] ^ b[9], a[10] ^ b[10], a[11] ^ b[11],
+      a[12] ^ b[12], a[13] ^ b[13], a[14] ^ b[14], a[15] ^ b[15],
+    ]
+  }
+
+  // Section 2.4.1: the odd round function FO(D, RK) = A(SL1(D ^ RK)) and
+  // the even round function FE(D, RK) = A(SL2(D ^ RK)).
+  spec fo(d: Word[8]^16, rk: Word[8]^16) -> Word[8]^16 { diffusion(sl1(xor_bytes(d, rk))) }
+
+  spec fe(d: Word[8]^16, rk: Word[8]^16) -> Word[8]^16 { diffusion(sl2(xor_bytes(d, rk))) }
+
+  // A 128-bit string as two big-endian 64-bit words, the form in which the
+  // key schedule rotates it.
+  spec load_be64(
+    b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8],
+    b4: Word[8], b5: Word[8], b6: Word[8], b7: Word[8],
+  ) -> Word[64] {
+    ((b0 as Word[64]) << 56) | ((b1 as Word[64]) << 48) | ((b2 as Word[64]) << 40)
+      | ((b3 as Word[64]) << 32) | ((b4 as Word[64]) << 24) | ((b5 as Word[64]) << 16)
+      | ((b6 as Word[64]) << 8) | (b7 as Word[64])
+  }
+
+  spec be_bytes64(x: Word[64]) -> Word[8]^8 {
+    [
+      (x >> 56) as Word[8], (x >> 48) as Word[8], (x >> 40) as Word[8], (x >> 32) as Word[8],
+      (x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8],
+    ]
+  }
+
+  spec words_of(b: Word[8]^16) -> Word[64]^2 {
+    [
+      load_be64(b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]),
+      load_be64(b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]),
+    ]
+  }
+
+  spec bytes_of(w: Word[64]^2) -> Word[8]^16 {
+    let h: Word[8]^8 = be_bytes64(w[0]);
+    let l: Word[8]^8 = be_bytes64(w[1]);
+    [
+      h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7],
+      l[0], l[1], l[2], l[3], l[4], l[5], l[6], l[7],
+    ]
+  }
+
+  spec xor128(a: Word[64]^2, b: Word[64]^2) -> Word[64]^2 { [a[0] ^ b[0], a[1] ^ b[1]] }
+
+  // Section 2.2: the 128-bit rotations of the round-key equations, each by
+  // its own literal amount because a shift amount is a literal. >>> 19 and
+  // >>> 31 are right rotations; <<< 61, <<< 31 and <<< 19 left rotations.
+  spec rotate_right_19(w: Word[64]^2) -> Word[64]^2 {
+    [(w[0] >> 19) | (w[1] << 45), (w[1] >> 19) | (w[0] << 45)]
+  }
+
+  spec rotate_right_31(w: Word[64]^2) -> Word[64]^2 {
+    [(w[0] >> 31) | (w[1] << 33), (w[1] >> 31) | (w[0] << 33)]
+  }
+
+  spec rotate_left_61(w: Word[64]^2) -> Word[64]^2 {
+    [(w[0] << 61) | (w[1] >> 3), (w[1] << 61) | (w[0] >> 3)]
+  }
+
+  spec rotate_left_31(w: Word[64]^2) -> Word[64]^2 {
+    [(w[0] << 31) | (w[1] >> 33), (w[1] << 31) | (w[0] >> 33)]
+  }
+
+  spec rotate_left_19(w: Word[64]^2) -> Word[64]^2 {
+    [(w[0] << 19) | (w[1] >> 45), (w[1] << 19) | (w[0] >> 45)]
+  }
+
+  // Section 2.2: the constants C1, C2, C3, the first 128*3 bits of the
+  // fractional part of 1/pi.
+  spec c1() -> Word[8]^16 {
+    [0x51, 0x7c, 0xc1, 0xb7, 0x27, 0x22, 0x0a, 0x94, 0xfe, 0x13, 0xab, 0xe8, 0xfa, 0x9a, 0x6e, 0xe0]
+  }
+
+  spec c2() -> Word[8]^16 {
+    [0x6d, 0xb1, 0x4a, 0xcc, 0x9e, 0x21, 0xc8, 0x20, 0xff, 0x28, 0xb1, 0xd5, 0xef, 0x5d, 0xe2, 0xb0]
+  }
+
+  spec c3() -> Word[8]^16 {
+    [0xdb, 0x92, 0x37, 0x1d, 0x21, 0x26, 0xe9, 0x70, 0x03, 0x24, 0x97, 0x75, 0x04, 0xe8, 0xc9, 0x0e]
+  }
+
+  // Section 2.2: W0, W1, W2, W3, the intermediate values of the encryption
+  // of KL || KR by a 3-round 256-bit Feistel cipher with the constants CK1,
+  // CK2, CK3, returned as four pairs of words.
+  spec feistel_w(
+    kl: Word[8]^16,
+    kr: Word[8]^16,
+    ck1: Word[8]^16,
+    ck2: Word[8]^16,
+    ck3: Word[8]^16,
+  ) -> Word[64]^8 {
+    let w0: Word[8]^16 = kl;
+    let w1: Word[8]^16 = xor_bytes(fo(w0, ck1), kr);
+    let w2: Word[8]^16 = xor_bytes(fe(w1, ck2), w0);
+    let w3: Word[8]^16 = xor_bytes(fo(w2, ck3), w1);
+    let p0: Word[64]^2 = words_of(w0);
+    let p1: Word[64]^2 = words_of(w1);
+    let p2: Word[64]^2 = words_of(w2);
+    let p3: Word[64]^2 = words_of(w3);
+    [p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]]
+  }
+
+  // Section 2.2: the encryption round keys ek1 through ek17, as the RFC
+  // lists them; round key ek(i+1) is the pair at positions 2i and 2i+1.
+  // A 128-bit key uses ek1 through ek13, a 192-bit key through ek15.
+  spec encryption_round_keys(w: Word[64]^8) -> Word[64]^34 {
+    let w0: Word[64]^2 = [w[0], w[1]];
+    let w1: Word[64]^2 = [w[2], w[3]];
+    let w2: Word[64]^2 = [w[4], w[5]];
+    let w3: Word[64]^2 = [w[6], w[7]];
+    let ek1: Word[64]^2 = xor128(w0, rotate_right_19(w1));
+    let ek2: Word[64]^2 = xor128(w1, rotate_right_19(w2));
+    let ek3: Word[64]^2 = xor128(w2, rotate_right_19(w3));
+    let ek4: Word[64]^2 = xor128(rotate_right_19(w0), w3);
+    let ek5: Word[64]^2 = xor128(w0, rotate_right_31(w1));
+    let ek6: Word[64]^2 = xor128(w1, rotate_right_31(w2));
+    let ek7: Word[64]^2 = xor128(w2, rotate_right_31(w3));
+    let ek8: Word[64]^2 = xor128(rotate_right_31(w0), w3);
+    let ek9: Word[64]^2 = xor128(w0, rotate_left_61(w1));
+    let ek10: Word[64]^2 = xor128(w1, rotate_left_61(w2));
+    let ek11: Word[64]^2 = xor128(w2, rotate_left_61(w3));
+    let ek12: Word[64]^2 = xor128(rotate_left_61(w0), w3);
+    let ek13: Word[64]^2 = xor128(w0, rotate_left_31(w1));
+    let ek14: Word[64]^2 = xor128(w1, rotate_left_31(w2));
+    let ek15: Word[64]^2 = xor128(w2, rotate_left_31(w3));
+    let ek16: Word[64]^2 = xor128(rotate_left_31(w0), w3);
+    let ek17: Word[64]^2 = xor128(w0, rotate_left_19(w1));
+    [
+      ek1[0], ek1[1], ek2[0], ek2[1], ek3[0], ek3[1], ek4[0], ek4[1],
+      ek5[0], ek5[1], ek6[0], ek6[1], ek7[0], ek7[1], ek8[0], ek8[1],
+      ek9[0], ek9[1], ek10[0], ek10[1], ek11[0], ek11[1], ek12[0], ek12[1],
+      ek13[0], ek13[1], ek14[0], ek14[1], ek15[0], ek15[1], ek16[0], ek16[1],
+      ek17[0], ek17[1],
+    ]
+  }
+
+  // Round key number k (from 0) of a schedule, selected by comparison
+  // because k is a value and not a static index.
+  spec round_key(rk: Word[64]^34, k: Int) -> Word[64]^2 {
+    for i in 0..17 with acc: Word[64]^2 = [0, 0] {
+      if i == k { [rk[2 * i], rk[2 * i + 1]] } else { acc }
+    }
+  }
+
+  // Section 2.2: decryption round key dk(i+1) = ek(n+1-i), passed through
+  // the diffusion layer A except for the first and the last.
+  spec decryption_round_key(ek: Word[64]^34, n: Int, i: Int) -> Word[64]^2 {
+    let e: Word[64]^2 = round_key(ek, n - i);
+    if (i == 0) || (i == n) { e } else { words_of(diffusion(bytes_of(e))) }
+  }
+
+  // Section 2.2: dk1 through dk(n+1) for an n-round key.
+  spec decryption_round_keys(ek: Word[64]^34, n: Int) -> Word[64]^34 {
+    for j in 0..34 with dk: Word[64]^34 = [0; 34] {
+      if (j / 2) <= n { dk with [j] = decryption_round_key(ek, n, j / 2)[j % 2] } else { dk }
+    }
+  }
+
+  // Section 2.3: the data randomizing part with n rounds and round keys
+  // rk1 through rk(n+1). Rounds 1 through n-1 alternate FO and FE, and
+  // round n is SL2 followed by the extra key addition, with no diffusion.
+  // Encryption uses ek, decryption dk (section 2.3.2).
+  spec data_randomizing(rk: Word[64]^34, d: Word[8]^16, n: Int) -> Word[8]^16 {
+    for r in 0..16 with x: Word[8]^16 = d {
+      if (r + 1) < n {
+        if (r % 2) == 0 {
+          fo(x, bytes_of([rk[2 * r], rk[2 * r + 1]]))
+        } else {
+          fe(x, bytes_of([rk[2 * r], rk[2 * r + 1]]))
+        }
+      } else if (r + 1) == n {
+        xor_bytes(
+          sl2(xor_bytes(x, bytes_of([rk[2 * r], rk[2 * r + 1]]))),
+          bytes_of([rk[2 * r + 2], rk[2 * r + 3]]),
+        )
+      } else {
+        x
+      }
+    }
+  }
+
+  // Section 2.2: KL is the leftmost 128 bits of the master key and KR the
+  // rest, right-padded with zeros; CK1, CK2, CK3 are C1, C2, C3 for a
+  // 128-bit key, C2, C3, C1 for 192 and C3, C1, C2 for 256 (the RFC's table).
+  spec key_schedule_128(k: Word[8]^16) -> Word[64]^34 {
+    encryption_round_keys(feistel_w(k, [0; 16], c1(), c2(), c3()))
+  }
+
+  spec key_schedule_192(k: Word[8]^24) -> Word[64]^34 {
+    let kl: Word[8]^16 = for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = k[i] };
+    let kr: Word[8]^16 = for i in 0..8 with b: Word[8]^16 = [0; 16] { b with [i] = k[16 + i] };
+    encryption_round_keys(feistel_w(kl, kr, c2(), c3(), c1()))
+  }
+
+  spec key_schedule_256(k: Word[8]^32) -> Word[64]^34 {
+    let kl: Word[8]^16 = for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = k[i] };
+    let kr: Word[8]^16 = for i in 0..16 with b: Word[8]^16 = [0; 16] { b with [i] = k[16 + i] };
+    encryption_round_keys(feistel_w(kl, kr, c3(), c1(), c2()))
+  }
+
+  // Sections 2.3.1.1 through 2.3.1.3 and 2.3.2: 12, 14 and 16 rounds.
+  spec encrypt_128(k: Word[8]^16, p: Word[8]^16) -> Word[8]^16 {
+    data_randomizing(key_schedule_128(k), p, 12)
+  }
+
+  spec decrypt_128(k: Word[8]^16, c: Word[8]^16) -> Word[8]^16 {
+    data_randomizing(decryption_round_keys(key_schedule_128(k), 12), c, 12)
+  }
+
+  spec encrypt_192(k: Word[8]^24, p: Word[8]^16) -> Word[8]^16 {
+    data_randomizing(key_schedule_192(k), p, 14)
+  }
+
+  spec decrypt_192(k: Word[8]^24, c: Word[8]^16) -> Word[8]^16 {
+    data_randomizing(decryption_round_keys(key_schedule_192(k), 14), c, 14)
+  }
+
+  spec encrypt_256(k: Word[8]^32, p: Word[8]^16) -> Word[8]^16 {
+    data_randomizing(key_schedule_256(k), p, 16)
+  }
+
+  spec decrypt_256(k: Word[8]^32, c: Word[8]^16) -> Word[8]^16 {
+    data_randomizing(decryption_round_keys(key_schedule_256(k), 16), c, 16)
+  }
+
+  // Appendix A: the plaintext of all three examples.
+  spec appendix_a_plaintext() -> Word[8]^16 {
+    [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+  }
+
+  spec appendix_a1_key() -> Word[8]^16 {
+    [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+  }
+
+  spec appendix_a2_key() -> Word[8]^24 {
+    [
+      0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+      0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+    ]
+  }
+
+  spec appendix_a3_key() -> Word[8]^32 {
+    [
+      0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+      0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+    ]
+  }
+
+  // RFC 5794, Appendix A.1: 128-bit key.
+  spec rfc5794_a1_128() -> Word[8]^16 { encrypt_128(appendix_a1_key(), appendix_a_plaintext()) }
+
+  spec rfc5794_a1_128_expected() -> Word[8]^16 {
+    [0xd7, 0x18, 0xfb, 0xd6, 0xab, 0x64, 0x4c, 0x73, 0x9d, 0xa9, 0x5f, 0x3b, 0xe6, 0x45, 0x17, 0x78]
+  }
+
+  // RFC 5794, Appendix A.2: 192-bit key.
+  spec rfc5794_a2_192() -> Word[8]^16 { encrypt_192(appendix_a2_key(), appendix_a_plaintext()) }
+
+  spec rfc5794_a2_192_expected() -> Word[8]^16 {
+    [0x26, 0x44, 0x9c, 0x18, 0x05, 0xdb, 0xe7, 0xaa, 0x25, 0xa4, 0x68, 0xce, 0x26, 0x3a, 0x9e, 0x79]
+  }
+
+  // RFC 5794, Appendix A.3: 256-bit key.
+  spec rfc5794_a3_256() -> Word[8]^16 { encrypt_256(appendix_a3_key(), appendix_a_plaintext()) }
+
+  spec rfc5794_a3_256_expected() -> Word[8]^16 {
+    [0xf9, 0x2b, 0xd7, 0xc7, 0x9f, 0xb7, 0x2e, 0x2f, 0x2b, 0x8f, 0x80, 0xc1, 0x97, 0x2d, 0x24, 0xfc]
+  }
+
+  // RFC 5794, Appendix A.1 read backwards: the ciphertext decrypts to the
+  // plaintext under the 128-bit key.
+  spec rfc5794_a1_128_decrypt() -> Word[8]^16 {
+    decrypt_128(appendix_a1_key(), rfc5794_a1_128_expected())
+  }
+
+  spec rfc5794_a1_128_decrypt_expected() -> Word[8]^16 { appendix_a_plaintext() }
+
+  // RFC 5794, Appendix A.2 read backwards, 192-bit key.
+  spec rfc5794_a2_192_decrypt() -> Word[8]^16 {
+    decrypt_192(appendix_a2_key(), rfc5794_a2_192_expected())
+  }
+
+  spec rfc5794_a2_192_decrypt_expected() -> Word[8]^16 { appendix_a_plaintext() }
+
+  // RFC 5794, Appendix A.3 read backwards, 256-bit key.
+  spec rfc5794_a3_256_decrypt() -> Word[8]^16 {
+    decrypt_256(appendix_a3_key(), rfc5794_a3_256_expected())
+  }
+
+  spec rfc5794_a3_256_decrypt_expected() -> Word[8]^16 { appendix_a_plaintext() }
+
+  // Botan src/tests/data/block/aria.vec, section [ARIA-128], the case
+  // headed "ARIA Test Vector PDF": key 00112233445566778899aabbccddeeff,
+  // first 16-byte block of the ECB input and output.
+  spec botan_aria_128_pdf_block_1() -> Word[8]^16 {
+    encrypt_128(
+      [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff],
+      [0x11, 0x11, 0x11, 0x11, 0xaa, 0xaa, 0xaa, 0xaa, 0x11, 0x11, 0x11, 0x11, 0xbb, 0xbb, 0xbb, 0xbb],
+    )
+  }
+
+  spec botan_aria_128_pdf_block_1_expected() -> Word[8]^16 {
+    [0xc6, 0xec, 0xd0, 0x8e, 0x22, 0xc3, 0x0a, 0xbd, 0xb2, 0x15, 0xcf, 0x74, 0xe2, 0x07, 0x5e, 0x6e]
+  }
+
+  // Botan aria.vec, section [ARIA-256], the case headed "ARIA Test Vector
+  // PDF": key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff,
+  // first 16-byte block.
+  spec botan_aria_256_pdf_block_1() -> Word[8]^16 {
+    encrypt_256(
+      [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+      ],
+      [0x11, 0x11, 0x11, 0x11, 0xaa, 0xaa, 0xaa, 0xaa, 0x11, 0x11, 0x11, 0x11, 0xbb, 0xbb, 0xbb, 0xbb],
+    )
+  }
+
+  spec botan_aria_256_pdf_block_1_expected() -> Word[8]^16 {
+    [0x58, 0xa8, 0x75, 0xe6, 0x04, 0x4a, 0xd7, 0xff, 0xfa, 0x4f, 0x58, 0x42, 0x0f, 0x7f, 0x44, 0x2d]
+  }
+}

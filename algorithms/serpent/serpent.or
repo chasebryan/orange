@@ -1,0 +1,732 @@
+// Serpent, the 128-bit block cipher of "Serpent: A Proposal for the Advanced
+// Encryption Standard" (Ross Anderson, Eli Biham, Lars Knudsen; submitted
+// to NIST in June 1998, https://www.cl.cam.ac.uk/~rja14/serpent.html), one
+// of the five AES finalists, written the way its designers implemented it:
+// bitsliced. The block is four 32-bit words, the eight 4-bit S-boxes S0 to
+// S7 are boolean functions on those four words (the forms of Osvik,
+// "Speeding up Serpent", AES3, 2000, as carried in Botan), the linear
+// transformation is rotations, shifts and xors, and the key schedule makes
+// the 132 prekeys w_i from the padded key with phi = 0x9e3779b9 and passes
+// them through the S-boxes to give the 33 subkeys. In this representation
+// the initial and final permutations IP and FP of the proposal are the
+// identity. Encryption and decryption for 128-, 192- and 256-bit keys
+// reproduce NESSIE set 1 and set 2 vectors and the designers' example
+// vectors as carried in Botan's serpent.vec.
+edition 2026;
+module serpent {
+  // Bytes and words. The proposal writes its words little-endian: the first
+  // byte of a block or a key is the least significant byte of the first
+  // word, and the vector file lists bytes in that order.
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+
+  spec le_bytes(x: Word[32]) -> Word[8]^4 {
+    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
+  }
+
+  spec block_words(b: Word[8]^16) -> Word[32]^4 {
+    [
+      load_le32(b[0], b[1], b[2], b[3]), load_le32(b[4], b[5], b[6], b[7]),
+      load_le32(b[8], b[9], b[10], b[11]), load_le32(b[12], b[13], b[14], b[15]),
+    ]
+  }
+
+  spec block_bytes(w: Word[32]^4) -> Word[8]^16 {
+    let w0: Word[8]^4 = le_bytes(w[0]);
+    let w1: Word[8]^4 = le_bytes(w[1]);
+    let w2: Word[8]^4 = le_bytes(w[2]);
+    let w3: Word[8]^4 = le_bytes(w[3]);
+    [
+      w0[0], w0[1], w0[2], w0[3], w1[0], w1[1], w1[2], w1[3],
+      w2[0], w2[1], w2[2], w2[3], w3[0], w3[1], w3[2], w3[3],
+    ]
+  }
+
+  // The S-boxes (the proposal's "The S-boxes" and its bitslice
+  // implementation). Each S_i is a permutation of the sixteen 4-bit
+  // values; applied bitsliced, bit j of the words x[0], x[1], x[2], x[3]
+  // holds bits 0, 1, 2, 3 of the j-th nibble, and the 32 nibbles of a
+  // block go through the S-box at once. The specs below are the boolean
+  // forms of Osvik as written in Botan's serpent_sbox.h, each assignment
+  // of that straight-line code renamed into one let; each was checked
+  // against its 16-entry table (S0 = 3 8 15 1 10 6 5 11 14 13 4 2 7 0 9 12
+  // and so on) on all sixteen inputs before transcription.
+  // S0.
+  spec sbox0(x: Word[32]^4) -> Word[32]^4 {
+    let d1: Word[32] = x[3] ^ x[0];
+    let b1: Word[32] = x[1] & d1;
+    let t1: Word[32] = x[1] ^ x[2];
+    let b2: Word[32] = b1 ^ x[0];
+    let a1: Word[32] = x[0] | d1;
+    let a2: Word[32] = a1 ^ t1;
+    let t2: Word[32] = t1 ^ d1;
+    let d2: Word[32] = d1 ^ x[2];
+    let c1: Word[32] = x[2] | b2;
+    let c2: Word[32] = c1 ^ t2;
+    let t3: Word[32] = ~t2;
+    let t4: Word[32] = t3 | b2;
+    let b3: Word[32] = b2 ^ d2;
+    let b4: Word[32] = b3 ^ t4;
+    let d3: Word[32] = d2 | a2;
+    let b5: Word[32] = b4 ^ d3;
+    let t5: Word[32] = t4 ^ d3;
+    [b5, t5, c2, a2]
+  }
+
+  // S1.
+  spec sbox1(x: Word[32]^4) -> Word[32]^4 {
+    let a1: Word[32] = ~x[0];
+    let c1: Word[32] = ~x[2];
+    let a2: Word[32] = a1 & x[1];
+    let c2: Word[32] = c1 ^ a2;
+    let a3: Word[32] = a2 | x[3];
+    let d1: Word[32] = x[3] ^ c2;
+    let b1: Word[32] = x[1] ^ a3;
+    let a4: Word[32] = a3 ^ a1;
+    let t1: Word[32] = a1 | b1;
+    let b2: Word[32] = b1 ^ d1;
+    let c3: Word[32] = c2 | a4;
+    let c4: Word[32] = c3 & t1;
+    let a5: Word[32] = a4 ^ b2;
+    let b3: Word[32] = b2 & c4;
+    let b4: Word[32] = b3 ^ a5;
+    let a6: Word[32] = a5 & c4;
+    let t2: Word[32] = t1 ^ a6;
+    [c4, t2, d1, b4]
+  }
+
+  // S2.
+  spec sbox2(x: Word[32]^4) -> Word[32]^4 {
+    let a1: Word[32] = x[0] & x[2];
+    let a2: Word[32] = a1 ^ x[3];
+    let c1: Word[32] = x[2] ^ x[1];
+    let c2: Word[32] = c1 ^ a2;
+    let d1: Word[32] = x[3] | x[0];
+    let d2: Word[32] = d1 ^ x[1];
+    let t1: Word[32] = x[0] ^ c2;
+    let d3: Word[32] = d2 | t1;
+    let d4: Word[32] = d3 ^ a2;
+    let a3: Word[32] = a2 & d2;
+    let t2: Word[32] = t1 ^ a3;
+    let b1: Word[32] = d2 ^ d4;
+    let b2: Word[32] = b1 ^ t2;
+    let d5: Word[32] = ~t2;
+    [c2, d4, b2, d5]
+  }
+
+  // S3.
+  spec sbox3(x: Word[32]^4) -> Word[32]^4 {
+    let a1: Word[32] = x[0] | x[3];
+    let d1: Word[32] = x[3] ^ x[1];
+    let b1: Word[32] = x[1] & x[0];
+    let t1: Word[32] = x[0] ^ x[2];
+    let c1: Word[32] = x[2] ^ d1;
+    let d2: Word[32] = d1 & a1;
+    let t2: Word[32] = t1 | b1;
+    let d3: Word[32] = d2 ^ t2;
+    let a2: Word[32] = a1 ^ b1;
+    let t3: Word[32] = t2 & a2;
+    let b2: Word[32] = b1 ^ d3;
+    let t4: Word[32] = t3 ^ c1;
+    let b3: Word[32] = b2 | a2;
+    let b4: Word[32] = b3 ^ c1;
+    let a3: Word[32] = a2 ^ d3;
+    let b5: Word[32] = b4 | d3;
+    let a4: Word[32] = a3 ^ b5;
+    [a4, b4, d3, t4]
+  }
+
+  // S4.
+  spec sbox4(x: Word[32]^4) -> Word[32]^4 {
+    let b1: Word[32] = x[1] ^ x[3];
+    let d1: Word[32] = ~x[3];
+    let c1: Word[32] = x[2] ^ d1;
+    let d2: Word[32] = d1 ^ x[0];
+    let b2: Word[32] = b1 & d2;
+    let b3: Word[32] = b2 ^ c1;
+    let t1: Word[32] = b1 ^ d2;
+    let a1: Word[32] = x[0] ^ t1;
+    let c2: Word[32] = c1 & t1;
+    let c3: Word[32] = c2 ^ a1;
+    let a2: Word[32] = a1 & b3;
+    let d3: Word[32] = d2 ^ a2;
+    let t2: Word[32] = t1 | b3;
+    let t3: Word[32] = t2 ^ a2;
+    let a3: Word[32] = a2 | d3;
+    let a4: Word[32] = a3 ^ c3;
+    let c4: Word[32] = c3 & d3;
+    let a5: Word[32] = ~a4;
+    let t4: Word[32] = t3 ^ c4;
+    [b3, t4, a5, d3]
+  }
+
+  // S5.
+  spec sbox5(x: Word[32]^4) -> Word[32]^4 {
+    let a1: Word[32] = x[0] ^ x[1];
+    let b1: Word[32] = x[1] ^ x[3];
+    let d1: Word[32] = ~x[3];
+    let b2: Word[32] = b1 & a1;
+    let c1: Word[32] = x[2] ^ d1;
+    let b3: Word[32] = b2 ^ c1;
+    let c2: Word[32] = c1 | b1;
+    let t1: Word[32] = b1 ^ d1;
+    let d2: Word[32] = d1 & b3;
+    let d3: Word[32] = d2 ^ a1;
+    let t2: Word[32] = t1 ^ b3;
+    let t3: Word[32] = t2 ^ c2;
+    let c3: Word[32] = c2 ^ a1;
+    let a2: Word[32] = a1 & d3;
+    let c4: Word[32] = ~c3;
+    let a3: Word[32] = a2 ^ t3;
+    let t4: Word[32] = t3 | d3;
+    let t5: Word[32] = t4 ^ c4;
+    [b3, d3, a3, t5]
+  }
+
+  // S6.
+  spec sbox6(x: Word[32]^4) -> Word[32]^4 {
+    let c1: Word[32] = ~x[2];
+    let d1: Word[32] = x[3] & x[0];
+    let a1: Word[32] = x[0] ^ x[3];
+    let d2: Word[32] = d1 ^ c1;
+    let c2: Word[32] = c1 | x[3];
+    let b1: Word[32] = x[1] ^ d2;
+    let c3: Word[32] = c2 ^ a1;
+    let a2: Word[32] = a1 | b1;
+    let c4: Word[32] = c3 ^ b1;
+    let t1: Word[32] = x[3] ^ a2;
+    let a3: Word[32] = a2 | d2;
+    let a4: Word[32] = a3 ^ c4;
+    let t2: Word[32] = t1 ^ d2;
+    let t3: Word[32] = t2 ^ a4;
+    let d3: Word[32] = ~d2;
+    let c5: Word[32] = c4 & t3;
+    let d4: Word[32] = d3 ^ c5;
+    [a4, b1, t3, d4]
+  }
+
+  // S7.
+  spec sbox7(x: Word[32]^4) -> Word[32]^4 {
+    let b1: Word[32] = x[1] | x[2];
+    let b2: Word[32] = b1 ^ x[3];
+    let t1: Word[32] = x[1] ^ x[2];
+    let c1: Word[32] = x[2] ^ b2;
+    let d1: Word[32] = x[3] | t1;
+    let d2: Word[32] = d1 & x[0];
+    let t2: Word[32] = t1 ^ c1;
+    let d3: Word[32] = d2 ^ b2;
+    let b3: Word[32] = b2 | t2;
+    let b4: Word[32] = b3 ^ x[0];
+    let a1: Word[32] = x[0] | t2;
+    let a2: Word[32] = a1 ^ c1;
+    let b5: Word[32] = b4 ^ t2;
+    let c2: Word[32] = c1 ^ b5;
+    let b6: Word[32] = b5 & a2;
+    let b7: Word[32] = b6 ^ t2;
+    let c3: Word[32] = ~c2;
+    let c4: Word[32] = c3 | a2;
+    let t3: Word[32] = t2 ^ c4;
+    [t3, d3, b7, a2]
+  }
+
+  // S0 inverse.
+  spec inverse_sbox0(x: Word[32]^4) -> Word[32]^4 {
+    let c1: Word[32] = ~x[2];
+    let b1: Word[32] = x[1] | x[0];
+    let t1: Word[32] = ~x[1];
+    let b2: Word[32] = b1 ^ c1;
+    let c2: Word[32] = c1 | t1;
+    let b3: Word[32] = b2 ^ x[3];
+    let a1: Word[32] = x[0] ^ t1;
+    let c3: Word[32] = c2 ^ a1;
+    let a2: Word[32] = a1 & x[3];
+    let t2: Word[32] = t1 ^ a2;
+    let a3: Word[32] = a2 | b3;
+    let a4: Word[32] = a3 ^ c3;
+    let d1: Word[32] = x[3] ^ t2;
+    let c4: Word[32] = c3 ^ b3;
+    let d2: Word[32] = d1 ^ a4;
+    let d3: Word[32] = d2 ^ b3;
+    let c5: Word[32] = c4 & d3;
+    let t3: Word[32] = t2 ^ c5;
+    [a4, t3, b3, d3]
+  }
+
+  // S1 inverse.
+  spec inverse_sbox1(x: Word[32]^4) -> Word[32]^4 {
+    let b1: Word[32] = x[1] ^ x[3];
+    let d1: Word[32] = x[3] & b1;
+    let t1: Word[32] = x[1] ^ x[2];
+    let d2: Word[32] = d1 ^ x[0];
+    let a1: Word[32] = x[0] | b1;
+    let c1: Word[32] = x[2] ^ d2;
+    let a2: Word[32] = a1 ^ t1;
+    let a3: Word[32] = a2 | c1;
+    let b2: Word[32] = b1 ^ d2;
+    let a4: Word[32] = a3 ^ b2;
+    let b3: Word[32] = b2 | d2;
+    let b4: Word[32] = b3 ^ a4;
+    let t2: Word[32] = ~t1;
+    let t3: Word[32] = t2 ^ b4;
+    let b5: Word[32] = b4 | a4;
+    let b6: Word[32] = b5 ^ a4;
+    let b7: Word[32] = b6 | t3;
+    let d3: Word[32] = d2 ^ b7;
+    [t3, a4, d3, c1]
+  }
+
+  // S2 inverse.
+  spec inverse_sbox2(x: Word[32]^4) -> Word[32]^4 {
+    let c1: Word[32] = x[2] ^ x[3];
+    let d1: Word[32] = x[3] ^ x[0];
+    let d2: Word[32] = d1 & c1;
+    let d3: Word[32] = d2 ^ x[1];
+    let b1: Word[32] = x[1] | c1;
+    let b2: Word[32] = b1 ^ d1;
+    let t1: Word[32] = d1 & d3;
+    let c2: Word[32] = c1 ^ d3;
+    let t2: Word[32] = t1 & x[0];
+    let t3: Word[32] = t2 ^ c2;
+    let c3: Word[32] = c2 & b2;
+    let c4: Word[32] = c3 | x[0];
+    let d4: Word[32] = ~d3;
+    let c5: Word[32] = c4 ^ d4;
+    let a1: Word[32] = x[0] ^ d4;
+    let a2: Word[32] = a1 & b2;
+    let d5: Word[32] = d4 ^ t3;
+    let d6: Word[32] = d5 ^ a2;
+    [b2, t3, c5, d6]
+  }
+
+  // S3 inverse.
+  spec inverse_sbox3(x: Word[32]^4) -> Word[32]^4 {
+    let c1: Word[32] = x[2] ^ x[1];
+    let a1: Word[32] = x[0] ^ c1;
+    let t1: Word[32] = x[2] & c1;
+    let t2: Word[32] = t1 ^ a1;
+    let a2: Word[32] = a1 & x[1];
+    let b1: Word[32] = x[1] ^ x[3];
+    let d1: Word[32] = x[3] | t2;
+    let c2: Word[32] = c1 ^ d1;
+    let a3: Word[32] = a2 ^ d1;
+    let b2: Word[32] = b1 ^ t2;
+    let d2: Word[32] = d1 & c2;
+    let d3: Word[32] = d2 ^ b2;
+    let b3: Word[32] = b2 ^ a3;
+    let b4: Word[32] = b3 | c2;
+    let a4: Word[32] = a3 ^ d3;
+    let b5: Word[32] = b4 ^ t2;
+    let a5: Word[32] = a4 ^ b5;
+    [c2, b5, d3, a5]
+  }
+
+  // S4 inverse.
+  spec inverse_sbox4(x: Word[32]^4) -> Word[32]^4 {
+    let c1: Word[32] = x[2] & x[3];
+    let c2: Word[32] = c1 ^ x[1];
+    let b1: Word[32] = x[1] | x[3];
+    let b2: Word[32] = b1 & x[0];
+    let t1: Word[32] = x[2] ^ c2;
+    let t2: Word[32] = t1 ^ b2;
+    let b3: Word[32] = b2 & c2;
+    let a1: Word[32] = ~x[0];
+    let d1: Word[32] = x[3] ^ t2;
+    let b4: Word[32] = b3 ^ d1;
+    let d2: Word[32] = d1 & a1;
+    let d3: Word[32] = d2 ^ c2;
+    let a2: Word[32] = a1 ^ b4;
+    let c3: Word[32] = c2 & a2;
+    let d4: Word[32] = d3 ^ a2;
+    let c4: Word[32] = c3 ^ t2;
+    let c5: Word[32] = c4 | d4;
+    let d5: Word[32] = d4 ^ a2;
+    let c6: Word[32] = c5 ^ b4;
+    [a2, d5, c6, t2]
+  }
+
+  // S5 inverse.
+  spec inverse_sbox5(x: Word[32]^4) -> Word[32]^4 {
+    let b1: Word[32] = ~x[1];
+    let c1: Word[32] = x[2] ^ b1;
+    let d1: Word[32] = x[3] | x[0];
+    let d2: Word[32] = d1 ^ c1;
+    let c2: Word[32] = c1 | b1;
+    let c3: Word[32] = c2 & x[0];
+    let t1: Word[32] = x[3] ^ d2;
+    let c4: Word[32] = c3 ^ t1;
+    let t2: Word[32] = t1 | x[0];
+    let t3: Word[32] = t2 ^ b1;
+    let b2: Word[32] = b1 & c4;
+    let b3: Word[32] = b2 ^ d2;
+    let t4: Word[32] = t3 ^ c4;
+    let d3: Word[32] = d2 & t4;
+    let t5: Word[32] = t4 ^ b3;
+    let d4: Word[32] = d3 ^ t5;
+    let t6: Word[32] = ~t5;
+    let d5: Word[32] = d4 ^ x[0];
+    [b3, t6, d5, c4]
+  }
+
+  // S6 inverse.
+  spec inverse_sbox6(x: Word[32]^4) -> Word[32]^4 {
+    let a1: Word[32] = x[0] ^ x[2];
+    let c1: Word[32] = x[2] & a1;
+    let t1: Word[32] = x[2] ^ x[3];
+    let c2: Word[32] = ~c1;
+    let d1: Word[32] = x[3] ^ x[1];
+    let c3: Word[32] = c2 ^ d1;
+    let t2: Word[32] = t1 | a1;
+    let a2: Word[32] = a1 ^ c3;
+    let d2: Word[32] = d1 ^ t2;
+    let t3: Word[32] = t2 ^ x[1];
+    let b1: Word[32] = x[1] & d2;
+    let b2: Word[32] = b1 ^ a2;
+    let a3: Word[32] = a2 ^ d2;
+    let a4: Word[32] = a3 | c3;
+    let d3: Word[32] = d2 ^ b2;
+    let t4: Word[32] = t3 ^ a4;
+    [b2, c3, t4, d3]
+  }
+
+  // S7 inverse.
+  spec inverse_sbox7(x: Word[32]^4) -> Word[32]^4 {
+    let c1: Word[32] = x[2] ^ x[0];
+    let a1: Word[32] = x[0] & x[3];
+    let t1: Word[32] = x[2] | x[3];
+    let c2: Word[32] = ~c1;
+    let d1: Word[32] = x[3] ^ x[1];
+    let b1: Word[32] = x[1] | a1;
+    let a2: Word[32] = a1 ^ c2;
+    let c3: Word[32] = c2 & t1;
+    let d2: Word[32] = d1 & t1;
+    let b2: Word[32] = b1 ^ c3;
+    let c4: Word[32] = c3 ^ a2;
+    let a3: Word[32] = a2 | c4;
+    let t2: Word[32] = t1 ^ b2;
+    let a4: Word[32] = a3 ^ d2;
+    let d3: Word[32] = d2 ^ t2;
+    let t3: Word[32] = t2 | a4;
+    let d4: Word[32] = d3 ^ c4;
+    let t4: Word[32] = t3 ^ c4;
+    [d4, a4, b2, t4]
+  }
+  // The linear transformation L of the proposal, on the four words after
+  // the S-box: X0 <<< 13, X2 <<< 3, X1 ^= X0 ^ X2, X3 ^= X2 ^ (X0 << 3),
+  // X1 <<< 1, X3 <<< 7, X0 ^= X1 ^ X3, X2 ^= X3 ^ (X1 << 7), X0 <<< 5,
+  // X2 <<< 22.
+  spec linear_transformation(x: Word[32]^4) -> Word[32]^4 {
+    let x0: Word[32] = x[0] <<< 13;
+    let x2: Word[32] = x[2] <<< 3;
+    let x1: Word[32] = (x[1] ^ x0 ^ x2) <<< 1;
+    let x3: Word[32] = (x[3] ^ x2 ^ (x0 << 3)) <<< 7;
+    let y0: Word[32] = (x0 ^ x1 ^ x3) <<< 5;
+    let y2: Word[32] = (x2 ^ x3 ^ (x1 << 7)) <<< 22;
+    [y0, x1, y2, x3]
+  }
+
+  // L inverse: the same steps undone in reverse order.
+  spec inverse_linear_transformation(x: Word[32]^4) -> Word[32]^4 {
+    let x2: Word[32] = x[2] >>> 22;
+    let x0: Word[32] = x[0] >>> 5;
+    let y2: Word[32] = x2 ^ x[3] ^ (x[1] << 7);
+    let y0: Word[32] = x0 ^ x[1] ^ x[3];
+    let x3: Word[32] = x[3] >>> 7;
+    let x1: Word[32] = x[1] >>> 1;
+    let y3: Word[32] = x3 ^ y2 ^ (y0 << 3);
+    let y1: Word[32] = x1 ^ y0 ^ y2;
+    [y0 >>> 13, y1, y2 >>> 3, y3]
+  }
+
+  // Round i uses S_(i mod 8). The S-box is selected by the round number,
+  // an Int fixed by the loop, never by the data; the key schedule uses the
+  // same selection with 3 - i in place of i (Euclidean `%` keeps the index
+  // in 0..7 when 3 - i is negative).
+  spec round_sbox(r: Int, x: Word[32]^4) -> Word[32]^4 {
+    let i: Int = r % 8;
+    if i == 0 { sbox0(x) }
+    else if i == 1 { sbox1(x) }
+    else if i == 2 { sbox2(x) }
+    else if i == 3 { sbox3(x) }
+    else if i == 4 { sbox4(x) }
+    else if i == 5 { sbox5(x) }
+    else if i == 6 { sbox6(x) }
+    else { sbox7(x) }
+  }
+
+  spec round_inverse_sbox(r: Int, x: Word[32]^4) -> Word[32]^4 {
+    let i: Int = r % 8;
+    if i == 0 { inverse_sbox0(x) }
+    else if i == 1 { inverse_sbox1(x) }
+    else if i == 2 { inverse_sbox2(x) }
+    else if i == 3 { inverse_sbox3(x) }
+    else if i == 4 { inverse_sbox4(x) }
+    else if i == 5 { inverse_sbox5(x) }
+    else if i == 6 { inverse_sbox6(x) }
+    else { inverse_sbox7(x) }
+  }
+
+  // The key schedule. The user key is 256 bits, eight little-endian words
+  // w_-8 to w_-1; a shorter key is padded with one 1 bit and then 0 bits
+  // to 256 bits, so a 128-bit key has w_-4 = 1 and a 192-bit key w_-2 = 1.
+  spec key_128(k: Word[8]^16) -> Word[32]^8 {
+    [
+      load_le32(k[0], k[1], k[2], k[3]), load_le32(k[4], k[5], k[6], k[7]),
+      load_le32(k[8], k[9], k[10], k[11]), load_le32(k[12], k[13], k[14], k[15]),
+      1, 0, 0, 0,
+    ]
+  }
+
+  spec key_192(k: Word[8]^24) -> Word[32]^8 {
+    [
+      load_le32(k[0], k[1], k[2], k[3]), load_le32(k[4], k[5], k[6], k[7]),
+      load_le32(k[8], k[9], k[10], k[11]), load_le32(k[12], k[13], k[14], k[15]),
+      load_le32(k[16], k[17], k[18], k[19]), load_le32(k[20], k[21], k[22], k[23]),
+      1, 0,
+    ]
+  }
+
+  spec key_256(k: Word[8]^32) -> Word[32]^8 {
+    [
+      load_le32(k[0], k[1], k[2], k[3]), load_le32(k[4], k[5], k[6], k[7]),
+      load_le32(k[8], k[9], k[10], k[11]), load_le32(k[12], k[13], k[14], k[15]),
+      load_le32(k[16], k[17], k[18], k[19]), load_le32(k[20], k[21], k[22], k[23]),
+      load_le32(k[24], k[25], k[26], k[27]), load_le32(k[28], k[29], k[30], k[31]),
+    ]
+  }
+
+  // phi, the fractional part of the golden ratio.
+  spec phi() -> Word[32] { 0x9e3779b9 }
+
+  // The prekeys w_0 to w_131 by the affine recurrence
+  // w_i = (w_(i-8) ^ w_(i-5) ^ w_(i-3) ^ w_(i-1) ^ phi ^ i) <<< 11.
+  // The array holds w_-8 to w_131, so w_i sits at index i + 8.
+  spec prekeys(k: Word[32]^8) -> Word[32]^140 {
+    let start: Word[32]^140 = for i in 0..8 with w: Word[32]^140 = [0; 140] { w with [i] = k[i] };
+    for i in 8..140 with w: Word[32]^140 = start {
+      w with [i] = (w[i - 8] ^ w[i - 5] ^ w[i - 3] ^ w[i - 1] ^ phi() ^ ((i - 8) as Word[32])) <<< 11
+    }
+  }
+
+  // The round keys K_0 to K_32, each four words: K_i is S_((3 - i) mod 8)
+  // applied bitsliced to (w_4i, w_4i+1, w_4i+2, w_4i+3), so K_0 uses S3,
+  // K_1 uses S2, and so on down and around to K_32 using S3 again. The
+  // result is one Word[32]^132 with K_i at indices 4i to 4i + 3. A loop
+  // step is one expression, so the S-box is recomputed for each of the
+  // four words it places.
+  spec key_schedule(k: Word[32]^8) -> Word[32]^132 {
+    let w: Word[32]^140 = prekeys(k);
+    for i in 0..33 with sk: Word[32]^132 = [0; 132] {
+      for j in 0..4 with t: Word[32]^132 = sk {
+        t with [4 * i + j] =
+          round_sbox(3 - i, [w[4 * i + 8], w[4 * i + 9], w[4 * i + 10], w[4 * i + 11]])[j]
+      }
+    }
+  }
+
+  // The cipher. Round i for 0 <= i < 31 is R_i(X) = L(S_i(X ^ K_i)); the
+  // last round is R_31(X) = S_7(X ^ K_31) ^ K_32. In the bitsliced
+  // representation IP and FP are the identity, so the four little-endian
+  // words of the plaintext enter the first round directly.
+  spec round(x: Word[32]^4, k: Word[32]^4, i: Int) -> Word[32]^4 {
+    linear_transformation(round_sbox(i, [x[0] ^ k[0], x[1] ^ k[1], x[2] ^ k[2], x[3] ^ k[3]]))
+  }
+
+  spec encrypt(sk: Word[32]^132, p: Word[32]^4) -> Word[32]^4 {
+    let b: Word[32]^4 = for i in 0..31 with x: Word[32]^4 = p {
+      round(x, [sk[4 * i], sk[4 * i + 1], sk[4 * i + 2], sk[4 * i + 3]], i)
+    };
+    let s: Word[32]^4 = sbox7([b[0] ^ sk[124], b[1] ^ sk[125], b[2] ^ sk[126], b[3] ^ sk[127]]);
+    [s[0] ^ sk[128], s[1] ^ sk[129], s[2] ^ sk[130], s[3] ^ sk[131]]
+  }
+
+  // Decryption: the inverse rounds in reverse order,
+  // R_i^-1(X) = S_i^-1(L^-1(X)) ^ K_i for i < 31 after
+  // R_31^-1(X) = S_7^-1(X ^ K_32) ^ K_31.
+  spec inverse_round(x: Word[32]^4, k: Word[32]^4, i: Int) -> Word[32]^4 {
+    let s: Word[32]^4 = round_inverse_sbox(i, inverse_linear_transformation(x));
+    [s[0] ^ k[0], s[1] ^ k[1], s[2] ^ k[2], s[3] ^ k[3]]
+  }
+
+  spec decrypt(sk: Word[32]^132, c: Word[32]^4) -> Word[32]^4 {
+    let s: Word[32]^4 =
+      inverse_sbox7([c[0] ^ sk[128], c[1] ^ sk[129], c[2] ^ sk[130], c[3] ^ sk[131]]);
+    let b: Word[32]^4 = [s[0] ^ sk[124], s[1] ^ sk[125], s[2] ^ sk[126], s[3] ^ sk[127]];
+    for i in 0..31 with x: Word[32]^4 = b {
+      inverse_round(
+        x,
+        [sk[4 * (30 - i)], sk[4 * (30 - i) + 1], sk[4 * (30 - i) + 2], sk[4 * (30 - i) + 3]],
+        30 - i,
+      )
+    }
+  }
+
+  // Vectors. Botan's src/tests/data/block/serpent.vec carries, unlabelled,
+  // the NESSIE sets 1 (a single key bit set, zero plaintext) and 2 (zero
+  // key, a single plaintext bit set) for the three key sizes, and ends with
+  // the designers' example vectors, whose key 0x00112233445566778899aabbccddeeff
+  // and plaintext 0x0123456789abcdeffedcba9876543210 are written as the
+  // proposal's little-endian integers and therefore appear byte-reversed
+  // in the file. Line numbers refer to that file.
+
+  spec zero_block() -> Word[8]^16 {
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+  }
+
+  // The 128-bit block or key with only its first bit set.
+  spec first_bit_block() -> Word[8]^16 {
+    [0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+  }
+
+  spec first_bit_key_192() -> Word[8]^24 {
+    [
+      0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  spec first_bit_key_256() -> Word[8]^32 {
+    [
+      0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  // NESSIE Serpent-128 set 1, vector 0 (serpent.vec line 813): key 80 00..00,
+  // plaintext 0.
+  spec nessie_128_set_1_vector_0() -> Word[8]^16 {
+    block_bytes(encrypt(key_schedule(key_128(first_bit_block())), block_words(zero_block())))
+  }
+
+  spec nessie_128_set_1_vector_0_expected() -> Word[8]^16 {
+    [0x26, 0x4e, 0x54, 0x81, 0xef, 0xf4, 0x2a, 0x46, 0x06, 0xab, 0xda, 0x06, 0xc0, 0xbf, 0xda, 0x3d]
+  }
+
+  // The same record decrypted: the ciphertext gives the zero block back.
+  spec nessie_128_set_1_vector_0_decrypt() -> Word[8]^16 {
+    block_bytes(decrypt(
+      key_schedule(key_128(first_bit_block())),
+      block_words(nessie_128_set_1_vector_0_expected()),
+    ))
+  }
+
+  spec nessie_128_set_1_vector_0_decrypt_expected() -> Word[8]^16 { zero_block() }
+
+  // NESSIE Serpent-128 set 2, vector 0 (serpent.vec line 3117): key 0,
+  // plaintext 80 00..00.
+  spec nessie_128_set_2_vector_0() -> Word[8]^16 {
+    block_bytes(encrypt(key_schedule(key_128(zero_block())), block_words(first_bit_block())))
+  }
+
+  spec nessie_128_set_2_vector_0_expected() -> Word[8]^16 {
+    [0xa3, 0xb3, 0x5d, 0xe7, 0xc3, 0x58, 0xdd, 0xd8, 0x26, 0x44, 0x67, 0x8c, 0x64, 0xb8, 0xbc, 0xbb]
+  }
+
+  // NESSIE Serpent-192 set 1, vector 0 (serpent.vec line 1581).
+  spec nessie_192_set_1_vector_0() -> Word[8]^16 {
+    block_bytes(encrypt(key_schedule(key_192(first_bit_key_192())), block_words(zero_block())))
+  }
+
+  spec nessie_192_set_1_vector_0_expected() -> Word[8]^16 {
+    [0x9e, 0x27, 0x4e, 0xad, 0x9b, 0x73, 0x7b, 0xb2, 0x1e, 0xfc, 0xfc, 0xa5, 0x48, 0x60, 0x26, 0x89]
+  }
+
+  // NESSIE Serpent-192 set 2, vector 0 (serpent.vec line 3629).
+  spec nessie_192_set_2_vector_0() -> Word[8]^16 {
+    block_bytes(encrypt(key_schedule(key_192([0x00; 24])), block_words(first_bit_block())))
+  }
+
+  spec nessie_192_set_2_vector_0_expected() -> Word[8]^16 {
+    [0x23, 0xf5, 0xf4, 0x32, 0xad, 0x68, 0x7e, 0x0d, 0x45, 0x74, 0xc1, 0x64, 0x59, 0x61, 0x8a, 0xbb]
+  }
+
+  // NESSIE Serpent-256 set 1, vector 0 (serpent.vec line 2605).
+  spec nessie_256_set_1_vector_0() -> Word[8]^16 {
+    block_bytes(encrypt(key_schedule(key_256(first_bit_key_256())), block_words(zero_block())))
+  }
+
+  spec nessie_256_set_1_vector_0_expected() -> Word[8]^16 {
+    [0xa2, 0x23, 0xaa, 0x12, 0x88, 0x46, 0x3c, 0x0e, 0x2b, 0xe3, 0x8e, 0xbd, 0x82, 0x56, 0x16, 0xc0]
+  }
+
+  // NESSIE Serpent-256 set 2, vector 0 (serpent.vec line 4141).
+  spec nessie_256_set_2_vector_0() -> Word[8]^16 {
+    block_bytes(encrypt(key_schedule(key_256([0x00; 32])), block_words(first_bit_block())))
+  }
+
+  spec nessie_256_set_2_vector_0_expected() -> Word[8]^16 {
+    [0x83, 0x14, 0x67, 0x5e, 0x8a, 0xd5, 0xc3, 0xec, 0xd8, 0x3d, 0x85, 0x2b, 0xcf, 0x7f, 0x56, 0x6e]
+  }
+
+  // The same record decrypted.
+  spec nessie_256_set_2_vector_0_decrypt() -> Word[8]^16 {
+    block_bytes(decrypt(
+      key_schedule(key_256([0x00; 32])),
+      block_words(nessie_256_set_2_vector_0_expected()),
+    ))
+  }
+
+  spec nessie_256_set_2_vector_0_decrypt_expected() -> Word[8]^16 { first_bit_block() }
+
+  // The designers' example: the 128-bit key 0x00112233445566778899aabbccddeeff
+  // and the plaintext 0x0123456789abcdeffedcba9876543210 as bytes.
+  spec example_key_128() -> Word[8]^16 {
+    [0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00]
+  }
+
+  spec example_plaintext() -> Word[8]^16 {
+    [0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01]
+  }
+
+  // serpent.vec line 4173: Serpent-128 encryption of the example plaintext.
+  spec botan_serpent_vec_128_example() -> Word[8]^16 {
+    block_bytes(encrypt(key_schedule(key_128(example_key_128())), block_words(example_plaintext())))
+  }
+
+  spec botan_serpent_vec_128_example_expected() -> Word[8]^16 {
+    [0xd5, 0xba, 0xa0, 0x0a, 0x4b, 0xb9, 0xd8, 0xa7, 0xc9, 0x81, 0xc8, 0xdc, 0x90, 0xd8, 0x9d, 0x92]
+  }
+
+  // serpent.vec line 4177, read as a decryption: under the same key the
+  // example plaintext, taken as a ciphertext, decrypts to the record's In.
+  spec botan_serpent_vec_128_example_decrypt() -> Word[8]^16 {
+    block_bytes(decrypt(key_schedule(key_128(example_key_128())), block_words(example_plaintext())))
+  }
+
+  spec botan_serpent_vec_128_example_decrypt_expected() -> Word[8]^16 {
+    [0x14, 0x5f, 0x0b, 0x8b, 0x66, 0x31, 0x76, 0xb9, 0x5d, 0xca, 0xb7, 0xe9, 0xdc, 0xd5, 0xcc, 0x24]
+  }
+
+  // serpent.vec line 4181: Serpent-192 with the key
+  // 0x00112233445566778899aabbccddeeffffeeddccbbaa9988.
+  spec botan_serpent_vec_192_example() -> Word[8]^16 {
+    block_bytes(encrypt(
+      key_schedule(key_192([
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88,
+        0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00,
+      ])),
+      block_words(example_plaintext()),
+    ))
+  }
+
+  spec botan_serpent_vec_192_example_expected() -> Word[8]^16 {
+    [0xda, 0x86, 0x08, 0x42, 0xb7, 0x20, 0x80, 0x2b, 0xf4, 0x04, 0xa4, 0xc7, 0x10, 0x34, 0x87, 0x9a]
+  }
+
+  // serpent.vec line 4189: Serpent-256 with the key
+  // 0x00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100.
+  spec botan_serpent_vec_256_example() -> Word[8]^16 {
+    block_bytes(encrypt(
+      key_schedule(key_256([
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+        0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00,
+      ])),
+      block_words(example_plaintext()),
+    ))
+  }
+
+  spec botan_serpent_vec_256_example_expected() -> Word[8]^16 {
+    [0x93, 0xdf, 0x9a, 0x3c, 0xaf, 0xe3, 0x87, 0xbd, 0x99, 0x9e, 0xeb, 0xe3, 0x93, 0xa1, 0x7f, 0xca]
+  }
+}

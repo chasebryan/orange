@@ -274,7 +274,8 @@ _GATE0_GIT_FIXED_ENVIRONMENT = {
     "LC_ALL": "C",
 }
 MINIMUM_REQUIRED_PATHS = set(
-    """
+    """algorithms/README.md
+algorithms/verify.py
 .editorconfig
 .gitattributes
 .github/CODEOWNERS
@@ -354,6 +355,7 @@ compiler/crates/orangec/tests/s3b_conformance.rs
 compiler/crates/orangec/tests/s3c_conformance.rs
 compiler/crates/orangec/tests/s3d_conformance.rs
 compiler/crates/orangec/tests/s3e_conformance.rs
+compiler/crates/orangec/tests/algorithms.rs
 compiler/crates/orangec/tests/s3f_conformance.rs
 compiler/crates/orangec/tests/s3g_conformance.rs
 compiler/crates/orangec/tests/s3h_conformance.rs
@@ -792,7 +794,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "630b1eb0ec156f298dd6c3140028a49e7df0f883885f5122715ccfa92b7097de"
+_PHD = "5c12969f9a479b9ee16a14845c609fee784f08bacfbb4f73202277e682cfc408"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1168,7 +1170,7 @@ GATE0_ALLOWED_TOP_LEVEL = set(
     """.editorconfig .gitattributes .github .gitignore .markdownlint-cli2.jsonc
 CODE_OF_CONDUCT.md CONTRIBUTING.md compiler DEPENDENCY_POLICY.md GOVERNANCE.md Makefile
 README.md RELEASE_POLICY.md rust-toolchain.toml SECURITY.md SUPPORT.md assets conformance
-docs examples policy research schemas scripts tabula tools""".split()
+algorithms docs examples policy research schemas scripts tabula tools""".split()
 )
 _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
@@ -3451,7 +3453,8 @@ class FoundationValidator:
         for value in sorted(actual_paths - static_paths):
             if re.fullmatch(
                 r"docs/governance/(?:oeps/OEP|adrs/ADR)-[0-9]{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md|tabula/(?:(?:src|tests)/"
-                r"[a-z0-9_]+\.rs|web/[a-z0-9]+\.(?:html|css|js|svg)|README\.md|Cargo\.(?:toml|lock)|\.gitignore)",
+                r"[a-z0-9_]+\.rs|web/[a-z0-9]+\.(?:html|css|js|svg)|README\.md|Cargo\.(?:toml|lock)|\.gitignore)"
+                r"|algorithms/[a-z0-9]+(?:-[a-z0-9]+)*/(?:README\.md|[a-z0-9]+(?:-[a-z0-9]+)*\.or)",
                 value,
             ):
                 continue

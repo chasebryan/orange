@@ -1,0 +1,268 @@
+// SM4, the 128-bit block cipher of GB/T 32907-2016, "Information security
+// technology: SM4 block cipher algorithm" (Chinese national standard, 2016;
+// published as SMS4 in 2006), described in English in the IETF draft
+// draft-ribose-cfrg-sm4, https://datatracker.ietf.org/doc/html/draft-ribose-cfrg-sm4,
+// and used by the TLS 1.3 cipher suites of RFC 8998,
+// https://www.rfc-editor.org/rfc/rfc8998. Written as the standard writes it:
+// the round function F of clause 6 with the composite permutation T (the
+// S-box tau, then the linear map L), the encryption and decryption of
+// clause 7.1 and 7.2 as 32 rounds followed by the reverse transformation R,
+// and the key expansion of clause 7.3 with the system parameter FK, the
+// fixed parameters CK and the linear map L'. The S-box is packed eight
+// entries to a word. The file reproduces example 1 of Appendix A in both
+// directions and three cases of Botan's sm4.vec, one of them in both
+// directions.
+edition 2026;
+module sm4 {
+  // Bytes and words. SM4 reads its key and its blocks big-endian: a 32-bit
+  // word is four bytes, the first most significant, and a 128-bit block or
+  // key is four such words, as the examples of Appendix A show.
+  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16) | ((b2 as Word[32]) << 8) | (b3 as Word[32])
+  }
+
+  spec be_bytes(x: Word[32]) -> Word[8]^4 {
+    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  }
+
+  spec block_words(b: Word[8]^16) -> Word[32]^4 {
+    [
+      load_be32(b[0], b[1], b[2], b[3]),
+      load_be32(b[4], b[5], b[6], b[7]),
+      load_be32(b[8], b[9], b[10], b[11]),
+      load_be32(b[12], b[13], b[14], b[15]),
+    ]
+  }
+
+  spec block_bytes(x: Word[32]^4) -> Word[8]^16 {
+    for i in 0..4 with bytes: Word[8]^16 = [0; 16] {
+      for j in 0..4 with b: Word[8]^16 = bytes { b with [4 * i + j] = be_bytes(x[i])[j] }
+    }
+  }
+
+  // Clause 6.2: the S-box is a table. Indices in Orange are static, so a
+  // lookup selects the word holding the entry and then the byte in it.
+  // The byte at position k of a word holding eight table entries.
+  spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
+    if k == 0 { (w >> 56) as Word[8] }
+    else if k == 1 { (w >> 48) as Word[8] }
+    else if k == 2 { (w >> 40) as Word[8] }
+    else if k == 3 { (w >> 32) as Word[8] }
+    else if k == 4 { (w >> 24) as Word[8] }
+    else if k == 5 { (w >> 16) as Word[8] }
+    else if k == 6 { (w >> 8) as Word[8] }
+    else { w as Word[8] }
+  }
+
+  // Entry x of a 256-entry table packed eight entries to a word.
+  spec lookup(t: Word[64]^32, x: Word[8]) -> Word[8] {
+    let w: Word[64] = for i in 0..32 with acc: Word[64] = 0 {
+      if (x >> 3) == (i as Word[8]) { t[i] } else { acc }
+    };
+    byte_at(w, x & 7)
+  }
+
+  // Clause 6.2, the S-box (Sbox) of the nonlinear transformation tau. The
+  // standard gives it as a table; its structure (Liu, Ji, Hu, Ding and Lv,
+  // 2007) is Sbox(x) = A(I(A(x) + c)) + c over GF(2): the affine map
+  // A(x) + c with A the circulant matrix whose first row is 11010011 (so
+  // A(x) = x + (x <<< 1) + (x <<< 3) + (x <<< 6) + (x <<< 7) on the byte)
+  // and c = 0xd3, then inversion I in GF(2^8) modulo x^8 + x^7 + x^6 +
+  // x^5 + x^4 + x^2 + 1 with I(0) = 0, then the same affine map again.
+  // Each word below is one half-row of the table read left to right:
+  // 0xd690e9fecce13db7 holds the entries d6 90 e9 fe cc e1 3d b7 for
+  // x = 00 through 07.
+  spec sbox() -> Word[64]^32 {
+    [
+      0xd690e9fecce13db7, 0x16b614c228fb2c05, 0x2b679a762abe04c3, 0xaa44132649860699,
+      0x9c4250f491ef987a, 0x33540b43edcfac62, 0xe4b31ca9c908e895, 0x80df94fa758f3fa6,
+      0x4707a7fcf37317ba, 0x83593c19e6854fa8, 0x686b81b27164da8b, 0xf8eb0f4b70569d35,
+      0x1e240e5e6358d1a2, 0x25227c3b01217887, 0xd40046579fd32752, 0x4c3602e7a0c4c89e,
+      0xeabf8ad240c738b5, 0xa3f7f2cef96115a1, 0xe0ae5da49b341a55, 0xad933230f58cb1e3,
+      0x1df6e22e8266ca60, 0xc02923ab0d534e6f, 0xd5db3745defd8e2f, 0x03ff6a726d6c5b51,
+      0x8d1baf92bbddbc7f, 0x11d95c411f105ad8, 0x0ac13188a5cd7bbd, 0x2d74d012b8e5b4b0,
+      0x8969974a0c96777e, 0x65b9f109c56ec684, 0x18f07dec3adc4d20, 0x79ee5f3ed7cb3948,
+    ]
+  }
+
+  // Clause 6.2: the nonlinear transformation tau applies Sbox to each of
+  // the four bytes of A = (a0, a1, a2, a3): B = (Sbox(a0), Sbox(a1),
+  // Sbox(a2), Sbox(a3)). The table s is passed in so that a caller loads it
+  // once per block.
+  spec tau(s: Word[64]^32, a: Word[32]) -> Word[32] {
+    load_be32(
+      lookup(s, (a >> 24) as Word[8]),
+      lookup(s, (a >> 16) as Word[8]),
+      lookup(s, (a >> 8) as Word[8]),
+      lookup(s, a as Word[8]),
+    )
+  }
+
+  // Clause 6.2: the linear transformation L of the round function,
+  // C = L(B) = B + (B <<< 2) + (B <<< 10) + (B <<< 18) + (B <<< 24).
+  spec linear_l(b: Word[32]) -> Word[32] { b ^ (b <<< 2) ^ (b <<< 10) ^ (b <<< 18) ^ (b <<< 24) }
+
+  // Clause 7.3: the linear transformation L' of the key expansion,
+  // L'(B) = B + (B <<< 13) + (B <<< 23).
+  spec linear_l_prime(b: Word[32]) -> Word[32] { b ^ (b <<< 13) ^ (b <<< 23) }
+
+  // Clause 6.2: the composite permutation T = L o tau, and clause 7.3: T',
+  // which is T with L replaced by L'.
+  spec composite_t(s: Word[64]^32, a: Word[32]) -> Word[32] { linear_l(tau(s, a)) }
+
+  spec composite_t_prime(s: Word[64]^32, a: Word[32]) -> Word[32] { linear_l_prime(tau(s, a)) }
+
+  // Clause 6.1: the round function F(X0, X1, X2, X3, rk) = X0 + T(X1 + X2 + X3 + rk).
+  spec round_f(s: Word[64]^32, x: Word[32]^4, rk: Word[32]) -> Word[32] {
+    x[0] ^ composite_t(s, x[1] ^ x[2] ^ x[3] ^ rk)
+  }
+
+  // Clause 7.3: the system parameter FK = (FK0, FK1, FK2, FK3).
+  spec system_parameter_fk() -> Word[32]^4 {
+    [
+      0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc,
+    ]
+  }
+
+  // Clause 7.3: the fixed parameters CK0 through CK31. Byte j of CK_i is
+  // ck_{i,j} = (4i + j) * 7 mod 256 (i from 0 through 31, j from 0 through
+  // 3): CK0 = (0, 7, 14, 21) = 0x00070e15, CK1 = (28, 35, 42, 49) =
+  // 0x1c232a31, and so on, wrapping modulo 256 at CK9 = 0xfc030a11.
+  spec fixed_parameters_ck() -> Word[32]^32 {
+    [
+      0x00070e15, 0x1c232a31, 0x383f464d, 0x545b6269, 0x70777e85, 0x8c939aa1, 0xa8afb6bd, 0xc4cbd2d9,
+      0xe0e7eef5, 0xfc030a11, 0x181f262d, 0x343b4249, 0x50575e65, 0x6c737a81, 0x888f969d, 0xa4abb2b9,
+      0xc0c7ced5, 0xdce3eaf1, 0xf8ff060d, 0x141b2229, 0x30373e45, 0x4c535a61, 0x686f767d, 0x848b9299,
+      0xa0a7aeb5, 0xbcc3cad1, 0xd8dfe6ed, 0xf4fb0209, 0x10171e25, 0x2c333a41, 0x484f565d, 0x646b7279,
+    ]
+  }
+
+  // Clause 7.3: the key expansion. From the encryption key MK = (MK0, MK1,
+  // MK2, MK3), (K0, K1, K2, K3) = (MK0 + FK0, MK1 + FK1, MK2 + FK2, MK3 + FK3)
+  // and, for i = 0 through 31, rk_i = K_{i+4} = K_i + T'(K_{i+1} + K_{i+2}
+  // + K_{i+3} + CK_i). The 36 words K0 through K35 are one array, and the
+  // round keys are its last 32.
+  spec key_expansion(mk: Word[8]^16) -> Word[32]^32 {
+    let s: Word[64]^32 = sbox();
+    let fk: Word[32]^4 = system_parameter_fk();
+    let ck: Word[32]^32 = fixed_parameters_ck();
+    let m: Word[32]^4 = block_words(mk);
+    let k0: Word[32]^36 = for i in 0..4 with k: Word[32]^36 = [0; 36] { k with [i] = m[i] ^ fk[i] };
+    let k: Word[32]^36 = for i in 0..32 with k: Word[32]^36 = k0 {
+      k with [i + 4] = k[i] ^ composite_t_prime(s, k[i + 1] ^ k[i + 2] ^ k[i + 3] ^ ck[i])
+    };
+    for i in 0..32 with rk: Word[32]^32 = [0; 32] { rk with [i] = k[i + 4] }
+  }
+
+  // Clause 7.1: 32 rounds, X_{i+4} = F(X_i, X_{i+1}, X_{i+2}, X_{i+3}, rk_i),
+  // then the reverse transformation R(A0, A1, A2, A3) = (A3, A2, A1, A0)
+  // gives (Y0, Y1, Y2, Y3) = R(X32, X33, X34, X35). The loop carries the
+  // four latest X as x. Clause 7.2: decryption is the same procedure with
+  // the round keys in the reverse order, rk31 first, so both directions
+  // call this spec.
+  spec rounds(rk: Word[32]^32, input: Word[32]^4) -> Word[32]^4 {
+    let s: Word[64]^32 = sbox();
+    let x: Word[32]^4 = for i in 0..32 with x: Word[32]^4 = input {
+      [x[1], x[2], x[3], round_f(s, x, rk[i])]
+    };
+    [x[3], x[2], x[1], x[0]]
+  }
+
+  // Clause 7.1: encryption of one block under the key MK.
+  spec encrypt(mk: Word[8]^16, plaintext: Word[8]^16) -> Word[8]^16 {
+    block_bytes(rounds(key_expansion(mk), block_words(plaintext)))
+  }
+
+  // Clause 7.2: decryption uses (rk31, rk30, ..., rk0).
+  spec decrypt(mk: Word[8]^16, ciphertext: Word[8]^16) -> Word[8]^16 {
+    let rk: Word[32]^32 = key_expansion(mk);
+    let reversed: Word[32]^32 = for i in 0..32 with r: Word[32]^32 = rk { r with [i] = rk[31 - i] };
+    block_bytes(rounds(reversed, block_words(ciphertext)))
+  }
+
+  // GB/T 32907-2016 Appendix A, example 1: key and plaintext
+  // 0123456789abcdeffedcba9876543210, ciphertext
+  // 681edf34d206965e86b3e94f536e4246. The same case opens Botan's sm4.vec and
+  // OpenSSL's evpciph_sm4.txt (SM4-ECB). Example 2 of the appendix encrypts
+  // the same block 1,000,000 times under the same key, which is beyond the
+  // evaluation budget and is not reproduced.
+  spec gbt32907_a_1() -> Word[8]^16 {
+    encrypt(
+      [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10],
+      [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10],
+    )
+  }
+
+  spec gbt32907_a_1_expected() -> Word[8]^16 {
+    [0x68, 0x1e, 0xdf, 0x34, 0xd2, 0x06, 0x96, 0x5e, 0x86, 0xb3, 0xe9, 0x4f, 0x53, 0x6e, 0x42, 0x46]
+  }
+
+  // Appendix A, example 1, decrypted: the ciphertext under the same key
+  // gives the plaintext back.
+  spec gbt32907_a_1_decrypt() -> Word[8]^16 {
+    decrypt(
+      [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10],
+      [0x68, 0x1e, 0xdf, 0x34, 0xd2, 0x06, 0x96, 0x5e, 0x86, 0xb3, 0xe9, 0x4f, 0x53, 0x6e, 0x42, 0x46],
+    )
+  }
+
+  spec gbt32907_a_1_decrypt_expected() -> Word[8]^16 {
+    [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10]
+  }
+
+  // Botan src/tests/data/block/sm4.vec, section [SM4], second case (the
+  // first of the "Random tests generated by GmSSL"): key
+  // 681edf34d206965e86b3e94f536e4246 and the first of its four blocks
+  // (In = f42131b0..., Out = ec4b7b17...).
+  spec botan_sm4_case_2_block_1() -> Word[8]^16 {
+    encrypt(
+      [0x68, 0x1e, 0xdf, 0x34, 0xd2, 0x06, 0x96, 0x5e, 0x86, 0xb3, 0xe9, 0x4f, 0x53, 0x6e, 0x42, 0x46],
+      [0xf4, 0x21, 0x31, 0xb0, 0x02, 0x42, 0x5b, 0x6f, 0x5c, 0xf5, 0x2a, 0x81, 0x06, 0x82, 0xa0, 0x9d],
+    )
+  }
+
+  spec botan_sm4_case_2_block_1_expected() -> Word[8]^16 {
+    [0xec, 0x4b, 0x7b, 0x17, 0x57, 0xfe, 0xe9, 0xce, 0x45, 0x51, 0x97, 0xe5, 0xbf, 0x9c, 0x3a, 0x90]
+  }
+
+  // Botan sm4.vec, section [SM4], fourth case (the first of the "Random
+  // tests generated by Botan"): key fd0c5fbdb30201222daea461486b2853, one
+  // block 000102...0f.
+  spec botan_sm4_case_4() -> Word[8]^16 {
+    encrypt(
+      [0xfd, 0x0c, 0x5f, 0xbd, 0xb3, 0x02, 0x01, 0x22, 0x2d, 0xae, 0xa4, 0x61, 0x48, 0x6b, 0x28, 0x53],
+      [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f],
+    )
+  }
+
+  spec botan_sm4_case_4_expected() -> Word[8]^16 {
+    [0x73, 0xf1, 0x02, 0x97, 0x7f, 0x15, 0x59, 0x9c, 0x61, 0xb1, 0x5d, 0x13, 0xd3, 0xda, 0x60, 0x64]
+  }
+
+  // The fourth case decrypted: its ciphertext under its key gives the block
+  // 000102...0f back.
+  spec botan_sm4_case_4_decrypt() -> Word[8]^16 {
+    decrypt(
+      [0xfd, 0x0c, 0x5f, 0xbd, 0xb3, 0x02, 0x01, 0x22, 0x2d, 0xae, 0xa4, 0x61, 0x48, 0x6b, 0x28, 0x53],
+      [0x73, 0xf1, 0x02, 0x97, 0x7f, 0x15, 0x59, 0x9c, 0x61, 0xb1, 0x5d, 0x13, 0xd3, 0xda, 0x60, 0x64],
+    )
+  }
+
+  spec botan_sm4_case_4_decrypt_expected() -> Word[8]^16 {
+    [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+  }
+
+  // Botan sm4.vec, section [SM4], fifth case: key
+  // e5ab67c47b9be83f1f37627532d91ab7 and the first of its two blocks
+  // (000102...0f, Out = 03a595d9...).
+  spec botan_sm4_case_5_block_1() -> Word[8]^16 {
+    encrypt(
+      [0xe5, 0xab, 0x67, 0xc4, 0x7b, 0x9b, 0xe8, 0x3f, 0x1f, 0x37, 0x62, 0x75, 0x32, 0xd9, 0x1a, 0xb7],
+      [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f],
+    )
+  }
+
+  spec botan_sm4_case_5_block_1_expected() -> Word[8]^16 {
+    [0x03, 0xa5, 0x95, 0xd9, 0xaf, 0x32, 0xaa, 0x81, 0x0a, 0xa0, 0xbe, 0xb7, 0x58, 0x46, 0x2f, 0x2c]
+  }
+}
