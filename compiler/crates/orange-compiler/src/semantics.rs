@@ -1,5 +1,6 @@
 //! Bounded name resolution, type checking, and Core construction.
 
+use std::cell::Cell;
 use std::cmp::Ordering;
 use std::fmt;
 
@@ -14,20 +15,23 @@ use crate::parser::{
     ArrayExpression, BinaryExpression, BinaryOperator, Binding, ByteString, CallExpression,
     ConditionalExpression, ConversionExpression, Expression, ExpressionKind, FillExpression,
     FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral,
-    LoopExpression, MAX_ARRAY_ELEMENTS, Parameter, Pattern, ProjectExpression, SliceExpression,
-    SliceRange, SliceUpdateExpression, SyntaxTree, TupleExpression, TypeSyntax, TypedBody,
-    TypedName, UnaryExpression, UnaryOperator, UpdateExpression,
+    LoopExpression, MAX_ARRAY_ELEMENTS, MAX_SIZES_PER_FUNCTION, Parameter, Pattern,
+    ProjectExpression, Size, SizeParameter, SliceExpression, SliceRange, SliceUpdateExpression,
+    SyntaxTree, TupleExpression, TypeSyntax, TypedBody, TypedName, UnaryExpression, UnaryOperator,
+    UpdateExpression,
 };
 use crate::source::{SourceFile, Span, TextOffset};
 
 mod bytes;
 mod linking;
 mod ranges;
+mod sizes;
 mod tuples;
 mod types;
 
 use linking::*;
 use ranges::*;
+use sizes::*;
 use tuples::*;
 use types::*;
 
@@ -233,6 +237,12 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
         && ast.module.functions.iter().all(|function| {
             belongs(function.span)
                 && belongs(function.name.span)
+                && function.sizes.iter().all(|size| {
+                    belongs(size.span)
+                        && belongs(size.name.span)
+                        && belongs(size.start_span)
+                        && belongs(size.end_span)
+                })
                 && function.parameters.iter().all(|parameter| {
                     belongs(parameter.span)
                         && belongs(parameter.name.span)
@@ -256,7 +266,10 @@ fn type_belongs(ty: &TypeSyntax, belongs: &impl Fn(Span) -> bool) -> bool {
     belongs(ty.span)
         && belongs(ty.name.span)
         && ty.width_span.is_none_or(belongs)
-        && ty.length_span.is_none_or(belongs)
+        && ty
+            .length
+            .as_ref()
+            .is_none_or(|length| size_belongs(length, belongs))
         && ty
             .modulus()
             .is_none_or(|modulus| expression_belongs(modulus, belongs))
@@ -277,13 +290,11 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
             ExpressionKind::Name(name) => belongs(name.span),
             ExpressionKind::Call(call) => {
                 belongs(call.callee.span)
+                    && call.module().is_none_or(|module| belongs(module.span))
                     && call
-                        .module
-                        .as_ref()
-                        .is_none_or(|module| belongs(module.span))
-                    && call
-                        .arguments
+                        .sizes()
                         .iter()
+                        .chain(&call.arguments)
                         .all(|argument| expression_belongs(argument, belongs))
             }
             ExpressionKind::Unary(unary) => {
@@ -305,7 +316,7 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                 .iter()
                 .all(|element| expression_belongs(element, belongs)),
             ExpressionKind::Fill(fill) => {
-                belongs(fill.length_span) && expression_belongs(&fill.element, belongs)
+                size_belongs(&fill.length, belongs) && expression_belongs(&fill.element, belongs)
             }
             ExpressionKind::Index(index) => {
                 expression_belongs(&index.index, belongs)
@@ -320,8 +331,8 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
             ExpressionKind::Loop(r#loop) => {
                 belongs(r#loop.keyword_span)
                     && belongs(r#loop.index.span)
-                    && belongs(r#loop.start_span)
-                    && belongs(r#loop.end_span)
+                    && size_belongs(&r#loop.start, belongs)
+                    && size_belongs(&r#loop.end, belongs)
                     && pattern_belongs(&r#loop.accumulator, belongs)
                     && expression_belongs(&r#loop.init, belongs)
                     && bindings_belong(&r#loop.step_bindings, belongs)
@@ -356,6 +367,15 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && expression_belongs(&conditional.otherwise, belongs)
             }
         }
+}
+
+/// Returns whether every span of a size belongs.
+/// Parser-established expression height bounds the recursion through it.
+fn size_belongs(size: &Size, belongs: &impl Fn(Span) -> bool) -> bool {
+    belongs(size.span)
+        && size
+            .expression()
+            .is_none_or(|expression| expression_belongs(expression, belongs))
 }
 
 /// Returns whether every span of a slice's bounds belongs.
@@ -457,6 +477,7 @@ struct PendingFunction {
     span: Span,
     name: String,
     name_span: Span,
+    sizes: Vec<u32>,
     parameters: Vec<CoreType>,
     result_type: CoreType,
     locals: Vec<CoreLocal>,
@@ -466,16 +487,37 @@ struct PendingFunction {
 }
 
 /// The silently resolved signature of one typed `spec`, used to check calls
-/// to it from any function in the module.
-struct Signature {
+/// to it from any function in the module: one for each of its instances.
+struct Signature<'ast> {
+    /// Identity of the first instance; the others follow it in order.
     id: CoreFunctionId,
+    /// The function's size parameters, empty for a function without sizes.
+    sizes: &'ast [SizeParameter],
+    /// The ranges of its size parameters, or `None` when they are malformed
+    /// and the function has no instances.
+    ranges: Option<SizeRanges>,
+    /// The parameter and result types of each instance, in order.
+    instances: Vec<InstanceSignature>,
+}
+
+struct InstanceSignature {
     parameters: Vec<Option<CoreType>>,
     result_type: Option<CoreType>,
 }
 
-impl Signature {
+impl InstanceSignature {
     fn is_complete(&self) -> bool {
         self.result_type.is_some() && self.parameters.iter().all(Option::is_some)
+    }
+}
+
+impl Signature<'_> {
+    /// Returns the identity of the instance at `index`.
+    fn instance_id(&self, index: usize) -> Option<CoreFunctionId> {
+        usize::try_from(self.id.index())
+            .ok()?
+            .checked_add(index)
+            .and_then(CoreFunctionId::from_index)
     }
 }
 
@@ -489,7 +531,7 @@ struct CallEdge {
 /// Module-wide name and signature tables shared by every body check.
 struct ModuleScope<'scope, 'ast> {
     declarations: &'scope DeclarationIndex<'ast>,
-    signatures: &'scope [Option<Signature>],
+    signatures: &'scope [Option<Signature<'ast>>],
     /// The modules this module uses, in the order of its `use` declarations.
     imports: &'scope [ImportScope<'scope, 'ast>],
 }
@@ -498,7 +540,7 @@ struct ModuleScope<'scope, 'ast> {
 struct ImportScope<'scope, 'ast> {
     name: &'ast str,
     declarations: &'scope DeclarationIndex<'ast>,
-    signatures: &'scope [Option<Signature>],
+    signatures: &'scope [Option<Signature<'ast>>],
 }
 
 impl<'scope, 'ast> ModuleScope<'scope, 'ast> {
@@ -508,8 +550,11 @@ impl<'scope, 'ast> ModuleScope<'scope, 'ast> {
     fn tables_for(
         &self,
         call: &CallExpression,
-    ) -> Option<(&'scope DeclarationIndex<'ast>, &'scope [Option<Signature>])> {
-        match &call.module {
+    ) -> Option<(
+        &'scope DeclarationIndex<'ast>,
+        &'scope [Option<Signature<'ast>>],
+    )> {
+        match call.module() {
             None => Some((self.declarations, self.signatures)),
             Some(module) => self
                 .imports
@@ -529,6 +574,8 @@ struct BodyOutput<'edges> {
 /// The function whose body is being checked.
 struct BodyContext<'ast> {
     id: CoreFunctionId,
+    /// The instance being checked: the function's sizes and their values.
+    instance: Instance<'ast>,
     name: &'ast Identifier,
     parameters: &'ast [Parameter],
     parameter_types: Vec<Option<CoreType>>,
@@ -604,6 +651,8 @@ struct CheckedBinding {
 /// A name that a tuple pattern binds carries its position in the pattern:
 /// it stands for that element of the pattern's value.
 enum NameResolution<'ast> {
+    /// A size parameter, whose value is fixed in the instance.
+    Size(u32),
     Parameter(usize),
     Binding(usize, Option<u32>),
     /// The binding at `index` of the block at `block` in the block scopes.
@@ -664,10 +713,13 @@ fn element_type(whole: Option<CoreType>, element: Option<u32>) -> Option<CoreTyp
 }
 
 impl<'ast> BodyContext<'ast> {
-    /// Resolves a bare name: parameters first, then the body's bindings in
-    /// scope, then the bindings in scope of the blocks being checked, each
-    /// list searched in source order.
+    /// Resolves a bare name: sizes first, then parameters, then the body's
+    /// bindings in scope, then the bindings in scope of the blocks being
+    /// checked, each list searched in source order.
     fn resolve(&self, name: &str) -> NameResolution<'ast> {
+        if let Some((_, value)) = self.instance.find(name) {
+            return NameResolution::Size(value);
+        }
         if let Some(index) = self
             .parameters
             .iter()
@@ -721,6 +773,7 @@ impl<'ast> BodyContext<'ast> {
     /// Returns the type of a name in scope without reporting.
     fn name_type(&self, name: &str) -> Option<CoreType> {
         match self.resolve(name) {
+            NameResolution::Size(_) => Some(CoreType::Int),
             NameResolution::Parameter(index) => self.parameter_types.get(index).cloned().flatten(),
             NameResolution::Binding(index, element) => {
                 element_type(self.binding_types.get(index).cloned().flatten(), element)
@@ -748,9 +801,12 @@ impl<'ast> BodyContext<'ast> {
         }
     }
 
-    /// Returns the earlier declaration of `name` among the parameters, the
-    /// bindings in scope, and the loop names in scope, if any.
+    /// Returns the earlier declaration of `name` among the sizes, the
+    /// parameters, the bindings in scope, and the loop names in scope, if any.
     fn earlier_name(&self, name: &str) -> Option<(Span, &'static str)> {
+        if let Some((size, _)) = self.instance.find(name) {
+            return Some((size.name.span, "the size parameter is here"));
+        }
         if let Some(parameter) = self
             .parameters
             .iter()
@@ -1130,35 +1186,64 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     }
                     continue;
                 }
-                let Some(id) = signatures
-                    .get(source_index)
-                    .and_then(Option::as_ref)
-                    .map(|signature| signature.id)
-                else {
+                let Some(signature) = signatures.get(source_index).and_then(Option::as_ref) else {
                     self.resource_limit(function.span, "semantic signature table is inconsistent");
                     break;
                 };
-                let context = BodyContext {
-                    id,
-                    name: &function.name,
-                    parameters: &function.parameters,
-                    parameter_types: Vec::new(),
-                    bindings: &body.bindings,
-                    binding_types: Vec::new(),
-                    loop_scopes: Vec::new(),
-                    blocks: Vec::new(),
-                    finished_blocks: Vec::new(),
-                    loops: Vec::new(),
-                    conditionals: Vec::new(),
+                // Malformed size parameters are reported once, and the
+                // function then has no instances to check.
+                if !self.check_size_parameters(function) {
+                    if self.halted {
+                        break;
+                    }
+                    continue;
+                }
+                let Some(ranges) = signature.ranges else {
+                    self.resource_limit(function.span, "semantic size table is inconsistent");
+                    break;
                 };
                 let scope = ModuleScope {
                     declarations: &declarations,
                     signatures: &signatures,
                     imports,
                 };
-                if let Some(pending) =
-                    self.analyze_typed_function(function, body, context, &scope, &mut call_edges)
-                {
+                // Each instance is checked as the function written out with
+                // its sizes' values, in order, until one is in error.
+                for index in 0..ranges.instances() {
+                    let (Some(instance), Some(id)) = (
+                        ranges.instance(&function.sizes, index),
+                        signature.instance_id(index),
+                    ) else {
+                        self.resource_limit(function.span, "semantic size table is inconsistent");
+                        break;
+                    };
+                    self.enter_instance(instance);
+                    let context = BodyContext {
+                        id,
+                        instance,
+                        name: &function.name,
+                        parameters: &function.parameters,
+                        parameter_types: Vec::new(),
+                        bindings: &body.bindings,
+                        binding_types: Vec::new(),
+                        loop_scopes: Vec::new(),
+                        blocks: Vec::new(),
+                        finished_blocks: Vec::new(),
+                        loops: Vec::new(),
+                        conditionals: Vec::new(),
+                    };
+                    let reported = self.diagnostics.len();
+                    let pending = self.analyze_typed_function(
+                        function,
+                        body,
+                        context,
+                        &scope,
+                        &mut call_edges,
+                    );
+                    self.name_instance(function, instance, reported);
+                    let Some(pending) = pending else {
+                        break;
+                    };
                     if (self.reserve_pending_function_slot)(&mut pending_functions) {
                         pending_functions.push(pending);
                     } else {
@@ -1168,7 +1253,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         );
                         break;
                     }
+                    if self.halted || self.diagnostics.len() > reported {
+                        break;
+                    }
                 }
+                self.enter_instance(Instance::NONE);
                 if self.halted {
                     break;
                 }
@@ -1199,7 +1288,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// Types are reported once, in source order, when their own declaration is
     /// checked; calls to a function whose signature did not resolve are then
     /// not reported again.
-    fn collect_signatures(&mut self) -> Option<Vec<Option<Signature>>> {
+    fn collect_signatures(&mut self) -> Option<Vec<Option<Signature<'ast>>>> {
         let functions = &self.ast.module.functions;
         let mut signatures = Vec::new();
         if signatures.try_reserve_exact(functions.len()).is_err() {
@@ -1224,25 +1313,58 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         );
                         return None;
                     };
-                    next_id = next_id.saturating_add(1);
-                    let mut parameters = Vec::new();
-                    if parameters
-                        .try_reserve_exact(function.parameters.len())
-                        .is_err()
-                    {
+                    let ranges = SizeRanges::of(self.source, function);
+                    let count = ranges.map_or(0, |ranges| ranges.instances());
+                    next_id = next_id.saturating_add(count);
+                    let mut instances = Vec::new();
+                    if instances.try_reserve_exact(count).is_err() {
                         self.resource_limit(function.span, "semantic signature allocation failed");
                         return None;
                     }
-                    parameters.extend(
-                        function
-                            .parameters
-                            .iter()
-                            .map(|parameter| silent_type(self.source, &self.types, &parameter.ty)),
-                    );
+                    for index in 0..count {
+                        let Some(instance) =
+                            ranges.and_then(|ranges| ranges.instance(&function.sizes, index))
+                        else {
+                            self.resource_limit(
+                                function.span,
+                                "semantic size table is inconsistent",
+                            );
+                            return None;
+                        };
+                        self.enter_instance(instance);
+                        let mut parameters = Vec::new();
+                        if parameters
+                            .try_reserve_exact(function.parameters.len())
+                            .is_err()
+                        {
+                            self.resource_limit(
+                                function.span,
+                                "semantic signature allocation failed",
+                            );
+                            return None;
+                        }
+                        parameters.extend(
+                            function.parameters.iter().map(|parameter| {
+                                silent_type(self.source, &self.types, &parameter.ty)
+                            }),
+                        );
+                        let result_type = silent_type(self.source, &self.types, &body.result_type);
+                        // Each part of a size evaluated for a signature is
+                        // one event, as when a body is checked.
+                        if !self.charge_size_events(function.name.span) {
+                            return None;
+                        }
+                        instances.push(InstanceSignature {
+                            parameters,
+                            result_type,
+                        });
+                    }
+                    self.enter_instance(Instance::NONE);
                     Some(Signature {
                         id,
-                        parameters,
-                        result_type: silent_type(self.source, &self.types, &body.result_type),
+                        sizes: &function.sizes,
+                        ranges,
+                        instances,
                     })
                 }
                 _ => None,
@@ -1362,10 +1484,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .cloned()
             .collect::<Option<Vec<_>>>()?;
         let name = self.copy_core_name(&function.name.text, function.name.span)?;
+        let mut sizes = Vec::new();
+        if sizes
+            .try_reserve_exact(context.instance.values().len())
+            .is_err()
+        {
+            self.resource_limit(function.span, "size storage allocation failed");
+            return None;
+        }
+        sizes.extend_from_slice(context.instance.values());
         Some(PendingFunction {
             span: function.span,
             name,
             name_span: function.name.span,
+            sizes,
             parameters,
             result_type,
             locals,
@@ -1399,12 +1531,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return None;
             }
             let text = &typed.name.text;
+            let size = function
+                .sizes
+                .iter()
+                .find(|size| size.name.text == *text)
+                .map(|size| (size.name.span, "the size parameter is here"));
             let parameter = function
                 .parameters
                 .iter()
                 .find(|parameter| parameter.name.text == *text)
                 .map(|parameter| (parameter.name.span, "the parameter is here"));
-            let earlier = parameter
+            let earlier = size
+                .or(parameter)
                 .or_else(|| {
                     body.bindings
                         .get(..index)?
@@ -1545,7 +1683,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             ExpressionKind::Fill(fill) => {
                 // One event for the literal and one for its length token.
-                if !self.event(expression.span) || !self.event(fill.length_span) {
+                if !self.event(expression.span) || !self.event(fill.length.span) {
                     return false;
                 }
                 self.check_fill(expression, fill, expected, context, scope, output)
@@ -1653,6 +1791,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         output: &mut BodyOutput<'_>,
     ) -> bool {
         let (whole, kind, element) = match context.resolve(&name.text) {
+            // A size is an `Int` constant of the instance.
+            NameResolution::Size(value) => {
+                let Some(value) =
+                    ExactInteger::from_u64(u64::from(value), self.reserve_range_limbs)
+                else {
+                    self.resource_limit(name.span, "size storage allocation failed");
+                    return false;
+                };
+                (
+                    Some(Some(CoreType::Int)),
+                    Ok(CoreNodeKind::Literal(CoreValue::Int(value))),
+                    None,
+                )
+            }
             NameResolution::Parameter(index) => (
                 context.parameter_types.get(index).cloned(),
                 u32::try_from(index).map(CoreNodeKind::Parameter),
@@ -2040,9 +2192,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Call(call) => {
                 let (declarations, signatures) = scope.tables_for(call)?;
                 let entry = first_declaration(declarations, FunctionKind::Spec, &call.callee.text)?;
-                signatures
-                    .get(entry.source_index)?
-                    .as_ref()?
+                let signature = signatures.get(entry.source_index)?.as_ref()?;
+                self.silent_instance(call, signature, context, scope)?
                     .result_type
                     .clone()
             }
@@ -2346,10 +2497,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         };
-        let length = array_length(self.source, fill.length_span)
-            .filter(|length| (1..=MAX_ARRAY_LENGTH).contains(length));
+        let length = self.checked_length(&fill.length);
+        if self.halted {
+            return false;
+        }
         match length {
-            None => self.report_unsupported_array_length(fill.length_span),
+            None => {}
             Some(length) if length != array.length() => {
                 if self.begin_report(expression.span) {
                     let expected_length = array.length();
@@ -2705,14 +2858,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// Decodes a loop's bounds and checks that they form a nonempty range
     /// within 0 through [`MAX_LOOP_BOUND`].
     fn check_loop_bounds(&mut self, r#loop: &LoopExpression) -> Option<(u32, u32)> {
-        let start = self.loop_bound(r#loop.start_span)?;
-        let end = self.loop_bound(r#loop.end_span)?;
+        let start = self.loop_bound(&r#loop.start)?;
+        let end = self.loop_bound(&r#loop.end)?;
         let limit = u64::from(MAX_LOOP_BOUND);
         let (span, message, label) = if start > limit || end > limit {
             let span = if start > limit {
-                r#loop.start_span
+                r#loop.start.span
             } else {
-                r#loop.end_span
+                r#loop.end.span
             };
             (
                 span,
@@ -2721,7 +2874,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             )
         } else if start >= end {
             (
-                r#loop.end_span,
+                r#loop.end.span,
                 format!("the loop range {start}..{end} is empty"),
                 "a loop runs at least once",
             )
@@ -2741,9 +2894,36 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         None
     }
 
-    /// Decodes one loop bound. A bound above the u64 range decodes as the
-    /// u64 maximum, which is too large.
-    fn loop_bound(&mut self, span: Span) -> Option<u64> {
+    /// Decodes one loop bound, an integer token or a size. A bound above
+    /// the u64 range decodes as the u64 maximum, which is too large.
+    fn loop_bound(&mut self, bound: &Size) -> Option<u64> {
+        let span = bound.span;
+        if let Some(expression) = bound.expression() {
+            let value = self.size_value(expression)?;
+            if value.is_negative() {
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::InvalidLoopRange,
+                            "a loop bound must be at least 0",
+                            span,
+                        )
+                        .with_label("negative loop bound in this instance")
+                        .with_note(
+                            "a loop `for i in a..b` runs once for each i from a up to b - 1, with \
+                             0 <= a < b <= 65536",
+                        ),
+                    );
+                }
+                return None;
+            }
+            return Some(
+                value
+                    .to_i64()
+                    .and_then(|value| u64::try_from(value).ok())
+                    .unwrap_or(u64::MAX),
+            );
+        }
         let literal = IntegerLiteral {
             span,
             magnitude_span: span,
@@ -3225,7 +3405,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let callee_name = &call.callee;
         let spelling = identifier_spelling_for_diagnostic(&callee_name.text);
         let Some((declarations, signatures)) = scope.tables_for(call) else {
-            if let Some(module) = &call.module {
+            if let Some(module) = call.module() {
                 self.report_module_not_used(module);
             }
             return false;
@@ -3234,7 +3414,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let signature = declaration.and_then(|entry| signatures.get(entry.source_index)?.as_ref());
         let Some(signature) = signature else {
             if self.begin_report(callee_name.span) {
-                let place = call.module.as_ref().map_or_else(
+                let place = call.module().map_or_else(
                     || String::from("this module"),
                     |module| {
                         format!(
@@ -3261,7 +3441,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     )
                     .with_label("unknown function")
                 };
-                let imported_by = (call.module.is_none() && declaration.is_none())
+                let imported_by = (call.module().is_none() && declaration.is_none())
                     .then(|| {
                         scope.imports.iter().find(|import| {
                             first_declaration(
@@ -3286,7 +3466,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             "the used module `{module}` declares `{spelling}`; call it as \
                          `{module}::{spelling}(...)`"
                         ))
-                    } else if call.module.is_some() {
+                    } else if call.module().is_some() {
                         diagnostic
                             .with_note("a qualified call names a typed `spec` of the used module")
                     } else if scope.imports.is_empty() {
@@ -3302,9 +3482,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         };
+        // The instance called: its sizes are computed in the caller's
+        // instance and must lie in the callee's ranges.
+        let Some((id, signature)) =
+            self.called_instance(expression, call, signature, context, scope)
+        else {
+            return false;
+        };
         // An unresolved callee type was reported at the callee's declaration.
         if !signature.is_complete() {
-            self.record_call_edge(context, signature, expression.span, output);
+            self.record_call_edge(context, id, expression.span, output);
             return false;
         }
         if signature.parameters.len() != call.arguments.len() {
@@ -3329,7 +3516,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     .with_note("every parameter receives exactly one argument"),
                 );
             }
-            self.record_call_edge(context, signature, expression.span, output);
+            self.record_call_edge(context, id, expression.span, output);
             return false;
         }
         let Some(result_type) = signature.result_type.clone() else {
@@ -3363,7 +3550,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return false;
             }
         }
-        if !self.record_call_edge(context, signature, expression.span, output)
+        if !self.record_call_edge(context, id, expression.span, output)
             || !result_matches
             || !arguments_checked
         {
@@ -3381,7 +3568,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             expression.span,
             expected.clone(),
             CoreNodeKind::Call {
-                function: signature.id,
+                function: id,
                 arguments,
             },
         )
@@ -3427,11 +3614,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn record_call_edge(
         &mut self,
         context: &BodyContext<'ast>,
-        callee: &Signature,
+        callee: CoreFunctionId,
         span: Span,
         output: &mut BodyOutput<'_>,
     ) -> bool {
-        if usize::try_from(callee.id.index()).is_ok_and(|index| index < self.id_offset) {
+        if usize::try_from(callee.index()).is_ok_and(|index| index < self.id_offset) {
             return true;
         }
         if !(self.reserve_call_edge_slot)(output.call_edges) {
@@ -3440,7 +3627,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         output.call_edges.push(CallEdge {
             caller: context.id,
-            callee: callee.id,
+            callee,
             span,
         });
         true
@@ -3684,6 +3871,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 span: pending_function.span,
                 name: pending_function.name,
                 name_span: pending_function.name_span,
+                sizes: pending_function.sizes,
                 parameters: pending_function.parameters,
                 result_type: pending_function.result_type,
                 locals: pending_function.locals,

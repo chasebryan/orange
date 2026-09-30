@@ -9,6 +9,11 @@ pub(super) enum TypeClass {
     MissingWordWidth,
     UnsupportedWordWidth(Span),
     UnsupportedArrayLength(Span),
+    /// A length written with sizes whose value in this instance is not
+    /// from 1 through 256, at the length's span.
+    ArrayLengthValue(Span, ExactInteger),
+    /// A length written with sizes that has no value.
+    Size(SizeFault),
     MissingModulus,
     /// A declared name whose element type is already an array, followed by
     /// the span of `^LENGTH`.
@@ -24,12 +29,16 @@ pub(super) enum TypeClass {
 }
 
 /// The types a module fixes before its functions are checked: the value of
-/// every modulus it writes, and the names of its `type` declarations.
+/// every modulus it writes, and the names of its `type` declarations; and
+/// the sizes of the instance whose types are being resolved.
 pub(super) struct TypeTable<'ast> {
     /// Each modulus by the extent of its expression, sorted by that key.
     pub(super) moduli: Vec<ResolvedModulus>,
     /// Declared names in declaration order, each unique.
     pub(super) names: Vec<DeclaredType<'ast>>,
+    /// The sizes of the instance being checked, or none outside a sized
+    /// function.
+    pub(super) sizes: SizeScope<'ast>,
 }
 
 pub(super) struct ResolvedModulus {
@@ -50,6 +59,13 @@ impl TypeTable<'_> {
         Self {
             moduli: Vec::new(),
             names: Vec::new(),
+            sizes: SizeScope {
+                instance: Instance::NONE,
+                bits: MAX_INTEGER_BITS,
+                reserve: reserve_range_limbs,
+                reserve_limb: reserve_magnitude_limb,
+                evaluated: Cell::new(0),
+            },
         }
     }
 
@@ -82,18 +98,24 @@ pub(super) fn classify_type(
         return classify_tuple_type(source, table, syntax);
     }
     let scalar = classify_scalar_type(source, table, syntax);
-    match (scalar, syntax.length_span) {
-        (TypeClass::Resolved(CoreType::Array(_)), Some(length_span)) => {
-            TypeClass::ArrayOfArrays(length_span)
+    match (scalar, syntax.length.as_ref()) {
+        (TypeClass::Resolved(CoreType::Array(_)), Some(length)) => {
+            TypeClass::ArrayOfArrays(length.span)
         }
-        (TypeClass::Resolved(CoreType::Tuple(_)), Some(length_span)) => {
-            TypeClass::ArrayOfTuples(length_span)
+        (TypeClass::Resolved(CoreType::Tuple(_)), Some(length)) => {
+            TypeClass::ArrayOfTuples(length.span)
         }
-        (TypeClass::Resolved(element), Some(length_span)) => array_length(source, length_span)
-            .and_then(|length| ArrayType::new(&element, length))
-            .map_or(TypeClass::UnsupportedArrayLength(length_span), |array| {
-                TypeClass::Resolved(CoreType::Array(array))
-            }),
+        (TypeClass::Resolved(element), Some(length)) => {
+            match table.sizes.array_length(source, length) {
+                Length::Admitted(count) => ArrayType::new(&element, count)
+                    .map_or(TypeClass::UnsupportedArrayLength(length.span), |array| {
+                        TypeClass::Resolved(CoreType::Array(array))
+                    }),
+                Length::Literal => TypeClass::UnsupportedArrayLength(length.span),
+                Length::Value(value) => TypeClass::ArrayLengthValue(length.span, value),
+                Length::Fault(fault) => TypeClass::Size(fault),
+            }
+        }
         (scalar, _) => scalar,
     }
 }
@@ -531,12 +553,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         {
             return None;
         }
-        if let Some(length_span) = syntax.length_span
-            && !self.event(length_span)
+        if let Some(length) = &syntax.length
+            && !self.event(length.span)
         {
             return None;
         }
-        match classify_type(self.source, &self.types, syntax) {
+        let class = classify_type(self.source, &self.types, syntax);
+        if !self.charge_size_events(syntax.span) {
+            return None;
+        }
+        match class {
             TypeClass::Resolved(ty) => Some(ty),
             TypeClass::Unresolved => None,
             TypeClass::Unindexed => {
@@ -598,6 +624,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             TypeClass::UnsupportedArrayLength(length_span) => {
                 self.report_unsupported_array_length(length_span);
+                None
+            }
+            TypeClass::ArrayLengthValue(length_span, value) => {
+                self.report_array_length_value(length_span, &value);
+                None
+            }
+            TypeClass::Size(fault) => {
+                self.report_size_fault(fault);
                 None
             }
             TypeClass::UnsupportedWordWidth(width_span) => {
@@ -681,6 +715,33 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .with_label("unsupported array length")
                 .with_note(
                     "write the length in decimal without leading zeros, as in `Word[32]^16`",
+                ),
+            );
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn report_array_length_value(&mut self, span: Span, value: &ExactInteger) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedArrayLength,
+                    value.to_i64().map_or_else(
+                        || format!("this array length is far outside 1 through {MAX_ARRAY_LENGTH}"),
+                        |value| {
+                            format!(
+                                "this array length is {value}, but an array has 1 through \
+                                 {MAX_ARRAY_LENGTH} elements"
+                            )
+                        },
+                    ),
+                    span,
+                )
+                .with_label("unsupported array length in this instance")
+                .with_note(
+                    "a length written with sizes is computed in each instance of its function, \
+                     and every instance's lengths are from 1 through 256",
                 ),
             );
         }

@@ -23,8 +23,8 @@ meaning. It accepts no D-004 candidate.
 
 > [!NOTE]
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, extends
-> this document with `Bool`, comparisons, Euclidean division, and
-> conditionals, and lets a static index divide a loop index.
+> this document with `Bool`, comparisons, Euclidean division, and conditionals,
+> and lets a static index divide a loop index.
 > [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, lifts the
 > static-index limit of section 13: an index may depend on data, and is proved
 > in range from its type. [`MODULES_2026.md`](MODULES_2026.md), proposed under
@@ -33,12 +33,14 @@ meaning. It accepts no D-004 candidate.
 > accumulator does, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
 > OEP-0013, lets a step begin with `let` bindings, evaluated afresh at every
 > step, as the working variables of a SHA-256 round are, and
-> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets a loop
-> carry several accumulators through a tuple pattern, as
-> `with (a: Int, b: Int) = (0, 1)`, and [`BYTES_2026.md`](BYTES_2026.md),
-> proposed under OEP-0015, lets a step read and replace a run of elements at
-> bounds that follow the loop index, as `w with [4 * i..4 * i + 4] = b`.
-> Every source this document accepts keeps its meaning under all seven.
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets a loop carry
+> several accumulators through a tuple pattern, as `with (a: Int, b: Int) = (0,
+> 1)`, and [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, lets a
+> step read and replace a run of elements at bounds that follow the loop index,
+> as `w with [4 * i..4 * i + 4] = b`, and [`SIZES_2026.md`](SIZES_2026.md),
+> proposed under OEP-0016, lets a loop's bounds be sizes, as `for b in
+> 0..blocks`, fixed in each instance of a sized function. Every source this
+> document accepts keeps its meaning under all eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

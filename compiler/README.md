@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3l proposed under OEP-0005 through OEP-0015, in owner review
+S3m proposed under OEP-0005 through OEP-0016, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -60,8 +60,14 @@ The S3l slice, proposed in [`docs/BYTES_2026.md`](../docs/BYTES_2026.md) and in
 owner review under OEP-0015, adds bytes: a byte string `"..."` or `hex"..."` is
 the array `Word[8]^n` of its bytes, `++` joins two arrays, and a slice
 `x[a..b]` and a slice update `x with [a..b] = v` read and replace a run of
-elements whose bounds are literals and loop indices proved in range. All
-twelve lower to a noncanonical Typed Reference Core and are
+elements whose bounds are literals and loop indices proved in range. The S3m
+slice, proposed in [`docs/SIZES_2026.md`](../docs/SIZES_2026.md) and in owner
+review under OEP-0016, adds sizes: a `spec` may declare size parameters with
+finite ranges, `spec f[n in 1..5](x: Word[8]^n)`, and stands for one instance
+for each value of its sizes, each checked as the function written out; sizes
+write array lengths, fill lengths, and loop bounds; and a call names its
+instance by its sizes, `f[2](x)`, or by its arguments' lengths. All
+thirteen lower to a noncanonical Typed Reference Core and are
 reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
@@ -193,7 +199,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3l are implemented and await owner review under OEP-0005 through OEP-0015, both
+S3m are implemented and await owner review under OEP-0005 through OEP-0016, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -670,8 +676,10 @@ module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* function_decl* "}
 use_decl        = "use" IDENTIFIER ";" ;
 type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
-                | "spec" IDENTIFIER "(" parameters ")" typed_tail
+                | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
+size_params     = "[" size_param ("," size_param)* "]" ;
+size_param      = IDENTIFIER "in" INTEGER ".." INTEGER ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
 binding         = "let" pattern "=" expression ";" ;
@@ -682,7 +690,8 @@ parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
 declared_type   = element_type | tuple_type ;
 tuple_type      = "(" element_type ("," element_type)+ ","? ")" ;
-element_type    = parsed_type ("^" INTEGER)? ;
+element_type    = parsed_type ("^" size)? ;
+size            = INTEGER | IDENTIFIER | "(" expression ")" ;
 parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
@@ -706,12 +715,13 @@ suffix          = "." INTEGER (index | slice)? | index | slice ;
 slice           = "[" range "]" ;
 range           = expression ".." expression? | ".." expression ;
 tuple           = "(" expression ("," expression)+ ","? ")" ;
-call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
+call            = (IDENTIFIER "::")? IDENTIFIER sizes? "(" arguments? ")" ;
+sizes           = "[" expression ("," expression)* "]" ;
 arguments       = expression ("," expression)* ","? ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
-fill            = "[" expression ";" INTEGER "]" ;
-loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
+fill            = "[" expression ";" size "]" ;
+loop            = "for" IDENTIFIER "in" size ".." size
                   "with" pattern "=" expression block ;
 conditional     = "if" expression block "else" alternative ;
 alternative     = block | conditional ;
@@ -720,10 +730,13 @@ block           = "{" binding* expression "}" ;
 
 `let`, `as`, `for`, `in`, `with`, `if`, `else`, `use`, and `type` are
 contextual: they are ordinary names everywhere except where a binding, a
-conversion, a loop, an update, a conditional, or, at the head of a module, a
-`use` or `type` declaration begins, and `Mod` takes a modulus only when a
+conversion, a loop, a size parameter, an update, a conditional, or, at the
+head of a module, a `use` or `type` declaration begins, and `Mod` takes a
+modulus only when a
 bracket follows it. `hex` begins a hex string only when a quote follows it
-directly. `true` and `false` are the `Bool` values only
+directly, and a name followed by brackets is a sized call only when the
+brackets hold integers, names, `+`, `-`, `*`, `/`, `%`, commas, and
+parentheses and `(` follows them. `true` and `false` are the `Bool` values only
 where no parameter, binding, or loop name of that spelling is in scope. For
 example:
 
@@ -757,6 +770,9 @@ module demo {
   spec fib() -> (Int, Int) { for i in 0..10 with (a: Int, b: Int) = (0, 1) { (b, a + b) } }
   spec greeting() -> Word[8]^5 { "Hi" ++ hex"20 21" ++ "!" }
   spec middle() -> Word[8]^3 { greeting()[1..4] }
+  spec zeros[n in 1..3]() -> Word[8]^n { [0; n] }
+  spec total[n in 1..9](x: Int^n) -> Int { for i in 0..n with s: Int = 0 { s + x[i] } }
+  spec six() -> Int { total([1, 2, 3]) }
 }
 ```
 
@@ -800,10 +816,18 @@ accumulator, and in a step or branch its own earlier bindings and those of the
 steps and branches around it, each name of a tuple pattern among them; Orange
 has no shadowing, so none of these may repeat a name in scope. Calls name typed `spec` functions of the same module, or, as
 `m::f(...)`, of a module it uses, and each module's call graph must be
-acyclic, as must the uses of a program. A loop runs over literal bounds with
+acyclic, as must the uses of a program. A `spec` with size parameters
+`[n in a..b, ...]`, at most four with a < b ≤ 65536 and at most 256
+instances in all, is checked once for each value of its sizes, as the
+function written out with that value; a size, built from integer literals and
+size parameters with `+`, `-`, `*`, `/`, `%`, and parentheses, writes an array
+length, a fill length, or a loop bound, and a size parameter's name is an
+`Int` constant. A call `f[2](x)` names its instance by its sizes, and `f(x)`
+names the one instance whose array parameters have its arguments' lengths.
+A loop runs over bounds that are literals or sizes with
 0 ≤ a < b ≤ 65536, and every index is proved in range before evaluation: an
-expression of literals and loop indices by its values, and an index keyed by
-data by the range of its word type. Duplicate names are syntactically valid, then semantic
+expression of literals, sizes, and loop indices by its values, and an index
+keyed by data by the range of its word type. Duplicate names are syntactically valid, then semantic
 analysis rejects a duplicate within the same declaration-kind namespace or
 parameter list. Empty declarations have no value, and a typed `impl` remains a
 syntax error.
@@ -821,7 +845,8 @@ reported type is derived from its value, so a type/value mismatch is not
 representable at the public Core boundary.
 
 `orangec eval` prints every typed specification without parameters of the
-root module in source order; the functions of the modules it uses run only
+root module in source order, every instance of a sized one in order and named
+by its sizes; the functions of the modules it uses run only
 when called. Functions with parameters are checked but run only when called,
 and words print as fixed-width lowercase hexadecimal:
 
@@ -838,11 +863,14 @@ demo::split: Int = 32
 demo::fib: (Int, Int) = (55, 89)
 demo::greeting: Word[8]^5 = [0x48, 0x69, 0x20, 0x21, 0x21]
 demo::middle: Word[8]^3 = [0x69, 0x20, 0x21]
+demo::zeros[1]: Word[8]^1 = [0x00]
+demo::zeros[2]: Word[8]^2 = [0x00, 0x00]
+demo::six: Int = 6
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3l rules, limits, and non-claims are in
+through S3m rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -852,8 +880,9 @@ through S3l rules, limits, and non-claims are in
 [`docs/MODULES_2026.md`](../docs/MODULES_2026.md),
 [`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md),
 [`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md),
-[`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md), and
-[`docs/BYTES_2026.md`](../docs/BYTES_2026.md). None of them defines
+[`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md),
+[`docs/BYTES_2026.md`](../docs/BYTES_2026.md), and
+[`docs/SIZES_2026.md`](../docs/SIZES_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1271,6 +1300,40 @@ tab and a raw delete, which the repository keeps out of its sources. This corpus
 tested behavior of one implementation; it does not accept OEP-0015, prove the
 rules sound, or complete S3.
 
+## S3m sizes conformance
+
+`fixtures/s3m/` contains an exact six-program corpus for the proposed S3m
+behavior, of which four must evaluate successfully and two must fail closed.
+The accepted programs write SHA-256 once for every message of 1 through 119
+bytes, its padding with a length computed from the message's size and its
+blocks absorbed by a loop whose bound is a size, reproducing FIPS 180-4's
+digests of "abc" and of its 56-byte two-block message; write HMAC-SHA-256 once
+for every key of 1 through 63 bytes and message of 1 through 55 over that
+SHA-256, used as a module, reproducing RFC 4231's test cases 1 and 2; write
+Poly1305 once for every message of 1 through 255 bytes, reproducing RFC 8439
+section 2.5.2's tag; and exercise sums over arrays of every length, instances
+of one and two sizes displayed by their sizes, lengths computed from sizes,
+tuples of sized halves, slices bounded by a size, Euclidean division of
+sizes, and calls with and without sizes. The rejected programs cover a size
+parameter without `in`, with a named bound, or a fifth; a computed length,
+fill length, or loop bound without parentheses; a qualified sized call without
+arguments; an empty range, a bound over 65536, 361 instances, a repeated size
+name, a parameter named like a size, a length written with a parameter, an
+index out of range in the first instance, a length of 0 in the first
+instance, a size outside its range, two sizes for one, sizes for a function
+without them, a call whose argument's length fits no instance and one that
+fits two, and a cycle between two instances.
+
+`crates/orangec/tests/s3m_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3l runner. It parses the 10-rule S3m index in
+`docs/SIZES_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates a
+function of four sizes with 256 instances, a function with every array length
+from 1 through 256, and a size bound of 65536, and each with one instance or
+one bound more. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0016, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1314,6 +1377,8 @@ rules sound, or complete S3.
   rule-index, and tuple-size runner;
 - `crates/orangec/tests/s3l_conformance.rs`: exact repeatable S3l corpus,
   rule-index, and byte-string-length runner;
+- `crates/orangec/tests/s3m_conformance.rs`: exact repeatable S3m corpus,
+  rule-index, and instance-limit runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1329,6 +1394,7 @@ rules sound, or complete S3.
 - `fixtures/s3j/`: exact three-positive/three-negative S3j CLI fixture corpus;
 - `fixtures/s3k/`: exact four-positive/three-negative S3k CLI fixture corpus;
 - `fixtures/s3l/`: exact three-positive/three-negative S3l CLI fixture corpus;
+- `fixtures/s3m/`: exact four-positive/two-negative S3m CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

@@ -28,15 +28,17 @@ meaning. It accepts no D-004 candidate.
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
 > use others and call their functions by module name,
 > [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, adds the
-> integers modulo a constant, whose division is total in the same spirit:
-> `x / y` is 0 when y has no inverse, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
-> proposed under OEP-0013, lets each branch begin with `let` bindings, which
-> are evaluated only when their branch is chosen, and
+> integers modulo a constant, whose division is total in the same spirit: `x /
+> y` is 0 when y has no inverse, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
+> proposed under OEP-0013, lets each branch begin with `let` bindings, which are
+> evaluated only when their branch is chosen, and
 > [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
 > which a conditional may choose between as it chooses any value, and
 > [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds `++`, whose
-> group mixes with no comparison or logical operator without parentheses.
-> Every source this document accepts keeps its meaning under all six.
+> group mixes with no comparison or logical operator without parentheses, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, computes sizes with
+> the same total, Euclidean `/` and `%`. Every source this document accepts
+> keeps its meaning under all seven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

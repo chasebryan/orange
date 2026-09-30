@@ -2694,7 +2694,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-07-12
 
-Manuscript version: 0.14
+Manuscript version: 0.15
 
 This is not a normative language specification.
 
@@ -2849,11 +2849,11 @@ under Chase Bryan's direction on 2026-09-28.
 
     def test_orange_book_contract_rejects_missing_wrong_or_duplicate_version(self) -> None:
         mutations = (
-            lambda text: text.replace("Manuscript version: 0.14\n\n", "", 1),
-            lambda text: text.replace("Manuscript version: 0.14", "Manuscript version: 0.13", 1),
+            lambda text: text.replace("Manuscript version: 0.15\n\n", "", 1),
+            lambda text: text.replace("Manuscript version: 0.15", "Manuscript version: 0.14", 1),
             lambda text: text.replace(
-                "Manuscript version: 0.14",
-                "Manuscript version: 0.14\n\nManuscript version: 0.14",
+                "Manuscript version: 0.15",
+                "Manuscript version: 0.15\n\nManuscript version: 0.15",
                 1,
             ),
         )

@@ -42,6 +42,9 @@ pub struct EvaluatedFunction {
     module: Arc<str>,
     /// Exact ASCII function name.
     name: String,
+    /// The values of the function's sizes in the instance evaluated, empty
+    /// for a function without sizes.
+    sizes: Vec<u32>,
     /// Exact evaluated value.
     value: CoreValue,
 }
@@ -65,6 +68,13 @@ impl EvaluatedFunction {
         &self.name
     }
 
+    /// Returns the values of the function's sizes in the instance
+    /// evaluated, or an empty slice for a function without sizes.
+    #[must_use]
+    pub fn sizes(&self) -> &[u32] {
+        &self.sizes
+    }
+
     /// Returns the statically checked result type.
     #[must_use]
     pub fn result_type(&self) -> CoreType {
@@ -80,14 +90,16 @@ impl EvaluatedFunction {
 
 impl fmt::Display for EvaluatedFunction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{}::{}: {} = {}",
-            self.module(),
-            self.name(),
-            self.result_type(),
-            self.value()
-        )
+        write!(formatter, "{}::{}", self.module(), self.name())?;
+        // An instance of a sized function is named as a call names it.
+        if let Some((first, rest)) = self.sizes.split_first() {
+            write!(formatter, "[{first}")?;
+            for size in rest {
+                write!(formatter, ", {size}")?;
+            }
+            formatter.write_str("]")?;
+        }
+        write!(formatter, ": {} = {}", self.result_type(), self.value())
     }
 }
 
@@ -240,17 +252,29 @@ impl<'core> Evaluator<'core> {
         self.machine.core
     }
 
-    /// Returns the root module's function named `name`, if there is one.
+    /// Returns the root module's function named `name`, if there is one and
+    /// it declares no size parameters.
     ///
     /// Functions of the modules the root uses are reached only through the
     /// root's calls, so two modules may each declare a function of one name.
+    /// A function with size parameters is one Core function per instance, all
+    /// of one name, and is reached one instance at a time through
+    /// [`Evaluator::instance`].
     #[must_use]
     pub fn function(&self, name: &str) -> Option<&'core CoreFunction> {
+        self.instance(name, &[])
+    }
+
+    /// Returns the instance of the root module's function named `name` whose
+    /// sizes, in declaration order, are `sizes`, if there is one. Empty
+    /// `sizes` name a function without size parameters.
+    #[must_use]
+    pub fn instance(&self, name: &str, sizes: &[u32]) -> Option<&'core CoreFunction> {
         self.machine
             .core
             .entry_functions()
             .iter()
-            .find(|function| function.name == name)
+            .find(|function| function.name == name && function.sizes() == sizes)
     }
 
     /// Calls `function` on `arguments` within `step_limit` evaluation steps.
@@ -2117,6 +2141,15 @@ fn evaluate_with_reservations(
             );
         }
         name.push_str(&function.name);
+        let mut sizes = Vec::new();
+        if sizes.try_reserve_exact(function.sizes.len()).is_err() {
+            return allocation_failure(
+                diagnostics,
+                function.name_span,
+                "evaluated function sizes could not be reserved",
+            );
+        }
+        sizes.extend_from_slice(&function.sizes);
         let value = match result_value(value, &function.result_type, reservations) {
             Ok(value) => value,
             Err(Stop::Allocation(label)) => {
@@ -2129,6 +2162,7 @@ fn evaluate_with_reservations(
             id: function.id,
             module,
             name,
+            sizes,
             value,
         });
     }
@@ -3514,6 +3548,20 @@ mod tests {
                 "h(".repeat(MAX_EXPRESSION_NESTING - 1),
                 ")[..1]".repeat(MAX_EXPRESSION_NESTING - 1)
             ),
+            // Sized calls nested in sized calls, calls without sizes that
+            // take the instance their arguments fit nested in each other,
+            // and a fill's length nested in groups.
+            nested("s[1](", "x", ")"),
+            format!(
+                "{}[x]{}[0]",
+                "t(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            format!(
+                "h([x; {}1{}])[0]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 2),
+                ")".repeat(MAX_EXPRESSION_NESTING - 2)
+            ),
             // Tuples of calls' elements nested in calls, and a tuple
             // pattern in every nested step of loops whose accumulators are
             // tuples.
@@ -3542,6 +3590,8 @@ mod tests {
                     "edition 2026; module m {{\n  spec g(x: Word[32]) -> Word[32] {{ x }}\n  \
                      spec h(x: Word[32]^1) -> Word[32]^1 {{ x }}\n  \
                      spec p(t: (Word[32], Word[32])) -> (Word[32], Word[32]) {{ t }}\n  \
+                     spec s[n in 1..2](x: Word[32]) -> Word[32] {{ x }}\n  \
+                     spec t[n in 1..3](x: Word[32]^n) -> Word[32]^n {{ x }}\n  \
                      spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
                      spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
                 )
@@ -3560,6 +3610,33 @@ mod tests {
             })
             .unwrap();
         assert_eq!(worker.join().unwrap(), vec![Some(1); bodies.len()]);
+    }
+
+    #[test]
+    fn every_instance_of_a_sized_root_is_evaluated_and_named_by_its_sizes() {
+        let (_, core) = analyzed(concat!(
+            "edition 2026; module sizes {\n",
+            "  spec zeros[n in 2..4]() -> Word[8]^n { [0; n] }\n",
+            "  spec count[a in 1..3, b in 5..6]() -> Int { (a * 100) + b }\n",
+            "  spec twice[k in 1..3](x: Word[8]^k) -> Word[8]^(2 * k) { x ++ x }\n",
+            "  spec pair() -> Word[8]^4 { twice(hex\"ab cd\") }\n",
+            "}\n"
+        ));
+        let result = evaluate(&core);
+        assert_eq!(result.diagnostics(), []);
+        let values = result.values().unwrap();
+        assert_eq!(
+            values.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            [
+                "sizes::zeros[2]: Word[8]^2 = [0x00, 0x00]",
+                "sizes::zeros[3]: Word[8]^3 = [0x00, 0x00, 0x00]",
+                "sizes::count[1, 5]: Int = 105",
+                "sizes::count[2, 5]: Int = 205",
+                "sizes::pair: Word[8]^4 = [0xab, 0xcd, 0xab, 0xcd]",
+            ]
+        );
+        assert_eq!(values[2].sizes(), [1, 5]);
+        assert_eq!(values[4].sizes(), []);
     }
 
     #[test]
@@ -4667,6 +4744,37 @@ mod tests {
         let result = evaluator.call(constant, &[], 1).unwrap();
         assert_eq!(result.value(), Some(&CoreValue::Word8(7)));
         assert_eq!(result.steps(), 1);
+    }
+
+    #[test]
+    fn sized_functions_are_found_one_instance_at_a_time() {
+        let core = core(concat!(
+            "edition 2026; module sized {\n",
+            "  spec pick[n in 1..3](x: Word[8]^n) -> Word[8] { x[n - 1] }\n",
+            "  spec plain() -> Int { 1 }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        // Every instance of `pick` has its name, so a lookup by name alone
+        // finds none of them rather than whichever comes first.
+        assert!(evaluator.function("pick").is_none());
+        assert!(evaluator.instance("pick", &[]).is_none());
+        assert!(evaluator.instance("pick", &[3]).is_none());
+        assert!(evaluator.instance("pick", &[1, 1]).is_none());
+        let second = evaluator.instance("pick", &[2]).unwrap();
+        assert_eq!(second.sizes(), [2]);
+        assert!(evaluator.call(second, &[bytes(&[5])], 100).is_none());
+        let result = evaluator.call(second, &[bytes(&[5, 6])], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(6)));
+        let first = evaluator.instance("pick", &[1]).unwrap();
+        let result = evaluator.call(first, &[bytes(&[5])], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(5)));
+        let plain = evaluator.function("plain").unwrap();
+        assert!(std::ptr::eq(
+            plain,
+            evaluator.instance("plain", &[]).unwrap()
+        ));
+        assert!(evaluator.instance("plain", &[1]).is_none());
     }
 
     #[test]

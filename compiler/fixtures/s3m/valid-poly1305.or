@@ -1,0 +1,53 @@
+// S3m conformance: Poly1305 of RFC 8439 section 2.5 for every message of 1
+// through 255 bytes, written once, over the integers modulo 2^130 - 5. The
+// message is padded with zeros to whole sixteen-byte blocks; each block is
+// its bytes, little-endian, with one more byte 0x01 above them, and in the
+// last block that byte sits just above the message's own last byte. The tag
+// of the section 2.5.2 example, "Cryptographic Forum Research Group", matches
+// the RFC byte for byte.
+edition 2026;
+module poly1305 {
+  type P = Mod[(1 << 130) - 5];
+
+  // 256^k as a residue, for 0 <= k <= 16.
+  spec weight(k: Int) -> P {
+    for i in 0..16 with w: P = 1 { if i < k { w * 256 } else { w } }
+  }
+
+  // Sixteen bytes read as one number, little-endian.
+  spec number(b: Word[8]^16) -> P {
+    for i in 0..16 with n: P = 0 { n * 256 + (b[15 - i] as P) }
+  }
+
+  // The low sixteen bytes of x, little-endian.
+  spec tag(x: Int) -> Word[8]^16 {
+    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (x / (weight(i) as Int)) as Word[8] }
+  }
+
+  // Section 2.5: r &= 0x0ffffffc0ffffffc0ffffffc0fffffff.
+  spec clamp(r: Word[8]^16) -> Word[8]^16 {
+    let mask: Word[8]^16 = hex"ffffff0f fcffff0f fcffff0f fcffff0f";
+    for i in 0..16 with c: Word[8]^16 = r { c with [i] = r[i] & mask[i] }
+  }
+
+  // Section 2.5.1 for a message of `len` bytes: ((len + 15) / 16) blocks,
+  // the last holding len - 16 * (blocks - 1) of the message's bytes.
+  spec mac[len in 1..256](key: Word[8]^32, m: Word[8]^len) -> Word[8]^16 {
+    let padded: Word[8]^(16 * ((len / 16) + 1)) = m ++ [0; (16 - (len % 16))];
+    let r: P = number(clamp(key[..16]));
+    let s: Int = number(key[16..]) as Int;
+    let a: P = for j in 0..((len + 15) / 16) with a: P = 0 {
+      let held: Int = if j == (((len + 15) / 16) - 1) { len - (16 * j) } else { 16 };
+      (a + number(padded[16 * j..16 * j + 16]) + weight(held)) * r
+    };
+    tag((a as Int) + s)
+  }
+
+  // Section 2.5.2.
+  spec example() -> Word[8]^16 {
+    mac(
+      hex"85d6be78 57556d33 7f4452fe 42d506a8 0103808a fb0db2fd 4abff6af 4149f51b",
+      "Cryptographic Forum Research Group",
+    )
+  }
+}

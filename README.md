@@ -368,7 +368,9 @@ Nothing is imported into scope: a call into another module always names it,
 and a module declares every module it uses, so a reader sees where each
 function comes from. Modules may not use each other in a cycle, and each means
 the same whoever uses it. [S3l](#bytes-as-the-standards-print-them) writes
-the test cases' keys and messages as the RFC prints them. This slice, S3h, is
+the test cases' keys and messages as the RFC prints them, and
+[S3m](#one-algorithm-for-every-length) writes HMAC once for every key and
+message length. This slice, S3h, is
 implemented and tested; its specification is in review as
 [OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md).
 
@@ -601,6 +603,78 @@ bytes as `hex"c3 a9"`. This slice, S3l, is implemented and tested; its
 specification is in review as
 [OEP-0015](docs/governance/oeps/OEP-0015-orange-2026-bytes.md).
 
+### One algorithm for every length
+
+A standard gives one algorithm for inputs of many lengths, and Orange writes
+it once. A `spec` may declare **size parameters** in square brackets, each with
+a finite range, and use them wherever a length or a loop bound is written.
+SHA-256 pads a message of any length from 1 through 119 bytes to whole blocks
+and absorbs them one at a time:
+
+```orange
+// FIPS 180-4 section 5.1.1: the message, the byte 80, zeros, and the
+// message's length in bits fill ((len + 8) / 64) + 1 blocks.
+spec pad[len in 1..120](m: Word[8]^len) -> Word[8]^(64 * (((len + 8) / 64) + 1)) {
+  m ++ hex"80" ++ [0; ((64 * (((len + 8) / 64) + 1)) - len - 3)]
+    ++ [((8 * len) / 256) as Word[8], (8 * len) as Word[8]]
+}
+
+// Section 6.2.2: each block absorbed in turn.
+spec absorb[blocks in 1..4](p: Word[8]^(64 * blocks)) -> Word[8]^32 {
+  digest(for b in 0..blocks with h: Word[32]^8 = initial_hash() {
+    compress(h, p[64 * b..64 * b + 64])
+  })
+}
+
+spec sha256[len in 1..120](m: Word[8]^len) -> Word[8]^32 { absorb(pad(m)) }
+
+spec abc() -> Word[8]^32 { sha256("abc") }
+
+spec two_blocks() -> Word[8]^32 {
+  sha256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+}
+```
+
+```text
+sha256::abc: Word[8]^32 = [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad]
+sha256::two_blocks: Word[8]^32 = [0x24, 0x8d, 0x6a, 0x61, 0xd2, 0x06, 0x38, 0xb8, 0xe5, 0xc0, 0x26, 0x93, 0x0c, 0x3e, 0x60, 0x39, 0xa3, 0x3c, 0xe4, 0x59, 0x64, 0xff, 0x21, 0x67, 0xf6, 0xec, 0xed, 0xd4, 0x19, 0xdb, 0x06, 0xc1]
+```
+
+`pad` stands for 119 functions, `pad[1]` through `pad[119]`, one for each
+value of `len`, and the compiler checks every one before anything runs,
+exactly as it would check each written out by hand: every length is computed,
+every slice of `absorb` is proved in range for each number of blocks, and
+were one instance in error, the first would be reported by its name, such as
+`pad[56]`. Nothing is symbolic. A size is a number, different in each instance, and what
+is proved of `sha256` is proved of each of its 119 instances.
+
+A call names its instance by its sizes, as `pad[3](m)`, or by the lengths of
+its arguments: `sha256("abc")` calls `sha256[3]`, and `absorb(pad(m))` calls
+the instance of `absorb` that takes `pad`'s result. HMAC is then written once
+for every key of 1 through 63 bytes and every message of 1 through 55, over
+that SHA-256 in its own module:
+
+```orange
+spec padded[klen in 1..64](key: Word[8]^klen) -> Word[8]^64 { key ++ [0; (64 - klen)] }
+
+spec hmac[len in 1..56](k0: Word[8]^64, m: Word[8]^len) -> Word[8]^32 {
+  sha256::sha256(keyed(k0, 0x5c) ++ sha256::sha256(keyed(k0, 0x36) ++ m))
+}
+
+spec case2() -> Word[8]^32 { hmac(padded("Jefe"), "what do ya want for nothing?") }
+```
+
+The [SHA-256 fixture](compiler/fixtures/s3m/sha256.or) reproduces FIPS
+180-4's digests of "abc" and of its 56-byte message, whose padding takes a
+second block; the [HMAC fixture](compiler/fixtures/s3m/valid-hmac.or)
+reproduces RFC 4231's test cases 1 and 2; and the
+[Poly1305 fixture](compiler/fixtures/s3m/valid-poly1305.or), written once for
+every message of 1 through 255 bytes, reproduces the tag of RFC 8439 section
+2.5.2. A size is built from integer literals and size parameters, so it never
+depends on data, and a function has at most 256 instances. This slice, S3m,
+is implemented and tested; its specification is in review as
+[OEP-0016](docs/governance/oeps/OEP-0016-orange-2026-sizes.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -630,8 +704,9 @@ cryptography.
 | `let` bindings inside a loop's step and each branch of a conditional | Working; specification in review ([OEP-0013](docs/governance/oeps/OEP-0013-orange-2026-blocks.md)) |
 | Tuples, `.k`, and tuple patterns, so that a function gives several values and a loop carries several accumulators | Working; specification in review ([OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md)) |
 | Byte strings `"..."` and `hex"..."`, `++` joins, and slices at bounds proved in range | Working; specification in review ([OEP-0015](docs/governance/oeps/OEP-0015-orange-2026-bytes.md)) |
+| Size parameters: one `spec` for every length in a range, each instance checked before anything runs | Working; specification in review ([OEP-0016](docs/governance/oeps/OEP-0016-orange-2026-sizes.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Functions generic over a size or a modulus, imports of names into scope | Not yet |
+| Functions generic over a modulus, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -712,7 +787,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, and bytes in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, and sizes in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -738,9 +813,9 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [lookups keyed by data](docs/LOOKUPS_2026.md),
   [programs of more than one module](docs/MODULES_2026.md),
   [integers modulo a constant](docs/MODULAR_2026.md),
-  [blocks](docs/BLOCKS_2026.md), [tuples](docs/TUPLES_2026.md), and
-  [bytes](docs/BYTES_2026.md): the definition of what the compiler accepts
-  today.
+  [blocks](docs/BLOCKS_2026.md), [tuples](docs/TUPLES_2026.md),
+  [bytes](docs/BYTES_2026.md), and [sizes](docs/SIZES_2026.md): the
+  definition of what the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

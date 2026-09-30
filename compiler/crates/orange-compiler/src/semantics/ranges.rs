@@ -305,6 +305,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return self.static_range(inner, context, scope);
             }
             ExpressionKind::Name(name) => match context.resolve(&name.text) {
+                // A size is a constant of the instance.
+                NameResolution::Size(value) => {
+                    ExactInteger::from_u64(u64::from(value), self.reserve_range_limbs).zip(
+                        ExactInteger::from_u64(u64::from(value), self.reserve_range_limbs),
+                    )
+                }
                 NameResolution::LoopIndex(position) => {
                     let scope = context.loop_scopes.get(position).ok_or(name.span)?;
                     let last = scope.end.checked_sub(1).ok_or(name.span)?;

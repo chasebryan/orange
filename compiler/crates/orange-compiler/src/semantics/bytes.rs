@@ -442,8 +442,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         match &expression.kind {
             ExpressionKind::Parenthesized(inner) => self.array_length_of(inner, context, scope),
             ExpressionKind::Array(array) => u32::try_from(array.elements.len()).ok(),
-            ExpressionKind::Fill(fill) => array_length(self.source, fill.length_span)
-                .filter(|length| (1..=MAX_ARRAY_LENGTH).contains(length)),
+            ExpressionKind::Fill(fill) => {
+                match self.types.sizes.array_length(self.source, &fill.length) {
+                    Length::Admitted(length) => Some(length),
+                    _ => None,
+                }
+            }
             ExpressionKind::Bytes(bytes) => {
                 let spelling = self.source.slice(expression.span)?;
                 let decoded =
@@ -1184,6 +1188,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Literal(literal) => self.range_literal(literal).map(Affine::constant),
             ExpressionKind::Parenthesized(inner) => return self.affine_form(inner, context),
             ExpressionKind::Name(name) => match context.resolve(&name.text) {
+                // A size is a constant of the instance.
+                NameResolution::Size(value) => {
+                    ExactInteger::from_u64(u64::from(value), reserve).map(Affine::constant)
+                }
                 NameResolution::LoopIndex(position) => ExactInteger::from_u64(0, reserve)
                     .zip(ExactInteger::from_u64(1, reserve))
                     .map(|(constant, one)| Affine {

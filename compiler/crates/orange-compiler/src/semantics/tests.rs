@@ -3971,8 +3971,8 @@ fn rejects_foreign_spans_in_arrays_and_indices() {
     let ExpressionKind::Index(foreign_index) = &foreign_array.elements[0].kind else {
         unreachable!();
     };
-    let foreign_length = foreign_function.parameters[0].ty.length_span;
-    let foreign_result_length = foreign.result_type.length_span;
+    let foreign_length = foreign_function.parameters[0].ty.length.clone();
+    let foreign_result_length = foreign.result_type.length.clone();
     fn index_mut(ast: &mut SyntaxTree) -> &mut IndexExpression {
         let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
             unreachable!();
@@ -3983,8 +3983,8 @@ fn rejects_foreign_spans_in_arrays_and_indices() {
         }
     }
     let mutations: [&dyn Fn(&mut SyntaxTree); 6] = [
-        &|ast| ast.module.functions[0].parameters[0].ty.length_span = foreign_length,
-        &|ast| typed_body_mut(ast).result_type.length_span = foreign_result_length,
+        &|ast| ast.module.functions[0].parameters[0].ty.length = foreign_length.clone(),
+        &|ast| typed_body_mut(ast).result_type.length = foreign_result_length.clone(),
         &|ast| typed_body_mut(ast).expression.span = foreign.expression.span,
         &|ast| {
             let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
@@ -4606,19 +4606,19 @@ fn rejects_foreign_spans_in_loops_updates_and_fills() {
     let mutations: Vec<Mutation<'_>> = vec![
         Box::new(|ast| loop_mut(ast).keyword_span = foreign.keyword_span),
         Box::new(|ast| loop_mut(ast).index.span = foreign.index.span),
-        Box::new(|ast| loop_mut(ast).start_span = foreign.start_span),
-        Box::new(|ast| loop_mut(ast).end_span = foreign.end_span),
+        Box::new(|ast| loop_mut(ast).start = foreign.start.clone()),
+        Box::new(|ast| loop_mut(ast).end = foreign.end.clone()),
         Box::new(|ast| {
             named_mut(&mut loop_mut(ast).accumulator).name.span =
                 named_of(&foreign.accumulator).name.span;
         }),
         Box::new(|ast| {
-            named_mut(&mut loop_mut(ast).accumulator).ty.length_span =
-                named_of(&foreign.accumulator).ty.length_span;
+            named_mut(&mut loop_mut(ast).accumulator).ty.length =
+                named_of(&foreign.accumulator).ty.length.clone();
         }),
         Box::new(|ast| update_mut(ast).keyword_span = foreign_update.keyword_span),
         Box::new(|ast| update_mut(ast).index.span = foreign_update.index.span),
-        Box::new(|ast| fill_mut(ast).length_span = foreign_fill.length_span),
+        Box::new(|ast| fill_mut(ast).length = foreign_fill.length.clone()),
         Box::new(|ast| fill_mut(ast).element.span = foreign_fill.element.span),
         Box::new(|ast| {
             let ExpressionKind::Index(index) = &mut update_mut(ast).value.kind else {
@@ -6043,15 +6043,14 @@ fn rejects_foreign_use_and_qualifier_spans_and_foreign_modules() {
     let foreign_use = second.asts[0].module.uses[0].clone();
     let foreign_module = second.asts[0].clone();
     let mut foreign_qualifier = second.asts[0].clone();
-    let foreign_qualifier_span = call_of(&mut foreign_qualifier)
-        .module
-        .as_ref()
-        .unwrap()
-        .span;
+    let foreign_qualifier_span = call_of(&mut foreign_qualifier).module().unwrap().span;
     let mutations: [&dyn Fn(&mut SyntaxTree); 3] = [
         &|ast| ast.module.uses[0].span = foreign_use.span,
         &|ast| ast.module.uses[0].name.span = foreign_use.name.span,
-        &|ast| call_of(ast).module.as_mut().unwrap().span = foreign_qualifier_span,
+        &|ast| {
+            let qualifiers = call_of(ast).qualifiers.as_mut().unwrap();
+            qualifiers.module.as_mut().unwrap().span = foreign_qualifier_span;
+        },
     ];
     let modules = first.modules();
     for (index, mutate) in mutations.iter().enumerate() {
@@ -8606,6 +8605,586 @@ fn rejects_foreign_spans_in_byte_strings_joins_and_slices() {
             result.diagnostics[0].code(),
             DiagnosticCode::InvalidSemanticInput,
             "case {case_index}"
+        );
+    }
+}
+
+#[test]
+fn sized_functions_take_one_core_function_per_instance_in_ascending_order() {
+    let (fixture, core) = accepted(concat!(
+        "  spec sum[n in 1..4](x: Int^n) -> Int { for i in 0..n with s: Int = 0 { s + x[i] } }\n",
+        "  spec pair[a in 1..3, b in 2..4]() -> Int { (a * 10) + b }\n",
+        "  spec total() -> Int { sum[3]([1, 2, 3]) + sum([10]) + pair[2, 3]() }\n",
+    ));
+    assert_eq!(
+        core.functions
+            .iter()
+            .map(|function| (function.name(), function.sizes().to_vec()))
+            .collect::<Vec<_>>(),
+        [
+            ("sum", vec![1]),
+            ("sum", vec![2]),
+            ("sum", vec![3]),
+            ("pair", vec![1, 2]),
+            ("pair", vec![1, 3]),
+            ("pair", vec![2, 2]),
+            ("pair", vec![2, 3]),
+            ("total", vec![]),
+        ]
+    );
+    let calls = core_nodes(&fixture, &core.functions[7])
+        .into_iter()
+        .filter(|(operation, _, _)| operation.starts_with("call"))
+        .map(|(operation, source, _)| (operation, source))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        calls,
+        [
+            (String::from("call #2 with 1"), "sum[3]([1, 2, 3])"),
+            (String::from("call #0 with 1"), "sum([10])"),
+            (String::from("call #6 with 0"), "pair[2, 3]()"),
+        ]
+    );
+    // Each instance's types are its own, and a size is an `Int` constant.
+    assert_eq!(
+        core.functions[2].parameters(),
+        [CoreType::Array(ArrayType::new(&CoreType::Int, 3).unwrap())]
+    );
+    let constants = core_nodes(&fixture, &core.functions[6])
+        .into_iter()
+        .filter(|(operation, _, _)| operation.starts_with("literal"))
+        .map(|(operation, source, _)| (operation, source))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        constants,
+        [
+            (String::from("literal 2"), "a"),
+            (String::from("literal 10"), "10"),
+            (String::from("literal 3"), "b"),
+        ]
+    );
+}
+
+#[test]
+fn only_the_first_failing_instance_of_a_function_is_reported_and_named() {
+    let (fixture, result) = rejected(concat!(
+        "  spec last[n in 1..5](x: Word[8]^n) -> Word[8] { x[3] }\n",
+        "  spec shape[n in 1..3](x: Word[8]^n) -> Word[8]^2 { x }\n",
+        "  spec fine[n in 1..3](x: Word[8]^n) -> Word[8]^n { x }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "3",
+                String::from("index `3` is out of range for `Word[8]^1`")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "x",
+                String::from("`x` has type `Word[8]^1`, but `Word[8]^2` is required here")
+            ),
+        ]
+    );
+    assert_eq!(
+        result.diagnostics[0].notes().last().unwrap(),
+        "in the instance `last[1]`, the first of `last` in error: a sized function is checked \
+         once for each value of its sizes"
+    );
+    assert_eq!(
+        result.diagnostics[1].notes().last().unwrap(),
+        "in the instance `shape[1]`, the first of `shape` in error: a sized function is checked \
+         once for each value of its sizes"
+    );
+}
+
+#[test]
+fn size_parameters_have_bounded_ranges_and_unique_names() {
+    let (fixture, result) = rejected(concat!(
+        "  spec empty[n in 3..3]() -> Int { n }\n",
+        "  spec reversed[n in 4..2]() -> Int { n }\n",
+        "  spec far[n in 0..65537]() -> Int { n }\n",
+        "  spec wide[n in 0..65536]() -> Int { n }\n",
+        "  spec many[a in 1..17, b in 1..18]() -> Int { a + b }\n",
+        "  spec twice[n in 1..2, n in 1..2]() -> Int { n }\n",
+        "  spec clash[n in 1..2](n: Int) -> Int { n }\n",
+        "  spec bound[n in 1..2]() -> Int { let n: Int = 1; n }\n",
+        "  spec most[a in 1..17, b in 1..17]() -> Int { a + b }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::SizeRange,
+                "3",
+                String::from("the size range 3..3 is empty")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "2",
+                String::from("the size range 4..2 is empty")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "65537",
+                String::from("a size's bound must be at most 65536")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "n in 0..65536",
+                String::from("`wide` has 65536 instances, but a function has at most 256")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "a in 1..17, b in 1..18",
+                String::from("`many` has 272 instances, but a function has at most 256")
+            ),
+            (
+                DiagnosticCode::DuplicateParameter,
+                "n",
+                String::from("duplicate parameter `n`")
+            ),
+            (
+                DiagnosticCode::DuplicateParameter,
+                "n",
+                String::from("duplicate parameter `n`")
+            ),
+            (
+                DiagnosticCode::DuplicateBinding,
+                "n",
+                String::from("duplicate binding `n`")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn sizes_are_built_from_literals_and_size_parameters_only() {
+    let (fixture, result) = rejected(concat!(
+        "  spec value(k: Int) -> Word[8]^(k + 1) { [0; 1] }\n",
+        "  spec index[n in 1..3]() -> Int {\n",
+        "    for i in 0..2 with s: Int = 0 { let t: Int^(i + n) = [0; 2]; s }\n",
+        "  }\n",
+        "  spec call[n in 1..3]() -> Word[8]^(f() + n) { [0; 1] }\n",
+        "  spec other[n in 1..3]() -> Word[8]^(n << 1) { [0; 1] }\n",
+        "  spec zero[n in 0..2]() -> Word[8]^n { [0; 1] }\n",
+        "  spec most[n in 255..258]() -> Word[8]^n { [0; n] }\n",
+        "  spec f() -> Int { 1 }\n",
+        "  spec bound[n in 1..3]() -> Int { for i in 0..(n - 1) with s: Int = 0 { s } }\n",
+        "  spec order[n in 1..3]() -> Int { for i in n..1 with s: Int = 0 { s } }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::NonStaticSize,
+                "k",
+                String::from("a size may use only integer literals and size parameters")
+            ),
+            (
+                DiagnosticCode::NonStaticSize,
+                "i",
+                String::from("a size may use only integer literals and size parameters")
+            ),
+            (
+                DiagnosticCode::NonStaticSize,
+                "f()",
+                String::from("a size may use only integer literals and size parameters")
+            ),
+            (
+                DiagnosticCode::NonStaticSize,
+                "n << 1",
+                String::from("a size may use only integer literals and size parameters")
+            ),
+            (
+                DiagnosticCode::UnsupportedArrayLength,
+                "n",
+                String::from("this array length is 0, but an array has 1 through 256 elements")
+            ),
+            (
+                DiagnosticCode::UnsupportedArrayLength,
+                "n",
+                String::from("this array length is 257, but an array has 1 through 256 elements")
+            ),
+            (
+                DiagnosticCode::InvalidLoopRange,
+                "(n - 1)",
+                String::from("the loop range 0..0 is empty")
+            ),
+            (
+                DiagnosticCode::InvalidLoopRange,
+                "1",
+                String::from("the loop range 1..1 is empty")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn sizes_are_exact_and_held_to_the_integer_limit() {
+    // Division and remainder are Euclidean and total, as for `Int`.
+    let (_, core) = accepted(concat!(
+        "  spec q[n in 1..8]() -> Word[8]^(((n - 9) / 4) + 4) { [0; (((n - 9) / 4) + 4)] }\n",
+        "  spec r[n in 1..3]() -> Word[8]^(((0 - n) % 3) + (n / 0) + (n % 0)) { [0; 3] }\n",
+    ));
+    let lengths = core
+        .functions
+        .iter()
+        .map(|function| function.result_type().as_array().unwrap().length())
+        .collect::<Vec<_>>();
+    // (n - 9) / 4 rounds toward minus infinity for a positive divisor: -2
+    // through n = 4, then -1. (0 - n) % 3 is 2 for n = 1 and 1 for n = 2,
+    // n / 0 is 0, and n % 0 is n.
+    assert_eq!(lengths, [2, 2, 2, 2, 3, 3, 3, 3, 3]);
+    let fixture = module("  spec big[n in 1..2]() -> Word[8]^((n * 200) - 199) { [0; 1] }\n");
+    let limits = Limits {
+        integer_bits: 7,
+        ..Limits::DEFAULT
+    };
+    let result = fixture.analyze_with(limits);
+    assert!(result.core.is_none());
+    assert_eq!(
+        reported(&fixture, &result),
+        [(
+            DiagnosticCode::IntegerMagnitudeLimit,
+            "200",
+            String::from("integer magnitude exceeds the 7-significant-bit limit")
+        )]
+    );
+}
+
+#[test]
+fn calls_name_one_instance_by_their_sizes_or_by_their_arguments() {
+    let (fixture, core) = accepted(concat!(
+        "  spec first[n in 1..5](x: Word[8]^n) -> Word[8] { x[0] }\n",
+        "  spec absorb[b in 1..4](p: Word[8]^(64 * b)) -> Word[8] { p[(64 * b) - 1] }\n",
+        "  spec grow[n in 1..4](x: Word[8]^n) -> Word[8]^(n + 1) { x ++ [0] }\n",
+        "  spec one[n in 7..8]() -> Int { n }\n",
+        "  spec calls[k in 2..4](y: Word[8]^k) -> Word[8] {\n",
+        "    first(y) ^ first[k - 1](y[1..]) ^ first(grow(y)) ^ absorb([0; 128])\n",
+        "      ^ first(\"abc\" ++ y[..1]) ^ (one() as Word[8])\n",
+        "  }\n",
+    ));
+    let calls = |index: usize| {
+        core_nodes(&fixture, &core.functions[index])
+            .into_iter()
+            .filter(|(operation, _, _)| operation.starts_with("call"))
+            .map(|(operation, source, _)| (operation, source))
+            .collect::<Vec<_>>()
+    };
+    // first[1..=4] are #0-#3, absorb[1..=3] #4-#6, grow[1..=3] #7-#9, one[7]
+    // #10, and calls[2] and calls[3] #11 and #12.
+    assert_eq!(
+        calls(11),
+        [
+            (String::from("call #1 with 1"), "first(y)"),
+            (String::from("call #0 with 1"), "first[k - 1](y[1..])"),
+            (String::from("call #8 with 1"), "grow(y)"),
+            (String::from("call #2 with 1"), "first(grow(y))"),
+            (String::from("call #5 with 1"), "absorb([0; 128])"),
+            (String::from("call #3 with 1"), "first(\"abc\" ++ y[..1])"),
+            (String::from("call #10 with 0"), "one()"),
+        ]
+    );
+    assert_eq!(calls(12)[0], (String::from("call #2 with 1"), "first(y)"));
+}
+
+#[test]
+fn calls_that_name_no_instance_are_reported_at_the_call() {
+    let (fixture, result) = rejected(concat!(
+        "  spec first[n in 1..4](x: Word[8]^n) -> Word[8] { x[0] }\n",
+        "  spec plain(x: Word[8]) -> Word[8] { x }\n",
+        "  spec count[n in 1..3]() -> Int { n }\n",
+        "  spec a() -> Word[8] { first[4]([0; 4]) }\n",
+        "  spec b() -> Word[8] { first[1, 1]([0]) }\n",
+        "  spec c() -> Word[8] { plain[1](0) }\n",
+        "  spec d() -> Word[8] { first([0; 9]) }\n",
+        "  spec e() -> Int { count() }\n",
+        "  spec f() -> Word[8] { first() }\n",
+        "  spec g(k: Int) -> Word[8] { first[k]([0]) }\n",
+        "  spec h[n in 1..3]() -> Word[8] { first[n - 1]([0]) }\n",
+        "  spec i() -> Word[8] { first[0 - 99999999999999999999]([0]) }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::SizeRange,
+                "4",
+                String::from("`first` is defined for `n` in 1..4")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "first[1, 1]([0])",
+                String::from("`first` takes 1 size, but this call gives 2")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "plain[1](0)",
+                String::from("`plain` has no size parameters, but this call gives 1 size")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "first([0; 9])",
+                String::from("no instance of `first` takes arguments of these lengths")
+            ),
+            (
+                DiagnosticCode::SizeCount,
+                "count()",
+                String::from(
+                    "this call fits more than one instance of `count`, among them `count[1]` \
+                     and `count[2]`"
+                )
+            ),
+            (
+                DiagnosticCode::ArgumentCountMismatch,
+                "first()",
+                String::from("`first` takes 1 argument but 0 were supplied")
+            ),
+            (
+                DiagnosticCode::NonStaticSize,
+                "k",
+                String::from("a size may use only integer literals and size parameters")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "n - 1",
+                String::from("`first` is defined for `n` in 1..4")
+            ),
+            (
+                DiagnosticCode::SizeRange,
+                "0 - 99999999999999999999",
+                String::from("`first` is defined for `n` in 1..4")
+            ),
+        ]
+    );
+    let labels = result
+        .diagnostics
+        .iter()
+        .map(Diagnostic::label)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        labels,
+        [
+            "this size is 4",
+            "wrong number of sizes",
+            "wrong number of sizes",
+            "an array of length 9 is given",
+            "write the sizes in brackets",
+            "wrong number of arguments",
+            "this is neither",
+            "this size is 0",
+            "this size is far outside that range",
+        ]
+    );
+    assert_eq!(
+        result.diagnostics[3].notes()[0],
+        "`first` is defined for `n` in 1..4"
+    );
+}
+
+#[test]
+fn sizes_are_constants_in_indices_slices_and_values() {
+    let (_, core) = accepted(concat!(
+        "  spec tail[n in 3..6](x: Word[8]^n) -> Word[8]^2 { x[n - 2..] }\n",
+        "  spec last[n in 1..4](x: Word[8]^n) -> Word[8] { x[n - 1] }\n",
+        "  spec spread[n in 1..3](x: Word[8]^n) -> Word[8]^(2 * n) {\n",
+        "    for i in 0..n with y: Word[8]^(2 * n) = [0; (2 * n)] { y with [n + i] = x[i] }\n",
+        "  }\n",
+        "  spec scaled[n in 2..4]() -> Word[32] { (n * 0x100) as Word[32] }\n",
+    ));
+    assert_eq!(core.functions.len(), 3 + 3 + 2 + 2);
+    let (fixture, result) =
+        rejected("  spec over[n in 1..4](x: Word[8]^n) -> Word[8]^2 { x[n - 2..] }\n");
+    assert_eq!(
+        reported(&fixture, &result),
+        [(
+            DiagnosticCode::IndexOutOfRange,
+            "n - 2..",
+            String::from("this slice reaches elements -1 through 0, out of range for `Word[8]^1`")
+        )]
+    );
+}
+
+#[test]
+fn sized_functions_of_used_modules_are_called_by_their_instances() {
+    let program = Program::new(&[
+        concat!(
+            "edition 2026; module main { use bytes; ",
+            "spec two() -> Word[8] { bytes::last(\"ab\") } ",
+            "spec three() -> Word[8]^3 { bytes::zeros[3]() } ",
+            "}"
+        ),
+        concat!(
+            "edition 2026; module bytes { ",
+            "spec last[n in 1..4](x: Word[8]^n) -> Word[8] { x[n - 1] } ",
+            "spec zeros[n in 2..4]() -> Word[8]^n { [0; n] } ",
+            "}"
+        ),
+    ]);
+    let result = program.analyze();
+    assert_eq!(result.diagnostics(), []);
+    let core = result.core().unwrap();
+    assert_eq!(
+        core.functions()
+            .iter()
+            .map(|function| (
+                function.module(),
+                function.name(),
+                function.sizes().to_vec()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("bytes", "last", vec![1]),
+            ("bytes", "last", vec![2]),
+            ("bytes", "last", vec![3]),
+            ("bytes", "zeros", vec![2]),
+            ("bytes", "zeros", vec![3]),
+            ("main", "two", vec![]),
+            ("main", "three", vec![]),
+        ]
+    );
+    assert_eq!(call_targets(core.functions()[5].body()), [1]);
+    assert_eq!(call_targets(core.functions()[6].body()), [4]);
+    let evaluated = crate::eval::evaluate(core);
+    assert_eq!(
+        evaluated
+            .values()
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        [
+            "main::two: Word[8] = 0x62",
+            "main::three: Word[8]^3 = [0x00, 0x00, 0x00]",
+        ]
+    );
+}
+
+#[test]
+fn call_cycles_are_found_between_instances() {
+    let (fixture, result) = rejected(concat!(
+        "  spec swap[n in 1..3]() -> Int { swap[3 - n]() }\n",
+        "  spec down[n in 1..3]() -> Int { up[n]() }\n",
+        "  spec up[n in 1..3]() -> Int { n }\n",
+        "  spec same[n in 1..3]() -> Int { same[n]() }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::CallCycle,
+                "swap[3 - n]()",
+                String::from("call cycle `swap[1]` -> `swap[2]` -> `swap[1]`")
+            ),
+            (
+                DiagnosticCode::CallCycle,
+                "same[n]()",
+                String::from("`same[1]` calls itself")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn every_part_of_a_size_is_one_semantic_event() {
+    let text = "  spec f[n in 1..2]() -> Word[8]^(((n + 1) * 2) - 3) { [0; 1] }\n";
+    let fixture = module(text);
+    let events = |limit: usize| {
+        let result = fixture.analyze_with(Limits {
+            events: limit,
+            ..Limits::DEFAULT
+        });
+        result.core.is_some()
+    };
+    let needed = (1..400).find(|limit| events(*limit)).unwrap();
+    // The same function without sizes and with its length written as an
+    // integer takes 22 fewer events: one for the size's range, one for its
+    // name, and ten for the parts of the length, groups included, counted
+    // once for the signature and once for the body's result type.
+    let plain = module("  spec f() -> Word[8]^1 { [0; 1] }\n");
+    let plain_needed = (1..400)
+        .find(|limit| {
+            plain
+                .analyze_with(Limits {
+                    events: *limit,
+                    ..Limits::DEFAULT
+                })
+                .core
+                .is_some()
+        })
+        .unwrap();
+    assert_eq!(needed - plain_needed, 2 + 10 + 10);
+    let result = fixture.analyze_with(Limits {
+        events: needed - 1,
+        ..Limits::DEFAULT
+    });
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .map(Diagnostic::code)
+            .collect::<Vec<_>>(),
+        [DiagnosticCode::SemanticResourceLimit]
+    );
+}
+
+#[test]
+fn rejects_foreign_size_spans() {
+    let text = concat!(
+        "  spec f[n in 1..3](x: Word[8]^n) -> Word[8]^(n + 1) { x ++ [0; 1] }\n",
+        "  spec g() -> Word[8]^2 { f[1]([0]) }\n",
+    );
+    let first = module(text);
+    let second = module(text);
+    let foreign = &second.ast.module.functions;
+    let mutations: [&dyn Fn(&mut SyntaxTree); 7] = [
+        &|ast| ast.module.functions[0].sizes[0].span = foreign[0].sizes[0].span,
+        &|ast| ast.module.functions[0].sizes[0].name.span = foreign[0].sizes[0].name.span,
+        &|ast| ast.module.functions[0].sizes[0].start_span = foreign[0].sizes[0].start_span,
+        &|ast| ast.module.functions[0].sizes[0].end_span = foreign[0].sizes[0].end_span,
+        &|ast| {
+            ast.module.functions[0].parameters[0].ty.length =
+                foreign[0].parameters[0].ty.length.clone();
+        },
+        &|ast| {
+            let FunctionBody::Typed(body) = &mut ast.module.functions[0].body else {
+                unreachable!()
+            };
+            let FunctionBody::Typed(other) = &foreign[0].body else {
+                unreachable!()
+            };
+            body.result_type.length = other.result_type.length.clone();
+        },
+        &|ast| {
+            let FunctionBody::Typed(body) = &mut ast.module.functions[1].body else {
+                unreachable!()
+            };
+            let FunctionBody::Typed(other) = &foreign[1].body else {
+                unreachable!()
+            };
+            let (ExpressionKind::Call(call), ExpressionKind::Call(other)) =
+                (&mut body.expression.kind, &other.expression.kind)
+            else {
+                unreachable!()
+            };
+            call.qualifiers.as_mut().unwrap().sizes = other.sizes().to_vec();
+        },
+    ];
+    for (index, mutate) in mutations.iter().enumerate() {
+        let mut ast = first.ast.clone();
+        mutate(&mut ast);
+        let result = analyze(first.source(), &ast);
+        assert!(result.core.is_none(), "case {index}");
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(Diagnostic::code)
+                .collect::<Vec<_>>(),
+            [DiagnosticCode::InvalidSemanticInput],
+            "case {index}"
         );
     }
 }

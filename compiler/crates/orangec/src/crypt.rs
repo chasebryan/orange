@@ -1095,11 +1095,14 @@ fn interface_shape(core: &CoreModule) -> Result<Shape, String> {
             "a scheme's module name is 1 to {MAX_SCHEME_NAME_BYTES} ASCII letters, digits, or underscores"
         ));
     }
-    let function = |name: &str| {
-        core.entry_functions()
-            .iter()
-            .find(|function| function.name() == name)
-            .ok_or_else(|| format!("it has no spec named `{name}`"))
+    let function = |name: &str| match core
+        .entry_functions()
+        .iter()
+        .find(|function| function.name() == name)
+    {
+        None => Err(format!("it has no spec named `{name}`")),
+        Some(function) if function.sizes().is_empty() => Ok(function),
+        Some(_) => Err(format!("`{name}` must declare no size parameters")),
     };
     let bytes = |ty: CoreType| {
         ty.as_array()

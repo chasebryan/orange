@@ -26,20 +26,22 @@ meaning. It accepts no D-004 candidate.
 > one element, and fill literals, which lift the absence of loops described in
 > section 12, [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under
 > OEP-0009, adds `Bool`, comparisons, Euclidean division, and conditionals on
-> top of those, [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under
-> OEP-0010, lets an index depend on data,
-> [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
-> use others, [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012,
-> adds arrays of residues, as `Mod[3329]^256`, and
-> [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, lets a loop's
-> step name the values it computes before the array it returns, and
-> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
-> whose elements may be arrays, as `(Word[64]^4, Word[64])`, though no array
-> holds a tuple, and [`BYTES_2026.md`](BYTES_2026.md), proposed under
-> OEP-0015, writes an array of bytes as a string, as `"abc"` or `hex"00 1f"`,
-> joins two arrays with `++`, and takes a run of elements with a slice, as
-> `x[4..8]`, at bounds proved in range. Every source this document accepts
-> keeps its meaning under all eight.
+> top of those, [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010,
+> lets an index depend on data, [`MODULES_2026.md`](MODULES_2026.md), proposed
+> under OEP-0011, lets a module use others,
+> [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, adds arrays of
+> residues, as `Mod[3329]^256`, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed
+> under OEP-0013, lets a loop's step name the values it computes before the
+> array it returns, and [`TUPLES_2026.md`](TUPLES_2026.md), proposed under
+> OEP-0014, adds tuples, whose elements may be arrays, as `(Word[64]^4,
+> Word[64])`, though no array holds a tuple, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, writes an array of
+> bytes as a string, as `"abc"` or `hex"00 1f"`, joins two arrays with `++`, and
+> takes a run of elements with a slice, as `x[4..8]`, at bounds proved in range,
+> and [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, writes a length
+> with a function's size parameters, as `Word[8]^(64 * blocks)`, and checks it
+> in each instance, from 1 through 256. Every source this document accepts keeps
+> its meaning under all nine.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

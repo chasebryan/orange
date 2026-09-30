@@ -432,6 +432,19 @@ fn any_orange_program_with_the_interface_is_a_scheme() {
     assert!(error.contains(
         "expected `spec seal(key: Word[8]^K, nonce: Word[8]^N, ad: Word[8]^64, plaintext: Word[8]^C) -> Word[8]^S`"
     ));
+    // A `seal` with size parameters is a family of functions, not the one
+    // the interface names.
+    scratch.write(
+        "sized.or",
+        half.replace("module half {", "module sized {")
+            .replace("spec seal(", "spec seal[n in 1..3](")
+            .as_bytes(),
+    );
+    let error = scratch.fails(1, &["schemes", "sized.or"]);
+    assert_eq!(
+        error,
+        "error[ORC1010]: `sized` at sized.or does not implement the sealing interface\n  = note: `seal` must declare no size parameters\n"
+    );
 }
 
 #[test]
