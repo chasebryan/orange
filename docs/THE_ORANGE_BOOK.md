@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.15
+Manuscript version: 0.16
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -109,9 +109,11 @@ round of SHA-256 names T1 and T2 where FIPS 180-4 does, the S3k slice adds
 tuples, so that a loop carries SHA-256's eight working variables by name and
 ChaCha20's quarter round gives its four words at once, the S3l slice
 writes bytes as the standards print them, so that RFC 4231's key is "Jefe"
-and SHA-256's padding is joined with `++`, and the S3m slice lets one `spec`
+and SHA-256's padding is joined with `++`, the S3m slice lets one `spec`
 stand for every length in a range, so that SHA-256 is written once for every
-message from 1 through 119 bytes. None of them
+message from 1 through 119 bytes, and the S3n slice reads and writes words in
+the byte order a standard names, so that SHA-256 reads a block as sixteen
+big-endian words in one conversion. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -321,9 +323,11 @@ step and each branch of a conditional begin with `let` bindings, the S3k
 slice, also in review, adds tuples and tuple patterns, so that a function
 gives several values and a loop carries several accumulators, the S3l
 slice, also in review, adds byte strings, joins, and slices, so that a
-program writes bytes as the standards print them, and the S3m slice, also in
+program writes bytes as the standards print them, the S3m slice, also in
 review, adds size parameters, so that one function stands for every length
-in a range and is checked for each.
+in a range and is checked for each, and the S3n slice, also in review, adds
+byte orders, so that words are read from bytes, and written back, in one
+conversion in the order a standard names.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -833,7 +837,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, block, tuple, byte, and size slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, and byte-order slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -1077,7 +1081,9 @@ byte string is an array literal like any other, and the byte slice adds three
 nodes: one joins two arrays, one takes a run of elements, and one replaces a
 run, the last two with their bounds as `Int` operands. Each instance of a
 sized function is one Core function that records its sizes, and a size's
-name in an expression is an `Int` literal, so sizes add no node at all.
+name in an expression is an `Int` literal, so sizes add no node at all. A
+conversion in a byte order is one node that records its operand's type and
+its order.
 
 The Core is bounded in the same spirit as the lexer and parser: at most
 262,144 Core nodes, 1,048,576 semantic events, and 100 ordinary semantic
@@ -1131,7 +1137,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The thirteen current slices complete bounded parts of the roadmap's S3 stage:
+The fourteen current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1142,7 +1148,8 @@ integers modulo a constant, with names for types, then `let` bindings inside
 a loop's step and a branch, then tuples, so that a loop carries several
 values, then byte strings, joins, and slices at bounds proved in range,
 then size parameters, so that one function serves every length in a range
-and is checked once for each.
+and is checked once for each, then byte orders, so that words are read from
+bytes and written back in the order a standard names.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over moduli, and explicit failure
 semantics,
@@ -1694,8 +1701,9 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [modular arithmetic specification](MODULAR_2026.md) of S3i, the
 [blocks specification](BLOCKS_2026.md) of S3j, the
 [tuples specification](TUPLES_2026.md) of S3k, the
-[bytes specification](BYTES_2026.md) of S3l, and the
-[sizes specification](SIZES_2026.md) of S3m. S3b through S3m
+[bytes specification](BYTES_2026.md) of S3l, the
+[sizes specification](SIZES_2026.md) of S3m, and the
+[byte order specification](ORDER_2026.md) of S3n. S3b through S3n
 are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
@@ -1707,8 +1715,9 @@ are implemented and tested, but their specifications are **proposed**:
 [OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md),
 [OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md),
 [OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md),
-[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), and
-[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md) are in
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md),
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), and
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1794,8 +1803,8 @@ The expression slice gives grammatical roles to `,`, `:`, `+`, `-`, `*`, `&`,
 condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
 `!`, `/`, and `%`, which the lexer has always produced. The byte slice gives
 strings their role, as byte strings, and adds two tokens, `++` and the hex
-string `hex"..."`, whose `hex` touches its opening quote. The size slice
-adds no token. The remaining punctuation is lexically reserved but has no
+string `hex"..."`, whose `hex` touches its opening quote. The size and
+byte-order slices add no token. The remaining punctuation is lexically reserved but has no
 grammatical role yet.
 `orangec lex` shows how any source
 tokenizes, with exact byte spans.
@@ -1832,7 +1841,8 @@ parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
                 | chain("++") | conversion | update ;
-conversion      = prefixed "as" (parsed_type | tuple_type) ;
+conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
+order           = "big" | "little" ;
 update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
@@ -1874,8 +1884,10 @@ same way, `if` starts a conditional only where a condition can follow it,
 `else` is a word only after a conditional's value, `use` and `type` start
 declarations only at the head of a module, before its first function, `Mod`
 takes a modulus only before `[`, `hex` begins a hex string only directly
-before a quote, and `true` and `false` are values only where no name of that
-spelling is in scope. Anywhere else they are
+before a quote, `big` and `little` are byte orders only directly after `as`
+and before `(` or a name other than `as` and `with`, and `true` and `false`
+are values only where no name of that spelling is in scope. Anywhere else
+they are
 ordinary names, so no program that used them as names changed meaning when
 they gained a role. After a declared type, `^` and a length make it an array
 type; everywhere else `^` is exclusive or. One source holds one module, and a
@@ -1981,8 +1993,8 @@ transcription most needs, so Orange does not infer it.
 A conversion, written `e as T`, is the only way a value changes type, and its
 meaning is one rule: take the operand's integer value and, for `Word[n]`, its
 residue modulo 2^n. Widening keeps a value, narrowing keeps the low bits, and
-an `Int` holding -1 becomes `0xff` as a `Word[8]`. That single rule is enough
-for byte order:
+an `Int` holding -1 becomes `0xff` as a `Word[8]`. That single rule, with
+shifts, is enough to build a word from its bytes:
 
 ```orange
 spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
@@ -1993,7 +2005,9 @@ spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
 
 Applied to the bytes `00 01 02 03`, it gives `0x03020100`, the first ChaCha20
 key word of RFC 8439 section 2.3.2. The same function with its arguments
-reversed reads SHA-256's big-endian message words.
+reversed reads SHA-256's big-endian message words. Since the S3n slice, the
+body is one conversion, `[b0, b1, b2, b3] as little Word[32]`, as
+[Words in either byte order](#words-in-either-byte-order) shows.
 
 A conversion applies to exactly one operand and forms a group of its own, under
 the grouping rule above. `x + y as Word[32]` is `ORC0108`, because its two
@@ -3333,10 +3347,299 @@ for each value in its range, one instance at a time, so a family is finite,
 and an array still holds at most 256 elements. No modulus is written with a
 parameter, so one `spec` cannot yet serve every field, and no position is a
 parameter, so one quarter round cannot act on four positions of a whole
-state. Bytes and words are still converted by functions a program writes.
-And a size is fixed in each instance, as a slice's position is, so a format
-that reads a length and then that many bytes still cannot be written. The
-roadmap lists those next.
+state. And a size is fixed in each instance, as a slice's position is, so a
+format that reads a length and then that many bytes still cannot be written.
+The roadmap lists those next. The next section closes one more seam: through
+S3m, bytes and words were converted by functions a program writes, one for
+each width and each order.
+
+### Words in either byte order
+
+A standard prints bytes and computes on words, and it says in a few words how
+one becomes the other. FIPS 180-4 section 3.1 fixes big-endian order for the
+whole standard, so SHA-256 reads each 64-byte block as sixteen 32-bit words,
+the first byte of each most significant, and writes its digest the same way.
+RFC 8439 reads ChaCha20's key, counter, and nonce as little-endian words,
+serializes the state as little-endian bytes, and reads each Poly1305 block as
+a little-endian number, and RFC 7748 decodes and encodes an X25519
+coordinate as a little-endian number. Through S3m, Orange said each of these
+in code. `load_le32`, earlier in this chapter, builds a word with three shifts
+and three ors, its inverse was four shifts called in another loop, and
+Poly1305 read a block with a loop of sixteen multiplications. A reader checked every index against
+the standard's few words, and the evaluator ran every step.
+
+The S3n slice, proposed in the [byte order specification](ORDER_2026.md),
+says it as the standards do. A conversion may name a **byte order**, `big`
+or `little`, between `as` and its type, and the type may then be an array:
+
+```orange
+spec big_word() -> Word[32] { hex"01020304" as big Word[32] }
+spec little_word() -> Word[32] { hex"01020304" as little Word[32] }
+spec text() -> Word[32] { "abcd" as big Word[32] }
+spec bytes() -> Word[8]^4 { let w: Word[32] = 0xdeadbeef; w as big Word[8]^4 }
+spec round_trip() -> Word[32] {
+  let w: Word[32] = 0xdeadbeef;
+  (w as little Word[8]^4) as little Word[32]
+}
+spec joined() -> Word[64] {
+  let high: Word[32] = 0x01234567;
+  let low: Word[32] = 0x89abcdef;
+  [high, low] as big Word[64]
+}
+spec quarters() -> Word[16]^4 { let w: Word[64] = 0x0123456789abcdef; w as little Word[16]^4 }
+```
+
+```text
+order::big_word: Word[32] = 0x01020304
+order::little_word: Word[32] = 0x04030201
+order::text: Word[32] = 0x61626364
+order::bytes: Word[8]^4 = [0xde, 0xad, 0xbe, 0xef]
+order::round_trip: Word[32] = 0xdeadbeef
+order::joined: Word[64] = 0x0123456789abcdef
+order::quarters: Word[16]^4 = [0xcdef, 0x89ab, 0x4567, 0x0123]
+```
+
+The meaning is one piece of arithmetic. Words x_0 through x_(k−1), each of n
+bits, **spell** a number N, the first word most significant in `big` order and
+least significant in `little`:
+
+```text
+big:     N = x_0 · 2^(n(k−1)) + x_1 · 2^(n(k−2)) + … + x_(k−1)
+little:  N = x_0 + x_1 · 2^n + … + x_(k−1) · 2^(n(k−1))
+```
+
+A conversion in a byte order goes through that number. Words become the words
+of another width that spell N in the same order, so `joined` puts `high`
+above `low`, and `quarters` gives the low sixteen bits first. A single word is
+an array of one, so `hex"01020304" as big Word[32]` and `w as big Word[8]^4`
+are one rule read in two directions. Words convert only to words of the same
+number of bits, so no conversion between words loses a bit or invents one:
+writing words in the order they were read gives them back, as `round_trip`
+shows, and writing them in the other order reverses the bytes of a word.
+
+Words convert to a number, and a number to words:
+
+```orange
+spec number() -> Int { hex"0100" as big Int }
+spec little_number() -> Int { hex"0100" as little Int }
+spec minus_one() -> Word[8]^4 { let n: Int = -1; n as big Word[8]^4 }
+spec wraps() -> Word[8]^2 { let n: Int = 65539; n as big Word[8]^2 }
+spec residue() -> Mod[251] { hex"0100" as big Mod[251] }
+spec residue_bytes() -> Word[8]^2 { let x: Mod[65521] = -1; x as big Word[8]^2 }
+```
+
+```text
+order::number: Int = 256
+order::little_number: Int = 1
+order::minus_one: Word[8]^4 = [0xff, 0xff, 0xff, 0xff]
+order::wraps: Word[8]^2 = [0x00, 0x03]
+order::residue: Mod[251] = 5
+order::residue_bytes: Word[8]^2 = [0xff, 0xf0]
+```
+
+As an `Int`, words are N itself, and as a `Mod[m]`, N modulo m, as
+`N as Mod[m]` would give. In the other direction a number becomes the words
+that spell its residue modulo 2^(nk), the width of the words, and a residue
+first becomes its least residue. That is the rule of `as Word[n]` stretched
+across an array: one word keeps a value's residue modulo 2^n, so −1 is `0xff`
+as one byte and four bytes `0xff` as four, 65539 keeps its low sixteen bits,
+which are 3, and the residue −1 of `Mod[65521]`, which is 65520, is the two
+bytes that spell it. Two numbers convert to each other without a byte order,
+as before, and `Bool`, tuples, and arrays of anything but words convert in
+none.
+
+SHA-256 then reads and writes its words where FIPS 180-4 says to. The
+[SHA-256 fixture](../compiler/fixtures/s3n/valid-sha256.or) is the sized
+SHA-256 of [One algorithm for every length](#one-algorithm-for-every-length)
+with its byte functions gone. The first sixteen words of the message schedule
+are the block, read as big-endian words, and the padding ends in the
+message's length in bits as a big-endian 64-bit number, all eight of its
+bytes, as the standard writes it:
+
+```orange
+spec schedule(block: Word[8]^64) -> Word[32]^64 {
+  let head: Word[32]^16 = block as big Word[32]^16;
+  for t in 16..64 with w: Word[32]^64 = head ++ [0; 48] {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+
+spec absorb[blocks in 1..4](p: Word[8]^(64 * blocks)) -> Word[8]^32 {
+  let hash: Word[32]^8 = for b in 0..blocks with h: Word[32]^8 = initial_hash() {
+    compress(h, p[64 * b..64 * b + 64])
+  };
+  hash as big Word[8]^32
+}
+
+spec pad[len in 1..120](m: Word[8]^len) -> Word[8]^(64 * (((len + 8) / 64) + 1)) {
+  m ++ ([0; ((64 * (((len + 8) / 64) + 1)) - len - 8)] with [0] = 0x80)
+    ++ ((8 * len) as big Word[8]^8)
+}
+```
+
+The S3m fixture wrote a function `word` of four bytes and called it sixteen
+times in a loop, wrote the digest one word at a time in another, and wrote
+only the length's last two bytes, all that a message of at most 119 bytes
+needs. Here each of those is one conversion. The
+[SHA-512 fixture](../compiler/fixtures/s3n/valid-sha512.or) is the same
+program over 64-bit words, reading `block as big Word[64]^16` and writing its
+length as `(8 * len) as big Word[8]^16`, sixteen bytes, and both hash FIPS
+180-4's examples, a message that fills its last block exactly, and the
+longest message each takes to their digests.
+
+ChaCha20 reads the other way. The 64 bytes of its constant, key, counter,
+and nonce are its initial state as sixteen little-endian words, and the state
+it gives is those words as little-endian bytes:
+
+```orange
+let initial: Word[32]^16 =
+  ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+```
+
+```orange
+state as little Word[8]^64
+```
+
+The constant is text, as RFC 8439 prints it, "expand 32-byte k", and the
+[ChaCha20 fixture](../compiler/fixtures/s3n/valid-chacha20.or) gives the
+serialized block of section 2.3.2 byte for byte and encrypts the sunscreen
+sentence of section 2.4.2 to its ciphertext:
+
+```text
+chacha20::block_vector: Word[8]^64 = [0x10, 0xf1, 0xe7, 0xe4, 0xd1, 0x3b, 0x59, 0x15, 0x50, 0x0f, 0xdd, 0x1f, 0xa3, 0x20, 0x71, 0xc4, 0xc7, 0xd1, 0xf4, 0xc7, 0x33, 0xc0, 0x68, 0x03, 0x04, 0x22, 0xaa, 0x9a, 0xc3, 0xd4, 0x6c, 0x4e, 0xd2, 0x82, 0x64, 0x46, 0x07, 0x9f, 0xaa, 0x09, 0x14, 0xc2, 0xd7, 0x05, 0xd9, 0x8b, 0x02, 0xa2, 0xb5, 0x12, 0x9c, 0xd1, 0xde, 0x16, 0x4e, 0xb9, 0xcb, 0xd0, 0x83, 0xe8, 0xa2, 0x50, 0x3c, 0x4e]
+```
+
+A number in a field is where a byte order earns the most. RFC 8439 section
+2.5 reads Poly1305's key as two little-endian numbers, r and s, clamps r,
+reads each block of the message as a little-endian number with a byte 01
+above it, and writes the low 128 bits of the accumulator plus s as sixteen
+little-endian bytes. The
+[Poly1305 fixture](../compiler/fixtures/s3n/valid-poly1305.or) says so, over
+the type `P` of the integers modulo 2^130 − 5:
+
+```orange
+spec mac[len in 1..256](key: Word[8]^32, m: Word[8]^len) -> Word[8]^16 {
+  // r &= 0x0ffffffc0ffffffc0ffffffc0fffffff, on its two 64-bit halves.
+  let half: Word[64]^2 = key[..16] as little Word[64]^2;
+  let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+  let s: Int = key[16..] as little Int;
+  let padded: Word[8]^(16 * ((len / 16) + 1)) = m ++ [0; (16 - (len % 16))];
+  let a: P = for j in 0..((len + 15) / 16) with a: P = 0 {
+    let held: Int = if j == (((len + 15) / 16) - 1) { len - (16 * j) } else { 16 };
+    (a + (padded[16 * j..16 * j + 16] as little P) + weight(held)) * r
+  };
+  ((a as Int) + s) as little Word[8]^16
+}
+```
+
+The clamp is the RFC's mask, written on two 64-bit halves where the byte
+slice wrote it as bytes in little-endian order. A block goes straight into
+the field, since sixteen bytes spell a number below 2^128, which is its own
+residue. The tag needs no reduction of its own: a number becomes words by
+its residue, so writing the sum as sixteen bytes keeps exactly its low 128
+bits. The example of section 2.5.2 gives the RFC's tag, and two vectors of
+Appendix A.3, one whose sum passes 2^128, give theirs:
+
+```text
+poly1305::example: Word[8]^16 = [0xa8, 0x06, 0x1d, 0xc1, 0x30, 0x51, 0x36, 0xc6, 0xc2, 0x2b, 0x8b, 0xaf, 0x0c, 0x01, 0x27, 0xa9]
+```
+
+X25519 decodes a coordinate as RFC 7748's decodeUCoordinate does, the top bit
+masked and the 32 bytes read as a little-endian number modulo 2^255 − 19,
+and encodes its result as encodeUCoordinate does, the least residue as 32
+little-endian bytes. In the
+[X25519 fixture](../compiler/fixtures/s3n/valid-x25519.or) each is one line
+around the ladder of
+[Rounds in the words of their standard](#rounds-in-the-words-of-their-standard):
+
+```orange
+let x_1: F = (u with [31] = u[31] & 127) as little F;
+```
+
+```orange
+(x_2 / z_2) as little Word[8]^32
+```
+
+```text
+x25519::test_vector: Word[8]^32 = [0xc3, 0xda, 0x55, 0x37, 0x9d, 0xe9, 0xc6, 0x90, 0x8e, 0x94, 0xea, 0x4d, 0xf2, 0x8d, 0x08, 0x4f, 0x32, 0xec, 0xcf, 0x03, 0x49, 0x1c, 0x71, 0xf7, 0x54, 0xb4, 0x07, 0x55, 0x77, 0xa2, 0x85, 0x52]
+```
+
+That is the result of the first test vector of section 5.2.
+
+A conversion that would lose a bit, or that has no words to order, is an
+error:
+
+```orange
+spec w(b: Word[8]^3) -> Word[32] { b as big Word[32] }
+spec m(x: Int) -> Mod[7] { x as big Mod[7] }
+spec n(x: Word[8]^4) -> Int { x as Int }
+```
+
+```text
+error[ORC0240]: `Word[8]^3` and `Word[32]` have different widths
+ --> <stdin>:3:47
+  |
+3 | ...  w(b: Word[8]^3) -> Word[32] { b as big Word[32] }
+  |                                             ^^^^^^^^ `Word[32]` has 32 bits
+ ::: <stdin>:3:38
+  |
+3 |   spec w(b: Word[8]^3) -> Word[32] { b as big Word[32] }
+  |                                      - `Word[8]^3` has 24 bits
+  = note: a byte order keeps every bit of the words it converts, so words convert only to words of the same number of bits
+```
+
+```text
+error[ORC0215]: `big` orders words, but this converts `Int` to `Mod[7]`
+ --> <stdin>:4:35
+  |
+4 |   spec m(x: Int) -> Mod[7] { x as big Mod[7] }
+  |                                   ^^^ neither side is a word or an array of words
+  = note: a number converts to another without a byte order, as `x as Mod[7]`
+```
+
+```text
+error[ORC0215]: `as` is not defined for `Word[8]^4`
+ --> <stdin>:5:35
+  |
+5 |   spec n(x: Word[8]^4) -> Int { x as Int }
+  |                                   ^^ `as` converts one `Int`, word, or residue value
+  = note: name a byte order to read the words as one number or as words of another width, as in `x as big Int`, or convert each element, such as `x[0] as Int`
+```
+
+Three bytes are 24 bits and a word is 32, and the error counts both sides.
+Between two numbers there is nothing to order. An array of words converts to
+a number only in a byte order, since without one there is no telling which
+end is the most significant, and the note names the byte order. `big` and
+`little` are byte orders only directly after `as` and before `(` or a name
+other than `as` and `with`, and anywhere else they are names, so a program
+that calls a function `big` or a type `little` means what it meant; without
+a byte order, an array type after `as` is still the ungrouped `^` of
+`ORC0108`, whose note now names the byte order too.
+
+A conversion in a byte order costs one evaluation step for each 64 bits of
+its width, or part of 64: 8 steps for a SHA-256 block read as sixteen words,
+and at most 256, for `Word[64]^256`, the widest array, whose 16,384 bits are
+also the most an `Int` holds. A conversion to `Mod[m]` also costs what
+`as Mod[m]` costs. In the Core it is one `pack` node that records its
+operand's type and its order. The three schemes of `orangec enc` read and
+write their words this way, the ChaCha20 state, the key stream, the exclusive
+or of a chunk eight bytes at a time, each Poly1305 block, the tag, and
+Ascon's blocks, and sealing one chunk takes 24,152 through 28,325 steps where
+it took 43,805 through 55,096; a megabyte seals in about a third of the time,
+and every file sealed before the change opens after it, and every file sealed
+after opens before. Every source S3m accepted has the same Core, values, and
+output under S3n, since `big` or `little` after `as` was a type's name only
+where S3n still reads it as one.
+
+That leaves seams. A byte order reads a whole value, never words at a
+position computed from data, so a format that reads a length and then that
+many bytes still cannot be written. An array of residues, such as field
+elements serialized one after another, converts one element at a time. A bit
+order within a word, as some hash functions and ciphers number their bits,
+is not defined, and a word has no byte order of its own: a word is a number,
+and only a sequence of words spells a number in an order. The roadmap lists
+moduli written with parameters, positions given as parameters, and slices
+and words at positions computed from data next.
 
 ### From bytes to a value
 
@@ -3469,7 +3772,13 @@ that repeats a size parameter's, `ORC0221` and `ORC0225` for a length or a
 loop bound whose value in an instance is out of range, `ORC0205` for a part
 of a size that is too large, `ORC0217` for a cycle between instances,
 `ORC0232` for a modulus written with a size, and `ORC0101` for a malformed
-size parameter, size, or sized call.
+size parameter, size, or sized call. The byte-order slice adds `ORC0240` for
+words converted to words of a different number of bits, and it reuses
+`ORC0215` for a byte order between two numbers or on a type that is neither
+words nor a number, `ORC0220` for an operand with no type of its own,
+`ORC0214` for a target other than the type expected, `ORC0221` for a target
+of more than 256 words, and `ORC0108` for an array type after `as` without a
+byte order.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -3583,7 +3892,14 @@ invalid, including SHA-256 written once for every message of 1 through 119
 bytes, HMAC-SHA-256 over it, and Poly1305 written once for every message of 1
 through 255 bytes, against FIPS 180-4, RFC 4231, and RFC 8439; generated
 sources pin functions of 256 instances and of 257 and 320, and a size's bound
-of 65536 and of 65537. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+of 65536 and of 65537. The byte order specification adds 8 rule identifiers
+and eight sources, six valid and two invalid, including SHA-256, SHA-512,
+ChaCha20, Poly1305, and X25519 reading and writing their words in the orders
+their standards name, against FIPS 180-4, RFC 8439, and RFC 7748; a generated
+source converts words of every width in both orders to words of every width
+and to `Int` against a reference computed in the runner, and converts the
+widest array to an `Int` and back, and an array one element longer is no
+type. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -3602,8 +3918,8 @@ but the lengths of a call's arguments, contracts, effects, statements other than
 shadowing, type inference, arrays of arrays, tuples of tuples, arrays of
 tuples, operators on whole tuples, records with named fields, indices
 narrowed by conditions, slices at positions computed from data, empty arrays,
-equality of whole arrays, text beyond printable ASCII, conversions between
-bytes and words, loops over ranges computed at run time, early exit, short-circuit
+equality of whole arrays, text beyond printable ASCII, conversions of
+arrays other than words, bit orders, loops over ranges computed at run time, early exit, short-circuit
 operators, conditionals without `else`, blocks as expressions of their own,
 moduli computed at run time,
 functions generic over a modulus, sizes on `type` declarations, distinct types by declaration, extension
@@ -3627,11 +3943,11 @@ through OEP-0008, S3f's, which builds on S3e, through OEP-0009, S3g's, which
 builds on S3f, through OEP-0010, S3h's, which builds on S3g, through
 OEP-0011, S3i's, which builds on S3h, through OEP-0012, S3j's, which builds
 on S3i, through OEP-0013, S3k's, which builds on S3j, through OEP-0014,
-S3l's, which builds on S3k, through OEP-0015, and S3m's, which builds on S3l,
-through OEP-0016.
+S3l's, which builds on S3k, through OEP-0015, S3m's, which builds on S3l,
+through OEP-0016, and S3n's, which builds on S3m, through OEP-0017.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All twelve migrations so far are small: every source
+documented migration. All thirteen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -3643,8 +3959,10 @@ and writes no modulus, every source S3i accepted does the same under S3j,
 since it binds nothing in a step or a branch, every source S3j accepted does
 the same under S3k, since it writes no tuple, every source S3k accepted
 does the same under S3l, since it writes no string, `++`, or range in
-brackets, and every source S3l accepted does the same under S3m, since it
-declares no size parameter and writes every length and bound as an integer.
+brackets, every source S3l accepted does the same under S3m, since it
+declares no size parameter and writes every length and bound as an integer,
+and every source S3m accepted does the same under S3n, since `big` or
+`little` after `as` was a type's name only where S3n still reads it as one.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -4363,6 +4681,12 @@ slice let each algorithm be written once for every length in a range:
 SHA-256 pads its own messages of 1 through 119 bytes, HMAC-SHA-256 takes any
 key of 1 through 63 bytes and message of 1 through 55, and Poly1305 any
 message of 1 through 255 bytes, and all three reproduce their published
+values. The byte-order slice let each algorithm read and write its words in
+the order its standard names, in one conversion each: SHA-256 and SHA-512
+read their blocks as big-endian words and write their digests as big-endian
+bytes, ChaCha20 and Poly1305 read their keys, nonces, and blocks as
+little-endian words and numbers, and X25519 decodes and encodes its
+coordinates as little-endian numbers, and all five reproduce their published
 values. These are still fixtures, not corpus entries. A message's length is
 fixed in each instance rather than read when the program runs, and no
 standard has been admitted with its provenance. The corpus remains a set of research inputs
@@ -4974,7 +5298,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3m in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3n in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -5293,9 +5617,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [modular arithmetic specification](MODULAR_2026.md), the
 [blocks specification](BLOCKS_2026.md), the
 [tuples specification](TUPLES_2026.md), the
-[bytes specification](BYTES_2026.md), and the
-[sizes specification](SIZES_2026.md) are proposed under
-OEP-0005 through OEP-0016 and in the owner's review. Where this summary and those
+[bytes specification](BYTES_2026.md), the
+[sizes specification](SIZES_2026.md), and the
+[byte order specification](ORDER_2026.md) are proposed under
+OEP-0005 through OEP-0017 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -5336,7 +5661,8 @@ parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
                 | chain("++") | conversion | update ;
-conversion      = prefixed "as" (parsed_type | tuple_type) ;
+conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
+order           = "big" | "little" ;
 update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
@@ -5371,7 +5697,7 @@ Sources are valid UTF-8 of at most 16 MiB. Identifiers are ASCII. Integers
 may be decimal, `0b` binary, or `0x` hexadecimal, with single underscores
 between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 `claim` are reserved; the last three have no grammatical role yet. `let`, `as`,
-`for`, `in`, `with`, `if`, `else`, `use`, `type`, `hex`, `true`, and `false` are not reserved: `let`
+`for`, `in`, `with`, `if`, `else`, `use`, `type`, `hex`, `big`, `little`, `true`, and `false` are not reserved: `let`
 starts a binding only at the start of a body, step, or branch item before a
 name or a tuple pattern, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
@@ -5381,8 +5707,9 @@ operand and before `[`, `if` starts a conditional only where a condition can
 follow it, `else` is a word only after a conditional's value, `use` and `type`
 start declarations only at the head of a module before its first function,
 `Mod` takes a modulus only before `[`, `hex` begins a hex string only directly
-before a quote, and `true` and `false` are values only where no name of that
-spelling is in scope.
+before a quote, `big` and `little` are byte orders only directly after `as`
+and before `(` or a name other than `as` and `with`, and `true` and `false`
+are values only where no name of that spelling is in scope.
 Line and
 nested block comments are trivia. `<<`, `>>`, `<<<`, `>>>`, and `++` are
 single tokens, matched longest first, and a string is a byte string of
@@ -5435,8 +5762,8 @@ operators; otherwise it is an `Int` built from integer literals, loop indices,
 and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
 conditionals. An update, a fill, a join, a slice, or a slice update costs one
 evaluation step per 64 elements of the array it builds, or part of 64, and a
-byte string costs one. No operator but `++`, and no conversion, applies to a
-whole array, and an array's elements are never arrays. A byte string `"..."`
+byte string costs one. No operator but `++`, and no conversion without a byte
+order, applies to a whole array, and an array's elements are never arrays. A byte string `"..."`
 of printable ASCII characters and the escapes `\"`, `\\`, `\n`, `\r`, `\t`,
 `\0`, and `\xNN`, or `hex"..."` of hex digit pairs, is the array `Word[8]^n`
 of its bytes. `a ++ b` is the elements of a followed by those of b, of one
@@ -5460,6 +5787,16 @@ parameter's name is an `Int` constant, which index and slice analysis read as
 a literal. `f[s, ...](args)` calls the instance with those sizes, and
 `f(args)` the one instance whose array parameters have the lengths of its
 arguments. Sizes cost nothing at run time.
+`e as big T` and `e as little T` convert words, a word or an array of words,
+to words of the same number of bits, to `Int`, or to `Mod[m]`, and an `Int`
+or a residue to words, through the number N the words spell, their first
+word most significant for `big` and least significant for `little`; a number
+becomes the words that spell its residue modulo 2 to the power of their
+width, and words become N, or N modulo m. The operand's type is its first
+typed leaf's, an array literal's or a fill's from its elements and its
+length. A conversion in a byte order costs one evaluation step per 64 bits of
+its width, or part of 64, and a conversion to `Mod[m]` also the cost of
+`as Mod[m]`.
 
 ### Operators
 
@@ -5525,7 +5862,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0009` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget, malformed hex string |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0239` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several |
+| `ORC0201`–`ORC0240` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1015` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness |
 
@@ -5643,8 +5980,9 @@ part are listed here so a reader can move from explanation to authority.
   [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
   [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md),
   [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md),
-  [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), and [size](SIZES_2026.md)
-  specifications under OEP-0005 through OEP-0016, the
+  [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), [size](SIZES_2026.md), and
+  [byte order](ORDER_2026.md) specifications under OEP-0005 through OEP-0017,
+  the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
@@ -5684,24 +6022,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.15 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.16 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.15 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.15 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, and size slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.16 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.16 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, and byte-order slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.15 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, and size slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.16 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, and byte-order slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.15 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.16 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.15 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.16 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.15 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.16 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -5753,9 +6091,11 @@ version 0.12 adds the [blocks specification](BLOCKS_2026.md) and
 adds the [tuples specification](TUPLES_2026.md) and
 [OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md), version 0.14
 adds the [bytes specification](BYTES_2026.md) and
-[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), and version 0.15
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), version 0.15
 adds the [sizes specification](SIZES_2026.md) and
-[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md).
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), and version 0.16
+adds the [byte order specification](ORDER_2026.md) and
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -5870,6 +6210,14 @@ section "One algorithm for every length". It was drafted with Claude Code
 under Chase Bryan's direction on 2026-09-30, and every Orange example it adds
 was run against the compiler at the revision that introduced it. That check
 is not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.16 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3n byte-order slice, and added the Chapter 8
+section "Words in either byte order". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
+run against the compiler at the revision that introduced it. That check is
+not independent review, and the same authorship, review, evidence, and
 provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No

@@ -526,10 +526,27 @@ acceptance requires the owner's acceptance of
 [OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), which bounds the
 S3m surface in [`SIZES_2026.md`](SIZES_2026.md) and builds on OEP-0015. Like
 the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3n follows S3m. It adds byte orders: a conversion may name one,
+`x as big T` or `x as little T`, and then reads words, a word or an array of
+words, as the words of another width with the same number of bits, as an
+`Int`, or as a `Mod[m]`, and writes an `Int` or a residue as words, the first
+word most significant for `big` and least significant for `little`. SHA-256
+and SHA-512 read their blocks as big-endian words and write their digests as
+big-endian bytes, ChaCha20 reads its state from "expand 32-byte k", the key,
+the counter, and the nonce as little-endian words, Poly1305 reads each block
+as an element of its field, and X25519 reads and writes its coordinates as
+little-endian residues, each in one conversion; all reproduce their
+standards' values, and the schemes of `orangec enc`, rewritten the same way,
+seal a megabyte in about a third of the time with the same bytes. It is
+implemented and tested, and its acceptance requires the owner's acceptance of
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), which bounds
+the S3n surface in [`ORDER_2026.md`](ORDER_2026.md) and builds on OEP-0016.
+Like the slices before it, it assumes only pure, total, deterministic meaning.
 Moduli written with parameters, so that one `spec` can serve every field,
 positions given as parameters, so that one quarter round can act on four
-positions of a whole state, conversions between bytes and words, and slices
-at positions computed from data are the next candidate slices.
+positions of a whole state, and slices and words at positions computed from
+data are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -575,8 +592,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3m are implemented and await owner review under
-OEP-0005 through OEP-0016, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3n are implemented and await owner review under
+OEP-0005 through OEP-0017, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

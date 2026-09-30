@@ -33,8 +33,11 @@ meaning. It accepts no D-004 candidate.
 > RFC 8439 prints it and its message read sixteen bytes at a time.
 > [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds size
 > parameters, so that Poly1305 is written once for every message length; a
-> modulus is not a size. Every source this document accepts keeps its meaning
-> under all four.
+> modulus is not a size. [`ORDER_2026.md`](ORDER_2026.md), proposed under
+> OEP-0017, adds conversions in a byte order, so that a Poly1305 block or an
+> X25519 coordinate is read as a residue in one conversion, as `(b ++ hex"01")
+> as little P`, and a residue is written as bytes. Every source this document
+> accepts keeps its meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

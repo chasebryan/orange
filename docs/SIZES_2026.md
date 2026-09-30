@@ -24,6 +24,13 @@ Until then, the compiler behavior it describes exists so that the proposal can
 be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, extends this
+> document with conversions in a byte order, which may write a size-dependent
+> length after the order, as `m as big Word[32]^(16 * blocks)`, and convert a
+> size's value, as `(8 * len) as big Word[8]^8`. Every source this document
+> accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

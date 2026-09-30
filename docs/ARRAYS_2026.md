@@ -40,8 +40,11 @@ meaning. It accepts no D-004 candidate.
 > takes a run of elements with a slice, as `x[4..8]`, at bounds proved in range,
 > and [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, writes a length
 > with a function's size parameters, as `Word[8]^(64 * blocks)`, and checks it
-> in each instance, from 1 through 256. Every source this document accepts keeps
-> its meaning under all nine.
+> in each instance, from 1 through 256, and [`ORDER_2026.md`](ORDER_2026.md),
+> proposed under OEP-0017, converts an array of words in a byte order to words
+> of another width or to a number, as `block as big Word[32]^16`, where a
+> conversion of an array is otherwise `ORC0215`. Every source this document
+> accepts keeps its meaning under all ten.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

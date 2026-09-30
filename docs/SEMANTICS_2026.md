@@ -51,7 +51,9 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > [`BYTES_2026.md`](BYTES_2026.md) under OEP-0015, which adds byte strings,
 > `++`, and slices, and the S3m slice proposed in
 > [`SIZES_2026.md`](SIZES_2026.md) under OEP-0016, which adds size parameters
-> and sized calls.
+> and sized calls, and the S3n slice proposed in
+> [`ORDER_2026.md`](ORDER_2026.md) under OEP-0017, which adds conversions in a
+> byte order.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

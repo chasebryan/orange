@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3m proposed under OEP-0005 through OEP-0016, in owner review
+S3n proposed under OEP-0005 through OEP-0017, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -66,8 +66,14 @@ review under OEP-0016, adds sizes: a `spec` may declare size parameters with
 finite ranges, `spec f[n in 1..5](x: Word[8]^n)`, and stands for one instance
 for each value of its sizes, each checked as the function written out; sizes
 write array lengths, fill lengths, and loop bounds; and a call names its
-instance by its sizes, `f[2](x)`, or by its arguments' lengths. All
-thirteen lower to a noncanonical Typed Reference Core and are
+instance by its sizes, `f[2](x)`, or by its arguments' lengths. The S3n
+slice, proposed in [`docs/ORDER_2026.md`](../docs/ORDER_2026.md) and in owner
+review under OEP-0017, adds byte orders: `x as big T` and `x as little T` read
+a word or an array of words as the words of another width with the same
+number of bits, as an `Int`, or as a `Mod[m]`, and write an `Int` or a residue
+as words, the first word most significant for `big` and least significant for
+`little`, so that `block as big Word[32]^16` gives SHA-256's message words. All
+fourteen lower to a noncanonical Typed Reference Core and are
 reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
@@ -199,7 +205,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3m are implemented and await owner review under OEP-0005 through OEP-0016, both
+S3n are implemented and await owner review under OEP-0005 through OEP-0017, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -704,7 +710,8 @@ shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
 comparison      = prefixed ("==" | "!=" | "<" | "<=" | ">" | ">=") prefixed ;
 division        = prefixed ("/" | "%") prefixed ;
-conversion      = prefixed "as" (parsed_type | tuple_type) ;
+conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
+order           = "big" | "little" ;
 update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
@@ -736,7 +743,9 @@ modulus only when a
 bracket follows it. `hex` begins a hex string only when a quote follows it
 directly, and a name followed by brackets is a sized call only when the
 brackets hold integers, names, `+`, `-`, `*`, `/`, `%`, commas, and
-parentheses and `(` follows them. `true` and `false` are the `Bool` values only
+parentheses and `(` follows them. `big` and `little` are byte orders only
+directly after `as` and before `(` or a name other than `as` and `with`, and
+only after one may a conversion's type have a length. `true` and `false` are the `Bool` values only
 where no parameter, binding, or loop name of that spelling is in scope. For
 example:
 
@@ -773,6 +782,8 @@ module demo {
   spec zeros[n in 1..3]() -> Word[8]^n { [0; n] }
   spec total[n in 1..9](x: Int^n) -> Int { for i in 0..n with s: Int = 0 { s + x[i] } }
   spec six() -> Int { total([1, 2, 3]) }
+  spec text() -> Word[32] { "abcd" as big Word[32] }
+  spec bytes() -> Word[8]^4 { let w: Word[32] = 0x01020304; w as little Word[8]^4 }
 }
 ```
 
@@ -802,6 +813,11 @@ least residues 0 through m - 1 of a modulus that is a constant of literals,
 m, it has `+`, `-`, `*`, `/`, prefix `-`, `==`, and `!=` of one modulus and no
 order, and `x / y` is 0 when y has no inverse. `as` converts among `Int`,
 words, and residues by least residues, so `t[x as Int]` indexes by a residue.
+With a byte order, `x as big T` and `x as little T` read a word or an array
+of words as the words of another width with the same number of bits, as an
+`Int`, or as a `Mod[m]`, and write an `Int` or a residue as words by its
+residue modulo 2 to the power of their width, the first word most significant
+for `big` and least significant for `little`.
 `p.k` selects element k of a tuple, counted from zero, and no operator,
 comparison, conversion, or index applies to a whole tuple. A byte string
 `"..."` of printable ASCII characters and escapes, or `hex"..."` of hex digit
@@ -866,11 +882,13 @@ demo::middle: Word[8]^3 = [0x69, 0x20, 0x21]
 demo::zeros[1]: Word[8]^1 = [0x00]
 demo::zeros[2]: Word[8]^2 = [0x00, 0x00]
 demo::six: Int = 6
+demo::text: Word[32] = 0x61626364
+demo::bytes: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3m rules, limits, and non-claims are in
+through S3n rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -881,8 +899,9 @@ through S3m rules, limits, and non-claims are in
 [`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md),
 [`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md),
 [`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md),
-[`docs/BYTES_2026.md`](../docs/BYTES_2026.md), and
-[`docs/SIZES_2026.md`](../docs/SIZES_2026.md). None of them defines
+[`docs/BYTES_2026.md`](../docs/BYTES_2026.md),
+[`docs/SIZES_2026.md`](../docs/SIZES_2026.md), and
+[`docs/ORDER_2026.md`](../docs/ORDER_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1334,6 +1353,41 @@ one bound more. This corpus establishes the tested behavior of one
 implementation; it does not accept OEP-0016, prove the rules sound, or
 complete S3.
 
+## S3n byte order conformance
+
+`fixtures/s3n/` contains an exact eight-program corpus for the proposed S3n
+behavior, of which six must evaluate successfully and two must fail closed.
+The accepted programs write SHA-256 and SHA-512 with each block read as
+big-endian words and each digest written as big-endian bytes, reproducing FIPS
+180-4's digests of "abc" and of its two-block messages and an independent
+implementation's at each padding limit and at the longest message each
+admits; ChaCha20 with its state read from "expand 32-byte k", the key, the
+counter, and the nonce as little-endian words, reproducing RFC 8439's block of
+section 2.3.2 and ciphertext of section 2.4.2; Poly1305 with its key's halves
+and each block read as little-endian numbers and residues, reproducing section
+2.5.2's tag and two vectors of Appendix A.3; X25519 with its scalar and
+coordinate read and its result written as little-endian residues, reproducing
+RFC 7748 section 5.2's vector; and exercise both orders on words of every
+width, text, round trips, joined and quartered words, numbers, negative and
+oversized numbers, residues, and a size's value. The rejected programs cover
+words of different widths in both directions, a byte order between two
+numbers, from `Bool`, to `Bool`, to an array of residues, and from an array of
+`Int`, an array literal without a typed element, a target other than the
+expected type, and conversions of and to arrays of words without a byte
+order; and an array type after `as` without a byte order and `big` as a type's
+name before another `as`.
+
+`crates/orangec/tests/s3n_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3m runner. It parses the 8-rule S3n index in
+`docs/ORDER_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates a
+program that converts words of every width in both orders to words of every
+width and to `Int`, checked against a reference computed in the runner, and
+converts `Word[64]^256` to `Int` and back, and one whose targets have one
+element more than an array may. This corpus establishes the tested behavior of
+one implementation; it does not accept OEP-0017, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1379,6 +1433,8 @@ complete S3.
   rule-index, and byte-string-length runner;
 - `crates/orangec/tests/s3m_conformance.rs`: exact repeatable S3m corpus,
   rule-index, and instance-limit runner;
+- `crates/orangec/tests/s3n_conformance.rs`: exact repeatable S3n corpus,
+  rule-index, and width runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1395,6 +1451,7 @@ complete S3.
 - `fixtures/s3k/`: exact four-positive/three-negative S3k CLI fixture corpus;
 - `fixtures/s3l/`: exact three-positive/three-negative S3l CLI fixture corpus;
 - `fixtures/s3m/`: exact four-positive/two-negative S3m CLI fixture corpus;
+- `fixtures/s3n/`: exact six-positive/two-negative S3n CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

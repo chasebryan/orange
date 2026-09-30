@@ -44,8 +44,10 @@ language meaning. It accepts no D-004 candidate.
 > bytes be written as the standard prints them, as `let key: Word[8]^4 =
 > "Jefe";`, and [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, makes
 > a size parameter's name an `Int` constant, in one namespace with parameters
-> and bindings. Every source this document accepts keeps its meaning under all
-> ten.
+> and bindings, and [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017,
+> lets a conversion name a byte order, `x as big T` or `x as little T`, and then
+> convert words to words of another width, to `Int`, or to `Mod[m]`, and back.
+> Every source this document accepts keeps its meaning under all eleven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

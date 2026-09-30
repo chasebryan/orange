@@ -107,8 +107,8 @@ module sha512 {
     )
   }
 
-  // The longest message of one block, whose padding holds no zero byte,
-  // and the longest message of all.
+  // The longest message of one block, whose padding puts no zero byte
+  // between the byte 80 and the length, and the longest message of all.
   spec full_block() -> Word[8]^64 { sha512([0x61; 111]) }
 
   spec longest() -> Word[8]^64 { sha512([0x61; 239]) }
