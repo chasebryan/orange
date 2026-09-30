@@ -163,3 +163,24 @@ The full smoke reported D6-F04 unmet for both candidates although both
 builds completed and the read-only home was unchanged: the runner called
 the fault's rule before recording `home_unchanged`, so the rule always saw
 it missing. The evidence is now recorded first.
+
+## H-09: a correction round's archive manifest bound the earlier summary (fixed after the epoch)
+
+Epoch `d006-e-c7b6648ae3988234297f` was summarized after its first attempt,
+as the correction window expects. The correction round's `execute` then
+rewrote the archive manifest and listed that summary in it, so once
+`summarize` rewrote `summary.json` for the latest attempt the archive could
+not verify: the manifest wanted the first attempt's summary, and `verify`
+wanted a summary that regenerates from the records. Every other file matched
+the manifest.
+
+The runner now leaves `summary.json` out of an archive manifest, since
+`verify` regenerates it anyway. The epoch's archive manifest was edited to
+match: its one `summary.json` row (SHA-256
+`23ee6f605f15ce7c5736ae683e7bc6e31d8e836f9e2843a96adc1191b6175d45`, the first
+attempt's summary) was removed, after checking that the remaining 1,170 rows
+equal what the fixed runner writes for the same tree. The manifest's SHA-256
+went from `021755ccf47be23919331aa0d483a041399c94d51e8328399752fee1b2eb94cd`
+to `7cd6b81b08bcfd6e5f4d411010cf1d53ef8786ec338b36d16ff090fa3ea400f1`, which
+the export records as `archive_manifest_sha256`. No record or log changed.
+The runner the epoch bound is unchanged at the epoch's revisions.

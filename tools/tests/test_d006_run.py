@@ -226,6 +226,16 @@ class D006ArchiveVerifyTests(unittest.TestCase):
             self.assertIn("records/0001-deterministic_replay-C-01.json differs from the archive manifest", problems)
             self.assertIn("record 1 projection digest mismatch", problems)
 
+    def test_a_summary_written_before_a_correction_round_stays_verifiable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = self.make_archive(Path(tmp))
+            (archive / "summary.json").write_bytes(b"{}\n")
+            run.write_manifest(archive)
+            manifest = json.loads((archive / "manifest.json").read_text())
+            self.assertNotIn("summary.json", [row["path"] for row in manifest["files"]])
+            (archive / "summary.json").unlink()
+            self.assertEqual(run.command_verify(REPOSITORY_ROOT, archive), [])
+
     def test_a_renamed_epoch_fails_verification(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             archive = self.make_archive(Path(tmp))
@@ -247,6 +257,16 @@ class D006ExportTests(unittest.TestCase):
         self.assertEqual(b"".join(plain), b"".join(lines))
         self.assertTrue(all(len(data) <= run.EXPORT_CHUNK for data in plain))
         self.assertEqual(run.chunked(lines, "records"), files)
+
+    def test_committed_json_carries_only_numbers_gate0_accepts(self) -> None:
+        value = {"r": 0.25, "n": 3, "seed": 2**64 - 1, "edge": 2**53 - 1, "flag": True, "rows": [1.5, -(2**60)]}
+        self.assertEqual(run.gate0_numbers(value), {"r": "0.25", "n": 3, "seed": "18446744073709551615",
+                                                    "edge": 2**53 - 1, "flag": True, "rows": ["1.5", "-1152921504606846976"]})
+
+    def test_a_chunk_that_compresses_over_the_file_cap_is_refused(self) -> None:
+        noise = [run.hashlib.sha256(b"%d" % n).hexdigest().encode() + b"\n" for n in range(60000)]
+        with self.assertRaisesRegex(run.RunError, "over the 524288-byte cap"):
+            run.chunked(noise, "records")
 
     def test_logs_round_trip_through_the_export_layout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

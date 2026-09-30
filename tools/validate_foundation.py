@@ -771,7 +771,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "f55ef36f58049ef7398d46196b7c436c5b4569ff43d3b7f20ea72e44a7af913b"
+_PHD = "77227b01744382930a8126511e0230bd3413fc454fa3029f9fcccd4fab70b8ae"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1376,9 +1376,17 @@ DECISION_LABORATORY_SPECS["d006"]["json_identities"] += tuple(("research/decisio
  ("shared-inputs/ds07-owner-tasks.json", "edb735e5795cae6976ebac8c454ad510562095a6071e1d542591d543a17c7b87", "b7961471b0059d760926f5addacc35217f234641c87abd2e71c32903c86f4f59"),
 ))) # d006-v0.3 identities end
 # d006 epoch admissions begin
-_D006_E = {"research/decisions/D-006/d006-v0.3/" + n for n in "CONTRACT.md FINDINGS.md HARNESS_ISSUES.md RUNNER.md lean4/Checker/Main.lean lean4/D006/Core.lean lean4/D006/Lrat.lean lean4/D006/Records.lean lean4/D006/Sieve.lean lean4/Loader/OleanCheck.lean lean4/NOTES.md lean4/adapter.d/ds02.json lean4/adapter.d/ds03.json lean4/adapter.d/ds04.json lean4/adapter.d/ds05.json lean4/adapter.d/ds06.json lean4/adapter.json lean4/patches/D1-N10.patch lean4/patches/D2-M01.patch lean4/patches/D2-M02.patch lean4/patches/D2-M06.patch rocq/NOTES.md rocq/adapter.d/ds02.json rocq/adapter.d/ds03.json rocq/adapter.d/ds04.json rocq/adapter.d/ds05.json rocq/adapter.d/ds06.json rocq/adapter.json rocq/extraction/Checker.v rocq/extraction/Extract.v rocq/extraction/driver.ml rocq/extraction/uint63.ml rocq/patches/D1-N10.patch rocq/patches/D2-M01.patch rocq/patches/D2-M02.patch rocq/patches/D2-M06.patch rocq/theories/Core.v rocq/theories/Lrat.v rocq/theories/Records.v rocq/theories/Sieve.v".split()}
+_D006_E = {"research/decisions/D-006/d006-v0.3/" + n for n in "CONTRACT.md FINDINGS.md HARNESS_ISSUES.md RUNNER.md lean4/Checker/Main.lean lean4/D006/Core.lean lean4/D006/Lrat.lean lean4/D006/Records.lean lean4/D006/Sieve.lean lean4/Loader/OleanCheck.lean lean4/NOTES.md lean4/adapter.d/ds02.json lean4/adapter.d/ds03.json lean4/adapter.d/ds04.json lean4/adapter.d/ds05.json lean4/adapter.d/ds06.json lean4/adapter.json lean4/patches/D1-N10.patch lean4/patches/D2-M01.patch lean4/patches/D2-M02.patch lean4/patches/D2-M06.patch rocq/NOTES.md rocq/adapter.d/ds02.json rocq/adapter.d/ds03.json rocq/adapter.d/ds04.json rocq/adapter.d/ds05.json rocq/adapter.d/ds06.json rocq/adapter.json rocq/extraction/Checker.v rocq/extraction/Extract.v rocq/extraction/driver.ml rocq/extraction/uint63.ml rocq/patches/D1-N10.patch rocq/patches/D2-M01.patch rocq/patches/D2-M02.patch rocq/patches/D2-M06.patch rocq/theories/Core.v rocq/theories/Lrat.v rocq/theories/Records.v rocq/theories/Sieve.v run/d006-e-c7b6648ae3988234297f/logs-01.jsonl.gz run/d006-e-c7b6648ae3988234297f/manifest.json run/d006-e-c7b6648ae3988234297f/objects-01.jsonl.gz run/d006-e-c7b6648ae3988234297f/packet.json run/d006-e-c7b6648ae3988234297f/records-01.jsonl.gz run/d006-e-c7b6648ae3988234297f/records-02.jsonl.gz run/d006-e-c7b6648ae3988234297f/records-03.jsonl.gz run/d006-e-c7b6648ae3988234297f/records-04.jsonl.gz run/d006-e-c7b6648ae3988234297f/summary.json".split()}
 MINIMUM_REQUIRED_PATHS |= _D006_E | {"tools/" + n for n in "d006_check.py d006_render.py d006_run.py tests/test_d006_run.py".split()}
 DECISION_LABORATORY_SPECS["d006"]["inventory"] |= {"research/decisions/D-006/d006-v0.3/" + n for n in "CONTRACT.md FINDINGS.md HARNESS_ISSUES.md RUNNER.md".split()}
+GATE0_ALLOWED_BINARY_ARTIFACTS += [{"path": "research/decisions/D-006/d006-v0.3/" + p, "sha256": d, "role": "D-006 v0.3 epoch export: gzip JSON lines written by tools/d006_run.py export", "provenance": "Written on 2026-09-30 by the D-006 epoch run it names"} for p, d in (
+ ("run/d006-e-c7b6648ae3988234297f/logs-01.jsonl.gz", "98830abe5029d8f36f785abe7d3a2068e3705a2effd2c2aa57dc13bc9446a1d1"),
+ ("run/d006-e-c7b6648ae3988234297f/objects-01.jsonl.gz", "633e960b5cfb8f7a36bbda21174dae389261faf2abbc15d717f4193befa4c7b3"),
+ ("run/d006-e-c7b6648ae3988234297f/records-01.jsonl.gz", "b4389e7eff49e5322484e24f85606654431a7be2b3c7155f66fac260a7cbf0ce"),
+ ("run/d006-e-c7b6648ae3988234297f/records-02.jsonl.gz", "17320b6e95b3a0d6f290aa217005cd3ce4294791fa09981821f17fee1216dbb0"),
+ ("run/d006-e-c7b6648ae3988234297f/records-03.jsonl.gz", "0ee86efd388c6b023fd0d9d29a291c84830312f7954f42944a2e969f373f7fa5"),
+ ("run/d006-e-c7b6648ae3988234297f/records-04.jsonl.gz", "2a044cbb8dd37e36a5f027e57c0b97366b1923755740237686b222a1f17986e1"),
+)]
 # d006 epoch admissions end
 # The runner binds each D-006 candidate tree per run (AM-04) and each epoch export binds its files by digest,
 # so these trees stay required paths but sit outside the lab's reviewed inventory and JSON identity closure.

@@ -126,6 +126,21 @@ def canonical_file(value: Any) -> bytes:
     return canonical(value) + b"\n"
 
 
+def gate0_numbers(value: Any) -> Any:
+    """Gate 0's JSON profile has no non-integers and no integers beyond 2**53 - 1: committed JSON carries those as
+    decimal strings (floats by their shortest round-trip form)."""
+
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2**53 - 1:
+        return str(value)
+    if isinstance(value, dict):
+        return {key: gate0_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [gate0_numbers(item) for item in value]
+    return value
+
+
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -1297,7 +1312,8 @@ def command_execute(repo: Path, archive: Path, plan: Plan) -> None:
 
 
 def write_manifest(archive: Path) -> None:
-    rows = tree_manifest(archive, exclude=lambda rel: rel.startswith("work/") or rel == "manifest.json")
+    # summary.json is derived: verify regenerates it from the records, and a correction round rewrites it (H-09).
+    rows = tree_manifest(archive, exclude=lambda rel: rel.startswith("work/") or rel in ("manifest.json", "summary.json"))
     (archive / "manifest.json").write_bytes(canonical_file({"schema_version": "d006-v0.3-archive-manifest-1", "files": rows}))
 
 
@@ -2005,7 +2021,7 @@ def combine(states: list[str]) -> str:
 
 def command_summarize(repo: Path, archive: Path) -> dict[str, Any]:
     summary = build_summary(repo, archive)
-    (archive / "summary.json").write_bytes(canonical_file(summary))
+    (archive / "summary.json").write_bytes(canonical_file(gate0_numbers(summary)))
     return summary
 
 
@@ -2033,7 +2049,7 @@ def build_summary(repo: Path, archive: Path) -> dict[str, Any]:
     records = every[starts[-1]:] if starts else every
     attempts = [{"attempt": every[i]["attempt"], "revision": every[i]["revision"], "plan": every[i]["plan"],
                  "records": (starts[n + 1] if n + 1 < len(starts) else len(every)) - i} for n, i in enumerate(starts)]
-    seed = packet["bootstrap_seed"]
+    seed = int(packet["bootstrap_seed"])
     overlay = json.loads((repo / OVERLAY_PATH).read_text())
     toolchains = json.loads((repo / TOOLCHAINS_PATH).read_text())
     candidates = sorted({r["candidate"] for r in records if r.get("candidate") in LANGUAGE})
@@ -2075,7 +2091,7 @@ def build_summary(repo: Path, archive: Path) -> dict[str, Any]:
         reasons.append("the owner's per-axis rationale (section 8, step 5) is absent")
     summary = {
         "schema_version": "d006-v0.3-summary-1", "suite_version": SUITE_VERSION, "epoch": packet["epoch"],
-        "revision": packet["revision"], "packet_sha256": file_sha256(archive / "packet.json"),
+        "revision": packet["revision"], "packet_sha256": sha256(canonical_file(gate0_numbers(packet))),
         "records": len(records), "attempts": attempts, "dev": packet.get("dev", False),
         "full_protocol": full,
         "candidates": summaries, "comparative": table,
@@ -2093,7 +2109,8 @@ def build_summary(repo: Path, archive: Path) -> dict[str, Any]:
 
 
 EXPORT_SCHEMA = "d006-v0.3-export-1"
-EXPORT_CHUNK = 8 * 1024 * 1024  # uncompressed bytes per chunk; each chunk is one gzip member
+EXPORT_CHUNK = 3 * 1024 * 1024  # uncompressed bytes per chunk; each chunk is one gzip member
+EXPORT_CHUNK_STORED = 512 * 1024  # Gate 0's cap on a committed file that is not an image or wasm
 
 
 def chunked(lines: list[bytes], stem: str) -> dict[str, bytes]:
@@ -2105,7 +2122,10 @@ def chunked(lines: list[bytes], stem: str) -> dict[str, bytes]:
     size = 0
 
     def close() -> None:
-        files[f"{stem}-{len(files) + 1:02d}.jsonl.gz"] = gzip.compress(b"".join(current), compresslevel=9, mtime=0)
+        name = f"{stem}-{len(files) + 1:02d}.jsonl.gz"
+        files[name] = gzip.compress(b"".join(current), compresslevel=9, mtime=0)
+        if len(files[name]) > EXPORT_CHUNK_STORED:
+            raise RunError(f"{name} compresses to {len(files[name])} bytes, over the {EXPORT_CHUNK_STORED}-byte cap on a committed file")
 
     for line in lines:
         if current and size + len(line) > EXPORT_CHUNK:
@@ -2130,7 +2150,7 @@ def command_export(repo: Path, archive: Path, dest: Path) -> Path:
         raise RunError(f"the archive does not verify: {problems[0]}")
     if dest.exists():
         raise RunError(f"{dest} already exists")
-    files = {"packet.json": (archive / "packet.json").read_bytes()}
+    files = {"packet.json": canonical_file(gate0_numbers(json.loads((archive / "packet.json").read_text())))}
     objects: dict[str, Any] = {}
     files.update(chunked([canonical(pack_record(r, objects)) + b"\n" for r in load_records(archive)], "records"))
     files.update(chunked([canonical({"sha256": key, "value": value}) + b"\n" for key, value in sorted(objects.items())], "objects"))
@@ -2141,7 +2161,7 @@ def command_export(repo: Path, archive: Path, dest: Path) -> Path:
         except UnicodeDecodeError:
             rows.append(canonical({"sha256": name, "bytes": len(data), "base64": base64.b64encode(data).decode("ascii")}) + b"\n")
     files.update(chunked(rows, "logs"))
-    files["summary.json"] = canonical_file(build_summary(repo, archive))
+    files["summary.json"] = canonical_file(gate0_numbers(build_summary(repo, archive)))
     dest.mkdir(parents=True)
     for name, data in files.items():
         (dest / name).write_bytes(data)
@@ -2156,7 +2176,7 @@ def command_verify(repo: Path, archive: Path) -> list[str]:
     problems = []
     packet = json.loads((archive / "packet.json").read_text())
     identity = {key: packet[key] for key in IDENTITY_KEYS if key in packet}
-    if epoch_name(identity) != packet["epoch"] or bootstrap_seed(identity) != packet["bootstrap_seed"]:
+    if epoch_name(identity) != packet["epoch"] or bootstrap_seed(identity) != int(packet["bootstrap_seed"]):
         problems.append("the packet's epoch name or bootstrap seed is not the hash of what it binds")
     known = subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{packet['revision']}^{{commit}}"], capture_output=True, check=False)
     if not packet.get("dev") and known.returncode == 0:
@@ -2196,7 +2216,7 @@ def command_verify(repo: Path, archive: Path) -> list[str]:
             problems.append(f"record {record['ordinal']} projection digest mismatch")
     if (archive / "summary.json").exists():
         try:
-            if canonical_file(build_summary(repo, archive)) != (archive / "summary.json").read_bytes():
+            if canonical_file(gate0_numbers(build_summary(repo, archive))) != (archive / "summary.json").read_bytes():
                 problems.append("summary.json does not regenerate byte for byte from the records")
         except RunError as exc:
             problems.append(f"summary.json cannot be regenerated: {exc}")

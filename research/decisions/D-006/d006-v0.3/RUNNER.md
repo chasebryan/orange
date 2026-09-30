@@ -38,8 +38,9 @@ later revision whose bound inputs are byte-identical.
 `summarize` computes M-01 to M-18, the hard gates, the materiality labels and
 the conclusion from the latest attempt's records. `export` writes the
 committed form of a verified archive: the packet, the records and logs as
-JSON lines in gzip chunks (at most 8 MiB uncompressed each, compressed with
-no file name or time so the same lines give the same bytes), the summary and
+JSON lines in gzip chunks (at most 3 MiB uncompressed each, compressed with
+no file name or time so the same lines give the same bytes; export refuses a
+chunk over Gate 0's 512 KiB cap on a committed file), the summary and
 a manifest; the toolchain archives stay out, named by digest in the packet.
 A record's projection, standalone results and candidate tree, and each
 step's invocation (argv, directory, environment, ceiling class, CPU set and
@@ -94,7 +95,7 @@ d006-e-XXXXXXXXXXXXXXXXXXXX/
   records/NNNN-PROFILE-CANDIDATE.json
   logs/SHA256          every step's stdout and stderr, by digest
   manifest.json        every file above with its size and SHA-256
-  summary.json         written by summarize
+  summary.json         written by summarize; verify regenerates it instead
 ```
 
 Records are canonical JSON (sorted keys, no spaces, a final newline) with
@@ -125,3 +126,9 @@ plan and every label is `practically_equivalent`; otherwise it is
 `inconclusive`, with its reasons. A recommendation needs the owner's per-axis
 rationale (suite section 8), which no runner writes. H-02 timings are emulated
 and never compared with H-01's.
+
+Committed JSON follows Gate 0's profile, which has no non-integers and no
+integers beyond 2^53 - 1, so `summary.json` and the exported `packet.json`
+carry those numbers (the statistics and the bootstrap seed) as decimal
+strings; a float is written in its shortest round-trip form. The summary's
+`packet_sha256` is the digest of the packet in that committed form.
