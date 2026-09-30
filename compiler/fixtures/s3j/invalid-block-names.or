@@ -1,0 +1,12 @@
+// S3j rejection: a block's binding repeats no name in scope, is in scope only
+// after its own `;`, and only within its own step or branch.
+edition 2026;
+module names {
+  spec parameter(x: Int) -> Int { for i in 0..2 with s: Int = x { let x: Int = s; x } }
+  spec index() -> Int { for i in 0..2 with s: Int = 0 { let i: Int = s; i } }
+  spec twice(c: Bool) -> Int { if c { let t: Int = 1; let t: Int = 2; t } else { 0 } }
+  spec body(c: Bool) -> Int { let t: Int = 1; if c { let t: Int = 2; t } else { t } }
+  spec early() -> Int { for i in 0..2 with s: Int = 0 { let a: Int = b; let b: Int = s; a } }
+  spec outside(c: Bool) -> Int { if c { let t: Int = 1; t } else { t } }
+  spec after() -> Int { let a: Int = for i in 0..2 with s: Int = 0 { let t: Int = s; t }; t }
+}

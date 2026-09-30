@@ -25,10 +25,11 @@ meaning. It accepts no D-004 candidate.
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, extends this
 > document with programs of more than one module, in which a module names the
 > modules it uses and calls their functions by module name, as in
-> `sha256::compress(h, block)`, and [`MODULAR_2026.md`](MODULAR_2026.md),
+> `sha256::compress(h, block)`, [`MODULAR_2026.md`](MODULAR_2026.md),
 > proposed under OEP-0012, adds residues, whose least residues index tables
-> through `as`. Every source this document accepts keeps its meaning under
-> both.
+> through `as`, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
+> OEP-0013, lets a step or a branch bind a looked-up value once and read it by
+> name. Every source this document accepts keeps its meaning under all three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

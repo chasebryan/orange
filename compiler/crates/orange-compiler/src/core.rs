@@ -191,7 +191,11 @@ pub const MAX_LOOP_BOUND: u32 = 65_536;
 ///
 /// The loop's `Fold` node takes the initial value from its operand subtree;
 /// the step is a separate expression evaluated once for each index from
-/// `start` up to, but not including, `end`.
+/// `start` up to, but not including, `end`. When the step has `let`
+/// bindings, the step expression holds each binding's value subtree in
+/// source order and then the subtree of the step's value, so evaluating its
+/// nodes in order leaves each binding's value in its slot before the value
+/// that uses it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoreLoop {
     /// Full source extent of the loop, from `for` through `}`.
@@ -211,7 +215,10 @@ pub struct CoreLoop {
     /// The loops whose index and accumulator are in scope in the step,
     /// outermost first, ending with this loop.
     pub(crate) scope: Vec<u32>,
-    /// Statically checked step.
+    /// The step's `let` bindings in source order, evaluated at every step.
+    pub(crate) bindings: Vec<CoreBinding>,
+    /// Statically checked step: the bindings' value subtrees, then the
+    /// step's value subtree.
     pub(crate) step: CoreExpression,
 }
 
@@ -265,7 +272,14 @@ impl CoreLoop {
         &self.scope
     }
 
-    /// Returns the statically checked step.
+    /// Returns the step's `let` bindings in source order.
+    #[must_use]
+    pub fn bindings(&self) -> &[CoreBinding] {
+        &self.bindings
+    }
+
+    /// Returns the statically checked step: the value subtree of each of
+    /// its bindings, in order, and then the subtree of its value.
     #[must_use]
     pub const fn step(&self) -> &CoreExpression {
         &self.step
@@ -277,7 +291,9 @@ impl CoreLoop {
 /// The conditional's `Choose` node consumes the condition, its one operand
 /// subtree; each branch is a separate expression, and only the branch the
 /// condition selects is evaluated. An `else if` arm is a conditional whose
-/// `Choose` node ends the enclosing conditional's `else` branch.
+/// `Choose` node ends the enclosing conditional's `else` branch. A branch
+/// with `let` bindings holds each binding's value subtree in source order
+/// and then the subtree of its value, as a loop's step does.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoreConditional {
     /// Source extent of the conditional from this `if` through its last `}`.
@@ -289,9 +305,15 @@ pub struct CoreConditional {
     /// The loops whose index and accumulator are in scope in the branches,
     /// outermost first.
     pub(crate) scope: Vec<u32>,
-    /// The value when the condition is true.
+    /// The `then` branch's `let` bindings in source order.
+    pub(crate) then_bindings: Vec<CoreBinding>,
+    /// The value when the condition is true: its bindings' value subtrees,
+    /// then its value's subtree.
     pub(crate) then_branch: CoreExpression,
-    /// The value when the condition is false.
+    /// The `else` branch's `let` bindings in source order.
+    pub(crate) else_bindings: Vec<CoreBinding>,
+    /// The value when the condition is false: its bindings' value subtrees,
+    /// then its value's subtree.
     pub(crate) else_branch: CoreExpression,
 }
 
@@ -322,16 +344,85 @@ impl CoreConditional {
         &self.scope
     }
 
-    /// Returns the value when the condition is true.
+    /// Returns the `then` branch's `let` bindings in source order.
+    #[must_use]
+    pub fn then_bindings(&self) -> &[CoreBinding] {
+        &self.then_bindings
+    }
+
+    /// Returns the value when the condition is true: the value subtree of
+    /// each of its bindings, in order, and then the subtree of its value.
     #[must_use]
     pub const fn then_branch(&self) -> &CoreExpression {
         &self.then_branch
     }
 
-    /// Returns the value when the condition is false.
+    /// Returns the `else` branch's `let` bindings in source order.
+    #[must_use]
+    pub fn else_bindings(&self) -> &[CoreBinding] {
+        &self.else_bindings
+    }
+
+    /// Returns the value when the condition is false: the value subtree of
+    /// each of its bindings, in order, and then the subtree of its value.
     #[must_use]
     pub const fn else_branch(&self) -> &CoreExpression {
         &self.else_branch
+    }
+}
+
+/// One `let` binding at the start of a loop's step or a conditional's
+/// branch.
+///
+/// Its value is a subtree of the step or branch expression that holds it,
+/// evaluated each time that step or branch is, after the bindings before it
+/// and before the step's or branch's value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CoreBinding {
+    /// Full source extent of the binding, from `let` through `;`.
+    pub(crate) span: Span,
+    /// Exact ASCII binding name.
+    pub(crate) name: String,
+    /// Source extent of the binding name.
+    pub(crate) name_span: Span,
+    /// Declared type of the binding.
+    pub(crate) ty: CoreType,
+    /// Offset in the step or branch expression just after the binding's
+    /// value subtree, which begins where the previous binding's ends, or at
+    /// the start for the first binding.
+    pub(crate) end: u32,
+}
+
+impl CoreBinding {
+    /// Returns the full source extent of the binding.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the exact ASCII binding name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the source extent of the binding name.
+    #[must_use]
+    pub const fn name_span(&self) -> Span {
+        self.name_span
+    }
+
+    /// Returns the declared type of the binding.
+    #[must_use]
+    pub const fn ty(&self) -> CoreType {
+        self.ty
+    }
+
+    /// Returns the offset in the step or branch expression just after the
+    /// binding's value subtree.
+    #[must_use]
+    pub const fn end(&self) -> u32 {
+        self.end
     }
 }
 
@@ -527,6 +618,22 @@ pub enum CoreNodeKind {
     LoopIndex(u32),
     /// The current accumulator of the enclosing loop at this index.
     Accumulator(u32),
+    /// The value of a `let` binding of the step of an enclosing loop in
+    /// this step.
+    StepBinding {
+        /// The loop's number within its function.
+        loop_id: u32,
+        /// The binding's zero-based position among the step's bindings.
+        index: u32,
+    },
+    /// The value of a `let` binding of the branch of an enclosing
+    /// conditional that is being evaluated.
+    BranchBinding {
+        /// The conditional's number within its function.
+        conditional: u32,
+        /// The binding's zero-based position among the branch's bindings.
+        index: u32,
+    },
     /// The value of the branch of the function's conditional at this index
     /// that the one `Bool` operand subtree selects.
     Choose(u32),
@@ -2195,8 +2302,10 @@ mod tests {
                     end: _,
                     visible_locals: _,
                     scope: _,
+                    bindings,
                     step,
                 } = r#loop;
+                bindings.into_iter().for_each(block_binding_fields);
                 step
             });
             let branches = conditionals.into_iter().flat_map(|conditional| {
@@ -2205,9 +2314,15 @@ mod tests {
                     ty: _,
                     visible_locals: _,
                     scope: _,
+                    then_bindings,
                     then_branch,
+                    else_bindings,
                     else_branch,
                 } = conditional;
+                then_bindings
+                    .into_iter()
+                    .chain(else_bindings)
+                    .for_each(block_binding_fields);
                 [then_branch, else_branch]
             });
             for node in local_values
@@ -2243,6 +2358,8 @@ mod tests {
                     | CoreNodeKind::Fold(_)
                     | CoreNodeKind::LoopIndex(_)
                     | CoreNodeKind::Accumulator(_)
+                    | CoreNodeKind::StepBinding { .. }
+                    | CoreNodeKind::BranchBinding { .. }
                     | CoreNodeKind::Compare { .. }
                     | CoreNodeKind::Choose(_) => {}
                 }
@@ -2258,6 +2375,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Names every field of a block binding, so that a new field must be
+    /// considered here.
+    fn block_binding_fields(binding: CoreBinding) {
+        let CoreBinding {
+            span: _,
+            name: _,
+            name_span: _,
+            ty: _,
+            end: _,
+        } = binding;
     }
 
     fn reserve(limbs: &mut Vec<u32>, count: usize) -> bool {
@@ -2723,5 +2852,115 @@ mod tests {
         assert_eq!(value.ty(), CoreType::Mod(seven));
         assert_eq!(value.word_as_u64(), None);
         assert_eq!(CoreValue::word_from_u64(CoreType::Mod(seven), 6), None);
+    }
+
+    #[test]
+    fn block_bindings_and_their_reads_keep_their_positions() {
+        let span = test_span();
+        let binding = |name: &str, ty: CoreType, end: u32| CoreBinding {
+            span,
+            name: String::from(name),
+            name_span: span,
+            ty,
+            end,
+        };
+        let node = |ty: CoreType, kind: CoreNodeKind| CoreNode { span, ty, kind };
+        // A step `{ let t: Word[8] = s; let u: Word[8] = t; u }`: each
+        // binding's value subtree ends where its `end` says, and the value
+        // reads the second binding.
+        let r#loop = CoreLoop {
+            span,
+            index_name: String::from("i"),
+            accumulator_name: String::from("s"),
+            ty: CoreType::Word8,
+            start: 0,
+            end: 2,
+            visible_locals: 0,
+            scope: vec![0],
+            bindings: vec![
+                binding("t", CoreType::Word8, 1),
+                binding("u", CoreType::Word8, 2),
+            ],
+            step: CoreExpression {
+                nodes: vec![
+                    node(CoreType::Word8, CoreNodeKind::Accumulator(0)),
+                    node(
+                        CoreType::Word8,
+                        CoreNodeKind::StepBinding {
+                            loop_id: 0,
+                            index: 0,
+                        },
+                    ),
+                    node(
+                        CoreType::Word8,
+                        CoreNodeKind::StepBinding {
+                            loop_id: 0,
+                            index: 1,
+                        },
+                    ),
+                ],
+            },
+        };
+        let names = r#loop
+            .bindings()
+            .iter()
+            .map(|binding| {
+                (
+                    binding.name(),
+                    binding.ty(),
+                    binding.end(),
+                    binding.span() == span && binding.name_span() == span,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                ("t", CoreType::Word8, 1, true),
+                ("u", CoreType::Word8, 2, true),
+            ]
+        );
+        assert_eq!(
+            r#loop.step().root().map(CoreNode::kind),
+            Some(&CoreNodeKind::StepBinding {
+                loop_id: 0,
+                index: 1
+            })
+        );
+
+        // A conditional keeps each branch's bindings apart.
+        let conditional = CoreConditional {
+            span,
+            ty: CoreType::Int,
+            visible_locals: 0,
+            scope: Vec::new(),
+            then_bindings: vec![binding("a", CoreType::Int, 1)],
+            then_branch: CoreExpression {
+                nodes: vec![
+                    node(CoreType::Int, CoreNodeKind::Parameter(0)),
+                    node(
+                        CoreType::Int,
+                        CoreNodeKind::BranchBinding {
+                            conditional: 0,
+                            index: 0,
+                        },
+                    ),
+                ],
+            },
+            else_bindings: Vec::new(),
+            else_branch: CoreExpression {
+                nodes: vec![node(CoreType::Int, CoreNodeKind::Parameter(0))],
+            },
+        };
+        assert_eq!(conditional.then_bindings().len(), 1);
+        assert_eq!(conditional.then_bindings()[0].name(), "a");
+        assert!(conditional.else_bindings().is_empty());
+        assert_eq!(
+            conditional.then_branch().root().map(CoreNode::kind),
+            Some(&CoreNodeKind::BranchBinding {
+                conditional: 0,
+                index: 0
+            })
+        );
     }
 }

@@ -26,7 +26,9 @@ meaning. It accepts no D-004 candidate.
 > document with the integers modulo a constant, as `Mod[(1 << 255) - 19]`, and
 > with `type` declarations, which follow a module's `use` declarations. A
 > residue type crosses a module boundary by its value, and a type name stays in
-> its module. Every source this document accepts keeps its meaning under it.
+> its module. [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013,
+> lets a loop's step and each branch begin with `let` bindings. Every source
+> this document accepts keeps its meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

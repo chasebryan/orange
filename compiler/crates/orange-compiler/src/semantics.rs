@@ -4,9 +4,10 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::core::{
-    ArrayType, CoreConditional, CoreExpression, CoreFunction, CoreFunctionId, CoreLocal, CoreLoop,
-    CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_ARRAY_LENGTH,
-    MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, MAX_MODULUS_BITS, Magnitude, Modulus, Residue,
+    ArrayType, CoreBinding, CoreConditional, CoreExpression, CoreFunction, CoreFunctionId,
+    CoreLocal, CoreLoop, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger,
+    MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, MAX_MODULUS_BITS, Magnitude, Modulus,
+    Residue,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
@@ -662,12 +663,7 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
                     FunctionBody::Typed(body) => {
                         belongs(body.span)
                             && type_belongs(&body.result_type)
-                            && body.bindings.iter().all(|binding| {
-                                belongs(binding.span)
-                                    && belongs(binding.name.span)
-                                    && type_belongs(&binding.ty)
-                                    && expression_belongs(&binding.value, &belongs)
-                            })
+                            && bindings_belong(&body.bindings, &belongs)
                             && expression_belongs(&body.expression, &belongs)
                     }
                 }
@@ -744,6 +740,7 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && belongs(r#loop.accumulator.span)
                     && type_belongs(&r#loop.ty, belongs)
                     && expression_belongs(&r#loop.init, belongs)
+                    && bindings_belong(&r#loop.step_bindings, belongs)
                     && expression_belongs(&r#loop.step, belongs)
             }
             ExpressionKind::Conditional(conditional) => {
@@ -751,11 +748,25 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && conditional.arms.iter().all(|arm| {
                         belongs(arm.keyword_span)
                             && expression_belongs(&arm.condition, belongs)
+                            && bindings_belong(&arm.bindings, belongs)
                             && expression_belongs(&arm.value, belongs)
                     })
+                    && bindings_belong(&conditional.otherwise_bindings, belongs)
                     && expression_belongs(&conditional.otherwise, belongs)
             }
         }
+}
+
+/// Returns whether every span of a list of `let` bindings belongs.
+/// Parser-established expression height bounds the recursion through
+/// their values.
+fn bindings_belong(bindings: &[Binding], belongs: &impl Fn(Span) -> bool) -> bool {
+    bindings.iter().all(|binding| {
+        belongs(binding.span)
+            && belongs(binding.name.span)
+            && type_belongs(&binding.ty, belongs)
+            && expression_belongs(&binding.value, belongs)
+    })
 }
 
 fn invalid_semantic_input(
@@ -906,6 +917,12 @@ struct BodyContext<'ast> {
     binding_types: Vec<Option<CoreType>>,
     /// Loops whose step is being checked, outermost first.
     loop_scopes: Vec<LoopScope<'ast>>,
+    /// Loop steps and conditional branches being checked, outermost first,
+    /// each with its `let` bindings.
+    blocks: Vec<BlockScope<'ast>>,
+    /// The `let` bindings of each step or branch already checked, in
+    /// checking order, for a report of a name used outside its block.
+    finished_blocks: Vec<&'ast [Binding]>,
     /// Checked loops of the function, by number. A loop's number is taken
     /// when its check starts, and its entry is filled once it is well formed.
     loops: Vec<Option<CoreLoop>>,
@@ -924,6 +941,36 @@ struct LoopScope<'ast> {
     end: u32,
 }
 
+/// A loop's step or a conditional's branch being checked, whose `let`
+/// bindings come into scope one after another.
+struct BlockScope<'ast> {
+    owner: BlockOwner,
+    /// Every binding of the block, including those not yet in scope.
+    bindings: &'ast [Binding],
+    /// Types of the bindings in scope: exactly the first
+    /// `binding_types.len()`.
+    binding_types: Vec<Option<CoreType>>,
+}
+
+/// What holds a block: the step of a loop, or a branch of a conditional,
+/// by number within the function.
+#[derive(Clone, Copy)]
+enum BlockOwner {
+    Step(u32),
+    Branch(u32),
+}
+
+impl BlockOwner {
+    /// Returns the Core node that reads the binding at `index` of this
+    /// block.
+    const fn node(self, index: u32) -> CoreNodeKind {
+        match self {
+            Self::Step(loop_id) => CoreNodeKind::StepBinding { loop_id, index },
+            Self::Branch(conditional) => CoreNodeKind::BranchBinding { conditional, index },
+        }
+    }
+}
+
 /// A binding whose type resolved.
 struct CheckedBinding {
     ty: CoreType,
@@ -935,6 +982,11 @@ struct CheckedBinding {
 enum NameResolution<'ast> {
     Parameter(usize),
     Binding(usize),
+    /// The binding at `index` of the block at `block` in the block scopes.
+    BlockBinding {
+        block: usize,
+        index: usize,
+    },
     /// The index of the loop scope at this position.
     LoopIndex(usize),
     /// The accumulator of the loop scope at this position.
@@ -942,14 +994,16 @@ enum NameResolution<'ast> {
     /// The `Bool` literal `true` or `false`, where no name of its spelling
     /// is in scope.
     BoolLiteral(bool),
-    /// A binding of this body whose scope has not started.
-    LaterBinding(&'ast Binding),
+    /// A binding of this body or of a block being checked whose scope has
+    /// not started, and whether it is a block's.
+    LaterBinding(&'ast Binding, bool),
     Unknown,
 }
 
 impl<'ast> BodyContext<'ast> {
-    /// Resolves a bare name: parameters first, then the bindings in scope,
-    /// each list searched in source order.
+    /// Resolves a bare name: parameters first, then the body's bindings in
+    /// scope, then the bindings in scope of the blocks being checked, each
+    /// list searched in source order.
     fn resolve(&self, name: &str) -> NameResolution<'ast> {
         if let Some(index) = self
             .parameters
@@ -965,6 +1019,15 @@ impl<'ast> BodyContext<'ast> {
         if let Some(index) = visible.iter().position(|binding| binding.name.text == name) {
             return NameResolution::Binding(index);
         }
+        for (block, scope) in self.blocks.iter().enumerate().rev() {
+            if let Some(index) = scope
+                .visible()
+                .iter()
+                .position(|binding| binding.name.text == name)
+            {
+                return NameResolution::BlockBinding { block, index };
+            }
+        }
         for (position, scope) in self.loop_scopes.iter().enumerate().rev() {
             if scope.index.text == name {
                 return NameResolution::LoopIndex(position);
@@ -978,10 +1041,16 @@ impl<'ast> BodyContext<'ast> {
             "false" => return NameResolution::BoolLiteral(false),
             _ => {}
         }
-        later
+        self.blocks
             .iter()
-            .find(|binding| binding.name.text == name)
-            .map_or(NameResolution::Unknown, NameResolution::LaterBinding)
+            .rev()
+            .flat_map(BlockScope::later)
+            .map(|binding| (binding, true))
+            .chain(later.iter().map(|binding| (binding, false)))
+            .find(|(binding, _)| binding.name.text == name)
+            .map_or(NameResolution::Unknown, |(binding, in_block)| {
+                NameResolution::LaterBinding(binding, in_block)
+            })
     }
 
     /// Returns the type of a name in scope without reporting.
@@ -989,12 +1058,19 @@ impl<'ast> BodyContext<'ast> {
         match self.resolve(name) {
             NameResolution::Parameter(index) => self.parameter_types.get(index).copied().flatten(),
             NameResolution::Binding(index) => self.binding_types.get(index).copied().flatten(),
+            NameResolution::BlockBinding { block, index } => self
+                .blocks
+                .get(block)?
+                .binding_types
+                .get(index)
+                .copied()
+                .flatten(),
             NameResolution::LoopIndex(_) => Some(CoreType::Int),
             NameResolution::Accumulator(position) => {
                 self.loop_scopes.get(position).map(|scope| scope.ty)
             }
             NameResolution::BoolLiteral(_) => Some(CoreType::Bool),
-            NameResolution::LaterBinding(_) | NameResolution::Unknown => None,
+            NameResolution::LaterBinding(..) | NameResolution::Unknown => None,
         }
     }
 
@@ -1011,7 +1087,10 @@ impl<'ast> BodyContext<'ast> {
         if let Some(binding) = self
             .bindings
             .get(..self.binding_types.len())
-            .and_then(|visible| visible.iter().find(|binding| binding.name.text == name))
+            .into_iter()
+            .flatten()
+            .chain(self.blocks.iter().flat_map(BlockScope::visible))
+            .find(|binding| binding.name.text == name)
         {
             return Some((binding.name.span, "the binding is here"));
         }
@@ -1027,6 +1106,22 @@ impl<'ast> BodyContext<'ast> {
     }
 }
 
+impl<'ast> BlockScope<'ast> {
+    /// Returns the block's bindings in scope, in source order.
+    fn visible(&self) -> &'ast [Binding] {
+        self.bindings
+            .get(..self.binding_types.len())
+            .unwrap_or(self.bindings)
+    }
+
+    /// Returns the block's bindings whose scope has not started.
+    fn later(&self) -> &'ast [Binding] {
+        self.bindings
+            .get(self.binding_types.len()..)
+            .unwrap_or_default()
+    }
+}
+
 /// Returns the first name, call, conversion, index, array literal, or
 /// comparison of `expression`, from left to right, outside call arguments,
 /// shift amounts, and the conditions of conditionals.
@@ -1036,8 +1131,10 @@ impl<'ast> BodyContext<'ast> {
 /// values, so this leaf's type is the type of the whole expression. A
 /// comparison is a leaf of type `Bool`. Integer literals take their type from
 /// their context and are skipped. An array literal ends the search so that a
-/// conversion can reject it. Parser-established expression height bounds this
-/// recursion.
+/// conversion can reject it. A branch's leaf that names one of the branch's
+/// own `let` bindings, directly or through indices, is skipped too, because
+/// those bindings are not in scope where the type is needed.
+/// Parser-established expression height bounds this recursion.
 fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
     match &expression.kind {
         ExpressionKind::Literal(_) => None,
@@ -1064,8 +1161,64 @@ fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
         ExpressionKind::Conditional(conditional) => conditional
             .arms
             .iter()
-            .find_map(|arm| first_typed_leaf(&arm.value))
-            .or_else(|| first_typed_leaf(&conditional.otherwise)),
+            .find_map(|arm| branch_leaf(&arm.bindings, &arm.value))
+            .or_else(|| branch_leaf(&conditional.otherwise_bindings, &conditional.otherwise)),
+    }
+}
+
+/// The label of an operand with no type because each branch that could give
+/// one names a binding of its own.
+const BRANCH_BINDING_LEAF_LABEL: &str = "a branch's own bindings are not in scope outside it";
+
+/// Returns whether the search for the first typed leaf of `expression`
+/// passes over a branch whose leaf names one of that branch's bindings.
+/// Parser-established expression height bounds this recursion.
+fn passes_branch_binding(expression: &Expression) -> bool {
+    let block = |bindings: &[Binding], value: &Expression| {
+        (first_typed_leaf(value).is_some() && branch_leaf(bindings, value).is_none())
+            || passes_branch_binding(value)
+    };
+    match &expression.kind {
+        ExpressionKind::Parenthesized(inner) => passes_branch_binding(inner),
+        ExpressionKind::Update(update) => passes_branch_binding(&update.base),
+        ExpressionKind::Unary(unary) => passes_branch_binding(&unary.operand),
+        ExpressionKind::Binary(binary) if !binary.operator.is_comparison() => {
+            passes_branch_binding(&binary.left)
+                || (!binary.operator.is_shift_or_rotation() && passes_branch_binding(&binary.right))
+        }
+        ExpressionKind::Conditional(conditional) => {
+            conditional
+                .arms
+                .iter()
+                .any(|arm| block(&arm.bindings, &arm.value))
+                || block(&conditional.otherwise_bindings, &conditional.otherwise)
+        }
+        _ => false,
+    }
+}
+
+/// Returns the first typed leaf of a branch's value unless it names one of
+/// the branch's bindings.
+fn branch_leaf<'expression>(
+    bindings: &[Binding],
+    value: &'expression Expression,
+) -> Option<&'expression Expression> {
+    let leaf = first_typed_leaf(value)?;
+    let bound = leaf_root_name(leaf).is_some_and(|name| {
+        bindings
+            .iter()
+            .any(|binding| binding.name.text == name.text)
+    });
+    (!bound).then_some(leaf)
+}
+
+/// Returns the name a name or index leaf reads, through any indices.
+/// Parser-established expression height bounds this recursion.
+fn leaf_root_name(leaf: &Expression) -> Option<&Identifier> {
+    match &leaf.kind {
+        ExpressionKind::Name(name) => Some(name),
+        ExpressionKind::Index(index) => leaf_root_name(&index.base),
+        _ => None,
     }
 }
 
@@ -1640,6 +1793,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     bindings: &body.bindings,
                     binding_types: Vec::new(),
                     loop_scopes: Vec::new(),
+                    blocks: Vec::new(),
+                    finished_blocks: Vec::new(),
                     loops: Vec::new(),
                     conditionals: Vec::new(),
                 };
@@ -1754,16 +1909,26 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Loop(r#loop) => {
                 self.resolve_modulus(&r#loop.ty);
                 self.resolve_moduli_within(&r#loop.init);
-                self.resolve_moduli_within(&r#loop.step);
+                self.resolve_block_moduli(&r#loop.step_bindings, &r#loop.step);
             }
             ExpressionKind::Conditional(conditional) => {
                 for arm in &conditional.arms {
                     self.resolve_moduli_within(&arm.condition);
-                    self.resolve_moduli_within(&arm.value);
+                    self.resolve_block_moduli(&arm.bindings, &arm.value);
                 }
-                self.resolve_moduli_within(&conditional.otherwise);
+                self.resolve_block_moduli(&conditional.otherwise_bindings, &conditional.otherwise);
             }
         }
+    }
+
+    /// Evaluates the moduli of a block's binding types and values and of
+    /// its value, in source order.
+    fn resolve_block_moduli(&mut self, bindings: &[Binding], value: &Expression) {
+        for binding in bindings {
+            self.resolve_modulus(&binding.ty);
+            self.resolve_moduli_within(&binding.value);
+        }
+        self.resolve_moduli_within(value);
     }
 
     /// Evaluates the modulus of `Mod[...]`, if `syntax` has one, and enters
@@ -2386,6 +2551,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 context.binding_types.get(index).copied(),
                 u32::try_from(index).map(CoreNodeKind::Local),
             ),
+            NameResolution::BlockBinding { block, index } => match context.blocks.get(block) {
+                Some(block) => (
+                    block.binding_types.get(index).copied(),
+                    u32::try_from(index).map(|index| block.owner.node(index)),
+                ),
+                None => (None, Ok(CoreNodeKind::Local(0))),
+            },
             NameResolution::LoopIndex(position) => match context.loop_scopes.get(position) {
                 Some(scope) => (
                     Some(Some(CoreType::Int)),
@@ -2404,7 +2576,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 Some(Some(CoreType::Bool)),
                 Ok(CoreNodeKind::Literal(CoreValue::Bool(value))),
             ),
-            NameResolution::LaterBinding(binding) => {
+            NameResolution::LaterBinding(binding, in_block) => {
                 if self.begin_report(name.span) {
                     let spelling = identifier_spelling_for_diagnostic(&name.text);
                     self.diagnostics.push(
@@ -2415,10 +2587,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         )
                         .with_label("not bound yet")
                         .with_secondary_span(binding.name.span, "the binding is here")
-                        .with_note(
+                        .with_note(if in_block {
                             "a binding is in scope after its own `;`, for the bindings that \
-                             follow it and the result",
-                        ),
+                             follow it and the value of its step or branch"
+                        } else {
+                            "a binding is in scope after its own `;`, for the bindings that \
+                             follow it and the result"
+                        }),
                     );
                 }
                 return false;
@@ -2478,7 +2653,33 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let spelling = identifier_spelling_for_diagnostic(&name.text);
         let function = identifier_spelling_for_diagnostic(&context.name.text);
-        let has_bindings = !context.bindings.is_empty();
+        // A binding of a step or branch already checked is out of scope.
+        let finished = context.finished_blocks.iter().rev().find_map(|bindings| {
+            bindings
+                .iter()
+                .find(|binding| binding.name.text == name.text)
+        });
+        if let Some(binding) = finished {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnknownParameter,
+                    format!("`{spelling}` is not in scope here"),
+                    name.span,
+                )
+                .with_label("unknown name")
+                .with_secondary_span(binding.name.span, "a binding of this name is here")
+                .with_note(
+                    "a binding of a loop's step or a branch is in scope only within that \
+                     step or branch",
+                ),
+            );
+            return;
+        }
+        let has_bindings = !context.bindings.is_empty()
+            || context
+                .blocks
+                .iter()
+                .any(|block| !block.bindings.is_empty());
         let mut diagnostic = Diagnostic::error(
             DiagnosticCode::UnknownParameter,
             if has_bindings {
@@ -2524,40 +2725,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let target_matches = match target {
             Some(target) if target != expected => {
-                if self.begin_report(conversion.target.span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::TypeMismatch,
-                            format!(
-                                "this conversion gives `{target}`, but `{expected}` is required here"
-                            ),
-                            conversion.target.span,
-                        )
-                        .with_label(format!("expected `{expected}`"))
-                        .with_note("`as` gives exactly the type written after it"),
-                    );
-                }
+                self.report_conversion_mismatch(conversion.target.span, target, expected);
                 false
             }
             Some(_) => true,
             None => false,
         };
         let Some(leaf) = first_typed_leaf(&conversion.operand) else {
-            let span = conversion.operand.span;
-            if self.begin_report(span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::UntypedConversionOperand,
-                        "the operand of `as` has no type of its own",
-                        span,
-                    )
-                    .with_label("a literal takes its type from where it is used")
-                    .with_note(
-                        "write the literal where its type is required, or give it a type \
-                         with a `let` binding",
-                    ),
-                );
-            }
+            self.report_untyped_conversion(&conversion.operand);
             return false;
         };
         if let Some(target) = target.filter(|target| !target.is_scalar()) {
@@ -2568,20 +2743,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if matches!(leaf.kind, ExpressionKind::Array(_))
             || from.is_some_and(|from| !from.is_scalar())
         {
-            let span = conversion.keyword_span;
-            if self.begin_report(span) {
-                let operand =
-                    from.map_or_else(|| String::from("an array"), |from| format!("`{from}`"));
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::UnsupportedOperator,
-                        format!("`as` is not defined for {operand}"),
-                        span,
-                    )
-                    .with_label("`as` converts one `Int`, word, or residue value")
-                    .with_note("convert each element, such as `x[0] as Int`"),
-                );
-            }
+            self.report_array_operand(conversion.keyword_span, from);
             return false;
         }
         let Some(from) = from else {
@@ -2591,21 +2753,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         };
         if from == CoreType::Bool || target == Some(CoreType::Bool) {
-            let span = conversion.keyword_span;
-            if self.begin_report(span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::UnsupportedOperator,
-                        "`as` does not convert to or from `Bool`",
-                        span,
-                    )
-                    .with_label("`as` converts one `Int`, word, or residue value")
-                    .with_note(
-                        "choose a number with a conditional, such as `if b { 1 } else { 0 }`, \
-                         or compare a number, such as `x != 0`",
-                    ),
-                );
-            }
+            self.report_bool_conversion(conversion.keyword_span);
             return false;
         }
         let operand = self.check_expression(&conversion.operand, from, context, scope, output);
@@ -2617,6 +2765,87 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 expected,
                 CoreNodeKind::Convert { from },
             )
+    }
+
+    // The reports of a conversion are out of line, so that the frame of
+    // `check_conversion`, which nested conversions stack, stays small.
+    #[cold]
+    #[inline(never)]
+    fn report_conversion_mismatch(&mut self, span: Span, target: CoreType, expected: CoreType) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!("this conversion gives `{target}`, but `{expected}` is required here"),
+                    span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("`as` gives exactly the type written after it"),
+            );
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_untyped_conversion(&mut self, operand: &Expression) {
+        let span = operand.span;
+        if !self.begin_report(span) {
+            return;
+        }
+        let diagnostic = Diagnostic::error(
+            DiagnosticCode::UntypedConversionOperand,
+            "the operand of `as` has no type of its own",
+            span,
+        );
+        self.diagnostics.push(if passes_branch_binding(operand) {
+            diagnostic.with_label(BRANCH_BINDING_LEAF_LABEL).with_note(
+                "bind the conditional's value with a typed `let` first, or convert within \
+                 each branch",
+            )
+        } else {
+            diagnostic
+                .with_label("a literal takes its type from where it is used")
+                .with_note(
+                    "write the literal where its type is required, or give it a type with a \
+                     `let` binding",
+                )
+        });
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_array_operand(&mut self, span: Span, from: Option<CoreType>) {
+        if self.begin_report(span) {
+            let operand = from.map_or_else(|| String::from("an array"), |from| format!("`{from}`"));
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedOperator,
+                    format!("`as` is not defined for {operand}"),
+                    span,
+                )
+                .with_label("`as` converts one `Int`, word, or residue value")
+                .with_note("convert each element, such as `x[0] as Int`"),
+            );
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_bool_conversion(&mut self, span: Span) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::UnsupportedOperator,
+                    "`as` does not convert to or from `Bool`",
+                    span,
+                )
+                .with_label("`as` converts one `Int`, word, or residue value")
+                .with_note(
+                    "choose a number with a conditional, such as `if b { 1 } else { 0 }`, or \
+                     compare a number, such as `x != 0`",
+                ),
+            );
+        }
     }
 
     #[cold]
@@ -3459,7 +3688,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             nodes: Vec::new(),
             call_edges: &mut *output.call_edges,
         };
-        let step = self.check_expression(&r#loop.step, ty, context, scope, &mut step_output);
+        let (bindings, step) = self.check_block(
+            BlockOwner::Step(id),
+            &r#loop.step_bindings,
+            &r#loop.step,
+            ty,
+            context,
+            scope,
+            &mut step_output,
+        );
         let step_nodes = step_output.nodes;
         let mut loop_scope = Vec::new();
         let scope_reserved = loop_scope
@@ -3471,7 +3708,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             self.resource_limit(expression.span, "loop scope allocation failed");
             return false;
         }
-        if !(init && step && names_unique && type_matches) || self.halted {
+        let Some(bindings) = bindings.filter(|_| init && step && names_unique && type_matches)
+        else {
+            return false;
+        };
+        if self.halted {
             return false;
         }
         let Ok(visible_locals) = u32::try_from(context.binding_types.len()) else {
@@ -3505,9 +3746,143 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             end,
             visible_locals,
             scope: loop_scope,
+            bindings,
             step: CoreExpression { nodes: step_nodes },
         });
         self.push_node(output, expression.span, expected, CoreNodeKind::Fold(id))
+    }
+
+    /// Checks a loop's step or a conditional's branch: its `let` bindings in
+    /// order, each against its declared type and in scope from the binding
+    /// after it, and then its value against `expected`. The bindings' value
+    /// nodes and then the value's nodes are appended to `output`.
+    ///
+    /// Returns the bindings' Core records, present only when every binding
+    /// is well formed, and whether the value is well typed.
+    #[allow(clippy::too_many_arguments)]
+    fn check_block(
+        &mut self,
+        owner: BlockOwner,
+        bindings: &'ast [Binding],
+        value: &'ast Expression,
+        expected: CoreType,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> (Option<Vec<CoreBinding>>, bool) {
+        let mut binding_types = Vec::new();
+        let mut records = Vec::new();
+        if context.blocks.try_reserve(1).is_err()
+            || binding_types.try_reserve_exact(bindings.len()).is_err()
+            || records.try_reserve_exact(bindings.len()).is_err()
+        {
+            self.resource_limit(value.span, "block binding storage allocation failed");
+            return (None, false);
+        }
+        context.blocks.push(BlockScope {
+            owner,
+            bindings,
+            binding_types,
+        });
+        let mut well_formed = true;
+        for binding in bindings {
+            match self.check_block_binding(binding, context, scope, output) {
+                Some((ty, checked)) => {
+                    if let Some(block) = context.blocks.last_mut() {
+                        block.binding_types.push(ty);
+                    }
+                    let Some(ty) = ty.filter(|_| checked && well_formed) else {
+                        well_formed = false;
+                        continue;
+                    };
+                    let Ok(end) = u32::try_from(output.nodes.len()) else {
+                        self.resource_limit(
+                            binding.span,
+                            "node count exceeds the u32 representation limit",
+                        );
+                        well_formed = false;
+                        break;
+                    };
+                    let Some(name) = self.copy_core_name(&binding.name.text, binding.name.span)
+                    else {
+                        well_formed = false;
+                        break;
+                    };
+                    records.push(CoreBinding {
+                        span: binding.span,
+                        name,
+                        name_span: binding.name.span,
+                        ty,
+                        end,
+                    });
+                }
+                None => {
+                    well_formed = false;
+                    break;
+                }
+            }
+        }
+        let checked =
+            !self.halted && self.check_expression(value, expected, context, scope, output);
+        context.blocks.pop();
+        if !bindings.is_empty() {
+            if context.finished_blocks.try_reserve(1).is_err() {
+                self.resource_limit(value.span, "block binding storage allocation failed");
+                return (None, false);
+            }
+            context.finished_blocks.push(bindings);
+        }
+        (well_formed.then_some(records), checked)
+    }
+
+    /// Checks one binding of a block: that its name is new in scope, its
+    /// type, and its value against that type.
+    ///
+    /// Returns the binding's type, when it resolved, and whether the binding
+    /// is well formed, or `None` when analysis stopped.
+    fn check_block_binding(
+        &mut self,
+        binding: &'ast Binding,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> Option<(Option<CoreType>, bool)> {
+        // One event for the binding-name uniqueness check.
+        if !self.event(binding.name.span) {
+            return None;
+        }
+        let earlier = context.earlier_name(&binding.name.text);
+        if let Some((earlier_span, earlier_label)) = earlier {
+            let span = binding.name.span;
+            if self.begin_report(span) {
+                let spelling = identifier_spelling_for_diagnostic(&binding.name.text);
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::DuplicateBinding,
+                        format!("duplicate name `{spelling}`"),
+                        span,
+                    )
+                    .with_label("this name repeats a name in scope")
+                    .with_secondary_span(earlier_span, earlier_label)
+                    .with_note(
+                        "each parameter, binding, loop index, and accumulator in scope has \
+                         its own name; Orange has no shadowing",
+                    ),
+                );
+            }
+        }
+        let ty = self.analyze_type(&binding.ty, "binding type");
+        if self.halted {
+            return None;
+        }
+        let Some(ty) = ty else {
+            return Some((None, false));
+        };
+        let checked = self.check_expression(&binding.value, ty, context, scope, output);
+        if self.halted {
+            return None;
+        }
+        Some((Some(ty), checked && earlier.is_none()))
     }
 
     /// Decodes a loop's bounds and checks that they form a nonempty range
@@ -3598,6 +3973,53 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         decoded
     }
 
+    #[cold]
+    #[inline(never)]
+    fn report_comparison_mismatch(&mut self, span: Span, expected: CoreType) {
+        if self.begin_report(span) {
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TypeMismatch,
+                    format!("a comparison gives `Bool`, but `{expected}` is required here"),
+                    span,
+                )
+                .with_label(format!("expected `{expected}`"))
+                .with_note("a conditional `if c { a } else { b }` chooses a value by a `Bool`"),
+            );
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_untyped_comparison(&mut self, span: Span, binary: &BinaryExpression) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let diagnostic = Diagnostic::error(
+            DiagnosticCode::UntypedComparison,
+            format!(
+                "the operands of `{}` have no type of their own",
+                binary.operator.as_str()
+            ),
+            span,
+        );
+        self.diagnostics.push(
+            if passes_branch_binding(&binary.left) || passes_branch_binding(&binary.right) {
+                diagnostic.with_label(BRANCH_BINDING_LEAF_LABEL).with_note(
+                    "bind the conditional's value with a typed `let` first, or compare within \
+                     each branch",
+                )
+            } else {
+                diagnostic
+                    .with_label("a literal takes its type from where it is used")
+                    .with_note(
+                        "compare with a typed operand, such as a name, or give the literal a \
+                         type with a `let` binding",
+                    )
+            },
+        );
+    }
+
     /// Checks a comparison `left op right` against `expected`, which must be
     /// `Bool`. Both operands have the type of the first typed leaf of the
     /// left operand, or else of the right operand, as a conversion operand
@@ -3613,33 +4035,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     ) -> bool {
         let operator = binary.operator.as_str();
         let result_matches = expected == CoreType::Bool;
-        if !result_matches && self.begin_report(expression.span) {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    DiagnosticCode::TypeMismatch,
-                    format!("a comparison gives `Bool`, but `{expected}` is required here"),
-                    expression.span,
-                )
-                .with_label(format!("expected `{expected}`"))
-                .with_note("a conditional `if c { a } else { b }` chooses a value by a `Bool`"),
-            );
+        if !result_matches {
+            self.report_comparison_mismatch(expression.span, expected);
         }
         let Some(leaf) = first_typed_leaf(&binary.left).or_else(|| first_typed_leaf(&binary.right))
         else {
-            if self.begin_report(expression.span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::UntypedComparison,
-                        format!("the operands of `{operator}` have no type of their own"),
-                        expression.span,
-                    )
-                    .with_label("a literal takes its type from where it is used")
-                    .with_note(
-                        "compare with a typed operand, such as a name, or give the literal a \
-                         type with a `let` binding",
-                    ),
-                );
-            }
+            self.report_untyped_comparison(expression.span, binary);
             return false;
         };
         let Some(operand) = self.leaf_type(leaf, context, scope) else {
@@ -3711,7 +4112,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         output: &mut BodyOutput<'_>,
     ) -> bool {
         let arm_count = conditional.arms.len();
-        let mut arms: Vec<(u32, Span, Vec<CoreNode>)> = Vec::new();
+        let mut arms: Vec<(u32, Span, Vec<CoreNode>, Vec<CoreBinding>)> = Vec::new();
         let mut else_branches: Vec<Vec<CoreNode>> = Vec::new();
         if arms.try_reserve_exact(arm_count).is_err()
             || else_branches.try_reserve_exact(arm_count).is_err()
@@ -3720,6 +4121,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         }
         let mut well_formed = true;
+        // The last `else` branch belongs to the last arm's conditional.
+        let mut last = None;
         for (position, arm) in conditional.arms.iter().enumerate() {
             if !self.event(arm.keyword_span) {
                 return false;
@@ -3736,6 +4139,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return false;
             }
             context.conditionals.push(None);
+            last = Some(id);
             let condition = if position == 0 {
                 self.check_expression(&arm.condition, CoreType::Bool, context, scope, output)
             } else {
@@ -3760,29 +4164,56 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 nodes: Vec::new(),
                 call_edges: &mut *output.call_edges,
             };
-            let value = self.check_expression(&arm.value, expected, context, scope, &mut branch);
+            let (bindings, value) = self.check_block(
+                BlockOwner::Branch(id),
+                &arm.bindings,
+                &arm.value,
+                expected,
+                context,
+                scope,
+                &mut branch,
+            );
             if self.halted {
                 return false;
             }
-            well_formed = well_formed && condition && value;
-            arms.push((id, arm.keyword_span, branch.nodes));
+            match bindings {
+                Some(bindings) if condition && value => {
+                    arms.push((id, arm.keyword_span, branch.nodes, bindings));
+                }
+                _ => well_formed = false,
+            }
         }
+        let Some(last) = last else {
+            return false;
+        };
         let mut branch = BodyOutput {
             nodes: Vec::new(),
             call_edges: &mut *output.call_edges,
         };
-        let otherwise = self.check_expression(
+        let (bindings, otherwise) = self.check_block(
+            BlockOwner::Branch(last),
+            &conditional.otherwise_bindings,
             &conditional.otherwise,
             expected,
             context,
             scope,
             &mut branch,
         );
-        if !(well_formed && otherwise) || self.halted {
+        let Some(else_bindings) = bindings.filter(|_| well_formed && otherwise) else {
+            return false;
+        };
+        if self.halted {
             return false;
         }
         else_branches.push(branch.nodes);
-        self.record_conditionals(expression, expected, arms, else_branches, context, output)
+        self.record_conditionals(
+            expression,
+            expected,
+            arms,
+            (else_branches, else_bindings),
+            context,
+            output,
+        )
     }
 
     /// Fills the table entries of a well-formed conditional's arms and
@@ -3791,8 +4222,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &Expression,
         expected: CoreType,
-        arms: Vec<(u32, Span, Vec<CoreNode>)>,
-        else_branches: Vec<Vec<CoreNode>>,
+        arms: Vec<(u32, Span, Vec<CoreNode>, Vec<CoreBinding>)>,
+        (else_branches, else_bindings): (Vec<Vec<CoreNode>>, Vec<CoreBinding>),
         context: &mut BodyContext<'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
@@ -3805,7 +4236,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         let spans = arms
             .iter()
-            .map(|(id, keyword_span, _)| {
+            .map(|(id, keyword_span, ..)| {
                 (
                     *id,
                     self.source
@@ -3815,7 +4246,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             })
             .collect::<Vec<_>>();
         let mut later_arms = spans.iter().skip(1);
-        for ((id, _, then_nodes), else_nodes) in arms.into_iter().zip(else_branches) {
+        // Only the last conditional's `else` branch is the written `else`
+        // block; each earlier one holds the next arm's condition and choice.
+        let mut last_else_bindings = Some(else_bindings);
+        let count = arms.len();
+        for (position, ((id, _, then_nodes, then_bindings), else_nodes)) in
+            arms.into_iter().zip(else_branches).enumerate()
+        {
             let mut else_branch = BodyOutput {
                 nodes: else_nodes,
                 call_edges: &mut *output.call_edges,
@@ -3853,12 +4290,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 );
                 return false;
             };
+            let else_bindings = if position.saturating_add(1) == count {
+                last_else_bindings.take().unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             *entry = Some(CoreConditional {
                 span,
                 ty: expected,
                 visible_locals,
                 scope: loop_scope,
+                then_bindings,
                 then_branch: CoreExpression { nodes: then_nodes },
+                else_bindings,
                 else_branch: CoreExpression {
                     nodes: else_branch.nodes,
                 },
@@ -4474,7 +4918,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             // each binding contributes one binding node, one type node, and
             // its expression nodes.
             // Each loop contributes one loop node, one accumulator-type
-            // node, and its step's nodes.
+            // node, and its step's nodes; each binding of a step or branch
+            // contributes one binding node and one type node, its value's
+            // nodes being the step's or branch's.
             let node_count = pending_function.locals.iter().fold(
                 pending_function
                     .parameters
@@ -4494,6 +4940,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     count
                         .saturating_add(r#loop.step.nodes.len())
                         .saturating_add(2)
+                        .saturating_add(r#loop.bindings.len().saturating_mul(2))
                 });
             // Each conditional contributes one table entry and its branches'
             // nodes.
@@ -4506,6 +4953,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             .saturating_add(conditional.then_branch.nodes.len())
                             .saturating_add(conditional.else_branch.nodes.len())
                             .saturating_add(1)
+                            .saturating_add(
+                                conditional
+                                    .then_bindings
+                                    .len()
+                                    .saturating_add(conditional.else_bindings.len())
+                                    .saturating_mul(2),
+                            )
                     });
             for _ in 0..node_count {
                 if !self.record_core_node(pending_function.span) {
@@ -7110,6 +7564,12 @@ mod tests {
                     CoreNodeKind::Fold(id) => format!("loop #{id}"),
                     CoreNodeKind::LoopIndex(id) => format!("index of loop #{id}"),
                     CoreNodeKind::Accumulator(id) => format!("accumulator of loop #{id}"),
+                    CoreNodeKind::StepBinding { loop_id, index } => {
+                        format!("binding {index} of loop #{loop_id}")
+                    }
+                    CoreNodeKind::BranchBinding { conditional, index } => {
+                        format!("binding {index} of branch #{conditional}")
+                    }
                     CoreNodeKind::Compare { operator, operand } => {
                         format!("compare {} on {operand}", operator.as_str())
                     }
@@ -11743,6 +12203,510 @@ mod tests {
             }),
             Box::new(|ast| {
                 loop_mut(ast).ty.modulus.as_mut().unwrap().span = modulus_span(&accumulator);
+            }),
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
+    }
+
+    /// Renders a block's bindings as `(name, source, type, end)`.
+    fn block_bindings<'text>(
+        fixture: &'text Fixture,
+        bindings: &[CoreBinding],
+    ) -> Vec<(String, &'text str, CoreType, u32)> {
+        bindings
+            .iter()
+            .map(|binding| {
+                (
+                    binding.name().to_owned(),
+                    fixture.source().slice(binding.span()).unwrap(),
+                    binding.ty(),
+                    binding.end(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn blocks_build_typed_core_with_each_binding_before_its_value() {
+        let (fixture, core) = accepted(concat!(
+            "  spec mix(a: Word[32], b: Word[32]) -> Word[32] {\n",
+            "    for i in 0..4 with s: Word[32] = a {\n",
+            "      let t: Word[32] = s ^ b; let u: Word[32] = t >>> 7; u + t\n",
+            "    }\n",
+            "  }\n",
+            "  spec pick(c: Bool, x: Int) -> Int {\n",
+            "    if c { let y: Int = x + 1; y * y } else if x < 0 { 0 } else { let z: Int = x; z - 1 }\n",
+            "  }\n",
+            "  spec nested(x: Int) -> Int {\n",
+            "    let w: Int = 2;\n",
+            "    for i in 0..2 with s: Int = x {\n",
+            "      let t: Int = s + i;\n",
+            "      for j in 0..2 with u: Int = t { let v: Int = u + t * w; if v < 0 { let n: Int = -v; n } else { v } }\n",
+            "    }\n",
+            "  }\n",
+        ));
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .collect::<Vec<_>>()
+        };
+        let word = CoreType::Word32;
+
+        // Each binding's value subtree comes first, in source order, and the
+        // step's value reads the bindings from their slots.
+        let mix = &core.functions[0];
+        assert_eq!(
+            block_bindings(&fixture, mix.loops[0].bindings()),
+            [
+                (String::from("t"), "let t: Word[32] = s ^ b;", word, 3),
+                (String::from("u"), "let u: Word[32] = t >>> 7;", word, 5),
+            ]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, mix.loops[0].step()),
+            owned(&[
+                ("accumulator of loop #0", "s", word),
+                ("parameter 1", "b", word),
+                ("infix ^", "s ^ b", word),
+                ("binding 0 of loop #0", "t", word),
+                ("shift >>> 7", "t >>> 7", word),
+                ("binding 1 of loop #0", "u", word),
+                ("binding 0 of loop #0", "t", word),
+                ("infix +", "u + t", word),
+            ])
+        );
+
+        // A branch's bindings belong to its conditional: the last `else`
+        // of a chain is the last arm's.
+        let pick = &core.functions[1];
+        assert_eq!(pick.conditionals.len(), 2);
+        assert_eq!(
+            block_bindings(&fixture, pick.conditionals[0].then_bindings()),
+            [(String::from("y"), "let y: Int = x + 1;", CoreType::Int, 3)]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, pick.conditionals[0].then_branch()),
+            owned(&[
+                ("parameter 1", "x", CoreType::Int),
+                ("literal 1", "1", CoreType::Int),
+                ("infix +", "x + 1", CoreType::Int),
+                ("binding 0 of branch #0", "y", CoreType::Int),
+                ("binding 0 of branch #0", "y", CoreType::Int),
+                ("infix *", "y * y", CoreType::Int),
+            ])
+        );
+        assert!(pick.conditionals[0].else_bindings().is_empty());
+        assert!(pick.conditionals[1].then_bindings().is_empty());
+        assert_eq!(
+            block_bindings(&fixture, pick.conditionals[1].else_bindings()),
+            [(String::from("z"), "let z: Int = x;", CoreType::Int, 1)]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, pick.conditionals[1].else_branch()),
+            owned(&[
+                ("parameter 1", "x", CoreType::Int),
+                ("binding 0 of branch #1", "z", CoreType::Int),
+                ("literal 1", "1", CoreType::Int),
+                ("infix -", "z - 1", CoreType::Int),
+            ])
+        );
+
+        // An inner step sees the outer step's bindings, and a branch inside
+        // it sees both.
+        let nested = &core.functions[2];
+        assert_eq!(
+            block_bindings(&fixture, nested.loops[0].bindings()),
+            [(String::from("t"), "let t: Int = s + i;", CoreType::Int, 3)]
+        );
+        assert_eq!(
+            block_bindings(&fixture, nested.loops[1].bindings()),
+            [(
+                String::from("v"),
+                "let v: Int = u + t * w;",
+                CoreType::Int,
+                5
+            )]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, nested.loops[1].step())
+                .into_iter()
+                .take(5)
+                .collect::<Vec<_>>(),
+            owned(&[
+                ("accumulator of loop #1", "u", CoreType::Int),
+                ("binding 0 of loop #0", "t", CoreType::Int),
+                ("local 0", "w", CoreType::Int),
+                ("infix *", "t * w", CoreType::Int),
+                ("infix +", "u + t * w", CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            expression_nodes(&fixture, nested.conditionals[0].then_branch()),
+            owned(&[
+                ("binding 0 of loop #1", "v", CoreType::Int),
+                ("prefix -", "-v", CoreType::Int),
+                ("binding 0 of branch #0", "n", CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            conditional_headers(&fixture, nested)
+                .into_iter()
+                .map(|(_, _, visible, scope)| (visible, scope))
+                .collect::<Vec<_>>(),
+            [(1, vec![0, 1])]
+        );
+    }
+
+    #[test]
+    fn unresolved_block_binding_types_are_reported_once_without_cascades() {
+        // As for a body's binding, the value of a block binding whose type
+        // does not resolve is not checked, and its uses are not reported;
+        // the block's other parts still are.
+        let (fixture, result) = rejected(concat!(
+            "  spec step(x: Word[32]) -> Word[32] {\n",
+            "    for i in 0..2 with s: Word[32] = x {\n",
+            "      let t: Wide = missing;\n",
+            "      let u: Word[32] = t;\n",
+            "      s ^ u ^ gone\n",
+            "    }\n",
+            "  }\n",
+            "  spec branch(c: Bool) -> Int {\n",
+            "    if c { let t: Word[12] = missing; t } else { absent }\n",
+            "  }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result)
+                .into_iter()
+                .map(|(code, source, _)| (code, source))
+                .collect::<Vec<_>>(),
+            [
+                (DiagnosticCode::UnsupportedType, "Wide"),
+                (DiagnosticCode::UnknownParameter, "gone"),
+                (DiagnosticCode::UnsupportedWordWidth, "12"),
+                (DiagnosticCode::UnknownParameter, "absent"),
+            ]
+        );
+    }
+
+    #[test]
+    fn block_names_are_unique_and_in_scope_only_within_their_block() {
+        let (fixture, result) = rejected(concat!(
+            "  spec parameter(x: Int) -> Int { for i in 0..2 with s: Int = x { let x: Int = s; x } }\n",
+            "  spec index() -> Int { for i in 0..2 with s: Int = 0 { let i: Int = s; i } }\n",
+            "  spec twice(c: Bool) -> Int { if c { let t: Int = 1; let t: Int = 2; t } else { 0 } }\n",
+            "  spec body(c: Bool) -> Int { let t: Int = 1; if c { let t: Int = 2; t } else { t } }\n",
+            "  spec inner() -> Int { for i in 0..2 with s: Int = 0 { let j: Int = s; for j in 0..2 with u: Int = s { u } } }\n",
+            "  spec early() -> Int { for i in 0..2 with s: Int = 0 { let a: Int = b; let b: Int = s; a } }\n",
+            "  spec outside(c: Bool) -> Int { if c { let t: Int = 1; t } else { t } }\n",
+            "  spec after() -> Int { let a: Int = for i in 0..2 with s: Int = 0 { let t: Int = s; t }; t }\n",
+            "  spec typed(x: Word[8]) -> Word[32] { if true { let t: Word[8] = x; t } else { 0 } }\n",
+            "  spec siblings(c: Bool) -> Int { if c { let t: Int = 1; t } else { let t: Int = 2; t } }\n",
+            "  spec steps() -> Int { for i in 0..2 with s: Int = 0 { let t: Int = s; t } + for j in 0..2 with u: Int = 0 { let t: Int = u; t } }\n",
+        ));
+        let duplicate = "each parameter, binding, loop index, and accumulator in scope has \
+                         its own name; Orange has no shadowing";
+        let outside = "a binding of a loop's step or a branch is in scope only within that \
+                       step or branch";
+        let rows = [
+            // A block's binding repeats no name in scope: not a parameter,
+            // a loop index, an earlier binding of its block or of the body.
+            (
+                DiagnosticCode::DuplicateBinding,
+                "x",
+                "duplicate name `x`",
+                Some(("x", "the parameter is here")),
+                duplicate,
+            ),
+            (
+                DiagnosticCode::DuplicateBinding,
+                "i",
+                "duplicate name `i`",
+                Some(("i", "the loop index is here")),
+                duplicate,
+            ),
+            (
+                DiagnosticCode::DuplicateBinding,
+                "t",
+                "duplicate name `t`",
+                Some(("t", "the binding is here")),
+                duplicate,
+            ),
+            (
+                DiagnosticCode::DuplicateBinding,
+                "t",
+                "duplicate name `t`",
+                Some(("t", "the binding is here")),
+                duplicate,
+            ),
+            // A loop inside a block does not reuse the block's names either.
+            (
+                DiagnosticCode::DuplicateBinding,
+                "j",
+                "duplicate name `j`",
+                Some(("j", "the binding is here")),
+                duplicate,
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "b",
+                "`b` is used before it is bound",
+                Some(("b", "the binding is here")),
+                "a binding is in scope after its own `;`, for the bindings that follow it and \
+                 the value of its step or branch",
+            ),
+            // Outside its step or branch a block's binding is not in scope.
+            (
+                DiagnosticCode::UnknownParameter,
+                "t",
+                "`t` is not in scope here",
+                Some(("t", "a binding of this name is here")),
+                outside,
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "t",
+                "`t` is not in scope here",
+                Some(("t", "a binding of this name is here")),
+                outside,
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "t",
+                "`t` has type `Word[8]`, but `Word[32]` is required here",
+                None,
+                "Orange has no implicit conversions between types",
+            ),
+            // Sibling branches and separate steps may each bind a name.
+        ];
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.code(),
+                    fixture.source().slice(diagnostic.primary_span()).unwrap(),
+                    diagnostic.message(),
+                    diagnostic.secondary_spans().first().map(|secondary| (
+                        fixture.source().slice(secondary.span()).unwrap(),
+                        secondary.label()
+                    )),
+                    diagnostic.notes()[0].as_str(),
+                ))
+                .collect::<Vec<_>>(),
+            rows
+        );
+        // The duplicate in `body` cites the body's binding, before it; the
+        // name used too early in `early` is bound after it.
+        let cited = |index: usize| {
+            result.diagnostics[index].secondary_spans()[0]
+                .span()
+                .start()
+                < result.diagnostics[index].primary_span().start()
+        };
+        assert_eq!(
+            (0..8).map(cited).collect::<Vec<_>>(),
+            [true, true, true, true, true, false, true, true]
+        );
+    }
+
+    #[test]
+    fn block_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); the parameter's uniqueness check and
+        // name (2); the result's name (1); the loop (1); the bounds `0` (1)
+        // and `1` (2); the two loop-name checks (2); the accumulator type's
+        // name (1); the initial `x` (1); the binding's uniqueness check and
+        // type name (2) and its value `s` (1); and the step's value `t`
+        // (1): 17 analysis events. Core is the module, one function node,
+        // one result-type node, one parameter-type node, the body nodes `x`
+        // and the loop, one loop node, one accumulator-type node, one
+        // binding node, one binding-type node, and the step nodes `s` and
+        // `t`: 12 nodes, each one more event.
+        let step = module(
+            "  spec f(x: Int) -> Int { for i in 0..1 with s: Int = x { let t: Int = s; t } }\n",
+        );
+        // The conditional of the S3f accounting (13 events and 9 nodes) with
+        // `1` bound in its `then` branch: the binding's uniqueness check and
+        // type name (2), its value `1` (3), and the branch's value `t` (1)
+        // in place of `1` (3), for 16 events; one binding node, one
+        // binding-type node, and the value `1` more: 12 nodes.
+        let branch = module("  spec f(c: Bool) -> Int { if c { let t: Int = 1; t } else { 2 } }\n");
+        for (fixture, events, nodes) in [(&step, 29, 12), (&branch, 28, 12)] {
+            let exact = fixture.analyze_with(Limits {
+                events,
+                nodes,
+                ..Limits::DEFAULT
+            });
+            assert_eq!(exact.diagnostics, []);
+            assert!(exact.core.is_some());
+            for (limits, label) in [
+                (
+                    Limits {
+                        events: events - 1,
+                        nodes,
+                        ..Limits::DEFAULT
+                    },
+                    "semantic event budget exhausted",
+                ),
+                (
+                    Limits {
+                        events,
+                        nodes: nodes - 1,
+                        ..Limits::DEFAULT
+                    },
+                    "typed Core node budget exhausted",
+                ),
+            ] {
+                let first = fixture.analyze_with(limits);
+                assert_eq!(first, fixture.analyze_with(limits));
+                assert!(first.core.is_none());
+                assert_eq!(first.diagnostics.len(), 1);
+                assert_eq!(
+                    first.diagnostics[0].code(),
+                    DiagnosticCode::SemanticResourceLimit
+                );
+                assert_eq!(first.diagnostics[0].label(), label);
+            }
+        }
+    }
+
+    #[test]
+    fn a_branch_binding_gives_no_type_where_the_branch_is_a_leaf() {
+        // A conversion operand's type comes from its first typed leaf; a
+        // branch whose value is its own binding is passed over for the next
+        // branch, because that binding is not in scope at the conversion.
+        let (fixture, core) = accepted(concat!(
+            "  spec widen(c: Bool, x: Word[8]) -> Word[32] {\n",
+            "    (if c { let t: Word[8] = x; t } else { x }) as Word[32]\n",
+            "  }\n",
+            "  spec element(c: Bool, x: Word[8]^2) -> Word[32] {\n",
+            "    (if c { let t: Word[8]^2 = x; t[1] } else { x[0] }) as Word[32]\n",
+            "  }\n",
+        ));
+        for function in &core.functions {
+            let nodes = core_nodes(&fixture, function);
+            assert_eq!(
+                nodes
+                    .last()
+                    .map(|(operation, _, ty)| (operation.as_str(), *ty)),
+                Some(("convert from Word[8]", CoreType::Word32))
+            );
+        }
+        let (fixture, result) = rejected(concat!(
+            "  spec only(c: Bool, x: Word[8]) -> Word[32] {\n",
+            "    (if c { let t: Word[8] = x; t } else { let u: Word[8] = x; u }) as Word[32]\n",
+            "  }\n",
+            "  spec compared(c: Bool, x: Word[8]) -> Bool {\n",
+            "    (if c { let t: Word[8] = x; t } else { let u: Word[8] = x; u + 1 }) == 1\n",
+            "  }\n",
+            "  spec literal() -> Word[32] { 1 as Word[32] }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UntypedConversionOperand,
+                    "(if c { let t: Word[8] = x; t } else { let u: Word[8] = x; u })",
+                    String::from("the operand of `as` has no type of its own")
+                ),
+                (
+                    DiagnosticCode::UntypedComparison,
+                    "(if c { let t: Word[8] = x; t } else { let u: Word[8] = x; u + 1 }) == 1",
+                    String::from("the operands of `==` have no type of their own")
+                ),
+                (
+                    DiagnosticCode::UntypedConversionOperand,
+                    "1",
+                    String::from("the operand of `as` has no type of its own")
+                ),
+            ]
+        );
+        // The label and note say why: the branches' bindings are out of
+        // scope where the type is needed. A bare literal keeps its S3c text.
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.label(), diagnostic.notes()[0].as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "a branch's own bindings are not in scope outside it",
+                    "bind the conditional's value with a typed `let` first, or convert within \
+                     each branch",
+                ),
+                (
+                    "a branch's own bindings are not in scope outside it",
+                    "bind the conditional's value with a typed `let` first, or compare within \
+                     each branch",
+                ),
+                (
+                    "a literal takes its type from where it is used",
+                    "write the literal where its type is required, or give it a type with a \
+                     `let` binding",
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_blocks() {
+        let text = "edition 2026; module values { \
+                    spec value(c: Bool, x: Int) -> Int { \
+                    for i in 0..2 with s: Int = x { let t: Int = s + i; \
+                    if c { let u: Int = t; u } else { let v: Int = t; v } } } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        fn loop_of(ast: &mut SyntaxTree) -> &mut LoopExpression {
+            let ExpressionKind::Loop(r#loop) = &mut typed_body_mut(ast).expression.kind else {
+                unreachable!();
+            };
+            r#loop
+        }
+        fn conditional_of(r#loop: &mut LoopExpression) -> &mut ConditionalExpression {
+            let ExpressionKind::Conditional(conditional) = &mut r#loop.step.kind else {
+                unreachable!();
+            };
+            conditional
+        }
+        let mut foreign_ast = second.ast.clone();
+        let foreign_loop = loop_of(&mut foreign_ast).clone();
+        let foreign_step = foreign_loop.step_bindings[0].clone();
+        let mut foreign_loop_copy = foreign_loop.clone();
+        let foreign_conditional = conditional_of(&mut foreign_loop_copy).clone();
+        let foreign_then = foreign_conditional.arms[0].bindings[0].clone();
+        let foreign_else = foreign_conditional.otherwise_bindings[0].clone();
+        type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
+        let mutations: Vec<Mutation<'_>> = vec![
+            Box::new(|ast| loop_of(ast).step_bindings[0].span = foreign_step.span),
+            Box::new(|ast| loop_of(ast).step_bindings[0].name.span = foreign_step.name.span),
+            Box::new(|ast| loop_of(ast).step_bindings[0].ty.span = foreign_step.ty.span),
+            Box::new(|ast| loop_of(ast).step_bindings[0].value.span = foreign_step.value.span),
+            Box::new(|ast| {
+                conditional_of(loop_of(ast)).arms[0].bindings[0].span = foreign_then.span;
+            }),
+            Box::new(|ast| {
+                conditional_of(loop_of(ast)).arms[0].bindings[0].value.span =
+                    foreign_then.value.span;
+            }),
+            Box::new(|ast| {
+                conditional_of(loop_of(ast)).otherwise_bindings[0].name.span =
+                    foreign_else.name.span;
+            }),
+            Box::new(|ast| {
+                conditional_of(loop_of(ast)).otherwise_bindings[0].ty.span = foreign_else.ty.span;
             }),
         ];
         assert!(analyze(first.source(), &first.ast).core.is_some());

@@ -202,7 +202,7 @@ const CASES: [Case; 8] = [
                 "every `if` has an `else`, so that a conditional always has a value",
                 "expected `{` or `if` after `else`",
                 "expected `}` after the value",
-                "each branch of a conditional is one expression",
+                "each branch of a conditional holds `let` bindings, if any, and then its value",
                 "`<` follows `<` without grouping parentheses",
                 "join two comparisons with `&&` or `||`",
                 "`/` follows `/` without grouping parentheses",

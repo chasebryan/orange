@@ -626,7 +626,10 @@ pub struct LoopExpression {
     pub(crate) ty: TypeSyntax,
     /// The accumulator's initial value.
     pub(crate) init: Expression,
-    /// The step, which gives the accumulator's next value.
+    /// `let` bindings at the start of the step, in source order, evaluated
+    /// again at every step before the step's value.
+    pub(crate) step_bindings: Vec<Binding>,
+    /// The step's value, which gives the accumulator's next value.
     pub(crate) step: Expression,
 }
 
@@ -673,7 +676,13 @@ impl LoopExpression {
         &self.init
     }
 
-    /// Returns the step.
+    /// Returns the `let` bindings at the start of the step, in source order.
+    #[must_use]
+    pub fn step_bindings(&self) -> &[Binding] {
+        &self.step_bindings
+    }
+
+    /// Returns the step's value.
     #[must_use]
     pub fn step(&self) -> &Expression {
         &self.step
@@ -690,6 +699,9 @@ pub struct ConditionalExpression {
     pub(crate) arms: Vec<ConditionalArm>,
     /// Exact extent of the last `else` keyword.
     pub(crate) else_span: Span,
+    /// `let` bindings at the start of the last `else` branch, in source
+    /// order.
+    pub(crate) otherwise_bindings: Vec<Binding>,
     /// The value when no condition is true.
     pub(crate) otherwise: Expression,
 }
@@ -707,6 +719,12 @@ impl ConditionalExpression {
         self.else_span
     }
 
+    /// Returns the `let` bindings at the start of the last `else` branch.
+    #[must_use]
+    pub fn otherwise_bindings(&self) -> &[Binding] {
+        &self.otherwise_bindings
+    }
+
     /// Returns the value when no condition is true.
     #[must_use]
     pub fn otherwise(&self) -> &Expression {
@@ -721,6 +739,8 @@ pub struct ConditionalArm {
     pub(crate) keyword_span: Span,
     /// The condition, a `Bool` expression.
     pub(crate) condition: Expression,
+    /// `let` bindings at the start of the arm's branch, in source order.
+    pub(crate) bindings: Vec<Binding>,
     /// The value when the condition is the first true one.
     pub(crate) value: Expression,
 }
@@ -736,6 +756,12 @@ impl ConditionalArm {
     #[must_use]
     pub fn condition(&self) -> &Expression {
         &self.condition
+    }
+
+    /// Returns the `let` bindings at the start of the arm's branch.
+    #[must_use]
+    pub fn bindings(&self) -> &[Binding] {
+        &self.bindings
     }
 
     /// Returns the value.
@@ -1287,8 +1313,14 @@ const BODY_SHAPE_NOTE: &str =
 
 const LOOP_SHAPE_NOTE: &str = "a loop is written `for i in 0..n with s: Type = start { step }`";
 
+const STEP_SHAPE_NOTE: &str = "a loop's step holds `let` bindings, if any, and then the \
+     expression that gives the accumulator's next value";
+
 const CONDITIONAL_SHAPE_NOTE: &str =
     "a conditional is written `if condition { value } else { other value }`";
+
+const BRANCH_SHAPE_NOTE: &str =
+    "each branch of a conditional holds `let` bindings, if any, and then its value";
 
 /// Something that continues an expression after an operand: a binary
 /// operator, the conversion keyword `as`, or the update keyword `with`.
@@ -2071,7 +2103,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         );
         let body_start = self.cursor;
         let bindings = if left_brace.is_some() {
-            self.parse_bindings()
+            self.parse_bindings(0).map(|(bindings, _)| bindings)
         } else {
             None
         };
@@ -2149,17 +2181,26 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses the `let` bindings at the start of a typed body.
+    /// Parses the `let` bindings at the start of a typed body, a loop's
+    /// step, or a conditional's branch, each type and value enclosed by
+    /// `level` nesting levels as the block that holds them is.
     ///
-    /// `let` is recognized by position, not reserved: it starts a binding
-    /// only when an identifier follows it, which no expression allows.
-    fn parse_bindings(&mut self) -> Option<Vec<Binding>> {
+    /// Returns the bindings and the greatest height of their types' moduli
+    /// and their values. `let` is recognized by position, not reserved: it
+    /// starts a binding only when an identifier follows it, which no
+    /// expression allows.
+    fn parse_bindings(&mut self, level: usize) -> Option<(Vec<Binding>, usize)> {
         let mut bindings = Vec::new();
+        let mut height = 0_usize;
         while self.current_is_word("let") && self.next_kind() == TokenKind::Identifier {
-            let binding = self.parse_binding()?;
+            let (binding, binding_height) = self.parse_binding(level)?;
             if bindings.len() >= MAX_BINDINGS_PER_BODY {
                 self.resource_limit_at(
-                    format!("typed body declares more than {MAX_BINDINGS_PER_BODY} bindings"),
+                    if level == 0 {
+                        format!("typed body declares more than {MAX_BINDINGS_PER_BODY} bindings")
+                    } else {
+                        format!("a block declares more than {MAX_BINDINGS_PER_BODY} bindings")
+                    },
                     binding.span,
                 );
                 return None;
@@ -2168,12 +2209,13 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 self.resource_limit_at("parser could not allocate binding storage", binding.span);
                 return None;
             }
+            height = height.max(binding_height);
             bindings.push(binding);
         }
-        Some(bindings)
+        Some((bindings, height))
     }
 
-    fn parse_binding(&mut self) -> Option<Binding> {
+    fn parse_binding(&mut self, level: usize) -> Option<(Binding, usize)> {
         let keyword = self.bump()?;
         let name = self.parse_identifier("binding")?;
         self.expect(
@@ -2181,25 +2223,49 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`:` and the binding's type",
             "every binding states its type, as in `let t: Word[32] = x + y;`",
         )?;
-        let (ty, _) = self.parse_type_syntax("binding type", true, 0)?;
+        let (ty, type_height) = self.parse_type_syntax("binding type", true, level)?;
         self.expect(
             TokenKind::Equal,
             "`=` after the binding's type",
             "a binding is written `let name: Type = expression;`",
         )?;
-        let (value, _) = self.parse_expression(0)?;
+        let (value, value_height) = self.parse_expression(level)?;
         let semicolon = self.expect(
             TokenKind::Semicolon,
             "`;` after the bound expression",
-            "each binding ends with `;`; the body's last item is its result expression",
+            if level == 0 {
+                "each binding ends with `;`; the body's last item is its result expression"
+            } else {
+                "each binding ends with `;`; the block's last item is its value"
+            },
         )?;
         let span = self.join(keyword.span, semicolon.span);
-        self.record_node().then_some(Binding {
-            span,
-            name,
-            ty,
-            value,
-        })
+        self.record_node().then_some((
+            Binding {
+                span,
+                name,
+                ty,
+                value,
+            },
+            type_height.max(value_height),
+        ))
+    }
+
+    /// Parses the `let` bindings, if any, at the start of a loop's step or a
+    /// conditional's branch, after its `{`, and checks that a value follows
+    /// them.
+    ///
+    /// Returns the bindings and their greatest height. The caller parses the
+    /// value itself, so that a step or branch nested in a value adds no
+    /// frame of this function to the stack.
+    #[inline(never)]
+    fn parse_block_bindings(&mut self, level: usize, note: &str) -> Option<(Vec<Binding>, usize)> {
+        let (bindings, height) = self.parse_bindings(level)?;
+        if !bindings.is_empty() && self.current_kind() == TokenKind::RightBrace {
+            self.expected("a value after the last binding", note);
+            return None;
+        }
+        Some((bindings, height))
     }
 
     /// Parses one expression enclosed by `level` groups, call argument
@@ -2759,8 +2825,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`{` before the loop's step",
             LOOP_SHAPE_NOTE,
         )?;
+        let step_bindings = self.parse_block_bindings(inner, STEP_SHAPE_NOTE)?;
         let step = self.parse_expression(inner)?;
-        self.finish_loop(header, type_height, init, step)
+        self.finish_loop(header, type_height, init, step_bindings, step)
     }
 
     /// Parses a loop from `for` through the `=` before its initial value.
@@ -2825,6 +2892,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 accumulator,
                 ty,
                 init: placeholder.clone(),
+                step_bindings: Vec::new(),
                 step: placeholder,
             }),
             type_height,
@@ -2839,21 +2907,26 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         mut header: Box<LoopExpression>,
         type_height: usize,
         (init, init_height): (Expression, usize),
+        (step_bindings, bindings_height): (Vec<Binding>, usize),
         (step, step_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
         let right_brace = self
             .expect(
                 TokenKind::RightBrace,
                 "`}` after the loop's step",
-                "a loop's step is one expression that gives the accumulator's next value",
+                STEP_SHAPE_NOTE,
             )?
             .span;
         let height = self.node_height(
-            init_height.max(step_height).max(type_height),
+            init_height
+                .max(bindings_height)
+                .max(step_height)
+                .max(type_height),
             header.keyword_span,
         )?;
         let span = self.join(header.keyword_span, right_brace);
         header.init = init;
+        header.step_bindings = step_bindings;
         header.step = step;
         self.record_node().then_some((
             Expression {
@@ -2948,9 +3021,16 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 "`{` after the condition",
                 CONDITIONAL_SHAPE_NOTE,
             )?;
+            let bindings = self.parse_block_bindings(inner, BRANCH_SHAPE_NOTE)?;
             let value = self.parse_expression(inner)?;
-            let else_span =
-                self.close_arm(&mut arms, &mut height, keyword_span, condition, value)?;
+            let else_span = self.close_arm(
+                &mut arms,
+                &mut height,
+                keyword_span,
+                condition,
+                bindings,
+                value,
+            )?;
             if self.current_is_word("if") {
                 continue;
             }
@@ -2959,8 +3039,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 "`{` or `if` after `else`",
                 CONDITIONAL_SHAPE_NOTE,
             )?;
+            let otherwise_bindings = self.parse_block_bindings(inner, BRANCH_SHAPE_NOTE)?;
             let otherwise = self.parse_expression(inner)?;
-            return self.finish_conditional(arms, height, else_span, otherwise);
+            return self.finish_conditional(arms, height, else_span, otherwise_bindings, otherwise);
         }
     }
 
@@ -2974,12 +3055,13 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         height: &mut usize,
         keyword_span: Span,
         (condition, condition_height): (Expression, usize),
+        (bindings, bindings_height): (Vec<Binding>, usize),
         (value, value_height): (Expression, usize),
     ) -> Option<Span> {
         self.expect(
             TokenKind::RightBrace,
             "`}` after the value",
-            "each branch of a conditional is one expression",
+            BRANCH_SHAPE_NOTE,
         )?;
         if !self.current_is_word("else") {
             self.expected(
@@ -2995,10 +3077,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             );
             return None;
         }
-        *height = (*height).max(condition_height).max(value_height);
+        *height = (*height)
+            .max(condition_height)
+            .max(bindings_height)
+            .max(value_height);
         arms.push(ConditionalArm {
             keyword_span,
             condition,
+            bindings,
             value,
         });
         Some(self.bump()?.span)
@@ -3012,17 +3098,18 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         arms: Vec<ConditionalArm>,
         height: usize,
         else_span: Span,
+        (otherwise_bindings, bindings_height): (Vec<Binding>, usize),
         (otherwise, otherwise_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
         let right_brace = self
             .expect(
                 TokenKind::RightBrace,
                 "`}` after the value",
-                "each branch of a conditional is one expression",
+                BRANCH_SHAPE_NOTE,
             )?
             .span;
         let first = arms.first()?.keyword_span;
-        let height = self.node_height(height.max(otherwise_height), first)?;
+        let height = self.node_height(height.max(bindings_height).max(otherwise_height), first)?;
         let span = self.join(first, right_brace);
         self.record_node().then_some((
             Expression {
@@ -3030,6 +3117,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 kind: ExpressionKind::Conditional(Box::new(ConditionalExpression {
                     arms,
                     else_span,
+                    otherwise_bindings,
                     otherwise,
                 })),
             },
@@ -4571,16 +4659,30 @@ mod tests {
                 .max(tree_height(&update.index))
                 .max(tree_height(&update.value)),
             ExpressionKind::Loop(r#loop) => tree_height(&r#loop.init)
-                .max(tree_height(&r#loop.step))
+                .max(block_height(&r#loop.step_bindings, &r#loop.step))
                 .max(type_height(&r#loop.ty)),
             ExpressionKind::Conditional(conditional) => conditional
                 .arms
                 .iter()
-                .map(|arm| tree_height(&arm.condition).max(tree_height(&arm.value)))
+                .map(|arm| tree_height(&arm.condition).max(block_height(&arm.bindings, &arm.value)))
                 .max()
                 .unwrap_or(0)
-                .max(tree_height(&conditional.otherwise)),
+                .max(block_height(
+                    &conditional.otherwise_bindings,
+                    &conditional.otherwise,
+                )),
         }
+    }
+
+    /// The height of a loop's step or a conditional's branch: the greatest
+    /// height of its bindings' types and values and of its value.
+    fn block_height(bindings: &[Binding], value: &Expression) -> usize {
+        bindings
+            .iter()
+            .map(|binding| tree_height(&binding.value).max(type_height(&binding.ty)))
+            .max()
+            .unwrap_or(0)
+            .max(tree_height(value))
     }
 
     #[test]
@@ -5888,10 +5990,6 @@ mod tests {
                 "expected `}` after the loop's step",
             ),
             (
-                "for i in 0..2 with s: Int = 0 { let t: Int = s; t }",
-                "expected `}` after the loop's step",
-            ),
-            (
                 "for 1 in 0..2 with s: Int = 0 { s }",
                 "expected `}` after the body expression",
             ),
@@ -6114,10 +6212,6 @@ mod tests {
             ("if a { b } else if", "expected an expression"),
             ("if a { b, } else { c }", "expected `}` after the value"),
             ("if a { b } else { c, }", "expected `}` after the value"),
-            (
-                "if a { let x: Int = b; x } else { c }",
-                "expected `}` after the value",
-            ),
             ("if a { } else { c }", "expected an expression"),
             ("if a { b } else { }", "expected an expression"),
             // Before `(`, `if` starts a conditional only when `else` follows
@@ -6765,5 +6859,225 @@ mod tests {
              prefix operators"
         );
         assert_resource_limited(&nested(MAX_EXPRESSION_NESTING), &message, "[");
+    }
+
+    #[test]
+    fn builds_blocks_in_steps_and_branches_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "spec mix(a: Word[32], b: Word[32]) -> Word[32] { ",
+            "for i in 0..4 with s: Word[32] = a { ",
+            "let t: Word[32] = s ^ b; let u: Word[32] = t >>> 7; u + s } } ",
+            "spec pick(c: Bool, x: Int) -> Int { ",
+            "if c { let y: Int = x + 1; y * y } else if x < 0 { 0 } ",
+            "else { let z: Int = x; z } } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+
+        let FunctionBody::Typed(body) = &ast.module.functions[0].body else {
+            panic!("expected a typed body");
+        };
+        assert!(body.bindings().is_empty());
+        let ExpressionKind::Loop(r#loop) = &body.expression().kind else {
+            panic!("expected a loop");
+        };
+        assert_eq!(
+            source.slice(body.expression().span),
+            Some(concat!(
+                "for i in 0..4 with s: Word[32] = a { ",
+                "let t: Word[32] = s ^ b; let u: Word[32] = t >>> 7; u + s }"
+            ))
+        );
+        let spans = r#loop
+            .step_bindings()
+            .iter()
+            .map(|binding| {
+                (
+                    source.slice(binding.span()).unwrap(),
+                    binding.name().text.as_str(),
+                    source.slice(binding.ty().span).unwrap(),
+                    shape(source, binding.value()),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            spans,
+            [
+                (
+                    "let t: Word[32] = s ^ b;",
+                    "t",
+                    "Word[32]",
+                    "(s ^ b)".to_owned()
+                ),
+                (
+                    "let u: Word[32] = t >>> 7;",
+                    "u",
+                    "Word[32]",
+                    "(t >>> 7)".to_owned()
+                ),
+            ]
+        );
+        assert_eq!(shape(source, r#loop.step()), "(u + s)");
+        assert_eq!(source.slice(r#loop.step().span), Some("u + s"));
+
+        let FunctionBody::Typed(body) = &ast.module.functions[1].body else {
+            panic!("expected a typed body");
+        };
+        let ExpressionKind::Conditional(conditional) = &body.expression().kind else {
+            panic!("expected a conditional");
+        };
+        let arms = conditional.arms();
+        assert_eq!(arms.len(), 2);
+        assert_eq!(arms[0].bindings().len(), 1);
+        assert_eq!(
+            source.slice(arms[0].bindings()[0].span()),
+            Some("let y: Int = x + 1;")
+        );
+        assert_eq!(shape(source, arms[0].value()), "(y * y)");
+        assert!(arms[1].bindings().is_empty());
+        assert_eq!(shape(source, arms[1].value()), "0");
+        assert_eq!(conditional.otherwise_bindings().len(), 1);
+        assert_eq!(
+            source.slice(conditional.otherwise_bindings()[0].span()),
+            Some("let z: Int = x;")
+        );
+        assert_eq!(shape(source, conditional.otherwise()), "z");
+    }
+
+    #[test]
+    fn rejects_malformed_blocks_with_exact_messages() {
+        let step = "a loop's step holds `let` bindings, if any, and then the expression \
+                    that gives the accumulator's next value";
+        let branch =
+            "each branch of a conditional holds `let` bindings, if any, and then its value";
+        let binding = "each binding ends with `;`; the block's last item is its value";
+        let cases = [
+            (
+                "for i in 0..2 with s: Word[32] = a { let t: Word[32] = s; }",
+                "expected a value after the last binding",
+                step,
+            ),
+            (
+                "for i in 0..2 with s: Word[32] = a { let t: Word[32] = s t }",
+                "expected `;` after the bound expression",
+                binding,
+            ),
+            (
+                "for i in 0..2 with s: Word[32] = a { let t = s; t }",
+                "expected `:` and the binding's type",
+                "every binding states its type, as in `let t: Word[32] = x + y;`",
+            ),
+            (
+                "for i in 0..2 with s: Word[32] = a { s; let t: Word[32] = s; t }",
+                "expected `}` after the loop's step",
+                step,
+            ),
+            (
+                "if c == d { let t: Word[32] = a; } else { b }",
+                "expected a value after the last binding",
+                branch,
+            ),
+            (
+                "if c == d { a } else { let t: Word[32] = b; }",
+                "expected a value after the last binding",
+                branch,
+            ),
+            (
+                "if c == d { a } else if c < d { let t: Word[32] = b; } else { c }",
+                "expected a value after the last binding",
+                branch,
+            ),
+            (
+                "if c == d { a } else { let t: Word[32] = b t }",
+                "expected `;` after the bound expression",
+                binding,
+            ),
+            (
+                "if c == d { let t: Word[32] = a; t; t } else { b }",
+                "expected `}` after the value",
+                branch,
+            ),
+            (
+                "if c == d { a } else { b; let t: Word[32] = b; t }",
+                "expected `}` after the value",
+                branch,
+            ),
+        ];
+        for (body, message, note) in cases {
+            let (_, lexed, parsed) = parse_text(&spec_source(body));
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{body:?}: {:?}",
+                parsed.diagnostics
+            );
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+            assert_eq!(diagnostic.notes(), [note], "{body:?}");
+        }
+    }
+
+    #[test]
+    fn bounds_bindings_per_block() {
+        let bindings = |count: usize| {
+            (0..count)
+                .map(|index| format!("let v{index}: Word[32] = a; "))
+                .collect::<String>()
+        };
+        let forms: [fn(&str) -> String; 3] = [
+            |bindings| format!("for i in 0..2 with s: Word[32] = a {{ {bindings}s }}"),
+            |bindings| format!("if a == b {{ {bindings}c }} else {{ d }}"),
+            |bindings| format!("if a == b {{ c }} else {{ {bindings}d }}"),
+        ];
+        let message = format!("a block declares more than {MAX_BINDINGS_PER_BODY} bindings");
+        let last = format!("let v{MAX_BINDINGS_PER_BODY}: Word[32] = a;");
+        for form in forms {
+            body_expression(&spec_source(&form(&bindings(MAX_BINDINGS_PER_BODY))));
+            assert_resource_limited(&form(&bindings(MAX_BINDINGS_PER_BODY + 1)), &message, &last);
+        }
+    }
+
+    #[test]
+    fn block_bindings_count_toward_the_height_of_their_expression() {
+        // The loop or conditional stands above its block; the binding's
+        // value `a + a + ...` is one level taller than its additions.
+        let tall = |additions: usize| format!("a{}", " + a".repeat(additions));
+        let additions = MAX_EXPRESSION_HEIGHT - 2;
+        type Form = (fn(&str) -> String, &'static str);
+        let forms: [Form; 3] = [
+            (
+                |value| {
+                    format!("for i in 0..1 with s: Word[32] = a {{ let t: Word[32] = {value}; t }}")
+                },
+                "for",
+            ),
+            (
+                |value| format!("if a == b {{ let t: Word[32] = {value}; t }} else {{ c }}"),
+                "if",
+            ),
+            (
+                |value| format!("if a == b {{ c }} else {{ let t: Word[32] = {value}; t }}"),
+                "if",
+            ),
+        ];
+        let message =
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
+        for (form, at) in forms {
+            let (_, expression) = body_expression(&spec_source(&form(&tall(additions))));
+            assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
+            assert_resource_limited(&form(&tall(additions + 1)), &message, at);
+        }
     }
 }

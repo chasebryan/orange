@@ -3464,13 +3464,17 @@ def verify_export(out: Path) -> list[str]:
     listed = {EXPORT_MANIFEST}
     lines: list[bytes] = []
     for row in manifest["files"]:
+        chunk = re.fullmatch(r"records-[0-9]{2}\.jsonl\.gz", row["path"]) is not None
+        if not chunk and row["path"] not in ("epoch.json", "summary.json"):
+            problems.append(f"{row['path']!r} is not a file an export holds")
+            continue
         listed.add(row["path"])
         path = out / row["path"]
         if path.is_symlink() or not path.is_file() or file_sha256(path) != row["sha256"] \
                 or path.stat().st_size != row["bytes"]:
             problems.append(f"{row['path']} differs from the export manifest")
             continue
-        if re.fullmatch(r"records-[0-9]{2}\.jsonl\.gz", row["path"]):
+        if chunk:
             try:
                 lines += gzip.decompress(path.read_bytes()).splitlines(keepends=True)
             except (OSError, EOFError, ValueError) as exc:
