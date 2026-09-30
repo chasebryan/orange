@@ -223,8 +223,8 @@ sha256::abc_digest: Word[32]^8 = [0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223
 An index such as `w[t - 15]` may use only literals and loop indices, and the
 compiler proves, before anything runs, that it stays in range for every `t`
 from 16 to 63; `w[t - 17]` is rejected with the range it would take, -1
-through 46. An index that depends on data, the classic source of cache-timing
-leaks in table-driven code, cannot be written at all. The
+through 46. In this slice an index may use only literals and loop indices;
+[S3g](#tables-keyed-by-data) lets it depend on data, still proved in range. The
 [ChaCha20 fixture](compiler/fixtures/s3e/valid-chacha20.or) loads the key and
 nonce with loops, runs the ten double rounds as one loop, and encrypts the
 "sunscreen" plaintext of RFC 8439 section 2.4.2 to the RFC's ciphertext, byte
@@ -278,13 +278,58 @@ and Orange makes no timing claim until it generates code. This slice, S3f, is
 implemented and tested; its specification is in review as
 [OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md).
 
+### Tables keyed by data
+
+FIPS 197 defines AES's SubBytes as a table: each byte of the state selects one
+of the 256 entries of the S-box. An Orange index may depend on data, and the
+compiler still proves it in range before anything runs. A byte runs from 0
+through 255, so it may index any table of 256 entries, and `x & 15` or
+`x >> 4` may index a table of 16:
+
+```orange
+spec sub_bytes(s: Word[8]^256, a: Word[8]^16) -> Word[8]^16 {
+  for i in 0..16 with b: Word[8]^16 = a { b with [i] = s[a[i]] }
+}
+
+spec sub_word(s: Word[8]^256, w: Word[32]) -> Word[32] {
+  ((s[w >> 24] as Word[32]) << 24)
+    | ((s[(w >> 16) & 0xff] as Word[32]) << 16)
+    | ((s[(w >> 8) & 0xff] as Word[32]) << 8)
+    | (s[w & 0xff] as Word[32])
+}
+```
+
+The [AES-128 fixture](compiler/fixtures/s3g/valid-aes128.or) does not copy the
+S-box; it derives it as FIPS 197 section 5.1.1 defines it, from inverses in
+GF(2^8) read off a table of logarithms, which is itself built by updates keyed
+by the table's own values. It then encrypts the examples of Appendix B and
+Appendix C.1 to the published ciphertexts and decrypts C.1 back to its
+plaintext:
+
+```text
+aes::example_c1: Word[8]^16 = [0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a]
+```
+
+Each operator narrows a range by one rule a reader can apply: `x & 15` runs
+from 0 through 15, `(x & 15) + 16` from 16 through 31, and `(x & 15) - 1`
+over its whole type, because it wraps. `s[x]` for a byte `x` and a table of 255
+entries is rejected with the range it would take, 0 through 255. A lookup
+keyed by a secret is the classic cache-timing leak of software AES; Orange
+states the lookup the standard states, makes no timing claim about it, and
+leaves how such a lookup is compiled to a later code-generation decision.
+Updates also cost less: changing one entry of a 256-entry table costs 4
+evaluation steps, not 256. This slice, S3g, is implemented and tested; its specification is in
+review as [OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md).
+
 ### Daylight Horizon example
 
-[`examples/daylight/`](examples/daylight/README.md) contains an owner-directed
-Orange port of Daylight Horizon v17's SHA-256, HKDF, ChaCha20 and Poly1305
-computations. It includes a standalone framed-encryption vector, a host adapter
-that preserves Horizon's existing evidence-policy checks, and interoperability
-tests. This is executable reference code, not verified production cryptography.
+[`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
+seal written as one Orange program: SHA-256, HMAC, HKDF, ChaCha20, Poly1305,
+and their AEAD, each as its standard writes it, with `seal`, `open`, and
+`authentic` on top. `orangec eval` reproduces the upstream frame byte for byte,
+and a bridge runs the upstream vault on the same specifications beneath its
+evidence checks. It is executable reference code, not verified production
+cryptography.
 
 ## What works today
 
@@ -299,8 +344,9 @@ tests. This is executable reference code, not verified production cryptography.
 | Fixed-length arrays `T^n`, array literals, and literal indices | Working; specification in review ([OEP-0007](docs/governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md)) |
 | Bounded loops, indices proved in range, updates, and fill literals | Working; specification in review ([OEP-0008](docs/governance/oeps/OEP-0008-orange-2026-bounded-loops.md)) |
 | `Bool`, comparisons, Euclidean division, and conditionals | Working; specification in review ([OEP-0009](docs/governance/oeps/OEP-0009-orange-2026-conditions.md)) |
+| Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Data-dependent indices, mixed-type tuples, a type of integers modulo a prime | Not yet |
+| Programs of more than one file, mixed-type tuples, a type of integers modulo a prime | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -318,6 +364,7 @@ git clone https://github.com/chasebryan/orange.git
 cd orange
 
 # Build and try the compiler
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3g/valid-aes128.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3f/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtures/hello.or
@@ -359,7 +406,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, and conditions in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, and lookups in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -380,9 +427,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [pure expression semantics](docs/EXPRESSIONS_2026.md),
   [bindings and conversions](docs/BINDINGS_2026.md),
   [fixed-length arrays](docs/ARRAYS_2026.md),
-  [bounded loops](docs/LOOPS_2026.md), and
-  [conditions and division](docs/CONDITIONS_2026.md): the definition of what
-  the compiler accepts today.
+  [bounded loops](docs/LOOPS_2026.md),
+  [conditions and division](docs/CONDITIONS_2026.md), and
+  [lookups keyed by data](docs/LOOKUPS_2026.md): the definition of what the
+  compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

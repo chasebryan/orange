@@ -2587,11 +2587,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn starts_conditional(&mut self) -> bool {
         let next = self.cursor.saturating_add(1);
         match self.kind_at(next) {
+            // After the word `as`, or `with` before `[`, an `if` named as a
+            // value may continue; it is a conditional only if its brace
+            // group is followed by `else`.
             TokenKind::Identifier => {
                 let continues = self.is_word_at(next, "as")
                     || (self.is_word_at(next, "with")
                         && self.kind_at(next.saturating_add(1)) == TokenKind::LeftBracket);
-                !continues
+                !continues || self.else_follows(next)
             }
             TokenKind::Integer | TokenKind::Bang | TokenKind::Tilde => true,
             TokenKind::LeftParen | TokenKind::Minus | TokenKind::LeftBracket => {
@@ -5711,6 +5714,9 @@ mod tests {
             "spec k(if: Int) -> Int { (if as Int) * if } ",
             "spec t(true: Int, false: Int) -> Int { true - false } ",
             "spec n(if: Int^2) -> Int { if[0] - if[1] } ",
+            "spec u(as: Bool) -> Int { if as { 1 } else { 0 } } ",
+            "spec w(with: Bool^2) -> Int { if with[0] { 1 } else { 0 } } ",
+            "spec v(if: Word[8]) -> Word[8] { (if as Word[8]) + 1 } ",
             "}"
         );
         let (sources, lexed, parsed) = parse_text(text);
@@ -5739,6 +5745,9 @@ mod tests {
                 "([(if as Int)] * if)",
                 "(true - false)",
                 "(if[0] - if[1])",
+                "(if as { 1 } else { 0 })",
+                "(if with[0] { 1 } else { 0 })",
+                "([(if as Word[8])] + 1)",
             ]
         );
     }

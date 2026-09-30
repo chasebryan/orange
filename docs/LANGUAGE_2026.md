@@ -51,6 +51,11 @@ unresolved.
 > operators, Euclidean division, and conditionals. It gives meaning to tokens
 > the lexer already produces, and it adds no token and no reserved word:
 > `if` and `else` are recognized by position, and `true` and `false` by scope.
+>
+> The S3g slice proposed in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) under
+> OEP-0010, also in review, builds on S3f with indices that depend on data,
+> each proved in range from its type, and cheaper updates. It changes no
+> grammar.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
