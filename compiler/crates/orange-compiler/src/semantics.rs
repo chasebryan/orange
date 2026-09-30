@@ -7,17 +7,28 @@ use crate::core::{
     ArrayType, CoreBinding, CoreConditional, CoreExpression, CoreFunction, CoreFunctionId,
     CoreLocal, CoreLoop, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger,
     MAX_ARRAY_LENGTH, MAX_EXACT_INTEGER_BITS, MAX_LOOP_BOUND, MAX_MODULUS_BITS, Magnitude, Modulus,
-    Residue,
+    Residue, TupleType,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{
     ArrayExpression, BinaryExpression, BinaryOperator, Binding, CallExpression,
     ConditionalExpression, ConversionExpression, Expression, ExpressionKind, FillExpression,
     FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression, IntegerLiteral,
-    LoopExpression, MAX_ARRAY_ELEMENTS, Parameter, SyntaxTree, TypeSyntax, TypedBody,
-    UnaryExpression, UnaryOperator, UpdateExpression,
+    LoopExpression, MAX_ARRAY_ELEMENTS, Parameter, Pattern, ProjectExpression, SyntaxTree,
+    TupleExpression, TypeSyntax, TypedBody, TypedName, UnaryExpression, UnaryOperator,
+    UpdateExpression,
 };
 use crate::source::{SourceFile, Span};
+
+mod linking;
+mod ranges;
+mod tuples;
+mod types;
+
+use linking::*;
+use ranges::*;
+use tuples::*;
+use types::*;
 
 /// Maximum ordinary semantic errors retained before one suppression diagnostic.
 pub const MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE: usize = 100;
@@ -47,6 +58,17 @@ const ADMITTED_TYPES: &str = "`Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, 
      `Mod[m]`, and the names of earlier `type` declarations";
 const ARRAY_OPERATOR_NOTE: &str = "operators apply to `Int`, `Bool`, word, and residue values; \
      apply them to elements, such as `x[0]`";
+const TUPLE_OPERATOR_NOTE: &str = "operators apply to `Int`, `Bool`, word, and residue values; \
+     apply them to elements, such as `p.0`";
+
+/// Returns the note of an operator applied to an array or a tuple.
+fn aggregate_operator_note(ty: &CoreType) -> &'static str {
+    if ty.as_tuple().is_some() {
+        TUPLE_OPERATOR_NOTE
+    } else {
+        ARRAY_OPERATOR_NOTE
+    }
+}
 const MODULUS_NOTE: &str = "a modulus is a constant built from integer literals with `+`, `-`, \
      `*`, `<<`, and parentheses, as in `Mod[(1 << 255) - 19]`";
 const BUILT_IN_TYPE_NAMES: [&str; 4] = ["Int", "Bool", "Word", "Mod"];
@@ -187,449 +209,6 @@ fn program_resource_limit(span: Span, detail: &str) -> AnalysisResult {
     }
 }
 
-/// The checked graph of a program's `use` declarations.
-struct ModuleGraph {
-    /// Program indices of the reachable modules in dependency order: each
-    /// module after every module it uses, the root last.
-    order: Vec<usize>,
-    /// For each program module, the program index of the module each of its
-    /// `use` declarations names, in source order; empty for a module the root
-    /// does not reach.
-    targets: Vec<Vec<usize>>,
-}
-
-/// Retains the module graph's diagnostics under the per-source bound.
-struct GraphReport {
-    diagnostics: Vec<Diagnostic>,
-    ordinary: usize,
-    limit_reported: bool,
-}
-
-impl GraphReport {
-    fn report(&mut self, build: impl FnOnce() -> Diagnostic) {
-        if self.ordinary < MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE {
-            self.ordinary = self.ordinary.saturating_add(1);
-            self.diagnostics.push(build());
-        } else if !self.limit_reported {
-            self.limit_reported = true;
-            let span = build().primary_span();
-            self.diagnostics.push(
-                Diagnostic::error(
-                    DiagnosticCode::TooManySemanticErrors,
-                    "too many semantic errors; further errors are suppressed",
-                    span,
-                )
-                .with_label("semantic diagnostic limit reached")
-                .with_note(format!(
-                    "at most {MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE} ordinary semantic diagnostics \
-                     are retained for a program's modules and their uses"
-                )),
-            );
-        }
-    }
-}
-
-impl ModuleGraph {
-    /// Checks module names and `use` declarations and orders the modules the
-    /// root reaches, stopping at the module limit. Only reachable modules are
-    /// entered, at most 64 of them with at most 64 uses each, and each is
-    /// compared with every supplied module once per name it declares or
-    /// uses, so the work is linear in the number of supplied modules. It
-    /// consumes no semantic events.
-    fn build(
-        program: &[(&SourceFile, &SyntaxTree)],
-        root_span: Span,
-    ) -> Result<Self, Vec<Diagnostic>> {
-        let count = program.len();
-        let failure = |span: Span| {
-            program_resource_limit(span, "module graph storage allocation failed").diagnostics
-        };
-        let mut report = GraphReport {
-            diagnostics: Vec::new(),
-            ordinary: 0,
-            limit_reported: false,
-        };
-        let mut targets: Vec<Vec<usize>> = Vec::new();
-        let mut state = Vec::new();
-        let mut order = Vec::new();
-        let mut path: Vec<(usize, usize)> = Vec::new();
-        let reachable = count.min(MAX_MODULES_PER_PROGRAM);
-        if report
-            .diagnostics
-            .try_reserve_exact(MAX_RETAINED_SEMANTIC_DIAGNOSTICS)
-            .is_err()
-            || targets.try_reserve_exact(count).is_err()
-            || state.try_reserve_exact(count).is_err()
-            || order.try_reserve_exact(reachable).is_err()
-            || path.try_reserve_exact(reachable).is_err()
-        {
-            return Err(failure(root_span));
-        }
-        let name_of = |index: usize| {
-            program
-                .get(index)
-                .map_or("", |(_, ast)| ast.module.name.text.as_str())
-        };
-
-        targets.extend(program.iter().map(|_| Vec::new()));
-        state.extend(program.iter().map(|_| VisitState::Unvisited));
-
-        // A depth-first search from the root enters each reachable module
-        // once, checks that no other supplied module shares its name, resolves
-        // its uses, and finds each cycle at the use that closes it. Finished
-        // modules follow the modules they use. A module the root does not
-        // reach is never entered.
-        let mut entered = 0_usize;
-        if let Some(slot) = state.first_mut() {
-            *slot = VisitState::OnPath;
-            path.push((0, 0));
-            entered = 1;
-            report_namesakes(program, 0, &mut report);
-            if !resolve_uses(program, 0, &mut targets, &mut report) {
-                return Err(failure(root_span));
-            }
-        }
-        while let Some((node, next_use)) = path.last().copied() {
-            let uses = program
-                .get(node)
-                .map_or(&[][..], |(_, ast)| ast.module.uses.as_slice());
-            let resolved = targets.get(node).map_or(&[][..], Vec::as_slice);
-            let Some((declaration, target)) = uses.get(next_use).zip(resolved.get(next_use)) else {
-                path.pop();
-                if let Some(slot) = state.get_mut(node) {
-                    *slot = VisitState::Done;
-                }
-                order.push(node);
-                continue;
-            };
-            let target = *target;
-            if let Some(top) = path.last_mut() {
-                top.1 = next_use.saturating_add(1);
-            }
-            match state.get(target) {
-                Some(VisitState::Unvisited) => {
-                    if entered >= MAX_MODULES_PER_PROGRAM {
-                        return Err(program_resource_limit(
-                            root_span,
-                            &format!("program reaches more than {MAX_MODULES_PER_PROGRAM} modules"),
-                        )
-                        .diagnostics);
-                    }
-                    entered = entered.saturating_add(1);
-                    if let Some(slot) = state.get_mut(target) {
-                        *slot = VisitState::OnPath;
-                    }
-                    path.push((target, 0));
-                    report_namesakes(program, target, &mut report);
-                    if !resolve_uses(program, target, &mut targets, &mut report) {
-                        return Err(failure(declaration.span));
-                    }
-                }
-                Some(VisitState::OnPath) => {
-                    report.report(|| {
-                        let start = path
-                            .iter()
-                            .position(|(module, _)| *module == target)
-                            .unwrap_or(0);
-                        let mut route = String::new();
-                        for (position, (module, _)) in
-                            path.get(start..).unwrap_or_default().iter().enumerate()
-                        {
-                            if position >= MAX_MODULES_IN_CYCLE_DIAGNOSTIC {
-                                route.push_str(" -> ...");
-                                break;
-                            }
-                            if position != 0 {
-                                route.push_str(" -> ");
-                            }
-                            route.push('`');
-                            route.push_str(
-                                &identifier_spelling_for_diagnostic(name_of(*module)).to_string(),
-                            );
-                            route.push('`');
-                        }
-                        let target_name = identifier_spelling_for_diagnostic(name_of(target));
-                        Diagnostic::error(
-                            DiagnosticCode::ModuleCycle,
-                            format!("module cycle {route} -> `{target_name}`"),
-                            declaration.span,
-                        )
-                        .with_label("this `use` closes the cycle")
-                        .with_note(
-                            "modules may not depend on each other in a cycle; move the functions \
-                             they share into a module that both use",
-                        )
-                    });
-                }
-                // A use that names no module was reported, and a finished
-                // module adds no cycle.
-                Some(VisitState::Done) | None => {}
-            }
-        }
-        if report.diagnostics.is_empty() {
-            Ok(Self { order, targets })
-        } else {
-            Err(report.diagnostics)
-        }
-    }
-}
-
-/// Reports each other supplied module whose name is that of `module`, a
-/// module of the program the search has just entered. A `use` resolves to
-/// the first supplied module of its name, so the module entered precedes its
-/// namesakes, and each pair is reported once, at the later module.
-fn report_namesakes(
-    program: &[(&SourceFile, &SyntaxTree)],
-    module: usize,
-    report: &mut GraphReport,
-) {
-    let Some((_, ast)) = program.get(module) else {
-        return;
-    };
-    let name = &ast.module.name;
-    for (other, (_, candidate)) in program.iter().enumerate() {
-        let repeat = &candidate.module.name;
-        if other == module || repeat.text != name.text {
-            continue;
-        }
-        let (first, repeat) = if other < module {
-            (repeat.span, name.span)
-        } else {
-            (name.span, repeat.span)
-        };
-        report.report(|| {
-            let spelling = identifier_spelling_for_diagnostic(&name.text);
-            Diagnostic::error(
-                DiagnosticCode::DuplicateModule,
-                format!("duplicate module `{spelling}`"),
-                repeat,
-            )
-            .with_label("this module repeats the name of a module of the program")
-            .with_secondary_span(first, "first module of this name is here")
-            .with_note(
-                "a `use` names one module, so no other supplied module may share the name of a \
-                 module of the program",
-            )
-        });
-    }
-}
-
-/// Resolves the `use` declarations of one module when the search first
-/// enters it, reporting self-uses, repeated uses, and unknown modules. An
-/// unresolved use gets a target past the program, which the search skips.
-/// Returns whether the targets could be stored.
-fn resolve_uses(
-    program: &[(&SourceFile, &SyntaxTree)],
-    module: usize,
-    targets: &mut [Vec<usize>],
-    report: &mut GraphReport,
-) -> bool {
-    let Some((_, ast)) = program.get(module) else {
-        return false;
-    };
-    let uses = &ast.module.uses;
-    let Some(resolved) = targets.get_mut(module) else {
-        return false;
-    };
-    if resolved.try_reserve_exact(uses.len()).is_err() {
-        return false;
-    }
-    let own = &ast.module.name;
-    for (index, declaration) in uses.iter().enumerate() {
-        let name = &declaration.name;
-        let earlier = uses.get(..index).and_then(|earlier| {
-            earlier
-                .iter()
-                .find(|candidate| candidate.name.text == name.text)
-        });
-        let target = program
-            .iter()
-            .position(|(_, candidate)| candidate.module.name.text == name.text);
-        if let Some(earlier) = earlier {
-            report.report(|| {
-                let spelling = identifier_spelling_for_diagnostic(&name.text);
-                Diagnostic::error(
-                    DiagnosticCode::DuplicateModule,
-                    format!("module `{spelling}` is used twice"),
-                    declaration.span,
-                )
-                .with_label("this declaration repeats an earlier `use`")
-                .with_secondary_span(earlier.span, "first used here")
-                .with_note("a module names each module it uses once")
-            });
-            resolved.push(usize::MAX);
-        } else if name.text == own.text {
-            report.report(|| {
-                let spelling = identifier_spelling_for_diagnostic(&name.text);
-                Diagnostic::error(
-                    DiagnosticCode::ModuleCycle,
-                    format!("module `{spelling}` uses itself"),
-                    declaration.span,
-                )
-                .with_label("this `use` names its own module")
-                .with_note("a module calls its own functions without a module name, as in `f(x)`")
-            });
-            resolved.push(usize::MAX);
-        } else if let Some(target) = target {
-            resolved.push(target);
-        } else {
-            report.report(|| {
-                let spelling = identifier_spelling_for_diagnostic(&name.text);
-                Diagnostic::error(
-                    DiagnosticCode::UnknownModule,
-                    format!("no module named `{spelling}` in this program"),
-                    name.span,
-                )
-                .with_label("unknown module")
-                .with_note(
-                    "a `use` declaration names another module of the program; `orangec` \
-                     reads the module `NAME` from the file `NAME.or` beside the file that uses it",
-                )
-            });
-            resolved.push(usize::MAX);
-        }
-    }
-    true
-}
-
-/// The name tables of a checked module that later modules call into.
-struct ModuleTables<'ast> {
-    declarations: DeclarationIndex<'ast>,
-    signatures: Vec<Option<Signature>>,
-}
-
-/// What analysis of one module of a program produced.
-struct ModuleOutcome<'ast> {
-    core: Option<CoreModule>,
-    diagnostics: Vec<Diagnostic>,
-    /// Present once the module's declarations and signatures are complete,
-    /// even if its bodies have errors.
-    tables: Option<ModuleTables<'ast>>,
-}
-
-fn typed_spec_count(ast: &SyntaxTree) -> usize {
-    ast.module
-        .functions
-        .iter()
-        .filter(|function| {
-            function.kind == FunctionKind::Spec && matches!(function.body, FunctionBody::Typed(_))
-        })
-        .count()
-}
-
-/// Checks each reachable module in dependency order and links their Core.
-fn link_program<'ast>(
-    program: &[(&SourceFile, &'ast SyntaxTree)],
-    graph: &ModuleGraph,
-    root_span: Span,
-) -> AnalysisResult {
-    let mut tables: Vec<Option<ModuleTables<'ast>>> = Vec::new();
-    let mut cores: Vec<CoreModule> = Vec::new();
-    if tables.try_reserve_exact(program.len()).is_err()
-        || cores.try_reserve_exact(graph.order.len()).is_err()
-    {
-        return program_resource_limit(root_span, "semantic program storage allocation failed");
-    }
-    tables.extend(program.iter().map(|_| None));
-    let mut diagnostics: Vec<Diagnostic> = Vec::new();
-    let mut id_offset = 0_usize;
-    let mut complete = true;
-    for &index in &graph.order {
-        let Some(&(source, ast)) = program.get(index) else {
-            return program_resource_limit(root_span, "module graph index is inconsistent");
-        };
-        let resolved = graph.targets.get(index).map_or(&[][..], Vec::as_slice);
-        let mut imports = Vec::new();
-        if imports.try_reserve_exact(resolved.len()).is_err() {
-            return program_resource_limit(
-                ast.module.span,
-                "semantic import table allocation failed",
-            );
-        }
-        let mut available = true;
-        for (declaration, target) in ast.module.uses.iter().zip(resolved) {
-            match tables.get(*target).and_then(Option::as_ref) {
-                Some(table) => imports.push(ImportScope {
-                    name: &declaration.name.text,
-                    declarations: &table.declarations,
-                    signatures: &table.signatures,
-                }),
-                None => available = false,
-            }
-        }
-        // A module whose used module stopped before its names were complete
-        // is not checked; that module's analysis has already reported why.
-        let outcome = available.then(|| {
-            Analyzer::new(source, ast, Limits::DEFAULT)
-                .with_id_offset(id_offset)
-                .run_linked(
-                    &imports,
-                    |declarations, capacity| declarations.try_reserve(capacity).is_ok(),
-                    |functions, capacity| functions.try_reserve_exact(capacity).is_ok(),
-                )
-        });
-        drop(imports);
-        id_offset = id_offset.saturating_add(typed_spec_count(ast));
-        let Some(outcome) = outcome else {
-            complete = false;
-            continue;
-        };
-        if diagnostics
-            .try_reserve_exact(outcome.diagnostics.len())
-            .is_err()
-        {
-            return program_resource_limit(
-                ast.module.span,
-                "semantic program diagnostic storage allocation failed",
-            );
-        }
-        diagnostics.extend(outcome.diagnostics);
-        if let Some(slot) = tables.get_mut(index) {
-            *slot = outcome.tables;
-        }
-        match outcome.core {
-            Some(core) => cores.push(core),
-            None => complete = false,
-        }
-    }
-    if !complete || !diagnostics.is_empty() {
-        if diagnostics.is_empty() {
-            return program_resource_limit(root_span, "semantic program linking is inconsistent");
-        }
-        return AnalysisResult {
-            core: None,
-            diagnostics,
-        };
-    }
-    let Some(mut root) = cores.pop() else {
-        return program_resource_limit(root_span, "semantic program linking is inconsistent");
-    };
-    if cores.is_empty() {
-        return AnalysisResult {
-            core: Some(root),
-            diagnostics,
-        };
-    }
-    let total = cores
-        .iter()
-        .map(|core| core.functions.len())
-        .fold(root.functions.len(), usize::saturating_add);
-    let mut functions = Vec::new();
-    if functions.try_reserve_exact(total).is_err() {
-        return program_resource_limit(root_span, "typed Core function storage allocation failed");
-    }
-    for core in cores {
-        functions.extend(core.functions);
-    }
-    root.entry = functions.len();
-    functions.append(&mut root.functions);
-    root.functions = functions;
-    AnalysisResult {
-        core: Some(root),
-        diagnostics,
-    }
-}
-
 fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool {
     let source_id = source.id();
     let belongs = |span: Span| span.source() == source_id;
@@ -680,6 +259,11 @@ fn type_belongs(ty: &TypeSyntax, belongs: &impl Fn(Span) -> bool) -> bool {
         && ty
             .modulus()
             .is_none_or(|modulus| expression_belongs(modulus, belongs))
+        // A tuple type's elements are never tuples: one level of recursion.
+        && ty
+            .elements
+            .iter()
+            .all(|element| type_belongs(element, belongs))
 }
 
 /// Parser-established expression height bounds this recursion.
@@ -737,11 +321,17 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
                     && belongs(r#loop.index.span)
                     && belongs(r#loop.start_span)
                     && belongs(r#loop.end_span)
-                    && belongs(r#loop.accumulator.span)
-                    && type_belongs(&r#loop.ty, belongs)
+                    && pattern_belongs(&r#loop.accumulator, belongs)
                     && expression_belongs(&r#loop.init, belongs)
                     && bindings_belong(&r#loop.step_bindings, belongs)
                     && expression_belongs(&r#loop.step, belongs)
+            }
+            ExpressionKind::Tuple(tuple) => tuple
+                .elements
+                .iter()
+                .all(|element| expression_belongs(element, belongs)),
+            ExpressionKind::Project(project) => {
+                belongs(project.position_span) && expression_belongs(&project.base, belongs)
             }
             ExpressionKind::Conditional(conditional) => {
                 belongs(conditional.else_span)
@@ -763,10 +353,18 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
 fn bindings_belong(bindings: &[Binding], belongs: &impl Fn(Span) -> bool) -> bool {
     bindings.iter().all(|binding| {
         belongs(binding.span)
-            && belongs(binding.name.span)
-            && type_belongs(&binding.ty, belongs)
+            && pattern_belongs(&binding.pattern, belongs)
             && expression_belongs(&binding.value, belongs)
     })
+}
+
+/// Returns whether every span of a binding's or an accumulator's pattern
+/// belongs.
+fn pattern_belongs(pattern: &Pattern, belongs: &impl Fn(Span) -> bool) -> bool {
+    belongs(pattern.span())
+        && pattern.names().iter().all(|typed| {
+            belongs(typed.span) && belongs(typed.name.span) && type_belongs(&typed.ty, belongs)
+        })
 }
 
 fn invalid_semantic_input(
@@ -935,7 +533,7 @@ struct BodyContext<'ast> {
 struct LoopScope<'ast> {
     id: u32,
     index: &'ast Identifier,
-    accumulator: &'ast Identifier,
+    accumulator: &'ast Pattern,
     ty: CoreType,
     start: u32,
     end: u32,
@@ -979,25 +577,67 @@ struct CheckedBinding {
 }
 
 /// What a bare name refers to at one point of a body.
+///
+/// A name that a tuple pattern binds carries its position in the pattern:
+/// it stands for that element of the pattern's value.
 enum NameResolution<'ast> {
     Parameter(usize),
-    Binding(usize),
+    Binding(usize, Option<u32>),
     /// The binding at `index` of the block at `block` in the block scopes.
     BlockBinding {
         block: usize,
         index: usize,
+        element: Option<u32>,
     },
     /// The index of the loop scope at this position.
     LoopIndex(usize),
     /// The accumulator of the loop scope at this position.
-    Accumulator(usize),
+    Accumulator(usize, Option<u32>),
     /// The `Bool` literal `true` or `false`, where no name of its spelling
     /// is in scope.
     BoolLiteral(bool),
-    /// A binding of this body or of a block being checked whose scope has
-    /// not started, and whether it is a block's.
-    LaterBinding(&'ast Binding, bool),
+    /// A name of a binding of this body or of a block being checked whose
+    /// scope has not started, and whether it is a block's.
+    LaterBinding(&'ast TypedName, bool),
     Unknown,
+}
+
+/// Returns whether `pattern` binds `name`: `Some(None)` when the pattern is
+/// that one name, `Some(Some(k))` when `name` is element `k` of a tuple
+/// pattern, and `None` when the pattern does not bind it.
+fn pattern_element(pattern: &Pattern, name: &str) -> Option<Option<u32>> {
+    match pattern {
+        Pattern::Name(typed) => (typed.name.text == name).then_some(None),
+        Pattern::Tuple(tuple) => tuple
+            .elements
+            .iter()
+            .position(|typed| typed.name.text == name)
+            .and_then(|position| u32::try_from(position).ok())
+            .map(Some),
+    }
+}
+
+/// Returns the first binding of `bindings` that binds `name`, and the
+/// name's position in its tuple pattern, if it has one.
+fn find_binding(bindings: &[Binding], name: &str) -> Option<(usize, Option<u32>)> {
+    bindings
+        .iter()
+        .enumerate()
+        .find_map(|(index, binding)| Some((index, pattern_element(&binding.pattern, name)?)))
+}
+
+/// Returns the typed name `name` of `pattern`, if the pattern binds it.
+fn pattern_name<'pattern>(pattern: &'pattern Pattern, name: &str) -> Option<&'pattern TypedName> {
+    pattern.names().iter().find(|typed| typed.name.text == name)
+}
+
+/// Returns the type of what a name stands for: the whole value's type, or,
+/// for a name of a tuple pattern, the type of its element.
+fn element_type(whole: Option<CoreType>, element: Option<u32>) -> Option<CoreType> {
+    match element {
+        None => whole,
+        Some(position) => whole?.as_tuple()?.element(position).cloned(),
+    }
 }
 
 impl<'ast> BodyContext<'ast> {
@@ -1016,24 +656,24 @@ impl<'ast> BodyContext<'ast> {
             .bindings
             .split_at_checked(self.binding_types.len())
             .unwrap_or((self.bindings, &[]));
-        if let Some(index) = visible.iter().position(|binding| binding.name.text == name) {
-            return NameResolution::Binding(index);
+        if let Some((index, element)) = find_binding(visible, name) {
+            return NameResolution::Binding(index, element);
         }
         for (block, scope) in self.blocks.iter().enumerate().rev() {
-            if let Some(index) = scope
-                .visible()
-                .iter()
-                .position(|binding| binding.name.text == name)
-            {
-                return NameResolution::BlockBinding { block, index };
+            if let Some((index, element)) = find_binding(scope.visible(), name) {
+                return NameResolution::BlockBinding {
+                    block,
+                    index,
+                    element,
+                };
             }
         }
         for (position, scope) in self.loop_scopes.iter().enumerate().rev() {
             if scope.index.text == name {
                 return NameResolution::LoopIndex(position);
             }
-            if scope.accumulator.text == name {
-                return NameResolution::Accumulator(position);
+            if let Some(element) = pattern_element(scope.accumulator, name) {
+                return NameResolution::Accumulator(position, element);
             }
         }
         match name {
@@ -1047,28 +687,39 @@ impl<'ast> BodyContext<'ast> {
             .flat_map(BlockScope::later)
             .map(|binding| (binding, true))
             .chain(later.iter().map(|binding| (binding, false)))
-            .find(|(binding, _)| binding.name.text == name)
-            .map_or(NameResolution::Unknown, |(binding, in_block)| {
-                NameResolution::LaterBinding(binding, in_block)
+            .find_map(|(binding, in_block)| {
+                pattern_name(&binding.pattern, name).map(|typed| (typed, in_block))
+            })
+            .map_or(NameResolution::Unknown, |(typed, in_block)| {
+                NameResolution::LaterBinding(typed, in_block)
             })
     }
 
     /// Returns the type of a name in scope without reporting.
     fn name_type(&self, name: &str) -> Option<CoreType> {
         match self.resolve(name) {
-            NameResolution::Parameter(index) => self.parameter_types.get(index).copied().flatten(),
-            NameResolution::Binding(index) => self.binding_types.get(index).copied().flatten(),
-            NameResolution::BlockBinding { block, index } => self
-                .blocks
-                .get(block)?
-                .binding_types
-                .get(index)
-                .copied()
-                .flatten(),
-            NameResolution::LoopIndex(_) => Some(CoreType::Int),
-            NameResolution::Accumulator(position) => {
-                self.loop_scopes.get(position).map(|scope| scope.ty)
+            NameResolution::Parameter(index) => self.parameter_types.get(index).cloned().flatten(),
+            NameResolution::Binding(index, element) => {
+                element_type(self.binding_types.get(index).cloned().flatten(), element)
             }
+            NameResolution::BlockBinding {
+                block,
+                index,
+                element,
+            } => element_type(
+                self.blocks
+                    .get(block)?
+                    .binding_types
+                    .get(index)
+                    .cloned()
+                    .flatten(),
+                element,
+            ),
+            NameResolution::LoopIndex(_) => Some(CoreType::Int),
+            NameResolution::Accumulator(position, element) => element_type(
+                self.loop_scopes.get(position).map(|scope| scope.ty.clone()),
+                element,
+            ),
             NameResolution::BoolLiteral(_) => Some(CoreType::Bool),
             NameResolution::LaterBinding(..) | NameResolution::Unknown => None,
         }
@@ -1084,23 +735,22 @@ impl<'ast> BodyContext<'ast> {
         {
             return Some((parameter.name.span, "the parameter is here"));
         }
-        if let Some(binding) = self
+        if let Some(typed) = self
             .bindings
             .get(..self.binding_types.len())
             .into_iter()
             .flatten()
             .chain(self.blocks.iter().flat_map(BlockScope::visible))
-            .find(|binding| binding.name.text == name)
+            .find_map(|binding| pattern_name(&binding.pattern, name))
         {
-            return Some((binding.name.span, "the binding is here"));
+            return Some((typed.name.span, "the binding is here"));
         }
         self.loop_scopes.iter().find_map(|scope| {
             if scope.index.text == name {
                 Some((scope.index.span, "the loop index is here"))
-            } else if scope.accumulator.text == name {
-                Some((scope.accumulator.span, "the accumulator is here"))
             } else {
-                None
+                pattern_name(scope.accumulator, name)
+                    .map(|typed| (typed.name.span, "the accumulator is here"))
             }
         })
     }
@@ -1122,16 +772,17 @@ impl<'ast> BlockScope<'ast> {
     }
 }
 
-/// Returns the first name, call, conversion, index, array literal, or
-/// comparison of `expression`, from left to right, outside call arguments,
-/// shift amounts, and the conditions of conditionals.
+/// Returns the first name, call, conversion, index, element of a tuple,
+/// array or tuple literal, or comparison of `expression`, from left to
+/// right, outside call arguments, shift amounts, and the conditions of
+/// conditionals.
 ///
 /// Every other operator gives its result the type of its operands, a shift
 /// or rotation amount is a literal, and a conditional has the type of its
 /// values, so this leaf's type is the type of the whole expression. A
 /// comparison is a leaf of type `Bool`. Integer literals take their type from
-/// their context and are skipped. An array literal ends the search so that a
-/// conversion can reject it. A branch's leaf that names one of the branch's
+/// their context and are skipped. An array or tuple literal ends the search
+/// so that a conversion can reject it. A branch's leaf that names one of the branch's
 /// own `let` bindings, directly or through indices, is skipped too, because
 /// those bindings are not in scope where the type is needed.
 /// Parser-established expression height bounds this recursion.
@@ -1144,7 +795,9 @@ fn first_typed_leaf(expression: &Expression) -> Option<&Expression> {
         | ExpressionKind::Index(_)
         | ExpressionKind::Array(_)
         | ExpressionKind::Fill(_)
-        | ExpressionKind::Loop(_) => Some(expression),
+        | ExpressionKind::Loop(_)
+        | ExpressionKind::Tuple(_)
+        | ExpressionKind::Project(_) => Some(expression),
         ExpressionKind::Parenthesized(inner) => first_typed_leaf(inner),
         // An update has the type of the array it updates.
         ExpressionKind::Update(update) => first_typed_leaf(&update.base),
@@ -1204,11 +857,8 @@ fn branch_leaf<'expression>(
     value: &'expression Expression,
 ) -> Option<&'expression Expression> {
     let leaf = first_typed_leaf(value)?;
-    let bound = leaf_root_name(leaf).is_some_and(|name| {
-        bindings
-            .iter()
-            .any(|binding| binding.name.text == name.text)
-    });
+    let bound =
+        leaf_root_name(leaf).is_some_and(|name| find_binding(bindings, &name.text).is_some());
     (!bound).then_some(leaf)
 }
 
@@ -1218,6 +868,7 @@ fn leaf_root_name(leaf: &Expression) -> Option<&Identifier> {
     match &leaf.kind {
         ExpressionKind::Name(name) => Some(name),
         ExpressionKind::Index(index) => leaf_root_name(&index.base),
+        ExpressionKind::Project(project) => leaf_root_name(&project.base),
         _ => None,
     }
 }
@@ -1266,339 +917,6 @@ fn reserve_core_node_slot(nodes: &mut Vec<CoreNode>) -> bool {
 
 fn reserve_call_edge_slot(edges: &mut Vec<CallEdge>) -> bool {
     edges.try_reserve(1).is_ok()
-}
-
-/// The outcome of classifying a parsed type without reporting.
-enum TypeClass {
-    Resolved(CoreType),
-    MissingWordWidth,
-    UnsupportedWordWidth(Span),
-    UnsupportedArrayLength(Span),
-    MissingModulus,
-    /// A declared name whose element type is already an array, followed by
-    /// the span of `^LENGTH`.
-    ArrayOfArrays(Span),
-    /// A modulus or declared name whose own check already failed.
-    Unresolved,
-    /// A modulus the module's table does not hold.
-    Unindexed,
-    Unsupported,
-}
-
-/// The types a module fixes before its functions are checked: the value of
-/// every modulus it writes, and the names of its `type` declarations.
-struct TypeTable<'ast> {
-    /// Each modulus by the extent of its expression, sorted by that key.
-    moduli: Vec<ResolvedModulus>,
-    /// Declared names in declaration order, each unique.
-    names: Vec<DeclaredType<'ast>>,
-}
-
-struct ResolvedModulus {
-    key: (u32, u32),
-    /// The modulus, or `None` when its expression was reported.
-    modulus: Option<Modulus>,
-}
-
-struct DeclaredType<'ast> {
-    name: &'ast str,
-    span: Span,
-    /// The declared type, or `None` when its declaration was reported.
-    ty: Option<CoreType>,
-}
-
-impl TypeTable<'_> {
-    const fn new() -> Self {
-        Self {
-            moduli: Vec::new(),
-            names: Vec::new(),
-        }
-    }
-
-    /// Returns the entry of the modulus written as `expression`.
-    fn modulus(&self, expression: &Expression) -> Option<&ResolvedModulus> {
-        let key = span_key(expression.span);
-        let position = self
-            .moduli
-            .binary_search_by_key(&key, |entry| entry.key)
-            .ok()?;
-        self.moduli.get(position)
-    }
-
-    /// Returns the declaration of `name`, if the module declares it.
-    fn name(&self, name: &str) -> Option<&DeclaredType<'_>> {
-        self.names.iter().find(|declared| declared.name == name)
-    }
-}
-
-fn span_key(span: Span) -> (u32, u32) {
-    (span.start().bytes(), span.end().bytes())
-}
-
-fn classify_type(source: &SourceFile, table: &TypeTable<'_>, syntax: &TypeSyntax) -> TypeClass {
-    let scalar = classify_scalar_type(source, table, syntax);
-    match (scalar, syntax.length_span) {
-        (TypeClass::Resolved(CoreType::Array(_)), Some(length_span)) => {
-            TypeClass::ArrayOfArrays(length_span)
-        }
-        (TypeClass::Resolved(element), Some(length_span)) => array_length(source, length_span)
-            .and_then(|length| ArrayType::new(element, length))
-            .map_or(TypeClass::UnsupportedArrayLength(length_span), |array| {
-                TypeClass::Resolved(CoreType::Array(array))
-            }),
-        (scalar, _) => scalar,
-    }
-}
-
-/// Decodes an array length written as a decimal integer with no leading
-/// zero and no underscore, as word widths are written.
-fn array_length(source: &SourceFile, span: Span) -> Option<u32> {
-    let spelling = source.slice(span)?;
-    let canonical = !spelling.is_empty()
-        && !spelling.starts_with('0')
-        && spelling.bytes().all(|byte| byte.is_ascii_digit());
-    if !canonical || spelling.len() > 3 {
-        return None;
-    }
-    spelling.parse().ok()
-}
-
-/// Classifies a type without its array length. A declared name stands for
-/// its whole type, which may be an array type.
-fn classify_scalar_type(
-    source: &SourceFile,
-    table: &TypeTable<'_>,
-    syntax: &TypeSyntax,
-) -> TypeClass {
-    if let Some(expression) = syntax.modulus() {
-        return match table.modulus(expression) {
-            Some(ResolvedModulus {
-                modulus: Some(modulus),
-                ..
-            }) => TypeClass::Resolved(CoreType::Mod(*modulus)),
-            Some(_) => TypeClass::Unresolved,
-            None => TypeClass::Unindexed,
-        };
-    }
-    match (syntax.name.text.as_str(), syntax.width_span) {
-        ("Int", None) => TypeClass::Resolved(CoreType::Int),
-        ("Bool", None) => TypeClass::Resolved(CoreType::Bool),
-        ("Word", Some(width_span)) => {
-            let width = match source.slice(width_span) {
-                Some("8") => Some(8),
-                Some("16") => Some(16),
-                Some("32") => Some(32),
-                Some("64") => Some(64),
-                _ => None,
-            };
-            width
-                .and_then(CoreType::word_of_width)
-                .map_or(TypeClass::UnsupportedWordWidth(width_span), |ty| {
-                    TypeClass::Resolved(ty)
-                })
-        }
-        ("Word", None) => TypeClass::MissingWordWidth,
-        ("Mod", None) => TypeClass::MissingModulus,
-        (name, None) => table.name(name).map_or(TypeClass::Unsupported, |declared| {
-            declared
-                .ty
-                .map_or(TypeClass::Unresolved, TypeClass::Resolved)
-        }),
-        _ => TypeClass::Unsupported,
-    }
-}
-
-fn silent_type(
-    source: &SourceFile,
-    table: &TypeTable<'_>,
-    syntax: &TypeSyntax,
-) -> Option<CoreType> {
-    match classify_type(source, table, syntax) {
-        TypeClass::Resolved(ty) => Some(ty),
-        _ => None,
-    }
-}
-
-/// The least and greatest values an index can take, as exact integers.
-type IndexRange = (ExactInteger, ExactInteger);
-
-/// The least and greatest values of a word expression. Bounds are kept in
-/// `u128` so that no bound computation of two 64-bit words overflows.
-type WordRange = (u128, u128);
-
-/// Returns the least value of the form 2^k - 1 that is at least `value`.
-fn all_ones(value: u128) -> u128 {
-    u128::MAX.checked_shr(value.leading_zeros()).unwrap_or(0)
-}
-
-/// Returns the range of `left operator right` for the ranges of its
-/// operands, computed exactly, or `None` when storage cannot be reserved.
-fn combine_ranges(
-    operator: BinaryOperator,
-    (left_low, left_high): &IndexRange,
-    (right_low, right_high): &IndexRange,
-    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
-) -> Option<IndexRange> {
-    match operator {
-        BinaryOperator::Add => Some((
-            left_low.add(right_low, reserve_limbs)?,
-            left_high.add(right_high, reserve_limbs)?,
-        )),
-        BinaryOperator::Subtract => Some((
-            left_low.subtract(right_high, reserve_limbs)?,
-            left_high.subtract(right_low, reserve_limbs)?,
-        )),
-        BinaryOperator::Multiply => {
-            let mut products = [
-                left_low.multiply(right_low, reserve_limbs)?,
-                left_low.multiply(right_high, reserve_limbs)?,
-                left_high.multiply(right_low, reserve_limbs)?,
-                left_high.multiply(right_high, reserve_limbs)?,
-            ];
-            products.sort_unstable_by(ExactInteger::compare);
-            let [low, _, _, high] = products;
-            Some((low, high))
-        }
-        _ => None,
-    }
-}
-
-/// Writes an exact integer in decimal, or returns `None` when storage
-/// cannot be reserved.
-fn render_exact(value: &ExactInteger) -> Option<String> {
-    let mut text = String::new();
-    fmt::write(&mut text, format_args!("{value}")).ok()?;
-    Some(text)
-}
-
-fn reserve_range_limbs(limbs: &mut Vec<u32>, count: usize) -> bool {
-    limbs.try_reserve_exact(count).is_ok()
-}
-
-/// Returns the range of `left / right` or `left % right` under the total
-/// Euclidean rules of S3f, for exact operand ranges, or `None` when storage
-/// cannot be reserved. Positive, zero, and negative divisors are considered
-/// separately and their ranges joined.
-fn divide_ranges(
-    operator: BinaryOperator,
-    left: &IndexRange,
-    (divisor_low, divisor_high): &IndexRange,
-    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
-) -> Option<IndexRange> {
-    let one = ExactInteger::from_u64(1, reserve_limbs)?;
-    let minus_one = one.try_clone_with_reservation(reserve_limbs)?.negated();
-    let zero = ExactInteger::from_u64(0, reserve_limbs)?;
-    let copy = |value: &ExactInteger| value.try_clone_with_reservation(reserve_limbs);
-    let mut parts: [Option<IndexRange>; 3] = [None, None, None];
-    if divisor_high.compare(&one) != Ordering::Less {
-        let lowest = if divisor_low.compare(&one) == Ordering::Less {
-            copy(&one)?
-        } else {
-            copy(divisor_low)?
-        };
-        parts[0] = Some(positive_divisor_range(
-            operator,
-            left,
-            (&lowest, divisor_high),
-            reserve_limbs,
-        )?);
-    }
-    if divisor_low.compare(&zero) != Ordering::Greater
-        && divisor_high.compare(&zero) != Ordering::Less
-    {
-        // x / 0 = 0 and x % 0 = x.
-        parts[1] = Some(if operator == BinaryOperator::Divide {
-            (copy(&zero)?, copy(&zero)?)
-        } else {
-            (copy(&left.0)?, copy(&left.1)?)
-        });
-    }
-    if divisor_low.compare(&minus_one) != Ordering::Greater {
-        // For d < 0, x / d = -(x / -d) and x % d = x % -d.
-        let nearest = if divisor_high.compare(&minus_one) == Ordering::Greater {
-            copy(&one)?
-        } else {
-            copy(divisor_high)?.negated()
-        };
-        let farthest = copy(divisor_low)?.negated();
-        let (low, high) =
-            positive_divisor_range(operator, left, (&nearest, &farthest), reserve_limbs)?;
-        parts[2] = Some(if operator == BinaryOperator::Divide {
-            (high.negated(), low.negated())
-        } else {
-            (low, high)
-        });
-    }
-    parts
-        .into_iter()
-        .flatten()
-        .reduce(|(low, high), (part_low, part_high)| {
-            (
-                if part_low.compare(&low) == Ordering::Less {
-                    part_low
-                } else {
-                    low
-                },
-                if part_high.compare(&high) == Ordering::Greater {
-                    part_high
-                } else {
-                    high
-                },
-            )
-        })
-}
-
-/// Returns the range of `left / d` or `left % d` over divisors d from
-/// `divisor_low` through `divisor_high`, where `1 <= divisor_low`, or `None`
-/// when storage cannot be reserved.
-fn positive_divisor_range(
-    operator: BinaryOperator,
-    (low, high): &IndexRange,
-    (divisor_low, divisor_high): (&ExactInteger, &ExactInteger),
-    reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
-) -> Option<IndexRange> {
-    let divide =
-        |value: &ExactInteger, divisor: &ExactInteger| value.divide_euclid(divisor, reserve_limbs);
-    if operator == BinaryOperator::Divide {
-        // The quotient grows with x, and for a fixed x it moves toward zero
-        // as d grows, so its extremes are at the corners.
-        let mut corners = [
-            divide(low, divisor_low)?.0,
-            divide(low, divisor_high)?.0,
-            divide(high, divisor_low)?.0,
-            divide(high, divisor_high)?.0,
-        ];
-        corners.sort_unstable_by(ExactInteger::compare);
-        let [least, _, _, greatest] = corners;
-        return Some((least, greatest));
-    }
-    // With one divisor and one quotient, the remainder grows with x.
-    if divisor_low.compare(divisor_high) == Ordering::Equal {
-        let (low_quotient, low_remainder) = divide(low, divisor_low)?;
-        let (high_quotient, high_remainder) = divide(high, divisor_low)?;
-        if low_quotient.compare(&high_quotient) == Ordering::Equal {
-            return Some((low_remainder, high_remainder));
-        }
-    }
-    // Otherwise 0 <= r < d, and r <= x when x is not negative.
-    let one = ExactInteger::from_u64(1, reserve_limbs)?;
-    let largest = divisor_high.subtract(&one, reserve_limbs)?;
-    let greatest = if !low.is_negative() && high.compare(&largest) == Ordering::Less {
-        high.try_clone_with_reservation(reserve_limbs)?
-    } else {
-        largest
-    };
-    Some((ExactInteger::from_u64(0, reserve_limbs)?, greatest))
-}
-
-fn word_maximum(ty: CoreType) -> Option<u64> {
-    match ty {
-        CoreType::Int | CoreType::Bool | CoreType::Mod(_) | CoreType::Array(_) => None,
-        CoreType::Word8 => Some(u64::from(u8::MAX)),
-        CoreType::Word16 => Some(u64::from(u16::MAX)),
-        CoreType::Word32 => Some(u64::from(u32::MAX)),
-        CoreType::Word64 => Some(u64::MAX),
-    }
 }
 
 impl<'source, 'ast> Analyzer<'source, 'ast> {
@@ -1841,298 +1159,6 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
-    /// Evaluates every modulus written in the module's `type` declarations
-    /// and typed `spec` functions, once each and in source order, before any
-    /// type is resolved.
-    fn resolve_moduli(&mut self) {
-        let module = &self.ast.module;
-        for declaration in &module.types {
-            self.resolve_modulus(&declaration.ty);
-        }
-        for function in &module.functions {
-            let (FunctionBody::Typed(body), FunctionKind::Spec) = (&function.body, function.kind)
-            else {
-                continue;
-            };
-            for parameter in &function.parameters {
-                self.resolve_modulus(&parameter.ty);
-            }
-            self.resolve_modulus(&body.result_type);
-            for binding in &body.bindings {
-                self.resolve_modulus(&binding.ty);
-                self.resolve_moduli_within(&binding.value);
-            }
-            self.resolve_moduli_within(&body.expression);
-        }
-        self.types.moduli.sort_unstable_by_key(|entry| entry.key);
-    }
-
-    /// Evaluates the moduli of the conversions and loops of an expression.
-    ///
-    /// Parser-established expression height bounds this recursion.
-    fn resolve_moduli_within(&mut self, expression: &Expression) {
-        if self.halted {
-            return;
-        }
-        match &expression.kind {
-            ExpressionKind::Literal(_) | ExpressionKind::Name(_) => {}
-            ExpressionKind::Call(call) => {
-                for argument in &call.arguments {
-                    self.resolve_moduli_within(argument);
-                }
-            }
-            ExpressionKind::Unary(unary) => self.resolve_moduli_within(&unary.operand),
-            ExpressionKind::Binary(binary) => {
-                self.resolve_moduli_within(&binary.left);
-                self.resolve_moduli_within(&binary.right);
-            }
-            ExpressionKind::Parenthesized(inner) => self.resolve_moduli_within(inner),
-            ExpressionKind::Conversion(conversion) => {
-                self.resolve_moduli_within(&conversion.operand);
-                self.resolve_modulus(&conversion.target);
-            }
-            ExpressionKind::Array(array) => {
-                for element in &array.elements {
-                    self.resolve_moduli_within(element);
-                }
-            }
-            ExpressionKind::Fill(fill) => self.resolve_moduli_within(&fill.element),
-            ExpressionKind::Index(index) => {
-                self.resolve_moduli_within(&index.base);
-                self.resolve_moduli_within(&index.index);
-            }
-            ExpressionKind::Update(update) => {
-                self.resolve_moduli_within(&update.base);
-                self.resolve_moduli_within(&update.index);
-                self.resolve_moduli_within(&update.value);
-            }
-            ExpressionKind::Loop(r#loop) => {
-                self.resolve_modulus(&r#loop.ty);
-                self.resolve_moduli_within(&r#loop.init);
-                self.resolve_block_moduli(&r#loop.step_bindings, &r#loop.step);
-            }
-            ExpressionKind::Conditional(conditional) => {
-                for arm in &conditional.arms {
-                    self.resolve_moduli_within(&arm.condition);
-                    self.resolve_block_moduli(&arm.bindings, &arm.value);
-                }
-                self.resolve_block_moduli(&conditional.otherwise_bindings, &conditional.otherwise);
-            }
-        }
-    }
-
-    /// Evaluates the moduli of a block's binding types and values and of
-    /// its value, in source order.
-    fn resolve_block_moduli(&mut self, bindings: &[Binding], value: &Expression) {
-        for binding in bindings {
-            self.resolve_modulus(&binding.ty);
-            self.resolve_moduli_within(&binding.value);
-        }
-        self.resolve_moduli_within(value);
-    }
-
-    /// Evaluates the modulus of `Mod[...]`, if `syntax` has one, and enters
-    /// it in the module's table, then the moduli written within it.
-    fn resolve_modulus(&mut self, syntax: &TypeSyntax) {
-        let Some(expression) = syntax.modulus() else {
-            return;
-        };
-        if self.halted {
-            return;
-        }
-        let modulus = self
-            .constant(expression)
-            .and_then(|value| self.checked_modulus(expression.span, &value));
-        if self.halted {
-            return;
-        }
-        if self.types.moduli.try_reserve(1).is_err() {
-            self.resource_limit(expression.span, "semantic modulus table allocation failed");
-            return;
-        }
-        self.types.moduli.push(ResolvedModulus {
-            key: span_key(expression.span),
-            modulus,
-        });
-        // A modulus that is not a constant may still hold a conversion or a
-        // loop whose type has a modulus of its own; that one is evaluated too.
-        self.resolve_moduli_within(expression);
-    }
-
-    /// Evaluates a constant: integer literals combined with `+`, `-`, `*`,
-    /// `<<`, and parentheses, with every value within the exact-integer
-    /// limit. Anything else is reported, and gives `None`.
-    ///
-    /// Parser-established expression height bounds this recursion.
-    fn constant(&mut self, expression: &Expression) -> Option<ExactInteger> {
-        if !self.event(expression.span) {
-            return None;
-        }
-        let reserve = self.reserve_range_limbs;
-        let value = match &expression.kind {
-            ExpressionKind::Literal(literal) => {
-                let magnitude = self.parse_magnitude(literal, self.limits.integer_bits)?;
-                Some(ExactInteger::new(literal.negative, magnitude))
-            }
-            ExpressionKind::Parenthesized(inner) => return self.constant(inner),
-            ExpressionKind::Binary(binary) if binary.operator == BinaryOperator::ShiftLeft => {
-                let value = self.constant(&binary.left)?;
-                let amount = self.constant(&binary.right)?;
-                let bits = self.limits.integer_bits;
-                let Some(amount) = amount
-                    .to_i64()
-                    .and_then(|amount| usize::try_from(amount).ok())
-                    .filter(|amount| *amount <= bits)
-                else {
-                    self.report_invalid_modulus(
-                        binary.right.span,
-                        format!("a shift amount in a modulus is from 0 through {bits}"),
-                    );
-                    return None;
-                };
-                ExactInteger::power_of_two(amount, reserve)
-                    .and_then(|power| value.multiply(&power, reserve))
-            }
-            ExpressionKind::Binary(binary)
-                if matches!(
-                    binary.operator,
-                    BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
-                ) =>
-            {
-                let left = self.constant(&binary.left)?;
-                let right = self.constant(&binary.right)?;
-                match binary.operator {
-                    BinaryOperator::Add => left.add(&right, reserve),
-                    BinaryOperator::Subtract => left.subtract(&right, reserve),
-                    _ => left.multiply(&right, reserve),
-                }
-            }
-            _ => {
-                self.report_invalid_modulus(
-                    expression.span,
-                    String::from("not a constant integer expression"),
-                );
-                return None;
-            }
-        };
-        let Some(value) = value else {
-            self.resource_limit(expression.span, "exact integer storage allocation failed");
-            return None;
-        };
-        if value.magnitude_bits() > self.limits.integer_bits {
-            if self.begin_report(expression.span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::IntegerMagnitudeLimit,
-                        format!(
-                            "integer magnitude exceeds the {}-significant-bit limit",
-                            self.limits.integer_bits
-                        ),
-                        expression.span,
-                    )
-                    .with_label("this value of the modulus is too large")
-                    .with_note("the value is rejected rather than truncated or approximated"),
-                );
-            }
-            return None;
-        }
-        Some(value)
-    }
-
-    /// Returns `value` as a modulus, or reports why it is not one.
-    fn checked_modulus(&mut self, span: Span, value: &ExactInteger) -> Option<Modulus> {
-        if let Some(modulus) = Modulus::new(value) {
-            return Some(modulus);
-        }
-        let label = if value.magnitude_bits() > MAX_MODULUS_BITS && !value.is_negative() {
-            format!("this modulus has {} bits", value.magnitude_bits())
-        } else if value.magnitude_bits() <= 64 {
-            format!("this modulus is {value}")
-        } else {
-            String::from("this modulus is negative")
-        };
-        self.report_invalid_modulus(span, label);
-        None
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn report_invalid_modulus(&mut self, span: Span, label: String) {
-        if self.begin_report(span) {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    DiagnosticCode::InvalidModulus,
-                    format!("a modulus must be a constant from 2 through 2^{MAX_MODULUS_BITS} - 1"),
-                    span,
-                )
-                .with_label(label)
-                .with_note(MODULUS_NOTE),
-            );
-        }
-    }
-
-    /// Resolves the module's `type` declarations in order. Each names a type
-    /// for the whole module, written with the built-in types and the names
-    /// declared before it.
-    fn analyze_type_declarations(&mut self) {
-        let declarations = &self.ast.module.types;
-        if self
-            .types
-            .names
-            .try_reserve_exact(declarations.len())
-            .is_err()
-        {
-            self.resource_limit(
-                self.ast.module.span,
-                "semantic type name table allocation failed",
-            );
-            return;
-        }
-        for declaration in declarations {
-            // One event for the name's lookup.
-            if !self.event(declaration.name.span) {
-                return;
-            }
-            let name = declaration.name.text.as_str();
-            let span = declaration.name.span;
-            let earlier = self.types.name(name).map(|declared| declared.span);
-            if BUILT_IN_TYPE_NAMES.contains(&name) {
-                if self.begin_report(span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::DuplicateTypeName,
-                            format!("`{name}` is a built-in type"),
-                            span,
-                        )
-                        .with_label("a `type` declaration cannot name a built-in type")
-                        .with_note("the built-in types are `Int`, `Bool`, `Word[n]`, and `Mod[m]`"),
-                    );
-                }
-            } else if let Some(first) = earlier
-                && self.begin_report(span)
-            {
-                let name = identifier_spelling_for_diagnostic(name);
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::DuplicateTypeName,
-                        format!("duplicate type name `{name}`"),
-                        span,
-                    )
-                    .with_label("this declaration repeats a type name")
-                    .with_secondary_span(first, "first declaration is here")
-                    .with_note("each `type` declaration of a module names a different type"),
-                );
-            }
-            let ty = self.analyze_type(&declaration.ty, "declared type");
-            if self.halted {
-                return;
-            }
-            if earlier.is_none() && !BUILT_IN_TYPE_NAMES.contains(&name) {
-                self.types.names.push(DeclaredType { name, span, ty });
-            }
-        }
-    }
-
     /// Resolves every typed `spec` signature without events or diagnostics.
     ///
     /// Types are reported once, in source order, when their own declaration is
@@ -2256,17 +1282,17 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             context
                 .binding_types
-                .push(checked.as_ref().map(|checked| checked.ty));
+                .push(checked.as_ref().map(|checked| checked.ty.clone()));
             if let Some(CheckedBinding {
                 ty,
                 nodes: Some(nodes),
             }) = checked
             {
-                let name = self.copy_core_name(&binding.name.text, binding.name.span)?;
+                let name = self.pattern_core_name(&binding.pattern)?;
                 locals.push(CoreLocal {
                     span: binding.span,
                     name,
-                    name_span: binding.name.span,
+                    name_span: pattern_name_span(&binding.pattern),
                     ty,
                     value: CoreExpression { nodes },
                 });
@@ -2280,7 +1306,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         let checked = self.check_expression(
             &body.expression,
-            result_type,
+            &result_type.clone(),
             &mut context,
             scope,
             &mut output,
@@ -2298,7 +1324,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let parameters = context
             .parameter_types
             .iter()
-            .copied()
+            .cloned()
             .collect::<Option<Vec<_>>>()?;
         let name = self.copy_core_name(&function.name.text, function.name.span)?;
         Some(PendingFunction {
@@ -2330,50 +1356,65 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         call_edges: &mut Vec<CallEdge>,
     ) -> Option<CheckedBinding> {
         let binding = body.bindings.get(index)?;
-        // One event for the binding-name uniqueness check.
-        if !self.event(binding.name.span) {
-            return None;
-        }
-        let parameter = function
-            .parameters
-            .iter()
-            .find(|parameter| parameter.name.text == binding.name.text)
-            .map(|parameter| (parameter.name.span, "the parameter is here"));
-        let earlier = parameter.or_else(|| {
-            body.bindings
-                .get(..index)?
+        let names = binding.pattern.names();
+        let mut unique = true;
+        for (position, typed) in names.iter().enumerate() {
+            // One event for each bound name's uniqueness check.
+            if !self.event(typed.name.span) {
+                return None;
+            }
+            let text = &typed.name.text;
+            let parameter = function
+                .parameters
                 .iter()
-                .find(|earlier| earlier.name.text == binding.name.text)
-                .map(|earlier| (earlier.name.span, "the first binding is here"))
-        });
-        if let Some((earlier_span, earlier_label)) = earlier {
-            let span = binding.name.span;
-            if self.begin_report(span) {
-                let name = identifier_spelling_for_diagnostic(&binding.name.text);
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::DuplicateBinding,
-                        format!("duplicate binding `{name}`"),
-                        span,
-                    )
-                    .with_label("this binding repeats an earlier name")
-                    .with_secondary_span(earlier_span, earlier_label)
-                    .with_note(
-                        "each parameter and binding of a function has its own name; \
-                         Orange has no shadowing",
-                    ),
-                );
+                .find(|parameter| parameter.name.text == *text)
+                .map(|parameter| (parameter.name.span, "the parameter is here"));
+            let earlier = parameter
+                .or_else(|| {
+                    body.bindings
+                        .get(..index)?
+                        .iter()
+                        .find_map(|earlier| pattern_name(&earlier.pattern, text))
+                        .map(|earlier| (earlier.name.span, "the first binding is here"))
+                })
+                .or_else(|| {
+                    names
+                        .get(..position)?
+                        .iter()
+                        .find(|earlier| earlier.name.text == *text)
+                        .map(|earlier| (earlier.name.span, "the first name is here"))
+                });
+            if let Some((earlier_span, earlier_label)) = earlier {
+                unique = false;
+                let span = typed.name.span;
+                if self.begin_report(span) {
+                    let name = identifier_spelling_for_diagnostic(text);
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::DuplicateBinding,
+                            format!("duplicate binding `{name}`"),
+                            span,
+                        )
+                        .with_label("this binding repeats an earlier name")
+                        .with_secondary_span(earlier_span, earlier_label)
+                        .with_note(
+                            "each parameter and binding of a function has its own name; \
+                             Orange has no shadowing",
+                        ),
+                    );
+                }
             }
         }
-        let ty = self.analyze_type(&binding.ty, "binding type")?;
+        let ty = self.analyze_pattern_type(&binding.pattern, "binding type")?;
         let mut output = BodyOutput {
             nodes: Vec::new(),
             call_edges,
         };
-        let checked = self.check_expression(&binding.value, ty, context, scope, &mut output);
+        let checked =
+            self.check_expression(&binding.value, &ty.clone(), context, scope, &mut output);
         Some(CheckedBinding {
             ty,
-            nodes: (checked && earlier.is_none()).then_some(output.nodes),
+            nodes: (checked && unique).then_some(output.nodes),
         })
     }
 
@@ -2384,7 +1425,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn check_expression(
         &mut self,
         expression: &'ast Expression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -2395,7 +1436,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         match &expression.kind {
             ExpressionKind::Literal(literal) if !expected.is_number() => {
                 if self.event(literal.span) {
-                    if expected == CoreType::Bool {
+                    if *expected == CoreType::Bool {
                         self.report_integer_for_bool(expression.span);
                     } else {
                         self.report_scalar_for_array(
@@ -2416,7 +1457,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 self.push_node(
                     output,
                     expression.span,
-                    expected,
+                    expected.clone(),
                     CoreNodeKind::Literal(value),
                 )
             }
@@ -2451,7 +1492,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     && self.push_node(
                         output,
                         expression.span,
-                        expected,
+                        expected.clone(),
                         CoreNodeKind::Unary(unary.operator),
                     )
             }
@@ -2495,6 +1536,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Conditional(conditional) => {
                 self.check_conditional(expression, conditional, expected, context, scope, output)
             }
+            ExpressionKind::Tuple(tuple) => {
+                if !self.event(expression.span) {
+                    return false;
+                }
+                self.check_tuple(expression, tuple, expected, context, scope, output)
+            }
+            ExpressionKind::Project(project) => {
+                if !self.event(project.position_span) {
+                    return false;
+                }
+                self.check_project(expression, project, expected, context, scope, output)
+            }
             ExpressionKind::Binary(binary) => {
                 if !self.event(binary.operator_span) {
                     return false;
@@ -2513,7 +1566,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         (true, Some(amount)) => self.push_node(
                             output,
                             expression.span,
-                            expected,
+                            expected.clone(),
                             CoreNodeKind::Shift {
                                 operator: binary.operator,
                                 amount,
@@ -2527,7 +1580,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     && self.push_node(
                         output,
                         expression.span,
-                        expected,
+                        expected.clone(),
                         CoreNodeKind::Binary(binary.operator),
                     )
             }
@@ -2537,46 +1590,58 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn check_name_reference(
         &mut self,
         name: &'ast Identifier,
-        expected: CoreType,
+        expected: &CoreType,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
-        let (actual, kind) = match context.resolve(&name.text) {
+        let (whole, kind, element) = match context.resolve(&name.text) {
             NameResolution::Parameter(index) => (
-                context.parameter_types.get(index).copied(),
+                context.parameter_types.get(index).cloned(),
                 u32::try_from(index).map(CoreNodeKind::Parameter),
+                None,
             ),
-            NameResolution::Binding(index) => (
-                context.binding_types.get(index).copied(),
+            NameResolution::Binding(index, element) => (
+                context.binding_types.get(index).cloned(),
                 u32::try_from(index).map(CoreNodeKind::Local),
+                element,
             ),
-            NameResolution::BlockBinding { block, index } => match context.blocks.get(block) {
+            NameResolution::BlockBinding {
+                block,
+                index,
+                element,
+            } => match context.blocks.get(block) {
                 Some(block) => (
-                    block.binding_types.get(index).copied(),
+                    block.binding_types.get(index).cloned(),
                     u32::try_from(index).map(|index| block.owner.node(index)),
+                    element,
                 ),
-                None => (None, Ok(CoreNodeKind::Local(0))),
+                None => (None, Ok(CoreNodeKind::Local(0)), None),
             },
             NameResolution::LoopIndex(position) => match context.loop_scopes.get(position) {
                 Some(scope) => (
                     Some(Some(CoreType::Int)),
                     Ok(CoreNodeKind::LoopIndex(scope.id)),
+                    None,
                 ),
-                None => (None, Ok(CoreNodeKind::LoopIndex(0))),
+                None => (None, Ok(CoreNodeKind::LoopIndex(0)), None),
             },
-            NameResolution::Accumulator(position) => match context.loop_scopes.get(position) {
-                Some(scope) => (
-                    Some(Some(scope.ty)),
-                    Ok(CoreNodeKind::Accumulator(scope.id)),
-                ),
-                None => (None, Ok(CoreNodeKind::Accumulator(0))),
-            },
+            NameResolution::Accumulator(position, element) => {
+                match context.loop_scopes.get(position) {
+                    Some(scope) => (
+                        Some(Some(scope.ty.clone())),
+                        Ok(CoreNodeKind::Accumulator(scope.id)),
+                        element,
+                    ),
+                    None => (None, Ok(CoreNodeKind::Accumulator(0)), None),
+                }
+            }
             NameResolution::BoolLiteral(value) => (
                 Some(Some(CoreType::Bool)),
                 Ok(CoreNodeKind::Literal(CoreValue::Bool(value))),
+                None,
             ),
-            NameResolution::LaterBinding(binding, in_block) => {
+            NameResolution::LaterBinding(typed, in_block) => {
                 if self.begin_report(name.span) {
                     let spelling = identifier_spelling_for_diagnostic(&name.text);
                     self.diagnostics.push(
@@ -2586,7 +1651,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             name.span,
                         )
                         .with_label("not bound yet")
-                        .with_secondary_span(binding.name.span, "the binding is here")
+                        .with_secondary_span(typed.name.span, "the binding is here")
                         .with_note(if in_block {
                             "a binding is in scope after its own `;`, for the bindings that \
                              follow it and the value of its step or branch"
@@ -2605,14 +1670,25 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         };
         // An unresolved parameter or binding type was reported at its
         // declaration.
-        let Some(Some(actual)) = actual else {
+        let Some(Some(whole)) = whole else {
             return false;
         };
-        if actual != expected {
+        // A name of a tuple pattern stands for one element of the pattern's
+        // value: its Core reads the value and then selects the element.
+        let Some(actual) = element_type(Some(whole.clone()), element) else {
+            self.resource_limit(name.span, "semantic pattern table is inconsistent");
+            return false;
+        };
+        if actual != *expected {
             if self.begin_report(name.span) {
                 let spelling = identifier_spelling_for_diagnostic(&name.text);
-                let note = if actual.as_array().map(ArrayType::element) == Some(expected) {
+                let note = if actual.as_array().map(ArrayType::element).as_ref() == Some(expected) {
                     format!("select one element with an index, such as `{spelling}[0]`")
+                } else if actual
+                    .as_tuple()
+                    .is_some_and(|tuple| tuple.elements().contains(expected))
+                {
+                    format!("select one element by its position, such as `{spelling}.0`")
                 } else {
                     String::from("Orange has no implicit conversions between types")
                 };
@@ -2637,7 +1713,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             );
             return false;
         };
-        self.push_node(output, name.span, expected, kind)
+        match element {
+            None => self.push_node(output, name.span, expected.clone(), kind),
+            Some(index) => {
+                self.push_node(output, name.span, whole, kind)
+                    && self.push_node(
+                        output,
+                        name.span,
+                        expected.clone(),
+                        CoreNodeKind::Project { index },
+                    )
+            }
+        }
     }
 
     #[cold]
@@ -2657,7 +1744,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let finished = context.finished_blocks.iter().rev().find_map(|bindings| {
             bindings
                 .iter()
-                .find(|binding| binding.name.text == name.text)
+                .find_map(|binding| pattern_name(&binding.pattern, &name.text))
         });
         if let Some(binding) = finished {
             self.diagnostics.push(
@@ -2714,7 +1801,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         conversion: &'ast ConversionExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -2723,9 +1810,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if self.halted {
             return false;
         }
-        let target_matches = match target {
-            Some(target) if target != expected => {
-                self.report_conversion_mismatch(conversion.target.span, target, expected);
+        let target_matches = match target.clone() {
+            Some(target) if target != *expected => {
+                self.report_conversion_mismatch(conversion.target.span, &target, expected);
                 false
             }
             Some(_) => true,
@@ -2735,15 +1822,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             self.report_untyped_conversion(&conversion.operand);
             return false;
         };
-        if let Some(target) = target.filter(|target| !target.is_scalar()) {
-            self.report_array_conversion(conversion.target.span, target);
+        if let Some(target) = target.clone().filter(|target| !target.is_scalar()) {
+            self.report_array_conversion(conversion.target.span, &target);
             return false;
         }
         let from = self.leaf_type(leaf, context, scope);
-        if matches!(leaf.kind, ExpressionKind::Array(_))
-            || from.is_some_and(|from| !from.is_scalar())
+        if matches!(
+            leaf.kind,
+            ExpressionKind::Array(_) | ExpressionKind::Tuple(_)
+        ) || from.clone().is_some_and(|from| !from.is_scalar())
         {
-            self.report_array_operand(conversion.keyword_span, from);
+            let tuple = matches!(leaf.kind, ExpressionKind::Tuple(_));
+            self.report_array_operand(conversion.keyword_span, from, tuple);
             return false;
         }
         let Some(from) = from else {
@@ -2756,13 +1846,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             self.report_bool_conversion(conversion.keyword_span);
             return false;
         }
-        let operand = self.check_expression(&conversion.operand, from, context, scope, output);
+        let operand =
+            self.check_expression(&conversion.operand, &from.clone(), context, scope, output);
         operand
             && target_matches
             && self.push_node(
                 output,
                 expression.span,
-                expected,
+                expected.clone(),
                 CoreNodeKind::Convert { from },
             )
     }
@@ -2771,7 +1862,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     // `check_conversion`, which nested conversions stack, stays small.
     #[cold]
     #[inline(never)]
-    fn report_conversion_mismatch(&mut self, span: Span, target: CoreType, expected: CoreType) {
+    fn report_conversion_mismatch(&mut self, span: Span, target: &CoreType, expected: &CoreType) {
         if self.begin_report(span) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -2814,9 +1905,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_array_operand(&mut self, span: Span, from: Option<CoreType>) {
+    fn report_array_operand(&mut self, span: Span, from: Option<CoreType>, tuple: bool) {
         if self.begin_report(span) {
-            let operand = from.map_or_else(|| String::from("an array"), |from| format!("`{from}`"));
+            let tuple = tuple || from.as_ref().is_some_and(|from| from.as_tuple().is_some());
+            let operand = from.map_or_else(
+                || String::from(if tuple { "a tuple" } else { "an array" }),
+                |from| format!("`{from}`"),
+            );
             self.diagnostics.push(
                 Diagnostic::error(
                     DiagnosticCode::UnsupportedOperator,
@@ -2824,7 +1919,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     span,
                 )
                 .with_label("`as` converts one `Int`, word, or residue value")
-                .with_note("convert each element, such as `x[0] as Int`"),
+                .with_note(if tuple {
+                    "convert each element, such as `p.0 as Int`"
+                } else {
+                    "convert each element, such as `x[0] as Int`"
+                }),
             );
         }
     }
@@ -2850,16 +1949,24 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_array_conversion(&mut self, span: Span, target: CoreType) {
+    fn report_array_conversion(&mut self, span: Span, target: &CoreType) {
         if self.begin_report(span) {
             self.diagnostics.push(
                 Diagnostic::error(
                     DiagnosticCode::UnsupportedOperator,
-                    format!("`as` does not convert to the array type `{target}`"),
+                    if target.as_tuple().is_some() {
+                        format!("`as` does not convert to the tuple type `{target}`")
+                    } else {
+                        format!("`as` does not convert to the array type `{target}`")
+                    },
                     span,
                 )
                 .with_label("`as` gives one `Int`, word, or residue value")
-                .with_note("convert each element, such as `x[0] as Int`"),
+                .with_note(if target.as_tuple().is_some() {
+                    "convert each element, such as `(p.0 as Int, p.1 as Int)`"
+                } else {
+                    "convert each element, such as `x[0] as Int`"
+                }),
             );
         }
     }
@@ -2876,7 +1983,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Call(call) => {
                 let (declarations, signatures) = scope.tables_for(call)?;
                 let entry = first_declaration(declarations, FunctionKind::Spec, &call.callee.text)?;
-                signatures.get(entry.source_index)?.as_ref()?.result_type
+                signatures
+                    .get(entry.source_index)?
+                    .as_ref()?
+                    .result_type
+                    .clone()
             }
             ExpressionKind::Conversion(conversion) => {
                 silent_type(self.source, &self.types, &conversion.target)
@@ -2885,7 +1996,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .leaf_type(&index.base, context, scope)?
                 .as_array()
                 .map(ArrayType::element),
-            ExpressionKind::Loop(r#loop) => silent_type(self.source, &self.types, &r#loop.ty),
+            ExpressionKind::Project(project) => self
+                .leaf_type(&project.base, context, scope)?
+                .as_tuple()?
+                .element(project.position)
+                .cloned(),
+            ExpressionKind::Loop(r#loop) => {
+                silent_pattern_type(self.source, &self.types, &r#loop.accumulator)
+            }
             ExpressionKind::Update(update) => {
                 self.leaf_type(first_typed_leaf(&update.base)?, context, scope)
             }
@@ -2898,7 +2016,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             | ExpressionKind::Parenthesized(_)
             | ExpressionKind::Array(_)
             | ExpressionKind::Fill(_)
-            | ExpressionKind::Conditional(_) => None,
+            | ExpressionKind::Conditional(_)
+            | ExpressionKind::Tuple(_) => None,
         }
     }
 
@@ -2909,7 +2028,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         array: &'ast ArrayExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -2951,7 +2070,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let mut elements_checked = true;
         for element in &array.elements {
             elements_checked &=
-                self.check_expression(element, array_type.element(), context, scope, output);
+                self.check_expression(element, &array_type.element(), context, scope, output);
             if self.halted {
                 return false;
             }
@@ -2969,7 +2088,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         self.push_node(
             output,
             expression.span,
-            expected,
+            expected.clone(),
             CoreNodeKind::Array { elements },
         )
     }
@@ -2984,7 +2103,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         index: &'ast IndexExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -2996,18 +2115,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         };
         let Some(array_type) = base_type.as_array() else {
-            if self.begin_report(index.base.span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::NotAnArray,
-                        format!("only an array can be indexed, but this has type `{base_type}`"),
-                        index.base.span,
-                    )
-                    .with_label(format!("`{base_type}` has no elements"))
-                    .with_note("an index selects one element of a value of type `T^n`"),
-                );
-            }
-            self.check_expression(&index.base, base_type, context, scope, output);
+            self.report_not_an_array(index.base.span, &base_type, false);
+            self.check_expression(&index.base, &base_type, context, scope, output);
             return false;
         };
         let literal = index.is_literal();
@@ -3017,7 +2126,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             None
         };
         let element = array_type.element();
-        let element_matches = element == expected;
+        let element_matches = element == *expected;
         if !element_matches && self.begin_report(expression.span) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -3029,441 +2138,61 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .with_note("Orange has no implicit conversions between types"),
             );
         }
-        let base = self.check_expression(&index.base, base_type, context, scope, output);
+        let base = self.check_expression(&index.base, &base_type, context, scope, output);
         if !literal {
             let in_range =
                 self.check_static_index(&index.index, array_type, context, scope, output);
             return in_range
                 && base
                 && element_matches
-                && self.push_node(output, expression.span, expected, CoreNodeKind::Select);
+                && self.push_node(
+                    output,
+                    expression.span,
+                    expected.clone(),
+                    CoreNodeKind::Select,
+                );
         }
         match position {
             Some(position) if base && element_matches => self.push_node(
                 output,
                 expression.span,
-                expected,
+                expected.clone(),
                 CoreNodeKind::Index { index: position },
             ),
             _ => false,
         }
     }
 
-    /// Checks an index expression, then proves it in range for `array`.
-    ///
-    /// The index has the type of its first typed leaf when that is a word
-    /// type, and is an `Int` otherwise. A word index ranges over its type,
-    /// narrowed by its operators, and is converted to its unsigned `Int`
-    /// value in Core; an `Int` index takes its range from its literals, loop
-    /// indices, and converted words.
-    fn check_static_index(
-        &mut self,
-        index: &'ast Expression,
-        array: ArrayType,
-        context: &mut BodyContext<'ast>,
-        scope: &ModuleScope<'_, 'ast>,
-        output: &mut BodyOutput<'_>,
-    ) -> bool {
-        let word = first_typed_leaf(index)
-            .and_then(|leaf| self.leaf_type(leaf, context, scope))
-            .filter(|ty| word_maximum(*ty).is_some());
-        let index_type = word.unwrap_or(CoreType::Int);
-        if !self.check_expression(index, index_type, context, scope, output) {
-            return false;
+    /// Reports an index or an update, when `update`, of a value of
+    /// `base_type`, which is not an array.
+    #[cold]
+    #[inline(never)]
+    fn report_not_an_array(&mut self, span: Span, base_type: &CoreType, update: bool) {
+        if !self.begin_report(span) {
+            return;
         }
-        let length = array.length();
-        let range = match word.and_then(word_maximum) {
-            Some(maximum) => {
-                let range = self.word_range(index, u128::from(maximum), context, scope);
-                Ok(self.exact_word_range(index.span, range))
-            }
-            None => self.static_range(index, context, scope),
-        };
-        let range = match range {
-            Ok(range) => range,
-            Err(span) => {
-                if self.begin_report(span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::NonStaticIndex,
-                            "an `Int` index may use only integer literals, loop indices, and \
-                             words converted with `as Int`",
-                            span,
-                        )
-                        .with_label("this `Int` has no bound")
-                        .with_note(STATIC_INDEX_NOTE),
-                    );
-                }
-                return false;
-            }
-        };
-        let in_range = range.as_ref().is_some_and(|(low, high)| {
-            !low.is_negative() && high.to_i64().is_some_and(|high| high < i64::from(length))
-        });
-        if !in_range && self.begin_report(index.span) {
-            let highest = length.saturating_sub(1);
-            let array = CoreType::Array(array);
-            let message = match &range {
-                Some((low, high)) => match (render_exact(low), render_exact(high)) {
-                    (Some(low_text), Some(_)) if low.compare(high) == Ordering::Equal => {
-                        format!("index {low_text} is out of range for `{array}`")
-                    }
-                    (Some(low_text), Some(high_text)) => format!(
-                        "this index runs from {low_text} through {high_text}, out of range \
-                         for `{array}`"
-                    ),
-                    _ => format!("this index is out of range for `{array}`"),
-                },
-                None => format!(
-                    "a bound of this index's range exceeds the {}-significant-bit limit of \
-                     `Int`",
-                    self.limits.integer_bits
-                ),
-            };
-            self.diagnostics.push(
-                Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, index.span)
-                    .with_label(format!("indices run from 0 through {highest}"))
-                    .with_note(
-                        "every value an index can take, over every loop index and word in it, \
-                         must select an element",
-                    ),
-            );
-        }
-        match word {
-            Some(from) if in_range => self.push_node(
-                output,
-                index.span,
-                CoreType::Int,
-                CoreNodeKind::Convert { from },
-            ),
-            _ => in_range,
-        }
-    }
-
-    /// Returns the least and greatest values of a well-typed `Int` index
-    /// built from literals, loop indices, words converted with `as Int`,
-    /// parentheses, negation, `+`, `-`, `*`, `/`, `%`, and conditionals,
-    /// computed exactly, or `None` when a bound's magnitude exceeds the
-    /// integer limit or storage cannot be reserved (which is reported as a
-    /// resource limit). Anything else is returned as the span of the first
-    /// such part.
-    ///
-    /// Parser-established expression height bounds this recursion.
-    fn static_range(
-        &mut self,
-        index: &Expression,
-        context: &BodyContext<'ast>,
-        scope: &ModuleScope<'_, 'ast>,
-    ) -> Result<Option<IndexRange>, Span> {
-        let range = match &index.kind {
-            ExpressionKind::Literal(literal) => self.range_literal(literal).and_then(|value| {
-                let copy = value.try_clone_with_reservation(self.reserve_range_limbs)?;
-                Some((value, copy))
-            }),
-            ExpressionKind::Parenthesized(inner) => {
-                return self.static_range(inner, context, scope);
-            }
-            ExpressionKind::Name(name) => match context.resolve(&name.text) {
-                NameResolution::LoopIndex(position) => {
-                    let scope = context.loop_scopes.get(position).ok_or(name.span)?;
-                    let last = scope.end.checked_sub(1).ok_or(name.span)?;
-                    ExactInteger::from_u64(u64::from(scope.start), self.reserve_range_limbs).zip(
-                        ExactInteger::from_u64(u64::from(last), self.reserve_range_limbs),
-                    )
-                }
-                _ => return Err(name.span),
-            },
-            ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => {
-                return Ok(self
-                    .static_range(&unary.operand, context, scope)?
-                    .map(|(low, high)| (high.negated(), low.negated())));
-            }
-            ExpressionKind::Binary(binary)
-                if matches!(
-                    binary.operator,
-                    BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
-                ) =>
-            {
-                let left = self.static_range(&binary.left, context, scope)?;
-                let right = self.static_range(&binary.right, context, scope)?;
-                let (Some(left), Some(right)) = (left, right) else {
-                    return Ok(None);
-                };
-                combine_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
-            }
-            ExpressionKind::Binary(binary) if binary.operator.is_division() => {
-                let left = self.static_range(&binary.left, context, scope)?;
-                let right = self.static_range(&binary.right, context, scope)?;
-                let (Some(left), Some(right)) = (left, right) else {
-                    return Ok(None);
-                };
-                divide_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
-            }
-            ExpressionKind::Conversion(conversion) => {
-                let from = first_typed_leaf(&conversion.operand)
-                    .and_then(|leaf| self.leaf_type(leaf, context, scope));
-                match from {
-                    Some(CoreType::Int) => {
-                        return self.static_range(&conversion.operand, context, scope);
-                    }
-                    // A residue converts to its least residue, 0 through m - 1.
-                    Some(CoreType::Mod(modulus)) => {
-                        let reserve = self.reserve_range_limbs;
-                        let high = modulus
-                            .to_exact(reserve)
-                            .zip(ExactInteger::from_u64(1, reserve));
-                        ExactInteger::from_u64(0, reserve)
-                            .zip(high.and_then(|(modulus, one)| modulus.subtract(&one, reserve)))
-                    }
-                    Some(from) => {
-                        let Some(maximum) = word_maximum(from) else {
-                            return Err(index.span);
-                        };
-                        let range = self.word_range(
-                            &conversion.operand,
-                            u128::from(maximum),
-                            context,
-                            scope,
-                        );
-                        return Ok(self.exact_word_range(index.span, range));
-                    }
-                    None => return Err(index.span),
-                }
-            }
-            ExpressionKind::Conditional(conditional) => {
-                let mut joined: Option<IndexRange> = None;
-                for value in conditional
-                    .arms
-                    .iter()
-                    .map(|arm| &arm.value)
-                    .chain(std::iter::once(&conditional.otherwise))
-                {
-                    let Some((low, high)) = self.static_range(value, context, scope)? else {
-                        return Ok(None);
-                    };
-                    joined = Some(match joined {
-                        None => (low, high),
-                        Some((least, greatest)) => (
-                            if low.compare(&least) == Ordering::Less {
-                                low
-                            } else {
-                                least
-                            },
-                            if high.compare(&greatest) == Ordering::Greater {
-                                high
-                            } else {
-                                greatest
-                            },
-                        ),
-                    });
-                }
-                joined
-            }
-            _ => return Err(index.span),
-        };
-        let Some(range) = range else {
-            self.resource_limit(index.span, "index range storage allocation failed");
-            return Ok(None);
-        };
-        let bits = self.limits.integer_bits;
-        Ok((range.0.magnitude_bits() <= bits && range.1.magnitude_bits() <= bits).then_some(range))
-    }
-
-    /// Decodes an index literal exactly, without events or diagnostics; the
-    /// literal was already checked as an `Int`. Returns `None` when storage
-    /// cannot be reserved.
-    fn range_literal(&self, literal: &IntegerLiteral) -> Option<ExactInteger> {
-        let spelling = self.source.slice(literal.magnitude_span)?;
-        let (radix, digits) = if let Some(digits) = spelling
-            .strip_prefix("0b")
-            .or_else(|| spelling.strip_prefix("0B"))
-        {
-            (2, digits)
-        } else if let Some(digits) = spelling
-            .strip_prefix("0x")
-            .or_else(|| spelling.strip_prefix("0X"))
-        {
-            (16, digits)
+        let tuple = base_type.as_tuple().is_some();
+        let message = if update {
+            format!("only an array can be updated, but this has type `{base_type}`")
         } else {
-            (10, spelling)
+            format!("only an array can be indexed, but this has type `{base_type}`")
         };
-        let mut magnitude = Magnitude::zero();
-        for character in digits.chars().filter(|character| *character != '_') {
-            let digit = character.to_digit(radix)?;
-            if !magnitude.multiply_add_with_reservation(radix, digit, self.reserve_magnitude_limb) {
-                return None;
-            }
-        }
-        Some(ExactInteger::new(literal.negative, magnitude))
-    }
-
-    /// Returns the least and greatest values of a well-typed word expression
-    /// whose type's greatest value is `maximum`. Every word lies in its type,
-    /// and an operator narrows that where its result provably does not wrap:
-    /// `&`, `|`, `^`, `~`, `/`, `%`, shifts by a literal amount, and `+`,
-    /// `-`, and `*` whose bounds stay within the type. Conditionals join
-    /// their branches, and a conversion from a narrower word keeps its range.
-    /// Everything else ranges over the whole type. No bound is ever more
-    /// than `maximum`.
-    ///
-    /// Parser-established expression height bounds this recursion.
-    fn word_range(
-        &self,
-        expression: &Expression,
-        maximum: u128,
-        context: &BodyContext<'ast>,
-        scope: &ModuleScope<'_, 'ast>,
-    ) -> WordRange {
-        let whole = (0, maximum);
-        match &expression.kind {
-            ExpressionKind::Literal(literal) if !literal.negative => self
-                .literal_value(literal)
-                .filter(|value| *value <= maximum)
-                .map_or(whole, |value| (value, value)),
-            ExpressionKind::Parenthesized(inner) => self.word_range(inner, maximum, context, scope),
-            ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Complement => {
-                let (low, high) = self.word_range(&unary.operand, maximum, context, scope);
-                (maximum.saturating_sub(high), maximum.saturating_sub(low))
-            }
-            ExpressionKind::Binary(binary) if binary.operator.is_shift_or_rotation() => {
-                let (low, high) = self.word_range(&binary.left, maximum, context, scope);
-                let amount = match &binary.right.kind {
-                    ExpressionKind::Literal(literal) if !literal.negative => self
-                        .literal_value(literal)
-                        .and_then(|amount| u32::try_from(amount).ok()),
-                    _ => None,
-                };
-                match (binary.operator, amount) {
-                    (BinaryOperator::ShiftRight, Some(amount)) => (
-                        low.checked_shr(amount).unwrap_or(0),
-                        high.checked_shr(amount).unwrap_or(0),
-                    ),
-                    (BinaryOperator::ShiftLeft, Some(amount)) => {
-                        match (low.checked_shl(amount), high.checked_shl(amount)) {
-                            (Some(least), Some(greatest))
-                                if greatest.checked_shr(amount) == Some(high)
-                                    && greatest <= maximum =>
-                            {
-                                (least, greatest)
-                            }
-                            _ => whole,
-                        }
-                    }
-                    _ => whole,
-                }
-            }
-            ExpressionKind::Binary(binary) => {
-                let (left_low, left_high) = self.word_range(&binary.left, maximum, context, scope);
-                let (right_low, right_high) =
-                    self.word_range(&binary.right, maximum, context, scope);
-                let within = |low: Option<u128>, high: Option<u128>| match (low, high) {
-                    (Some(low), Some(high)) if high <= maximum => (low, high),
-                    _ => whole,
-                };
-                match binary.operator {
-                    BinaryOperator::And => (0, left_high.min(right_high)),
-                    BinaryOperator::Or => {
-                        (left_low.max(right_low), all_ones(left_high.max(right_high)))
-                    }
-                    BinaryOperator::Xor => (0, all_ones(left_high.max(right_high))),
-                    BinaryOperator::Add => within(
-                        left_low.checked_add(right_low),
-                        left_high.checked_add(right_high),
-                    ),
-                    BinaryOperator::Subtract if left_low >= right_high => within(
-                        left_low.checked_sub(right_high),
-                        left_high.checked_sub(right_low),
-                    ),
-                    BinaryOperator::Multiply => within(
-                        left_low.checked_mul(right_low),
-                        left_high.checked_mul(right_high),
-                    ),
-                    // x / 0 = 0, and a quotient never exceeds its dividend.
-                    BinaryOperator::Divide => match (
-                        left_low.checked_div(right_high),
-                        left_high.checked_div(right_low),
-                    ) {
-                        (Some(low), Some(high)) => (low, high),
-                        _ => (0, left_high),
-                    },
-                    // x % 0 = x, and otherwise 0 <= x % d <= min(x, d - 1).
-                    BinaryOperator::Remainder if right_low > 0 && left_high < right_low => {
-                        (left_low, left_high)
-                    }
-                    BinaryOperator::Remainder if right_low > 0 => {
-                        (0, left_high.min(right_high.saturating_sub(1)))
-                    }
-                    BinaryOperator::Remainder => (0, left_high),
-                    _ => whole,
-                }
-            }
-            ExpressionKind::Conditional(conditional) => conditional
-                .arms
-                .iter()
-                .map(|arm| &arm.value)
-                .chain(std::iter::once(&conditional.otherwise))
-                .map(|value| self.word_range(value, maximum, context, scope))
-                .reduce(|(low, high), (least, greatest)| (low.min(least), high.max(greatest)))
-                .unwrap_or(whole),
-            ExpressionKind::Conversion(conversion) => {
-                let from = first_typed_leaf(&conversion.operand)
-                    .and_then(|leaf| self.leaf_type(leaf, context, scope));
-                // A residue converts to its least residue, 0 through m - 1.
-                let range = match from.and_then(CoreType::modulus) {
-                    Some(modulus) => modulus
-                        .to_u64()
-                        .and_then(|modulus| modulus.checked_sub(1))
-                        .map(|high| (0, u128::from(high))),
-                    None => from.and_then(word_maximum).map(|from| {
-                        self.word_range(&conversion.operand, u128::from(from), context, scope)
-                    }),
-                };
-                range.filter(|(_, high)| *high <= maximum).unwrap_or(whole)
-            }
-            _ => whole,
-        }
-    }
-
-    /// Converts a word range to exact integers, reporting a failed
-    /// reservation as a resource limit at `span` and giving `None`.
-    fn exact_word_range(&mut self, span: Span, (low, high): WordRange) -> Option<IndexRange> {
-        let exact = |value: u128| {
-            u64::try_from(value)
-                .ok()
-                .and_then(|value| ExactInteger::from_u64(value, self.reserve_range_limbs))
-        };
-        let range = exact(low).zip(exact(high));
-        if range.is_none() {
-            self.resource_limit(span, "index range storage allocation failed");
-        }
-        range
-    }
-
-    /// Decodes a literal's magnitude without allocating, or gives `None`
-    /// when it exceeds 128 bits.
-    fn literal_value(&self, literal: &IntegerLiteral) -> Option<u128> {
-        let spelling = self.source.slice(literal.magnitude_span)?;
-        let (radix, digits) = if let Some(digits) = spelling
-            .strip_prefix("0b")
-            .or_else(|| spelling.strip_prefix("0B"))
-        {
-            (2, digits)
-        } else if let Some(digits) = spelling
-            .strip_prefix("0x")
-            .or_else(|| spelling.strip_prefix("0X"))
-        {
-            (16, digits)
+        let label = if tuple {
+            format!("`{base_type}` is a tuple, not an array")
         } else {
-            (10, spelling)
+            format!("`{base_type}` has no elements")
         };
-        digits
-            .chars()
-            .filter(|character| *character != '_')
-            .try_fold(0_u128, |value, character| {
-                value
-                    .checked_mul(u128::from(radix))?
-                    .checked_add(u128::from(character.to_digit(radix)?))
-            })
+        let note = match (update, tuple) {
+            (false, false) => "an index selects one element of a value of type `T^n`",
+            (false, true) => "a tuple's element is selected by its position, such as `p.0`",
+            (true, false) => "`x with [i] = v` is the array `x` with one element replaced",
+            (true, true) => "a tuple with one element replaced is written anew, such as `(v, p.1)`",
+        };
+        self.diagnostics.push(
+            Diagnostic::error(DiagnosticCode::NotAnArray, message, span)
+                .with_label(label)
+                .with_note(note),
+        );
     }
 
     /// Checks `base with [index] = value` against `expected`, which must be
@@ -3472,7 +2201,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         update: &'ast UpdateExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -3480,20 +2209,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let base_type =
             first_typed_leaf(&update.base).and_then(|leaf| self.leaf_type(leaf, context, scope));
         if let Some(base_type) = base_type
-            && base_type.is_scalar()
+            && base_type.as_array().is_none()
         {
-            if self.begin_report(update.base.span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::NotAnArray,
-                        format!("only an array can be updated, but this has type `{base_type}`"),
-                        update.base.span,
-                    )
-                    .with_label(format!("`{base_type}` has no elements"))
-                    .with_note("`x with [i] = v` is the array `x` with one element replaced"),
-                );
-            }
-            self.check_expression(&update.base, base_type, context, scope, output);
+            self.report_not_an_array(update.base.span, &base_type, true);
+            self.check_expression(&update.base, &base_type, context, scope, output);
             return false;
         }
         let Some(array) = expected.as_array() else {
@@ -3518,10 +2237,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if self.halted {
             return false;
         }
-        let value = self.check_expression(&update.value, array.element(), context, scope, output);
+        let value = self.check_expression(&update.value, &array.element(), context, scope, output);
         base && index
             && value
-            && self.push_node(output, expression.span, expected, CoreNodeKind::Update)
+            && self.push_node(
+                output,
+                expression.span,
+                expected.clone(),
+                CoreNodeKind::Update,
+            )
     }
 
     /// Checks `[element; n]` against `expected`, which must be an array type
@@ -3530,7 +2254,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         fill: &'ast FillExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -3579,10 +2303,16 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             Some(_) => {}
         }
-        let element = self.check_expression(&fill.element, array.element(), context, scope, output);
+        let element =
+            self.check_expression(&fill.element, &array.element(), context, scope, output);
         element
             && length == Some(array.length())
-            && self.push_node(output, expression.span, expected, CoreNodeKind::Fill)
+            && self.push_node(
+                output,
+                expression.span,
+                expected.clone(),
+                CoreNodeKind::Fill,
+            )
     }
 
     /// Checks `for i in a..b with s: T = init { step }` against `expected`.
@@ -3595,7 +2325,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         r#loop: &'ast LoopExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -3604,44 +2334,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if self.halted {
             return false;
         }
-        let mut names_unique = true;
-        for (name, sibling) in [
-            (&r#loop.index, None),
-            (&r#loop.accumulator, Some(&r#loop.index)),
-        ] {
-            // One event for each loop name's uniqueness check.
-            if !self.event(name.span) {
-                return false;
-            }
-            let earlier = context.earlier_name(&name.text).or_else(|| {
-                sibling
-                    .filter(|sibling| sibling.text == name.text)
-                    .map(|sibling| (sibling.span, "the loop index is here"))
-            });
-            if let Some((earlier_span, earlier_label)) = earlier {
-                names_unique = false;
-                if self.begin_report(name.span) {
-                    let spelling = identifier_spelling_for_diagnostic(&name.text);
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::DuplicateBinding,
-                            format!("duplicate name `{spelling}`"),
-                            name.span,
-                        )
-                        .with_label("this name repeats a name in scope")
-                        .with_secondary_span(earlier_span, earlier_label)
-                        .with_note(
-                            "each parameter, binding, loop index, and accumulator in scope has \
-                             its own name; Orange has no shadowing",
-                        ),
-                    );
-                }
-            }
+        let mut names_unique = self.check_new_name(&r#loop.index, context, None, &[]);
+        let accumulator = r#loop.accumulator.names();
+        for (position, typed) in accumulator.iter().enumerate() {
+            let earlier_names = accumulator.get(..position).unwrap_or_default();
+            names_unique &=
+                self.check_new_name(&typed.name, context, Some(&r#loop.index), earlier_names);
         }
-        let Some(ty) = self.analyze_type(&r#loop.ty, "accumulator type") else {
+        if self.halted {
+            return false;
+        }
+        let Some(ty) = self.analyze_pattern_type(&r#loop.accumulator, "accumulator type") else {
             return false;
         };
-        let type_matches = ty == expected;
+        let type_matches = ty == *expected;
         if !type_matches && self.begin_report(expression.span) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -3665,7 +2371,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         }
         context.loops.push(None);
-        let init = self.check_expression(&r#loop.init, ty, context, scope, output);
+        let init = self.check_expression(&r#loop.init, &ty.clone(), context, scope, output);
         let Some((start, end)) = bounds else {
             return false;
         };
@@ -3680,7 +2386,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             id,
             index: &r#loop.index,
             accumulator: &r#loop.accumulator,
-            ty,
+            ty: ty.clone(),
             start,
             end,
         });
@@ -3692,7 +2398,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             BlockOwner::Step(id),
             &r#loop.step_bindings,
             &r#loop.step,
-            ty,
+            &ty.clone(),
             context,
             scope,
             &mut step_output,
@@ -3725,9 +2431,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let Some(index_name) = self.copy_core_name(&r#loop.index.text, r#loop.index.span) else {
             return false;
         };
-        let Some(accumulator_name) =
-            self.copy_core_name(&r#loop.accumulator.text, r#loop.accumulator.span)
-        else {
+        let Some(accumulator_name) = self.pattern_core_name(&r#loop.accumulator) else {
             return false;
         };
         let Some(entry) = usize::try_from(id)
@@ -3749,7 +2453,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             bindings,
             step: CoreExpression { nodes: step_nodes },
         });
-        self.push_node(output, expression.span, expected, CoreNodeKind::Fold(id))
+        self.push_node(
+            output,
+            expression.span,
+            expected.clone(),
+            CoreNodeKind::Fold(id),
+        )
     }
 
     /// Checks a loop's step or a conditional's branch: its `let` bindings in
@@ -3765,7 +2474,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         owner: BlockOwner,
         bindings: &'ast [Binding],
         value: &'ast Expression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -3789,7 +2498,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             match self.check_block_binding(binding, context, scope, output) {
                 Some((ty, checked)) => {
                     if let Some(block) = context.blocks.last_mut() {
-                        block.binding_types.push(ty);
+                        block.binding_types.push(ty.clone());
                     }
                     let Some(ty) = ty.filter(|_| checked && well_formed) else {
                         well_formed = false;
@@ -3803,15 +2512,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         well_formed = false;
                         break;
                     };
-                    let Some(name) = self.copy_core_name(&binding.name.text, binding.name.span)
-                    else {
+                    let Some(name) = self.pattern_core_name(&binding.pattern) else {
                         well_formed = false;
                         break;
                     };
                     records.push(CoreBinding {
                         span: binding.span,
                         name,
-                        name_span: binding.name.span,
+                        name_span: pattern_name_span(&binding.pattern),
                         ty,
                         end,
                     });
@@ -3847,42 +2555,78 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> Option<(Option<CoreType>, bool)> {
-        // One event for the binding-name uniqueness check.
-        if !self.event(binding.name.span) {
+        let names = binding.pattern.names();
+        let mut unique = true;
+        for (position, typed) in names.iter().enumerate() {
+            let earlier_names = names.get(..position).unwrap_or_default();
+            unique &= self.check_new_name(&typed.name, context, None, earlier_names);
+        }
+        if self.halted {
             return None;
         }
-        let earlier = context.earlier_name(&binding.name.text);
-        if let Some((earlier_span, earlier_label)) = earlier {
-            let span = binding.name.span;
-            if self.begin_report(span) {
-                let spelling = identifier_spelling_for_diagnostic(&binding.name.text);
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::DuplicateBinding,
-                        format!("duplicate name `{spelling}`"),
-                        span,
-                    )
-                    .with_label("this name repeats a name in scope")
-                    .with_secondary_span(earlier_span, earlier_label)
-                    .with_note(
-                        "each parameter, binding, loop index, and accumulator in scope has \
-                         its own name; Orange has no shadowing",
-                    ),
-                );
-            }
-        }
-        let ty = self.analyze_type(&binding.ty, "binding type");
+        let ty = self.analyze_pattern_type(&binding.pattern, "binding type");
         if self.halted {
             return None;
         }
         let Some(ty) = ty else {
             return Some((None, false));
         };
-        let checked = self.check_expression(&binding.value, ty, context, scope, output);
+        let checked = self.check_expression(&binding.value, &ty.clone(), context, scope, output);
         if self.halted {
             return None;
         }
-        Some((Some(ty), checked && earlier.is_none()))
+        Some((Some(ty), checked && unique))
+    }
+
+    /// Checks that a name a loop or a block introduces repeats no name in
+    /// scope, not `index` when it is a sibling loop index, and none of the
+    /// earlier names of its own pattern, and reports it if it does. One
+    /// event is counted for the check.
+    ///
+    /// Returns whether the name is new.
+    fn check_new_name(
+        &mut self,
+        name: &Identifier,
+        context: &BodyContext<'ast>,
+        index: Option<&Identifier>,
+        earlier_names: &[TypedName],
+    ) -> bool {
+        if !self.event(name.span) {
+            return false;
+        }
+        let earlier = context
+            .earlier_name(&name.text)
+            .or_else(|| {
+                index
+                    .filter(|index| index.text == name.text)
+                    .map(|index| (index.span, "the loop index is here"))
+            })
+            .or_else(|| {
+                earlier_names
+                    .iter()
+                    .find(|earlier| earlier.name.text == name.text)
+                    .map(|earlier| (earlier.name.span, "the first name is here"))
+            });
+        let Some((earlier_span, earlier_label)) = earlier else {
+            return true;
+        };
+        if self.begin_report(name.span) {
+            let spelling = identifier_spelling_for_diagnostic(&name.text);
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::DuplicateBinding,
+                    format!("duplicate name `{spelling}`"),
+                    name.span,
+                )
+                .with_label("this name repeats a name in scope")
+                .with_secondary_span(earlier_span, earlier_label)
+                .with_note(
+                    "each parameter, binding, loop index, and accumulator in scope has its \
+                     own name; Orange has no shadowing",
+                ),
+            );
+        }
+        false
     }
 
     /// Decodes a loop's bounds and checks that they form a nonempty range
@@ -3975,7 +2719,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_comparison_mismatch(&mut self, span: Span, expected: CoreType) {
+    fn report_comparison_mismatch(&mut self, span: Span, expected: &CoreType) {
         if self.begin_report(span) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -4020,6 +2764,31 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         );
     }
 
+    /// Reports a comparison whose first typed leaf is an array, a fill, or a
+    /// tuple written out, which no comparison is defined for.
+    #[cold]
+    #[inline(never)]
+    fn report_aggregate_comparison(&mut self, binary: &BinaryExpression, tuple: bool) {
+        if !self.begin_report(binary.operator_span) {
+            return;
+        }
+        let operator = binary.operator.as_str();
+        let (operand, note) = if tuple {
+            ("a tuple", "compare elements, such as `p.0 == q.0`")
+        } else {
+            ("an array", "compare elements, such as `x[0] == y[0]`")
+        };
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::UnsupportedOperator,
+                format!("`{operator}` is not defined for {operand}"),
+                binary.operator_span,
+            )
+            .with_label(format!("an operand is {operand}"))
+            .with_note(note),
+        );
+    }
+
     /// Checks a comparison `left op right` against `expected`, which must be
     /// `Bool`. Both operands have the type of the first typed leaf of the
     /// left operand, or else of the right operand, as a conversion operand
@@ -4028,13 +2797,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         binary: &'ast BinaryExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
         let operator = binary.operator.as_str();
-        let result_matches = expected == CoreType::Bool;
+        let result_matches = *expected == CoreType::Bool;
         if !result_matches {
             self.report_comparison_mismatch(expression.span, expected);
         }
@@ -4044,6 +2813,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         };
         let Some(operand) = self.leaf_type(leaf, context, scope) else {
+            if matches!(
+                leaf.kind,
+                ExpressionKind::Array(_) | ExpressionKind::Fill(_) | ExpressionKind::Tuple(_)
+            ) {
+                let tuple = matches!(leaf.kind, ExpressionKind::Tuple(_));
+                self.report_aggregate_comparison(binary, tuple);
+                return false;
+            }
             // The leaf's own check reports why it has no type.
             self.check_expression(leaf, expected, context, scope, output);
             return false;
@@ -4066,6 +2843,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                          compare least residues, such as `(x as Int) < (y as Int)`"
                     } else if operand.is_scalar() {
                         "`Bool` values are compared with `==` and `!=`; they have no order"
+                    } else if operand.as_tuple().is_some() {
+                        "compare elements, such as `p.0 == q.0`"
                     } else {
                         "compare elements, such as `x[0] == y[0]`"
                     }),
@@ -4073,11 +2852,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
             return false;
         }
-        let left = self.check_expression(&binary.left, operand, context, scope, output);
+        let left = self.check_expression(&binary.left, &operand.clone(), context, scope, output);
         if self.halted {
             return false;
         }
-        let right = self.check_expression(&binary.right, operand, context, scope, output);
+        let right = self.check_expression(&binary.right, &operand.clone(), context, scope, output);
         left && right
             && result_matches
             && self.push_node(
@@ -4106,7 +2885,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         conditional: &'ast ConditionalExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -4141,7 +2920,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             context.conditionals.push(None);
             last = Some(id);
             let condition = if position == 0 {
-                self.check_expression(&arm.condition, CoreType::Bool, context, scope, output)
+                self.check_expression(&arm.condition, &CoreType::Bool, context, scope, output)
             } else {
                 let mut branch = BodyOutput {
                     nodes: Vec::new(),
@@ -4149,7 +2928,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 };
                 let checked = self.check_expression(
                     &arm.condition,
-                    CoreType::Bool,
+                    &CoreType::Bool,
                     context,
                     scope,
                     &mut branch,
@@ -4221,7 +3000,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     fn record_conditionals(
         &mut self,
         expression: &Expression,
-        expected: CoreType,
+        expected: &CoreType,
         arms: Vec<(u32, Span, Vec<CoreNode>, Vec<CoreBinding>)>,
         (else_branches, else_bindings): (Vec<Vec<CoreNode>>, Vec<CoreBinding>),
         context: &mut BodyContext<'ast>,
@@ -4261,7 +3040,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 && !self.push_node(
                     &mut else_branch,
                     *next_span,
-                    expected,
+                    expected.clone(),
                     CoreNodeKind::Choose(*next),
                 )
             {
@@ -4297,7 +3076,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             };
             *entry = Some(CoreConditional {
                 span,
-                ty: expected,
+                ty: expected.clone(),
                 visible_locals,
                 scope: loop_scope,
                 then_bindings,
@@ -4318,7 +3097,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         self.push_node(
             output,
             expression.span,
-            expected,
+            expected.clone(),
             CoreNodeKind::Choose(*first),
         )
     }
@@ -4342,7 +3121,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     #[cold]
     #[inline(never)]
-    fn report_scalar_for_array(&mut self, span: Span, what: &str, expected: CoreType) {
+    fn report_scalar_for_array(&mut self, span: Span, what: &str, expected: &CoreType) {
         if !self.begin_report(span) {
             return;
         }
@@ -4353,7 +3132,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 span,
             )
             .with_label(format!("expected `{expected}`"))
-            .with_note("an array value is written `[e0, e1, ...]`, one element per index"),
+            .with_note(if expected.as_tuple().is_some() {
+                "a tuple value is written `(e0, e1, ...)`, one element per position"
+            } else {
+                "an array value is written `[e0, e1, ...]`, one element per index"
+            }),
         );
     }
 
@@ -4361,7 +3144,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         &mut self,
         expression: &'ast Expression,
         call: &'ast CallExpression,
-        expected: CoreType,
+        expected: &CoreType,
         context: &mut BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
@@ -4476,13 +3259,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             self.record_call_edge(context, signature, expression.span, output);
             return false;
         }
-        let Some(result_type) = signature.result_type else {
+        let Some(result_type) = signature.result_type.clone() else {
             return false;
         };
         // A result-type mismatch is reported at the call before its arguments
         // are checked; arguments are checked against the callee's parameter
         // types, so their errors are independent and are still reported.
-        let result_matches = result_type == expected;
+        let result_matches = result_type == *expected;
         if !result_matches && self.begin_report(expression.span) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -4498,11 +3281,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let mut arguments_checked = true;
         for (argument, parameter_type) in call.arguments.iter().zip(&signature.parameters) {
-            let Some(parameter_type) = *parameter_type else {
+            let Some(parameter_type) = parameter_type.clone() else {
                 return false;
             };
             arguments_checked &=
-                self.check_expression(argument, parameter_type, context, scope, output);
+                self.check_expression(argument, &parameter_type, context, scope, output);
             if self.halted {
                 return false;
             }
@@ -4523,7 +3306,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         self.push_node(
             output,
             expression.span,
-            expected,
+            expected.clone(),
             CoreNodeKind::Call {
                 function: signature.id,
                 arguments,
@@ -4590,17 +3373,17 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         true
     }
 
-    fn unary_is_defined(&mut self, unary: &UnaryExpression, expected: CoreType) -> bool {
+    fn unary_is_defined(&mut self, unary: &UnaryExpression, expected: &CoreType) -> bool {
         let defined = match unary.operator {
-            UnaryOperator::Negate => expected == CoreType::Int || expected.modulus().is_some(),
+            UnaryOperator::Negate => *expected == CoreType::Int || expected.modulus().is_some(),
             UnaryOperator::Complement => expected.word_bits().is_some(),
-            UnaryOperator::Not => expected == CoreType::Bool,
+            UnaryOperator::Not => *expected == CoreType::Bool,
         };
         if !defined && self.begin_report(unary.operator_span) {
             let operator = unary.operator.as_str();
             let note = match (unary.operator, expected.word_bits()) {
-                _ if !expected.is_scalar() => String::from(ARRAY_OPERATOR_NOTE),
-                _ if expected == CoreType::Bool => String::from(BOOL_OPERATOR_NOTE),
+                _ if !expected.is_scalar() => String::from(aggregate_operator_note(expected)),
+                _ if *expected == CoreType::Bool => String::from(BOOL_OPERATOR_NOTE),
                 (UnaryOperator::Negate, Some(bits)) => {
                     format!("write `0 - x` for negation modulo 2^{bits}")
                 }
@@ -4625,7 +3408,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         defined
     }
 
-    fn binary_is_defined(&mut self, binary: &BinaryExpression, expected: CoreType) -> bool {
+    fn binary_is_defined(&mut self, binary: &BinaryExpression, expected: &CoreType) -> bool {
         let defined = match binary.operator {
             BinaryOperator::Add
             | BinaryOperator::Subtract
@@ -4639,7 +3422,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             | BinaryOperator::ShiftRight
             | BinaryOperator::RotateLeft
             | BinaryOperator::RotateRight => expected.word_bits().is_some(),
-            BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => expected == CoreType::Bool,
+            BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => *expected == CoreType::Bool,
             // A comparison is checked by `check_comparison`.
             BinaryOperator::Equal
             | BinaryOperator::NotEqual
@@ -4658,8 +3441,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 )
                 .with_label(format!("`{expected}` is required here"))
                 .with_note(if !expected.is_scalar() {
-                    ARRAY_OPERATOR_NOTE
-                } else if expected == CoreType::Bool {
+                    aggregate_operator_note(expected)
+                } else if *expected == CoreType::Bool {
                     BOOL_OPERATOR_NOTE
                 } else if binary.operator == BinaryOperator::Remainder {
                     "a residue is already reduced; `%` applies to `Int` and word values, such \
@@ -4677,7 +3460,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         defined
     }
 
-    fn check_shift_amount(&mut self, binary: &BinaryExpression, expected: CoreType) -> Option<u32> {
+    fn check_shift_amount(
+        &mut self,
+        binary: &BinaryExpression,
+        expected: &CoreType,
+    ) -> Option<u32> {
         let bits = expected.word_bits()?;
         let amount = &binary.right;
         let decoded = match &amount.kind {
@@ -4728,168 +3515,6 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         output.nodes.push(CoreNode { span, ty, kind });
         true
-    }
-
-    /// Reports every call cycle among typed specifications.
-    ///
-    /// A depth-first search in function-ID order examines each function's call
-    /// edges in checking order; each edge that returns to a function still on
-    /// the search path closes a cycle and is reported once at that call. The
-    /// search consumes no semantic events: it visits each function and each
-    /// already counted call exactly once.
-    fn check_call_graph(&mut self, signatures: &[Option<Signature>], edges: &[CallEdge]) {
-        let function_count = signatures.iter().flatten().count();
-        let mut names = Vec::new();
-        let mut offsets = Vec::new();
-        let mut targets: Vec<(CoreFunctionId, usize)> = Vec::new();
-        let mut state = Vec::new();
-        let mut path = Vec::new();
-        if names.try_reserve_exact(function_count).is_err()
-            || offsets
-                .try_reserve_exact(function_count.saturating_add(1))
-                .is_err()
-            || targets.try_reserve_exact(edges.len()).is_err()
-            || state.try_reserve_exact(function_count).is_err()
-            || path.try_reserve_exact(function_count).is_err()
-        {
-            self.resource_limit(self.ast.module.span, "call graph storage allocation failed");
-            return;
-        }
-        names.extend(
-            self.ast
-                .module
-                .functions
-                .iter()
-                .zip(signatures)
-                .filter(|(_, signature)| signature.is_some())
-                .map(|(function, _)| &function.name),
-        );
-        // Group edges by caller; within one caller, edges keep the order in
-        // which their calls finished checking.
-        targets.extend(
-            edges
-                .iter()
-                .enumerate()
-                .map(|(index, edge)| (edge.caller, index)),
-        );
-        targets.sort_unstable();
-        offsets.push(0_usize);
-        let mut cursor = 0_usize;
-        for index in 0..function_count {
-            let global = index.checked_add(self.id_offset);
-            while targets
-                .get(cursor)
-                .is_some_and(|(caller, _)| usize::try_from(caller.index()).ok() == global)
-            {
-                cursor = cursor.saturating_add(1);
-            }
-            offsets.push(cursor);
-        }
-        state.resize(function_count, VisitState::Unvisited);
-
-        for root in 0..function_count {
-            if state.get(root) != Some(&VisitState::Unvisited) {
-                continue;
-            }
-            path.push((root, offsets.get(root).copied().unwrap_or(0)));
-            if let Some(slot) = state.get_mut(root) {
-                *slot = VisitState::OnPath;
-            }
-            while let Some((node, next_edge)) = path.last().copied() {
-                let end = offsets.get(node.saturating_add(1)).copied().unwrap_or(0);
-                if next_edge >= end {
-                    path.pop();
-                    if let Some(slot) = state.get_mut(node) {
-                        *slot = VisitState::Done;
-                    }
-                    continue;
-                }
-                if let Some(top) = path.last_mut() {
-                    top.1 = next_edge.saturating_add(1);
-                }
-                let Some(edge) = targets
-                    .get(next_edge)
-                    .and_then(|(_, index)| edges.get(*index))
-                else {
-                    self.resource_limit(self.ast.module.span, "call graph index is inconsistent");
-                    return;
-                };
-                let Some(target) = usize::try_from(edge.callee.index())
-                    .ok()
-                    .and_then(|index| index.checked_sub(self.id_offset))
-                else {
-                    self.resource_limit(edge.span, "call graph index is inconsistent");
-                    return;
-                };
-                match state.get(target) {
-                    Some(VisitState::Unvisited) => {
-                        if let Some(slot) = state.get_mut(target) {
-                            *slot = VisitState::OnPath;
-                        }
-                        path.push((target, offsets.get(target).copied().unwrap_or(0)));
-                    }
-                    Some(VisitState::OnPath) => {
-                        self.report_cycle(edge, target, &path, &names);
-                        if self.halted {
-                            return;
-                        }
-                    }
-                    Some(VisitState::Done) => {}
-                    None => {
-                        self.resource_limit(edge.span, "call graph index is inconsistent");
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    fn report_cycle(
-        &mut self,
-        edge: &CallEdge,
-        target: usize,
-        path: &[(usize, usize)],
-        names: &[&Identifier],
-    ) {
-        if !self.begin_report(edge.span) {
-            return;
-        }
-        let start = path
-            .iter()
-            .position(|(node, _)| *node == target)
-            .unwrap_or(0);
-        let cycle = path.get(start..).unwrap_or_default();
-        let name_of = |index: usize| {
-            names.get(index).map_or_else(String::new, |name| {
-                identifier_spelling_for_diagnostic(&name.text).to_string()
-            })
-        };
-        let target_name = name_of(target);
-        let message = if cycle.len() <= 1 {
-            format!("`{target_name}` calls itself")
-        } else {
-            let mut route = String::new();
-            for (position, (node, _)) in cycle.iter().enumerate() {
-                if position >= MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC {
-                    route.push_str(" -> ...");
-                    break;
-                }
-                if position != 0 {
-                    route.push_str(" -> ");
-                }
-                route.push('`');
-                route.push_str(&name_of(*node));
-                route.push('`');
-            }
-            format!("call cycle {route} -> `{target_name}`")
-        };
-        self.diagnostics.push(
-            Diagnostic::error(DiagnosticCode::CallCycle, message, edge.span)
-                .with_label("this call closes the cycle")
-                .with_note(
-                    "a `spec` may not depend on itself; recursion is not part of Orange 2026",
-                ),
-        );
     }
 
     fn construct_core(
@@ -5000,321 +3625,6 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             functions,
             entry: 0,
         })
-    }
-
-    fn analyze_type(&mut self, syntax: &TypeSyntax, role: &str) -> Option<CoreType> {
-        // The identifier and optional width are distinct parsed-type
-        // components; a modulus was evaluated with the module's types.
-        if !self.event(syntax.name.span) {
-            return None;
-        }
-        if let Some(width_span) = syntax.width_span
-            && !self.event(width_span)
-        {
-            return None;
-        }
-        if let Some(length_span) = syntax.length_span
-            && !self.event(length_span)
-        {
-            return None;
-        }
-        match classify_type(self.source, &self.types, syntax) {
-            TypeClass::Resolved(ty) => Some(ty),
-            TypeClass::Unresolved => None,
-            TypeClass::Unindexed => {
-                self.resource_limit(syntax.span, "semantic modulus table is inconsistent");
-                None
-            }
-            TypeClass::MissingModulus => {
-                let span = syntax.name.span;
-                if self.begin_report(span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::InvalidModulus,
-                            "`Mod` requires a modulus",
-                            span,
-                        )
-                        .with_label("missing modulus")
-                        .with_note(MODULUS_NOTE),
-                    );
-                }
-                None
-            }
-            TypeClass::ArrayOfArrays(length_span) => {
-                if self.begin_report(syntax.span) {
-                    let name = identifier_spelling_for_diagnostic(&syntax.name.text);
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedType,
-                            format!("`{name}` is an array type, so this is an array of arrays"),
-                            syntax.span,
-                        )
-                        .with_label("arrays of arrays are not part of Orange 2026")
-                        .with_secondary_span(
-                            length_span,
-                            "this length would make each element an array",
-                        )
-                        .with_note("an array's elements are `Int`, `Bool`, words, or residues"),
-                    );
-                }
-                None
-            }
-            TypeClass::UnsupportedArrayLength(length_span) => {
-                self.report_unsupported_array_length(length_span);
-                None
-            }
-            TypeClass::UnsupportedWordWidth(width_span) => {
-                if self.begin_report(width_span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedWordWidth,
-                            "`Word` width must be exactly 8, 16, 32, or 64",
-                            width_span,
-                        )
-                        .with_label("unsupported word width")
-                        .with_note("word widths do not coerce, truncate, or wrap"),
-                    );
-                }
-                None
-            }
-            TypeClass::MissingWordWidth => {
-                let span = syntax.name.span;
-                if self.begin_report(span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedWordWidth,
-                            "`Word` requires an exact width of 8, 16, 32, or 64",
-                            span,
-                        )
-                        .with_label("missing word width")
-                        .with_note("write the width in decimal, as in `Word[32]`"),
-                    );
-                }
-                None
-            }
-            TypeClass::Unsupported => {
-                if self.begin_report(syntax.span) {
-                    let declared_later = syntax.width_span.is_none()
-                        && self
-                            .ast
-                            .module
-                            .types
-                            .iter()
-                            .any(|declaration| declaration.name.text == syntax.name.text);
-                    let name = identifier_spelling_for_diagnostic(&syntax.name.text);
-                    let note = if declared_later {
-                        format!(
-                            "`{name}` is declared by a later `type` declaration; a `type` \
-                             declaration uses only the names declared before it"
-                        )
-                    } else {
-                        String::from(
-                            "types are resolved contextually and never inferred by spelling \
-                             similarity",
-                        )
-                    };
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedType,
-                            format!("unsupported {role} `{name}`"),
-                            syntax.span,
-                        )
-                        .with_label(format!("the admitted types are {ADMITTED_TYPES}"))
-                        .with_note(note),
-                    );
-                }
-                None
-            }
-        }
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn report_unsupported_array_length(&mut self, span: Span) {
-        if self.begin_report(span) {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    DiagnosticCode::UnsupportedArrayLength,
-                    format!(
-                        "an array length must be a decimal integer from 1 through \
-                         {MAX_ARRAY_LENGTH}"
-                    ),
-                    span,
-                )
-                .with_label("unsupported array length")
-                .with_note(
-                    "write the length in decimal without leading zeros, as in `Word[32]^16`",
-                ),
-            );
-        }
-    }
-
-    fn analyze_literal(
-        &mut self,
-        expected: CoreType,
-        literal: &IntegerLiteral,
-    ) -> Option<CoreValue> {
-        // One literal event precedes shared exact-magnitude decoding. Word sign
-        // and range classification follows only after the magnitude is valid.
-        if !self.event(literal.span) {
-            return None;
-        }
-        let magnitude = self.parse_magnitude(literal, self.limits.integer_bits)?;
-        if let Some(modulus) = expected.modulus() {
-            return self.residue_literal(expected, modulus, literal, magnitude);
-        }
-        let Some(maximum) = word_maximum(expected) else {
-            return Some(CoreValue::Int(ExactInteger::new(
-                literal.negative,
-                magnitude,
-            )));
-        };
-        if literal.negative {
-            if self.begin_report(literal.span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::NegativeWordLiteral,
-                        format!("`{expected}` literals cannot be negative"),
-                        literal.span,
-                    )
-                    .with_label(format!(
-                        "negative value is outside the range 0 through {maximum}"
-                    ))
-                    .with_note("fixed-width words do not wrap or coerce negative integers"),
-                );
-            }
-            return None;
-        }
-        let value = magnitude.to_u64().filter(|value| *value <= maximum);
-        if let Some(value) = value.and_then(|value| CoreValue::word_from_u64(expected, value)) {
-            Some(value)
-        } else {
-            if self.begin_report(literal.magnitude_span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::WordLiteralOutOfRange,
-                        format!("literal is outside the range of `{expected}`"),
-                        literal.magnitude_span,
-                    )
-                    .with_label(format!("expected a value from 0 through {maximum}"))
-                    .with_note("fixed-width words do not truncate or wrap out-of-range integers"),
-                );
-            }
-            None
-        }
-    }
-    /// Gives the residue of a literal of `Mod[m]`, whose magnitude n is less
-    /// than m: n itself, or m - n when the literal is negative.
-    fn residue_literal(
-        &mut self,
-        expected: CoreType,
-        modulus: Modulus,
-        literal: &IntegerLiteral,
-        magnitude: Magnitude,
-    ) -> Option<CoreValue> {
-        let reserve = self.reserve_range_limbs;
-        let value = ExactInteger::new(false, magnitude);
-        if !modulus.contains(&value) {
-            if self.begin_report(literal.magnitude_span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::WordLiteralOutOfRange,
-                        format!("literal is outside the range of `{expected}`"),
-                        literal.magnitude_span,
-                    )
-                    .with_label("the literal's magnitude is not less than the modulus")
-                    .with_note(
-                        "a literal of `Mod[m]` has a magnitude n less than m, and `-n` stands \
-                         for m - n; residues do not reduce out-of-range literals",
-                    ),
-                );
-            }
-            return None;
-        }
-        let residue = if literal.negative && !value.is_zero() {
-            modulus
-                .to_exact(reserve)
-                .and_then(|modulus| modulus.subtract(&value, reserve))
-        } else {
-            Some(value)
-        };
-        let residue = residue.and_then(|residue| Residue::new(modulus, residue));
-        if residue.is_none() {
-            self.resource_limit(literal.span, "exact integer storage allocation failed");
-        }
-        residue.map(CoreValue::Mod)
-    }
-
-    fn parse_magnitude(&mut self, literal: &IntegerLiteral, bit_limit: usize) -> Option<Magnitude> {
-        let Some(spelling) = self.source.slice(literal.magnitude_span) else {
-            self.resource_limit(
-                literal.span,
-                "integer literal span does not belong to the analyzed source",
-            );
-            return None;
-        };
-        // Prefix inspection is one event whether the decimal default or an
-        // explicit binary/hexadecimal prefix is selected.
-        if !self.event(literal.magnitude_span) {
-            return None;
-        }
-        let (radix, digits) = if let Some(digits) = spelling
-            .strip_prefix("0b")
-            .or_else(|| spelling.strip_prefix("0B"))
-        {
-            (2, digits)
-        } else if let Some(digits) = spelling
-            .strip_prefix("0x")
-            .or_else(|| spelling.strip_prefix("0X"))
-        {
-            (16, digits)
-        } else {
-            (10, spelling)
-        };
-
-        let mut magnitude = Magnitude::zero();
-        let mut significant = false;
-        for character in digits.chars() {
-            if character == '_' {
-                continue;
-            }
-            let Some(digit) = character.to_digit(radix) else {
-                self.resource_limit(
-                    literal.magnitude_span,
-                    "semantic analysis received a malformed integer AST",
-                );
-                return None;
-            };
-            significant |= digit != 0;
-            if significant && !self.event(literal.magnitude_span) {
-                return None;
-            }
-            if !magnitude.multiply_add_with_reservation(radix, digit, self.reserve_magnitude_limb) {
-                self.resource_limit(
-                    literal.magnitude_span,
-                    "exact integer magnitude storage allocation failed",
-                );
-                return None;
-            }
-            if magnitude.bit_len() > bit_limit {
-                if self.begin_report(literal.magnitude_span) {
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::IntegerMagnitudeLimit,
-                            format!(
-                                "integer magnitude exceeds the {}-significant-bit limit",
-                                self.limits.integer_bits
-                            ),
-                            literal.magnitude_span,
-                        )
-                        .with_label("exact integer is too large for this semantic fragment")
-                        .with_note("the literal is rejected rather than truncated or approximated"),
-                    );
-                }
-                return None;
-            }
-        }
-        Some(magnitude)
     }
 
     fn copy_core_name(&mut self, source: &str, span: Span) -> Option<String> {
@@ -5481,6 +3791,21 @@ mod tests {
         fn analyze_with(&self, limits: Limits) -> AnalysisResult {
             Analyzer::new(self.source(), &self.ast, limits).run()
         }
+    }
+
+    /// The typed name of a binding or an accumulator that is one name.
+    fn named_of(pattern: &Pattern) -> &TypedName {
+        let Pattern::Name(typed) = pattern else {
+            panic!("expected one name");
+        };
+        typed
+    }
+
+    fn named_mut(pattern: &mut Pattern) -> &mut TypedName {
+        let Pattern::Name(typed) = pattern else {
+            panic!("expected one name");
+        };
+        typed
     }
 
     fn typed_body_mut(ast: &mut SyntaxTree) -> &mut TypedBody {
@@ -7574,11 +5899,13 @@ mod tests {
                         format!("compare {} on {operand}", operator.as_str())
                     }
                     CoreNodeKind::Choose(id) => format!("choose #{id}"),
+                    CoreNodeKind::Tuple { elements } => format!("tuple of {elements}"),
+                    CoreNodeKind::Project { index } => format!("element {index}"),
                 };
                 (
                     operation,
                     fixture.source().slice(node.span).unwrap(),
-                    node.ty,
+                    node.ty.clone(),
                 )
             })
             .collect()
@@ -7644,7 +5971,7 @@ mod tests {
                     function.id.index(),
                     function.name.as_str(),
                     function.parameters.clone(),
-                    function.result_type
+                    function.result_type.clone()
                 ))
                 .collect::<Vec<_>>(),
             [
@@ -7661,28 +5988,28 @@ mod tests {
         let word = CoreType::Word32;
         let owned = |rows: &[(&str, &'static str, CoreType)]| {
             rows.iter()
-                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
                 .collect::<Vec<_>>()
         };
         assert_eq!(
             core_nodes(&fixture, &core.functions[0]),
             owned(&[
-                ("parameter 0", "x", word),
-                ("parameter 1", "y", word),
-                ("prefix ~", "~y", word),
-                ("infix ^", "x ^ ~y", word),
-                ("shift <<< 7", "(x ^ ~y) <<< 7", word),
+                ("parameter 0", "x", word.clone()),
+                ("parameter 1", "y", word.clone()),
+                ("prefix ~", "~y", word.clone()),
+                ("infix ^", "x ^ ~y", word.clone()),
+                ("shift <<< 7", "(x ^ ~y) <<< 7", word.clone()),
             ])
         );
         assert_eq!(
             core_nodes(&fixture, &core.functions[1]),
             owned(&[
-                ("literal 0x00000001", "1", word),
-                ("literal 0x000000ff", "0xff", word),
-                ("call #0 with 2", "mix(1, 0xff)", word),
-                ("literal 0x00000002", "2", word),
-                ("literal 0x00000003", "3", word),
-                ("infix *", "2 * 3", word),
+                ("literal 0x00000001", "1", word.clone()),
+                ("literal 0x000000ff", "0xff", word.clone()),
+                ("call #0 with 2", "mix(1, 0xff)", word.clone()),
+                ("literal 0x00000002", "2", word.clone()),
+                ("literal 0x00000003", "3", word.clone()),
+                ("infix *", "2 * 3", word.clone()),
                 ("infix +", "mix(1, 0xff) + 2 * 3", word),
             ])
         );
@@ -8117,10 +6444,10 @@ mod tests {
             let bits = ty.word_bits().unwrap();
             for operator in ["<<", ">>", "<<<", ">>>"] {
                 members.push_str(&format!(
-                    "  spec ok{bits}_{}(x: {ty}) -> {ty} {{ (x {operator} 0) ^ (x {operator} {}) }}\n",
-                    members.len(),
-                    bits - 1
-                ));
+                "  spec ok{bits}_{}(x: {ty}) -> {ty} {{ (x {operator} 0) ^ (x {operator} {}) }}\n",
+                members.len(),
+                bits - 1
+            ));
             }
         }
         let (fixture, core) = accepted(&members);
@@ -8159,7 +6486,7 @@ mod tests {
             let highest = TYPES
                 .into_iter()
                 .find(|candidate| candidate.to_string() == ty)
-                .and_then(CoreType::word_bits)
+                .and_then(|candidate| candidate.word_bits())
                 .unwrap()
                 - 1;
             expected.push((
@@ -8409,7 +6736,7 @@ mod tests {
         ));
         let owned = |rows: &[(&str, &'static str, CoreType)]| {
             rows.iter()
-                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
                 .collect::<Vec<_>>()
         };
         let load = &core.functions[0];
@@ -8489,13 +6816,13 @@ mod tests {
             .iter()
             .map(|function| {
                 let root = function.body.root().unwrap();
-                let CoreNodeKind::Convert { from } = root.kind else {
+                let CoreNodeKind::Convert { from } = &root.kind else {
                     return None;
                 };
                 Some((
                     function.name.as_str(),
-                    from,
-                    root.ty,
+                    from.clone(),
+                    root.ty.clone(),
                     fixture.source().slice(root.span).unwrap(),
                 ))
             })
@@ -8846,9 +7173,22 @@ mod tests {
         }
         let mutations: [&dyn Fn(&mut SyntaxTree); 8] = [
             &|ast| typed_body_mut(ast).bindings[0].span = foreign_binding.span,
-            &|ast| typed_body_mut(ast).bindings[0].name.span = foreign_binding.name.span,
-            &|ast| typed_body_mut(ast).bindings[0].ty.span = foreign_binding.ty.span,
-            &|ast| typed_body_mut(ast).bindings[0].ty.name.span = foreign_binding.ty.name.span,
+            &|ast| {
+                named_mut(&mut typed_body_mut(ast).bindings[0].pattern)
+                    .name
+                    .span = named_of(&foreign_binding.pattern).name.span;
+            },
+            &|ast| {
+                named_mut(&mut typed_body_mut(ast).bindings[0].pattern)
+                    .ty
+                    .span = named_of(&foreign_binding.pattern).ty.span;
+            },
+            &|ast| {
+                named_mut(&mut typed_body_mut(ast).bindings[0].pattern)
+                    .ty
+                    .name
+                    .span = named_of(&foreign_binding.pattern).ty.name.span;
+            },
             &|ast| typed_body_mut(ast).bindings[0].value.span = foreign_binding.value.span,
             &|ast| conversion_mut(ast).keyword_span = foreign_conversion.keyword_span,
             &|ast| conversion_mut(ast).target.span = foreign_conversion.target.span,
@@ -8888,7 +7228,7 @@ mod tests {
     }
 
     fn array_of(element: CoreType, length: u32) -> CoreType {
-        CoreType::Array(ArrayType::new(element, length).unwrap())
+        CoreType::Array(ArrayType::new(&element, length).unwrap())
     }
 
     #[test]
@@ -8902,17 +7242,17 @@ mod tests {
         let words = array_of(CoreType::Word32, 4);
         let owned = |rows: &[(&str, &'static str, CoreType)]| {
             rows.iter()
-                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
                 .collect::<Vec<_>>()
         };
         assert_eq!(
             core.functions
                 .iter()
-                .map(|function| (function.parameters.clone(), function.result_type))
+                .map(|function| (function.parameters.clone(), function.result_type.clone()))
                 .collect::<Vec<_>>(),
             [
-                (vec![words], words),
-                (vec![words], CoreType::Word32),
+                (vec![words.clone()], words.clone()),
+                (vec![words.clone()], CoreType::Word32),
                 (vec![], array_of(CoreType::Int, 2)),
                 (vec![], CoreType::Int),
             ]
@@ -8920,22 +7260,22 @@ mod tests {
         assert_eq!(
             core_nodes(&fixture, &core.functions[0]),
             owned(&[
-                ("parameter 0", "x", words),
+                ("parameter 0", "x", words.clone()),
                 ("index 1", "x[1]", CoreType::Word32),
-                ("parameter 0", "x", words),
+                ("parameter 0", "x", words.clone()),
                 ("index 2", "x[2]", CoreType::Word32),
-                ("parameter 0", "x", words),
+                ("parameter 0", "x", words.clone()),
                 ("index 3", "x[3]", CoreType::Word32),
-                ("parameter 0", "x", words),
+                ("parameter 0", "x", words.clone()),
                 ("index 0", "x[0]", CoreType::Word32),
-                ("array of 4", "[x[1], x[2], x[3], x[0]]", words),
+                ("array of 4", "[x[1], x[2], x[3], x[0]]", words.clone()),
             ])
         );
         assert_eq!(
             core_nodes(&fixture, &core.functions[1]),
             owned(&[
-                ("parameter 0", "x", words),
-                ("call #0 with 1", "rot(x)", words),
+                ("parameter 0", "x", words.clone()),
+                ("call #0 with 1", "rot(x)", words.clone()),
                 ("index 3", "rot(x)[3]", CoreType::Word32),
                 ("parameter 0", "x", words),
                 ("index 0", "x[0x0]", CoreType::Word32),
@@ -9475,7 +7815,7 @@ mod tests {
         ));
         let owned = |rows: &[(&str, &'static str, CoreType)]| {
             rows.iter()
-                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
                 .collect::<Vec<_>>()
         };
         let ints = array_of(CoreType::Int, 4);
@@ -9524,14 +7864,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 (String::from("literal 0x00"), CoreType::Word8),
-                (String::from("fill"), half),
-                (String::from("loop #0"), half),
+                (String::from("fill"), half.clone()),
+                (String::from("loop #0"), half.clone()),
             ]
         );
         assert_eq!(
             expression_nodes(&fixture, odd.loops[0].step()),
             owned(&[
-                ("accumulator of loop #0", "s", half),
+                ("accumulator of loop #0", "s", half.clone()),
                 ("index of loop #0", "i", CoreType::Int),
                 ("parameter 0", "x", bytes),
                 ("literal 2", "2", CoreType::Int),
@@ -10038,8 +8378,14 @@ mod tests {
             Box::new(|ast| loop_mut(ast).index.span = foreign.index.span),
             Box::new(|ast| loop_mut(ast).start_span = foreign.start_span),
             Box::new(|ast| loop_mut(ast).end_span = foreign.end_span),
-            Box::new(|ast| loop_mut(ast).accumulator.span = foreign.accumulator.span),
-            Box::new(|ast| loop_mut(ast).ty.length_span = foreign.ty.length_span),
+            Box::new(|ast| {
+                named_mut(&mut loop_mut(ast).accumulator).name.span =
+                    named_of(&foreign.accumulator).name.span;
+            }),
+            Box::new(|ast| {
+                named_mut(&mut loop_mut(ast).accumulator).ty.length_span =
+                    named_of(&foreign.accumulator).ty.length_span;
+            }),
             Box::new(|ast| update_mut(ast).keyword_span = foreign_update.keyword_span),
             Box::new(|ast| update_mut(ast).index.span = foreign_update.index.span),
             Box::new(|ast| fill_mut(ast).length_span = foreign_fill.length_span),
@@ -10100,7 +8446,7 @@ mod tests {
         ));
         let owned = |rows: &[(&str, &'static str, CoreType)]| {
             rows.iter()
-                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
                 .collect::<Vec<_>>()
         };
         let whole = "if c { x } else if x < 0 { 0 - x } else { 7 }";
@@ -11547,46 +9893,46 @@ mod tests {
         assert_eq!(
             core.functions
                 .iter()
-                .map(|function| (function.parameters.clone(), function.result_type))
+                .map(|function| (function.parameters.clone(), function.result_type.clone()))
                 .collect::<Vec<_>>(),
             [
-                (vec![f, CoreType::Word8], f),
-                (vec![f], CoreType::Int),
-                (vec![f], CoreType::Bool),
+                (vec![f.clone(), CoreType::Word8], f.clone()),
+                (vec![f.clone()], CoreType::Int),
+                (vec![f.clone()], CoreType::Bool),
             ]
         );
         let owned = |rows: &[(&str, &'static str, CoreType)]| {
             rows.iter()
-                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
                 .collect::<Vec<_>>()
         };
         assert_eq!(
             core_nodes(&fixture, &core.functions[0]),
             owned(&[
-                ("literal 6", "-1", f),
-                ("parameter 0", "x", f),
+                ("literal 6", "-1", f.clone()),
+                ("parameter 0", "x", f.clone()),
                 ("parameter 1", "w", CoreType::Word8),
-                ("convert from Word[8]", "w as F", f),
-                ("infix *", "x * (w as F)", f),
-                ("infix +", "-1 + x * (w as F)", f),
-                ("parameter 0", "x", f),
-                ("prefix -", "-x", f),
-                ("infix -", "-1 + x * (w as F) - -x", f),
+                ("convert from Word[8]", "w as F", f.clone()),
+                ("infix *", "x * (w as F)", f.clone()),
+                ("infix +", "-1 + x * (w as F)", f.clone()),
+                ("parameter 0", "x", f.clone()),
+                ("prefix -", "-x", f.clone()),
+                ("infix -", "-1 + x * (w as F) - -x", f.clone()),
             ])
         );
         assert_eq!(
             core_nodes(&fixture, &core.functions[1]),
             owned(&[
-                ("parameter 0", "x", f),
-                ("literal 3", "3", f),
-                ("infix /", "x / 3", f),
+                ("parameter 0", "x", f.clone()),
+                ("literal 3", "3", f.clone()),
+                ("infix /", "x / 3", f.clone()),
                 ("convert from Mod[7]", "(x / 3) as Int", CoreType::Int),
             ])
         );
         assert_eq!(
             core_nodes(&fixture, &core.functions[2]),
             owned(&[
-                ("parameter 0", "x", f),
+                ("parameter 0", "x", f.clone()),
                 ("literal 6", "6", f),
                 ("compare != on Mod[7]", "x != 6", CoreType::Bool),
             ])
@@ -11606,7 +9952,7 @@ mod tests {
              x == -3 }\n",
         ));
         let seven = residue_type(7);
-        assert_eq!(core.functions[0].parameters, [seven]);
+        assert_eq!(core.functions[0].parameters, std::slice::from_ref(&seven));
         assert_eq!(core.functions[1].result_type, seven);
         assert_eq!(core.functions[2].result_type, residue_type(2));
         assert_eq!(
@@ -11620,7 +9966,7 @@ mod tests {
                 "Mod[0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff]",
             ]
         );
-        let Some(CoreType::Mod(wide)) = core.functions[3].parameters.first().copied() else {
+        let Some(CoreType::Mod(wide)) = core.functions[3].parameters.first().cloned() else {
             panic!("expected a residue type");
         };
         assert_eq!(wide.bits(), MAX_MODULUS_BITS);
@@ -11780,7 +10126,7 @@ mod tests {
         let f = residue_type(7);
         assert_eq!(
             core.functions[0].parameters,
-            [array_of(f, 2), CoreType::Int]
+            [array_of(f.clone(), 2), CoreType::Int]
         );
         assert_eq!(core.functions[0].result_type, f);
 
@@ -12187,7 +10533,7 @@ mod tests {
         let mut foreign = second.ast.clone();
         let declaration = foreign.module.types[0].clone();
         let target = conversion_mut(&mut foreign).target.clone();
-        let accumulator = loop_mut(&mut foreign).ty.clone();
+        let accumulator = named_of(&loop_mut(&mut foreign).accumulator).ty.clone();
         let modulus_span = |ty: &TypeSyntax| ty.modulus().unwrap().span;
         type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
         let mutations: Vec<Mutation<'_>> = vec![
@@ -12202,7 +10548,12 @@ mod tests {
                 conversion_mut(ast).target.modulus.as_mut().unwrap().span = modulus_span(&target);
             }),
             Box::new(|ast| {
-                loop_mut(ast).ty.modulus.as_mut().unwrap().span = modulus_span(&accumulator);
+                named_mut(&mut loop_mut(ast).accumulator)
+                    .ty
+                    .modulus
+                    .as_mut()
+                    .unwrap()
+                    .span = modulus_span(&accumulator);
             }),
         ];
         assert!(analyze(first.source(), &first.ast).core.is_some());
@@ -12260,7 +10611,7 @@ mod tests {
         ));
         let owned = |rows: &[(&str, &'static str, CoreType)]| {
             rows.iter()
-                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, *ty))
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
                 .collect::<Vec<_>>()
         };
         let word = CoreType::Word32;
@@ -12271,20 +10622,30 @@ mod tests {
         assert_eq!(
             block_bindings(&fixture, mix.loops[0].bindings()),
             [
-                (String::from("t"), "let t: Word[32] = s ^ b;", word, 3),
-                (String::from("u"), "let u: Word[32] = t >>> 7;", word, 5),
+                (
+                    String::from("t"),
+                    "let t: Word[32] = s ^ b;",
+                    word.clone(),
+                    3
+                ),
+                (
+                    String::from("u"),
+                    "let u: Word[32] = t >>> 7;",
+                    word.clone(),
+                    5
+                ),
             ]
         );
         assert_eq!(
             expression_nodes(&fixture, mix.loops[0].step()),
             owned(&[
-                ("accumulator of loop #0", "s", word),
-                ("parameter 1", "b", word),
-                ("infix ^", "s ^ b", word),
-                ("binding 0 of loop #0", "t", word),
-                ("shift >>> 7", "t >>> 7", word),
-                ("binding 1 of loop #0", "u", word),
-                ("binding 0 of loop #0", "t", word),
+                ("accumulator of loop #0", "s", word.clone()),
+                ("parameter 1", "b", word.clone()),
+                ("infix ^", "s ^ b", word.clone()),
+                ("binding 0 of loop #0", "t", word.clone()),
+                ("shift >>> 7", "t >>> 7", word.clone()),
+                ("binding 1 of loop #0", "u", word.clone()),
+                ("binding 0 of loop #0", "t", word.clone()),
                 ("infix +", "u + t", word),
             ])
         );
@@ -12600,7 +10961,7 @@ mod tests {
             assert_eq!(
                 nodes
                     .last()
-                    .map(|(operation, _, ty)| (operation.as_str(), *ty)),
+                    .map(|(operation, _, ty)| (operation.as_str(), ty.clone())),
                 Some(("convert from Word[8]", CoreType::Word32))
             );
         }
@@ -12691,8 +11052,16 @@ mod tests {
         type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
         let mutations: Vec<Mutation<'_>> = vec![
             Box::new(|ast| loop_of(ast).step_bindings[0].span = foreign_step.span),
-            Box::new(|ast| loop_of(ast).step_bindings[0].name.span = foreign_step.name.span),
-            Box::new(|ast| loop_of(ast).step_bindings[0].ty.span = foreign_step.ty.span),
+            Box::new(|ast| {
+                named_mut(&mut loop_of(ast).step_bindings[0].pattern)
+                    .name
+                    .span = named_of(&foreign_step.pattern).name.span;
+            }),
+            Box::new(|ast| {
+                named_mut(&mut loop_of(ast).step_bindings[0].pattern)
+                    .ty
+                    .span = named_of(&foreign_step.pattern).ty.span;
+            }),
             Box::new(|ast| loop_of(ast).step_bindings[0].value.span = foreign_step.value.span),
             Box::new(|ast| {
                 conditional_of(loop_of(ast)).arms[0].bindings[0].span = foreign_then.span;
@@ -12702,12 +11071,533 @@ mod tests {
                     foreign_then.value.span;
             }),
             Box::new(|ast| {
-                conditional_of(loop_of(ast)).otherwise_bindings[0].name.span =
-                    foreign_else.name.span;
+                named_mut(&mut conditional_of(loop_of(ast)).otherwise_bindings[0].pattern)
+                    .name
+                    .span = named_of(&foreign_else.pattern).name.span;
             }),
             Box::new(|ast| {
-                conditional_of(loop_of(ast)).otherwise_bindings[0].ty.span = foreign_else.ty.span;
+                named_mut(&mut conditional_of(loop_of(ast)).otherwise_bindings[0].pattern)
+                    .ty
+                    .span = named_of(&foreign_else.pattern).ty.span;
             }),
+        ];
+        assert!(analyze(first.source(), &first.ast).core.is_some());
+        for (case_index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.ast.clone();
+            mutate(&mut ast);
+            let result = analyze(first.source(), &ast);
+            assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+            assert!(result.core.is_none(), "case {case_index}");
+            assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+            assert_eq!(
+                result.diagnostics[0].code(),
+                DiagnosticCode::InvalidSemanticInput,
+                "case {case_index}"
+            );
+        }
+    }
+
+    fn tuple_of(elements: &[CoreType]) -> CoreType {
+        CoreType::Tuple(TupleType::new(elements).unwrap())
+    }
+
+    #[test]
+    fn tuples_build_typed_core_with_elements_in_order() {
+        let (fixture, core) = accepted(concat!(
+            "  spec pair(a: Int, b: Word[8]) -> (Int, Word[8]) { (a + 1, b) }\n",
+            "  spec first(p: (Int, Word[8])) -> Int { p.0 }\n",
+            "  spec call() -> Word[8] { pair(1, 2).1 }\n",
+            "  spec split(p: (Int, Word[8])) -> Int { let (x: Int, y: Word[8]) = p; x + (y as Int) }\n",
+            "  spec fold() -> Int {\n",
+            "    let (s: Int, t: Int) = for i in 0..3 with (a: Int, b: Int) = (0, 1) {\n",
+            "      let (c: Int, d: Int) = (b, a); (c, c + d)\n",
+            "    };\n",
+            "    t\n",
+            "  }\n",
+        ));
+        let owned = |rows: &[(&str, &'static str, CoreType)]| {
+            rows.iter()
+                .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
+                .collect::<Vec<_>>()
+        };
+        let pair = tuple_of(&[CoreType::Int, CoreType::Word8]);
+        let ints = tuple_of(&[CoreType::Int, CoreType::Int]);
+
+        // A tuple is its elements, left to right, and then one tuple node.
+        assert_eq!(core.functions[0].result_type, pair);
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[0]),
+            owned(&[
+                ("parameter 0", "a", CoreType::Int),
+                ("literal 1", "1", CoreType::Int),
+                ("infix +", "a + 1", CoreType::Int),
+                ("parameter 1", "b", CoreType::Word8),
+                ("tuple of 2", "(a + 1, b)", pair.clone()),
+            ])
+        );
+        // `.k` is its base and then one element node, of a name or a call.
+        assert_eq!(core.functions[1].parameters[0], pair);
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[1]),
+            owned(&[
+                ("parameter 0", "p", pair.clone()),
+                ("element 0", "p.0", CoreType::Int),
+            ])
+        );
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[2]),
+            owned(&[
+                ("literal 1", "1", CoreType::Int),
+                ("literal 0x02", "2", CoreType::Word8),
+                ("call #0 with 2", "pair(1, 2)", pair.clone()),
+                ("element 1", "pair(1, 2).1", CoreType::Word8),
+            ])
+        );
+        // A tuple pattern is one binding of the tuple's type, named by its
+        // names; each name reads the binding and selects its element.
+        let split = &core.functions[3];
+        assert_eq!(split.locals.len(), 1);
+        assert_eq!(split.locals[0].name(), "(x, y)");
+        assert_eq!(
+            fixture.source().slice(split.locals[0].name_span()),
+            Some("(x: Int, y: Word[8])")
+        );
+        assert_eq!(split.locals[0].ty(), pair);
+        assert_eq!(
+            core_nodes(&fixture, split),
+            owned(&[
+                ("local 0", "x", pair.clone()),
+                ("element 0", "x", CoreType::Int),
+                ("local 0", "y", pair.clone()),
+                ("element 1", "y", CoreType::Word8),
+                ("convert from Word[8]", "y as Int", CoreType::Int),
+                ("infix +", "x + (y as Int)", CoreType::Int),
+            ])
+        );
+        // Accumulators named by a pattern are one accumulator of the tuple's
+        // type, and a step's pattern is one step binding.
+        let fold = &core.functions[4];
+        assert_eq!(fold.loops[0].ty(), ints);
+        assert_eq!(fold.loops[0].accumulator_name(), "(a, b)");
+        assert_eq!(
+            block_bindings(&fixture, fold.loops[0].bindings()),
+            [(
+                String::from("(c, d)"),
+                "let (c: Int, d: Int) = (b, a);",
+                ints.clone(),
+                5
+            )]
+        );
+        assert_eq!(
+            expression_nodes(&fixture, fold.loops[0].step()),
+            owned(&[
+                ("accumulator of loop #0", "b", ints.clone()),
+                ("element 1", "b", CoreType::Int),
+                ("accumulator of loop #0", "a", ints.clone()),
+                ("element 0", "a", CoreType::Int),
+                ("tuple of 2", "(b, a)", ints.clone()),
+                ("binding 0 of loop #0", "c", ints.clone()),
+                ("element 0", "c", CoreType::Int),
+                ("binding 0 of loop #0", "c", ints.clone()),
+                ("element 0", "c", CoreType::Int),
+                ("binding 0 of loop #0", "d", ints.clone()),
+                ("element 1", "d", CoreType::Int),
+                ("infix +", "c + d", CoreType::Int),
+                ("tuple of 2", "(c, c + d)", ints.clone()),
+            ])
+        );
+        assert_eq!(fold.locals[0].name(), "(s, t)");
+        assert_eq!(
+            core_nodes(&fixture, fold)
+                .into_iter()
+                .rev()
+                .take(2)
+                .collect::<Vec<_>>(),
+            owned(&[("element 1", "t", CoreType::Int), ("local 0", "t", ints),])
+        );
+    }
+
+    #[test]
+    fn tuple_pattern_names_are_unique_and_scoped_like_bindings() {
+        let (fixture, result) = rejected(concat!(
+            "  spec within() -> Int { let (a: Int, a: Int) = (1, 2); a }\n",
+            "  spec parameter(a: Int) -> Int { let (a: Int, b: Int) = (1, 2); b }\n",
+            "  spec binding() -> Int { let b: Int = 1; let (a: Int, b: Int) = (1, 2); a }\n",
+            "  spec index() -> (Int, Int) { for i in 0..2 with (i: Int, s: Int) = (0, 0) { (s, s) } }\n",
+            "  spec step() -> (Int, Int) {\n",
+            "    for i in 0..2 with (a: Int, s: Int) = (0, 0) { let (t: Int, a: Int) = (s, s); (t, a) }\n",
+            "  }\n",
+            "  spec itself() -> Int { let (a: Int, b: Int) = (1, a); b }\n",
+            "  spec after() -> Int { let r: (Int, Int) = for i in 0..2 with (a: Int, b: Int) = (0, 1) { (b, a) }; a }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "a",
+                    String::from("duplicate binding `a`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "a",
+                    String::from("duplicate binding `a`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "b",
+                    String::from("duplicate binding `b`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "i",
+                    String::from("duplicate name `i`")
+                ),
+                (
+                    DiagnosticCode::DuplicateBinding,
+                    "a",
+                    String::from("duplicate name `a`")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "a",
+                    String::from("`a` is used before it is bound")
+                ),
+                (
+                    DiagnosticCode::UnknownParameter,
+                    "a",
+                    String::from("`a` is not a parameter or binding of `after`")
+                ),
+            ]
+        );
+        // A duplicate within one pattern cites the pattern's first name.
+        let within = &result.diagnostics[0];
+        assert_eq!(within.label(), "this binding repeats an earlier name");
+        assert_eq!(
+            within
+                .secondary_spans()
+                .iter()
+                .map(|secondary| (
+                    fixture.source().slice(secondary.span()).unwrap(),
+                    secondary.label()
+                ))
+                .collect::<Vec<_>>(),
+            [("a", "the first name is here")]
+        );
+    }
+
+    #[test]
+    fn tuple_types_and_selections_are_checked_once_in_order() {
+        let (fixture, result) = rejected(concat!(
+            "  type Pair = (Int, Int);\n",
+            "  spec nested(p: (Pair, Int)) -> Int { 0 }\n",
+            "  spec array(p: Pair^2) -> Int { 0 }\n",
+            "  spec count() -> Pair { (1, 2, 3) }\n",
+            "  spec scalar() -> Int { (1, 2) }\n",
+            "  spec element() -> Pair { (true, false) }\n",
+            "  spec whole(p: Pair) -> Int { p }\n",
+            "  spec not_tuple(x: Int^2) -> Int { x.0 }\n",
+            "  spec position(p: Pair) -> Int { p.2 }\n",
+            "  spec far(p: Pair) -> Int { p.4294967296 }\n",
+            "  spec selected(p: Pair) -> Bool { p.0 }\n",
+            "  spec indexed(p: Pair) -> Int { p[0] }\n",
+            "  spec updated(p: Pair) -> Pair { p with [0] = 1 }\n",
+            "  spec equal(p: Pair, q: Pair) -> Bool { p == q }\n",
+            "  spec added(p: Pair, q: Pair) -> Pair { p + q }\n",
+            "  spec negated(p: Pair) -> Pair { -p }\n",
+            "  spec converted(p: Pair) -> Int { p as Int }\n",
+            "  spec converted_to(x: Int) -> Pair { x as Pair }\n",
+            "  spec pattern() -> Int { let (a: Int, b: Bool) = (1, 2); a }\n",
+            "  spec not_a_value() -> Int { let (a: Int, b: Int) = 5; a }\n",
+            "  spec nested_name() -> Int { let (a: (Int, Int), b: Int) = (1, 2); b }\n",
+            "  spec compared(p: Pair) -> Bool { (1, 2) == p }\n",
+            "  spec compared_arrays(x: Int^2) -> Bool { [1, 2] != x }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Pair",
+                    String::from("`Pair` is a tuple type, so this is a tuple of tuples")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Pair^2",
+                    String::from("`Pair` is a tuple type, so this is an array of tuples")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "(1, 2, 3)",
+                    String::from("this tuple has 3 elements, but `(Int, Int)` has 2")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "(1, 2)",
+                    String::from("a tuple cannot have type `Int`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "true",
+                    String::from("`true` has type `Bool`, but `Int` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "false",
+                    String::from("`false` has type `Bool`, but `Int` is required here")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "p",
+                    String::from("`p` has type `(Int, Int)`, but `Int` is required here")
+                ),
+                (
+                    DiagnosticCode::NotATuple,
+                    "x",
+                    String::from(
+                        "only a tuple has elements selected by position, but this has type \
+                         `Int^2`"
+                    )
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "2",
+                    String::from("`(Int, Int)` has no element 2")
+                ),
+                (
+                    DiagnosticCode::IndexOutOfRange,
+                    "4294967296",
+                    String::from("`(Int, Int)` has no element 4294967296")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "p.0",
+                    String::from("this element has type `Int`, but `Bool` is required here")
+                ),
+                (
+                    DiagnosticCode::NotAnArray,
+                    "p",
+                    String::from("only an array can be indexed, but this has type `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::NotAnArray,
+                    "p",
+                    String::from("only an array can be updated, but this has type `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "==",
+                    String::from("`==` is not defined for `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "+",
+                    String::from("`+` is not defined for `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "-",
+                    String::from("prefix `-` is not defined for `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "as",
+                    String::from("`as` is not defined for `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "Pair",
+                    String::from("`as` does not convert to the tuple type `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "2",
+                    String::from("an integer literal cannot have type `Bool`")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    "5",
+                    String::from("an integer literal cannot have type `(Int, Int)`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "(Int, Int)",
+                    String::from("`(Int, Int)` is a tuple type, so this is a tuple of tuples")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "==",
+                    String::from("`==` is not defined for a tuple")
+                ),
+                (
+                    DiagnosticCode::UnsupportedOperator,
+                    "!=",
+                    String::from("`!=` is not defined for an array")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn unresolved_pattern_types_are_reported_once_without_cascades() {
+        // As for a binding of one name, a pattern whose element type does
+        // not resolve is reported once at each such type; its value is not
+        // checked, and none of its names is reported where it is used.
+        let (fixture, result) = rejected(concat!(
+            "  spec body() -> Int { let (a: Wide, b: Int, c: Narrow) = (missing, 2, 3); a + b + c }\n",
+            "  spec step() -> Int {\n",
+            "    let r: Int = for i in 0..2 with (s: Int, t: Wide) = (0, missing) { (s + t, t) };\n",
+            "    r\n",
+            "  }\n",
+            "  spec branch(c: Bool) -> Int { if c { let (x: Wide, y: Int) = (1, 2); x } else { 0 } }\n",
+        ));
+        assert_eq!(
+            reported(&fixture, &result),
+            [
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Wide",
+                    String::from("unsupported binding type `Wide`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Narrow",
+                    String::from("unsupported binding type `Narrow`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Wide",
+                    String::from("unsupported accumulator type `Wide`")
+                ),
+                (
+                    DiagnosticCode::UnsupportedType,
+                    "Wide",
+                    String::from("unsupported binding type `Wide`")
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn tuple_events_and_core_nodes_follow_the_normative_accounting() {
+        // `let t: Int = x; t` with `x` an `Int` parameter takes 9 analysis
+        // events and 8 Core nodes (17 events in all). The pattern
+        // `(t: Int, u: Int)` with the value `(x, x)` adds 5 events: the
+        // pattern (1), the second name's uniqueness check and type name
+        // (2), the tuple (1), and its second element (1). Its type is still
+        // one type node; the tuple and its second element add 2 nodes, and
+        // the read of `t` is the binding's read and an element node, 1
+        // more: 14 events and 11 nodes, 25 events in all.
+        let pattern = module("  spec f(x: Int) -> Int { let (t: Int, u: Int) = (x, x); t }\n");
+        // `g() -> Int { 1 }` and `f() -> Int { g() }` take 10 analysis
+        // events and 7 nodes. The tuple result type `(Int, Int)` adds its
+        // event and its second type name (2), the tuple (1) and the literal
+        // `2` (3), and `.1` one event: 17 events. The tuple, the literal and
+        // the element node add 3 nodes: 10, and 27 events in all.
+        let projection = module(concat!(
+            "  spec g() -> (Int, Int) { (1, 2) }\n",
+            "  spec f() -> Int { g().1 }\n",
+        ));
+        for (fixture, events, nodes) in [(&pattern, 25, 11), (&projection, 27, 10)] {
+            let exact = fixture.analyze_with(Limits {
+                events,
+                nodes,
+                ..Limits::DEFAULT
+            });
+            assert_eq!(exact.diagnostics, []);
+            assert!(exact.core.is_some());
+            for (limits, label) in [
+                (
+                    Limits {
+                        events: events - 1,
+                        nodes,
+                        ..Limits::DEFAULT
+                    },
+                    "semantic event budget exhausted",
+                ),
+                (
+                    Limits {
+                        events,
+                        nodes: nodes - 1,
+                        ..Limits::DEFAULT
+                    },
+                    "typed Core node budget exhausted",
+                ),
+            ] {
+                let first = fixture.analyze_with(limits);
+                assert_eq!(first, fixture.analyze_with(limits));
+                assert!(first.core.is_none());
+                assert_eq!(first.diagnostics.len(), 1);
+                assert_eq!(
+                    first.diagnostics[0].code(),
+                    DiagnosticCode::SemanticResourceLimit
+                );
+                assert_eq!(first.diagnostics[0].label(), label);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_foreign_spans_in_tuples() {
+        let text = "edition 2026; module values { \
+                    spec value(p: (Int, Int)) -> (Int, Int) { \
+                    let (a: Int, b: Int) = (p.0, p.1); \
+                    for i in 0..2 with (s: Int, t: Int) = (a, b) { (t, s + i) } } }\n";
+        let first = Fixture::new(text);
+        let second = Fixture::new(text);
+        fn tuple_pattern(pattern: &mut Pattern) -> &mut crate::parser::TuplePattern {
+            let Pattern::Tuple(tuple) = pattern else {
+                unreachable!();
+            };
+            tuple
+        }
+        fn binding_of(ast: &mut SyntaxTree) -> &mut Binding {
+            &mut typed_body_mut(ast).bindings[0]
+        }
+        fn tuple_of_value(expression: &mut Expression) -> &mut TupleExpression {
+            let ExpressionKind::Tuple(tuple) = &mut expression.kind else {
+                unreachable!();
+            };
+            tuple
+        }
+        fn project_of(expression: &mut Expression) -> &mut ProjectExpression {
+            let ExpressionKind::Project(project) = &mut expression.kind else {
+                unreachable!();
+            };
+            project
+        }
+        let mut foreign_ast = second.ast.clone();
+        let foreign_binding = binding_of(&mut foreign_ast).clone();
+        let foreign_body = typed_body_mut(&mut foreign_ast).clone();
+        let mut foreign_value = foreign_binding.value.clone();
+        let foreign_element = tuple_of_value(&mut foreign_value).elements[1].clone();
+        let mut foreign_element_copy = foreign_element.clone();
+        let foreign_position = project_of(&mut foreign_element_copy).position_span;
+        let mut foreign_pattern = foreign_binding.pattern.clone();
+        let foreign_names = tuple_pattern(&mut foreign_pattern).clone();
+        let foreign_expression = foreign_body.expression.clone();
+        type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
+        let mutations: Vec<Mutation<'_>> = vec![
+            Box::new(|ast| tuple_pattern(&mut binding_of(ast).pattern).span = foreign_names.span),
+            Box::new(|ast| {
+                tuple_pattern(&mut binding_of(ast).pattern).elements[1]
+                    .name
+                    .span = foreign_names.elements[1].name.span;
+            }),
+            Box::new(|ast| {
+                tuple_pattern(&mut binding_of(ast).pattern).elements[1]
+                    .ty
+                    .span = foreign_names.elements[1].ty.span;
+            }),
+            Box::new(|ast| binding_of(ast).value.span = foreign_binding.value.span),
+            Box::new(|ast| {
+                tuple_of_value(&mut binding_of(ast).value).elements[1].span = foreign_element.span;
+            }),
+            Box::new(|ast| {
+                project_of(&mut tuple_of_value(&mut binding_of(ast).value).elements[1])
+                    .position_span = foreign_position;
+            }),
+            Box::new(|ast| typed_body_mut(ast).expression.span = foreign_expression.span),
         ];
         assert!(analyze(first.source(), &first.ast).core.is_some());
         for (case_index, mutate) in mutations.iter().enumerate() {

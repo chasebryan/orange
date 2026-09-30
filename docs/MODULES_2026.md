@@ -27,8 +27,10 @@ meaning. It accepts no D-004 candidate.
 > with `type` declarations, which follow a module's `use` declarations. A
 > residue type crosses a module boundary by its value, and a type name stays in
 > its module. [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013,
-> lets a loop's step and each branch begin with `let` bindings. Every source
-> this document accepts keeps its meaning under both.
+> lets a loop's step and each branch begin with `let` bindings, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> whose types cross a module boundary by their elements. Every source this
+> document accepts keeps its meaning under all three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

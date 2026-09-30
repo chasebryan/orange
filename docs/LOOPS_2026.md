@@ -32,8 +32,11 @@ meaning. It accepts no D-004 candidate.
 > proposed under OEP-0012, lets a loop accumulate a residue, as a Poly1305
 > accumulator does, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
 > OEP-0013, lets a step begin with `let` bindings, evaluated afresh at every
-> step, as the working variables of a SHA-256 round are. Every source this
-> document accepts keeps its meaning under all five.
+> step, as the working variables of a SHA-256 round are, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets a loop
+> carry several accumulators through a tuple pattern, as
+> `with (a: Int, b: Int) = (0, 1)`. Every source this document accepts keeps
+> its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

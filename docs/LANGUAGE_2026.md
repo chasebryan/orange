@@ -76,6 +76,12 @@ unresolved.
 > branch of a conditional may begin with `let` bindings, as a function's body
 > does. It adds no token and no reserved word: `let` is recognized by
 > position, as in S3c.
+>
+> The S3k slice proposed in [`TUPLES_2026.md`](TUPLES_2026.md) under
+> OEP-0014, also in review, builds on S3j with tuples: a tuple type `(T, U)`,
+> a tuple `(a, b)`, the selection `.k` of element k, and tuple patterns that
+> name each element where a binding or a loop's accumulator is declared. It
+> adds no token and no reserved word.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

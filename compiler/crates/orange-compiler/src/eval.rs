@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use crate::core::{
     ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
-    CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger,
-    MAX_EXACT_INTEGER_BITS, Modulus, Residue,
+    CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreTuple, CoreType, CoreValue,
+    ExactInteger, MAX_EXACT_INTEGER_BITS, Modulus, Residue, TupleType,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, UnaryOperator};
@@ -67,7 +67,7 @@ impl EvaluatedFunction {
 
     /// Returns the statically checked result type.
     #[must_use]
-    pub const fn result_type(&self) -> CoreType {
+    pub fn result_type(&self) -> CoreType {
         self.value.ty()
     }
 
@@ -289,7 +289,7 @@ impl<'core> Evaluator<'core> {
         machine.step_limit = step_limit;
         let value = host_values(arguments, machine.reservations)
             .and_then(|arguments| machine.run(function, arguments))
-            .and_then(|value| result_value(value, function.result_type, machine.reservations));
+            .and_then(|value| result_value(value, &function.result_type, machine.reservations));
         let steps = machine.steps;
         // Release the call's values and frames; their storage is kept.
         machine.stack.clear();
@@ -351,13 +351,32 @@ fn host_value(value: &CoreValue, reservations: Reservations) -> Result<Value, St
                 ));
             }
             for element in array.elements() {
-                if matches!(element, CoreValue::Array(_)) {
+                if matches!(element, CoreValue::Array(_) | CoreValue::Tuple(_)) {
                     return Err(Stop::InconsistentCore);
                 }
                 elements.push(host_value(element, reservations)?);
             }
             Value::Array(Rc::new(ArrayValue {
                 ty: array.ty(),
+                elements,
+            }))
+        }
+        CoreValue::Tuple(tuple) => {
+            let mut elements = Vec::new();
+            if !(reservations.array)(&mut elements, tuple.elements().len()) {
+                return Err(Stop::Allocation(
+                    "evaluation tuple storage could not be reserved",
+                ));
+            }
+            // A tuple holds no tuple, so this recursion is one level deep.
+            for element in tuple.elements() {
+                if matches!(element, CoreValue::Tuple(_)) {
+                    return Err(Stop::InconsistentCore);
+                }
+                elements.push(host_value(element, reservations)?);
+            }
+            Value::Tuple(Rc::new(TupleValue {
+                ty: tuple.ty().clone(),
                 elements,
             }))
         }
@@ -441,12 +460,20 @@ enum Value {
     /// the modulus is the type's.
     Mod(Rc<ExactInteger>),
     Array(Rc<ArrayValue>),
+    Tuple(Rc<TupleValue>),
 }
 
 /// An array value with the type it was built at.
 #[derive(Debug)]
 struct ArrayValue {
     ty: ArrayType,
+    elements: Vec<Value>,
+}
+
+/// A tuple value with the type it was built at.
+#[derive(Debug)]
+struct TupleValue {
+    ty: TupleType,
     elements: Vec<Value>,
 }
 
@@ -573,12 +600,13 @@ fn branch_part(function: &CoreFunction, id: usize, condition: bool) -> Option<us
 }
 
 /// Returns whether a value has exactly the type `ty`.
-fn has_type(value: &Value, ty: CoreType) -> bool {
+fn has_type(value: &Value, ty: &CoreType) -> bool {
     match (value, ty) {
         (Value::Int(_), CoreType::Int) | (Value::Bool(_), CoreType::Bool) => true,
         (Value::Word(word), ty) => word_mask(ty).is_some_and(|mask| (*word & !mask) == 0),
         (Value::Mod(value), CoreType::Mod(modulus)) => modulus.contains(value),
-        (Value::Array(array), CoreType::Array(array_type)) => array.ty == array_type,
+        (Value::Array(array), CoreType::Array(array_type)) => array.ty == *array_type,
+        (Value::Tuple(tuple), CoreType::Tuple(tuple_type)) => tuple.ty == *tuple_type,
         _ => false,
     }
 }
@@ -627,9 +655,13 @@ const fn bulk_cost(length: usize) -> usize {
     if length <= 64 { 1 } else { length.div_ceil(64) }
 }
 
-fn word_mask(ty: CoreType) -> Option<u64> {
+fn word_mask(ty: &CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int | CoreType::Bool | CoreType::Mod(_) | CoreType::Array(_) => None,
+        CoreType::Int
+        | CoreType::Bool
+        | CoreType::Mod(_)
+        | CoreType::Array(_)
+        | CoreType::Tuple(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -750,7 +782,7 @@ impl<'core> Machine<'core> {
     fn pop_int(&mut self) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Int(value) => Ok(value),
-            Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
+            Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) | Value::Tuple(_) => {
                 Err(Stop::InconsistentCore)
             }
         }
@@ -759,7 +791,7 @@ impl<'core> Machine<'core> {
     fn pop_bool(&mut self) -> Result<bool, Stop> {
         match self.pop()? {
             Value::Bool(value) => Ok(value),
-            Value::Int(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
+            Value::Int(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) | Value::Tuple(_) => {
                 Err(Stop::InconsistentCore)
             }
         }
@@ -768,7 +800,7 @@ impl<'core> Machine<'core> {
     fn pop_word(&mut self) -> Result<u64, Stop> {
         match self.pop()? {
             Value::Word(value) => Ok(value),
-            Value::Int(_) | Value::Bool(_) | Value::Mod(_) | Value::Array(_) => {
+            Value::Int(_) | Value::Bool(_) | Value::Mod(_) | Value::Array(_) | Value::Tuple(_) => {
                 Err(Stop::InconsistentCore)
             }
         }
@@ -778,9 +810,12 @@ impl<'core> Machine<'core> {
     fn pop_residue(&mut self, modulus: Modulus) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Mod(value) if modulus.contains(&value) => Ok(value),
-            Value::Int(_) | Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
-                Err(Stop::InconsistentCore)
-            }
+            Value::Int(_)
+            | Value::Bool(_)
+            | Value::Word(_)
+            | Value::Mod(_)
+            | Value::Array(_)
+            | Value::Tuple(_) => Err(Stop::InconsistentCore),
         }
     }
 
@@ -829,10 +864,10 @@ impl<'core> Machine<'core> {
 
     /// Pops an operand of type `from` and returns its integer value: an
     /// `Int` itself, a word's unsigned value, or a residue's least residue.
-    fn pop_integer(&mut self, from: CoreType) -> Result<Rc<ExactInteger>, Stop> {
+    fn pop_integer(&mut self, from: &CoreType) -> Result<Rc<ExactInteger>, Stop> {
         match from {
             CoreType::Int => self.pop_int(),
-            CoreType::Mod(modulus) => self.pop_residue(modulus),
+            CoreType::Mod(modulus) => self.pop_residue(*modulus),
             _ => {
                 let mask = word_mask(from).ok_or(Stop::InconsistentCore)?;
                 let word = self.pop_word()?;
@@ -865,12 +900,42 @@ impl<'core> Machine<'core> {
             ));
         }
         for element in self.stack.drain(start..) {
-            if !has_type(&element, ty.element()) {
+            if !has_type(&element, &ty.element()) {
                 return Err(Stop::InconsistentCore);
             }
             elements.push(element);
         }
         Ok(Value::Array(Rc::new(ArrayValue { ty, elements })))
+    }
+
+    /// Builds a tuple of type `ty` from the top `count` values of the
+    /// stack, which lie above `floor`.
+    fn build_tuple(&mut self, ty: &TupleType, count: usize, floor: usize) -> Result<Value, Stop> {
+        if ty.elements().len() != count {
+            return Err(Stop::InconsistentCore);
+        }
+        let start = self
+            .stack
+            .len()
+            .checked_sub(count)
+            .filter(|start| *start >= floor)
+            .ok_or(Stop::InconsistentCore)?;
+        let mut elements = Vec::new();
+        if !(self.reservations.array)(&mut elements, count) {
+            return Err(Stop::Allocation(
+                "evaluation tuple storage could not be reserved",
+            ));
+        }
+        for (element, element_type) in self.stack.drain(start..).zip(ty.elements()) {
+            if !has_type(&element, element_type) {
+                return Err(Stop::InconsistentCore);
+            }
+            elements.push(element);
+        }
+        Ok(Value::Tuple(Rc::new(TupleValue {
+            ty: ty.clone(),
+            elements,
+        })))
     }
 
     fn checked_int(&self, value: ExactInteger, span: Span) -> Result<Value, Stop> {
@@ -1055,7 +1120,7 @@ impl<'core> Machine<'core> {
             || !self
                 .stack
                 .last()
-                .is_some_and(|value| has_type(value, binding.ty()))
+                .is_some_and(|value| has_type(value, &binding.ty()))
         {
             return Err(Stop::InconsistentCore);
         }
@@ -1103,7 +1168,7 @@ impl<'core> Machine<'core> {
         let FrameKind::Loop(active) = &mut frame.kind else {
             return Err(Stop::InconsistentCore);
         };
-        if self.stack.len() != active.floor || !has_type(&value, r#loop.ty) {
+        if self.stack.len() != active.floor || !has_type(&value, &r#loop.ty) {
             return Err(Stop::InconsistentCore);
         }
         active.bound = 0;
@@ -1145,7 +1210,7 @@ impl<'core> Machine<'core> {
             finished.floor,
             finished.bound,
         )?;
-        if self.stack.len() != finished.floor || !has_type(&value, conditional.ty) {
+        if self.stack.len() != finished.floor || !has_type(&value, &conditional.ty) {
             return Err(Stop::InconsistentCore);
         }
         self.inner_frames = self.inner_frames.saturating_sub(1);
@@ -1175,7 +1240,7 @@ impl<'core> Machine<'core> {
         function: &'core CoreFunction,
         base: usize,
         id: u32,
-        ty: CoreType,
+        ty: &CoreType,
     ) -> Result<(), Stop> {
         self.charge(1)?;
         let condition = self.pop_bool()?;
@@ -1186,7 +1251,7 @@ impl<'core> Machine<'core> {
             .ok_or(Stop::InconsistentCore)?;
         // The loops active in this function must be exactly those that
         // enclose the conditional.
-        if !self.active_loops_are(&conditional.scope) || conditional.ty != ty {
+        if !self.active_loops_are(&conditional.scope) || conditional.ty != *ty {
             return Err(Stop::InconsistentCore);
         }
         let part = branch_part(function, index, condition).ok_or(Stop::InconsistentCore)?;
@@ -1220,7 +1285,7 @@ impl<'core> Machine<'core> {
         bindings: &[CoreBinding],
         (floor, bound): (usize, usize),
         index: u32,
-        ty: CoreType,
+        ty: &CoreType,
     ) -> Result<Value, Stop> {
         let index = usize::try_from(index)
             .ok()
@@ -1229,7 +1294,7 @@ impl<'core> Machine<'core> {
         let binding = bindings.get(index).ok_or(Stop::InconsistentCore)?;
         let slot = floor.checked_add(index).ok_or(Stop::InconsistentCore)?;
         let value = self.stack.get(slot).ok_or(Stop::InconsistentCore)?;
-        if binding.ty() != ty || !has_type(value, ty) {
+        if binding.ty != *ty || !has_type(value, ty) {
             return Err(Stop::InconsistentCore);
         }
         Ok(value.clone())
@@ -1278,7 +1343,7 @@ impl<'core> Machine<'core> {
         function: &'core CoreFunction,
         base: usize,
         id: u32,
-        ty: CoreType,
+        ty: &CoreType,
     ) -> Result<(), Stop> {
         self.charge(1)?;
         let accumulator = self.pop()?;
@@ -1293,7 +1358,7 @@ impl<'core> Machine<'core> {
             .map(|(_, enclosing)| enclosing)
             .ok_or(Stop::InconsistentCore)?;
         if !self.active_loops_are(enclosing)
-            || r#loop.ty != ty
+            || r#loop.ty != *ty
             || r#loop.start >= r#loop.end
             || !has_type(&accumulator, ty)
         {
@@ -1432,7 +1497,7 @@ impl<'core> Machine<'core> {
                 Ok(())
             }
             CoreNodeKind::Unary(operator) => {
-                let value = match (operator, word_mask(node.ty)) {
+                let value = match (operator, word_mask(&node.ty)) {
                     (UnaryOperator::Not, None) if node.ty == CoreType::Bool => {
                         self.charge(1)?;
                         Value::Bool(!self.pop_bool()?)
@@ -1483,7 +1548,7 @@ impl<'core> Machine<'core> {
                         BinaryOperator::LogicalOr => left || right,
                         _ => return Err(Stop::InconsistentCore),
                     })
-                } else if let Some(mask) = word_mask(node.ty) {
+                } else if let Some(mask) = word_mask(&node.ty) {
                     self.charge(1)?;
                     let right = self.pop_word()?;
                     let left = self.pop_word()?;
@@ -1589,7 +1654,7 @@ impl<'core> Machine<'core> {
                         left.compare(&right)
                     }
                     ty => {
-                        let mask = word_mask(*ty).ok_or(Stop::InconsistentCore)?;
+                        let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
                         self.charge(1)?;
                         let right = self.pop_word()?;
                         let left = self.pop_word()?;
@@ -1606,12 +1671,12 @@ impl<'core> Machine<'core> {
                 if self.stack.len() <= floor {
                     return Err(Stop::InconsistentCore);
                 }
-                self.begin_branch(function, base, *id, node.ty)
+                self.begin_branch(function, base, *id, &node.ty)
             }
             CoreNodeKind::Shift { operator, amount } => {
                 self.charge(1)?;
                 let bits = node.ty.word_bits().ok_or(Stop::InconsistentCore)?;
-                let mask = word_mask(node.ty).ok_or(Stop::InconsistentCore)?;
+                let mask = word_mask(&node.ty).ok_or(Stop::InconsistentCore)?;
                 let value = self.pop_word()?;
                 let shifted = word_shift(*operator, bits, mask, value, *amount)
                     .ok_or(Stop::InconsistentCore)?;
@@ -1669,7 +1734,7 @@ impl<'core> Machine<'core> {
                 let Value::Array(array) = self.pop()? else {
                     return Err(Stop::InconsistentCore);
                 };
-                if array.ty != ty || !has_type(&value, ty.element()) {
+                if array.ty != ty || !has_type(&value, &ty.element()) {
                     return Err(Stop::InconsistentCore);
                 }
                 let mut elements = Vec::new();
@@ -1692,7 +1757,7 @@ impl<'core> Machine<'core> {
                     return Err(Stop::InconsistentCore);
                 }
                 let element = self.pop()?;
-                if !has_type(&element, ty.element()) {
+                if !has_type(&element, &ty.element()) {
                     return Err(Stop::InconsistentCore);
                 }
                 let mut elements = Vec::new();
@@ -1708,7 +1773,7 @@ impl<'core> Machine<'core> {
                 if self.stack.len() <= floor {
                     return Err(Stop::InconsistentCore);
                 }
-                self.begin_loop(function, base, *id, node.ty)
+                self.begin_loop(function, base, *id, &node.ty)
             }
             CoreNodeKind::LoopIndex(id) => {
                 self.charge(1)?;
@@ -1725,7 +1790,7 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Accumulator(id) => {
                 self.charge(1)?;
                 let accumulator = self.active_loop(*id)?.accumulator.clone();
-                if !has_type(&accumulator, node.ty) {
+                if !has_type(&accumulator, &node.ty) {
                     return Err(Stop::InconsistentCore);
                 }
                 self.push(accumulator)
@@ -1741,7 +1806,7 @@ impl<'core> Machine<'core> {
                     r#loop.bindings(),
                     (active.floor, active.bound),
                     *index,
-                    node.ty,
+                    &node.ty,
                 )?;
                 self.push(value)
             }
@@ -1754,7 +1819,7 @@ impl<'core> Machine<'core> {
                     .map(|conditional| branch_bindings(conditional, active.then))
                     .ok_or(Stop::InconsistentCore)?;
                 let value =
-                    self.bound_value(bindings, (active.floor, active.bound), *index, node.ty)?;
+                    self.bound_value(bindings, (active.floor, active.bound), *index, &node.ty)?;
                 self.push(value)
             }
             CoreNodeKind::Index { index } => {
@@ -1773,12 +1838,38 @@ impl<'core> Machine<'core> {
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(element)
             }
+            CoreNodeKind::Tuple { elements } => {
+                let ty = node.ty.as_tuple().ok_or(Stop::InconsistentCore)?;
+                let count = usize::try_from(*elements).map_err(|_| Stop::InconsistentCore)?;
+                // One step per element, as for an array; a tuple has at
+                // least two.
+                self.charge(count.max(1))?;
+                // Elements are intermediate values of the current expression.
+                let tuple = self.build_tuple(ty, count, floor)?;
+                self.push(tuple)
+            }
+            CoreNodeKind::Project { index } => {
+                self.charge(1)?;
+                let Value::Tuple(tuple) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if tuple.ty.element(*index) != Some(&node.ty) {
+                    return Err(Stop::InconsistentCore);
+                }
+                let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
+                let element = tuple
+                    .elements
+                    .get(index)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(element)
+            }
             CoreNodeKind::Convert { from } => {
                 self.charge(1)?;
                 if *from == CoreType::Bool || node.ty == CoreType::Bool {
                     return Err(Stop::InconsistentCore);
                 }
-                let value = match (word_mask(*from), node.ty) {
+                let value = match (word_mask(from), &node.ty) {
                     (Some(_), ty) if word_mask(ty).is_some() => {
                         let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
                         Value::Word(self.pop_word()? & mask)
@@ -1788,17 +1879,18 @@ impl<'core> Machine<'core> {
                     // modulo m, which costs one step per digit of the
                     // operand and of m.
                     (_, CoreType::Mod(modulus)) => {
-                        let value = self.pop_integer(*from)?;
+                        let modulus = *modulus;
+                        let value = self.pop_integer(from)?;
                         self.charge(digits(&value).saturating_mul(modulus_digits(modulus)))?;
                         let reduced = modulus
                             .reduce(&value, self.reservations.value_limbs)
                             .ok_or(Stop::Allocation(INTEGER_STORAGE))?;
                         Value::Mod(Rc::new(reduced))
                     }
-                    (_, CoreType::Int) => Value::Int(self.pop_integer(*from)?),
+                    (_, CoreType::Int) => Value::Int(self.pop_integer(from)?),
                     (_, ty) => {
                         let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
-                        Value::Word(self.pop_integer(*from)?.modulo_2_64() & mask)
+                        Value::Word(self.pop_integer(from)?.modulo_2_64() & mask)
                     }
                 };
                 self.push(value)
@@ -1884,7 +1976,7 @@ fn evaluate_with_reservations(
             );
         }
         name.push_str(&function.name);
-        let value = match result_value(value, function.result_type, reservations) {
+        let value = match result_value(value, &function.result_type, reservations) {
             Ok(value) => value,
             Err(Stop::Allocation(label)) => {
                 return allocation_failure(diagnostics, function.name_span, label);
@@ -1906,7 +1998,11 @@ fn evaluate_with_reservations(
 }
 
 /// Copies an evaluated value of type `ty` out of the machine's shared storage.
-fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Result<CoreValue, Stop> {
+fn result_value(
+    value: Value,
+    ty: &CoreType,
+    reservations: Reservations,
+) -> Result<CoreValue, Stop> {
     match (value, ty) {
         (Value::Int(value), CoreType::Int) => value
             .try_clone_with_reservation(reservations.value_limbs)
@@ -1919,9 +2015,9 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
             CoreValue::word_from_u64(ty, value).ok_or(Stop::InconsistentCore)
         }
         (Value::Mod(value), CoreType::Mod(modulus)) => {
-            result_residue(&value, modulus, reservations)
+            result_residue(&value, *modulus, reservations)
         }
-        (Value::Array(array), CoreType::Array(array_type)) if array.ty == array_type => {
+        (Value::Array(array), CoreType::Array(array_type)) if array.ty == *array_type => {
             let mut elements = Vec::new();
             if !(reservations.result_array)(&mut elements, array.elements.len()) {
                 return Err(Stop::Allocation(
@@ -1929,10 +2025,33 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
                 ));
             }
             for element in &array.elements {
-                elements.push(result_element(element, array_type.element(), reservations)?);
+                elements.push(result_element(
+                    element,
+                    &array_type.element(),
+                    reservations,
+                )?);
             }
-            CoreArray::new(array_type, elements)
+            CoreArray::new(*array_type, elements)
                 .map(CoreValue::Array)
+                .ok_or(Stop::InconsistentCore)
+        }
+        (Value::Tuple(tuple), CoreType::Tuple(tuple_type)) if tuple.ty == *tuple_type => {
+            let mut elements = Vec::new();
+            if !(reservations.result_array)(&mut elements, tuple.elements.len()) {
+                return Err(Stop::Allocation(
+                    "evaluated tuple storage could not be reserved",
+                ));
+            }
+            // A tuple's elements are scalars and arrays, so this recursion
+            // is one level deep.
+            for (element, element_type) in tuple.elements.iter().zip(tuple_type.elements()) {
+                if matches!(element, Value::Tuple(_)) {
+                    return Err(Stop::InconsistentCore);
+                }
+                elements.push(result_value(element.clone(), element_type, reservations)?);
+            }
+            CoreTuple::new(tuple_type.clone(), elements)
+                .map(CoreValue::Tuple)
                 .ok_or(Stop::InconsistentCore)
         }
         _ => Err(Stop::InconsistentCore),
@@ -1942,7 +2061,7 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
 /// Copies one scalar array element; arrays have no array elements.
 fn result_element(
     element: &Value,
-    ty: CoreType,
+    ty: &CoreType,
     reservations: Reservations,
 ) -> Result<CoreValue, Stop> {
     match (element, ty) {
@@ -1956,7 +2075,9 @@ fn result_element(
         (Value::Word(value), ty) => {
             CoreValue::word_from_u64(ty, *value).ok_or(Stop::InconsistentCore)
         }
-        (Value::Mod(value), CoreType::Mod(modulus)) => result_residue(value, modulus, reservations),
+        (Value::Mod(value), CoreType::Mod(modulus)) => {
+            result_residue(value, *modulus, reservations)
+        }
         _ => Err(Stop::InconsistentCore),
     }
 }
@@ -2907,6 +3028,19 @@ mod tests {
                 "  spec i() -> Int { if true { let a: Int = 2; a * a } else { 1 } }\n",
                 7,
             ),
+            // A tuple of n elements costs its elements' steps and n more, as
+            // an array does; `.k` costs one step, so a read of a name of a
+            // tuple pattern costs two.
+            ("  spec t() -> (Int, Word[8]) { (1, 2) }\n", 4),
+            ("  spec t() -> Int { let p: (Int, Int) = (1, 2); p.1 }\n", 6),
+            (
+                "  spec t() -> Word[8] { let (a: Word[8], b: Word[8]) = (1, 2); a ^ b }\n",
+                9,
+            ),
+            (
+                "  spec t() -> (Int, Int) { for i in 0..2 with (a: Int, b: Int) = (0, 1) { (b, a) } }\n",
+                19,
+            ),
             // Integer division costs 1 + d1 * max(d2, 1); word division
             // costs one step.
             ("  spec i() -> Int { let a: Int = 4294967296; a / 3 }\n", 6),
@@ -3158,6 +3292,26 @@ mod tests {
                     .map(|index| format!("; t{index} }} else {{ x }}"))
                     .collect::<String>()
             ),
+            // Tuples of calls' elements nested in calls, and a tuple
+            // pattern in every nested step of loops whose accumulators are
+            // tuples.
+            format!(
+                "{}x{}",
+                "p((".repeat(MAX_EXPRESSION_NESTING / 2),
+                ", x)).0".repeat(MAX_EXPRESSION_NESTING / 2)
+            ),
+            format!(
+                "let r: (Word[32], Word[32]) = {}(c{last}, d{last}){}; r.1",
+                (0..MAX_EXPRESSION_NESTING - 1)
+                    .map(|index| format!(
+                        "for i{index} in 0..1 with (a{index}: Word[32], b{index}: Word[32]) = \
+                         (x, x) {{ let (c{index}: Word[32], d{index}: Word[32]) = \
+                         (b{index}, a{index}); "
+                    ))
+                    .collect::<String>(),
+                " }".repeat(MAX_EXPRESSION_NESTING - 1),
+                last = MAX_EXPRESSION_NESTING - 2
+            ),
         ];
         let sources = bodies
             .iter()
@@ -3165,6 +3319,7 @@ mod tests {
                 format!(
                     "edition 2026; module m {{\n  spec g(x: Word[32]) -> Word[32] {{ x }}\n  \
                      spec h(x: Word[32]^1) -> Word[32]^1 {{ x }}\n  \
+                     spec p(t: (Word[32], Word[32])) -> (Word[32], Word[32]) {{ t }}\n  \
                      spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
                      spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
                 )
@@ -3413,7 +3568,7 @@ mod tests {
             "}\n"
         ));
         fn words(length: u32) -> CoreType {
-            CoreType::Array(ArrayType::new(CoreType::Word8, length).unwrap())
+            CoreType::Array(ArrayType::new(&CoreType::Word8, length).unwrap())
         }
         let mutations: [fn(&mut CoreModule); 9] = [
             // An array claims more elements than its type has.
@@ -4143,7 +4298,7 @@ mod tests {
     }
 
     fn bytes(values: &[u8]) -> CoreValue {
-        let ty = ArrayType::new(CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap();
+        let ty = ArrayType::new(&CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap();
         CoreValue::Array(
             CoreArray::new(
                 ty,
@@ -4478,7 +4633,7 @@ mod tests {
         ));
         let mut evaluator = Evaluator::new(&core).unwrap();
         let mul = evaluator.function("mul").unwrap();
-        let field = evaluator.module().functions()[0].parameters()[0];
+        let field = evaluator.module().functions()[0].parameters()[0].clone();
         let Some(modulus) = field.modulus() else {
             panic!("expected a residue type");
         };
@@ -4655,6 +4810,145 @@ mod tests {
                 second.end = 2;
                 conditional.then_bindings.push(second);
             },
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn tuples_hold_their_elements_in_order_and_select_them_by_position() {
+        let members = concat!(
+            "  spec pair() -> (Int, Word[8]^2) { (-3, [1, 2]) }\n",
+            "  spec second() -> Word[8] { pair().1[1] }\n",
+            "  spec swap(p: (Int, Bool)) -> (Bool, Int) { (p.1, p.0) }\n",
+            "  spec swapped() -> (Bool, Int) { swap((7, true)) }\n",
+            "  spec fibonacci() -> Int {\n",
+            "    let (f: Int, g: Int) = for i in 0..10 with (a: Int, b: Int) = (0, 1) { (b, a + b) };\n",
+            "    g - f\n",
+            "  }\n",
+            "  spec rounds() -> (Word[8], Word[8]) {\n",
+            "    for i in 0..3 with (x: Word[8], y: Word[8]) = (1, 2) {\n",
+            "      let (s: Word[8], t: Word[8]) = (x + y, x ^ y); (t <<< 1, s)\n",
+            "    }\n",
+            "  }\n",
+        );
+        // (x, y) = (1, 2), then (6, 3), (10, 9), and (6, 19).
+        assert_eq!(
+            values_of(members),
+            [
+                "pair = (-3, [0x01, 0x02])",
+                "second = 0x02",
+                "swapped = (true, 7)",
+                "fibonacci = 34",
+                "rounds = (0x06, 0x13)",
+            ]
+        );
+    }
+
+    #[test]
+    fn tuple_storage_reservation_failures_return_no_values() {
+        let core = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec pair() -> (Int, Int) { (1, 2) }\n",
+            "}\n"
+        ));
+        for (reservations, label) in [
+            (
+                Reservations {
+                    array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation tuple storage could not be reserved",
+            ),
+            (
+                Reservations {
+                    result_array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluated tuple storage could not be reserved",
+            ),
+        ] {
+            let run = || {
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.values().is_none());
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label);
+        }
+    }
+
+    #[test]
+    fn inconsistent_tuples_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec pair() -> (Int, Bool) { (1, true) }\n",
+            "  spec first() -> Int { pair().0 }\n",
+            "}\n"
+        ));
+        let pair = base.functions[0].result_type.clone();
+        assert_eq!(
+            base.functions[0].body.nodes[2].kind,
+            CoreNodeKind::Tuple { elements: 2 }
+        );
+        assert_eq!(
+            base.functions[1].body.nodes[1].kind,
+            CoreNodeKind::Project { index: 0 }
+        );
+        let ints = CoreType::Tuple(TupleType::new(&[CoreType::Int, CoreType::Int]).unwrap());
+        assert_ne!(pair, ints);
+        type Mutation<'a> = Box<dyn Fn(&mut CoreModule) + 'a>;
+        let mutations: [Mutation<'_>; 8] = [
+            // A tuple claims more elements than its type has.
+            Box::new(|core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::Tuple { elements: 3 };
+            }),
+            // A tuple claims fewer elements than its type has.
+            Box::new(|core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::Tuple { elements: 1 };
+            }),
+            // A tuple's type is not a tuple type.
+            Box::new(|core| core.functions[0].body.nodes[2].ty = CoreType::Int),
+            // A tuple's element has another type than its type says.
+            Box::new(|core| {
+                core.functions[0].body.nodes[2].ty = ints.clone();
+                core.functions[0].result_type = ints.clone();
+            }),
+            // A selection names an element the tuple lacks.
+            Box::new(|core| {
+                core.functions[1].body.nodes[1].kind = CoreNodeKind::Project { index: 2 };
+            }),
+            // A selection claims another type than its element's.
+            Box::new(|core| core.functions[1].body.nodes[1].ty = CoreType::Bool),
+            // A selection applies to a value that is not a tuple.
+            Box::new(|core| {
+                let literal = core.functions[0].body.nodes[0].clone();
+                core.functions[1].body.nodes[0] = literal;
+            }),
+            // A function claims a tuple result of another type.
+            Box::new(|core| core.functions[0].result_type = ints.clone()),
         ];
         for (index, mutate) in mutations.iter().enumerate() {
             let mut core = base.clone();

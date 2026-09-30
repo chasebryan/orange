@@ -45,6 +45,10 @@ pub const MAX_BINDINGS_PER_BODY: usize = 256;
 /// admitted array type.
 pub const MAX_ARRAY_ELEMENTS: usize = 256;
 
+/// Maximum elements of a tuple type, a tuple expression, or a tuple
+/// pattern. A tuple has at least two.
+pub const MAX_TUPLE_ELEMENTS: usize = 16;
+
 /// Maximum `use` declarations in one module.
 pub const MAX_USES_PER_MODULE: usize = 64;
 
@@ -384,15 +388,15 @@ impl TypedBody {
     }
 }
 
-/// One `let name: Type = expression;` binding in a typed body.
+/// One `let` binding in a typed body or a block:
+/// `let name: Type = expression;` or, with a tuple pattern,
+/// `let (a: T, b: U) = expression;`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Binding {
     /// Full extent from `let` through the closing `;`.
     pub(crate) span: Span,
-    /// Bound name.
-    pub(crate) name: Identifier,
-    /// Syntactic declared type; semantic analysis resolves its meaning.
-    pub(crate) ty: TypeSyntax,
+    /// What the binding names: one typed name or a tuple pattern.
+    pub(crate) pattern: Pattern,
     /// The bound expression.
     pub(crate) value: Expression,
 }
@@ -404,7 +408,39 @@ impl Binding {
         self.span
     }
 
-    /// Returns the bound name.
+    /// Returns what the binding names.
+    #[must_use]
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    /// Returns the bound expression.
+    #[must_use]
+    pub const fn value(&self) -> &Expression {
+        &self.value
+    }
+}
+
+/// A name and its declared type, `name: Type`, as a binding, an accumulator,
+/// or an element of a tuple pattern writes it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypedName {
+    /// Full extent from the name through its type.
+    pub(crate) span: Span,
+    /// The name.
+    pub(crate) name: Identifier,
+    /// Syntactic declared type; semantic analysis resolves its meaning.
+    pub(crate) ty: TypeSyntax,
+}
+
+impl TypedName {
+    /// Returns the full extent from the name through its type.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the name.
     #[must_use]
     pub const fn name(&self) -> &Identifier {
         &self.name
@@ -415,11 +451,60 @@ impl Binding {
     pub const fn ty(&self) -> &TypeSyntax {
         &self.ty
     }
+}
 
-    /// Returns the bound expression.
+/// What a binding or a loop's accumulator names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Pattern {
+    /// One name and its type, `name: Type`.
+    Name(Box<TypedName>),
+    /// A tuple pattern `(a: T, b: U, ...)`, which names each element of a
+    /// tuple value.
+    Tuple(Box<TuplePattern>),
+}
+
+impl Pattern {
+    /// Returns the full extent of the pattern.
     #[must_use]
-    pub const fn value(&self) -> &Expression {
-        &self.value
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Name(name) => name.span,
+            Self::Tuple(tuple) => tuple.span,
+        }
+    }
+
+    /// Returns the typed names the pattern binds, in source order: one for
+    /// a name, two through [`MAX_TUPLE_ELEMENTS`] for a tuple pattern.
+    #[must_use]
+    pub fn names(&self) -> &[TypedName] {
+        match self {
+            Self::Name(name) => std::slice::from_ref(&**name),
+            Self::Tuple(tuple) => &tuple.elements,
+        }
+    }
+}
+
+/// A tuple pattern `(a: T, b: U, ...)` of two through
+/// [`MAX_TUPLE_ELEMENTS`] typed names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TuplePattern {
+    /// Full extent from `(` through `)`.
+    pub(crate) span: Span,
+    /// The typed names in source order.
+    pub(crate) elements: Vec<TypedName>,
+}
+
+impl TuplePattern {
+    /// Returns the full extent from `(` through `)`.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the typed names in source order.
+    #[must_use]
+    pub fn elements(&self) -> &[TypedName] {
+        &self.elements
     }
 }
 
@@ -481,6 +566,59 @@ pub enum ExpressionKind {
     /// A conditional `if c { a } else { b }`, with any number of
     /// `else if` arms.
     Conditional(Box<ConditionalExpression>),
+    /// A tuple `(e0, e1, ...)` of two through [`MAX_TUPLE_ELEMENTS`]
+    /// elements.
+    Tuple(Box<TupleExpression>),
+    /// One element `base.k` of a tuple, selected by its position.
+    Project(Box<ProjectExpression>),
+}
+
+/// A tuple expression `(e0, e1, ...)` of two through
+/// [`MAX_TUPLE_ELEMENTS`] elements.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TupleExpression {
+    /// Elements in source order.
+    pub(crate) elements: Vec<Expression>,
+}
+
+impl TupleExpression {
+    /// Returns the elements in source order.
+    #[must_use]
+    pub fn elements(&self) -> &[Expression] {
+        &self.elements
+    }
+}
+
+/// One element `base.k` of a tuple.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectExpression {
+    /// The tuple: a name or a call.
+    pub(crate) base: Expression,
+    /// Exact extent of the position's integer token.
+    pub(crate) position_span: Span,
+    /// The zero-based position, written in decimal. A position too large
+    /// for `u32` is kept as `u32::MAX`, which no tuple has.
+    pub(crate) position: u32,
+}
+
+impl ProjectExpression {
+    /// Returns the tuple.
+    #[must_use]
+    pub const fn base(&self) -> &Expression {
+        &self.base
+    }
+
+    /// Returns the exact extent of the position's integer token.
+    #[must_use]
+    pub const fn position_span(&self) -> Span {
+        self.position_span
+    }
+
+    /// Returns the zero-based position.
+    #[must_use]
+    pub const fn position(&self) -> u32 {
+        self.position
+    }
 }
 
 /// An array literal `[e0, e1, ...]` with at least one element.
@@ -620,10 +758,9 @@ pub struct LoopExpression {
     pub(crate) start_span: Span,
     /// Exact extent of the second bound's integer token.
     pub(crate) end_span: Span,
-    /// The accumulator.
-    pub(crate) accumulator: Identifier,
-    /// Syntactic accumulator type; semantic analysis resolves its meaning.
-    pub(crate) ty: TypeSyntax,
+    /// The accumulator: one typed name, or a tuple pattern that names each
+    /// element of a tuple accumulator.
+    pub(crate) accumulator: Pattern,
     /// The accumulator's initial value.
     pub(crate) init: Expression,
     /// `let` bindings at the start of the step, in source order, evaluated
@@ -658,16 +795,10 @@ impl LoopExpression {
         self.end_span
     }
 
-    /// Returns the accumulator.
+    /// Returns the accumulator's pattern.
     #[must_use]
-    pub const fn accumulator(&self) -> &Identifier {
+    pub const fn accumulator(&self) -> &Pattern {
         &self.accumulator
-    }
-
-    /// Returns the syntactic accumulator type.
-    #[must_use]
-    pub const fn ty(&self) -> &TypeSyntax {
-        &self.ty
     }
 
     /// Returns the accumulator's initial value.
@@ -1095,6 +1226,10 @@ pub struct TypeSyntax {
     pub(crate) modulus: Option<Box<Expression>>,
     /// Exact span of the array length integer, excluding `^`.
     pub(crate) length_span: Option<Span>,
+    /// The element types of a tuple type `(T0, T1, ...)`, in order, and
+    /// empty for every other type. A tuple type has no name: its `name` is
+    /// empty and spans its `(`.
+    pub(crate) elements: Vec<TypeSyntax>,
 }
 
 impl TypeSyntax {
@@ -1127,6 +1262,19 @@ impl TypeSyntax {
     #[must_use]
     pub fn modulus(&self) -> Option<&Expression> {
         self.modulus.as_deref()
+    }
+
+    /// Returns the element types of a tuple type in order, or an empty
+    /// slice for every other type.
+    #[must_use]
+    pub fn elements(&self) -> &[TypeSyntax] {
+        &self.elements
+    }
+
+    /// Returns whether this is a tuple type `(T0, T1, ...)`.
+    #[must_use]
+    pub fn is_tuple(&self) -> bool {
+        !self.elements.is_empty()
     }
 }
 
@@ -1322,6 +1470,40 @@ const CONDITIONAL_SHAPE_NOTE: &str =
 const BRANCH_SHAPE_NOTE: &str =
     "each branch of a conditional holds `let` bindings, if any, and then its value";
 
+const TUPLE_NOTE: &str = "a tuple is written `(a, b)` with two through 16 elements; `(a)` \
+     without a comma is a group";
+
+const TUPLE_TYPE_NOTE: &str = "a tuple type is written `(T, U)` with two through 16 element \
+     types, each `Int`, `Bool`, a word, a residue, or an array of one";
+
+const PATTERN_NOTE: &str = "a tuple pattern names two through 16 values, each with its type, \
+     as in `let (sum: Word[64], carry: Word[64]) = add(x, y, c);`";
+
+const PROJECTION_NOTE: &str = "a tuple's element is selected by its position, counted from \
+     zero and written in decimal, as in `pair.0` or `pair.1`";
+
+/// How a pattern's parts are described in diagnostics.
+struct PatternRole {
+    name: &'static str,
+    colon: &'static str,
+    colon_note: &'static str,
+    ty: &'static str,
+}
+
+const BINDING_ROLE: PatternRole = PatternRole {
+    name: "binding",
+    colon: "`:` and the binding's type",
+    colon_note: "every binding states its type, as in `let t: Word[32] = x + y;`",
+    ty: "binding type",
+};
+
+const ACCUMULATOR_ROLE: PatternRole = PatternRole {
+    name: "accumulator",
+    colon: "`:` and the accumulator's type",
+    colon_note: "every accumulator states its type, as in `with s: Word[32]^16 = x`",
+    ty: "accumulator type",
+};
+
 /// Something that continues an expression after an operand: a binary
 /// operator, the conversion keyword `as`, or the update keyword `with`.
 #[derive(Clone, Copy)]
@@ -1358,6 +1540,8 @@ struct Parser<'source, 'tokens> {
     reserve_argument_slot: fn(&mut Vec<Expression>) -> bool,
     reserve_binding_slot: fn(&mut Vec<Binding>) -> bool,
     reserve_arm_slot: fn(&mut Vec<ConditionalArm>) -> bool,
+    reserve_type_slot: fn(&mut Vec<TypeSyntax>) -> bool,
+    reserve_name_slot: fn(&mut Vec<TypedName>) -> bool,
     reserve_identifier_text: fn(&mut String, usize) -> bool,
     reserve_diagnostic_slots: fn(&mut Vec<Diagnostic>, usize) -> bool,
 }
@@ -1380,6 +1564,14 @@ fn reserve_arm_slot(arms: &mut Vec<ConditionalArm>) -> bool {
 
 fn reserve_binding_slot(bindings: &mut Vec<Binding>) -> bool {
     bindings.try_reserve(1).is_ok()
+}
+
+fn reserve_type_slot(types: &mut Vec<TypeSyntax>) -> bool {
+    types.try_reserve(1).is_ok()
+}
+
+fn reserve_name_slot(names: &mut Vec<TypedName>) -> bool {
+    names.try_reserve(1).is_ok()
 }
 
 fn reserve_identifier_text(text: &mut String, bytes: usize) -> bool {
@@ -1409,6 +1601,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             reserve_argument_slot,
             reserve_binding_slot,
             reserve_arm_slot,
+            reserve_type_slot,
+            reserve_name_slot,
             reserve_identifier_text,
             reserve_diagnostic_slots,
         }
@@ -2192,7 +2386,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     fn parse_bindings(&mut self, level: usize) -> Option<(Vec<Binding>, usize)> {
         let mut bindings = Vec::new();
         let mut height = 0_usize;
-        while self.current_is_word("let") && self.next_kind() == TokenKind::Identifier {
+        while self.current_is_word("let") && self.starts_binding() {
             let (binding, binding_height) = self.parse_binding(level)?;
             if bindings.len() >= MAX_BINDINGS_PER_BODY {
                 self.resource_limit_at(
@@ -2215,15 +2409,46 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         Some((bindings, height))
     }
 
+    /// Returns whether the `let` at the cursor starts a binding.
+    ///
+    /// `let` is recognized by position: it starts a binding when a name
+    /// follows it, or a tuple pattern whose first element is `name:`, which
+    /// no call of a function named `let` can begin with. A parenthesized
+    /// list of names followed by `=`, such as `let (a, b) =`, is a tuple
+    /// pattern whose types are missing, since no expression is followed by
+    /// `=`; it is parsed as a binding so that the missing type is reported.
+    fn starts_binding(&self) -> bool {
+        let at = |offset: usize| self.kind_at(self.cursor.saturating_add(offset));
+        match self.next_kind() {
+            TokenKind::Identifier => true,
+            TokenKind::LeftParen if at(2) == TokenKind::Identifier && at(3) == TokenKind::Colon => {
+                true
+            }
+            TokenKind::LeftParen => {
+                // At most one name for each element of the longest pattern.
+                let mut offset = 2_usize;
+                for _ in 0..=MAX_TUPLE_ELEMENTS {
+                    match at(offset) {
+                        TokenKind::Identifier => offset = offset.saturating_add(1),
+                        TokenKind::RightParen => break,
+                        _ => return false,
+                    }
+                    match at(offset) {
+                        TokenKind::Comma => offset = offset.saturating_add(1),
+                        TokenKind::RightParen => break,
+                        _ => return false,
+                    }
+                }
+                at(offset) == TokenKind::RightParen
+                    && at(offset.saturating_add(1)) == TokenKind::Equal
+            }
+            _ => false,
+        }
+    }
+
     fn parse_binding(&mut self, level: usize) -> Option<(Binding, usize)> {
         let keyword = self.bump()?;
-        let name = self.parse_identifier("binding")?;
-        self.expect(
-            TokenKind::Colon,
-            "`:` and the binding's type",
-            "every binding states its type, as in `let t: Word[32] = x + y;`",
-        )?;
-        let (ty, type_height) = self.parse_type_syntax("binding type", true, level)?;
+        let (pattern, type_height) = self.parse_pattern(&BINDING_ROLE, level)?;
         self.expect(
             TokenKind::Equal,
             "`=` after the binding's type",
@@ -2243,12 +2468,96 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         self.record_node().then_some((
             Binding {
                 span,
-                name,
-                ty,
+                pattern,
                 value,
             },
             type_height.max(value_height),
         ))
+    }
+
+    /// Parses what a binding or an accumulator names: `name: Type`, or a
+    /// tuple pattern `(a: T, b: U, ...)` of two through
+    /// [`MAX_TUPLE_ELEMENTS`] typed names.
+    ///
+    /// Returns the pattern and the greatest height of its types.
+    #[inline(never)]
+    fn parse_pattern(&mut self, role: &PatternRole, level: usize) -> Option<(Pattern, usize)> {
+        if self.current_kind() != TokenKind::LeftParen {
+            let (name, height) = self.parse_typed_name(role, level)?;
+            return Some((Pattern::Name(Box::new(name)), height));
+        }
+        let left_paren = self.bump()?.span;
+        let mut elements = Vec::new();
+        let mut height = 0_usize;
+        loop {
+            let (element, element_height) = self.parse_pattern_element(role, level)?;
+            if elements.len() >= MAX_TUPLE_ELEMENTS {
+                self.resource_limit_at(
+                    format!("a tuple pattern names more than {MAX_TUPLE_ELEMENTS} values"),
+                    element.span,
+                );
+                return None;
+            }
+            if !(self.reserve_name_slot)(&mut elements) {
+                self.resource_limit_at("parser could not allocate pattern storage", element.span);
+                return None;
+            }
+            height = height.max(element_height);
+            elements.push(element);
+            match self.current_kind() {
+                TokenKind::Comma if elements.len() == 1 => {
+                    self.bump()?;
+                }
+                TokenKind::Comma => {
+                    self.bump()?;
+                    // A trailing comma before `)` is permitted.
+                    if self.current_kind() == TokenKind::RightParen {
+                        break;
+                    }
+                }
+                TokenKind::RightParen if elements.len() >= 2 => break,
+                TokenKind::RightParen => {
+                    self.expected("`,` and another name in the pattern", PATTERN_NOTE);
+                    return None;
+                }
+                _ => {
+                    self.expected("`,` or `)` after the pattern's element", PATTERN_NOTE);
+                    return None;
+                }
+            }
+        }
+        let right_paren = self.bump()?.span;
+        let span = self.join(left_paren, right_paren);
+        self.record_node().then_some((
+            Pattern::Tuple(Box::new(TuplePattern { span, elements })),
+            height,
+        ))
+    }
+
+    /// Parses one `name: Type` of a tuple pattern.
+    fn parse_pattern_element(
+        &mut self,
+        role: &PatternRole,
+        level: usize,
+    ) -> Option<(TypedName, usize)> {
+        if self.current_kind() != TokenKind::Identifier {
+            self.expected("a name for the pattern's next value", PATTERN_NOTE);
+            return None;
+        }
+        if self.next_kind() != TokenKind::Colon {
+            self.bump()?;
+            self.expected("`:` and the type of the name", PATTERN_NOTE);
+            return None;
+        }
+        self.parse_typed_name(role, level)
+    }
+
+    fn parse_typed_name(&mut self, role: &PatternRole, level: usize) -> Option<(TypedName, usize)> {
+        let name = self.parse_identifier(role.name)?;
+        self.expect(TokenKind::Colon, role.colon, role.colon_note)?;
+        let (ty, height) = self.parse_type_syntax(role.ty, true, level)?;
+        let span = self.join(name.span, ty.span);
+        Some((TypedName { span, name, ty }, height))
     }
 
     /// Parses the `let` bindings, if any, at the start of a loop's step or a
@@ -2651,7 +2960,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 let inner = self.open_level(level)?;
                 let left_paren = self.bump()?.span;
                 let group = self.parse_expression(inner)?;
-                self.finish_group(left_paren, group)
+                self.finish_group(left_paren, group, inner)
             }
             TokenKind::LeftBracket => self.parse_array(level),
             _ => {
@@ -2665,7 +2974,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses an optional `[index]` after a name or a call.
+    /// Parses an optional `.k` and then an optional `[index]` after a name
+    /// or a call.
     ///
     /// An index that is one integer token opens no nesting level, exactly as
     /// in S3d; any other index is an expression one level deeper.
@@ -2675,6 +2985,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         (base, base_height): (Expression, usize),
         level: usize,
     ) -> Option<(Expression, usize)> {
+        if self.current_kind() == TokenKind::Dot {
+            return self.parse_projection(base, base_height, level);
+        }
         if self.current_kind() != TokenKind::LeftBracket {
             return Some((base, base_height));
         }
@@ -2712,6 +3025,13 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             );
             return None;
         }
+        if self.current_kind() == TokenKind::Dot {
+            self.expected(
+                "an operator or the end of the expression",
+                "an array's elements are not tuples, so an element has no `.k`",
+            );
+            return None;
+        }
         let height = self.node_height(base_height.max(index_height), left_bracket)?;
         let span = self.join(base.span, right_bracket);
         self.record_node().then_some((
@@ -2721,6 +3041,125 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             },
             height,
         ))
+    }
+
+    /// Parses `.k` after a name or a call, the element of a tuple at
+    /// position `k`, and then an optional `[index]` after it.
+    #[inline(never)]
+    fn parse_projection(
+        &mut self,
+        base: Expression,
+        base_height: usize,
+        level: usize,
+    ) -> Option<(Expression, usize)> {
+        let dot = self.bump()?.span;
+        let token = self.expect(
+            TokenKind::Integer,
+            "an element's position after `.`",
+            PROJECTION_NOTE,
+        )?;
+        let text = token.lexeme(self.source)?;
+        let decimal = text.bytes().all(|byte| byte.is_ascii_digit())
+            && (text == "0" || !text.starts_with('0'));
+        if !decimal {
+            self.report(
+                DiagnosticCode::ExpectedSyntax,
+                "expected an element's position in decimal",
+                token.span,
+                "found INTEGER",
+                PROJECTION_NOTE,
+            );
+            return None;
+        }
+        let position = text.parse::<u32>().unwrap_or(u32::MAX);
+        if self.current_kind() == TokenKind::Dot {
+            self.expected(
+                "an operator or the end of the expression",
+                "a tuple's elements are not tuples, so an element is selected once",
+            );
+            return None;
+        }
+        let height = self.node_height(base_height, dot)?;
+        let span = self.join(base.span, token.span);
+        if !self.record_node() {
+            return None;
+        }
+        let projection = Expression {
+            span,
+            kind: ExpressionKind::Project(Box::new(ProjectExpression {
+                base,
+                position_span: token.span,
+                position,
+            })),
+        };
+        // The next token is not `.`, so this parses at most an index.
+        self.parse_index_suffix((projection, height), level)
+    }
+
+    /// Parses the rest of a tuple `(e0, e1, ...)` after its first element,
+    /// at the `,` that follows it.
+    ///
+    /// A tuple has two through [`MAX_TUPLE_ELEMENTS`] elements; a trailing
+    /// comma is permitted after the second.
+    #[inline(never)]
+    fn parse_tuple(
+        &mut self,
+        left_paren: Span,
+        (first, first_height): (Expression, usize),
+        inner: usize,
+    ) -> Option<(Expression, usize)> {
+        let mut elements = Vec::new();
+        if !self.push_tuple_element(&mut elements, first) {
+            return None;
+        }
+        let mut element_height = first_height;
+        while self.current_kind() == TokenKind::Comma {
+            self.bump()?;
+            if self.current_kind() == TokenKind::RightParen {
+                if elements.len() >= 2 {
+                    break;
+                }
+                self.expected("another element after `,`", TUPLE_NOTE);
+                return None;
+            }
+            let (element, height) = self.parse_expression(inner)?;
+            element_height = element_height.max(height);
+            if !self.push_tuple_element(&mut elements, element) {
+                return None;
+            }
+        }
+        let right_paren = self
+            .expect(
+                TokenKind::RightParen,
+                "`,` or `)` after the tuple's element",
+                TUPLE_NOTE,
+            )?
+            .span;
+        let height = self.node_height(element_height, left_paren)?;
+        let span = self.join(left_paren, right_paren);
+        self.record_node().then_some((
+            Expression {
+                span,
+                kind: ExpressionKind::Tuple(Box::new(TupleExpression { elements })),
+            },
+            height,
+        ))
+    }
+
+    fn push_tuple_element(&mut self, elements: &mut Vec<Expression>, element: Expression) -> bool {
+        if elements.len() >= MAX_TUPLE_ELEMENTS {
+            self.resource_limit_at(
+                format!("a tuple has more than {MAX_TUPLE_ELEMENTS} elements"),
+                element.span,
+            );
+            return false;
+        }
+        if !(self.reserve_argument_slot)(elements) {
+            self.resource_limit_at("parser could not allocate tuple storage", element.span);
+            return false;
+        }
+        elements.push(element);
+        true
     }
 
     /// Parses an array literal `[e0, e1, ...]` with at least one element and
@@ -2866,13 +3305,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             return None;
         }
         self.bump()?;
-        let accumulator = self.parse_identifier("accumulator")?;
-        self.expect(
-            TokenKind::Colon,
-            "`:` and the accumulator's type",
-            "every accumulator states its type, as in `with s: Word[32]^16 = x`",
-        )?;
-        let (ty, type_height) = self.parse_type_syntax("accumulator type", true, level)?;
+        let (accumulator, type_height) = self.parse_pattern(&ACCUMULATOR_ROLE, level)?;
         self.expect(
             TokenKind::Equal,
             "`=` after the accumulator's type",
@@ -2890,7 +3323,6 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 start_span,
                 end_span,
                 accumulator,
-                ty,
                 init: placeholder.clone(),
                 step_bindings: Vec::new(),
                 step: placeholder,
@@ -3166,12 +3598,18 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         ))
     }
 
+    /// Finishes a group after its expression, or a tuple when a `,`
+    /// follows its first element.
     #[inline(never)]
     fn finish_group(
         &mut self,
         left_paren: Span,
         (inner, inner_height): (Expression, usize),
+        level: usize,
     ) -> Option<(Expression, usize)> {
+        if self.current_kind() == TokenKind::Comma {
+            return self.parse_tuple(left_paren, (inner, inner_height), level);
+        }
         let right_paren = self.consume_or_recover(
             TokenKind::RightParen,
             "`)` to close the group",
@@ -3280,6 +3718,9 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         array: bool,
         level: usize,
     ) -> Option<(TypeSyntax, usize)> {
+        if self.current_kind() == TokenKind::LeftParen {
+            return self.parse_tuple_type(role, level);
+        }
         let name = self.parse_identifier(role)?;
         let mut end = name.span;
         let mut width_span = None;
@@ -3370,9 +3811,150 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 width_span,
                 modulus,
                 length_span,
+                elements: Vec::new(),
             },
             modulus_height,
         ))
+    }
+
+    /// Parses a tuple type `(T0, T1, ...)` of two through
+    /// [`MAX_TUPLE_ELEMENTS`] element types, none of them a tuple type.
+    #[inline(never)]
+    fn parse_tuple_type(&mut self, role: &str, level: usize) -> Option<(TypeSyntax, usize)> {
+        let left_paren = self.bump()?.span;
+        let Some((elements, height)) = self.parse_tuple_type_elements(role, level) else {
+            self.recover_past_group();
+            return None;
+        };
+        let right_paren = self.bump()?.span;
+        if self.current_kind() == TokenKind::Caret {
+            self.expected(
+                "the end of the type after the tuple",
+                "an array's elements are `Int`, `Bool`, words, or residues; arrays of \
+                 tuples are not part of Orange 2026",
+            );
+            return None;
+        }
+        let span = self.join(left_paren, right_paren);
+        self.record_node().then_some((
+            TypeSyntax {
+                span,
+                name: Identifier {
+                    text: String::new(),
+                    span: left_paren,
+                },
+                width_span: None,
+                modulus: None,
+                length_span: None,
+                elements,
+            },
+            height,
+        ))
+    }
+
+    /// Parses the element types of a tuple type after its `(`, up to and
+    /// not including its `)`, with the greatest height among them.
+    fn parse_tuple_type_elements(
+        &mut self,
+        role: &str,
+        level: usize,
+    ) -> Option<(Vec<TypeSyntax>, usize)> {
+        let mut elements = Vec::new();
+        let mut height = 0_usize;
+        loop {
+            match self.current_kind() {
+                TokenKind::LeftParen => {
+                    self.expected(
+                        "an element type",
+                        "a tuple's elements are `Int`, `Bool`, words, residues, and arrays of \
+                         them; a tuple holds no tuple",
+                    );
+                    return None;
+                }
+                TokenKind::RightParen => {
+                    self.expected("an element type", TUPLE_TYPE_NOTE);
+                    return None;
+                }
+                _ => {}
+            }
+            let (element, element_height) = self.parse_type_syntax(role, true, level)?;
+            if elements.len() >= MAX_TUPLE_ELEMENTS {
+                self.resource_limit_at(
+                    format!("a tuple type has more than {MAX_TUPLE_ELEMENTS} elements"),
+                    element.span,
+                );
+                return None;
+            }
+            if !(self.reserve_type_slot)(&mut elements) {
+                self.resource_limit_at("parser could not allocate type storage", element.span);
+                return None;
+            }
+            height = height.max(element_height);
+            elements.push(element);
+            match self.current_kind() {
+                TokenKind::Comma if elements.len() == 1 => {
+                    self.bump()?;
+                }
+                TokenKind::Comma => {
+                    self.bump()?;
+                    // A trailing comma before `)` is permitted.
+                    if self.current_kind() == TokenKind::RightParen {
+                        return Some((elements, height));
+                    }
+                }
+                TokenKind::RightParen if elements.len() >= 2 => return Some((elements, height)),
+                TokenKind::RightParen => {
+                    self.expected("`,` and another element type", TUPLE_TYPE_NOTE);
+                    return None;
+                }
+                _ => {
+                    self.expected("`,` or `)` after the element type", TUPLE_TYPE_NOTE);
+                    return None;
+                }
+            }
+        }
+    }
+
+    /// After an error inside a parenthesized group whose `(` is consumed,
+    /// skips past the group's matching `)`, so that an enclosing list does
+    /// not read the group's commas as its own. It stops before a token that
+    /// cannot appear in a type, which leaves the rest to the caller's own
+    /// recovery.
+    #[cold]
+    #[inline(never)]
+    fn recover_past_group(&mut self) {
+        let mut depth = 1_usize;
+        while !self.halted {
+            match self.current_kind() {
+                TokenKind::LeftParen | TokenKind::LeftBracket => {
+                    depth = depth.saturating_add(1);
+                    if depth > self.limits.recovery_depth {
+                        self.resource_limit(format!(
+                            "parser recovery exceeds the {}-delimiter nesting limit",
+                            self.limits.recovery_depth
+                        ));
+                        return;
+                    }
+                }
+                TokenKind::RightParen | TokenKind::RightBracket => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        self.bump();
+                        return;
+                    }
+                }
+                TokenKind::LeftBrace
+                | TokenKind::RightBrace
+                | TokenKind::Semicolon
+                | TokenKind::Arrow
+                | TokenKind::Equal
+                | TokenKind::KwSpec
+                | TokenKind::KwImpl
+                | TokenKind::Eof => return,
+                _ => {}
+            }
+            self.bump();
+        }
     }
 
     fn parse_integer_literal(&mut self) -> Option<IntegerLiteral> {
@@ -4607,15 +5189,26 @@ mod tests {
                 shape(source, &update.value)
             ),
             ExpressionKind::Loop(r#loop) => format!(
-                "(for {} in {}..{} with {}: {} = {} {{ {} }})",
+                "(for {} in {}..{} with {} = {} {{ {} }})",
                 r#loop.index.text,
                 source.slice(r#loop.start_span).unwrap(),
                 source.slice(r#loop.end_span).unwrap(),
-                r#loop.accumulator.text,
-                source.slice(r#loop.ty.span).unwrap(),
+                source.slice(r#loop.accumulator.span()).unwrap(),
                 shape(source, &r#loop.init),
                 shape(source, &r#loop.step)
             ),
+            ExpressionKind::Tuple(tuple) => format!(
+                "(tuple {})",
+                tuple
+                    .elements
+                    .iter()
+                    .map(|element| shape(source, element))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            ExpressionKind::Project(project) => {
+                format!("{}.{}", shape(source, &project.base), project.position)
+            }
             ExpressionKind::Conditional(conditional) => format!(
                 "({} else {{ {} }})",
                 conditional
@@ -4633,9 +5226,29 @@ mod tests {
         }
     }
 
-    /// The height of a type's modulus, or zero.
+    /// The height of a type's modulus, or of its elements' moduli, or zero.
     fn type_height(ty: &TypeSyntax) -> usize {
-        ty.modulus().map_or(0, tree_height)
+        ty.modulus()
+            .map_or(0, tree_height)
+            .max(ty.elements().iter().map(type_height).max().unwrap_or(0))
+    }
+
+    /// The greatest height of a pattern's types.
+    fn pattern_height(pattern: &Pattern) -> usize {
+        pattern
+            .names()
+            .iter()
+            .map(|typed| type_height(&typed.ty))
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The typed name of a binding or an accumulator that is one name.
+    fn named(pattern: &Pattern) -> &TypedName {
+        let Pattern::Name(typed) = pattern else {
+            panic!("expected one name");
+        };
+        typed
     }
 
     fn tree_height(expression: &Expression) -> usize {
@@ -4660,7 +5273,11 @@ mod tests {
                 .max(tree_height(&update.value)),
             ExpressionKind::Loop(r#loop) => tree_height(&r#loop.init)
                 .max(block_height(&r#loop.step_bindings, &r#loop.step))
-                .max(type_height(&r#loop.ty)),
+                .max(pattern_height(&r#loop.accumulator)),
+            ExpressionKind::Tuple(tuple) => {
+                tuple.elements.iter().map(tree_height).max().unwrap_or(0)
+            }
+            ExpressionKind::Project(project) => tree_height(&project.base),
             ExpressionKind::Conditional(conditional) => conditional
                 .arms
                 .iter()
@@ -4679,7 +5296,7 @@ mod tests {
     fn block_height(bindings: &[Binding], value: &Expression) -> usize {
         bindings
             .iter()
-            .map(|binding| tree_height(&binding.value).max(type_height(&binding.ty)))
+            .map(|binding| tree_height(&binding.value).max(pattern_height(&binding.pattern)))
             .max()
             .unwrap_or(0)
             .max(tree_height(value))
@@ -5273,9 +5890,15 @@ mod tests {
             source.slice(wide.span()),
             Some("let wide: Word[32] = a as Word[32];")
         );
-        assert_eq!(wide.name().text, "wide");
-        assert_eq!(source.slice(wide.name().span), Some("wide"));
-        assert_eq!(source.slice(wide.ty().span), Some("Word[32]"));
+        assert_eq!(named(wide.pattern()).name().text, "wide");
+        assert_eq!(
+            source.slice(named(wide.pattern()).name().span),
+            Some("wide")
+        );
+        assert_eq!(
+            source.slice(named(wide.pattern()).ty().span),
+            Some("Word[32]")
+        );
         assert_eq!(source.slice(wide.value().span), Some("a as Word[32]"));
         let ExpressionKind::Conversion(conversion) = &wide.value().kind else {
             panic!("expected a conversion");
@@ -5371,7 +5994,12 @@ mod tests {
         assert_eq!(
             body.bindings()
                 .iter()
-                .map(|binding| (binding.name().text.as_str(), shape(source, binding.value())))
+                .map(|binding| {
+                    (
+                        named(binding.pattern()).name().text.as_str(),
+                        shape(source, binding.value()),
+                    )
+                })
                 .collect::<Vec<_>>(),
             [("let", String::from("as")), ("as2", String::from("let"))]
         );
@@ -5596,7 +6224,10 @@ mod tests {
         };
         assert_eq!(source.slice(body.result_type.span), Some("Word[32]^4"));
         let binding = &body.bindings()[0];
-        assert_eq!(source.slice(binding.ty().span), Some("Word[8]^2"));
+        assert_eq!(
+            source.slice(named(binding.pattern()).ty().span),
+            Some("Word[8]^2")
+        );
         assert_eq!(
             source.slice(binding.value().span),
             Some("[n[1] as Word[8], 0x0f,]")
@@ -5675,7 +6306,7 @@ mod tests {
             for ty in [
                 &function.parameters[0].ty,
                 &body.result_type,
-                body.bindings()[0].ty(),
+                named(body.bindings()[0].pattern()).ty(),
             ] {
                 assert_eq!(
                     ty.length_span().and_then(|span| source.slice(span)),
@@ -5841,8 +6472,11 @@ mod tests {
         assert_eq!(source.slice(first.index().span), Some("t"));
         assert_eq!(source.slice(first.start_span()), Some("0"));
         assert_eq!(source.slice(first.end_span()), Some("16"));
-        assert_eq!(first.accumulator().text, "w");
-        assert_eq!(source.slice(first.ty().span), Some("Word[32]^64"));
+        assert_eq!(named(first.accumulator()).name().text, "w");
+        assert_eq!(
+            source.slice(named(first.accumulator()).ty().span),
+            Some("Word[32]^64")
+        );
         assert_eq!(source.slice(first.init().span), Some("[0; 64]"));
         let ExpressionKind::Fill(fill) = &first.init().kind else {
             panic!("expected a fill literal");
@@ -6684,12 +7318,12 @@ mod tests {
         let FunctionBody::Typed(body) = &k.body else {
             panic!("expected a typed body");
         };
-        assert_eq!(modulus(&body.bindings[0].ty), Some("2"));
+        assert_eq!(modulus(&named(&body.bindings[0].pattern).ty), Some("2"));
         let ExpressionKind::Loop(r#loop) = &body.bindings[0].value.kind else {
             panic!("expected a loop");
         };
-        assert_eq!(slice(r#loop.ty.span), "Mod[2]^3");
-        assert_eq!(modulus(&r#loop.ty), Some("2"));
+        assert_eq!(slice(named(&r#loop.accumulator).ty.span), "Mod[2]^3");
+        assert_eq!(modulus(&named(&r#loop.accumulator).ty), Some("2"));
 
         // `type` is a word only at the head of a module, and `Mod` takes a
         // modulus only when a bracket follows it.
@@ -6899,8 +7533,8 @@ mod tests {
             .map(|binding| {
                 (
                     source.slice(binding.span()).unwrap(),
-                    binding.name().text.as_str(),
-                    source.slice(binding.ty().span).unwrap(),
+                    named(binding.pattern()).name().text.as_str(),
+                    source.slice(named(binding.pattern()).ty().span).unwrap(),
                     shape(source, binding.value()),
                 )
             })
@@ -7079,5 +7713,401 @@ mod tests {
             assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
             assert_resource_limited(&form(&tall(additions + 1)), &message, at);
         }
+    }
+
+    #[test]
+    fn builds_tuples_projections_and_patterns_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module m { ",
+            "type Pair = (Word[64], Word[64]^4,); ",
+            "spec f(p: (Int, Bool), q: Pair) -> (Int, Int) { ",
+            "let (s: Int, c: Bool) = p; ",
+            "for i in 0..2 with (a: Int, b: Int) = (s, p.0,) { ",
+            "let (x: Int, y: Int) = g(a, q); (b, h(x, y).1[i]) } } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        let slices = |types: &[TypeSyntax]| {
+            types
+                .iter()
+                .map(|ty| source.slice(ty.span).unwrap())
+                .collect::<Vec<_>>()
+        };
+
+        // A tuple type: its extent, a trailing comma, and its element types.
+        let pair = ast.module.types()[0].ty();
+        assert!(pair.is_tuple());
+        assert_eq!(source.slice(pair.span), Some("(Word[64], Word[64]^4,)"));
+        assert_eq!(slices(pair.elements()), ["Word[64]", "Word[64]^4"]);
+        assert!(pair.name.text.is_empty());
+        assert_eq!(source.slice(pair.name.span), Some("("));
+        let function = &ast.module.functions[0];
+        assert_eq!(
+            slices(function.parameters[0].ty.elements()),
+            ["Int", "Bool"]
+        );
+        assert!(!function.parameters[1].ty.is_tuple());
+        let FunctionBody::Typed(body) = &function.body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(source.slice(body.result_type.span), Some("(Int, Int)"));
+        assert_eq!(slices(body.result_type.elements()), ["Int", "Int"]);
+
+        // A binding's tuple pattern names each element with its type.
+        let names = |pattern: &Pattern| {
+            pattern
+                .names()
+                .iter()
+                .map(|typed| {
+                    (
+                        typed.name.text.clone(),
+                        source.slice(typed.ty.span).unwrap(),
+                        source.slice(typed.span).unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let binding = &body.bindings()[0];
+        assert_eq!(
+            source.slice(binding.span()),
+            Some("let (s: Int, c: Bool) = p;")
+        );
+        assert_eq!(
+            source.slice(binding.pattern().span()),
+            Some("(s: Int, c: Bool)")
+        );
+        assert_eq!(
+            names(binding.pattern()),
+            [
+                ("s".to_owned(), "Int", "s: Int"),
+                ("c".to_owned(), "Bool", "c: Bool")
+            ]
+        );
+
+        // A loop's accumulators, a tuple with a trailing comma, a tuple
+        // pattern in a step, and a projection of a call followed by an index.
+        let ExpressionKind::Loop(r#loop) = &body.expression().kind else {
+            panic!("expected a loop");
+        };
+        assert_eq!(
+            source.slice(r#loop.accumulator().span()),
+            Some("(a: Int, b: Int)")
+        );
+        assert_eq!(
+            names(r#loop.accumulator()),
+            [
+                ("a".to_owned(), "Int", "a: Int"),
+                ("b".to_owned(), "Int", "b: Int")
+            ]
+        );
+        assert_eq!(source.slice(r#loop.init().span), Some("(s, p.0,)"));
+        assert_eq!(shape(source, r#loop.init()), "(tuple s, p.0)");
+        let step = &r#loop.step_bindings()[0];
+        assert_eq!(
+            source.slice(step.pattern().span()),
+            Some("(x: Int, y: Int)")
+        );
+        assert_eq!(shape(source, step.value()), "g(a, q)");
+        assert_eq!(shape(source, r#loop.step()), "(tuple b, h(x, y).1[i])");
+        let ExpressionKind::Tuple(tuple) = &r#loop.step().kind else {
+            panic!("expected a tuple");
+        };
+        let ExpressionKind::Index(index) = &tuple.elements()[1].kind else {
+            panic!("expected an index");
+        };
+        let ExpressionKind::Project(project) = &index.base.kind else {
+            panic!("expected a projection");
+        };
+        assert_eq!(source.slice(index.base.span), Some("h(x, y).1"));
+        assert_eq!(source.slice(project.position_span), Some("1"));
+        assert_eq!(project.position, 1);
+
+        // A group of one expression stays a group, and a position too large
+        // for `u32` is kept as `u32::MAX`.
+        let (sources, expression) = body_expression(&spec_source("(a)"));
+        assert_eq!(shape(sources.iter().next().unwrap(), &expression), "[a]");
+        let (_, expression) = body_expression(&spec_source("a.4294967296"));
+        let ExpressionKind::Project(project) = &expression.kind else {
+            panic!("expected a projection");
+        };
+        assert_eq!(project.position, u32::MAX);
+    }
+
+    #[test]
+    fn rejects_malformed_tuples_with_exact_messages() {
+        let tuple_type = TUPLE_TYPE_NOTE;
+        let tuple = TUPLE_NOTE;
+        let pattern = PATTERN_NOTE;
+        let projection = PROJECTION_NOTE;
+        let nested_type = "a tuple's elements are `Int`, `Bool`, words, residues, and arrays of \
+                           them; a tuple holds no tuple";
+        let cases = [
+            (
+                "let t: (Int) = a; t",
+                "expected `,` and another element type",
+                tuple_type,
+            ),
+            ("let t: () = a; t", "expected an element type", tuple_type),
+            (
+                "let t: (Int,) = a; t",
+                "expected an element type",
+                tuple_type,
+            ),
+            (
+                "let t: (Int Int) = a; t",
+                "expected `,` or `)` after the element type",
+                tuple_type,
+            ),
+            (
+                "let t: ((Int, Int), Int) = a; t",
+                "expected an element type",
+                nested_type,
+            ),
+            (
+                "let t: (Int, Int)^2 = a; t",
+                "expected the end of the type after the tuple",
+                "an array's elements are `Int`, `Bool`, words, or residues; arrays of tuples \
+                 are not part of Orange 2026",
+            ),
+            ("(a,)", "expected another element after `,`", tuple),
+            (
+                "(a, b c)",
+                "expected `,` or `)` after the tuple's element",
+                tuple,
+            ),
+            (
+                "a.x",
+                "expected an element's position after `.`",
+                projection,
+            ),
+            (
+                "a.01",
+                "expected an element's position in decimal",
+                projection,
+            ),
+            (
+                "a.0x1",
+                "expected an element's position in decimal",
+                projection,
+            ),
+            (
+                "a.1_0",
+                "expected an element's position in decimal",
+                projection,
+            ),
+            (
+                "a.0.1",
+                "expected an operator or the end of the expression",
+                "a tuple's elements are not tuples, so an element is selected once",
+            ),
+            (
+                "a[0].1",
+                "expected an operator or the end of the expression",
+                "an array's elements are not tuples, so an element has no `.k`",
+            ),
+            (
+                "let (x: Int) = a; x",
+                "expected `,` and another name in the pattern",
+                pattern,
+            ),
+            (
+                "let (x, y) = a; x",
+                "expected `:` and the type of the name",
+                pattern,
+            ),
+            (
+                "let (x: Int, 5) = a; x",
+                "expected a name for the pattern's next value",
+                pattern,
+            ),
+            (
+                "let (): Int = a; a",
+                "expected `}` after the body expression",
+                "a typed `spec` body holds `let` bindings, if any, and then one result \
+                 expression",
+            ),
+            (
+                "let (x: Int y: Int) = a; x",
+                "expected `,` or `)` after the pattern's element",
+                pattern,
+            ),
+            (
+                "for i in 0..2 with (s: Int, t) = a { s }",
+                "expected `:` and the type of the name",
+                pattern,
+            ),
+        ];
+        for (body, message, note) in cases {
+            let (_, lexed, parsed) = parse_text(&spec_source(body));
+            assert!(lexed.diagnostics().is_empty(), "{body:?}");
+            assert!(parsed.ast.is_none(), "accepted {body:?}");
+            assert_eq!(
+                parsed.diagnostics.len(),
+                1,
+                "{body:?}: {:?}",
+                parsed.diagnostics
+            );
+            let diagnostic = &parsed.diagnostics[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::ExpectedSyntax,
+                "{body:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{body:?}");
+            assert_eq!(diagnostic.notes(), [note], "{body:?}");
+        }
+
+        // An error inside a parameter's tuple type is reported once: the
+        // parameter list resumes after the tuple, not at its inner commas.
+        let (_, _, parsed) = parse_text(
+            "edition 2026; module m { spec f(p: ((Int, Int), Int), q: Int) -> Int { q } \
+             spec g() -> Int { 0 } }",
+        );
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+
+        // `let` followed by a call's arguments is still a call of `let`.
+        let (sources, expression) = body_expression(&spec_source("let(a, b)"));
+        assert_eq!(
+            shape(sources.iter().next().unwrap(), &expression),
+            "let(a, b)"
+        );
+    }
+
+    #[test]
+    fn bounds_tuple_elements() {
+        let list = |count: usize, item: &dyn Fn(usize) -> String| {
+            (0..count).map(item).collect::<Vec<_>>().join(", ")
+        };
+        let most = MAX_TUPLE_ELEMENTS;
+        let over = MAX_TUPLE_ELEMENTS + 1;
+        let types = |count| format!("let t: ({}) = a; t", list(count, &|_| "Int".to_owned()));
+        let tuples = |count| format!("({})", list(count, &|_| "a".to_owned()));
+        let patterns = |count| {
+            format!(
+                "let ({}) = a; v0",
+                list(count, &|index| format!("v{index}: Int"))
+            )
+        };
+        body_expression(&spec_source(&types(most)));
+        assert_resource_limited(
+            &types(over),
+            &format!("a tuple type has more than {most} elements"),
+            "Int",
+        );
+        let (_, expression) = body_expression(&spec_source(&tuples(most)));
+        let ExpressionKind::Tuple(tuple) = &expression.kind else {
+            panic!("expected a tuple");
+        };
+        assert_eq!(tuple.elements().len(), most);
+        assert_resource_limited(
+            &tuples(over),
+            &format!("a tuple has more than {most} elements"),
+            "a",
+        );
+        body_expression(&spec_source(&patterns(most)));
+        assert_resource_limited(
+            &patterns(over),
+            &format!("a tuple pattern names more than {most} values"),
+            &format!("v{most}: Int"),
+        );
+    }
+
+    #[test]
+    fn tuples_and_projections_count_toward_expression_height() {
+        // A tuple stands one level above its tallest element, and a
+        // projection one level above its base, here a call.
+        let tall = |additions: usize| format!("a{}", " + a".repeat(additions));
+        type Form = (fn(&str) -> String, &'static str, usize);
+        let forms: [Form; 2] = [
+            (
+                |value| format!("(a, {value})"),
+                "(",
+                MAX_EXPRESSION_HEIGHT - 2,
+            ),
+            (
+                |value| format!("g({value}).0"),
+                ".",
+                MAX_EXPRESSION_HEIGHT - 3,
+            ),
+        ];
+        let message =
+            format!("expression tree height exceeds the {MAX_EXPRESSION_HEIGHT}-level limit");
+        for (form, at, additions) in forms {
+            let (_, expression) = body_expression(&spec_source(&form(&tall(additions))));
+            assert_eq!(tree_height(&expression), MAX_EXPRESSION_HEIGHT);
+            assert_resource_limited(&form(&tall(additions + 1)), &message, at);
+        }
+    }
+
+    #[test]
+    fn tuple_reservation_failures_return_no_partial_ast() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add(
+                "test.or",
+                "edition 2026; module m { spec f(x: (Int, Int)) -> Int { \
+                 let (a: Int, b: Int) = x; a } }",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let type_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_type_slot = |_| false;
+            parser.run()
+        };
+        let name_failure = || {
+            let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+            parser.reserve_name_slot = |_| false;
+            parser.run()
+        };
+        for (run, message, span) in [
+            (
+                &type_failure as &dyn Fn() -> ParseResult,
+                "parser could not allocate type storage",
+                "Int",
+            ),
+            (
+                &name_failure,
+                "parser could not allocate pattern storage",
+                "a: Int",
+            ),
+        ] {
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.ast.is_none());
+            assert_eq!(first.diagnostics.len(), 1, "{:?}", first.diagnostics);
+            let diagnostic = &first.diagnostics[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::ParserResourceLimit);
+            assert_eq!(diagnostic.message(), message);
+            assert_eq!(source.slice(diagnostic.primary_span()), Some(span));
+        }
+
+        // A tuple's elements share the argument slots' reservation hook.
+        let id = sources
+            .add(
+                "tuple.or",
+                "edition 2026; module m { spec f(x: Int) -> (Int, Int) { (x, x) } }",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::E2026);
+        let mut parser = Parser::new(source, lexed.tokens(), Limits::DEFAULT);
+        parser.reserve_argument_slot = |_| false;
+        let result = parser.run();
+        assert!(result.ast.is_none());
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics[0].message(),
+            "parser could not allocate tuple storage"
+        );
+        assert_eq!(
+            source.slice(result.diagnostics[0].primary_span()),
+            Some("x")
+        );
     }
 }

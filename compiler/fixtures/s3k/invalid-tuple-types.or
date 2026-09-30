@@ -1,0 +1,26 @@
+// S3k conformance: the typing of tuples. A tuple's elements are never
+// tuples, and a tuple is never an array's element; a tuple is checked
+// against a tuple type of as many elements; `.k` selects an element that
+// exists, of a tuple; and no operator applies to a whole tuple, or to a
+// tuple or an array written out.
+edition 2026;
+module tuple_types {
+  type Pair = (Int, Int);
+  spec nested(p: (Pair, Int)) -> Int { 0 }
+  spec array(p: Pair^2) -> Int { 0 }
+  spec count() -> Pair { (1, 2, 3) }
+  spec scalar() -> Int { (1, 2) }
+  spec element() -> Pair { (1, true) }
+  spec whole(p: Pair) -> Int { p }
+  spec not_tuple(x: Int^2) -> Int { x.0 }
+  spec position(p: Pair) -> Int { p.2 }
+  spec selected(p: Pair) -> Bool { p.0 }
+  spec indexed(p: Pair) -> Int { p[0] }
+  spec equal(p: Pair, q: Pair) -> Bool { p == q }
+  spec added(p: Pair, q: Pair) -> Pair { p + q }
+  spec converted(p: Pair) -> Int { p as Int }
+  spec pattern() -> Int { let (a: Int, b: Bool) = (1, 2); a }
+  spec unresolved() -> Int { let (a: Wide, b: Int) = (missing, 2); a + b }
+  spec written(p: Pair) -> Bool { (1, 2) == p }
+  spec written_array(x: Int^2) -> Bool { [1, 2] != x }
+}

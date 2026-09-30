@@ -25,8 +25,11 @@ meaning. It accepts no D-004 candidate.
 > [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, extends this
 > document with `let` bindings at the start of a loop's step and of each
 > branch of a conditional, so that the Montgomery ladder of X25519 names A,
-> AA, B, BB, E, C, D, DA, and CB inside each step, as RFC 7748 does. Every
-> source this document accepts keeps its meaning under it.
+> AA, B, BB, E, C, D, DA, and CB inside each step, as RFC 7748 does.
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> which a `type` declaration may name, as `type Pair = (Int, Int);`, and whose
+> elements may be residues. Every source this document accepts keeps its
+> meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

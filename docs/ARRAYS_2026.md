@@ -32,8 +32,11 @@ meaning. It accepts no D-004 candidate.
 > use others, [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012,
 > adds arrays of residues, as `Mod[3329]^256`, and
 > [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, lets a loop's
-> step name the values it computes before the array it returns. Every source
-> this document accepts keeps its meaning under all six.
+> step name the values it computes before the array it returns, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> whose elements may be arrays, as `(Word[64]^4, Word[64])`, though no array
+> holds a tuple. Every source this document accepts keeps its meaning under
+> all seven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
