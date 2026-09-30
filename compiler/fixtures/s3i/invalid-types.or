@@ -1,0 +1,17 @@
+// S3i conformance: `type` declarations name types for their module. A name
+// is declared once, is not a built-in type's, and is used after it is
+// declared; a declared array type has no array length of its own.
+edition 2026;
+module names {
+  type Int = Word[8];
+  type Mod = Mod[7];
+  type K = Mod[7];
+  type K = Mod[11];
+  type L = M;
+  type M = Word[8];
+  type Block = Word[32]^16;
+  type Blocks = Block^2;
+
+  spec f(x: Block^2) -> K { 0 }
+  spec g(x: Unknown) -> K { 0 }
+}

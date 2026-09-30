@@ -30,9 +30,12 @@ language meaning. It accepts no D-004 candidate.
 > comparisons, Euclidean division, and conditionals, so that a field element
 > reduces modulo its prime, [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed
 > under OEP-0010, lets an index depend on data, so that SubBytes is one lookup
-> per byte, and [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011,
-> lets a module use others, so that HMAC calls SHA-256 by name. Every source
-> this document accepts keeps its meaning under all five.
+> per byte, [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011,
+> lets a module use others, so that HMAC calls SHA-256 by name, and
+> [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, lets `as`
+> convert into and out of the integers modulo a constant, so that a field
+> element needs no reduction at all. Every source this document accepts keeps
+> its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -533,7 +533,8 @@ pub enum CoreNodeKind {
 }
 
 /// Types admitted by the typed expression fragment: `Int`, `Bool`, the four
-/// word types, and fixed-length arrays of them.
+/// word types, the integers modulo a constant, and fixed-length arrays of
+/// them.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CoreType {
     /// An exact, signed mathematical integer.
@@ -548,6 +549,8 @@ pub enum CoreType {
     Word32,
     /// An element of the integers modulo 2^64.
     Word64,
+    /// An element of the integers modulo m, written `Mod[m]`.
+    Mod(Modulus),
     /// A fixed-length array of one scalar type, written `T^n`.
     Array(ArrayType),
 }
@@ -563,12 +566,12 @@ impl CoreType {
         Self::Word64,
     ];
 
-    /// Returns the width of a word type, or `None` for `Int`, `Bool`, and
-    /// arrays.
+    /// Returns the width of a word type, or `None` for `Int`, `Bool`,
+    /// `Mod[m]`, and arrays.
     #[must_use]
     pub const fn word_bits(self) -> Option<u32> {
         match self {
-            Self::Int | Self::Bool | Self::Array(_) => None,
+            Self::Int | Self::Bool | Self::Mod(_) | Self::Array(_) => None,
             Self::Word8 => Some(8),
             Self::Word16 => Some(16),
             Self::Word32 => Some(32),
@@ -588,17 +591,40 @@ impl CoreType {
         }
     }
 
-    /// Returns whether this is `Int`, `Bool`, or a word type rather than an
-    /// array.
+    /// Returns whether this is `Int`, `Bool`, a word type, or `Mod[m]` rather
+    /// than an array.
     #[must_use]
     pub const fn is_scalar(self) -> bool {
         !matches!(self, Self::Array(_))
     }
 
-    /// Returns whether this is `Int` or a word type: a type with arithmetic.
+    /// Returns whether this is `Int`, a word type, or `Mod[m]`: a type with
+    /// arithmetic and integer literals.
     #[must_use]
     pub const fn is_number(self) -> bool {
         !matches!(self, Self::Bool | Self::Array(_))
+    }
+
+    /// Returns whether this is `Int` or a word type: a number with an order.
+    /// The integers modulo m have no order that their arithmetic respects.
+    #[must_use]
+    pub const fn is_ordered(self) -> bool {
+        !matches!(self, Self::Bool | Self::Mod(_) | Self::Array(_))
+    }
+
+    /// Returns the modulus of `Mod[m]`, or `None` for the other types.
+    #[must_use]
+    pub const fn modulus(self) -> Option<Modulus> {
+        match self {
+            Self::Mod(modulus) => Some(modulus),
+            Self::Int
+            | Self::Bool
+            | Self::Word8
+            | Self::Word16
+            | Self::Word32
+            | Self::Word64
+            | Self::Array(_) => None,
+        }
     }
 
     /// Returns the array type, or `None` for the scalar types.
@@ -606,9 +632,13 @@ impl CoreType {
     pub const fn as_array(self) -> Option<ArrayType> {
         match self {
             Self::Array(array) => Some(array),
-            Self::Int | Self::Bool | Self::Word8 | Self::Word16 | Self::Word32 | Self::Word64 => {
-                None
-            }
+            Self::Int
+            | Self::Bool
+            | Self::Word8
+            | Self::Word16
+            | Self::Word32
+            | Self::Word64
+            | Self::Mod(_) => None,
         }
     }
 }
@@ -622,6 +652,7 @@ impl fmt::Display for CoreType {
             Self::Word16 => formatter.write_str("Word[16]"),
             Self::Word32 => formatter.write_str("Word[32]"),
             Self::Word64 => formatter.write_str("Word[64]"),
+            Self::Mod(modulus) => write!(formatter, "Mod[{modulus}]"),
             Self::Array(array) => write!(formatter, "{}^{}", array.element(), array.length()),
         }
     }
@@ -648,6 +679,7 @@ enum Scalar {
     Word16,
     Word32,
     Word64,
+    Mod(Modulus),
 }
 
 impl ArrayType {
@@ -663,6 +695,7 @@ impl ArrayType {
             CoreType::Word16 => Scalar::Word16,
             CoreType::Word32 => Scalar::Word32,
             CoreType::Word64 => Scalar::Word64,
+            CoreType::Mod(modulus) => Scalar::Mod(modulus),
             CoreType::Array(_) => return None,
         };
         if length == 0 || length > MAX_ARRAY_LENGTH {
@@ -681,6 +714,7 @@ impl ArrayType {
             Scalar::Word16 => CoreType::Word16,
             Scalar::Word32 => CoreType::Word32,
             Scalar::Word64 => CoreType::Word64,
+            Scalar::Mod(modulus) => CoreType::Mod(modulus),
         }
     }
 
@@ -706,6 +740,8 @@ pub enum CoreValue {
     Word32(u32),
     /// An element of the integers modulo 2^64.
     Word64(u64),
+    /// An element of the integers modulo m.
+    Mod(Residue),
     /// A fixed-length array of scalar values.
     Array(CoreArray),
 }
@@ -752,6 +788,7 @@ impl CoreValue {
             Self::Word16(_) => CoreType::Word16,
             Self::Word32(_) => CoreType::Word32,
             Self::Word64(_) => CoreType::Word64,
+            Self::Mod(residue) => CoreType::Mod(residue.modulus),
             Self::Array(array) => CoreType::Array(array.ty),
         }
     }
@@ -761,7 +798,7 @@ impl CoreValue {
     pub(crate) fn word_from_u64(ty: CoreType, value: u64) -> Option<Self> {
         let [b0, b1, b2, b3, b4, b5, b6, b7] = value.to_le_bytes();
         match ty {
-            CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
+            CoreType::Int | CoreType::Bool | CoreType::Mod(_) | CoreType::Array(_) => None,
             CoreType::Word8 => Some(Self::Word8(b0)),
             CoreType::Word16 => Some(Self::Word16(u16::from_le_bytes([b0, b1]))),
             CoreType::Word32 => Some(Self::Word32(u32::from_le_bytes([b0, b1, b2, b3]))),
@@ -775,7 +812,7 @@ impl CoreValue {
     /// other values.
     pub(crate) fn word_as_u64(&self) -> Option<u64> {
         match self {
-            Self::Int(_) | Self::Bool(_) | Self::Array(_) => None,
+            Self::Int(_) | Self::Bool(_) | Self::Mod(_) | Self::Array(_) => None,
             Self::Word8(value) => Some(u64::from(*value)),
             Self::Word16(value) => Some(u64::from(*value)),
             Self::Word32(value) => Some(u64::from(*value)),
@@ -793,6 +830,7 @@ impl fmt::Display for CoreValue {
             Self::Word16(value) => write!(formatter, "0x{value:04x}"),
             Self::Word32(value) => write!(formatter, "0x{value:08x}"),
             Self::Word64(value) => write!(formatter, "0x{value:016x}"),
+            Self::Mod(residue) => residue.value.fmt(formatter),
             Self::Array(array) => {
                 formatter.write_str("[")?;
                 for (index, element) in array.elements.iter().enumerate() {
@@ -804,6 +842,255 @@ impl fmt::Display for CoreValue {
                 formatter.write_str("]")
             }
         }
+    }
+}
+
+/// The most bits a modulus may have: `Mod[m]` admits 2 <= m < 2^521, so
+/// every standardized prime field, that of P-521 included, has a type.
+pub const MAX_MODULUS_BITS: usize = 521;
+const MODULUS_LIMBS: usize = MAX_MODULUS_BITS.div_ceil(BINARY_LIMB_BITS);
+
+/// The modulus m of the type `Mod[m]`, from 2 through 2^521 - 1.
+///
+/// It is kept in fixed little-endian binary limbs, so that a Core type stays
+/// a small copyable value that still names its modulus exactly. Two moduli
+/// are equal exactly when their values are, and they are ordered by value.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Modulus {
+    limbs: [u32; MODULUS_LIMBS],
+}
+
+impl Ord for Modulus {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.limbs.iter().rev().cmp(other.limbs.iter().rev())
+    }
+}
+
+impl PartialOrd for Modulus {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Modulus {
+    /// Returns the modulus `value`, or `None` unless
+    /// 2 <= `value` < 2^[`MAX_MODULUS_BITS`].
+    #[must_use]
+    pub fn new(value: &ExactInteger) -> Option<Self> {
+        if value.negative || value.magnitude_bits() > MAX_MODULUS_BITS {
+            return None;
+        }
+        let mut limbs = [0; MODULUS_LIMBS];
+        for (slot, limb) in limbs.iter_mut().zip(&value.magnitude.limbs) {
+            *slot = *limb;
+        }
+        let modulus = Self { limbs };
+        (modulus.bits() >= 2).then_some(modulus)
+    }
+
+    /// Returns the number of significant bits of m.
+    #[must_use]
+    pub fn bits(&self) -> usize {
+        let used = self.used_limbs();
+        self.limbs.get(..used).map_or(0, Magnitude::limbs_bit_len)
+    }
+
+    /// Returns the number of limbs below the most significant nonzero one,
+    /// that one included.
+    fn used_limbs(&self) -> usize {
+        self.limbs
+            .iter()
+            .rposition(|limb| *limb != 0)
+            .map_or(0, |position| position.saturating_add(1))
+    }
+
+    /// Returns m as an exact integer, or `None` if storage cannot be
+    /// reserved.
+    pub(crate) fn to_exact(
+        self,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<ExactInteger> {
+        let used = self.limbs.get(..self.used_limbs())?;
+        let mut limbs = Vec::new();
+        if !reserve_limbs(&mut limbs, used.len()) {
+            return None;
+        }
+        limbs.extend_from_slice(used);
+        Some(ExactInteger::new(false, Magnitude { limbs }))
+    }
+
+    /// Returns whether `value` is a least residue: 0 <= `value` < m.
+    #[must_use]
+    pub fn contains(&self, value: &ExactInteger) -> bool {
+        if value.negative {
+            return false;
+        }
+        let used = self.limbs.get(..self.used_limbs()).unwrap_or_default();
+        Magnitude::compare_limbs(&value.magnitude.limbs, used) == Ordering::Less
+    }
+
+    /// Returns the least residue of `value` modulo m, or `None` if storage
+    /// cannot be reserved.
+    pub(crate) fn reduce(
+        &self,
+        value: &ExactInteger,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<ExactInteger> {
+        if self.contains(value) {
+            return value.try_clone_with_reservation(reserve_limbs);
+        }
+        let modulus = self.to_exact(reserve_limbs)?;
+        Some(value.divide_euclid(&modulus, reserve_limbs)?.1)
+    }
+
+    /// Returns the least residue r with `value` * r = 1 modulo m when `value`
+    /// is a unit, that is when gcd(`value`, m) = 1, and 0 otherwise, by the
+    /// extended Euclidean algorithm; `value` is a least residue. Returns
+    /// `None` if storage cannot be reserved.
+    pub(crate) fn inverse(
+        &self,
+        value: &ExactInteger,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<ExactInteger> {
+        let modulus = self.to_exact(reserve_limbs)?;
+        let mut previous = (
+            value.try_clone_with_reservation(reserve_limbs)?,
+            ExactInteger::from_u64(1, reserve_limbs)?,
+        );
+        let mut current = (
+            modulus.try_clone_with_reservation(reserve_limbs)?,
+            ExactInteger::from_u64(0, reserve_limbs)?,
+        );
+        // Each step keeps previous.0 = previous.1 * value and
+        // current.0 = current.1 * value modulo m, and the remainders shrink
+        // to gcd(value, m) in at most about 1.44 * 521 steps.
+        while !current.0.is_zero() {
+            let (quotient, remainder) = previous.0.divide_euclid(&current.0, reserve_limbs)?;
+            let coefficient = previous.1.subtract(
+                &quotient.multiply(&current.1, reserve_limbs)?,
+                reserve_limbs,
+            )?;
+            previous = std::mem::replace(&mut current, (remainder, coefficient));
+        }
+        let one = ExactInteger::from_u64(1, reserve_limbs)?;
+        if previous.0.compare(&one) == Ordering::Equal {
+            Some(previous.1.divide_euclid(&modulus, reserve_limbs)?.1)
+        } else {
+            ExactInteger::from_u64(0, reserve_limbs)
+        }
+    }
+
+    /// Returns m when it is below 2^64.
+    #[must_use]
+    pub fn to_u64(&self) -> Option<u64> {
+        let used = self.limbs.get(..self.used_limbs())?;
+        match used {
+            [] => Some(0),
+            [low] => Some(u64::from(*low)),
+            [low, high] => Some((u64::from(*high) << u32::BITS) | u64::from(*low)),
+            _ => None,
+        }
+    }
+
+    /// Returns `(true, 2^bit - m)` when m < 2^`bit` and `(false, m - 2^bit)`
+    /// otherwise, when that difference is below 2^64.
+    fn offset_from_power(&self, bit: usize) -> Option<(bool, u64)> {
+        let mut power = [0_u32; MODULUS_LIMBS];
+        let limb = bit.checked_div(BINARY_LIMB_BITS)?;
+        let shift = u32::try_from(bit.checked_rem(BINARY_LIMB_BITS)?).ok()?;
+        *power.get_mut(limb)? = 1_u32.checked_shl(shift)?;
+        let (larger, smaller, below) = match Self::compare_raw(&power, &self.limbs) {
+            Ordering::Greater => (power, self.limbs, true),
+            Ordering::Equal | Ordering::Less => (self.limbs, power, false),
+        };
+        let mut difference = [0_u32; MODULUS_LIMBS];
+        let mut borrow = 0_u64;
+        for ((slot, high), low) in difference.iter_mut().zip(larger).zip(smaller) {
+            let subtrahend = u64::from(low).checked_add(borrow)?;
+            let (value, next) = if u64::from(high) >= subtrahend {
+                (u64::from(high).checked_sub(subtrahend)?, 0)
+            } else {
+                (
+                    u64::from(high)
+                        .checked_add(1 << 32)?
+                        .checked_sub(subtrahend)?,
+                    1,
+                )
+            };
+            *slot = u32::try_from(value).ok()?;
+            borrow = next;
+        }
+        let [low, high, rest @ ..] = difference;
+        rest.iter()
+            .all(|limb| *limb == 0)
+            .then(|| (below, (u64::from(high) << u32::BITS) | u64::from(low)))
+    }
+
+    fn compare_raw(left: &[u32; MODULUS_LIMBS], right: &[u32; MODULUS_LIMBS]) -> Ordering {
+        left.iter().rev().cmp(right.iter().rev())
+    }
+}
+
+/// Displays m in decimal below 2^64. A larger modulus within 2^64 of a power
+/// of two displays as `(1 << k) - c`, `(1 << k) + c`, or `1 << k`, with the
+/// smaller c, as the standards of prime fields write them; any other displays
+/// in hexadecimal.
+impl fmt::Display for Modulus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(value) = self.to_u64() {
+            return write!(formatter, "{value}");
+        }
+        let bits = self.bits();
+        let above = bits
+            .checked_sub(1)
+            .and_then(|bit| self.offset_from_power(bit).map(|offset| (bit, offset)));
+        let below = self.offset_from_power(bits).map(|offset| (bits, offset));
+        let nearest = match (below, above) {
+            (Some(below), Some(above)) => Some(if above.1.1 < below.1.1 { above } else { below }),
+            (below, above) => below.or(above),
+        };
+        match nearest {
+            Some((bit, (_, 0))) => write!(formatter, "1 << {bit}"),
+            Some((bit, (true, offset))) => write!(formatter, "(1 << {bit}) - {offset}"),
+            Some((bit, (false, offset))) => write!(formatter, "(1 << {bit}) + {offset}"),
+            None => {
+                let used = self.limbs.get(..self.used_limbs()).ok_or(fmt::Error)?;
+                let (most, rest) = used.split_last().ok_or(fmt::Error)?;
+                write!(formatter, "0x{most:x}")?;
+                for limb in rest.iter().rev() {
+                    write!(formatter, "{limb:08x}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// An element of `Mod[m]`: its modulus and its least residue r, 0 <= r < m.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Residue {
+    modulus: Modulus,
+    value: ExactInteger,
+}
+
+impl Residue {
+    /// Returns the element of `Mod[modulus]` whose least residue is `value`,
+    /// or `None` unless 0 <= `value` < `modulus`.
+    #[must_use]
+    pub fn new(modulus: Modulus, value: ExactInteger) -> Option<Self> {
+        modulus.contains(&value).then_some(Self { modulus, value })
+    }
+
+    /// Returns the modulus.
+    #[must_use]
+    pub const fn modulus(&self) -> Modulus {
+        self.modulus
+    }
+
+    /// Returns the least residue, from 0 through m - 1.
+    #[must_use]
+    pub const fn value(&self) -> &ExactInteger {
+        &self.value
     }
 }
 
@@ -863,6 +1150,22 @@ impl ExactInteger {
         reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
     ) -> Option<Self> {
         Some(Self::new(false, Magnitude::from_u64(value, reserve_limbs)?))
+    }
+
+    /// Returns 2^`bit`, or `None` if storage cannot be reserved.
+    pub(crate) fn power_of_two(
+        bit: usize,
+        reserve_limbs: fn(&mut Vec<u32>, usize) -> bool,
+    ) -> Option<Self> {
+        let limb = bit.checked_div(BINARY_LIMB_BITS)?;
+        let shift = u32::try_from(bit.checked_rem(BINARY_LIMB_BITS)?).ok()?;
+        let mut limbs = Vec::new();
+        if !reserve_limbs(&mut limbs, limb.checked_add(1)?) {
+            return None;
+        }
+        limbs.resize(limb, 0);
+        limbs.push(1_u32.checked_shl(shift)?);
+        Some(Self::new(false, Magnitude { limbs }))
     }
 
     /// Returns this integer when its magnitude has at most 63 bits.
@@ -1079,10 +1382,14 @@ impl Magnitude {
     }
 
     fn compare(&self, other: &Self) -> Ordering {
-        self.limbs
-            .len()
-            .cmp(&other.limbs.len())
-            .then_with(|| self.limbs.iter().rev().cmp(other.limbs.iter().rev()))
+        Self::compare_limbs(&self.limbs, &other.limbs)
+    }
+
+    /// Compares two normalized little-endian limb sequences by value.
+    fn compare_limbs(left: &[u32], right: &[u32]) -> Ordering {
+        left.len()
+            .cmp(&right.len())
+            .then_with(|| left.iter().rev().cmp(right.iter().rev()))
     }
 
     fn add(&self, other: &Self, reserve_limbs: fn(&mut Vec<u32>, usize) -> bool) -> Option<Self> {
@@ -1275,8 +1582,13 @@ impl Magnitude {
     }
 
     pub(crate) fn bit_len(&self) -> usize {
-        self.limbs.last().map_or(0, |most_significant| {
-            self.limbs
+        Self::limbs_bit_len(&self.limbs)
+    }
+
+    /// The significant bits of normalized little-endian limbs.
+    fn limbs_bit_len(limbs: &[u32]) -> usize {
+        limbs.last().map_or(0, |most_significant| {
+            limbs
                 .len()
                 .checked_sub(1)
                 .and_then(|full_limbs| full_limbs.checked_mul(BINARY_LIMB_BITS))
@@ -1913,6 +2225,7 @@ mod tests {
                         | CoreValue::Word16(_)
                         | CoreValue::Word32(_)
                         | CoreValue::Word64(_)
+                        | CoreValue::Mod(_)
                         | CoreValue::Array(_),
                     )
                     | CoreNodeKind::Parameter(_)
@@ -1940,6 +2253,7 @@ mod tests {
                     | CoreType::Word16
                     | CoreType::Word32
                     | CoreType::Word64
+                    | CoreType::Mod(_)
                     | CoreType::Array(_) => {}
                 }
             }
@@ -2236,5 +2550,178 @@ mod tests {
             assert_eq!(converted.to_string(), value.to_string());
             assert_eq!(converted.modulo_2_64(), value);
         }
+    }
+
+    /// 2^`bit` - `offset`.
+    fn power_minus(bit: usize, offset: i128) -> ExactInteger {
+        ExactInteger::power_of_two(bit, reserve)
+            .unwrap()
+            .subtract(&exact(offset), reserve)
+            .unwrap()
+    }
+
+    fn modulus_of(value: &ExactInteger) -> Modulus {
+        Modulus::new(value).unwrap()
+    }
+
+    /// 2^256 - 2^224 + 2^192 + 2^96 - 1, the prime of P-256.
+    fn p256() -> ExactInteger {
+        [(224, -1), (192, 1), (96, 1)].into_iter().fold(
+            power_minus(256, 1),
+            |value, (bit, sign)| {
+                let power = ExactInteger::power_of_two(bit, reserve).unwrap();
+                if sign < 0 {
+                    value.subtract(&power, reserve).unwrap()
+                } else {
+                    value.add(&power, reserve).unwrap()
+                }
+            },
+        )
+    }
+
+    #[test]
+    fn moduli_range_from_two_through_two_to_the_521_minus_one() {
+        for value in [-7, -1, 0, 1] {
+            assert_eq!(Modulus::new(&exact(value)), None, "{value}");
+        }
+        assert_eq!(
+            Modulus::new(&exact(2)).map(|modulus| modulus.bits()),
+            Some(2)
+        );
+        let widest = modulus_of(&power_minus(521, 1));
+        assert_eq!(widest.bits(), MAX_MODULUS_BITS);
+        assert_eq!(widest.to_u64(), None);
+        assert_eq!(Modulus::new(&power_minus(521, 0)), None);
+        assert_eq!(Modulus::new(&power_minus(600, 1)), None);
+        assert_eq!(modulus_of(&exact(3329)).to_u64(), Some(3329));
+
+        // Moduli are equal exactly when their values are, and ordered by
+        // value.
+        assert_eq!(modulus_of(&exact(3329)), modulus_of(&exact(3329)));
+        let mut moduli = [
+            power_minus(255, 19),
+            exact(3329),
+            power_minus(130, 5),
+            exact(2),
+            power_minus(64, 0),
+        ]
+        .map(|value| modulus_of(&value));
+        moduli.sort();
+        assert_eq!(
+            moduli.map(|modulus| modulus.to_string()),
+            ["2", "3329", "1 << 64", "(1 << 130) - 5", "(1 << 255) - 19"]
+        );
+    }
+
+    #[test]
+    fn moduli_display_as_their_standards_write_them() {
+        let cases = [
+            (exact(3329), String::from("3329")),
+            (
+                exact(i128::from(u64::MAX)),
+                String::from("18446744073709551615"),
+            ),
+            (power_minus(64, 0), String::from("1 << 64")),
+            (power_minus(64, -5), String::from("(1 << 64) + 5")),
+            (power_minus(127, -45), String::from("(1 << 127) + 45")),
+            (power_minus(130, 5), String::from("(1 << 130) - 5")),
+            (power_minus(255, 19), String::from("(1 << 255) - 19")),
+            (
+                power_minus(256, 4_294_968_273),
+                String::from("(1 << 256) - 4294968273"),
+            ),
+            (power_minus(521, 1), String::from("(1 << 521) - 1")),
+            (
+                power_minus(200, i128::from(u64::MAX)),
+                String::from("(1 << 200) - 18446744073709551615"),
+            ),
+            (
+                power_minus(200, i128::from(u64::MAX) + 1),
+                format!("0x{}{}", "f".repeat(34), "0".repeat(16)),
+            ),
+            (
+                p256(),
+                String::from("0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff"),
+            ),
+        ];
+        for (value, display) in cases {
+            assert_eq!(modulus_of(&value).to_string(), display, "{value}");
+        }
+    }
+
+    #[test]
+    fn residues_reduce_and_invert_exactly() {
+        let seven = modulus_of(&exact(7));
+        assert!(seven.contains(&exact(0)) && seven.contains(&exact(6)));
+        assert!(!seven.contains(&exact(7)) && !seven.contains(&exact(-1)));
+        for (value, residue) in [(-1, 6), (-7, 0), (7, 0), (-15, 6), (100, 2), (0, 0)] {
+            assert_eq!(
+                seven.reduce(&exact(value), reserve),
+                Some(exact(residue)),
+                "{value}"
+            );
+        }
+        for (value, inverse) in [(0, 0), (1, 1), (2, 4), (3, 5), (6, 6)] {
+            assert_eq!(
+                seven.inverse(&exact(value), reserve),
+                Some(exact(inverse)),
+                "{value}"
+            );
+        }
+        // Modulo 256 exactly the odd residues are units; the others give 0.
+        let byte = modulus_of(&exact(256));
+        for value in 0..256 {
+            let inverse = byte
+                .inverse(&exact(value), reserve)
+                .unwrap()
+                .to_i64()
+                .unwrap();
+            if value % 2 == 1 {
+                assert_eq!((i128::from(inverse) * value) % 256, 1, "{value}");
+            } else {
+                assert_eq!(inverse, 0, "{value}");
+            }
+        }
+        // RFC 8032's d = -121665 / 121666 modulo 2^255 - 19.
+        let p = power_minus(255, 19);
+        let field = modulus_of(&p);
+        let inverse = field.inverse(&exact(121_666), reserve).unwrap();
+        let d = field
+            .reduce(
+                &exact(-121_665).multiply(&inverse, reserve).unwrap(),
+                reserve,
+            )
+            .unwrap();
+        assert_eq!(
+            d.to_string(),
+            "37095705934669439343138083508754565189542113879843219016388785533085940283555"
+        );
+        assert!(Residue::new(field, d).is_some());
+        assert!(Residue::new(field, p).is_none());
+        assert!(Residue::new(seven, exact(-1)).is_none());
+        let residue = Residue::new(seven, exact(3)).unwrap();
+        assert_eq!((residue.modulus(), residue.value()), (seven, &exact(3)));
+        assert_eq!(field.to_exact(|_, _| false), None);
+        assert_eq!(field.inverse(&exact(2), |_, _| false), None);
+        assert_eq!(field.reduce(&exact(-2), |_, _| false), None);
+    }
+
+    #[test]
+    fn residue_types_and_values_display_their_modulus_and_least_residue() {
+        let field = CoreType::Mod(modulus_of(&power_minus(255, 19)));
+        assert_eq!(field.to_string(), "Mod[(1 << 255) - 19]");
+        assert!(field.is_scalar() && field.is_number() && !field.is_ordered());
+        assert_eq!(field.word_bits(), None);
+        assert_eq!(field.modulus(), Some(modulus_of(&power_minus(255, 19))));
+        assert_eq!(CoreType::Int.modulus(), None);
+        let array = ArrayType::new(field, 4).unwrap();
+        assert_eq!(array.element(), field);
+        assert_eq!(CoreType::Array(array).to_string(), "Mod[(1 << 255) - 19]^4");
+        let seven = modulus_of(&exact(7));
+        let value = CoreValue::Mod(Residue::new(seven, exact(6)).unwrap());
+        assert_eq!(value.to_string(), "6");
+        assert_eq!(value.ty(), CoreType::Mod(seven));
+        assert_eq!(value.word_as_u64(), None);
+        assert_eq!(CoreValue::word_from_u64(CoreType::Mod(seven), 6), None);
     }
 }

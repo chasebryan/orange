@@ -63,6 +63,13 @@ unresolved.
 > module name, as in `sha256::compress(h, block)`. It adds no token and no
 > reserved word: `use` is recognized by position, and `::` is the existing
 > `DOUBLE_COLON` token.
+>
+> The S3i slice proposed in [`MODULAR_2026.md`](MODULAR_2026.md) under
+> OEP-0012, also in review, builds on S3h with the type `Mod[m]` of the
+> integers modulo a constant, whose modulus is an expression, as in
+> `Mod[(1 << 255) - 19]`, and `type` declarations at the head of a module. It
+> adds no token and no reserved word: `type` is recognized by position, and
+> `Mod` is an ordinary type name that takes an expression in brackets.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
