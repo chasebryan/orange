@@ -252,17 +252,29 @@ impl<'core> Evaluator<'core> {
         self.machine.core
     }
 
-    /// Returns the root module's function named `name`, if there is one.
+    /// Returns the root module's function named `name`, if there is one and
+    /// it declares no size parameters.
     ///
     /// Functions of the modules the root uses are reached only through the
     /// root's calls, so two modules may each declare a function of one name.
+    /// A function with size parameters is one Core function per instance, all
+    /// of one name, and is reached one instance at a time through
+    /// [`Evaluator::instance`].
     #[must_use]
     pub fn function(&self, name: &str) -> Option<&'core CoreFunction> {
+        self.instance(name, &[])
+    }
+
+    /// Returns the instance of the root module's function named `name` whose
+    /// sizes, in declaration order, are `sizes`, if there is one. Empty
+    /// `sizes` name a function without size parameters.
+    #[must_use]
+    pub fn instance(&self, name: &str, sizes: &[u32]) -> Option<&'core CoreFunction> {
         self.machine
             .core
             .entry_functions()
             .iter()
-            .find(|function| function.name == name)
+            .find(|function| function.name == name && function.sizes() == sizes)
     }
 
     /// Calls `function` on `arguments` within `step_limit` evaluation steps.
@@ -4732,6 +4744,37 @@ mod tests {
         let result = evaluator.call(constant, &[], 1).unwrap();
         assert_eq!(result.value(), Some(&CoreValue::Word8(7)));
         assert_eq!(result.steps(), 1);
+    }
+
+    #[test]
+    fn sized_functions_are_found_one_instance_at_a_time() {
+        let core = core(concat!(
+            "edition 2026; module sized {\n",
+            "  spec pick[n in 1..3](x: Word[8]^n) -> Word[8] { x[n - 1] }\n",
+            "  spec plain() -> Int { 1 }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        // Every instance of `pick` has its name, so a lookup by name alone
+        // finds none of them rather than whichever comes first.
+        assert!(evaluator.function("pick").is_none());
+        assert!(evaluator.instance("pick", &[]).is_none());
+        assert!(evaluator.instance("pick", &[3]).is_none());
+        assert!(evaluator.instance("pick", &[1, 1]).is_none());
+        let second = evaluator.instance("pick", &[2]).unwrap();
+        assert_eq!(second.sizes(), [2]);
+        assert!(evaluator.call(second, &[bytes(&[5])], 100).is_none());
+        let result = evaluator.call(second, &[bytes(&[5, 6])], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(6)));
+        let first = evaluator.instance("pick", &[1]).unwrap();
+        let result = evaluator.call(first, &[bytes(&[5])], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(5)));
+        let plain = evaluator.function("plain").unwrap();
+        assert!(std::ptr::eq(
+            plain,
+            evaluator.instance("plain", &[]).unwrap()
+        ));
+        assert!(evaluator.instance("plain", &[1]).is_none());
     }
 
     #[test]

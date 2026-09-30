@@ -100,6 +100,9 @@ module NAME {
 - Each call may take at most 16,777,216 evaluation steps.
 - The parameter names above are the convention; `orangec` checks the types in
   order.
+- The three specifications declare no size parameters: each is one function
+  whose sizes are its signature's. They may call functions that do, such as
+  a hash written once for every message length.
 - A scheme program may use other modules, which `orangec` reads from beside
   it as it does for `orangec check`: `use chacha20;` reads `chacha20.or`. The
   three specifications must be the program's own, declared in its root
