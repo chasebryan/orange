@@ -5,6 +5,7 @@ Usage:
   python3 tools/d011_suite.py check
   python3 tools/d011_suite.py owner-template
   python3 tools/d011_suite.py run --profile dev|measured [--owner-input NAME]
+  python3 tools/d011_suite.py export EPOCH
   python3 tools/d011_suite.py verify EPOCH
 
 `generate` writes research/decisions/D-011/d011-v0.1/suite-packet.json from the
@@ -12,14 +13,16 @@ tables below and the bound input files; `check` requires the committed packet
 to equal that output byte for byte and to pass the structural checks.
 `owner-template` prints an empty owner input on standard output. `run` builds
 the stand-in kernels for every target tuple, runs the eight cases, and writes a
-content-addressed epoch archive with a summary under ARCHIVE_ROOT; `verify`
-re-hashes an archive and recomputes its summary.
+content-addressed epoch archive with a summary under ARCHIVE_ROOT. `export`
+writes what the repository keeps of a verified archive to
+research/decisions/D-011/d011-v0.1/run/EPOCH, and `verify` re-hashes an archive
+or, when no archive of that name exists, its export, and recomputes the summary.
 
 Command-line arguments never become filesystem paths or command elements. An
 epoch or owner input is named by an entry that already exists under
-ARCHIVE_ROOT (owner inputs under ARCHIVE_ROOT/owner-input), orangec is read
-from compiler/target/release/orangec in this repository, and working files live
-under ARCHIVE_ROOT/work.
+ARCHIVE_ROOT (owner inputs under ARCHIVE_ROOT/owner-input, exports under the
+run directory above), orangec is read from compiler/target/release/orangec in
+this repository, and working files live under ARCHIVE_ROOT/work.
 
 What the laboratory measures is target feasibility, not Orange code
 generation. The kernels under research/decisions/D-011/d011-v0.1/kernels are
@@ -39,6 +42,7 @@ capabilities.
 from __future__ import annotations
 
 import ctypes
+import gzip
 import hashlib
 import hmac
 import json
@@ -3311,7 +3315,7 @@ def verify(archive: Path) -> list[str]:
     try:
         manifest = json.loads((archive / MANIFEST_NAME).read_text(encoding="utf-8"))
         index = json.loads((archive / "index.json").read_text(encoding="utf-8"))
-        packet = json.loads((archive / "packet.json").read_text(encoding="utf-8"))
+        packet_bytes = (archive / "packet.json").read_bytes()
         epoch = json.loads((archive / "epoch.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return [f"archive unreadable: {exc}"]
@@ -3323,17 +3327,37 @@ def verify(archive: Path) -> list[str]:
                 or path.stat().st_size != row["bytes"]:
             problems.append(f"{row['path']} differs from the archive manifest")
     problems += [f"{name} is not in the archive manifest" for name in unlisted(archive, listed)]
-    if epoch_name(epoch["identity"]) != epoch["epoch"] or epoch["epoch"] != archive.name:
+    raw_records: dict[str, bytes] = {}
+    for entry in index["records"]:
+        try:
+            raw_records[entry["sha256"]] = (archive / "records" / f"{entry['sha256']}.json").read_bytes()
+        except OSError:
+            pass
+    indexed = {f"records/{entry['sha256']}.json" for entry in index["records"]}
+    problems += [f"{name} is not in the record index" for name in listed
+                 if name.startswith("records/") and name not in indexed]
+    try:
+        summary_bytes = (archive / "summary.json").read_bytes()
+    except OSError as exc:
+        return problems + [f"archive unreadable: {exc}"]
+    return problems + verify_epoch(archive.name, epoch, packet_bytes, index, raw_records, summary_bytes)
+
+
+def verify_epoch(name: str, epoch: dict[str, Any], packet_bytes: bytes, index: dict[str, Any],
+                 raw_records: dict[str, bytes], summary_bytes: bytes) -> list[str]:
+    """The checks an archive and its export share: the epoch name hashes its identity, the packet is the
+    one the epoch bound, every indexed record is present, matches its digest and belongs to this epoch, and
+    the summary recomputes byte for byte from the records alone."""
+
+    problems: list[str] = []
+    if epoch_name(epoch["identity"]) != epoch["epoch"] or epoch["epoch"] != name:
         problems.append("the epoch name is not the hash of its identity")
-    if sha256_hex((archive / "packet.json").read_bytes()) != epoch["identity"]["packet_sha256"]:
+    if sha256_hex(packet_bytes) != epoch["identity"]["packet_sha256"]:
         problems.append("packet.json is not the packet the epoch bound")
     records = []
-    indexed = set()
     for entry in index["records"]:
-        indexed.add(f"records/{entry['sha256']}.json")
-        try:
-            raw = (archive / "records" / f"{entry['sha256']}.json").read_bytes()
-        except OSError:
+        raw = raw_records.get(entry["sha256"])
+        if raw is None:
             problems.append(f"record {entry['key']} is missing")
             continue
         if sha256_hex(raw) != entry["sha256"]:
@@ -3343,16 +3367,137 @@ def verify(archive: Path) -> list[str]:
                 or record.get("stage") != entry["stage"] or record.get("key") != entry["key"]:
             problems.append(f"record {entry['key']} is not the indexed {RECORD_SCHEMA} record of this epoch")
         records.append(record)
-    problems += [f"{name} is not in the record index" for name in listed
-                 if name.startswith("records/") and name not in indexed]
     try:
-        summary = summarize(records, packet, epoch["identity"]["profile"])
+        summary = summarize(records, json.loads(packet_bytes.decode("utf-8")), epoch["identity"]["profile"])
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         return problems + [f"the summary cannot be recomputed: {exc!r}"]
     summary["epoch"] = epoch["epoch"]
-    if canonical_file(gate0_numbers(summary)) != (archive / "summary.json").read_bytes():
+    if canonical_file(gate0_numbers(summary)) != summary_bytes:
         problems.append("summary.json does not recompute byte for byte from the records")
     return problems
+
+
+# ---------------------------------------------------------------------------
+# Committed epoch exports
+#
+# An export is what the repository keeps of an epoch: epoch.json and summary.json as the archive holds them,
+# every record as one line of gzip-compressed JSON lines, and a manifest. The archive's other rows
+# (index.json, packet.json and the driver ELFs under products/) are carried in the manifest by digest: the
+# index is rebuilt from the record lines, the packet is the committed suite packet, and the products are
+# rebuilt deterministically by a later epoch rather than committed. The rebuilt archive manifest must hash to
+# the digest the export names, so the export holds exactly the archive's records and nothing else.
+
+EXPORT_SCHEMA = "d011-v0.1-export-1"
+EXPORT_MANIFEST = "manifest.json"
+EXPORT_CHUNK_RAW_BYTES = 2 * 1024 * 1024
+EXPORT_CHUNK_MAX_BYTES = 480 * 1024
+RUN_ROOT = REPOSITORY_ROOT / LAB / "run"
+
+
+def _gzip(data: bytes) -> bytes:
+    return gzip.compress(data, compresslevel=9, mtime=0)
+
+
+def export(archive: Path, out_root: Path) -> Path:
+    """Write the export of a verified archive to out_root/EPOCH, replacing an earlier export of it."""
+
+    problems = verify(archive)
+    if problems:
+        raise RunError(f"{archive.name} does not verify: {problems[0]}")
+    manifest_bytes = (archive / MANIFEST_NAME).read_bytes()
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
+    index = json.loads((archive / "index.json").read_text(encoding="utf-8"))
+    out = out_root / archive.name
+    out.mkdir(parents=True, exist_ok=True)
+    for child in sorted(out.iterdir()):
+        if child.is_symlink() or not child.is_file():
+            raise RunError(f"{child} is not a regular file")
+        child.unlink()
+    chunks: list[bytes] = []
+    pending = b""
+    for entry in index["records"]:
+        line = (archive / "records" / f"{entry['sha256']}.json").read_bytes()
+        if pending and len(pending) + len(line) > EXPORT_CHUNK_RAW_BYTES:
+            chunks.append(pending)
+            pending = b""
+        pending += line
+    if pending:
+        chunks.append(pending)
+    written: dict[str, bytes] = {
+        "epoch.json": (archive / "epoch.json").read_bytes(),
+        "summary.json": (archive / "summary.json").read_bytes(),
+    }
+    for number, chunk in enumerate(chunks, start=1):
+        data = _gzip(chunk)
+        if len(data) > EXPORT_CHUNK_MAX_BYTES:
+            raise RunError(f"records chunk {number} compresses to {len(data)} bytes, over the export cap")
+        written[f"records-{number:02d}.jsonl.gz"] = data
+    for name, data in written.items():
+        (out / name).write_bytes(data)
+    (out / EXPORT_MANIFEST).write_bytes(canonical_file({
+        "schema": EXPORT_SCHEMA, "epoch": archive.name, "label": LABEL,
+        "archive_manifest_sha256": sha256_hex(manifest_bytes),
+        "carried": [row for row in manifest["files"] if not row["path"].startswith("records/")
+                    and row["path"] not in written],
+        "files": [{"path": name, "sha256": sha256_hex(data), "bytes": len(data)}
+                  for name, data in sorted(written.items())],
+        "note": "index.json is rebuilt from the record lines, packet.json is the committed suite packet, and "
+                "products/ are named by digest only",
+    }))
+    return out
+
+
+def verify_export(out: Path) -> list[str]:
+    """Re-check an export: its files against its manifest, no file outside it, the archive manifest rebuilt
+    from the carried rows and the record lines, and then every check verify makes of an archive."""
+
+    problems: list[str] = []
+    try:
+        manifest = json.loads((out / EXPORT_MANIFEST).read_text(encoding="utf-8"))
+        epoch_bytes = (out / "epoch.json").read_bytes()
+        summary_bytes = (out / "summary.json").read_bytes()
+        epoch = json.loads(epoch_bytes.decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"export unreadable: {exc}"]
+    if manifest.get("schema") != EXPORT_SCHEMA or manifest.get("epoch") != out.name:
+        problems.append(f"{EXPORT_MANIFEST} is not the {EXPORT_SCHEMA} manifest of this epoch")
+    listed = {EXPORT_MANIFEST}
+    lines: list[bytes] = []
+    for row in manifest["files"]:
+        listed.add(row["path"])
+        path = out / row["path"]
+        if path.is_symlink() or not path.is_file() or file_sha256(path) != row["sha256"] \
+                or path.stat().st_size != row["bytes"]:
+            problems.append(f"{row['path']} differs from the export manifest")
+            continue
+        if re.fullmatch(r"records-[0-9]{2}\.jsonl\.gz", row["path"]):
+            try:
+                lines += gzip.decompress(path.read_bytes()).splitlines(keepends=True)
+            except (OSError, EOFError, ValueError) as exc:
+                problems.append(f"{row['path']} does not decompress: {exc}")
+    problems += [f"{name} is not in the export manifest" for name in archive_files(out) if name not in listed]
+    raw_records = {sha256_hex(line): line for line in lines}
+    entries = []
+    for digest, line in raw_records.items():
+        try:
+            record = json.loads(line.decode("utf-8"))
+            entries.append({"key": record["key"], "sha256": digest, "stage": record["stage"]})
+        except (ValueError, KeyError, TypeError):
+            problems.append(f"a record line is not a record: {digest}")
+    if len(raw_records) != len(lines):
+        problems.append("a record line appears more than once")
+    index = {"epoch": out.name, "records": entries}
+    packet_bytes = (REPOSITORY_ROOT / PACKET_PATH).read_bytes()
+    own = {"epoch.json": epoch_bytes, "summary.json": summary_bytes, "index.json": canonical_file(index),
+           "packet.json": packet_bytes}
+    rows = [{"path": f"records/{digest}.json", "sha256": digest, "bytes": len(line)}
+            for digest, line in raw_records.items()]
+    rows += [{"path": name, "sha256": sha256_hex(data), "bytes": len(data)} for name, data in own.items()]
+    rows += [row for row in manifest["carried"] if row["path"] not in own]
+    rebuilt = canonical_file({"files": sorted(rows, key=lambda row: row["path"])})
+    if sha256_hex(rebuilt) != manifest["archive_manifest_sha256"]:
+        problems.append("the carried rows and record lines do not rebuild the archive manifest")
+    return problems + verify_epoch(out.name, epoch, packet_bytes, index, raw_records, summary_bytes)
 
 
 # ---------------------------------------------------------------------------
@@ -3404,8 +3549,15 @@ def main(argv: list[str]) -> int:
             print(f"archive {path}")
             print(f"conclusion {summary['conclusion']['result']}: {summary['conclusion']['reason']}")
             return 0
+        if command == "export" and len(argv) == 2:
+            out = export(existing_entry(argv[1], ARCHIVE_ROOT, directories=True), RUN_ROOT)
+            print(f"wrote {out.relative_to(REPOSITORY_ROOT).as_posix()}")
+            return 0
         if command == "verify" and len(argv) == 2:
-            problems = verify(existing_entry(argv[1], ARCHIVE_ROOT, directories=True))
+            try:
+                problems = verify(existing_entry(argv[1], ARCHIVE_ROOT, directories=True))
+            except RunError:
+                problems = verify_export(existing_entry(argv[1], RUN_ROOT, directories=True))
             for problem in problems:
                 print(f"FAIL  {problem}")
             print("ok" if not problems else f"{len(problems)} problems")

@@ -1,8 +1,8 @@
 # D-011 native target laboratory
 
 Status: contributor-produced, unreviewed; `d011-v0.1` suite and laboratory
-written, one development epoch run, no measured epoch, no target envelope
-selected
+written, one measured epoch run and exported, no owner input, no target
+envelope selected
 
 This directory holds the inputs for the comparison of initial native target
 envelopes defined by
@@ -28,9 +28,17 @@ timings with native ones.
   the packet and runs the laboratory. It uses only the Python standard library.
 - [`tools/tests/test_d011_suite.py`](../../../tools/tests/test_d011_suite.py)
   tests the packet, the oracles and the laboratory's pure logic without
-  running a compiler or emulator.
+  running a compiler or emulator, and verifies every committed export.
+- [`d011-v0.1/run/d011-e-59b28dba6bd33a57cecb/`](d011-v0.1/run/d011-e-59b28dba6bd33a57cecb/)
+  is the export of the measured epoch: its `epoch.json` and `summary.json`,
+  its 1,083 records as gzip-compressed JSON lines, and a manifest.
 
-Archives are written outside the repository.
+Archives are written outside the repository. An export keeps an archive's
+records and binds everything else by digest: `index.json` is rebuilt from the
+record lines, `packet.json` is the committed suite packet, and the 33 driver
+ELFs under `products/` are named by SHA-256 only. `verify` rebuilds the
+archive manifest from those parts, requires it to hash to the digest the
+export names, and then recomputes the summary from the records byte for byte.
 
 ## Using the laboratory
 
@@ -42,7 +50,11 @@ the base revision into `compiler/target/release/orangec` first, then:
 python3 tools/d011_suite.py check
 python3 tools/d011_suite.py run --profile dev
 python3 tools/d011_suite.py verify d011-e-<id>
+python3 tools/d011_suite.py export d011-e-<id>
 ```
+
+`export` writes `d011-v0.1/run/d011-e-<id>/` from a verified archive. On a
+clone without the archive, `verify d011-e-<id>` checks the export instead.
 
 Epochs are written under `/tmp/orange-d011`. For the evidence run the owner
 saves a completed copy of `python3 tools/d011_suite.py owner-template` under
@@ -52,65 +64,89 @@ owner input is written by the owner only; the laboratory records its digest
 and does not verify who wrote it. Native runs on owner hardware use the driver
 ELFs and request files the epoch writes under `products/`.
 
-## Development epoch
+## Measured epoch
 
-Epoch `d011-e-221362817d5023f337a1` ran the `dev` profile on 2026-09-30 from
-commit `fc3892ab59890b03f936eb253744f931be59b517` with a clean working tree,
-on a contributor host (Ubuntu 24.04.4, x86-64, 4 CPUs, AES and PCLMULQDQ).
-It took 77 seconds, wrote 413 records, and `verify` passed. The archive
-(2.5 MB) is kept outside the repository. Packet SHA-256:
+Epoch `d011-e-59b28dba6bd33a57cecb` ran the `measured` profile on 2026-09-30
+from 08:34 UTC, at repository commit
+`d517505d3981ba7d3c8ebbcd01b5de8995c69326` (a commit of the pull request that
+added this laboratory) with a clean working tree. `orangec` and the Orange
+oracles come from the base revision
+`59caa344e176bc6d8f4e5429a00f3d82eeb2799a`. The host was a contributor
+machine (Ubuntu 24.04.4, Linux 6.18, x86-64, 4 CPUs with AES, PCLMULQDQ and
+AVX2), not owner hardware. The run took 8 minutes 50 seconds and wrote 1,083
+records. `verify` passed on the 6.5 MB archive and passes on its 130 KB
+export. Packet SHA-256:
 `a34d8e461e5964db4fbce80ec07338b4076555524e71b4a46f31478b86a9ce86`.
 
-This epoch exercises every stage once. It is not a result, and it concludes
-`inconclusive` by rule. No owner input was supplied.
+The profile built `-O2`, `-O3` and `-Os` three times each, timed 30 native
+runs after one warm-up and five emulated runs, sent the request file 20 times
+per timed run, and traced eight variants per group. No owner input was
+supplied, so the epoch concludes `inconclusive: no valid owner input`.
 
 All 64 subjects had agreeing oracles: the published literal, `orangec eval`
 of the 15 bound Orange sources, and the library oracle.
 
 | Case | Gate | T-X64 | T-A64 | T-RV64 | Portable path |
 | --- | --- | --- | --- | --- | --- |
-| NT-01 known answers | HG-02 | pass: 548/548, native and emulated identical 4/4 | pass: 274/274 emulated | pass: 137/137 emulated | pass |
-| NT-02 inventory | HG-04 | pass: class A 0, B 168, C 0, D 26, E 3; control 4/4 | pass: A 0, B 163, C 0, D 26, E 4; control 4/4 | pass: A 0, B 137, C 0, D 61, E 6; control 2/2 | vacuous |
-| NT-03 traces | HG-05 | pass: 60/60 groups, control differs 4/4 | pass: 60/60, control 4/4 | pass: 30/30, control 2/2 | vacuous |
-| NT-04 negatives | HG-03 | pass: 44/44 | unresolved: 42/44, N-12 has no emulated CPU without FEAT_AES | pass: 22/22 | pass |
+| NT-01 known answers | HG-02 | pass: 1644/1644, native and emulated identical 12/12 | pass: 822/822 emulated | pass: 411/411 emulated | pass |
+| NT-02 inventory | HG-04 | pass: class A 0, B 168, C 0, D 26, E 3; control 12/12 | pass: A 0, B 163, C 0, D 26, E 4; control 12/12 | pass: A 0, B 137, C 0, D 61, E 6; control 6/6 | vacuous |
+| NT-03 traces | HG-05 | pass: 180/180 groups, control differs 12/12 | pass: 180/180, control 12/12 | pass: 90/90, control 6/6 | vacuous |
+| NT-04 negatives | HG-03 | pass: 132/132 | unresolved: 126/132, N-12 has no emulated CPU without FEAT_AES in the six crypto-profile builds | pass: 66/66 | pass |
 | NT-05 C ABI | HG-06 | pass: cross-links 2/2, Rust probe 128/128, symbol violations 0 | unresolved: cross-links 2/2, no Rust `aarch64` standard library | unresolved: one C toolchain, no Rust `riscv64gc` standard library | pass |
 | NT-06 inventory rows | HG-07 | unresolved: 0/3 verified | unresolved: 0/3 | unresolved: 0/3 | vacuous |
 | NT-07 owner hardware | HG-08 | unresolved: no owner input | unresolved | unresolved | vacuous |
-| NT-08 resources | HG-09, HG-01 | pass, pass: 8/8 builds | pass, pass: 8/8 builds | pass, unresolved: 4/6 builds, TC-03 absent | pass, pass |
+| NT-08 resources | HG-09, HG-01 | pass, pass: 36/36 builds | pass, pass: 36/36 builds | pass, unresolved: 18/24 builds, TC-03 absent | pass, pass |
 
-Resource figures from this epoch (one `-O2` repetition, contributor host):
+Every build rebuilt to identical bytes. Resource figures (contributor host;
+build cost is one repetition of all three optimization levels, the other
+figures are for the `-O2` reference build):
 
 | Figure | T-X64 | T-A64 | T-RV64 |
 | --- | --- | --- | --- |
-| Build CPU / wall, ms | 5305 / 5490 | 6457 / 6618 | 2959 / 3043 |
-| Deterministic rebuild | yes | yes | yes |
+| Build CPU / wall, ms | 17813 / 18489 | 20137 / 20669 | 8010 / 8255 |
 | Kernel code bytes, all families | 15086 | 12020 | 20404 |
 | Crypto-profile glue / target bytes | 2106 / 108 | 1940 / 116 | 3096 / 758 |
 | Target-specific source lines | 52 | 53 | 91 |
 | Distinct kernel mnemonics | 79 | 77 | 56 |
-| Emulated known-answer median, ms (launch overhead) | 57 (15) | 54 (14) | 46 (15) |
-| Native known-answer median, ms (launch overhead) | 18 (10) | none | none |
+| Emulated known-answer median, ms (launch overhead) | 329 (15) | 416 (16) | 180 (14) |
+| Native known-answer median, ms (launch overhead) | 86 (10) | none | none |
 | Trace blocks, reference build | 1360719 | 1407283 | 177987 |
-| CI projection, ms | 19806 | 21635 | 6227 |
+| Trace wall time, ms | 107861 | 99659 | 41486 |
+| CI projection, ms | 132153 | 125199 | 51084 |
 
-The emulated and native columns are different quantities and are not
-compared. Each timed run sent the request file twice in one process.
+The portable path's CI projection is 3153 ms. The emulated and native columns
+are different quantities and are not compared.
 
 | Candidate | Gates not passing | Eligible | AX-01 | AX-02 | AX-03 | AX-04 ms | AX-05 | AX-06 | AX-07 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TE-01 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 2 | 17 | 52 | 44649 | 251 | 6 | 2 |
-| TE-02 | HG-07, HG-08 unresolved | no | 1 | 12 | 26 | 23014 | 131 | 3 | 1 |
-| TE-03 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 1 | 10 | 26 | 24843 | 130 | 6 | 1 |
-| TE-04 | none (HG-04, HG-05, HG-07, HG-08 vacuous) | yes | 0 | 5 | 0 | 3208 | 0 | 3 | 0 |
-| TE-05 | HG-01, HG-03, HG-06, HG-07, HG-08 unresolved | no | 3 | 22 | 113 | 50876 | 390 | 9 | 3 |
+| TE-01 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 2 | 17 | 52 | 260505 | 251 | 6 | 2 |
+| TE-02 | HG-07, HG-08 unresolved | no | 1 | 12 | 26 | 135306 | 131 | 3 | 1 |
+| TE-03 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 1 | 10 | 26 | 128352 | 130 | 6 | 1 |
+| TE-04 | none (HG-04, HG-05, HG-07, HG-08 vacuous) | yes | 0 | 5 | 0 | 3153 | 0 | 3 | 0 |
+| TE-05 | HG-01, HG-03, HG-06, HG-07, HG-08 unresolved | no | 3 | 22 | 113 | 311589 | 390 | 9 | 3 |
 
 No gate failed. Every non-passing gate is unresolved for one of three
 reasons: owner input the contributor cannot supply (HG-07, HG-08), a tool not
 installed on the host (HG-01 for T-RV64, HG-06 for T-A64 and T-RV64), or an
 emulator limit (HG-03 for T-A64). TE-04 is eligible only through vacuous
-passes, as the suite's anti-gaming rule 5 describes.
+passes, as the suite's anti-gaming rule 5 describes; the summary lists it as
+eligible and still concludes `inconclusive`, because the conclusion needs the
+owner's input and review scopes before any candidate is recommended.
 
-### Tools recorded by the epoch
+Every gate state matches the development epoch below; the measured profile
+changed counts and costs, not outcomes.
+
+## Development epoch
+
+Before the measured run, epoch `d011-e-221362817d5023f337a1` ran the `dev`
+profile on the same host (one `-O2` build per toolchain, a batch of two per
+timed run). It took 77 seconds, wrote 413 records and verified, and it
+concludes `inconclusive` by rule because a development epoch is not a result.
+It ran from the laboratory's draft commit before it was rebased onto `main`,
+so that commit is not in this repository's history; its packet is the same
+(`a34d8e46…`). Its archive is kept outside the repository and not exported.
+
+### Tools recorded by the measured epoch
 
 | Tool | Version | SHA-256 |
 | --- | --- | --- |
@@ -139,9 +175,10 @@ passes, as the suite's anti-gaming rule 5 describes.
 | `setpriv` | util-linux 2.39.3 | `96b083b79c32fd2f0c29657e88e20c7495839349fc64ad5d0503f32d26bf8733` |
 
 `rustc` links the probe with the system `cc`, which is the same
-`x86_64-linux-gnu-gcc-13` binary.
+`x86_64-linux-gnu-gcc-13` binary. The development epoch recorded the same
+digests.
 
-## What the measured run still needs
+## What a conclusive epoch still needs
 
 - Acquisitions: `gcc-13-riscv64-linux-gnu` (TC-03), and the Rust standard
   libraries for `aarch64-unknown-linux-gnu` and `riscv64gc-unknown-linux-gnu`.
@@ -152,11 +189,10 @@ passes, as the suite's anti-gaming rule 5 describes.
   a SIGILL on an AArch64 device without the Cryptographic Extension (gap G-09),
   every review scope NR-01 to NR-10, a distinguishing rule and, for DR-1, a
   solo slice capacity.
-- The `measured` profile itself: `-O2`, `-O3` and `-Os`, three build
-  repetitions, 30 native runs after one warm-up, five emulated runs, a batch of
-  20 per timed run, and eight trace variants per group. Extrapolated from the
-  development epoch, not measured, it takes about ten minutes on the
-  development host, most of it in traces and builds.
+- A new `measured` epoch with that input (`--owner-input NAME`). The run
+  reads the input and records it among the epoch's records, so it cannot be
+  added to this epoch afterwards. On the contributor host the measured profile
+  took 8 minutes 50 seconds.
 
 ## Judgment calls
 
@@ -182,5 +218,10 @@ passes, as the suite's anti-gaming rule 5 describes.
   request beside it, because sandbox launch alone costs about 10 to 15
   milliseconds on the development host.
 - Epochs live under the fixed root `/tmp/orange-d011` and arguments only name
-  entries that already exist there, so no command-line argument becomes a
-  path or a command element.
+  entries that already exist there (or, for `verify`, an export under
+  `d011-v0.1/run/`), so no command-line argument becomes a path or a command
+  element.
+- The repository keeps an export rather than the archive. The driver ELFs are
+  not committed, because a later epoch rebuilds them to identical bytes and
+  the owner's native runs need an epoch with owner input anyway; the export
+  names each one by SHA-256.

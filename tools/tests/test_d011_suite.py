@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+import gzip
 import json
+import shutil
 import signal
 import struct
 import tempfile
@@ -295,6 +297,39 @@ class D011LaboratoryLogicTests(unittest.TestCase):
             self.assertIn("records/stray.json is not in the archive manifest", suite.verify(archive))
             suite.write_manifest(archive)
             self.assertIn("records/stray.json is not in the record index", suite.verify(archive))
+
+
+class D011ExportTests(unittest.TestCase):
+    def exports(self) -> list[Path]:
+        root = suite.RUN_ROOT
+        return sorted(child for child in root.iterdir() if child.is_dir()) if root.is_dir() else []
+
+    def test_every_committed_export_verifies(self) -> None:
+        self.assertTrue(self.exports())
+        for out in self.exports():
+            self.assertEqual(suite.verify_export(out), [], out.name)
+
+    def test_export_verification_names_tampering(self) -> None:
+        source = self.exports()[0]
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / source.name
+            shutil.copytree(source, out)
+            (out / "stray.json").write_bytes(b"{}\n")
+            self.assertIn("stray.json is not in the export manifest", suite.verify_export(out))
+            (out / "stray.json").unlink()
+            summary = (out / "summary.json").read_bytes()
+            (out / "summary.json").write_bytes(summary.replace(b"inconclusive", b"recommend_te_04", 1))
+            self.assertIn("summary.json differs from the export manifest", suite.verify_export(out))
+            (out / "summary.json").write_bytes(summary)
+            manifest = json.loads((out / suite.EXPORT_MANIFEST).read_text(encoding="utf-8"))
+            chunk = next(row for row in manifest["files"] if row["path"].startswith("records-"))
+            lines = gzip.decompress((out / chunk["path"]).read_bytes()).splitlines(keepends=True)
+            data = suite._gzip(b"".join(lines[1:]))
+            (out / chunk["path"]).write_bytes(data)
+            chunk.update(sha256=suite.sha256_hex(data), bytes=len(data))
+            (out / suite.EXPORT_MANIFEST).write_bytes(suite.canonical_file(manifest))
+            problems = suite.verify_export(out)
+            self.assertIn("the carried rows and record lines do not rebuild the archive manifest", problems)
 
 
 if __name__ == "__main__":

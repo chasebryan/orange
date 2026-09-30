@@ -41,8 +41,8 @@ const CASE_INPUT_INDEX: &[u8] =
 const SOLVER_TRUST_SUITE: &[u8] = include_bytes!("../../../../docs/SOLVER_TRUST_DECISION_SUITE.md");
 
 const PACKET_CANONICAL_SHA256: &str =
-    "5b5d2b8edb4df81f361323000054112614025ff07af0bad301dac4c501f878d5";
-const PACKET_RAW_SHA256: &str = "fd83f28daf6c285e149de1603d6318496c6634d2c72d5acbaa7c4014930bb1d8";
+    "67053f68c2fa495cfff5ecb128b6306bc74c9deb7b53c7a9e0f733b473437f07";
+const PACKET_RAW_SHA256: &str = "d1bf9db8ecd19d1441c63f9e686c837bcc041ec6ba8636aca40878ab7128b38f";
 const INDEX_RAW_SHA256: &str = "c5298d625f5392de2774ffb861fe1dc1701b379ebd385cde0584a8cbcd249859";
 
 fn checked_in_replay_inputs() -> ReplayInputs<'static> {
