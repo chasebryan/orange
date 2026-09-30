@@ -35,20 +35,21 @@ Archives are written outside the repository.
 
 The laboratory needs a Linux host that allows unprivileged user namespaces,
 with the tools the suite lists (section 9 of the suite). Build `orangec` from
-the base revision first, then:
+the base revision into `compiler/target/release/orangec` first, then:
 
 ```sh
 python3 tools/d011_suite.py check
-python3 tools/d011_suite.py owner-template /path/to/owner-input.json
-python3 tools/d011_suite.py run --profile dev --archive /path/to/archive \
-    --orangec compiler/target/release/orangec
-python3 tools/d011_suite.py verify /path/to/archive/d011-e-<id>
+python3 tools/d011_suite.py run --profile dev
+python3 tools/d011_suite.py verify d011-e-<id>
 ```
 
-`run --profile measured --owner-input FILE` is the evidence run. The owner
-input is written by the owner only; the laboratory records its digest and does
-not verify who wrote it. Native runs on owner hardware use the driver ELFs and
-request files the epoch writes under `products/`.
+Epochs are written under `/tmp/orange-d011`. For the evidence run the owner
+saves a completed copy of `python3 tools/d011_suite.py owner-template` under
+`/tmp/orange-d011/owner-input/` and runs
+`python3 tools/d011_suite.py run --profile measured --owner-input NAME`. The
+owner input is written by the owner only; the laboratory records its digest
+and does not verify who wrote it. Native runs on owner hardware use the driver
+ELFs and request files the epoch writes under `products/`.
 
 ## Development epoch
 

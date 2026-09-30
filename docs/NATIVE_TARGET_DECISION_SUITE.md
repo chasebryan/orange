@@ -512,10 +512,10 @@ spaces, integers only and one final line feed. `tools/d011_suite.py generate`
 writes it, and `tools/d011_suite.py check` confirms that the committed bytes
 equal the generator's output and that every bound input still has its digest.
 
-`tools/d011_suite.py run --profile dev|measured --archive DIR` writes one epoch
-directory named `d011-e-` plus the first 20 hex digits of the SHA-256 of the
-epoch identity (suite version, packet digest, profile, base revision,
-repository head, tools, host and start time):
+`tools/d011_suite.py run --profile dev|measured` writes one epoch directory
+under the fixed root `/tmp/orange-d011`, named `d011-e-` plus the first 20 hex
+digits of the SHA-256 of the epoch identity (suite version, packet digest,
+profile, base revision, repository head, tools, host and start time):
 
 ```text
 d011-e-<id>/
@@ -528,14 +528,27 @@ d011-e-<id>/
   archive-manifest.json    SHA-256 of every file in the epoch
 ```
 
-`tools/d011_suite.py verify EPOCH_DIR` rechecks every digest and recomputes
-`summary.json` from the records. Archives stay outside the repository.
+`tools/d011_suite.py verify EPOCH` rechecks every file against the manifest,
+rejects any file the manifest or the record index does not list, checks that
+every record belongs to the epoch, and recomputes `summary.json` from the
+records alone. Archives stay outside the repository.
+
+Command-line arguments never become filesystem paths or command elements. An
+epoch or an owner input is named by an entry that already exists under the
+root, working files live under `/tmp/orange-d011/work`, and `orangec` is read
+from `compiler/target/release/orangec` in the repository. Only a step that
+completes (exit status 0, no limit reached) counts as a success; an expected
+failure, such as N-11's exit status or N-12's SIGILL, is matched on that exit
+code or signal and never on a limit. Records and summaries carry no floats and
+no integers beyond 2^53 - 1, and the summary is computed only from the
+records, never by querying the host.
 
 ## 11. Owner input and review scopes
 
-`tools/d011_suite.py owner-template OUT` writes an empty owner input. Only the
-owner completes it; the laboratory records its digest and content and does not
-verify who wrote it. It holds the attested devices and declared absences per
+`tools/d011_suite.py owner-template` prints an empty owner input. Only the
+owner completes it, saves it under `/tmp/orange-d011/owner-input/` and names it
+with `run --owner-input NAME`; the laboratory records its digest and content
+and does not verify who wrote it. It holds the attested devices and declared absences per
 tuple, native runs of archived drivers, feature-negative attestations, a
 verdict on every inventory row, the review scopes done, the distinguishing
 rule, and the owner's solo slice capacity.

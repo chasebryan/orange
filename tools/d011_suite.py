@@ -3,17 +3,23 @@
 Usage:
   python3 tools/d011_suite.py generate
   python3 tools/d011_suite.py check
-  python3 tools/d011_suite.py owner-template OUT.json
-  python3 tools/d011_suite.py run --profile dev|measured --archive DIR
-      [--orangec PATH] [--owner-input FILE] [--work DIR]
-  python3 tools/d011_suite.py verify EPOCH_DIR
+  python3 tools/d011_suite.py owner-template
+  python3 tools/d011_suite.py run --profile dev|measured [--owner-input NAME]
+  python3 tools/d011_suite.py verify EPOCH
 
 `generate` writes research/decisions/D-011/d011-v0.1/suite-packet.json from the
 tables below and the bound input files; `check` requires the committed packet
-to equal that output byte for byte and to pass the structural checks. `run`
-builds the stand-in kernels for every target tuple, runs the eight cases, and
-writes a content-addressed epoch archive with a summary; `verify` re-hashes an
-archive and recomputes its summary.
+to equal that output byte for byte and to pass the structural checks.
+`owner-template` prints an empty owner input on standard output. `run` builds
+the stand-in kernels for every target tuple, runs the eight cases, and writes a
+content-addressed epoch archive with a summary under ARCHIVE_ROOT; `verify`
+re-hashes an archive and recomputes its summary.
+
+Command-line arguments never become filesystem paths or command elements. An
+epoch or owner input is named by an entry that already exists under
+ARCHIVE_ROOT (owner inputs under ARCHIVE_ROOT/owner-input), orangec is read
+from compiler/target/release/orangec in this repository, and working files live
+under ARCHIVE_ROOT/work.
 
 What the laboratory measures is target feasibility, not Orange code
 generation. The kernels under research/decisions/D-011/d011-v0.1/kernels are
@@ -38,6 +44,7 @@ import hmac
 import json
 import os
 import platform
+import pwd
 import re
 import selectors
 import shutil
@@ -64,6 +71,11 @@ RECORD_SCHEMA = "d011-v0.1-record-1"
 SUMMARY_SCHEMA = "d011-v0.1-summary-1"
 LABEL = "contributor-produced, unreviewed"
 MAX_SAFE = (1 << 53) - 1
+ARCHIVE_ROOT = Path("/tmp/orange-d011")
+OWNER_INPUT_DIR = ARCHIVE_ROOT / "owner-input"
+WORK_DIR = ARCHIVE_ROOT / "work"
+ORANGEC = REPOSITORY_ROOT / "compiler" / "target" / "release" / "orangec"
+MANIFEST_NAME = "archive-manifest.json"
 
 
 class SuiteError(Exception):
@@ -84,6 +96,21 @@ def canonical(value: Any) -> bytes:
 
 def canonical_file(value: Any) -> bytes:
     return canonical(value) + b"\n"
+
+
+def gate0_numbers(value: Any) -> Any:
+    """Gate 0's JSON profile has no non-integers and no integers beyond 2**53 - 1; records carry those as
+    decimal strings (floats by their shortest round-trip form)."""
+
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > MAX_SAFE:
+        return str(value)
+    if isinstance(value, dict):
+        return {key: gate0_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [gate0_numbers(item) for item in value]
+    return value
 
 
 def sha256_hex(data: bytes) -> str:
@@ -1872,6 +1899,24 @@ def exit_facts(code: int) -> dict[str, Any]:
     return {"exit_code": code, "signal": None}
 
 
+def run_state(code: int, timed_out: bool, oversized: bool) -> str:
+    """How a step ended. Only `completed` (exit status 0, no limit reached) is a success; an expected
+    failure is matched on `failed` with its exit code or `crash` with its signal, never on a limit."""
+
+    facts = exit_facts(code)
+    if timed_out:
+        return "timeout"
+    if oversized:
+        return "oversized_output"
+    if facts["signal"] in ("SIGXCPU", "SIGXFSZ"):
+        return "resource_exhaustion"
+    if facts["exit_code"] == 0:
+        return "completed"
+    if facts["exit_code"] is not None:
+        return "failed"
+    return "crash"
+
+
 class Launcher:
     """Run one process tree in fresh namespaces, without capabilities, inside fs-sandbox."""
 
@@ -1965,7 +2010,12 @@ class Launcher:
         code = os.waitstatus_to_exitcode(status)
         if bytes(err).startswith(LAUNCH_FAILURES) and not bytes(err).startswith(COMMAND_EXEC_FAILURE):
             raise RunError(f"launcher failure: {bytes(err)[:300].decode('utf-8', 'replace')}")
-        result = {"exit": code, **exit_facts(code), "stdout": bytes(out), "stderr": bytes(err), "wall_us": wall,
+        state = run_state(code, timed_out, oversized)
+        facts = exit_facts(code)
+        if state in ("timeout", "oversized_output"):
+            # A step stopped by a limit keeps neither its exit status nor its signal.
+            code, facts = None, {"exit_code": None, "signal": None}
+        result = {"exit": code, **facts, "state": state, "stdout": bytes(out), "stderr": bytes(err), "wall_us": wall,
                   "cpu_us": int((usage.ru_utime + usage.ru_stime) * 1_000_000), "max_rss_kib": int(usage.ru_maxrss),
                   "timed_out": timed_out, "oversized": oversized}
         if trace:
@@ -2012,13 +2062,18 @@ def _version(argv: list[str]) -> str:
     return text[0] if text else "unavailable"
 
 
+RUSTC_TOOLCHAIN = "1.96.1-x86_64-unknown-linux-gnu"
+
+
 def find_rustc() -> Path | None:
-    candidates = [os.environ.get("D011_RUSTC"),
-                  str(Path.home() / ".rustup/toolchains/1.96.1-x86_64-unknown-linux-gnu/bin/rustc")]
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file():
-            return Path(candidate)
-    return None
+    """The pinned rustup toolchain in the current user's home, found from the password database."""
+
+    try:
+        home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        return None
+    candidate = home / ".rustup" / "toolchains" / RUSTC_TOOLCHAIN / "bin" / "rustc"
+    return candidate if candidate.is_file() else None
 
 
 def tool_capture(orangec: Path | None, rustc: Path | None) -> dict[str, Any]:
@@ -2088,15 +2143,38 @@ def build_id(tup: str, tc: str, profile: str, opt: str, rep: int) -> str:
     return f"{tup}/{tc}/{profile}/{opt}/r{rep}"
 
 
+def ensure_archive_root() -> None:
+    """Create ARCHIVE_ROOT private to this user, and refuse one that is a link or someone else's."""
+
+    ARCHIVE_ROOT.mkdir(mode=0o700, exist_ok=True)
+    info = os.lstat(ARCHIVE_ROOT)
+    if ARCHIVE_ROOT.is_symlink() or not ARCHIVE_ROOT.is_dir() or info.st_uid != os.getuid():
+        raise RunError(f"{ARCHIVE_ROOT} is not a directory owned by this user")
+    OWNER_INPUT_DIR.mkdir(mode=0o700, exist_ok=True)
+
+
+def existing_entry(name: str, root: Path, directories: bool) -> Path:
+    """The entry under root that an argument names, by name or path. The argument is only compared with
+    entries that already exist there (as D-004's and D-006's runners do), so it never becomes part of a
+    filesystem path."""
+
+    wanted = os.path.realpath(name)
+    for child in sorted(root.iterdir()) if root.is_dir() else ():
+        if child.is_symlink() or not (child.is_dir() if directories else child.is_file()):
+            continue
+        if child.name == name or os.path.realpath(child) == wanted:
+            return child
+    raise RunError(f"no {'epoch' if directories else 'file'} named {name!r} under {root}")
+
+
 class Lab:
-    def __init__(self, root: Path, profile: str, archive_root: Path, work: Path, orangec: Path | None,
-                 owner_input: Path | None) -> None:
+    def __init__(self, root: Path, profile: str, owner_input: Path | None) -> None:
         self.root = root
         self.profile_name = profile
         self.profile = RUN_PROFILES[profile]
-        self.archive_root = archive_root
-        self.work = work
-        self.orangec = orangec
+        self.archive_root = ARCHIVE_ROOT
+        self.work = WORK_DIR
+        self.orangec = ORANGEC
         self.owner_input = owner_input
         self.packet_bytes = (root / PACKET_PATH).read_bytes()
         self.packet = json.loads(self.packet_bytes.decode("utf-8"))
@@ -2110,11 +2188,12 @@ class Lab:
 
     def record(self, stage: str, key: str, data: dict[str, Any]) -> None:
         body = {"schema": RECORD_SCHEMA, "epoch": self.name, "label": LABEL, "stage": stage, "key": key, **data}
-        raw = canonical_file(body)
+        raw = canonical_file(gate0_numbers(body))
         digest = sha256_hex(raw)
         (self.archive / "records" / f"{digest}.json").write_bytes(raw)
         self.index.append({"stage": stage, "key": key, "sha256": digest})
-        self.records.append(body)
+        # The summary is computed from exactly what was recorded, as verify recomputes it.
+        self.records.append(json.loads(raw.decode("utf-8")))
         print(f"  {stage:<12} {key}", flush=True)
 
     # -- preparation
@@ -2123,7 +2202,8 @@ class Lab:
         problems = check(self.root)
         if problems:
             raise RunError("packet check failed: " + "; ".join(problems[:5]))
-        self.work.mkdir(parents=True, exist_ok=True)
+        ensure_archive_root()
+        self.work.mkdir(mode=0o700, exist_ok=True)
         self.src = self.work / "src"
         if self.src.exists():
             shutil.rmtree(self.src)
@@ -2138,15 +2218,22 @@ class Lab:
         self.launcher = Launcher(sandbox)
         self.tools = tool_capture(self.orangec, self.rustc)
         self.tools["TC-11"] = sandbox_facts
-        head = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"], capture_output=True, text=True,
-                              check=False).stdout.strip()
-        dirty = subprocess.run(["git", "-C", str(self.root), "status", "--porcelain"], capture_output=True, text=True,
-                               check=False).stdout.strip()
+        head, dirty = "", "unknown"
+        try:
+            found = subprocess.run(["/usr/bin/git", "-C", str(self.root), "rev-parse", "HEAD"], capture_output=True,
+                                   text=True, check=False, env=dict(BASE_ENV))
+            status = subprocess.run(["/usr/bin/git", "-C", str(self.root), "status", "--porcelain"],
+                                    capture_output=True, text=True, check=False, env=dict(BASE_ENV))
+            if found.returncode == 0 and status.returncode == 0:
+                head, dirty = found.stdout.strip(), status.stdout.strip()
+        except OSError:
+            pass
         self.identity = {"suite_version": SUITE_VERSION, "packet_sha256": sha256_hex(self.packet_bytes),
                          "profile": self.profile_name, "run_profile": self.profile,
                          "base_revision": self.packet["base_revision"], "repository_head": head,
                          "working_tree_clean": not dirty, "tools": self.tools, "host": self.host,
                          "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        self.identity = gate0_numbers(self.identity)
         self.name = epoch_name(self.identity)
         self.archive = self.archive_root / self.name
         if self.archive.exists():
@@ -2154,9 +2241,9 @@ class Lab:
         (self.archive / "records").mkdir(parents=True)
         (self.archive / "products").mkdir()
         (self.archive / "packet.json").write_bytes(self.packet_bytes)
-        (self.archive / "epoch.json").write_bytes(canonical_file(
+        (self.archive / "epoch.json").write_bytes(canonical_file(gate0_numbers(
             {"schema": RECORD_SCHEMA, "epoch": self.name, "label": LABEL, "identity": self.identity,
-             "statement": self.packet["stand_in_statement"]}))
+             "statement": self.packet["stand_in_statement"]})))
         print(f"epoch {self.name} ({self.profile_name})", flush=True)
         self.record("host", "host", {"host": self.host})
         self.record("tools", "tools", {"tools": self.tools})
@@ -2176,9 +2263,9 @@ class Lab:
             if found == src["sha256"] and self.orangec is not None and self.orangec.is_file():
                 run = self.launcher.run([str(self.orangec), "eval", str(path)], ro=[str(path), str(self.orangec)],
                                         wall_seconds=300)
-                row.update({"exit": run["exit"], "wall_us": run["wall_us"], "stderr": run["stderr"][:2000].decode(
-                    "utf-8", "replace")})
-                if run["exit"] == 0 and not run["stderr"].strip():
+                row.update({"exit": run["exit"], "run_state": run["state"], "wall_us": run["wall_us"],
+                            "stderr": run["stderr"][:2000].decode("utf-8", "replace")})
+                if run["state"] == "completed" and not run["stderr"].strip():
                     values[src["id"]] = parse_eval(run["stdout"].decode("utf-8"))
                     row["evaluated"] = True
                     row["stdout_sha256"] = sha256_hex(run["stdout"])
@@ -2259,9 +2346,10 @@ class Lab:
             run = self.launcher.run([*base, f"-DD011_PART_{part}", "-c", source, "-o", str(obj)],
                                     ro=[str(self.src)], rw=[str(out)], cwd=self.src, env={"TMPDIR": str(out / "tmp")},
                                     wall_seconds=600)
-            row = {"part": part, "source": source, "exit": run["exit"], "cpu_us": run["cpu_us"],
-                   "wall_us": run["wall_us"], "diagnostics": run["stderr"][:4000].decode("utf-8", "replace")}
-            if run["exit"] == 0 and obj.is_file():
+            row = {"part": part, "source": source, "exit": run["exit"], "run_state": run["state"],
+                   "cpu_us": run["cpu_us"], "wall_us": run["wall_us"],
+                   "diagnostics": run["stderr"][:4000].decode("utf-8", "replace")}
+            if run["state"] == "completed" and obj.is_file():
                 data = obj.read_bytes()
                 facts = elf_facts(data)
                 row.update({"sha256": sha256_hex(data), "bytes": len(data), "code_bytes": facts["code_bytes"],
@@ -2276,9 +2364,9 @@ class Lab:
                                      *[f"{prefix}_{part}.o" for _source, part, prefix in parts], "-o", str(driver)],
                                     ro=[str(self.src)], rw=[str(out)], cwd=out, env={"TMPDIR": str(out / "tmp")},
                                     wall_seconds=600)
-            link = {"exit": run["exit"], "cpu_us": run["cpu_us"], "wall_us": run["wall_us"],
+            link = {"exit": run["exit"], "run_state": run["state"], "cpu_us": run["cpu_us"], "wall_us": run["wall_us"],
                     "diagnostics": run["stderr"][:4000].decode("utf-8", "replace")}
-            if run["exit"] == 0 and driver.is_file():
+            if run["state"] == "completed" and driver.is_file():
                 data = driver.read_bytes()
                 link.update({"sha256": sha256_hex(data), "bytes": len(data), "code_bytes": elf_facts(data)["code_bytes"]})
                 if rep == 1:
@@ -2384,13 +2472,18 @@ class Lab:
                     empty = self.execute(build["driver"], build["tuple"], mode, b"")
                     if i >= warm:
                         timings.append({"wall_us": timed["wall_us"], "cpu_us": timed["cpu_us"],
+                                        "run_state": timed["state"],
                                         "same_output": timed["stdout"] == run["stdout"] * repeats})
-                        overhead.append({"wall_us": empty["wall_us"], "cpu_us": empty["cpu_us"]})
+                        overhead.append({"wall_us": empty["wall_us"], "cpu_us": empty["cpu_us"],
+                                         "run_state": empty["state"]})
                 outputs[mode] = sha256_hex(run["stdout"])
                 self.record("kat", f"{build['id']}/{mode}", {
                     "build": build["id"], "tuple": build["tuple"], "toolchain": build["toolchain"],
                     "profile": build["profile"], "opt": build["opt"], "mode": mode, "exit": run["exit"],
-                    "signal": run["signal"], "complete": whole and len(responses) == len(requests) and run["exit"] == 0,
+                    "signal": run["signal"], "run_state": run["state"],
+                    "complete": whole and len(responses) == len(requests) and run["state"] == "completed",
+                    "timings_consistent": all(t["run_state"] == "completed" and t["same_output"] for t in timings)
+                    and all(o["run_state"] == "completed" for o in overhead),
                     "stdout_sha256": sha256_hex(run["stdout"]), "results": rows,
                     "matched": sum(1 for r in rows if r["match"]), "total": len(rows),
                     "timing_kind": mode, "timing_batch_repeats": repeats, "timings": timings,
@@ -2419,9 +2512,11 @@ class Lab:
                     for mode in self.modes(build):
                         run = self.execute(build["driver"], build["tuple"], mode, stdin, wall_seconds=120)
                         responses, whole = parse_responses(run["stdout"])
-                        ok = (run["exit"] == 0 and whole and len(responses) == 1 and responses[0][0] == neg["expect"]
+                        ok = (run["state"] == "completed" and whole and len(responses) == 1
+                              and responses[0][0] == neg["expect"]
                               and (neg["expect"] == "ok" or responses[0][1] == b""))
-                        rows.append({"mode": mode, "exit": run["exit"], "responses": [r[0] for r in responses],
+                        rows.append({"mode": mode, "exit": run["exit"], "run_state": run["state"],
+                                     "responses": [r[0] for r in responses],
                                      "pass": ok})
                     self.record("negative", key, {**base, "modes": rows,
                                                   "state": "pass" if all(r["pass"] for r in rows) else "fail"})
@@ -2429,8 +2524,10 @@ class Lab:
                     stdin = encode_request(1, [b"abc"]) + encode_request(1, [b"x" * 100])[:20]
                     run = self.execute(build["driver"], build["tuple"], "emulated", stdin, wall_seconds=120)
                     responses, whole = parse_responses(run["stdout"])
-                    ok = run["exit"] == 2 and whole and len(responses) == 1 and responses[0][0] == "ok"
-                    self.record("negative", key, {**base, "exit": run["exit"], "responses": len(responses),
+                    ok = (run["state"] == "failed" and run["exit_code"] == 2 and whole and len(responses) == 1
+                          and responses[0][0] == "ok")
+                    self.record("negative", key, {**base, "exit": run["exit"], "run_state": run["state"],
+                                                  "responses": len(responses),
                                                   "state": "pass" if ok else "fail"})
                 elif neg["kind"] == "feature":
                     (self.archive / "products" / "feature-negative.bin").write_bytes(
@@ -2444,8 +2541,9 @@ class Lab:
                     stdin = encode_request(17, [bytes(16), bytes(16)])
                     run = self.execute(build["driver"], build["tuple"], "emulated", stdin, cpu=cpu, wall_seconds=120)
                     responses, _ = parse_responses(run["stdout"])
-                    ok = run["signal"] == "SIGILL" and not responses
+                    ok = run["state"] == "crash" and run["signal"] == "SIGILL" and not responses
                     self.record("negative", key, {**base, "cpu": cpu, "exit": run["exit"], "signal": run["signal"],
+                                                  "run_state": run["state"],
                                                   "responses": len(responses), "state": "pass" if ok else "fail"})
                 elif neg["kind"] == "corruption":
                     image = build["driver"].read_bytes()
@@ -2457,14 +2555,16 @@ class Lab:
                         continue
                     target = build["dir"] / "driver-corrupted"
                     target.write_bytes(mutated)
-                    target.chmod(0o755)
+                    target.chmod(0o700)
                     sha = [s for s in self.packet["subjects"] if s["op"] == 1]
                     requests = [(s["id"], 1, [bytes.fromhex(a) for a in s["args"]]) for s in sha]
                     stdin = b"".join(encode_request(op, args) for _rid, op, args in requests)
                     run = self.execute(target, build["tuple"], "emulated", stdin, wall_seconds=120)
                     rows = self.compare(requests, parse_responses(run["stdout"])[0])
-                    detected = any(not r["match"] for r in rows)
-                    self.record("negative", key, {**base, "mismatches": sum(1 for r in rows if not r["match"]),
+                    # Caught by the known answers: the corrupted driver completes and answers wrongly.
+                    detected = run["state"] == "completed" and any(not r["match"] for r in rows)
+                    self.record("negative", key, {**base, "run_state": run["state"],
+                                                  "mismatches": sum(1 for r in rows if not r["match"]),
                                                   "state": "pass" if detected else "fail"})
 
     # -- NT-02 and the symbol surface of NT-05
@@ -2503,11 +2603,14 @@ class Lab:
                                      "relocation_types": types, "undefined": facts["undefined"],
                                      "symbol_violations": symbol_violations(facts["undefined"]),
                                      "code_bytes": facts["code_bytes"], "instructions": sum(
-                                         len(v) for v in functions.values()), "objdump_exit": run["exit"]}
+                                         len(v) for v in functions.values()), "objdump_exit": run["exit"],
+                                     "objdump_state": run["state"], "readelf_state": relocs["state"]}
             control = objects.get("r_CONTROL", {}).get("classes", {}).get("A", 0)
+            completed = bool(objects) and all(o["objdump_state"] == "completed" and o["readelf_state"] == "completed"
+                                              for o in objects.values())
             self.record("inventory", build["id"], {"build": build["id"], "tuple": build["tuple"],
                                                    "toolchain": build["toolchain"], "profile": build["profile"],
-                                                   "opt": build["opt"], "objects": objects,
+                                                   "opt": build["opt"], "objects": objects, "completed": completed,
                                                    "control_detected": control > 0})
 
     # -- NT-03
@@ -2547,7 +2650,8 @@ class Lab:
                     hashes.append(run["trace"]["sha256"])
                     blocks.append(run["trace"]["blocks"])
                     responses, _ = parse_responses(run["stdout"])
-                    statuses.append(responses[0][0] if responses else f"exit {run['exit']}")
+                    statuses.append(responses[0][0] if responses and run["state"] == "completed"
+                                    else f"{run['state']} (exit {run['exit']}, signal {run['signal']})")
                     walls.append(run["wall_us"])
                 distinct = len(set(hashes))
                 ran = all(s == "ok" for s in statuses) and all(b > 0 for b in blocks)
@@ -2587,17 +2691,19 @@ class Lab:
                                           str(out / "driver")], ro=[str(kdir), str(rdir)], rw=[str(out)], cwd=out,
                                          env={"TMPDIR": str(out / "tmp")})
                 key = f"{tup['id']}/{kernel_tc}+{runtime_tc}"
-                if link["exit"] != 0:
+                if link["state"] != "completed":
                     self.record("cross_link", key, {"tuple": tup["id"], "kernels": kernel_tc, "runtime": runtime_tc,
-                                                    "state": "failed", "diagnostics": link["stderr"][:2000].decode(
+                                                    "state": "failed", "run_state": link["state"],
+                                                    "diagnostics": link["stderr"][:2000].decode(
                                                         "utf-8", "replace")})
                     continue
                 requests = self.kat_requests("P-BASE")
                 stdin = b"".join(encode_request(op, args) for _rid, op, args in requests)
                 run = self.execute(out / "driver", tup["id"], "emulated", stdin)
                 rows = self.compare(requests, parse_responses(run["stdout"])[0])
-                agree = run["exit"] == 0 and all(r["match"] for r in rows)
+                agree = run["state"] == "completed" and all(r["match"] for r in rows)
                 self.record("cross_link", key, {"tuple": tup["id"], "kernels": kernel_tc, "runtime": runtime_tc,
+                                                "run_state": run["state"],
                                                 "matched": sum(1 for r in rows if r["match"]), "total": len(rows),
                                                 "state": "agree" if agree else "disagree"})
 
@@ -2627,8 +2733,9 @@ class Lab:
                 build = self.launcher.run(argv, ro=[str(self.src), str(kdir), str(sysroot)], rw=[str(out)], cwd=out,
                                           env={"TMPDIR": str(out / "tmp")})
                 key = f"{tup['id']}/{tc}"
-                if build["exit"] != 0:
+                if build["state"] != "completed":
                     self.record("rust_probe", key, {"tuple": tup["id"], "toolchain": tc, "state": "failed",
+                                                    "run_state": build["state"],
                                                     "wall_us": build["wall_us"], "cpu_us": build["cpu_us"],
                                                     "diagnostics": build["stderr"][:3000].decode("utf-8", "replace")})
                     continue
@@ -2643,12 +2750,14 @@ class Lab:
                     nrun = self.launcher.run([str(out / "probe")], ro=[str(out / "probe")],
                                              stdin=encode_request(neg["op"], [bytes.fromhex(a) for a in neg["args"]]))
                     responses, whole = parse_responses(nrun["stdout"])
-                    negatives.append({"negative": neg["id"], "pass": nrun["exit"] == 0 and whole and len(responses) == 1
+                    negatives.append({"negative": neg["id"], "run_state": nrun["state"],
+                                      "pass": nrun["state"] == "completed" and whole and len(responses) == 1
                                       and responses[0][0] == neg["expect"]})
-                agree = run["exit"] == 0 and all(r["match"] for r in rows)
+                agree = run["state"] == "completed" and all(r["match"] for r in rows)
                 self.record("rust_probe", key, {
                     "tuple": tup["id"], "toolchain": tc, "rustc": self.tools.get("TC-07", {}).get("version", ""),
                     "build_wall_us": build["wall_us"], "build_cpu_us": build["cpu_us"], "run_wall_us": run["wall_us"],
+                    "run_state": run["state"],
                     "matched": sum(1 for r in rows if r["match"]), "total": len(rows), "kat_agree": agree,
                     "mismatches": [r for r in rows if not r["match"]][:10], "negatives": negatives,
                     "negatives_pass": all(n["pass"] for n in negatives),
@@ -2682,7 +2791,7 @@ class Lab:
         self.owner()
         summary = summarize(self.records, self.packet, self.profile_name)
         summary["epoch"] = self.name
-        (self.archive / "summary.json").write_bytes(canonical_file(summary))
+        (self.archive / "summary.json").write_bytes(canonical_file(gate0_numbers(summary)))
         (self.archive / "index.json").write_bytes(canonical_file({"epoch": self.name, "records": self.index}))
         write_manifest(self.archive)
         return self.archive
@@ -2711,11 +2820,30 @@ def owner_input_errors(content: Any) -> list[str]:
     return problems
 
 
+def archive_files(archive: Path) -> list[str]:
+    """Every regular file and every other entry (link, device, socket) under an archive, except the manifest."""
+
+    return sorted(p.relative_to(archive).as_posix() for p in archive.rglob("*")
+                  if not p.is_dir() or p.is_symlink()) if archive.is_dir() else []
+
+
+def unlisted(archive: Path, listed: Iterable[str]) -> list[str]:
+    """Entries in the archive that its manifest does not list."""
+
+    known = set(listed) | {MANIFEST_NAME}
+    return [name for name in archive_files(archive) if name not in known]
+
+
 def write_manifest(archive: Path) -> None:
-    files = sorted(p for p in archive.rglob("*") if p.is_file() and p.name != "archive-manifest.json")
-    rows = [{"path": p.relative_to(archive).as_posix(), "sha256": file_sha256(p), "bytes": p.stat().st_size}
-            for p in files]
-    (archive / "archive-manifest.json").write_bytes(canonical_file({"files": rows}))
+    rows = []
+    for name in archive_files(archive):
+        if name == MANIFEST_NAME:
+            continue
+        path = archive / name
+        if path.is_symlink() or not path.is_file():
+            raise RunError(f"{name} in the archive is not a regular file")
+        rows.append({"path": name, "sha256": file_sha256(path), "bytes": path.stat().st_size})
+    (archive / MANIFEST_NAME).write_bytes(canonical_file({"files": rows}))
 
 
 # ---------------------------------------------------------------------------
@@ -2814,7 +2942,9 @@ def summarize(records: list[dict[str, Any]], packet: dict[str, Any], profile_nam
         pairs = []
         for k in of("kat", tid):
             if not k["complete"]:
-                pairs.append(("fail", f"{k['key']}: incomplete run (exit {k['exit']}, signal {k['signal']})"))
+                pairs.append(("fail", f"{k['key']}: {k['run_state']} run (exit {k['exit']}, signal {k['signal']})"))
+            if not k["timings_consistent"]:
+                pairs.append(("fail", f"{k['key']}: a timed run did not complete with the same responses"))
             for row in k["results"]:
                 if not row["match"]:
                     state = oracle.get(row["subject"].split("+")[0], {}).get("state")
@@ -2841,6 +2971,8 @@ def summarize(records: list[dict[str, Any]], packet: dict[str, Any], profile_nam
             for name, obj in inv["objects"].items():
                 if obj["role"] == "kernel" and obj["classes"]["A"]:
                     pairs.append(("fail", f"{inv['build']}: {name} has {obj['classes']['A']} class A"))
+            if not inv["completed"]:
+                pairs.append(("unresolved", f"{inv['build']}: a disassembly step did not complete"))
             if not inv["control_detected"]:
                 pairs.append(("unresolved", f"{inv['build']}: division control not detected"))
         if not of("inventory", tid):
@@ -3172,34 +3304,62 @@ def conclude(candidates: dict[str, Any], profile_name: str, content: dict[str, A
 
 
 def verify(archive: Path) -> list[str]:
-    problems = []
-    manifest = json.loads((archive / "archive-manifest.json").read_text(encoding="utf-8"))
+    """Re-check an epoch archive: every file against its manifest, no file outside it, every record against
+    its digest and this epoch, and the summary recomputed from the records alone."""
+
+    problems: list[str] = []
+    try:
+        manifest = json.loads((archive / MANIFEST_NAME).read_text(encoding="utf-8"))
+        index = json.loads((archive / "index.json").read_text(encoding="utf-8"))
+        packet = json.loads((archive / "packet.json").read_text(encoding="utf-8"))
+        epoch = json.loads((archive / "epoch.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"archive unreadable: {exc}"]
+    listed = []
     for row in manifest["files"]:
+        listed.append(row["path"])
         path = archive / row["path"]
-        if not path.is_file() or file_sha256(path) != row["sha256"]:
-            problems.append(f"{row['path']}: digest")
-    index = json.loads((archive / "index.json").read_text(encoding="utf-8"))
-    records = []
-    for entry in index["records"]:
-        raw = (archive / "records" / f"{entry['sha256']}.json").read_bytes()
-        if sha256_hex(raw) != entry["sha256"]:
-            problems.append(f"record {entry['key']}: digest")
-        records.append(json.loads(raw.decode("utf-8")))
-    packet = json.loads((archive / "packet.json").read_text(encoding="utf-8"))
-    epoch = json.loads((archive / "epoch.json").read_text(encoding="utf-8"))
+        if path.is_symlink() or not path.is_file() or file_sha256(path) != row["sha256"] \
+                or path.stat().st_size != row["bytes"]:
+            problems.append(f"{row['path']} differs from the archive manifest")
+    problems += [f"{name} is not in the archive manifest" for name in unlisted(archive, listed)]
     if epoch_name(epoch["identity"]) != epoch["epoch"] or epoch["epoch"] != archive.name:
-        problems.append("epoch identity")
-    summary = summarize(records, packet, epoch["identity"]["profile"])
+        problems.append("the epoch name is not the hash of its identity")
+    if sha256_hex((archive / "packet.json").read_bytes()) != epoch["identity"]["packet_sha256"]:
+        problems.append("packet.json is not the packet the epoch bound")
+    records = []
+    indexed = set()
+    for entry in index["records"]:
+        indexed.add(f"records/{entry['sha256']}.json")
+        try:
+            raw = (archive / "records" / f"{entry['sha256']}.json").read_bytes()
+        except OSError:
+            problems.append(f"record {entry['key']} is missing")
+            continue
+        if sha256_hex(raw) != entry["sha256"]:
+            problems.append(f"record {entry['key']} does not match its digest")
+        record = json.loads(raw.decode("utf-8"))
+        if record.get("schema") != RECORD_SCHEMA or record.get("epoch") != epoch["epoch"] \
+                or record.get("stage") != entry["stage"] or record.get("key") != entry["key"]:
+            problems.append(f"record {entry['key']} is not the indexed {RECORD_SCHEMA} record of this epoch")
+        records.append(record)
+    problems += [f"{name} is not in the record index" for name in listed
+                 if name.startswith("records/") and name not in indexed]
+    try:
+        summary = summarize(records, packet, epoch["identity"]["profile"])
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        return problems + [f"the summary cannot be recomputed: {exc!r}"]
     summary["epoch"] = epoch["epoch"]
-    if canonical_file(summary) != (archive / "summary.json").read_bytes():
-        problems.append("summary does not recompute")
+    if canonical_file(gate0_numbers(summary)) != (archive / "summary.json").read_bytes():
+        problems.append("summary.json does not recompute byte for byte from the records")
     return problems
 
 
 # ---------------------------------------------------------------------------
 # Command line
 
-USAGE = __doc__.split("\n\n")[0]
+USAGE = next((part for part in (__doc__ or "").split("\n\n") if part.startswith("Usage:")), "Usage: see the module")
+PROFILE_NAMES = {name: name for name in RUN_PROFILES}
 
 
 def _option(argv: list[str], name: str) -> str | None:
@@ -3216,41 +3376,43 @@ def main(argv: list[str]) -> int:
         print(USAGE)
         return 2
     command = argv[0]
-    if command == "generate":
-        (REPOSITORY_ROOT / PACKET_PATH).write_bytes(committed_packet_bytes())
-        print(f"wrote {PACKET_PATH}")
-        return 0
-    if command == "check":
-        problems = check()
-        for problem in problems:
-            print(f"FAIL  {problem}")
-        print("ok" if not problems else f"{len(problems)} problems")
-        return 1 if problems else 0
-    if command == "owner-template" and len(argv) == 2:
-        Path(argv[1]).write_bytes(canonical_file(owner_template()))
-        return 0
-    if command == "run":
-        profile = _option(argv, "--profile") or "dev"
-        archive = _option(argv, "--archive")
-        if profile not in RUN_PROFILES or archive is None:
-            print(USAGE)
-            return 2
-        orangec = _option(argv, "--orangec") or os.environ.get("ORANGEC") or str(
-            REPOSITORY_ROOT / "compiler/target/release/orangec")
-        owner = _option(argv, "--owner-input")
-        work = Path(_option(argv, "--work") or Path(archive) / "work")
-        lab = Lab(REPOSITORY_ROOT, profile, Path(archive), work, Path(orangec), Path(owner) if owner else None)
-        path = lab.run()
-        summary = json.loads((path / "summary.json").read_text(encoding="utf-8"))
-        print(f"archive {path}")
-        print(f"conclusion {summary['conclusion']['result']}: {summary['conclusion']['reason']}")
-        return 0
-    if command == "verify" and len(argv) == 2:
-        problems = verify(Path(argv[1]))
-        for problem in problems:
-            print(f"FAIL  {problem}")
-        print("ok" if not problems else f"{len(problems)} problems")
-        return 1 if problems else 0
+    try:
+        if command == "generate" and len(argv) == 1:
+            (REPOSITORY_ROOT / PACKET_PATH).write_bytes(committed_packet_bytes())
+            print(f"wrote {PACKET_PATH}")
+            return 0
+        if command == "check" and len(argv) == 1:
+            problems = check()
+            for problem in problems:
+                print(f"FAIL  {problem}")
+            print("ok" if not problems else f"{len(problems)} problems")
+            return 1 if problems else 0
+        if command == "owner-template" and len(argv) == 1:
+            sys.stdout.write(canonical_file(owner_template()).decode("utf-8"))
+            return 0
+        if command == "run":
+            profile = PROFILE_NAMES.get(_option(argv, "--profile") or "dev")
+            if profile is None:
+                print(USAGE)
+                return 2
+            owner_name = _option(argv, "--owner-input")
+            if owner_name is not None:
+                ensure_archive_root()
+            owner = existing_entry(owner_name, OWNER_INPUT_DIR, directories=False) if owner_name else None
+            path = Lab(REPOSITORY_ROOT, profile, owner).run()
+            summary = json.loads((path / "summary.json").read_text(encoding="utf-8"))
+            print(f"archive {path}")
+            print(f"conclusion {summary['conclusion']['result']}: {summary['conclusion']['reason']}")
+            return 0
+        if command == "verify" and len(argv) == 2:
+            problems = verify(existing_entry(argv[1], ARCHIVE_ROOT, directories=True))
+            for problem in problems:
+                print(f"FAIL  {problem}")
+            print("ok" if not problems else f"{len(problems)} problems")
+            return 1 if problems else 0
+    except RunError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(USAGE)
     return 2
 

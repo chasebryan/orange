@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import signal
 import struct
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -243,6 +245,56 @@ class D011LaboratoryLogicTests(unittest.TestCase):
                    native_runs=[{"tuple": "T-X64", "driver_sha256": "x", "stdout_sha256": "y"}])
         self.assertEqual(set(suite.owner_input_errors(bad)),
                          {"distinguishing_rule", "solo_slice_capacity", "native_runs digests"})
+
+    def test_only_a_completed_step_succeeds(self) -> None:
+        self.assertEqual(suite.run_state(0, False, False), "completed")
+        self.assertEqual(suite.run_state(0, True, False), "timeout")
+        self.assertEqual(suite.run_state(0, False, True), "oversized_output")
+        self.assertEqual(suite.run_state(2, False, False), "failed")
+        self.assertEqual(suite.run_state(132, False, False), "crash")
+        self.assertEqual(suite.exit_facts(132)["signal"], "SIGILL")
+        self.assertEqual(suite.run_state(-signal.SIGXCPU, False, False), "resource_exhaustion")
+        self.assertEqual(suite.run_state(128 + signal.SIGXFSZ, False, False), "resource_exhaustion")
+
+    def test_gate0_numbers_writes_floats_and_large_integers_as_strings(self) -> None:
+        value = {"a": 1.5, "b": [2**53, -(2**53), 2**53 - 1], "c": True, "d": "x"}
+        converted = suite.gate0_numbers(value)
+        self.assertEqual(converted, {"a": "1.5", "b": [str(2**53), str(-(2**53)), 2**53 - 1], "c": True, "d": "x"})
+        self.assertEqual(suite.gate0_json_errors(converted), [])
+        self.assertNotEqual(suite.gate0_json_errors(value), [])
+
+    def test_arguments_only_name_entries_that_already_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "d011-e-0123").mkdir()
+            (root / "owner.json").write_text("{}\n", encoding="utf-8")
+            self.assertEqual(suite.existing_entry("d011-e-0123", root, directories=True), root / "d011-e-0123")
+            self.assertEqual(suite.existing_entry(str(root / "d011-e-0123"), root, directories=True),
+                             root / "d011-e-0123")
+            self.assertEqual(suite.existing_entry("owner.json", root, directories=False), root / "owner.json")
+            for name, directories in (("../d011-e-0123", True), ("/etc", True), ("owner.json", True),
+                                      ("d011-e-0123", False), ("missing", False)):
+                with self.assertRaises(suite.RunError):
+                    suite.existing_entry(name, root, directories=directories)
+
+    def test_verify_rejects_a_file_missing_from_the_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "d011-e-test"
+            (archive / "records").mkdir(parents=True)
+            packet_bytes = (REPOSITORY_ROOT / suite.PACKET_PATH).read_bytes()
+            (archive / "packet.json").write_bytes(packet_bytes)
+            identity = {"profile": "dev", "packet_sha256": suite.sha256_hex(packet_bytes)}
+            (archive / "epoch.json").write_bytes(suite.canonical_file(
+                {"epoch": "d011-e-test", "identity": identity}))
+            (archive / "index.json").write_bytes(suite.canonical_file({"epoch": "d011-e-test", "records": []}))
+            (archive / "summary.json").write_bytes(b"{}\n")
+            suite.write_manifest(archive)
+            clean = suite.verify(archive)
+            self.assertFalse(any("manifest" in problem for problem in clean), clean)
+            (archive / "records" / "stray.json").write_bytes(b"{}\n")
+            self.assertIn("records/stray.json is not in the archive manifest", suite.verify(archive))
+            suite.write_manifest(archive)
+            self.assertIn("records/stray.json is not in the record index", suite.verify(archive))
 
 
 if __name__ == "__main__":
