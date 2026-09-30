@@ -222,8 +222,9 @@ A function's parameters in brackets are checked in order, each size's range
 or each type parameter's name and listed types, and then each name against
 the earlier ones; the count of instances is checked only when every range and
 list is valid and no name repeats. A function any of whose parameters in
-brackets is in error has no instances: its body is not checked and it
-contributes no Core.
+brackets is in error has no instances: its body is not checked, it
+contributes no Core, and a call to it, whether it names an instance or leaves
+its arguments to choose one, is not reported again.
 
 ## 5. Checking instances
 

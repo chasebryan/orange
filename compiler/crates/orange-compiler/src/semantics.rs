@@ -1226,7 +1226,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         self.resource_limit(function.span, "semantic size table is inconsistent");
                         break;
                     };
-                    self.enter_instance(instance);
+                    self.enter_instance(instance, &signature.listed);
                     let context = BodyContext {
                         id,
                         instance,
@@ -1266,7 +1266,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         break;
                     }
                 }
-                self.enter_instance(Instance::NONE);
+                self.enter_instance(Instance::NONE, &[]);
                 if self.halted {
                     break;
                 }
@@ -1322,10 +1322,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         );
                         return None;
                     };
-                    let ranges = SizeRanges::of(self.source, function);
-                    let count = ranges.map_or(0, |ranges| ranges.instances());
-                    next_id = next_id.saturating_add(count);
-                    let listed = function
+                    let listed: Vec<Vec<Option<CoreType>>> = function
                         .sizes
                         .iter()
                         .map(|size| {
@@ -1335,6 +1332,14 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                                 .collect()
                         })
                         .collect();
+                    // A list with a type that does not resolve, or one type
+                    // twice, is reported at the declaration; like malformed
+                    // sizes, it leaves the function no instances, so that
+                    // its callers are not reported again.
+                    let ranges = SizeRanges::of(self.source, function)
+                        .filter(|_| listed.iter().all(|types| distinct_types(types)));
+                    let count = ranges.map_or(0, |ranges| ranges.instances());
+                    next_id = next_id.saturating_add(count);
                     let spellings = type_spellings(self.source, &function.sizes);
                     let mut instances = Vec::new();
                     if instances.try_reserve_exact(count).is_err() {
@@ -1351,7 +1356,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             );
                             return None;
                         };
-                        self.enter_instance(instance);
+                        self.enter_instance(instance, &listed);
                         let mut parameters = Vec::new();
                         if parameters
                             .try_reserve_exact(function.parameters.len())
@@ -1379,7 +1384,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             result_type,
                         });
                     }
-                    self.enter_instance(Instance::NONE);
+                    self.enter_instance(Instance::NONE, &[]);
                     Some(Signature {
                         id,
                         sizes: &function.sizes,

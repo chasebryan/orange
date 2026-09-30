@@ -9620,6 +9620,11 @@ fn type_parameters_list_distinct_types_under_names_of_their_own() {
         "  type G = Mod[3329];\n",
         "  spec twice[K in {F, Q, G}](x: K) -> K { x }\n",
         "  spec words[K in {Word[32], Word[32]}](x: K) -> K { x }\n",
+        // A list in error leaves its function no instances, so calls to it,
+        // named or fitted, are not reported again.
+        "  spec fits() -> Word[32] { words(1) }\n",
+        "  spec names() -> Word[32] { words[Word[32]](1) }\n",
+        "  spec unknown_fits() -> Int { unknown(1) }\n",
         "  spec builtin[Int in {F, Q}](x: F) -> F { x }\n",
         "  spec declared[F in {Q}](x: Q) -> Q { x }\n",
         "  spec repeated[K in {F}, K in {Q}](x: F) -> F { x }\n",
@@ -10073,6 +10078,34 @@ fn rejects_foreign_listed_type_spans() {
             "case {index}"
         );
     }
+}
+
+#[test]
+fn listed_types_are_resolved_once_for_every_instance() {
+    // Each of 16 functions has four type parameters of four types each, 256
+    // instances, and every listed length takes 39 events to compute. Were
+    // the listed types resolved again for each instance, as signature and
+    // as body, they would take 16 * 256 * 2 * 4 * 39 = 1,277,952 events,
+    // more than the budget; resolved once, they take 16 * 16 * 39.
+    let length = |ones: usize| vec!["1"; ones].join(" + ");
+    let members = (0..16)
+        .map(|function| {
+            let parameters = ["A", "B", "C", "D"]
+                .iter()
+                .enumerate()
+                .map(|(parameter, name)| {
+                    let types = (0..4)
+                        .map(|ty| format!("Word[8]^({} + {})", length(19), 4 * parameter + ty))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{name} in {{{types}}}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("  spec f{function}[{parameters}](a: A, b: B, c: C, d: D) -> Int {{ 0 }}\n")
+        })
+        .collect::<String>();
+    accepted(&members);
 }
 
 #[test]

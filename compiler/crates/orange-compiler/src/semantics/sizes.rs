@@ -458,6 +458,15 @@ impl SizeScope<'_> {
     }
 }
 
+/// Returns whether every type of a type parameter's list resolved and none
+/// is listed twice; the list of a size is empty.
+pub(super) fn distinct_types(types: &[Option<CoreType>]) -> bool {
+    types
+        .iter()
+        .enumerate()
+        .all(|(index, ty)| ty.is_some() && !types.iter().take(index).any(|earlier| earlier == ty))
+}
+
 /// What an array length stands for.
 pub(super) enum Length {
     /// An admitted length, from 1 through 256.
@@ -473,28 +482,31 @@ pub(super) enum Length {
 impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// Enters the instance whose types and sizes are resolved next, with the
     /// analyzer's limits and reservations. Each type parameter stands for
-    /// its listed type at the instance's position, resolved outside every
-    /// instance, as the module's own types are.
-    pub(super) fn enter_instance(&mut self, instance: Instance<'ast>) {
+    /// its listed type at the instance's position, taken from `listed`, the
+    /// types each parameter lists, resolved once outside every instance, as
+    /// the module's own types are.
+    pub(super) fn enter_instance(
+        &mut self,
+        instance: Instance<'ast>,
+        listed: &[Vec<Option<CoreType>>],
+    ) {
         // Sizes evaluated without a report, such as a fill's length read to
         // infer a join's length, are charged before the scope changes.
         self.charge_size_events(self.ast.module.span);
-        self.types.sizes =
-            self.size_scope(Instance::NONE, [const { None }; MAX_SIZES_PER_FUNCTION]);
         let mut types = [const { None }; MAX_SIZES_PER_FUNCTION];
-        for ((slot, parameter), value) in types
+        for (((slot, parameter), value), listed) in types
             .iter_mut()
             .zip(instance.parameters)
             .zip(instance.values)
+            .zip(listed)
         {
             if parameter.is_type() {
                 *slot = usize::try_from(value)
                     .ok()
-                    .and_then(|position| parameter.types.get(position))
-                    .and_then(|ty| silent_type(self.source, &self.types, ty));
+                    .and_then(|position| listed.get(position))
+                    .and_then(Clone::clone);
             }
         }
-        self.charge_size_events(self.ast.module.span);
         self.types.sizes = self.size_scope(instance, types);
     }
 
