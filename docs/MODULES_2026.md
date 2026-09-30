@@ -29,8 +29,11 @@ meaning. It accepts no D-004 candidate.
 > its module. [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013,
 > lets a loop's step and each branch begin with `let` bindings, and
 > [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
-> whose types cross a module boundary by their elements. Every source this
-> document accepts keeps its meaning under all three.
+> whose types cross a module boundary by their elements, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds byte
+> strings, joins, and slices, which cross a module boundary as the arrays
+> they are. Every source this document accepts keeps its meaning under all
+> four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

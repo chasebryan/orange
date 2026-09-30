@@ -26,7 +26,10 @@ meaning. It accepts no D-004 candidate.
 > document with tuples and tuple patterns, which lift the exclusion of loops
 > with more than one accumulator and of destructuring in section 12: a block's
 > binding may name each element of a tuple, and a loop may carry several
-> accumulators. Every source this document accepts keeps its meaning under it.
+> accumulators, and [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015,
+> adds byte strings, `++`, and slices, so that a step may take one block of a
+> message as `m[16 * j..16 * j + 16]`. Every source this document accepts
+> keeps its meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -36,8 +36,10 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > declarations, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
 > OEP-0013, adds `let` bindings at the start of a loop's step and of each
 > branch, and [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014,
-> adds tuples, the selection `.k` of an element, and tuple patterns. Every
-> source this document accepts keeps its meaning under all nine.
+> adds tuples, the selection `.k` of an element, and tuple patterns, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds byte
+> strings, the concatenation operator `++` in a group of its own, and slices.
+> Every source this document accepts keeps its meaning under all ten.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

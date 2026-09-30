@@ -23,6 +23,12 @@ Until then, the compiler behavior it describes exists so that the proposal can
 be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, extends this
+> document with byte strings, the concatenation `++` of arrays, and slices,
+> which may follow a tuple's element as `p.0[..4]`. A tuple is not joined
+> with `++`. Every source this document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

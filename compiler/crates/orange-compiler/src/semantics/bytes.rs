@@ -853,14 +853,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if !self.begin_report(span) {
             return;
         }
-        self.diagnostics.push(
-            Diagnostic::error(
-                DiagnosticCode::TypeMismatch,
+        let (message, note) = if expected.as_array().is_some() {
+            (
                 format!("this slice is an array of `{element}`, but `{expected}` is required here"),
-                span,
+                "a slice is an array of the elements of the array it is taken from",
             )
-            .with_label(format!("expected `{expected}`"))
-            .with_note("a slice is an array of the elements of the array it is taken from"),
+        } else {
+            (
+                format!("a slice is an array, but `{expected}` is required here"),
+                "one element is selected by an index, such as `x[0]`",
+            )
+        };
+        self.diagnostics.push(
+            Diagnostic::error(DiagnosticCode::TypeMismatch, message, span)
+                .with_label(format!("expected `{expected}`"))
+                .with_note(note),
         );
     }
 

@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.13
+Manuscript version: 0.14
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -105,9 +105,11 @@ HMAC is written over SHA-256 by name, as RFC 2104 defines it, the S3i
 slice puts a field in a type, so that X25519's ladder is written in the field
 of 2^255 − 19 with no reduction in sight, as RFC 7748 writes it, the S3j
 slice lets a round name its values inside the loop that runs it, so that a
-round of SHA-256 names T1 and T2 where FIPS 180-4 does, and the S3k slice
-adds tuples, so that a loop carries SHA-256's eight working variables by name
-and ChaCha20's quarter round gives its four words at once. None of them
+round of SHA-256 names T1 and T2 where FIPS 180-4 does, the S3k slice adds
+tuples, so that a loop carries SHA-256's eight working variables by name and
+ChaCha20's quarter round gives its four words at once, and the S3l slice
+writes bytes as the standards print them, so that RFC 4231's key is "Jefe"
+and SHA-256's padding is joined with `++`. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -313,9 +315,11 @@ while still proving it in range, the S3h slice, also in review, lets a
 module use other modules, each in its own file, and call their functions by
 module name, the S3i slice, also in review, adds the integers modulo a
 constant and names for types, the S3j slice, also in review, lets a loop's
-step and each branch of a conditional begin with `let` bindings, and the S3k
+step and each branch of a conditional begin with `let` bindings, the S3k
 slice, also in review, adds tuples and tuple patterns, so that a function
-gives several values and a loop carries several accumulators.
+gives several values and a loop carries several accumulators, and the S3l
+slice, also in review, adds byte strings, joins, and slices, so that a
+program writes bytes as the standards print them.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -808,9 +812,9 @@ specifications have meaning: pure `spec` functions over `Int`, `Bool`,
 arrays of them, and tuples of those, built from
 literals, parameters, calls, operators, comparisons, `let` bindings, at the
 start of a body, a loop's step, or a branch, tuple patterns, explicit
-conversions, array literals, tuples, indices, including indices keyed by data,
-selections by position, bounded loops, updates, and conditionals. An `impl`
-body must still be empty. A
+conversions, array literals, byte strings, tuples, indices, including indices
+keyed by data, selections by position, joins, slices, bounded loops, updates,
+and conditionals. An `impl` body must still be empty. A
 program may span several modules, one per file: a module names the modules it
 uses at its head and calls their functions by module name, as in
 `sha256::compress(h, block)`, and nothing is imported into its scope. A
@@ -822,7 +826,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, block, and tuple slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, and byte slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -894,11 +898,13 @@ exact span. `orangec lex` prints that sequence:
 
 The Orange 2026 lexer recognizes ASCII identifiers, seven reserved words,
 decimal, binary, and hexadecimal integers with single underscores between
-digits, line-bounded strings with a fixed escape set, nested block comments,
-and a fixed inventory of punctuation, matched longest first so that `<<<` is
-one rotation token rather than a shift and a comparison. It reserves more than
-the grammar uses: strings and several punctuation tokens have no grammatical
-role yet. Reservation is a promise about spelling, not about meaning.
+digits, line-bounded strings with a fixed escape set, hex strings of digit
+pairs, nested block comments, and a fixed inventory of punctuation, matched
+longest first so that `<<<` is one rotation token rather than a shift and a
+comparison. It reserves more than the grammar uses: several punctuation
+tokens have no grammatical role yet, and strings had none until the byte
+slice made them arrays of bytes. Reservation is a promise about spelling,
+not about meaning.
 
 The lexer is also bounded. It retains at most 262,144 non-trivia tokens and
 emits at most 100 ordinary diagnostics before one suppression diagnostic. A
@@ -1059,7 +1065,10 @@ those of its branches, each with the point in the step's or branch's
 postorder where its value ends, so the evaluator knows when a name takes its
 value. A tuple pattern is one binding of a tuple type, and a read of one of
 its names reads the whole and selects the element, so tuples add only two
-nodes to the Core: one that builds a tuple and one that selects from it.
+nodes to the Core: one that builds a tuple and one that selects from it. A
+byte string is an array literal like any other, and the byte slice adds three
+nodes: one joins two arrays, one takes a run of elements, and one replaces a
+run, the last two with their bounds as `Int` operands.
 
 The Core is bounded in the same spirit as the lexer and parser: at most
 262,144 Core nodes, 1,048,576 semantic events, and 100 ordinary semantic
@@ -1113,7 +1122,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The eleven current slices complete bounded parts of the roadmap's S3 stage:
+The twelve current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1122,7 +1131,7 @@ then indices keyed by data, proved in range from their types, then programs
 of several modules, each checked once, after the modules it uses, then the
 integers modulo a constant, with names for types, then `let` bindings inside
 a loop's step and a branch, then tuples, so that a loop carries several
-values.
+values, then byte strings, joins, and slices at bounds proved in range.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over sizes and moduli, and explicit failure
 semantics,
@@ -1672,8 +1681,9 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [lookups specification](LOOKUPS_2026.md) of S3g, the
 [modules specification](MODULES_2026.md) of S3h, the
 [modular arithmetic specification](MODULAR_2026.md) of S3i, the
-[blocks specification](BLOCKS_2026.md) of S3j, and the
-[tuples specification](TUPLES_2026.md) of S3k. S3b through S3k
+[blocks specification](BLOCKS_2026.md) of S3j, the
+[tuples specification](TUPLES_2026.md) of S3k, and the
+[bytes specification](BYTES_2026.md) of S3l. S3b through S3l
 are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
@@ -1683,8 +1693,9 @@ are implemented and tested, but their specifications are **proposed**:
 [OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md),
 [OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md),
 [OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md),
-[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), and
-[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md) are in
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md),
+[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md), and
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1768,9 +1779,11 @@ The expression slice gives grammatical roles to `,`, `:`, `+`, `-`, `*`, `&`,
 `|`, `^`, and `~`, and adds four tokens of its own, `<<`, `>>`, `<<<`, and
 `>>>`, matched longest first, so `<<<<` is `<<<` followed by `<`. The
 condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
-`!`, `/`, and `%`, which the lexer has always produced. String tokens and the
-remaining punctuation are lexically reserved but have no grammatical role
-yet. `orangec lex` shows how any source
+`!`, `/`, and `%`, which the lexer has always produced. The byte slice gives
+strings their role, as byte strings, and adds two tokens, `++` and the hex
+string `hex"..."`, whose `hex` touches its opening quote. The remaining
+punctuation is lexically reserved but has no grammatical role yet.
+`orangec lex` shows how any source
 tokenizes, with exact byte spans.
 
 ### The grammar
@@ -1801,9 +1814,9 @@ parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
-                | conversion | update ;
+                | chain("++") | conversion | update ;
 conversion      = prefixed "as" (parsed_type | tuple_type) ;
-update          = prefixed "with" "[" expression "]" "=" expression ;
+update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
@@ -1815,10 +1828,13 @@ division        = prefixed ("/" | "%") prefixed ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
 primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
-                | tuple | array | fill | loop | conditional ;
-suffix          = "." INTEGER index? | index ;
+                | byte_string | tuple | array | fill | loop | conditional ;
+byte_string     = STRING | HEX_STRING ;
+suffix          = "." INTEGER (index | slice)? | index | slice ;
 tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
+slice           = "[" range "]" ;
+range           = expression ".." expression? | ".." expression ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
@@ -1838,8 +1854,9 @@ only before a name, `in` and `with` are words only inside a loop's header, and
 same way, `if` starts a conditional only where a condition can follow it,
 `else` is a word only after a conditional's value, `use` and `type` start
 declarations only at the head of a module, before its first function, `Mod`
-takes a modulus only before `[`, and `true` and `false` are values only where
-no name of that spelling is in scope. Anywhere else they are
+takes a modulus only before `[`, `hex` begins a hex string only directly
+before a quote, and `true` and `false` are values only where no name of that
+spelling is in scope. Anywhere else they are
 ordinary names, so no program that used them as names changed meaning when
 they gained a role. After a declared type, `^` and a length make it an array
 type; everywhere else `^` is exclusive or. One source holds one module, and a
@@ -2856,12 +2873,220 @@ two kinds of node. A tuple is shared, not copied, where it is read more than
 once, as an array is, and every source S3j accepted has the same Core, values,
 and output under S3k, since it writes no tuple.
 
-That leaves new seams. A pattern names every element, with no wildcard for
-one it does not need, and a step that changes one element of a tuple rebuilds
-the whole, as Ascon's absorption does. Nothing yet takes a size or a modulus
-as a parameter, so `add256` is written for four limbs rather than for n;
-arrays cannot yet be joined or sliced; and a message is still written as
-words, not as a string of bytes. The roadmap lists those next.
+That leaves seams. A pattern names every element, with no wildcard for one it
+does not need, and a step that changes one element of a tuple rebuilds the
+whole, as Ascon's absorption does. Nothing yet takes a size or a modulus as a
+parameter, so `add256` is written for four limbs rather than for n. The next
+section closes a third seam: through S3k, arrays could not be joined or
+sliced, and a message was written as a list of numbers rather than as the
+bytes a standard prints.
+
+### Bytes as the standards print them
+
+Standards print their inputs as text and hex. RFC 4231 keys its second HMAC
+test case with "Jefe" and authenticates "what do ya want for nothing?"; RFC
+8439 seals a sentence about sunscreen under a key printed as 32 hex bytes. And
+their algorithms move runs of bytes. FIPS 180-4 pads a message by appending
+the byte 80, zeros, and the message's length, then reads each block's words
+four bytes at a time; RFC 8439 takes the first 32 bytes of a block as a
+one-time key. Through S3k, each of those inputs was a list of numbers typed
+by hand, and each run of bytes was copied one element at a time by a loop.
+
+The S3l slice, proposed in the [bytes specification](BYTES_2026.md), writes
+them as the standards do. A byte string `"..."` is the array `Word[8]^n` of
+the ASCII codes of its characters; a hex string `hex"..."` is the array of its
+hex digit pairs, spaced wherever the reader likes between bytes; `a ++ b`
+joins two arrays of one element type; `x[a..b]` is the array of the elements
+of `x` from index a up to, but not including, index b, with a bound left out
+meaning the start or the end; and `x with [a..b] = v` is `x` with that run
+replaced by `v`:
+
+```orange
+spec key() -> Word[8]^4 { "Jefe" }
+spec nonce() -> Word[8]^12 { hex"07000000 40414243 44454647" }
+spec iv() -> Word[8]^8 { nonce()[4..] }
+spec padded() -> Word[8]^16 { "abc" ++ hex"80" ++ [0; 8] ++ hex"00 00 00 18" }
+```
+
+```text
+bytes::key: Word[8]^4 = [0x4a, 0x65, 0x66, 0x65]
+bytes::nonce: Word[8]^12 = [0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47]
+bytes::iv: Word[8]^8 = [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47]
+bytes::padded: Word[8]^16 = [0x61, 0x62, 0x63, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18]
+```
+
+A byte string's length is part of its type, so `"Jefe"` is a `Word[8]^4` and
+is an error where five bytes are required, exactly as an array literal of four
+elements would be. Its characters are printable ASCII, space through tilde, so
+that what a reader sees is exactly what the bytes are, and any other byte is
+written with an escape, `\"`, `\\`, `\n`, `\r`, `\t`, `\0`, or `\xNN`, or in
+hex. `hex` is not reserved: it begins a hex string only when a quote follows it
+directly, and a parameter named `hex` keeps its meaning. `++` is an operator
+group of its own, so it never shares a level with `+` or `^` without
+parentheses.
+
+The [HMAC fixture](../compiler/fixtures/s3l/valid-hmac.or) pads its messages
+as FIPS 180-4 section 5.1.1 says and reads the sixteen words of each block
+through slices, so the schedule of section 6.2.2 is written over bytes:
+
+```orange
+spec schedule(block: Word[8]^64) -> Word[32]^64 {
+  let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] {
+    w with [t] = word(block[4 * t..4 * t + 4])
+  };
+  for t in 16..64 with w: Word[32]^64 = head {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+```
+
+Here `word` is section 3.1's reading of four bytes, most significant first,
+as one word. The digest goes the other way, and a slice update writes each
+word of the hash as four bytes:
+
+```orange
+spec digest(hash: Word[32]^8) -> Word[8]^32 {
+  for i in 0..8 with out: Word[8]^32 = [0; 32] {
+    out with [4 * i..4 * i + 4] = [
+      (hash[i] >> 24) as Word[8], (hash[i] >> 16) as Word[8],
+      (hash[i] >> 8) as Word[8], hash[i] as Word[8],
+    ]
+  }
+}
+```
+
+HMAC is then RFC 2104 with RFC 4231's inputs as that RFC prints them. The key
+is padded with zeros to one block, exclusive-ored with the inner pad, and
+joined to the text and to SHA-256's padding: the byte 80, 27 zeros, and the
+length of the 92-byte inner message in bits, 0x2e0:
+
+```orange
+spec case2() -> Word[8]^32 {
+  let k0: Word[8]^64 = "Jefe" ++ [0; 60];
+  let text: Word[8]^28 = "what do ya want for nothing?";
+  outer(k0, hash128(keyed(k0, 0x36) ++ text ++ hex"80" ++ [0; 27] ++ hex"00000000 000002e0"))
+}
+```
+
+```text
+hmac::case2: Word[8]^32 = [0x5b, 0xdc, 0xc1, 0x46, 0xbf, 0x60, 0x75, 0x4e, 0x6a, 0x04, 0x24, 0x26, 0x08, 0x95, 0x75, 0xc7, 0x5a, 0x00, 0x3f, 0x08, 0x9d, 0x27, 0x39, 0x83, 0x9d, 0xec, 0x58, 0xb9, 0x64, 0xec, 0x38, 0x43]
+```
+
+That is the MAC of RFC 4231 section 4.3, and the same fixture reproduces
+test case 1 and FIPS 180-4's digest of "abc". The arithmetic of the padding
+is still the writer's: each join's lengths must sum to the declared length,
+and the analyzer says so, with both lengths, when they do not.
+
+The [AEAD fixture](../compiler/fixtures/s3l/valid-aead.or) writes
+ChaCha20-Poly1305 as RFC 8439 section 2.8 does. Its plaintext is the
+sentence of section 2.8.2, as text:
+
+```orange
+spec sunscreen() -> Word[8]^114 {
+  "Ladies and Gentlemen of the class of '99: " ++
+    "If I could offer you only one tip for the future, " ++
+    "sunscreen would be it."
+}
+```
+
+Poly1305 reads one message joined from the additional data padded with zeros
+to sixteen bytes, the ciphertext padded the same way, and the two lengths, 12
+and 114, as 64-bit little-endian numbers; the one-time key is the first 32
+bytes of block 0, which is section 2.6's key generation read as a slice of a
+call:
+
+```orange
+spec mac_data(aad: Word[8]^12, ciphertext: Word[8]^114) -> Word[8]^160 {
+  aad ++ [0; 4] ++ ciphertext ++ [0; 14] ++ hex"0c00000000000000" ++ hex"7200000000000000"
+}
+
+spec seal(key: Word[8]^32, nonce: Word[8]^12, aad: Word[8]^12, plaintext: Word[8]^114)
+  -> Word[8]^130 {
+  let ciphertext: Word[8]^114 = encrypt(key, nonce, plaintext);
+  ciphertext ++ mac(block(key, 0, nonce)[..32], mac_data(aad, ciphertext))
+}
+```
+
+Poly1305 itself takes its sixteen-byte blocks as `m[16 * j..16 * j + 16]`,
+and even its clamp is written as bytes:
+`hex"ffffff0f fcffff0f fcffff0f fcffff0f"` is the mask
+0ffffffc0ffffffc0ffffffc0fffffff of section 2.5 in little-endian order. The
+sealed message ends in the RFC's tag, and the receiver's check, which
+recomputes the tag and compares it byte by byte, accepts it:
+
+```text
+aead::tag: Word[8]^16 = [0x1a, 0xe1, 0x0b, 0x59, 0x4f, 0x09, 0xe2, 0x6a, 0x7e, 0x90, 0x2e, 0xcb, 0xd0, 0x60, 0x06, 0x91]
+aead::verified: Bool = true
+```
+
+Here `tag` is `sealed()[114..]`, the last sixteen bytes.
+
+A slice's position never depends on data. Its bounds are built from integer
+literals and loop indices, with `+`, `-`, and `*` by a constant, and the
+analyzer proves, before anything runs, that the distance between them is the
+same positive number at every step, because that number is the slice's
+length and so part of its type, and that every element the slice can take,
+at every step, exists. A slice therefore needs no check when it runs, and the
+compiler points at the part it cannot prove:
+
+```orange
+spec window(x: Word[8]^8, n: Int) -> Word[8]^4 { x[n..n + 4] }
+spec words(x: Word[8]^8) -> Word[8]^4 {
+  for i in 0..2 with w: Word[8]^4 = [0; 4] { x[4 * i + 2..4 * i + 6] }
+}
+spec accent() -> Word[8]^5 { "café" }
+```
+
+```text
+error[ORC0226]: a slice's bounds may use only integer literals and loop indices
+ --> <stdin>:3:54
+  |
+3 | ... (x: Word[8]^8, n: Int) -> Word[8]^4 { x[n..n + 4] }
+  |                                             ^ this is neither
+  = note: a slice's position never depends on data: its bounds are built from integer literals and loop indices with `+`, `-`, and `*` by a constant
+```
+
+```text
+error[ORC0223]: this slice reaches elements 2 through 9, out of range for `Word[8]^8`
+ --> <stdin>:5:50
+  |
+5 | ...  in 0..2 with w: Word[8]^4 = [0; 4] { x[4 * i + 2..4 * i + 6] }
+  |                                             ^^^^^^^^^^^^^^^^^^^^ indices run from 0 through 7
+  = note: every element a slice can take, over every loop index in its bounds, must be an element of the array
+```
+
+```text
+error[ORC0235]: U+00E9 is not a printable ASCII character
+ --> <stdin>:7:36
+  |
+7 |   spec accent() -> Word[8]^5 { "caf\u{e9}" }
+  |                                    ^^^^^^ its UTF-8 bytes are written `hex"c3 a9"`
+  = note: a byte string's characters are its bytes, so each is printable ASCII, from ` ` through `~`; write any other byte as an escape, or in a hex string joined with `++`
+```
+
+The second error names the whole range the slice sweeps: its last step, i =
+1, would take elements 6 through 9 of an array of eight. The third writes the
+source line with the character escaped, and its label gives the bytes a
+program would write in its place.
+
+A byte string costs one evaluation step, whatever its length, because the
+evaluator builds its array once, before evaluation, and shares it, as it
+shares an integer literal. A join, a slice, and a slice update cost one step
+for each 64 elements, or part of 64, of the array they build, as an update or
+a fill does. In the Core, a byte string is one array literal, and joins,
+slices, and slice updates are three new kinds of node, each after its
+operands, with a bound left out recorded as the literal it stands for. Every
+source S3k accepted has the same Core, values, and output under S3l, since it
+writes no string, `++`, or range in brackets.
+
+That leaves new seams. A slice's position never depends on data, so a message
+of variable length, or a format that reads a length and then that many bytes,
+cannot be written yet. A byte string holds printable ASCII, and an array at
+most 256 elements, so a longer message is several values and text in another
+script is written in hex. Bytes and words are converted by functions a
+program writes, such as `word` above, one for each byte order. And nothing
+takes a size as a parameter, so `hash64` and `hash128` are two functions where
+SHA-256 is one. The roadmap lists those next.
 
 ### From bytes to a value
 
@@ -2975,6 +3200,16 @@ tuple of the wrong length or where no tuple is wanted, `ORC0223` for a
 position the tuple lacks, `ORC0215` for an operator on a whole tuple,
 `ORC0224` for an index into a tuple or an update of one, and `ORC0101` and
 `ORC0106` for a malformed or oversized tuple, tuple type, or pattern.
+The byte slice adds `ORC0009` for a malformed hex string, `ORC0235` for a
+character in a byte string that is not printable ASCII, and `ORC0236` for a
+slice whose length is not the same positive number at every step, and it
+reuses `ORC0003` for an unterminated hex string, `ORC0221` for an empty or
+oversized byte string, `ORC0222` for a byte string, join, or slice of the
+wrong length, `ORC0224` for a join, slice, or slice update of a value that is
+not an array, `ORC0226` for a slice bound that is neither a literal nor a
+loop index, `ORC0223` for a slice that leaves its array, `ORC0214` where no
+array is wanted, `ORC0108` for `++` beside another operator, and `ORC0101`
+for a slice with no bounds or with a step.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -3078,7 +3313,12 @@ sources, four valid and three invalid, including SHA-256 with a through h as
 eight named accumulators, the ChaCha20 quarter round and block, and
 Ascon-Hash256, against FIPS 180-4, RFC 8439, and the Ascon designers' known
 answers; generated sources pin tuple types, tuples, and patterns of 16 parts
-and of 17. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+and of 17. The bytes specification adds 10 rule identifiers and six sources,
+three valid and three invalid, including HMAC-SHA-256 with RFC 4231's keys
+and messages as that RFC prints them and ChaCha20-Poly1305 with RFC 8439's
+plaintext as text, against FIPS 180-4, RFC 4231, and RFC 8439; generated
+sources pin byte strings and hex strings of 256 bytes and of 257. The
+complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -3094,7 +3334,9 @@ than hidden: imports of names into scope, module paths and packages, modules
 that take modules as parameters, attributes, visibility, generic arguments, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, arrays of arrays, tuples of tuples, arrays of
 tuples, operators on whole tuples, records with named fields, indices
-narrowed by conditions, loops over computed ranges, early exit, short-circuit
+narrowed by conditions, slices at positions computed from data, empty arrays,
+equality of whole arrays, text beyond printable ASCII, conversions between
+bytes and words, loops over computed ranges, early exit, short-circuit
 operators, conditionals without `else`, blocks as expressions of their own,
 moduli computed at run time,
 functions generic over a modulus, distinct types by declaration, extension
@@ -3117,10 +3359,11 @@ S3d's, which builds on S3c, through OEP-0007, S3e's, which builds on S3d,
 through OEP-0008, S3f's, which builds on S3e, through OEP-0009, S3g's, which
 builds on S3f, through OEP-0010, S3h's, which builds on S3g, through
 OEP-0011, S3i's, which builds on S3h, through OEP-0012, S3j's, which builds
-on S3i, through OEP-0013, and S3k's, which builds on S3j, through OEP-0014.
+on S3i, through OEP-0013, S3k's, which builds on S3j, through OEP-0014, and
+S3l's, which builds on S3k, through OEP-0015.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All ten migrations so far are small: every source
+documented migration. All eleven migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -3129,8 +3372,10 @@ S3f accepted does the same under S3g, where it costs no more steps, every
 source S3g accepted does the same under S3h, as a program of one module,
 every source S3h accepted does the same under S3i, since it declares no type
 and writes no modulus, every source S3i accepted does the same under S3j,
-since it binds nothing in a step or a branch, and every source S3j accepted
-does the same under S3k, since it writes no tuple.
+since it binds nothing in a step or a branch, every source S3j accepted does
+the same under S3k, since it writes no tuple, and every source S3k accepted
+does the same under S3l, since it writes no string, `++`, or range in
+brackets.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -3841,10 +4086,13 @@ T1, and T2, and X25519's ladder names every value RFC 7748 names, inside one
 loop each. The tuple slice let each round carry its state by name: SHA-256's
 loop carries a through h, ChaCha20's quarter round gives four words as RFC
 8439 writes it, and Ascon-Hash256's state is five named words; all three
-reproduce their published values. These are
-still fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
-no byte strings and no message of variable length, and no standard has been
-admitted with its provenance. The corpus remains a set of research inputs
+reproduce their published values. The byte slice let each input be written
+as its standard prints it: HMAC-SHA-256 is keyed with "Jefe" and twenty bytes
+0b, as RFC 4231 prints its test cases, and ChaCha20-Poly1305 seals RFC 8439's
+sentence, written as text, into the RFC's ciphertext and tag. These are
+still fixtures, not corpus entries. Each message is padded to whole blocks by
+its writer, because Orange 2026 has no message of variable length, and no
+standard has been admitted with its provenance. The corpus remains a set of research inputs
 rather than promises.
 
 The acceptance test will run for the first time when a complete primitive can
@@ -4453,7 +4701,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3k in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3l in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -4770,9 +5018,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [lookups specification](LOOKUPS_2026.md), the
 [modules specification](MODULES_2026.md), the
 [modular arithmetic specification](MODULAR_2026.md), the
-[blocks specification](BLOCKS_2026.md), and the
-[tuples specification](TUPLES_2026.md) are proposed under
-OEP-0005 through OEP-0014 and in the owner's review. Where this summary and those
+[blocks specification](BLOCKS_2026.md), the
+[tuples specification](TUPLES_2026.md), and the
+[bytes specification](BYTES_2026.md) are proposed under
+OEP-0005 through OEP-0015 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -4806,9 +5055,9 @@ parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | comparison | chain("&&") | chain("||") | division
-                | conversion | update ;
+                | chain("++") | conversion | update ;
 conversion      = prefixed "as" (parsed_type | tuple_type) ;
-update          = prefixed "with" "[" expression "]" "=" expression ;
+update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
@@ -4820,10 +5069,13 @@ division        = prefixed ("/" | "%") prefixed ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
 primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
-                | tuple | array | fill | loop | conditional ;
-suffix          = "." INTEGER index? | index ;
+                | byte_string | tuple | array | fill | loop | conditional ;
+byte_string     = STRING | HEX_STRING ;
+suffix          = "." INTEGER (index | slice)? | index | slice ;
 tuple           = "(" expression ("," expression)+ ","? ")" ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
+slice           = "[" range "]" ;
+range           = expression ".." expression? | ".." expression ;
 array           = "[" expression ("," expression)* ","? "]" ;
 fill            = "[" expression ";" INTEGER "]" ;
 loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
@@ -4838,7 +5090,7 @@ Sources are valid UTF-8 of at most 16 MiB. Identifiers are ASCII. Integers
 may be decimal, `0b` binary, or `0x` hexadecimal, with single underscores
 between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 `claim` are reserved; the last three have no grammatical role yet. `let`, `as`,
-`for`, `in`, `with`, `if`, `else`, `use`, `type`, `true`, and `false` are not reserved: `let`
+`for`, `in`, `with`, `if`, `else`, `use`, `type`, `hex`, `true`, and `false` are not reserved: `let`
 starts a binding only at the start of a body, step, or branch item before a
 name or a tuple pattern, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
@@ -4846,20 +5098,23 @@ only after a complete operand, `for` starts a loop only before a name, `in` and
 operand and before `[`, `if` starts a conditional only where a condition can
 follow it, `else` is a word only after a conditional's value, `use` and `type`
 start declarations only at the head of a module before its first function,
-`Mod` takes a modulus only before `[`, and `true` and `false` are values only
-where no name of that spelling is in scope.
+`Mod` takes a modulus only before `[`, `hex` begins a hex string only directly
+before a quote, and `true` and `false` are values only where no name of that
+spelling is in scope.
 Line and
-nested block comments are trivia. `<<`, `>>`, `<<<`, and `>>>` are single
-tokens, matched longest first. Operators from different groups, or two shifts,
+nested block comments are trivia. `<<`, `>>`, `<<<`, `>>>`, and `++` are
+single tokens, matched longest first, and a string is a byte string of
+printable ASCII and escapes or, when `hex` touches its opening quote, a hex
+string of digit pairs and spaces. Operators from different groups, or two shifts,
 two comparisons, or two divisions, may not share a level without parentheses, and a conversion or an update shares
 a level with no operator and no other conversion or update. `^` after a declared
 type gives its array length; anywhere else it is exclusive or. Expressions may
 nest at most 64 levels deep, counting groups, tuples, calls, arrays, indices,
-loops, conditionals, updates, moduli, and prefix operators, and reach height
-256; a function declares at most 64 parameters and 256 bindings, a loop's step
+slices, loops, conditionals, updates, moduli, and prefix operators, and reach
+height 256; a function declares at most 64 parameters and 256 bindings, a loop's step
 or a branch at most 256 bindings, a call supplies at most 256 arguments, an
-array literal lists at most 256 elements, a tuple type, a tuple, and a tuple
-pattern hold at most 16 parts, and a loop's bounds satisfy
+array literal lists at most 256 elements, a byte string holds 1 through 256
+bytes, a tuple type, a tuple, and a tuple pattern hold at most 16 parts, and a loop's bounds satisfy
 0 ≤ a < b ≤ 65536. A module declares at most 64 `use` declarations and 64
 `type` declarations, and a program holds at most 64 modules, its root
 included.
@@ -4894,9 +5149,18 @@ before anything runs. An index is checked as the word type of its first name,
 call, conversion, or element, and ranges over that type, narrowed by its
 operators; otherwise it is an `Int` built from integer literals, loop indices,
 and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
-conditionals. An update or fill of n elements costs one evaluation step per
-64 elements, or part of 64. No operator or
-conversion applies to a whole array, and an array's elements are never arrays.
+conditionals. An update, a fill, a join, a slice, or a slice update costs one
+evaluation step per 64 elements of the array it builds, or part of 64, and a
+byte string costs one. No operator but `++`, and no conversion, applies to a
+whole array, and an array's elements are never arrays. A byte string `"..."`
+of printable ASCII characters and the escapes `\"`, `\\`, `\n`, `\r`, `\t`,
+`\0`, and `\xNN`, or `hex"..."` of hex digit pairs, is the array `Word[8]^n`
+of its bytes. `a ++ b` is the elements of a followed by those of b, of one
+element type. `x[a..b]` is the elements of x from index a up to but not
+including b, `x with [a..b] = v` is x with them replaced by v, and an omitted
+bound is 0 or the length. A slice's bounds are built from integer literals
+and loop indices with `+`, `-`, and `*` by a constant, and are proved a fixed
+positive distance apart and in range at every step.
 A tuple lists exactly as many elements as its type, `p.k` selects element k,
 counted from zero, and no operator, comparison, conversion, index, or update
 applies to a whole tuple; neither a tuple's nor an array's elements are ever
@@ -4964,9 +5228,9 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 
 | Codes | Phase | Examples |
 | --- | --- | --- |
-| `ORC0001`–`ORC0008` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget |
+| `ORC0001`–`ORC0009` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget, malformed hex string |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0234` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple |
+| `ORC0201`–`ORC0236` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1015` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness |
 
@@ -5083,8 +5347,9 @@ part are listed here so a reader can move from explanation to authority.
   [binding and conversion](BINDINGS_2026.md), [array](ARRAYS_2026.md), and
   [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
   [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md),
-  [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md), and
-  [tuple](TUPLES_2026.md) specifications under OEP-0005 through OEP-0014, the
+  [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md),
+  [tuple](TUPLES_2026.md), and [byte](BYTES_2026.md) specifications under
+  OEP-0005 through OEP-0015, the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
@@ -5124,24 +5389,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.13 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.14 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.13 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.13 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, and tuple slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.14 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.14 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, and byte slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.13 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, and tuple slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.14 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, and byte slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.13 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.14 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.13 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.14 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.13 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.14 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -5189,9 +5454,11 @@ version 0.10 adds the [modules specification](MODULES_2026.md),
 [modular arithmetic specification](MODULAR_2026.md) and
 [OEP-0012](governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md),
 version 0.12 adds the [blocks specification](BLOCKS_2026.md) and
-[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), and version 0.13
+[OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), version 0.13
 adds the [tuples specification](TUPLES_2026.md) and
-[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md).
+[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md), and version 0.14
+adds the [bytes specification](BYTES_2026.md) and
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -5291,6 +5558,14 @@ Bryan's direction on 2026-09-30, and every Orange example it adds was run
 against the compiler at the revision that introduced it. That check is not
 independent review, and the same authorship, review, evidence, and provenance
 boundaries apply.
+
+Manuscript version 0.14 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3l byte slice, and added the Chapter 8
+section "Bytes as the standards print them". It was drafted with Claude Code
+under Chase Bryan's direction on 2026-09-30, and every Orange example it adds
+was run against the compiler at the revision that introduced it. That check
+is not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

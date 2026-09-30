@@ -28,8 +28,10 @@ meaning. It accepts no D-004 candidate.
 > AA, B, BB, E, C, D, DA, and CB inside each step, as RFC 7748 does.
 > [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
 > which a `type` declaration may name, as `type Pair = (Int, Int);`, and whose
-> elements may be residues. Every source this document accepts keeps its
-> meaning under both.
+> elements may be residues. [`BYTES_2026.md`](BYTES_2026.md), proposed under
+> OEP-0015, adds byte strings and slices, so that a Poly1305 key is written as
+> RFC 8439 prints it and its message read sixteen bytes at a time. Every
+> source this document accepts keeps its meaning under all three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

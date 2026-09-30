@@ -8310,6 +8310,100 @@ fn a_conditional_joined_takes_its_length_from_a_branch_without_bindings() {
 }
 
 #[test]
+fn slices_and_slice_updates_are_typed_against_the_required_array() {
+    // A slice gives an array of its base's element type and its own
+    // length, and a slice update gives its base's array type; each is
+    // reported where it stands, and a base that is not an array where it
+    // is written.
+    let (fixture, result) = rejected(concat!(
+        "  spec scalar(x: Word[8]^4) -> Word[8] { x[1..3] }\n",
+        "  spec element(x: Word[32]^4) -> Word[8]^2 { x[1..3] }\n",
+        "  spec word(w: Word[32]) -> Word[32]^1 { w[0..1] }\n",
+        "  spec tuple(p: (Int, Int)) -> Int^1 { p[0..1] }\n",
+        "  spec length(x: Word[8]^4) -> Word[8]^3 { x[1..3] }\n",
+        "  spec wanted(x: Word[8]^4) -> Word[8] { x with [0..2] = \"ab\" }\n",
+        "  spec base(w: Word[32]) -> Word[32]^4 { w with [0..1] = [0] }\n",
+        "  spec pair(p: (Int, Int)) -> (Int, Int) { p with [0..1] = [0] }\n",
+        "  spec value(x: Word[8]^4) -> Word[8]^4 { x with [1..3] = [1, 2, 3] }\n",
+        "  spec values(x: Word[8]^4) -> Word[8]^4 { x with [1..] = \"ab\" }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::TypeMismatch,
+                "x[1..3]",
+                String::from("a slice is an array, but `Word[8]` is required here")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "x[1..3]",
+                String::from(
+                    "this slice is an array of `Word[32]`, but `Word[8]^2` is required here"
+                )
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "w",
+                String::from("only an array can be sliced, but this has type `Word[32]`")
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "p",
+                String::from("only an array can be sliced, but this has type `(Int, Int)`")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "x[1..3]",
+                String::from("this slice has 2 elements, but `Word[8]^3` has 3")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "x with [0..2] = \"ab\"",
+                String::from("an update gives an array, but `Word[8]` is required here")
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "w",
+                String::from("only an array can be updated, but this has type `Word[32]`")
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "p",
+                String::from("only an array can be updated, but this has type `(Int, Int)`")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "[1, 2, 3]",
+                String::from("this array has 3 elements, but `Word[8]^2` has 2")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "\"ab\"",
+                String::from("this byte string holds 2 bytes, but `Word[8]^3` has 3")
+            ),
+        ]
+    );
+    let notes = result
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.notes().first().cloned().unwrap_or_default())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        notes[0],
+        "one element is selected by an index, such as `x[0]`"
+    );
+    assert_eq!(
+        notes[1],
+        "a slice is an array of the elements of the array it is taken from"
+    );
+    assert_eq!(
+        notes[7],
+        "a tuple with elements replaced is written anew, such as `(v, p.1)`"
+    );
+}
+
+#[test]
 fn byte_string_and_slice_events_and_core_nodes_follow_the_normative_accounting() {
     // `f(x: Word[8]^4) -> Word[8]^4 { x }` takes 10 analysis events and 5
     // Core nodes (15 events in all). A byte string of n bytes in place of

@@ -82,6 +82,13 @@ unresolved.
 > a tuple `(a, b)`, the selection `.k` of element k, and tuple patterns that
 > name each element where a binding or a loop's accumulator is declared. It
 > adds no token and no reserved word.
+>
+> The S3l slice proposed in [`BYTES_2026.md`](BYTES_2026.md) under OEP-0015,
+> also in review, builds on S3k with bytes: a string is the array of its
+> bytes, `hex"..."` writes one in hex, `++` joins two arrays, and `x[a..b]`
+> takes a run of elements at bounds proved in range. It adds two tokens,
+> `HEX_STRING` and `PLUS_PLUS`, and no reserved word: `hex` is a name unless a
+> quote follows it directly.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

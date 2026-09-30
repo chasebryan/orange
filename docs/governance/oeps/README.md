@@ -117,3 +117,4 @@ success does not establish technical soundness or authority approval.
 | [OEP-0012](OEP-0012-orange-2026-modular-arithmetic.md) | Review | Orange 2026 integers modulo a constant and type declarations: `Mod[m]` with constant moduli, total division, and names for types (S3i) |
 | [OEP-0013](OEP-0013-orange-2026-blocks.md) | Review | Orange 2026 blocks: `let` bindings at the start of a loop's step and of each branch, in scope only within it (S3j) |
 | [OEP-0014](OEP-0014-orange-2026-tuples.md) | Review | Orange 2026 tuples: tuple types, tuples, `.k`, and tuple patterns, so that a function gives several values and a loop carries several accumulators (S3k) |
+| [OEP-0015](OEP-0015-orange-2026-bytes.md) | Review | Orange 2026 bytes: byte strings and hex strings, `++` joins, and slices `x[a..b]` and slice updates at bounds proved in range before a program runs (S3l) |

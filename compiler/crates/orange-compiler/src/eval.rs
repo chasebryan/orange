@@ -2239,8 +2239,8 @@ fn result_residue(
         .ok_or(Stop::InconsistentCore)
 }
 
-/// Shares every `Int` and residue literal once so that evaluation never
-/// copies literal digits.
+/// Shares every `Int`, residue, and array literal once so that evaluation
+/// never copies literal digits or a byte string's bytes.
 fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     let mut shared = Vec::new();
     shared.try_reserve_exact(core.functions.len()).ok()?;

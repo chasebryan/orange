@@ -497,9 +497,24 @@ tested, and its acceptance requires the owner's acceptance of
 [OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md), which bounds the
 S3k surface in [`TUPLES_2026.md`](TUPLES_2026.md) and builds on OEP-0013. Like
 the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3l follows S3k. It adds bytes: a byte string `"..."` is the array
+`Word[8]^n` of the ASCII bytes of its text and a hex string `hex"..."` that of
+its hex digit pairs, `++` joins two arrays, and a slice `x[a..b]` and a slice
+update `x with [a..b] = v` read and replace a run of elements whose bounds are
+built from literals and loop indices, proved a fixed distance apart and in
+range before the program runs. HMAC-SHA-256 writes RFC 4231's keys and
+messages as the RFC prints them and pads SHA-256's input with `++`, and
+ChaCha20-Poly1305 writes RFC 8439's plaintext as text and its key, nonce, and
+additional data in hex; both reproduce their standards' values. It is
+implemented and tested, and its acceptance requires the owner's acceptance of
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), which bounds the
+S3l surface in [`BYTES_2026.md`](BYTES_2026.md) and builds on OEP-0014. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
 Static parameters, so that one quarter round can act on four positions of a
-whole state and one `spec` can serve every field, array concatenation and
-slicing, and byte-string literals are the next candidate slices.
+whole state and one `spec` can serve every field, conversions between bytes
+and words, and slices at positions computed from data are the next candidate
+slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -545,8 +560,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3k are implemented and await owner review under
-OEP-0005 through OEP-0014, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3l are implemented and await owner review under
+OEP-0005 through OEP-0015, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics
