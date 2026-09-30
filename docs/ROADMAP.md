@@ -563,11 +563,29 @@ owner's acceptance of
 [OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md), which
 bounds the S3o surface in [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md)
 and builds on OEP-0017. Like the slices before it, it assumes only pure,
-total, deterministic meaning. Moduli written with parameters, so that one
-`spec` can serve every field rather than a listed few, lists of types named
-once for several functions, positions given as parameters, so that one
-quarter round can act on four positions of a whole state, and slices and
-words at positions computed from data are the next candidate slices.
+total, deterministic meaning.
+
+S3p follows S3o. It lifts the length of an array, an array literal, and a
+byte string from 256 to 65,536 elements, the most iterations a loop has and
+the values of a 16-bit word, so a `Word[16]` indexes the longest array with
+no check at run time, and it keeps every cost per element, so a long array is
+built in rows placed with slice updates. RFC 8439's long vectors, the
+375-byte test vector 2 of appendix A.2 and the 265-byte ciphertext of
+appendix A.5, are written as the RFC prints them and reproduced byte for
+byte, and a table of the 65,536 powers of 3 modulo the Fermat prime
+2^16 + 1 is built and read by 16-bit words. `orangec eval` gains `--steps`,
+which sets a run's step budget up to 1,073,741,824, `--spec`, which evaluates
+only the functions it names, and `--stats`, which reports the steps each
+used. It is implemented and tested, and its acceptance requires the owner's
+acceptance of
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), which bounds the
+S3p surface in [`LENGTHS_2026.md`](LENGTHS_2026.md) and builds on OEP-0018.
+Like the slices before it, it assumes only pure, total, deterministic
+meaning. Moduli written with parameters, so that one `spec` can serve every
+field rather than a listed few, lists of types named once for several
+functions, positions given as parameters, so that one quarter round can act
+on four positions of a whole state, and slices and words at positions
+computed from data are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -613,8 +631,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3o are implemented and await owner review under
-OEP-0005 through OEP-0018, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3p are implemented and await owner review under
+OEP-0005 through OEP-0019, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

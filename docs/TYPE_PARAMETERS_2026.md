@@ -23,6 +23,14 @@ section 12. Until then, the compiler behavior it describes exists so that the
 proposal can be reviewed against running code, and it establishes no accepted
 language meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, extends this
+> document with arrays of up to 65,536 elements and with evaluation controls:
+> a type parameter may list array types of any admitted length, a function
+> still has at most 256 instances, and `orangec eval --spec pow` evaluates
+> every instance of `pow` alone. Every source this document accepts keeps its
+> meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

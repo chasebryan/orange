@@ -10,7 +10,7 @@ pub(super) enum TypeClass {
     UnsupportedWordWidth(Span),
     UnsupportedArrayLength(Span),
     /// A length written with sizes whose value in this instance is not
-    /// from 1 through 256, at the length's span.
+    /// from 1 through [`MAX_ARRAY_LENGTH`], at the length's span.
     ArrayLengthValue(Span, ExactInteger),
     /// A length written with sizes that has no value.
     Size(SizeFault),
@@ -143,6 +143,10 @@ fn classify_tuple_type(
     })
 }
 
+/// The most digits an admitted array length has: 65,536 has five.
+const ARRAY_LENGTH_DIGITS: usize = 5;
+const _: () = assert!(MAX_ARRAY_LENGTH >= 10_000 && MAX_ARRAY_LENGTH < 100_000);
+
 /// Decodes an array length written as a decimal integer with no leading
 /// zero and no underscore, as word widths are written.
 pub(super) fn array_length(source: &SourceFile, span: Span) -> Option<u32> {
@@ -150,7 +154,7 @@ pub(super) fn array_length(source: &SourceFile, span: Span) -> Option<u32> {
     let canonical = !spelling.is_empty()
         && !spelling.starts_with('0')
         && spelling.bytes().all(|byte| byte.is_ascii_digit());
-    if !canonical || spelling.len() > 3 {
+    if !canonical || spelling.len() > ARRAY_LENGTH_DIGITS {
         return None;
     }
     spelling.parse().ok()
@@ -752,10 +756,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     span,
                 )
                 .with_label("unsupported array length in this instance")
-                .with_note(
+                .with_note(format!(
                     "a length written with sizes is computed in each instance of its function, \
-                     and every instance's lengths are from 1 through 256",
-                ),
+                     and every instance's lengths are from 1 through {MAX_ARRAY_LENGTH}"
+                )),
             );
         }
     }

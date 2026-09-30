@@ -94,7 +94,7 @@ module NAME {
   underscores. It is written into every sealed file.
 - `orangec` reads the sizes from these signatures. `S = C + T`, where `T` is
   the tag length. Keys are 16 to 64 bytes, nonces 12 to 29 bytes, tags and
-  chunks at least 16 bytes, and a sealed chunk `S` at most 256 bytes, the
+  chunks at least 16 bytes, and a sealed chunk `S` at most 65,536 bytes, the
   longest array Orange has. The associated data is always the 64-byte header.
 - `seal` is authenticated encryption: `authentic(k, n, a, seal(k, n, a, p))`
   is `true`, and `open` of it returns `p`. `authentic` must be `true` only for

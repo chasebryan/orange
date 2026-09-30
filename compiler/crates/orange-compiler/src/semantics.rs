@@ -54,8 +54,10 @@ pub const MAX_MODULES_PER_PROGRAM: usize = 64;
 /// Maximum significant bits retained for one exact mathematical integer.
 pub const MAX_INTEGER_BITS: usize = 16_384;
 const _: () = assert!(MAX_INTEGER_BITS == MAX_EXACT_INTEGER_BITS);
-// An array literal can spell every admitted array type and no longer one.
-const _: () = assert!(MAX_ARRAY_ELEMENTS == 256 && MAX_ARRAY_LENGTH == 256);
+// An array literal can spell every admitted array type and no longer one,
+// and a loop can visit every element of the longest.
+const _: () = assert!(MAX_ARRAY_ELEMENTS == 65_536 && MAX_ARRAY_LENGTH == 65_536);
+const _: () = assert!(MAX_LOOP_BOUND == MAX_ARRAY_LENGTH);
 
 const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
 const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;

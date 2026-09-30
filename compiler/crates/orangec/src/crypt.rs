@@ -1752,8 +1752,18 @@ mod tests {
             "its header names impossible sizes: nonces are 12 to 29 bytes"
         );
         assert_eq!(
-            altered(15, 0xf1),
-            "its header names impossible sizes: a sealed chunk is at most 256 bytes"
+            altered(13, 1),
+            "its header names impossible sizes: a sealed chunk is at most 65536 bytes"
+        );
+        // A 65,520-byte chunk and its 16-byte tag are the longest array a
+        // scheme can take; one byte more is refused.
+        let mut largest = header;
+        largest[14] = 0xff;
+        assert_eq!(parse_header(&largest).unwrap().shape.chunk, 65_520);
+        largest[15] = 0xf1;
+        assert_eq!(
+            parse_header(&largest).err().unwrap(),
+            "its header names impossible sizes: a sealed chunk is at most 65536 bytes"
         );
         assert_eq!(altered(16, 0), "its header does not name a scheme");
         assert_eq!(altered(20, b'-'), "its header does not name a scheme");

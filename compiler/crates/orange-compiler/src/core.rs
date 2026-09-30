@@ -879,7 +879,7 @@ impl fmt::Display for CoreType {
 }
 
 /// Longest admitted array type.
-pub const MAX_ARRAY_LENGTH: u32 = 256;
+pub const MAX_ARRAY_LENGTH: u32 = 65_536;
 
 /// A fixed-length array type `T^n`: `n` values of the scalar type `T`, for
 /// `n` from 1 through [`MAX_ARRAY_LENGTH`].
@@ -2316,9 +2316,9 @@ mod tests {
     }
 
     #[test]
-    fn array_types_hold_one_to_256_scalars_and_display_as_powers() {
+    fn array_types_hold_one_to_65536_scalars_and_display_as_powers() {
         for element in CoreType::SCALARS {
-            for length in [1, 2, 16, MAX_ARRAY_LENGTH] {
+            for length in [1, 2, 16, 256, 257, 4096, MAX_ARRAY_LENGTH] {
                 let array = ArrayType::new(element, length).unwrap();
                 assert_eq!(array.element(), *element);
                 assert_eq!(array.length(), length);

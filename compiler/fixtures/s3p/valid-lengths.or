@@ -1,0 +1,71 @@
+// S3p conformance: arrays of up to 65,536 elements. The powers of 3 modulo
+// the Fermat prime F4 = 2^16 + 1 fill a table of 65,536 residues, one row
+// of 256 at a time, and a 16-bit word indexes it with no check at run time,
+// since every value of a 16-bit word is in range. Pepin's test reads
+// 3^32768 = -1 from the table, so 3 has order 65,536 and the table holds
+// every nonzero residue exactly once. Fills, joins, slices and byte orders
+// reach the same length.
+edition 2026;
+module lengths {
+  type F4 = Mod[(1 << 16) + 1];
+
+  // x, xg, xg^2, ..., xg^255: one row of the table.
+  spec row(x: F4, g: F4) -> F4^256 {
+    let (r: F4^256, next: F4) =
+      for i in 0..256 with (r: F4^256, y: F4) = ([0; 256], x) { (r with [i] = y, y * g) };
+    r
+  }
+
+  // g^i for every i from 0 through 65535. An update costs one step for
+  // each 64 elements of the array it updates, so each row is filled in an
+  // array of its own and placed with one slice update.
+  spec powers(g: F4) -> F4^65536 {
+    let (table: F4^65536, next: F4) =
+      for k in 0..256 with (t: F4^65536, x: F4) = ([0; 65536], 1) {
+        let r: F4^256 = row(x, g);
+        (t with [256 * k..256 * k + 256] = r, r[255] * g)
+      };
+    table
+  }
+
+  // A 16-bit word's every value indexes an array of 65,536 elements, so
+  // this index is proved in range before anything runs.
+  spec at(table: F4^65536, i: Word[16]) -> F4 { table[i] }
+
+  // Pepin's test: F4 is prime exactly when 3^((F4 - 1) / 2) = -1, and then 3
+  // generates its multiplicative group. The last power, 3^65535, is the
+  // inverse of 3.
+  spec pepin() -> (F4, F4, Bool) {
+    let table: F4^65536 = powers(3);
+    let half: F4 = at(table, 0x8000);
+    let last: F4 = at(table, 0xffff);
+    (half, last, (half == -1) && ((last * 3) == 1))
+  }
+
+  // The longest fill, and joins and slices at the limit: two halves of
+  // 32,768 bytes join to 65,536, and the middle two bytes straddle them.
+  spec halves() -> Word[8]^2 {
+    let whole: Word[8]^65536 = [0x5a; 32768] ++ [0xa5; 32768];
+    let zeros: Word[8]^65536 = [0; 65536];
+    let swapped: Word[8]^65536 = zeros with [0..32768] = whole[32768..];
+    [whole[32767] ^ swapped[0], swapped[32768] | whole[32768]]
+  }
+
+  // Byte orders at the limit: 8,192 words of 64 bits are 65,536 bytes,
+  // read here least significant byte first and back most significant
+  // first.
+  spec words() -> (Word[8]^8, Word[64]) {
+    let w: Word[64]^8192 = [0x0102030405060708; 8192];
+    let bytes: Word[8]^65536 = w as little Word[8]^65536;
+    let back: Word[64]^8192 = bytes as big Word[64]^8192;
+    (bytes[65528..], back[8191])
+  }
+
+  // Words convert to one number while it has at most 16,384 significant
+  // bits: 2,048 bytes of 0xff are 2^16384 - 1, which F4 divides, since
+  // 2^16 = -1 modulo F4.
+  spec widest() -> Int {
+    let ones: Word[8]^2048 = [0xff; 2048];
+    (ones as big Int) % 65537
+  }
+}

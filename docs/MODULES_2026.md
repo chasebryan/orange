@@ -37,11 +37,13 @@ meaning. It accepts no D-004 candidate.
 > `sha256::sha256(m)` or `m::f[2](x)`, and [`ORDER_2026.md`](ORDER_2026.md),
 > proposed under OEP-0017, adds conversions in a byte order, which convert
 > values of every module's types alike, and
-> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
-> OEP-0018, adds type parameters, whose instances are called across a module
-> boundary as `field::cube[Kyber](5)`: a type entry names a type in the
-> caller's module, matched by equality with the types the callee lists.
-> Every source this document accepts keeps its meaning under all seven.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> adds type parameters, whose instances are called across a module boundary as
+> `field::cube[Kyber](5)`: a type entry names a type in the caller's module,
+> matched by equality with the types the callee lists.
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, lets `orangec
+> eval --spec` evaluate only the named functions of the root module. Every
+> source this document accepts keeps its meaning under all eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

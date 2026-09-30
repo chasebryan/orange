@@ -902,6 +902,67 @@ SHA-512. This slice, S3o, is implemented and tested; its specification is in
 review as
 [OEP-0018](docs/governance/oeps/OEP-0018-orange-2026-type-parameters.md).
 
+### Vectors at full length
+
+The objects of cryptography are long. An ML-KEM-512 ciphertext is 768 bytes,
+an ML-DSA-44 signature 2,420, and an RSA-4096 block 512; RFC 8439 prints test
+vectors of 375 and 265 bytes. An Orange array, array literal, or byte string
+holds up to **65,536** elements: as many as a loop visits, and exactly the
+values of a 16-bit word, so a `Word[16]` indexes the longest array with no
+check at run time. RFC 8439's appendix A.5 is written as the RFC prints it,
+and ChaCha20 is written once for messages of 1 through 256 whole blocks:
+
+```orange
+spec a5_ciphertext() -> Word[8]^265 {
+  hex"64 a0 86 15 75 86 1a f4 60 f0 62 c7 9b e6 43 bd" ++
+    hex"5e 80 5c fd 34 5c f3 89 f1 08 67 0a c7 6c 8c b2" ++
+    ...
+    hex"a6 ad 5c b4 02 2b 02 70 9b"
+}
+
+spec encrypt[blocks in 1..257](
+  key: Word[8]^32, counter: Word[32], nonce: Word[8]^12, plaintext: Word[8]^(64 * blocks),
+) -> Word[8]^(64 * blocks) {
+  for j in 0..blocks with c: Word[8]^(64 * blocks) = plaintext {
+    c with [64 * j..64 * j + 64] =
+      xor64(plaintext[64 * j..64 * j + 64], block(key, counter + (j as Word[32]), nonce))
+  }
+}
+
+// The plaintext is the ciphertext exclusive-ored with the key stream from
+// block 1, padded to five blocks and cut back to its 265 bytes.
+spec a5_plaintext() -> Word[8]^265 {
+  encrypt(a5_key(), 1, a5_nonce(), a5_ciphertext() ++ [0; 55])[..265]
+}
+```
+
+Nothing about costs changes: making an array costs one step for each 64 of
+its elements, so a long table is built in rows placed with slice updates, and
+an evaluation's memory stays bounded by its steps. `orangec eval` takes
+three options for longer work: `--steps N` sets the step budget, up to
+1,073,741,824; `--spec NAME` evaluates only the functions it names; and
+`--stats` reports on standard error, after the values, the steps each used:
+
+```console
+$ orangec eval --spec a5_authentic --spec a5_opens_to_text --stats compiler/fixtures/s3p/valid-rfc8439.or
+rfc8439::a5_authentic: Bool = true
+rfc8439::a5_opens_to_text: Bool = true
+rfc8439::a5_authentic: 24802 steps
+rfc8439::a5_opens_to_text: 28442 steps
+total: 53244 of 1048576 steps
+```
+
+The [RFC 8439 fixture](compiler/fixtures/s3p/valid-rfc8439.or) reproduces the
+375-byte ciphertext of appendix A.2 test vector 2, the tags of appendix A.3
+test vectors 2 and 3, and appendix A.5's authentication and plaintext, and the
+[lengths fixture](compiler/fixtures/s3p/valid-lengths.or) builds the 65,536
+powers of 3 modulo the Fermat prime 2^16 + 1 and reads them by 16-bit words
+for Pepin's test. A conversion of words to a number still stops at the
+evaluator's 16,384-bit limit, now at run time, since a long array can spell a
+longer number. This slice, S3p, is implemented and tested; its specification
+is in review as
+[OEP-0019](docs/governance/oeps/OEP-0019-orange-2026-lengths.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -934,6 +995,7 @@ cryptography.
 | Size parameters: one `spec` for every length in a range, each instance checked before anything runs | Working; specification in review ([OEP-0016](docs/governance/oeps/OEP-0016-orange-2026-sizes.md)) |
 | Byte orders: `as big` and `as little` read words as words of another width, a number, or a residue, and write numbers as words | Working; specification in review ([OEP-0017](docs/governance/oeps/OEP-0017-orange-2026-byte-order.md)) |
 | Type parameters: one `spec` for a list of types, such as several fields or word widths, each instance checked before anything runs | Working; specification in review ([OEP-0018](docs/governance/oeps/OEP-0018-orange-2026-type-parameters.md)) |
+| Arrays, literals, and byte strings of up to 65,536 elements, and `orangec eval --steps`, `--spec`, and `--stats` | Working; specification in review ([OEP-0019](docs/governance/oeps/OEP-0019-orange-2026-lengths.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
@@ -954,6 +1016,7 @@ cd orange
 
 # Build and try the compiler
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --stats compiler/fixtures/s3p/valid-rfc8439.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3g/valid-aes128.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
@@ -980,6 +1043,7 @@ Markdown lint, workflow audits, and link checks run only in CI.
 
 ```text
 Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
+       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
        orangec keygen [--scheme <NAME>] [-o <FILE>]
        orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
        orangec schemes [<NAME>...]
@@ -1016,7 +1080,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, and type parameters in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, and long arrays in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -1044,9 +1108,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [integers modulo a constant](docs/MODULAR_2026.md),
   [blocks](docs/BLOCKS_2026.md), [tuples](docs/TUPLES_2026.md),
   [bytes](docs/BYTES_2026.md), [sizes](docs/SIZES_2026.md),
-  [byte order](docs/ORDER_2026.md), and
-  [type parameters](docs/TYPE_PARAMETERS_2026.md): the definition of what the
-  compiler accepts today.
+  [byte order](docs/ORDER_2026.md),
+  [type parameters](docs/TYPE_PARAMETERS_2026.md), and
+  [lengths and evaluation controls](docs/LENGTHS_2026.md): the definition of
+  what the compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

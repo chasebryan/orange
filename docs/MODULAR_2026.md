@@ -37,11 +37,14 @@ meaning. It accepts no D-004 candidate.
 > OEP-0017, adds conversions in a byte order, so that a Poly1305 block or an
 > X25519 coordinate is read as a residue in one conversion, as `(b ++ hex"01")
 > as little P`, and a residue is written as bytes.
-> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
-> OEP-0018, adds type parameters, so that one function serves several moduli,
-> as `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, each instance checked in its
-> own ring; a modulus is still a constant. Every source this document accepts
-> keeps its meaning under all six.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> adds type parameters, so that one function serves several moduli, as `spec
+> pow[K in {F, P, Q}](x: K, e: Int) -> K`, each instance checked in its own
+> ring; a modulus is still a constant. [`LENGTHS_2026.md`](LENGTHS_2026.md),
+> proposed under OEP-0019, lets an array of residues hold up to 65,536 elements,
+> and reads words wider than 16,384 bits as a residue only while their number
+> fits the exact-integer limit. Every source this document accepts keeps its
+> meaning under all seven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

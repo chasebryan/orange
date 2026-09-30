@@ -357,7 +357,7 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/semantics/tests.rs",
-        test: "byte_strings_hold_one_through_256_printable_bytes",
+        test: "byte_strings_hold_one_through_65536_printable_bytes",
         rules: &["S3L-BYTES-01", "S3L-RES-01", "S3L-DETERMINISM-01"],
     },
     TestEvidence {
@@ -765,14 +765,19 @@ fn s3l_cli_conformance_corpus_is_exact_and_repeatable() {
 fn s3l_byte_strings_are_exact_at_the_limit() {
     let directory = scratch_directory("limits");
 
-    // A byte string holds 1 through 256 bytes, written as characters or as
-    // hex digit pairs; a 257th byte is reported at the string, before any
-    // later character is read.
+    // A byte string holds 1 through 65,536 bytes, written as characters or
+    // as hex digit pairs; a 65,537th byte is reported at the string, before
+    // any later character is read.
+    const MOST: usize = 65_536;
     let program = |text: usize, hex: usize| {
         let mut source =
-            String::from("edition 2026;\nmodule limits {\n  spec text() -> Word[8]^256 {\n    \"");
+            format!("edition 2026;\nmodule limits {{\n  spec text() -> Word[8]^{MOST} {{\n    \"");
         source.push_str(&"~".repeat(text));
-        source.push_str("\"\n  }\n  spec hex() -> Word[8]^256 {\n    hex\"");
+        write!(
+            source,
+            "\"\n  }}\n  spec hex() -> Word[8]^{MOST} {{\n    hex\""
+        )
+        .unwrap();
         for byte in 0..hex {
             write!(source, "{:02x} ", byte % 256).unwrap();
         }
@@ -780,16 +785,21 @@ fn s3l_byte_strings_are_exact_at_the_limit() {
         source
     };
     let path = directory.join("limits.or");
-    fs::write(&path, program(256, 256)).unwrap();
-    let most = run_twice("eval", &path, "256 bytes");
-    let mut expected = String::from("limits::text: Word[8]^256 = [");
-    expected.push_str(&vec!["0x7e"; 256].join(", "));
-    expected.push_str("]\nlimits::hex: Word[8]^256 = [");
-    let bytes: Vec<_> = (0..256).map(|byte| format!("0x{byte:02x}")).collect();
+    fs::write(&path, program(MOST, MOST)).unwrap();
+    let most = run_twice("eval", &path, "65536 bytes");
+    let mut expected = format!("limits::text: Word[8]^{MOST} = [");
+    expected.push_str(&vec!["0x7e"; MOST].join(", "));
+    write!(expected, "]\nlimits::hex: Word[8]^{MOST} = [").unwrap();
+    let bytes: Vec<_> = (0..MOST)
+        .map(|byte| format!("0x{:02x}", byte % 256))
+        .collect();
     expected.push_str(&bytes.join(", "));
     expected.push_str("]\n");
-    assert_success(&most, &expected, "256 bytes");
-    for (text, hex, location) in [(257, 256, "limits.or:4:5"), (256, 257, "limits.or:7:5")] {
+    assert_success(&most, &expected, "65536 bytes");
+    for (text, hex, location) in [
+        (MOST + 1, MOST, "limits.or:4:5"),
+        (MOST, MOST + 1, "limits.or:7:5"),
+    ] {
         fs::write(&path, program(text, hex)).unwrap();
         let context = format!("{text} and {hex} bytes");
         let over = run_twice("check", &path, &context);
@@ -797,7 +807,7 @@ fn s3l_byte_strings_are_exact_at_the_limit() {
             &over,
             &["ORC0221"],
             &[location],
-            &["a byte string holds at most 256 bytes"],
+            &["a byte string holds at most 65536 bytes"],
             &context,
         );
     }

@@ -112,6 +112,14 @@ unresolved.
 > instance by its types, `pow[F](x, e)`, or lets its arguments' types and its
 > place choose. It adds no token and no reserved word: braces after a size
 > parameter's `in` hold a list of types.
+>
+> The S3p slice proposed in [`LENGTHS_2026.md`](LENGTHS_2026.md) under
+> OEP-0019, also in review, builds on S3o with long arrays and evaluation
+> controls: an array, an array literal, and a byte string hold up to 65,536
+> elements, so a `Word[16]` indexes the longest with no check at run time, and
+> `orangec eval --steps`, `--spec`, and `--stats` set a run's step budget,
+> evaluate only the functions named, and report the steps each used. It adds
+> no token and no reserved word.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

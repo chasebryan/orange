@@ -44,10 +44,13 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, lets `as` name a
 > byte order, as `block as big Word[32]^16`, which reads words as words of
 > another width or as one number, and
-> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
-> OEP-0018, lets a `spec` list the types it is written for, as
-> `K in {Word[32], Word[64]}`, and stands for one function for each. Every
-> source this document accepts keeps its meaning under all thirteen.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lets a `spec` list the types it is written for, as `K in {Word[32],
+> Word[64]}`, and stands for one function for each.
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, lets `orangec
+> eval` set the step budget, from 1 through 1,073,741,824 steps, evaluate only
+> the functions it names, and report the steps each used. Every source this
+> document accepts keeps its meaning under all fourteen.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
