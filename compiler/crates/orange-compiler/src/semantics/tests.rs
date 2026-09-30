@@ -7836,3 +7836,633 @@ fn rejects_foreign_spans_in_tuples() {
         );
     }
 }
+
+#[test]
+fn byte_strings_joins_and_slices_build_typed_core_in_postorder() {
+    let (fixture, core) = accepted(concat!(
+        r#"  spec text() -> Word[8]^10 { "\"\\\n\r\t\0\x7F~ a" }"#,
+        "\n",
+        "  spec hex() -> Word[8]^3 { hex\" 00Ff  1a \" }\n",
+        "  spec join(x: Word[8]^2) -> Word[8]^5 { x ++ [1; 2] ++ \"z\" }\n",
+        "  spec slice(x: Word[8]^4) -> Word[8]^2 { x[1..3] }\n",
+        "  spec open(x: Word[8]^4) -> Word[8]^3 { x[..3] }\n",
+        "  spec rest(x: Word[8]^4) -> Word[8]^3 { x[1..] }\n",
+        "  spec splice(x: Word[8]^4) -> Word[8]^4 { x with [2..] = \"hi\" }\n",
+        "  spec reverse(x: Word[8]^4) -> Word[8]^4 {\n",
+        "    for i in 0..4 with y: Word[8]^4 = x { y with [i..i + 1] = x[3 - i..4 - i] }\n",
+        "  }\n",
+    ));
+    let owned = |rows: &[(&str, &'static str, CoreType)]| {
+        rows.iter()
+            .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
+            .collect::<Vec<_>>()
+    };
+    let bytes = |length| array_of(CoreType::Word8, length);
+
+    // A byte string is one literal node holding its bytes: each escape
+    // is one byte, and a hex string's spaces are not bytes.
+    assert_eq!(core.functions[0].result_type, bytes(10));
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[0]),
+        owned(&[(
+            "literal [0x22, 0x5c, 0x0a, 0x0d, 0x09, 0x00, 0x7f, 0x7e, 0x20, 0x61]",
+            r#""\"\\\n\r\t\0\x7F~ a""#,
+            bytes(10)
+        )])
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[1]),
+        owned(&[("literal [0x00, 0xff, 0x1a]", "hex\" 00Ff  1a \"", bytes(3))])
+    );
+    // `++` associates to the left, and each join is one node after its
+    // operands.
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[2]),
+        owned(&[
+            ("parameter 0", "x", bytes(2)),
+            ("literal 0x01", "1", CoreType::Word8),
+            ("fill", "[1; 2]", bytes(2)),
+            ("concat", "x ++ [1; 2]", bytes(4)),
+            ("literal [0x7a]", "\"z\"", bytes(1)),
+            ("concat", "x ++ [1; 2] ++ \"z\"", bytes(5)),
+        ])
+    );
+    // A slice is its base, its start, its end, and one node; an omitted
+    // bound is an `Int` literal, 0 or the base's length, spanning `..`.
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[3]),
+        owned(&[
+            ("parameter 0", "x", bytes(4)),
+            ("literal 1", "1", CoreType::Int),
+            ("literal 3", "3", CoreType::Int),
+            ("slice", "x[1..3]", bytes(2)),
+        ])
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[4]),
+        owned(&[
+            ("parameter 0", "x", bytes(4)),
+            ("literal 0", "..", CoreType::Int),
+            ("literal 3", "3", CoreType::Int),
+            ("slice", "x[..3]", bytes(3)),
+        ])
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[5]),
+        owned(&[
+            ("parameter 0", "x", bytes(4)),
+            ("literal 1", "1", CoreType::Int),
+            ("literal 4", "..", CoreType::Int),
+            ("slice", "x[1..]", bytes(3)),
+        ])
+    );
+    // A slice update is its base, its bounds, its value, and one node.
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[6]),
+        owned(&[
+            ("parameter 0", "x", bytes(4)),
+            ("literal 2", "2", CoreType::Int),
+            ("literal 4", "..", CoreType::Int),
+            ("literal [0x68, 0x69]", "\"hi\"", bytes(2)),
+            ("slice update", "x with [2..] = \"hi\"", bytes(4)),
+        ])
+    );
+    // Bounds that fall as the index rises are proved in range too.
+    let reverse = &core.functions[7];
+    assert_eq!(
+        expression_nodes(&fixture, reverse.loops[0].step()),
+        owned(&[
+            ("accumulator of loop #0", "y", bytes(4)),
+            ("index of loop #0", "i", CoreType::Int),
+            ("index of loop #0", "i", CoreType::Int),
+            ("literal 1", "1", CoreType::Int),
+            ("infix +", "i + 1", CoreType::Int),
+            ("parameter 0", "x", bytes(4)),
+            ("literal 3", "3", CoreType::Int),
+            ("index of loop #0", "i", CoreType::Int),
+            ("infix -", "3 - i", CoreType::Int),
+            ("literal 4", "4", CoreType::Int),
+            ("index of loop #0", "i", CoreType::Int),
+            ("infix -", "4 - i", CoreType::Int),
+            ("slice", "x[3 - i..4 - i]", bytes(1)),
+            (
+                "slice update",
+                "y with [i..i + 1] = x[3 - i..4 - i]",
+                bytes(4)
+            ),
+        ])
+    );
+}
+
+#[test]
+fn byte_strings_hold_one_through_256_printable_bytes() {
+    let at_limit = format!(
+        "  spec text() -> Word[8]^256 {{ \"{}\" }}\n  spec hex() -> Word[8]^256 {{ hex\"{}\" }}\n",
+        "a".repeat(256),
+        "01 ".repeat(256),
+    );
+    let (_, core) = accepted(&at_limit);
+    assert_eq!(core.functions.len(), 2);
+    let long = format!("\"{}\"", "a".repeat(257));
+    let long_hex = format!("hex\"{}\"", "ff".repeat(257));
+    // Decoding stops at the byte past the limit, before the character
+    // that follows it.
+    let past = format!("\"{}é\"", "a".repeat(300));
+    let (fixture, result) = rejected(&format!(
+        concat!(
+            "  spec tab() -> Word[8]^3 {{ \"a\tb\" }}\n",
+            "  spec delete() -> Word[8]^1 {{ \"\u{7f}\" }}\n",
+            "  spec accent() -> Word[8]^3 {{ \"éa€\" }}\n",
+            "  spec euro() -> Word[8]^3 {{ \"a€\" }}\n",
+            "  spec empty() -> Word[8]^1 {{ \"\" }}\n",
+            "  spec long() -> Word[8]^256 {{ {long} }}\n",
+            "  spec long_hex() -> Word[8]^256 {{ {long_hex} }}\n",
+            "  spec past() -> Word[8]^256 {{ {past} }}\n",
+        ),
+        long = long,
+        long_hex = long_hex,
+        past = past,
+    ));
+    let too_long = String::from("a byte string holds at most 256 bytes");
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::UnprintableByteString,
+                "\t",
+                String::from("U+0009 is not a printable ASCII character")
+            ),
+            (
+                DiagnosticCode::UnprintableByteString,
+                "\u{7f}",
+                String::from("U+007F is not a printable ASCII character")
+            ),
+            (
+                DiagnosticCode::UnprintableByteString,
+                "é",
+                String::from("U+00E9 is not a printable ASCII character")
+            ),
+            (
+                DiagnosticCode::UnprintableByteString,
+                "€",
+                String::from("U+20AC is not a printable ASCII character")
+            ),
+            (
+                DiagnosticCode::UnsupportedArrayLength,
+                "\"\"",
+                String::from("a byte string holds at least one byte")
+            ),
+            (
+                DiagnosticCode::UnsupportedArrayLength,
+                long.as_str(),
+                too_long.clone()
+            ),
+            (
+                DiagnosticCode::UnsupportedArrayLength,
+                long_hex.as_str(),
+                too_long.clone()
+            ),
+            (
+                DiagnosticCode::UnsupportedArrayLength,
+                past.as_str(),
+                too_long
+            ),
+        ]
+    );
+    // An ASCII character's label gives its byte, and any other's its UTF-8
+    // bytes, as a hex string.
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .take(4)
+            .map(Diagnostic::label)
+            .collect::<Vec<_>>(),
+        [
+            "its byte is written `hex\"09\"`",
+            "its byte is written `hex\"7f\"`",
+            "its UTF-8 bytes are written `hex\"c3 a9\"`",
+            "its UTF-8 bytes are written `hex\"e2 82 ac\"`",
+        ]
+    );
+    assert_eq!(result.diagnostics[4].label(), "this string is empty");
+    assert_eq!(
+        result.diagnostics[5].label(),
+        "this string holds more than 256"
+    );
+}
+
+#[test]
+fn slice_bounds_are_static_in_range_and_a_fixed_length_apart() {
+    let (fixture, result) = rejected(concat!(
+        "  spec beyond(x: Word[8]^4) -> Word[8]^2 { x[3..5] }\n",
+        "  spec before(x: Word[8]^4) -> Word[8]^2 { x[-1..1] }\n",
+        "  spec rising(x: Word[8]^4) -> Word[8]^4 {\n",
+        "    for i in 0..4 with y: Word[8]^4 = x { y with [i + 1..i + 2] = [0] }\n",
+        "  }\n",
+        "  spec falling(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..4 with y: Word[8]^1 = [0] { x[4 - i..5 - i] }\n",
+        "  }\n",
+        "  spec negated(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[-i..-i + 1] }\n",
+        "  }\n",
+        "  spec empty(x: Word[8]^4) -> Word[8]^1 { x[2..2] }\n",
+        "  spec one(x: Word[8]^4) -> Word[8]^1 { x[2..1] }\n",
+        "  spec far(x: Word[8]^4) -> Word[8]^1 { x[0..9223372036854775808] }\n",
+        "  spec growing(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[i..2 * i + 1] }\n",
+        "  }\n",
+        "  spec bound(x: Word[8]^4) -> Word[8]^1 { let n: Int = 1; x[n..2] }\n",
+        "  spec quotient(x: Word[8]^4) -> Word[8]^1 { x[4 / 2..3] }\n",
+        "  spec product(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[i * i..i * i + 1] }\n",
+        "  }\n",
+        "  spec typed(x: Word[8]^4, w: Word[8]) -> Word[8]^1 { x[w..2] }\n",
+        "  spec length(x: Word[8]^4) -> Word[8]^3 { x[..2] }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "3..5",
+                String::from(
+                    "this slice reaches elements 3 through 4, out of range for `Word[8]^4`"
+                )
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "-1..1",
+                String::from(
+                    "this slice reaches elements -1 through 0, out of range for `Word[8]^4`"
+                )
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "i + 1..i + 2",
+                String::from(
+                    "this slice reaches elements 1 through 4, out of range for `Word[8]^4`"
+                )
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "4 - i..5 - i",
+                String::from(
+                    "this slice reaches elements 1 through 4, out of range for `Word[8]^4`"
+                )
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "-i..-i + 1",
+                String::from(
+                    "this slice reaches elements -1 through 0, out of range for `Word[8]^4`"
+                )
+            ),
+            (
+                DiagnosticCode::SliceLength,
+                "2..2",
+                String::from("this slice is empty: its bounds are equal")
+            ),
+            (
+                DiagnosticCode::SliceLength,
+                "2..1",
+                String::from("this slice ends 1 element before it starts")
+            ),
+            (
+                DiagnosticCode::SliceLength,
+                "0..9223372036854775808",
+                String::from("this slice's bounds are too far apart")
+            ),
+            (
+                DiagnosticCode::SliceLength,
+                "i..2 * i + 1",
+                String::from("the length of this slice changes from step to step")
+            ),
+            (
+                DiagnosticCode::NonStaticIndex,
+                "n",
+                String::from("a slice's bounds may use only integer literals and loop indices")
+            ),
+            (
+                DiagnosticCode::NonStaticIndex,
+                "4 / 2",
+                String::from("a slice's bounds may use only integer literals and loop indices")
+            ),
+            (
+                DiagnosticCode::NonStaticIndex,
+                "*",
+                String::from("a slice's bound may multiply a loop index only by a constant")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "w",
+                String::from("`w` has type `Word[8]`, but `Int` is required here")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "x[..2]",
+                String::from("this slice has 2 elements, but `Word[8]^3` has 3")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn slice_bounds_are_held_to_the_significant_bit_limit_of_int() {
+    let fixture = module(concat!(
+        "  spec f(x: Word[8]^4) -> Word[8]^1 {\n",
+        "    for i in 0..2 with y: Word[8]^1 = [0] { x[(i * 200) * 2..(i * 200) * 2 + 1] }\n",
+        "  }\n",
+    ));
+    let limits = Limits {
+        integer_bits: 8,
+        ..Limits::DEFAULT
+    };
+    let result = fixture.analyze_with(limits);
+    assert_eq!(result, fixture.analyze_with(limits));
+    assert!(result.core.is_none());
+    assert_eq!(
+        reported(&fixture, &result),
+        [(
+            DiagnosticCode::IndexOutOfRange,
+            "(i * 200) * 2",
+            String::from("a part of this bound exceeds the 8-significant-bit limit of `Int`")
+        )]
+    );
+}
+
+#[test]
+fn joins_are_checked_once_in_order() {
+    let (fixture, result) = rejected(concat!(
+        "  spec scalar() -> Word[32] { \"ab\" ++ \"cd\" }\n",
+        "  spec left(w: Word[32]) -> Word[8]^4 { w ++ missing }\n",
+        "  spec right(w: Word[32]) -> Word[8]^4 { \"ab\" ++ w }\n",
+        "  spec tuple(p: (Int, Int)) -> Int^4 { p ++ [1, 2] }\n",
+        "  spec unknown() -> Word[8]^4 { missing ++ \"ab\" }\n",
+        "  spec unprintable() -> Word[8]^4 { \"é\" ++ \"ab\" }\n",
+        "  spec unprintable_right() -> Word[8]^4 { \"ab\" ++ \"é\" }\n",
+        "  spec sum(x: Word[8]^2, y: Word[8]^3) -> Word[8]^4 { x ++ y }\n",
+        "  spec fills(x: Word[8]^4) -> Word[8]^4 { x ++ 1 }\n",
+        "  spec literal(x: Word[8]^2) -> Word[8]^4 { 1 ++ x }\n",
+        "  spec elements(x: Word[8]^2, y: Word[32]^2) -> Word[8]^4 { x ++ y }\n",
+        "  spec chain(x: Word[8]^2) -> Word[8]^8 { x ++ x ++ x }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::TypeMismatch,
+                "++",
+                String::from("`++` joins arrays, but `Word[32]` is required here")
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "w",
+                String::from("only arrays can be joined, but this has type `Word[32]`")
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "w",
+                String::from("only arrays can be joined, but this has type `Word[32]`")
+            ),
+            (
+                DiagnosticCode::NotAnArray,
+                "p",
+                String::from("only arrays can be joined, but this has type `(Int, Int)`")
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "missing",
+                String::from("`missing` is not a parameter of `unknown`")
+            ),
+            (
+                DiagnosticCode::UnprintableByteString,
+                "é",
+                String::from("U+00E9 is not a printable ASCII character")
+            ),
+            (
+                DiagnosticCode::UnprintableByteString,
+                "é",
+                String::from("U+00E9 is not a printable ASCII character")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "++",
+                String::from("`++` joins 2 and 3 elements, 5 in all, but `Word[8]^4` has 4")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "++",
+                String::from(
+                    "the left operand of `++` has 4 elements, leaving none of the 4 of \
+                     `Word[8]^4` for the right"
+                )
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "1",
+                String::from("an integer literal cannot have type `Word[8]^4`")
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "y",
+                String::from("`y` has type `Word[32]^2`, but `Word[8]^2` is required here")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "++",
+                String::from("`++` joins 4 and 2 elements, 6 in all, but `Word[8]^8` has 8")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_conditional_joined_takes_its_length_from_a_branch_without_bindings() {
+    // A conditional's length is its first typed leaf's, or else that of
+    // the first branch that binds no names and has a length of its own.
+    let (_, core) = accepted(concat!(
+        "  spec middle(c: Bool) -> Word[8]^6 { \"a\" ++ (if c { [1, 2, 3] } else { \"xyz\" }) ++ \"de\" }\n",
+        "  spec bound(c: Bool) -> Word[8]^5 {\n",
+        "    (if c { let t: Word[8]^3 = \"abc\"; t } else { [1, 2, 3] }) ++ \"de\"\n",
+        "  }\n",
+    ));
+    assert_eq!(core.functions.len(), 2);
+    let (fixture, result) = rejected(concat!(
+        "  spec short(c: Bool) -> Word[8]^6 { \"a\" ++ (if c { [1, 2, 3] } else { [4, 5] }) ++ \"de\" }\n",
+        "  spec long(c: Bool) -> Word[8]^6 { \"ab\" ++ (if c { [1, 2, 3, 4] } else { \"wxyz\" }) ++ \"de\" }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "[4, 5]",
+                String::from("this array has 2 elements, but `Word[8]^3` has 3")
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "++",
+                String::from("`++` joins 6 and 2 elements, 8 in all, but `Word[8]^6` has 6")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn byte_string_and_slice_events_and_core_nodes_follow_the_normative_accounting() {
+    // `f(x: Word[8]^4) -> Word[8]^4 { x }` takes 10 analysis events and 5
+    // Core nodes (15 events in all). A byte string of n bytes in place of
+    // `x` takes 1 + n events and one node; `x ++ x` adds its operator's
+    // event and the second read, 2 events and 2 nodes; a slice adds its
+    // own event, the events of its written bounds (an integer literal
+    // takes 3), and a node for each bound, written or not, and for
+    // itself; a slice update likewise, with its value.
+    let cases = [
+        ("Word[8]^3", "\"abc\"", 18, 5),
+        ("Word[8]^3", "hex\"00 01 02\"", 18, 5),
+        ("Word[8]^8", "x ++ x", 19, 7),
+        ("Word[8]^2", "x[1..3]", 25, 8),
+        ("Word[8]^2", "x[..2]", 22, 8),
+        ("Word[8]^2", "x[2..]", 22, 8),
+        ("Word[8]^4", "x with [1..3] = x[..2]", 34, 12),
+    ];
+    for (result, body, events, nodes) in cases {
+        let fixture = module(&format!(
+            "  spec f(x: Word[8]^4) -> {result} {{ {body} }}\n"
+        ));
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, [], "{body}");
+        assert!(exact.core.is_some(), "{body}");
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none(), "{body}");
+            assert_eq!(first.diagnostics.len(), 1, "{body}");
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label, "{body}");
+        }
+    }
+}
+
+#[test]
+fn slice_bound_storage_failures_return_no_partial_core() {
+    for (members, responsible, label) in [
+        (
+            "  spec f(x: Word[8]^4) -> Word[8]^2 { x[..2] }\n",
+            "..2",
+            "slice bound storage allocation failed",
+        ),
+        (
+            "  spec f(x: Word[8]^4) -> Word[8]^4 { x with [1..3] = \"ab\" }\n",
+            "1..3",
+            "slice bound storage allocation failed",
+        ),
+    ] {
+        let fixture = module(members);
+        let analyze_with_failure = || {
+            let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+            analyzer.reserve_range_limbs = |_, _| false;
+            analyzer.run()
+        };
+        let first = analyze_with_failure();
+        assert_eq!(first, analyze_with_failure());
+        assert!(first.core().is_none());
+        assert_eq!(first.diagnostics().len(), 1, "{members}");
+        let diagnostic = &first.diagnostics()[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::SemanticResourceLimit);
+        assert_eq!(
+            fixture.source().slice(diagnostic.primary_span()),
+            Some(responsible)
+        );
+        assert_eq!(diagnostic.label(), label);
+    }
+}
+
+#[test]
+fn rejects_foreign_spans_in_byte_strings_joins_and_slices() {
+    let text = "edition 2026; module values { \
+                spec value(x: Word[8]^4) -> Word[8]^6 { \
+                (x with [0..2] = x[2..]) ++ \"ab\" } }\n";
+    let first = Fixture::new(text);
+    let second = Fixture::new(text);
+    fn join_of(ast: &mut SyntaxTree) -> &mut BinaryExpression {
+        let ExpressionKind::Binary(binary) = &mut typed_body_mut(ast).expression.kind else {
+            unreachable!();
+        };
+        binary
+    }
+    fn update_of(ast: &mut SyntaxTree) -> &mut SliceUpdateExpression {
+        let ExpressionKind::Parenthesized(inner) = &mut join_of(ast).left.kind else {
+            unreachable!();
+        };
+        let ExpressionKind::SliceUpdate(update) = &mut inner.kind else {
+            unreachable!();
+        };
+        update
+    }
+    fn slice_of(ast: &mut SyntaxTree) -> &mut SliceExpression {
+        let ExpressionKind::Slice(slice) = &mut update_of(ast).value.kind else {
+            unreachable!();
+        };
+        slice
+    }
+    let mut foreign_ast = second.ast.clone();
+    let foreign_join = join_of(&mut foreign_ast).clone();
+    let foreign_update = update_of(&mut foreign_ast).clone();
+    let foreign_slice = slice_of(&mut foreign_ast).clone();
+    let foreign_start = foreign_update.range.start.clone().unwrap();
+    type Mutation<'a> = Box<dyn Fn(&mut SyntaxTree) + 'a>;
+    let mutations: Vec<Mutation<'_>> = vec![
+        Box::new(|ast| join_of(ast).operator_span = foreign_join.operator_span),
+        Box::new(|ast| join_of(ast).right.span = foreign_join.right.span),
+        Box::new(|ast| update_of(ast).keyword_span = foreign_update.keyword_span),
+        Box::new(|ast| update_of(ast).range.span = foreign_update.range.span),
+        Box::new(|ast| update_of(ast).range.dots_span = foreign_update.range.dots_span),
+        Box::new(|ast| {
+            update_of(ast).range.start.as_mut().unwrap().span = foreign_start.span;
+        }),
+        Box::new(|ast| update_of(ast).value.span = foreign_update.value.span),
+        Box::new(|ast| slice_of(ast).range.span = foreign_slice.range.span),
+        Box::new(|ast| slice_of(ast).range.dots_span = foreign_slice.range.dots_span),
+        Box::new(|ast| slice_of(ast).base.span = foreign_slice.base.span),
+    ];
+    assert!(analyze(first.source(), &first.ast).core.is_some());
+    for (case_index, mutate) in mutations.iter().enumerate() {
+        let mut ast = first.ast.clone();
+        mutate(&mut ast);
+        let result = analyze(first.source(), &ast);
+        assert_eq!(result, analyze(first.source(), &ast), "case {case_index}");
+        assert!(result.core.is_none(), "case {case_index}");
+        assert_eq!(result.diagnostics.len(), 1, "case {case_index}");
+        assert_eq!(
+            result.diagnostics[0].code(),
+            DiagnosticCode::InvalidSemanticInput,
+            "case {case_index}"
+        );
+    }
+}

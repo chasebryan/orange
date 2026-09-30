@@ -65,19 +65,26 @@ pub(super) fn decode_byte_string(
     if bytes.try_reserve_exact(limit).is_err() {
         return Err(ByteStringError::Storage);
     }
-    let mut over = false;
-    let mut push = |byte: u8, bytes: &mut Vec<u8>| {
+    // Decoding stops at the byte past the limit, so a long spelling is
+    // never scanned to its end.
+    let over = Err(ByteStringError::Length(MAX_ARRAY_LENGTH.saturating_add(1)));
+    let push = |byte: u8, bytes: &mut Vec<u8>| {
         if bytes.len() < limit {
             bytes.push(byte);
+            true
         } else {
-            over = true;
+            false
         }
     };
     if hex {
         let mut high: Option<char> = None;
         for digit in contents.chars().filter(char::is_ascii_hexdigit) {
             match high.take() {
-                Some(high) => push(hex_byte(high, digit)?, &mut bytes),
+                Some(high) => {
+                    if !push(hex_byte(high, digit)?, &mut bytes) {
+                        return over;
+                    }
+                }
                 None => high = Some(digit),
             }
         }
@@ -124,11 +131,10 @@ pub(super) fn decode_byte_string(
                     .ok_or(ByteStringError::Storage)?;
                 return Err(ByteStringError::Unprintable(span, character));
             };
-            push(byte, &mut bytes);
+            if !push(byte, &mut bytes) {
+                return over;
+            }
         }
-    }
-    if over {
-        return Err(ByteStringError::Length(MAX_ARRAY_LENGTH.saturating_add(1)));
     }
     if bytes.is_empty() {
         return Err(ByteStringError::Length(0));
@@ -411,7 +417,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// Returns the length of an array expression without reporting: from
     /// the elements of an array literal, the length of a fill, the bytes of
     /// a byte string, the operands of `++`, or the type of the first typed
-    /// leaf. Returns `None` for an expression that is not an array.
+    /// leaf, and for a conditional with no such leaf, from the first branch
+    /// with no bindings whose value has a length. Returns `None` for an
+    /// expression that is not an array.
     ///
     /// Parser-established expression height bounds this recursion.
     pub(super) fn array_length_of(
@@ -439,11 +447,39 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::SliceUpdate(update) => {
                 self.array_length_of(&update.base, context, scope)
             }
-            _ => first_typed_leaf(expression)
-                .and_then(|leaf| self.leaf_type(leaf, context, scope))?
-                .as_array()
-                .map(ArrayType::length),
+            ExpressionKind::Conditional(conditional) => {
+                self.leaf_length(expression, context, scope).or_else(|| {
+                    // A branch's bindings are not in scope here, so only a
+                    // branch without them is read.
+                    let otherwise = conditional
+                        .otherwise_bindings
+                        .is_empty()
+                        .then_some(&conditional.otherwise);
+                    conditional
+                        .arms
+                        .iter()
+                        .filter(|arm| arm.bindings.is_empty())
+                        .map(|arm| &arm.value)
+                        .chain(otherwise)
+                        .find_map(|value| self.array_length_of(value, context, scope))
+                })
+            }
+            _ => self.leaf_length(expression, context, scope),
         }
+    }
+
+    /// Returns the length of the array type of an expression's first typed
+    /// leaf, when it has one.
+    fn leaf_length(
+        &self,
+        expression: &Expression,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) -> Option<u32> {
+        first_typed_leaf(expression)
+            .and_then(|leaf| self.leaf_type(leaf, context, scope))?
+            .as_array()
+            .map(ArrayType::length)
     }
 
     /// Returns the element type of an array expression without reporting,
@@ -487,6 +523,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
     /// Checks `left ++ right` against `expected`, which must be an array
     /// type whose length is the sum of the operands' lengths.
+    ///
+    /// `++` associates to the left, so the joins of a chain `a ++ b ++ c`
+    /// nest in their left operands as deeply as an expression's height
+    /// allows. The check walks that spine in a loop rather than through
+    /// [`Self::check_expression`], with the effect of checking each join
+    /// recursively: every join is validated before its left operand, the
+    /// innermost left operand is checked first, and each join's right
+    /// operand is checked and its node pushed on the way back out. Only the
+    /// operands recurse, so a chain of any length takes one frame.
     pub(super) fn check_concatenation(
         &mut self,
         expression: &'ast Expression,
@@ -496,39 +541,82 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
-        let Some(array) = expected.as_array() else {
-            if self.begin_report(binary.operator_span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::TypeMismatch,
-                        format!("`++` joins arrays, but `{expected}` is required here"),
-                        binary.operator_span,
-                    )
-                    .with_label(format!("`{expected}` is not an array type"))
-                    .with_note(CONCATENATION_NOTE),
-                );
+        // Down the spine: validate each join, and check the left operand of
+        // the innermost one that validates.
+        let mut depth = 0_usize;
+        let mut level = binary;
+        let mut level_type = expected.clone();
+        let (mut checked, mut outermost_open) = loop {
+            let Some(left_type) = self.validate_join(level, &level_type, context, scope) else {
+                // This join is rejected: it has no value, and the joins
+                // around it finish with that.
+                match depth.checked_sub(1) {
+                    Some(outer) => break (false, outer),
+                    None => return false,
+                }
+            };
+            match &level.left.kind {
+                ExpressionKind::Binary(inner) if inner.operator.is_concatenation() => {
+                    if !self.event(inner.operator_span) {
+                        break (false, depth);
+                    }
+                    depth = depth.saturating_add(1);
+                    level = inner;
+                    level_type = left_type;
+                }
+                _ => {
+                    let left =
+                        self.check_expression(&level.left, &left_type, context, scope, output);
+                    break (left, depth);
+                }
             }
-            return false;
+        };
+        // Back up the spine: finish each join with its left operand's result.
+        loop {
+            checked = self.finish_join(
+                (expression, binary, outermost_open),
+                expected,
+                checked,
+                context,
+                scope,
+                output,
+            );
+            match outermost_open.checked_sub(1) {
+                Some(outer) => outermost_open = outer,
+                None => return checked,
+            }
+        }
+    }
+
+    /// Validates one join of a `++` chain against `expected` before its
+    /// operands are checked, and returns the type its left operand is
+    /// checked against: the array of the left operand's length, or all of
+    /// `expected` when that length is not found without checking.
+    fn validate_join(
+        &mut self,
+        binary: &'ast BinaryExpression,
+        expected: &CoreType,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) -> Option<CoreType> {
+        let Some(array) = expected.as_array() else {
+            self.report_join_not_wanted(binary.operator_span, expected);
+            return None;
         };
         let length = array.length();
         let Some(left) = self.array_length_of(&binary.left, context, scope) else {
             if let Some(ty) = self.known_non_array(&binary.left, context, scope) {
                 self.report_joined_non_array(binary.left.span, &ty);
-            } else if self.check_expression(&binary.left, expected, context, scope, output)
-                && !self.halted
-            {
-                // The left operand has no length of its own but checks as
-                // the whole array, which leaves nothing for the right.
-                self.report_left_fills_join(binary.operator_span, length, expected);
+                return None;
             }
-            return false;
+            return Some(expected.clone());
         };
         let right = self.array_length_of(&binary.right, context, scope);
         if right.is_none()
             && let Some(ty) = self.known_non_array(&binary.right, context, scope)
         {
             self.report_joined_non_array(binary.right.span, &ty);
-            return false;
+            return None;
         }
         let fits = match right {
             Some(right) => left.checked_add(right) == Some(length),
@@ -537,47 +625,72 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if !fits {
             match right {
                 Some(right) => {
-                    if self.begin_report(binary.operator_span) {
-                        self.diagnostics.push(
-                            Diagnostic::error(
-                                DiagnosticCode::ArrayLengthMismatch,
-                                format!(
-                                    "`++` joins {left} and {right} elements, {} in all, but \
-                                     `{expected}` has {length}",
-                                    u64::from(left).saturating_add(u64::from(right))
-                                ),
-                                binary.operator_span,
-                            )
-                            .with_label(format!("expected {length} elements in all"))
-                            .with_note(CONCATENATION_NOTE),
-                        );
-                    }
+                    self.report_join_length(binary.operator_span, (left, right), expected);
                 }
                 None => self.report_left_fills_join(binary.operator_span, left, expected),
             }
+            return None;
+        }
+        let element = array.element();
+        let right_type = length
+            .checked_sub(left)
+            .and_then(|right| ArrayType::new(&element, right));
+        right_type?;
+        ArrayType::new(&element, left).map(CoreType::Array)
+    }
+
+    /// Finishes the join `depth` levels down the left spine of the chain
+    /// `outermost` checked against `expected`, whose left operand checked
+    /// as `left_checked`: checks its right operand and pushes its node, or,
+    /// when its left operand's length is not found without checking,
+    /// reports a left operand that took the whole array.
+    fn finish_join(
+        &mut self,
+        (outermost, binary, depth): (&'ast Expression, &'ast BinaryExpression, usize),
+        expected: &CoreType,
+        left_checked: bool,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> bool {
+        let Some((expression, level)) = join_at(outermost, binary, depth) else {
+            return false;
+        };
+        let Some(array) = expected.as_array() else {
+            return false;
+        };
+        // A join's type is the array of its found length; a join with no
+        // found length lies on the outer part of the spine, where every
+        // join has all of `expected`.
+        let whole = array.length();
+        let length = if depth == 0 {
+            whole
+        } else {
+            self.array_length_of(expression, context, scope)
+                .unwrap_or(whole)
+        };
+        let Some(left) = self.array_length_of(&level.left, context, scope) else {
+            if left_checked && !self.halted {
+                // The left operand has no length of its own but checks as
+                // the whole array, which leaves nothing for the right.
+                self.report_left_fills_join(level.operator_span, whole, expected);
+            }
+            return false;
+        };
+        if self.halted {
             return false;
         }
         let element = array.element();
-        let (Some(left_type), Some(right_type)) = (
-            ArrayType::new(&element, left),
+        let (Some(ty), Some(right_type)) = (
+            ArrayType::new(&element, length),
             length
                 .checked_sub(left)
                 .and_then(|right| ArrayType::new(&element, right)),
         ) else {
             return false;
         };
-        let left_checked = self.check_expression(
-            &binary.left,
-            &CoreType::Array(left_type),
-            context,
-            scope,
-            output,
-        );
-        if self.halted {
-            return false;
-        }
         let right_checked = self.check_expression(
-            &binary.right,
+            &level.right,
             &CoreType::Array(right_type),
             context,
             scope,
@@ -588,7 +701,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             && self.push_node(
                 output,
                 expression.span,
-                expected.clone(),
+                CoreType::Array(ty),
                 CoreNodeKind::Concat,
             )
     }
@@ -604,6 +717,45 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         first_typed_leaf(operand)
             .and_then(|leaf| self.leaf_type(leaf, context, scope))
             .filter(|ty| ty.as_array().is_none())
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_join_not_wanted(&mut self, span: Span, expected: &CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeMismatch,
+                format!("`++` joins arrays, but `{expected}` is required here"),
+                span,
+            )
+            .with_label(format!("`{expected}` is not an array type"))
+            .with_note(CONCATENATION_NOTE),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_join_length(&mut self, span: Span, (left, right): (u32, u32), expected: &CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let length = expected.as_array().map_or(0, ArrayType::length);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::ArrayLengthMismatch,
+                format!(
+                    "`++` joins {left} and {right} elements, {} in all, but `{expected}` has \
+                     {length}",
+                    u64::from(left).saturating_add(u64::from(right))
+                ),
+                span,
+            )
+            .with_label(format!("expected {length} elements in all"))
+            .with_note(CONCATENATION_NOTE),
+        );
     }
 
     #[cold]
@@ -669,18 +821,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let target = expected
             .as_array()
             .filter(|target| target.element() == element);
-        if target.is_none() && self.begin_report(expression.span) {
-            self.diagnostics.push(
-                Diagnostic::error(
-                    DiagnosticCode::TypeMismatch,
-                    format!(
-                        "this slice is an array of `{element}`, but `{expected}` is required here"
-                    ),
-                    expression.span,
-                )
-                .with_label(format!("expected `{expected}`"))
-                .with_note("a slice is an array of the elements of the array it is taken from"),
-            );
+        if target.is_none() {
+            self.report_slice_element(expression.span, &element, expected);
         }
         let base = self.check_expression(&slice.base, &base_type, context, scope, output);
         if self.halted {
@@ -694,21 +836,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         };
         if length != target.length() {
-            if self.begin_report(expression.span) {
-                let expected_length = target.length();
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::ArrayLengthMismatch,
-                        format!(
-                            "this slice has {length} {}, but `{expected}` has {expected_length}",
-                            if length == 1 { "element" } else { "elements" },
-                        ),
-                        expression.span,
-                    )
-                    .with_label(format!("expected {expected_length} elements"))
-                    .with_note(SLICE_LENGTH_NOTE),
-                );
-            }
+            self.report_slice_length_mismatch(expression.span, length, expected);
             return false;
         }
         base && self.push_node(
@@ -717,6 +845,44 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             expected.clone(),
             CoreNodeKind::Slice,
         )
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_slice_element(&mut self, span: Span, element: &CoreType, expected: &CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeMismatch,
+                format!("this slice is an array of `{element}`, but `{expected}` is required here"),
+                span,
+            )
+            .with_label(format!("expected `{expected}`"))
+            .with_note("a slice is an array of the elements of the array it is taken from"),
+        );
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_slice_length_mismatch(&mut self, span: Span, length: u32, expected: &CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        let expected_length = expected.as_array().map_or(0, ArrayType::length);
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::ArrayLengthMismatch,
+                format!(
+                    "this slice has {length} {}, but `{expected}` has {expected_length}",
+                    if length == 1 { "element" } else { "elements" },
+                ),
+                span,
+            )
+            .with_label(format!("expected {expected_length} elements"))
+            .with_note(SLICE_LENGTH_NOTE),
+        );
     }
 
     #[cold]
@@ -762,17 +928,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return false;
         }
         let Some(array) = expected.as_array() else {
-            if self.begin_report(expression.span) {
-                self.diagnostics.push(
-                    Diagnostic::error(
-                        DiagnosticCode::TypeMismatch,
-                        format!("an update gives an array, but `{expected}` is required here"),
-                        expression.span,
-                    )
-                    .with_label(format!("expected `{expected}`"))
-                    .with_note(SLICE_UPDATE_NOTE),
-                );
-            }
+            self.report_update_not_wanted(expression.span, expected);
             return false;
         };
         let base = self.check_expression(&update.base, expected, context, scope, output);
@@ -800,6 +956,23 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 expected.clone(),
                 CoreNodeKind::SliceUpdate,
             )
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_update_not_wanted(&mut self, span: Span, expected: &CoreType) {
+        if !self.begin_report(span) {
+            return;
+        }
+        self.diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::TypeMismatch,
+                format!("an update gives an array, but `{expected}` is required here"),
+                span,
+            )
+            .with_label(format!("expected `{expected}`"))
+            .with_note(SLICE_UPDATE_NOTE),
+        );
     }
 
     #[cold]
@@ -1136,6 +1309,27 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 ),
         );
     }
+}
+
+/// Returns the join `depth` levels down the left spine of the join
+/// `expression`, whose operator expression is `binary`, with its own
+/// expression.
+fn join_at<'ast>(
+    expression: &'ast Expression,
+    binary: &'ast BinaryExpression,
+    depth: usize,
+) -> Option<(&'ast Expression, &'ast BinaryExpression)> {
+    let mut level = (expression, binary);
+    for _ in 0..depth {
+        let ExpressionKind::Binary(inner) = &level.1.left.kind else {
+            return None;
+        };
+        if !inner.operator.is_concatenation() {
+            return None;
+        }
+        level = (&level.1.left, inner);
+    }
+    Some(level)
 }
 
 /// The note of every concatenation diagnostic.

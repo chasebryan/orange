@@ -1626,6 +1626,13 @@ const SPACED_HEX_NOTE: &str =
 const SLICE_NOTE: &str = "a slice is written `x[a..b]`, the elements of `x` from index a up to but \
      not including index b, or `x[a..]` or `x[..b]` to run to the end or from the start";
 
+/// What an update replaces: one element at an index, or the elements of a
+/// slice, with the height of the index or of the taller bound.
+enum UpdateTarget {
+    Index(Expression, usize),
+    Slice(SliceRange, usize),
+}
+
 /// The note of a malformed slice update.
 const SLICE_UPDATE_NOTE: &str = "a slice update is written `x with [a..b] = values`, the array `x` \
      with its elements from index a up to but not including index b replaced";
@@ -2934,30 +2941,50 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         ))
     }
 
-    /// Parses `with [index] = value` after a complete operand. The value
-    /// extends as far as an expression can, so an update ends its operator
-    /// chain.
+    /// Parses `with [index] = value` or `with [start..end] = value` after a
+    /// complete operand. The value extends as far as an expression can, so
+    /// an update ends its operator chain. Whichever form the brackets hold,
+    /// the value is parsed in this frame, so updates nested in values cost
+    /// one frame each.
     #[inline(never)]
     fn parse_update(
         &mut self,
-        (base, base_height): (Expression, usize),
+        base: (Expression, usize),
         level: usize,
     ) -> Option<(Expression, usize)> {
         let inner = self.open_level(level)?;
         let keyword_span = self.bump()?.span;
         self.bump()?;
+        let target = self.parse_update_target(inner)?;
+        let value = self.parse_expression(inner)?;
+        self.update_node(base, keyword_span, target, value)
+    }
+
+    /// Parses what an update replaces, through its `=`: `index] =`, or the
+    /// bounds of a slice and `] =`.
+    #[inline(never)]
+    fn parse_update_target(&mut self, inner: usize) -> Option<UpdateTarget> {
+        let start = if self.current_kind() == TokenKind::DotDot {
+            None
+        } else {
+            Some(self.parse_expression(inner)?)
+        };
         if self.current_kind() == TokenKind::DotDot {
-            return self.finish_slice_update((base, base_height), keyword_span, None, inner);
+            let (range, height) = self.parse_slice_range(start, inner, SLICE_UPDATE_NOTE)?;
+            self.expect(
+                TokenKind::RightBracket,
+                "`]` after the slice",
+                SLICE_UPDATE_NOTE,
+            )?;
+            self.expect(
+                TokenKind::Equal,
+                "`=` after the updated slice",
+                SLICE_UPDATE_NOTE,
+            )?;
+            return Some(UpdateTarget::Slice(range, height));
         }
-        let (index, index_height) = self.parse_expression(inner)?;
-        if self.current_kind() == TokenKind::DotDot {
-            return self.finish_slice_update(
-                (base, base_height),
-                keyword_span,
-                Some((index, index_height)),
-                inner,
-            );
-        }
+        // Without `..` first, an index was parsed.
+        let (index, height) = start?;
         self.expect(
             TokenKind::RightBracket,
             "`]` after the index",
@@ -2968,65 +2995,44 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             "`=` after the updated index",
             "an update is written `x with [i] = value`",
         )?;
-        let (value, value_height) = self.parse_expression(inner)?;
-        let height = self.node_height(
-            base_height.max(index_height).max(value_height),
-            keyword_span,
-        )?;
-        let span = self.join(base.span, value.span);
-        self.record_node().then_some((
-            Expression {
-                span,
-                kind: ExpressionKind::Update(Box::new(UpdateExpression {
-                    base,
-                    keyword_span,
-                    index,
-                    value,
-                })),
-            },
-            height,
-        ))
+        Some(UpdateTarget::Index(index, height))
     }
 
-    /// Parses the rest of `with [start..end] = value` at `..`, after the
-    /// start when one is written.
+    /// Builds the update of `base` at `target` with `value`.
     #[inline(never)]
-    fn finish_slice_update(
+    fn update_node(
         &mut self,
         (base, base_height): (Expression, usize),
         keyword_span: Span,
-        start: Option<(Expression, usize)>,
-        inner: usize,
+        target: UpdateTarget,
+        (value, value_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
-        let (range, range_height) = self.parse_slice_range(start, inner, SLICE_UPDATE_NOTE)?;
-        self.expect(
-            TokenKind::RightBracket,
-            "`]` after the slice",
-            SLICE_UPDATE_NOTE,
-        )?;
-        self.expect(
-            TokenKind::Equal,
-            "`=` after the updated slice",
-            SLICE_UPDATE_NOTE,
-        )?;
-        let (value, value_height) = self.parse_expression(inner)?;
+        let target_height = match &target {
+            UpdateTarget::Index(_, height) | UpdateTarget::Slice(_, height) => *height,
+        };
         let height = self.node_height(
-            base_height.max(range_height).max(value_height),
+            base_height.max(target_height).max(value_height),
             keyword_span,
         )?;
         let span = self.join(base.span, value.span);
-        self.record_node().then_some((
-            Expression {
-                span,
-                kind: ExpressionKind::SliceUpdate(Box::new(SliceUpdateExpression {
+        let kind = match target {
+            UpdateTarget::Index(index, _) => ExpressionKind::Update(Box::new(UpdateExpression {
+                base,
+                keyword_span,
+                index,
+                value,
+            })),
+            UpdateTarget::Slice(range, _) => {
+                ExpressionKind::SliceUpdate(Box::new(SliceUpdateExpression {
                     base,
                     keyword_span,
                     range,
                     value,
-                })),
-            },
-            height,
-        ))
+                }))
+            }
+        };
+        self.record_node()
+            .then_some((Expression { span, kind }, height))
     }
 
     #[inline(never)]
