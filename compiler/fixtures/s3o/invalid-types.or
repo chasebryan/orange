@@ -1,0 +1,30 @@
+// S3o rejection: a type parameter lists each type once, its listed types
+// resolve, and its name is no built-in or declared type's and no other
+// parameter's in brackets. Every instance is checked, and the first of a
+// function in error is named. A call gives each type parameter one of the
+// types it lists, or gives no brackets and fits exactly one instance by its
+// arguments' types and, among several, by the type its place expects.
+edition 2026;
+module types {
+  type F = Mod[(1 << 255) - 19];
+  type Q = Mod[3329];
+  type G = Mod[3329];
+
+  spec twice[K in {F, Q, G}](x: K) -> K { x }
+  spec builtin[Int in {F, Q}](x: F) -> F { x }
+  spec declared[F in {Q}](x: Q) -> Q { x }
+  spec repeated[K in {F}, K in {Q}](x: F) -> F { x }
+  spec mixed[n in 1..3, n in {Q}](x: Q) -> Q { x }
+  spec unknown[K in {Word[7], Mod[1], H}](x: Int) -> Int { x }
+  spec many[K in {Int, Bool}, n in 0..200]() -> Int { n }
+  spec value[K in {F, Q}](x: K) -> K { K }
+  spec remainder[K in {Word[8], Q}](x: K) -> K { x % x }
+  spec square[K in {F, Q}](x: K) -> K { x * x }
+
+  spec unlisted() -> Int { square[Int](3) }
+  spec not_a_type(x: F) -> F { square[x](x) }
+  spec extra() -> F { square[F, Q](3) }
+  spec unclear() -> Int { square(3) as Int }
+  spec unfit(x: Word[32]) -> Word[32] { square(x) }
+  spec result(x: F) -> Q { square(x) }
+}

@@ -601,7 +601,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         .ranges
                         .and_then(|ranges| ranges.instance(signature.sizes, *instance))
                         .unwrap_or(Instance::NONE)
-                        .label(&name.text)
+                        .label(&name.text, &signature.spellings)
                 })
         };
         let target_name = name_of(target);

@@ -36,8 +36,12 @@ meaning. It accepts no D-004 candidate.
 > modulus is not a size. [`ORDER_2026.md`](ORDER_2026.md), proposed under
 > OEP-0017, adds conversions in a byte order, so that a Poly1305 block or an
 > X25519 coordinate is read as a residue in one conversion, as `(b ++ hex"01")
-> as little P`, and a residue is written as bytes. Every source this document
-> accepts keeps its meaning under all five.
+> as little P`, and a residue is written as bytes.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, adds type parameters, so that one function serves several moduli,
+> as `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, each instance checked in its
+> own ring; a modulus is still a constant. Every source this document accepts
+> keeps its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -543,10 +543,31 @@ implemented and tested, and its acceptance requires the owner's acceptance of
 [OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), which bounds
 the S3n surface in [`ORDER_2026.md`](ORDER_2026.md) and builds on OEP-0016.
 Like the slices before it, it assumes only pure, total, deterministic meaning.
-Moduli written with parameters, so that one `spec` can serve every field,
-positions given as parameters, so that one quarter round can act on four
-positions of a whole state, and slices and words at positions computed from
-data are the next candidate slices.
+
+S3o follows S3n. It adds type parameters: a `spec` may list the types it is
+written for in its brackets, beside or instead of sizes, as
+`spec pow[K in {F, L, P, Q, D}](x: K, e: Int) -> K`, and stands for one
+instance for each combination of its sizes' values and types, at most four
+parameters in brackets and 256 instances, each checked as the function
+written out; a call names its instance by its types, `pow[F](x, e)`, or lets
+its arguments' types and, where they do not decide, the type its place
+expects choose. Exponentiation, Fermat inversion, and Euler's criterion are
+written once for the five prime fields of Curve25519, its subgroup,
+Poly1305, ML-KEM, and ML-DSA, reproducing RFC 8032's square root of −1 and
+the roots of unity of FIPS 203 and FIPS 204, and SHA-256 and SHA-512 share
+one Ch, one Maj, and one round, reproducing FIPS 180-4's digests. Finding a
+call's instance now reads each argument once, which also removes a checking
+cost that doubled with each level of conditionals nested in sized calls'
+arguments. It is implemented and tested, and its acceptance requires the
+owner's acceptance of
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md), which
+bounds the S3o surface in [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md)
+and builds on OEP-0017. Like the slices before it, it assumes only pure,
+total, deterministic meaning. Moduli written with parameters, so that one
+`spec` can serve every field rather than a listed few, lists of types named
+once for several functions, positions given as parameters, so that one
+quarter round can act on four positions of a whole state, and slices and
+words at positions computed from data are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -592,8 +613,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3n are implemented and await owner review under
-OEP-0005 through OEP-0017, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3o are implemented and await owner review under
+OEP-0005 through OEP-0018, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

@@ -24,6 +24,15 @@ const STATIC_SLICE_NOTE: &str = "a slice's position never depends on data: its b
      from integer literals and loop indices with `+`, `-`, and `*` by a constant";
 
 /// A byte string that cannot be decoded, and why.
+/// What is known of an array expression's type without reporting.
+#[derive(Default)]
+pub(super) struct ArrayParts {
+    /// The number of elements, when known.
+    pub(super) length: Option<u32>,
+    /// The element type, when known.
+    pub(super) element: Option<CoreType>,
+}
+
 pub(super) enum ByteStringError {
     /// A character that is neither printable ASCII nor an escape, with its
     /// exact extent.
@@ -431,92 +440,142 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// leaf, and for a conditional with no such leaf, from the first branch
     /// with no bindings whose value has a length. Returns `None` for an
     /// expression that is not an array.
-    ///
-    /// Parser-established expression height bounds this recursion.
     pub(super) fn array_length_of(
         &self,
         expression: &Expression,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
     ) -> Option<u32> {
+        self.array_parts_of(expression, context, scope).length
+    }
+
+    /// Returns the length and the element type of an array expression
+    /// without reporting, each when it is known: the length as
+    /// [`Self::array_length_of`] describes, and the element type from the
+    /// first operand of `++` that has one, or from the type of the first
+    /// typed leaf.
+    ///
+    /// Each operand and branch is read once, so the work is linear in the
+    /// size of the expression apart from the calls whose instance it fits:
+    /// reading one twice would double the work of every expression nested
+    /// in it.
+    ///
+    /// Parser-established expression height bounds this recursion.
+    fn array_parts_of(
+        &self,
+        expression: &Expression,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) -> ArrayParts {
         match &expression.kind {
-            ExpressionKind::Parenthesized(inner) => self.array_length_of(inner, context, scope),
-            ExpressionKind::Array(array) => u32::try_from(array.elements.len()).ok(),
-            ExpressionKind::Fill(fill) => {
-                match self.types.sizes.array_length(self.source, &fill.length) {
+            ExpressionKind::Parenthesized(inner) => self.array_parts_of(inner, context, scope),
+            ExpressionKind::Array(array) => ArrayParts {
+                length: u32::try_from(array.elements.len()).ok(),
+                element: None,
+            },
+            ExpressionKind::Fill(fill) => ArrayParts {
+                length: match self.types.sizes.array_length(self.source, &fill.length) {
                     Length::Admitted(length) => Some(length),
                     _ => None,
+                },
+                element: None,
+            },
+            ExpressionKind::Bytes(bytes) => ArrayParts {
+                length: self.source.slice(expression.span).and_then(|spelling| {
+                    let decoded = decode_byte_string(
+                        spelling,
+                        expression.span.start(),
+                        bytes.hex,
+                        self.source,
+                    )
+                    .ok()?;
+                    u32::try_from(decoded.len()).ok()
+                }),
+                element: Some(CoreType::Word8),
+            },
+            ExpressionKind::Binary(binary) if binary.operator.is_concatenation() => {
+                let left = self.array_parts_of(&binary.left, context, scope);
+                let right = self.array_parts_of(&binary.right, context, scope);
+                ArrayParts {
+                    length: left
+                        .length
+                        .zip(right.length)
+                        .and_then(|(left, right)| left.checked_add(right)),
+                    element: left.element.or(right.element),
                 }
             }
-            ExpressionKind::Bytes(bytes) => {
-                let spelling = self.source.slice(expression.span)?;
-                let decoded =
-                    decode_byte_string(spelling, expression.span.start(), bytes.hex, self.source)
-                        .ok()?;
-                u32::try_from(decoded.len()).ok()
-            }
-            ExpressionKind::Binary(binary) if binary.operator.is_concatenation() => self
-                .array_length_of(&binary.left, context, scope)?
-                .checked_add(self.array_length_of(&binary.right, context, scope)?),
-            ExpressionKind::Update(update) => self.array_length_of(&update.base, context, scope),
+            ExpressionKind::Update(update) => self.array_parts_of(&update.base, context, scope),
             ExpressionKind::SliceUpdate(update) => {
-                self.array_length_of(&update.base, context, scope)
+                self.array_parts_of(&update.base, context, scope)
             }
             ExpressionKind::Conditional(conditional) => {
-                self.leaf_length(expression, context, scope).or_else(|| {
-                    // A branch's bindings are not in scope here, so only a
-                    // branch without them is read.
-                    let otherwise = conditional
-                        .otherwise_bindings
-                        .is_empty()
-                        .then_some(&conditional.otherwise);
-                    conditional
-                        .arms
-                        .iter()
-                        .filter(|arm| arm.bindings.is_empty())
-                        .map(|arm| &arm.value)
-                        .chain(otherwise)
-                        .find_map(|value| self.array_length_of(value, context, scope))
-                })
+                self.conditional_parts(conditional, context, scope)
             }
-            _ => self.leaf_length(expression, context, scope),
+            _ => self.leaf_parts(first_typed_leaf(expression), context, scope),
         }
     }
 
-    /// Returns the length of the array type of an expression's first typed
-    /// leaf, when it has one.
-    fn leaf_length(
+    /// Returns the parts of a conditional: those of its first typed leaf,
+    /// from the first branch that has one outside the branch's bindings,
+    /// and when that leaf gives no length, the length of the first later
+    /// branch without bindings that has one.
+    ///
+    /// A branch without bindings is read as a whole, which gives its leaf's
+    /// parts when they are known: so the branch of the first typed leaf is
+    /// read once, not once for its leaf and again for its length.
+    fn conditional_parts(
         &self,
-        expression: &Expression,
+        conditional: &ConditionalExpression,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
-    ) -> Option<u32> {
-        first_typed_leaf(expression)
-            .and_then(|leaf| self.leaf_type(leaf, context, scope))?
-            .as_array()
-            .map(ArrayType::length)
+    ) -> ArrayParts {
+        let branches = conditional
+            .arms
+            .iter()
+            .map(|arm| (arm.bindings.as_slice(), &arm.value))
+            .chain(std::iter::once((
+                conditional.otherwise_bindings.as_slice(),
+                &conditional.otherwise,
+            )));
+        let mut parts: Option<ArrayParts> = None;
+        for (bindings, value) in branches {
+            match &mut parts {
+                // Until a branch has a typed leaf, a branch without bindings
+                // has none, and so no length either.
+                None if bindings.is_empty() => {
+                    if first_typed_leaf(value).is_some() {
+                        parts = Some(self.array_parts_of(value, context, scope));
+                    }
+                }
+                None => {
+                    if let Some(leaf) = branch_leaf(bindings, value) {
+                        parts = Some(self.leaf_parts(Some(leaf), context, scope));
+                    }
+                }
+                Some(found) if found.length.is_none() && bindings.is_empty() => {
+                    found.length = self.array_parts_of(value, context, scope).length;
+                }
+                Some(_) => {}
+            }
+            if parts.as_ref().is_some_and(|found| found.length.is_some()) {
+                break;
+            }
+        }
+        parts.unwrap_or_default()
     }
 
-    /// Returns the element type of an array expression without reporting,
-    /// from its first operand that has one.
-    ///
-    /// Parser-established expression height bounds this recursion.
-    fn array_element_of(
+    /// Returns the parts of the type of a leaf, when it has one.
+    fn leaf_parts(
         &self,
-        expression: &Expression,
+        leaf: Option<&Expression>,
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
-    ) -> Option<CoreType> {
-        match &expression.kind {
-            ExpressionKind::Parenthesized(inner) => self.array_element_of(inner, context, scope),
-            ExpressionKind::Bytes(_) => Some(CoreType::Word8),
-            ExpressionKind::Binary(binary) if binary.operator.is_concatenation() => self
-                .array_element_of(&binary.left, context, scope)
-                .or_else(|| self.array_element_of(&binary.right, context, scope)),
-            _ => first_typed_leaf(expression)
-                .and_then(|leaf| self.leaf_type(leaf, context, scope))?
-                .as_array()
-                .map(ArrayType::element),
+    ) -> ArrayParts {
+        let ty = leaf.and_then(|leaf| self.leaf_type(leaf, context, scope));
+        let array = ty.as_ref().and_then(CoreType::as_array);
+        ArrayParts {
+            length: array.map(ArrayType::length),
+            element: array.map(ArrayType::element),
         }
     }
 
@@ -528,12 +587,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
     ) -> Option<CoreType> {
-        let left = self.array_length_of(&binary.left, context, scope)?;
-        let right = self.array_length_of(&binary.right, context, scope)?;
-        let element = self
-            .array_element_of(&binary.left, context, scope)
-            .or_else(|| self.array_element_of(&binary.right, context, scope))?;
-        ArrayType::new(&element, left.checked_add(right)?).map(CoreType::Array)
+        let left = self.array_parts_of(&binary.left, context, scope);
+        let right = self.array_parts_of(&binary.right, context, scope);
+        let length = left.length?.checked_add(right.length?)?;
+        let element = left.element.or(right.element)?;
+        ArrayType::new(&element, length).map(CoreType::Array)
     }
 
     /// Checks `left ++ right` against `expected`, which must be an array
@@ -824,7 +882,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     ) -> bool {
         let Some(base_type) = self.leaf_type(&slice.base, context, scope) else {
             // The base's own check reports why it has no type.
-            self.check_expression(&slice.base, expected, context, scope, output);
+            self.check_untyped(&slice.base, expected, context, scope, output);
             return false;
         };
         let Some(array) = base_type.as_array() else {

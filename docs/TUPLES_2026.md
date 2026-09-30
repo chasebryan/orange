@@ -30,8 +30,11 @@ meaning. It accepts no D-004 candidate.
 > `++`. [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds size
 > parameters, whose instances may take and give tuples.
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, adds conversions in
-> a byte order, which convert no tuple. Every source this document accepts keeps
-> its meaning under all three.
+> a byte order, which convert no tuple, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, lets a tuple's elements be a function's type parameter, as
+> `(K, K)`, and lists tuple types among a function's types. Every source this
+> document accepts keeps its meaning under all four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

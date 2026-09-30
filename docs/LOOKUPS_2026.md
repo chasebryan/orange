@@ -38,7 +38,11 @@ meaning. It accepts no D-004 candidate.
 > are constants in each instance and so count as literals in indices and slice
 > bounds, and [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, adds
 > conversions in a byte order, which read words at positions that never depend
-> on data. Every source this document accepts keeps its meaning under all seven.
+> on data, and [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed
+> under OEP-0018, adds type parameters, which never depend on data: each
+> instance's types are fixed before a program runs, and every index in each
+> is proved in range as before. Every source this document accepts keeps its
+> meaning under all eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

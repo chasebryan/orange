@@ -43,8 +43,11 @@ meaning. It accepts no D-004 candidate.
 > in each instance, from 1 through 256, and [`ORDER_2026.md`](ORDER_2026.md),
 > proposed under OEP-0017, converts an array of words in a byte order to words
 > of another width or to a number, as `block as big Word[32]^16`, where a
-> conversion of an array is otherwise `ORC0215`. Every source this document
-> accepts keeps its meaning under all ten.
+> conversion of an array is otherwise `ORC0215`, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, lets an array's element be a function's type parameter, as `K^n`,
+> and lists array types among a function's types. Every source this document
+> accepts keeps its meaning under all eleven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -1,0 +1,12 @@
+// S3o rejection: a type parameter is written `K in {F, L}`, listing one or
+// more types separated by commas, and a function has at most four size and
+// type parameters. After an error in a list, parsing resumes after its `}`.
+edition 2026;
+module syntax {
+  spec empty[K in {}](x: Int) -> Int { x }
+  spec trailing[K in {Int,}](x: Int) -> Int { x }
+  spec unseparated[K in {Int Bool}](x: Int) -> Int { x }
+  spec unclosed[K in {Int, Bool](x: Int) -> Int { x }
+  spec five[A in {Int}, B in {Int}, C in {Int}, D in {Int}, E in {Int}]() -> Int { 1 }
+  spec after() -> Int { 1 }
+}

@@ -1,0 +1,68 @@
+// S3o conformance: type parameters. `K in {Int, Word[16], P}` lists the
+// types a function is written for; the function is checked once for each,
+// and a function without parameters is evaluated once for each, named as a
+// call names it. A type parameter stands for its type wherever a type is
+// written: parameters, results, `let` bindings, loop accumulators, arrays,
+// tuples, conversion targets, and brackets of calls.
+edition 2026;
+module types {
+  type P = Mod[65521];
+
+  // One body, three types. Evaluated once for each.
+  spec seven[K in {Int, Word[16], P}]() -> K {
+    let x: K = 3;
+    x + 4
+  }
+
+  // A number converted to each type: -1 is 2^16 - 1 as a word and
+  // 65520 as a residue modulo 65521.
+  spec minus_one[K in {Word[16], P}]() -> K {
+    let n: Int = -1;
+    n as K
+  }
+
+  // Arrays and tuples of the type, and a loop over them.
+  spec fill[n in 1..4, K in {Int, Word[16], P}](x: K) -> K^n { [x; n] }
+
+  spec total[K in {Int, Word[16], P}, n in 1..4](xs: K^n) -> K {
+    for i in 0..n with sum: K = 0 { sum + xs[i] }
+  }
+
+  spec pair[K in {Int, Word[16], P}](x: K) -> (K, K) { (x, x * x) }
+
+  // The type can be an array or a tuple, and `Bool` and `Int` can be listed.
+  spec first[T in {Word[8]^4, (Int, Bool)}](x: T) -> T { x }
+  spec both[B in {Bool, Int}](x: B, y: B) -> (B, B) { (y, x) }
+
+  // A call without brackets takes the instance whose parameters have its
+  // arguments' types, and among several, the one whose result has the type
+  // its place expects.
+  spec zero[K in {Int, Word[16], P}]() -> K { 0 }
+
+  spec chosen() -> (Word[16], P, Int) {
+    let w: Word[16] = 40000;
+    let r: P = 40000;
+    (w + w, total(fill[3, P](r)), total([1, 2, 3]) + zero())
+  }
+
+  // A call names its instance in brackets: `Int`, `Bool`, `Word[n]`, an
+  // array of one of them, a `type` declaration, or a type parameter of the
+  // caller.
+  spec named() -> (P, Word[16], Int) {
+    (seven[P](), seven[Word[16]](), seven[Int]())
+  }
+
+  spec square_all[K in {Word[16], P}](x: K) -> (K, K) { pair[K](x) }
+
+  spec word_squares() -> (Word[16], Word[16]) { square_all[Word[16]](300) }
+
+  spec residue_squares() -> (P, P) { square_all[P](300) }
+
+  spec swapped() -> (Bool, Bool) { both(true, false) }
+
+  spec swapped_numbers() -> (Int, Int) { both(1, 2) }
+
+  spec same_bytes() -> Word[8]^4 { first(hex"00010203") }
+
+  spec same_bytes_named() -> Word[8]^4 { first[Word[8]^4](hex"00010203") }
+}

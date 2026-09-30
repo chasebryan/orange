@@ -243,6 +243,7 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
                         && belongs(size.name.span)
                         && belongs(size.start_span)
                         && belongs(size.end_span)
+                        && size.types.iter().all(&type_belongs)
                 })
                 && function.parameters.iter().all(|parameter| {
                     belongs(parameter.span)
@@ -480,6 +481,7 @@ struct PendingFunction {
     name: String,
     name_span: Span,
     sizes: Vec<u32>,
+    instance: String,
     parameters: Vec<CoreType>,
     result_type: CoreType,
     locals: Vec<CoreLocal>,
@@ -498,6 +500,11 @@ struct Signature<'ast> {
     /// The ranges of its size parameters, or `None` when they are malformed
     /// and the function has no instances.
     ranges: Option<SizeRanges>,
+    /// The types each type parameter lists, resolved outside every
+    /// instance, by the parameter's position; empty for a size.
+    listed: Vec<Vec<Option<CoreType>>>,
+    /// The listed types as written, by the parameter's position.
+    spellings: Vec<Vec<String>>,
     /// The parameter and result types of each instance, in order.
     instances: Vec<InstanceSignature>,
 }
@@ -1219,7 +1226,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         self.resource_limit(function.span, "semantic size table is inconsistent");
                         break;
                     };
-                    self.enter_instance(instance);
+                    self.enter_instance(instance, &signature.listed);
                     let context = BodyContext {
                         id,
                         instance,
@@ -1259,7 +1266,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         break;
                     }
                 }
-                self.enter_instance(Instance::NONE);
+                self.enter_instance(Instance::NONE, &[]);
                 if self.halted {
                     break;
                 }
@@ -1315,9 +1322,25 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         );
                         return None;
                     };
-                    let ranges = SizeRanges::of(self.source, function);
+                    let listed: Vec<Vec<Option<CoreType>>> = function
+                        .sizes
+                        .iter()
+                        .map(|size| {
+                            size.types
+                                .iter()
+                                .map(|ty| silent_type(self.source, &self.types, ty))
+                                .collect()
+                        })
+                        .collect();
+                    // A list with a type that does not resolve, or one type
+                    // twice, is reported at the declaration; like malformed
+                    // sizes, it leaves the function no instances, so that
+                    // its callers are not reported again.
+                    let ranges = SizeRanges::of(self.source, function)
+                        .filter(|_| listed.iter().all(|types| distinct_types(types)));
                     let count = ranges.map_or(0, |ranges| ranges.instances());
                     next_id = next_id.saturating_add(count);
+                    let spellings = type_spellings(self.source, &function.sizes);
                     let mut instances = Vec::new();
                     if instances.try_reserve_exact(count).is_err() {
                         self.resource_limit(function.span, "semantic signature allocation failed");
@@ -1333,7 +1356,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             );
                             return None;
                         };
-                        self.enter_instance(instance);
+                        self.enter_instance(instance, &listed);
                         let mut parameters = Vec::new();
                         if parameters
                             .try_reserve_exact(function.parameters.len())
@@ -1361,11 +1384,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             result_type,
                         });
                     }
-                    self.enter_instance(Instance::NONE);
+                    self.enter_instance(Instance::NONE, &[]);
                     Some(Signature {
                         id,
                         sizes: &function.sizes,
                         ranges,
+                        listed,
+                        spellings,
                         instances,
                     })
                 }
@@ -1495,11 +1520,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return None;
         }
         sizes.extend_from_slice(context.instance.values());
+        let instance = context
+            .instance
+            .suffix(&type_spellings(self.source, &function.sizes));
         Some(PendingFunction {
             span: function.span,
             name,
             name_span: function.name.span,
             sizes,
+            instance,
             parameters,
             result_type,
             locals,
@@ -1533,10 +1562,12 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return None;
             }
             let text = &typed.name.text;
+            // A type parameter names a type, not a value, so a binding may
+            // share its name, as a parameter may.
             let size = function
                 .sizes
                 .iter()
-                .find(|size| size.name.text == *text)
+                .find(|size| !size.is_type() && size.name.text == *text)
                 .map(|size| (size.name.span, "the size parameter is here"));
             let parameter = function
                 .parameters
@@ -1988,18 +2019,22 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             name.span,
         )
         .with_label("unknown name");
-        diagnostic =
-            if first_declaration(scope.declarations, FunctionKind::Spec, &name.text).is_some() {
-                diagnostic.with_note(format!(
-                    "to call the function `{spelling}`, write `{spelling}()` with its arguments"
-                ))
-            } else if has_bindings {
-                diagnostic.with_note(
-                    "a bare name in a `spec` body refers to one of its parameters or bindings",
-                )
-            } else {
-                diagnostic.with_note("a bare name in a `spec` body refers to one of its parameters")
-            };
+        diagnostic = if self.types.sizes.instance.find_type(&name.text).is_some() {
+            diagnostic.with_note(format!(
+                "`{spelling}` is a type parameter: it names a type, not a value, so it is \
+                 written where a type is, as in `let x: {spelling} = 0;`"
+            ))
+        } else if first_declaration(scope.declarations, FunctionKind::Spec, &name.text).is_some() {
+            diagnostic.with_note(format!(
+                "to call the function `{spelling}`, write `{spelling}()` with its arguments"
+            ))
+        } else if has_bindings {
+            diagnostic.with_note(
+                "a bare name in a `spec` body refers to one of its parameters or bindings",
+            )
+        } else {
+            diagnostic.with_note("a bare name in a `spec` body refers to one of its parameters")
+        };
         self.diagnostics.push(diagnostic);
     }
 
@@ -2053,7 +2088,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let Some(from) = from else {
             // The leaf's own check reports why it has no type. That check
             // stops before comparing with the type passed here.
-            self.check_expression(leaf, expected, context, scope, output);
+            self.check_untyped(leaf, expected, context, scope, output);
             return false;
         };
         if from == CoreType::Bool || target == Some(CoreType::Bool) {
@@ -2349,7 +2384,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         let Some(base_type) = self.leaf_type(&index.base, context, scope) else {
             // The base's own check reports why it has no type and stops
             // before comparing with the type passed here.
-            self.check_expression(&index.base, expected, context, scope, output);
+            self.check_untyped(&index.base, expected, context, scope, output);
             return false;
         };
         let Some(array_type) = base_type.as_array() else {
@@ -3089,7 +3124,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 return false;
             }
             // The leaf's own check reports why it has no type.
-            self.check_expression(leaf, expected, context, scope, output);
+            self.check_untyped(leaf, expected, context, scope, output);
             return false;
         };
         let defined = match binary.operator {
@@ -3499,7 +3534,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         // The instance called: its sizes are computed in the caller's
         // instance and must lie in the callee's ranges.
         let Some((id, signature)) =
-            self.called_instance(expression, call, signature, context, scope)
+            self.called_instance(expression, call, signature, expected, context, scope)
         else {
             return false;
         };
@@ -3886,6 +3921,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 name: pending_function.name,
                 name_span: pending_function.name_span,
                 sizes: pending_function.sizes,
+                instance: pending_function.instance,
                 parameters: pending_function.parameters,
                 result_type: pending_function.result_type,
                 locals: pending_function.locals,

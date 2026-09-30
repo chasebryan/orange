@@ -42,9 +42,13 @@ pub struct EvaluatedFunction {
     module: Arc<str>,
     /// Exact ASCII function name.
     name: String,
-    /// The values of the function's sizes in the instance evaluated, empty
-    /// for a function without sizes.
+    /// The values of the function's sizes in the instance evaluated, each
+    /// type parameter's the position of its type in its list; empty for a
+    /// function without sizes or types.
     sizes: Vec<u32>,
+    /// The instance's sizes and types in brackets as a call writes them,
+    /// `[2]` or `[1, F]`; empty for a function without sizes or types.
+    instance: String,
     /// Exact evaluated value.
     value: CoreValue,
 }
@@ -69,10 +73,19 @@ impl EvaluatedFunction {
     }
 
     /// Returns the values of the function's sizes in the instance
-    /// evaluated, or an empty slice for a function without sizes.
+    /// evaluated, with each type parameter's the position of its type in
+    /// its list, or an empty slice for a function without sizes or types.
     #[must_use]
     pub fn sizes(&self) -> &[u32] {
         &self.sizes
+    }
+
+    /// Returns the instance's sizes and types in brackets as a call writes
+    /// them, `[2]` or `[1, F]`, or an empty string for a function without
+    /// sizes or types.
+    #[must_use]
+    pub fn instance(&self) -> &str {
+        &self.instance
     }
 
     /// Returns the statically checked result type.
@@ -90,16 +103,17 @@ impl EvaluatedFunction {
 
 impl fmt::Display for EvaluatedFunction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}::{}", self.module(), self.name())?;
-        // An instance of a sized function is named as a call names it.
-        if let Some((first, rest)) = self.sizes.split_first() {
-            write!(formatter, "[{first}")?;
-            for size in rest {
-                write!(formatter, ", {size}")?;
-            }
-            formatter.write_str("]")?;
-        }
-        write!(formatter, ": {} = {}", self.result_type(), self.value())
+        // An instance of a function with sizes or types is named as a call
+        // names it.
+        write!(
+            formatter,
+            "{}::{}{}: {} = {}",
+            self.module(),
+            self.name(),
+            self.instance,
+            self.result_type(),
+            self.value()
+        )
     }
 }
 
@@ -2326,6 +2340,15 @@ fn evaluate_with_reservations(
             );
         }
         sizes.extend_from_slice(&function.sizes);
+        let mut instance = String::new();
+        if !(reservations.name)(&mut instance, function.instance.len()) {
+            return allocation_failure(
+                diagnostics,
+                function.name_span,
+                "evaluated function instance storage could not be reserved",
+            );
+        }
+        instance.push_str(&function.instance);
         let value = match result_value(value, &function.result_type, reservations) {
             Ok(value) => value,
             Err(Stop::Allocation(label)) => {
@@ -2339,6 +2362,7 @@ fn evaluate_with_reservations(
             module,
             name,
             sizes,
+            instance,
             value,
         });
     }
@@ -2898,6 +2922,34 @@ mod tests {
         assert_eq!(
             name_failure.diagnostics()[0].label(),
             "evaluated function name storage could not be reserved"
+        );
+
+        // An instance's name in brackets is reserved as its function's is.
+        let instance_core = core(concat!(
+            "edition 2026; module values {\n",
+            "  spec pick[K in {Word[8], Word[16]}]() -> K { 1 }\n",
+            "}\n",
+        ));
+        let instance_failure = evaluate_with_reservations(
+            &instance_core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            Reservations {
+                name: |name, bytes| {
+                    bytes != "[Word[16]]".len() && name.try_reserve_exact(bytes).is_ok()
+                },
+                ..Reservations::DEFAULT
+            },
+        );
+        assert!(instance_failure.values().is_none());
+        assert_eq!(instance_failure.diagnostics().len(), 1);
+        assert_eq!(
+            instance_failure.diagnostics()[0].primary_span(),
+            instance_core.functions[1].name_span
+        );
+        assert_eq!(
+            instance_failure.diagnostics()[0].label(),
+            "evaluated function instance storage could not be reserved"
         );
 
         let value_core = core(concat!(
@@ -3791,6 +3843,20 @@ mod tests {
                 MAX_EXPRESSION_NESTING / 2,
             ),
             nested_by("g([", "x", "] as big Word[32])", MAX_EXPRESSION_NESTING / 2),
+            // Calls of typed functions nested in each other's arguments:
+            // each naming its instance, each fitting one by its argument's
+            // type, arrays fitting by their elements and length, and calls
+            // that only their place chooses among, around one that only its
+            // place chooses either.
+            // `Word[32]`'s own brackets are one level more.
+            nested_by("u[Word[32]](", "x", ")", MAX_EXPRESSION_NESTING - 1),
+            nested("u(", "x", ")"),
+            format!(
+                "{}[x]{}[0]",
+                "v(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            nested_by("u(", "z(true)", ")", MAX_EXPRESSION_NESTING - 1),
         ];
         let sources = bodies
             .iter()
@@ -3801,6 +3867,9 @@ mod tests {
                      spec p(t: (Word[32], Word[32])) -> (Word[32], Word[32]) {{ t }}\n  \
                      spec s[n in 1..2](x: Word[32]) -> Word[32] {{ x }}\n  \
                      spec t[n in 1..3](x: Word[32]^n) -> Word[32]^n {{ x }}\n  \
+                     spec u[K in {{Word[16], Word[32]}}](x: K) -> K {{ x }}\n  \
+                     spec v[K in {{Word[16], Word[32]}}, n in 1..3](x: K^n) -> K^n {{ x }}\n  \
+                     spec z[K in {{Word[16], Word[32]}}](b: Bool) -> K {{ 0 }}\n  \
                      spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
                      spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
                 )
@@ -3846,6 +3915,41 @@ mod tests {
         );
         assert_eq!(values[2].sizes(), [1, 5]);
         assert_eq!(values[4].sizes(), []);
+    }
+
+    #[test]
+    fn every_instance_of_a_typed_root_is_evaluated_and_named_by_its_types() {
+        let (_, core) = analyzed(concat!(
+            "edition 2026; module types {\n",
+            "  type F = Mod[7];\n",
+            "  type Q = Mod[13];\n",
+            "  spec minus_one[K in {F, Q}]() -> K { let n: Int = -1; n as K }\n",
+            "  spec zeros[W in {Word[8], Word[16]}, n in 1..3]() -> W^n { [0; n] }\n",
+            "  spec top() -> Q { minus_one() }\n",
+            "}\n"
+        ));
+        let result = evaluate(&core);
+        assert_eq!(result.diagnostics(), []);
+        let values = result.values().unwrap();
+        assert_eq!(
+            values.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            [
+                "types::minus_one[F]: Mod[7] = 6",
+                "types::minus_one[Q]: Mod[13] = 12",
+                "types::zeros[Word[8], 1]: Word[8]^1 = [0x00]",
+                "types::zeros[Word[8], 2]: Word[8]^2 = [0x00, 0x00]",
+                "types::zeros[Word[16], 1]: Word[16]^1 = [0x0000]",
+                "types::zeros[Word[16], 2]: Word[16]^2 = [0x0000, 0x0000]",
+                "types::top: Mod[13] = 12",
+            ]
+        );
+        // A type parameter's value is the position of its type in its list.
+        assert_eq!(values[1].sizes(), [1]);
+        assert_eq!(values[1].instance(), "[Q]");
+        assert_eq!(values[4].sizes(), [1, 1]);
+        assert_eq!(values[4].instance(), "[Word[16], 1]");
+        assert_eq!(values[6].sizes(), []);
+        assert_eq!(values[6].instance(), "");
     }
 
     #[test]
@@ -5220,6 +5324,44 @@ mod tests {
             evaluator.instance("plain", &[]).unwrap()
         ));
         assert!(evaluator.instance("plain", &[1]).is_none());
+    }
+
+    #[test]
+    fn typed_functions_are_found_one_instance_at_a_time_by_type_position() {
+        let core = core(concat!(
+            "edition 2026; module typed {\n",
+            "  type F = Mod[7];\n",
+            "  spec double[K in {Word[8], F}](x: K) -> K { x + x }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        assert!(evaluator.function("double").is_none());
+        assert!(evaluator.instance("double", &[2]).is_none());
+        let word = evaluator.instance("double", &[0]).unwrap();
+        assert_eq!(word.instance(), "[Word[8]]");
+        let result = evaluator.call(word, &[CoreValue::Word8(200)], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(144)));
+        let field = evaluator.instance("double", &[1]).unwrap();
+        assert_eq!(field.instance(), "[F]");
+        let Some(modulus) = field.parameters()[0].modulus() else {
+            panic!("expected a residue type");
+        };
+        let five = CoreValue::Mod(
+            Residue::new(
+                modulus,
+                ExactInteger::from_u64(5, reserve_value_limbs).unwrap(),
+            )
+            .unwrap(),
+        );
+        // Each instance takes only its own type.
+        assert!(
+            evaluator
+                .call(word, std::slice::from_ref(&five), 100)
+                .is_none()
+        );
+        assert!(evaluator.call(field, &[CoreValue::Word8(5)], 100).is_none());
+        let result = evaluator.call(field, &[five], 100).unwrap();
+        assert_eq!(result.value().unwrap().to_string(), "3");
     }
 
     #[test]

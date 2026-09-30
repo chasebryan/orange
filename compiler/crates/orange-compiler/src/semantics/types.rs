@@ -61,6 +61,7 @@ impl TypeTable<'_> {
             names: Vec::new(),
             sizes: SizeScope {
                 instance: Instance::NONE,
+                types: [const { None }; MAX_SIZES_PER_FUNCTION],
                 bits: MAX_INTEGER_BITS,
                 reserve: reserve_range_limbs,
                 reserve_limb: reserve_magnitude_limb,
@@ -191,6 +192,15 @@ pub(super) fn classify_scalar_type(
         }
         ("Word", None) => TypeClass::MissingWordWidth,
         ("Mod", None) => TypeClass::MissingModulus,
+        // A type parameter stands for its type in the instance.
+        (name, None) if table.sizes.instance.find_type(name).is_some() => table
+            .sizes
+            .instance
+            .find_type(name)
+            .and_then(|position| table.sizes.types.get(position))
+            .cloned()
+            .flatten()
+            .map_or(TypeClass::Unresolved, TypeClass::Resolved),
         (name, None) => table.name(name).map_or(TypeClass::Unsupported, |declared| {
             declared
                 .ty
@@ -226,6 +236,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             else {
                 continue;
             };
+            for ty in function.sizes.iter().flat_map(|size| &size.types) {
+                self.resolve_modulus(ty);
+            }
             for parameter in &function.parameters {
                 self.resolve_modulus(&parameter.ty);
             }
