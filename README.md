@@ -437,12 +437,28 @@ in CI.
 
 ```text
 Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...
+       orangec keygen [--scheme <NAME>] [-o <FILE>]
+       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
+       orangec schemes [<NAME>...]
 
 Commands:
   check    Perform lexical, syntactic, and semantic validation
   eval     Reference-evaluate one source after complete validation
   lex      Print the deterministic token stream
+  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]
+  enc      Seal a file with the scheme its key belongs to
+  dec      Open a sealed file, writing nothing unless all of it is authentic
+  schemes  List the built-in sealing schemes, or describe the named ones
 ```
+
+`orangec enc FILE` seals any file with an authenticated cipher written in
+Orange, and `orangec dec FILE.orange` opens it again. XChaCha20-Poly1305 (the
+default), ChaCha20-Poly1305, and Ascon-AEAD128 are built in, and any Orange
+program with `seal`, `open`, and `authentic` specifications is a scheme too,
+including one that uses other modules. The
+[scheme guide](compiler/schemes/README.md) specifies the file format and
+states its limits: the evaluator is not constant-time, nothing is verified,
+and keys are stored unencrypted.
 
 The [compiler guide](compiler/README.md) covers the grammar, diagnostics, and
 test corpora in detail.

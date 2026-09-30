@@ -100,6 +100,11 @@ module NAME {
 - Each call may take at most 16,777,216 evaluation steps.
 - The parameter names above are the convention; `orangec` checks the types in
   order.
+- A scheme program may use other modules, which `orangec` reads from beside
+  it as it does for `orangec check`: `use chacha20;` reads `chacha20.or`. The
+  three specifications must be the program's own, declared in its root
+  module, and they may call the used modules' functions, as in
+  `chacha20::block(key, counter, nonce)`. A built-in scheme is one module.
 
 `orangec schemes PATH` compiles a program, checks its interface, seals one
 chunk of zeros, and prints its sizes and step count. A program that differs
