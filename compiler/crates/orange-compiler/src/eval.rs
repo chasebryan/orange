@@ -3002,13 +3002,16 @@ fn stopped(
     step_limit: usize,
     before_function: bool,
 ) -> EvaluationResult {
+    // A test is reported at its title whatever stopped it, with the place
+    // of a limit that has one as a secondary label.
+    let test = function.title.is_some();
     let diagnostic = match stop {
         Stop::Steps => Diagnostic::error(
             DiagnosticCode::EvaluationResourceLimit,
             "reference evaluation step limit exceeded",
             function.name_span,
         )
-        .with_label(match (function.title.is_some(), before_function) {
+        .with_label(match (test, before_function) {
             (false, true) => "evaluation stopped before this function",
             (false, false) => "evaluation stopped while evaluating this function",
             (true, true) => "evaluation stopped before this test",
@@ -3017,6 +3020,26 @@ fn stopped(
         .with_note(format!(
             "at most {step_limit} evaluation steps are permitted"
         )),
+        Stop::CallDepth(span) if test => Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            "reference evaluation call depth limit exceeded",
+            function.name_span,
+        )
+        .with_label("evaluation stopped while evaluating this test")
+        .with_secondary_span(span, "this call exceeds the depth limit")
+        .with_note(format!(
+            "at most {MAX_CALL_DEPTH} nested calls are permitted"
+        )),
+        Stop::IntegerBits(span) if test => Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            format!(
+                "exact integer result exceeds the {MAX_EXACT_INTEGER_BITS}-significant-bit limit"
+            ),
+            function.name_span,
+        )
+        .with_label("evaluation stopped while evaluating this test")
+        .with_secondary_span(span, "result is too large for the reference evaluator")
+        .with_note("`Int` is unbounded; this is a resource limit, not a finite width"),
         Stop::CallDepth(span) => Diagnostic::error(
             DiagnosticCode::EvaluationResourceLimit,
             "reference evaluation call depth limit exceeded",
@@ -3048,9 +3071,13 @@ fn stopped(
             "reference evaluation received inconsistent Core",
             function.name_span,
         )
-        .with_label("evaluation stopped in this function"),
+        .with_label(if test {
+            "evaluation stopped in this test"
+        } else {
+            "evaluation stopped in this function"
+        }),
     };
-    let note = if function.title.is_some() {
+    let note = if test {
         NO_TEST_OUTCOME_NOTE
     } else {
         "no partial value set is returned"
@@ -6982,6 +7009,100 @@ mod tests {
             ]
         );
         assert_eq!(run_tests(&core, total - 1), short);
+    }
+
+    #[test]
+    fn every_limit_that_stops_a_test_is_reported_at_its_title() {
+        // An `Int` past its limit stops the run at the test's title, with
+        // the operation that made it as a secondary label.
+        let text = concat!(
+            "edition 2026; module grow {\n",
+            "  spec tower() -> Int { for i in 0..15 with x: Int = 2 { x * x } }\n",
+            "  test \"first\" { true }\n",
+            "  test \"a tower of squares\" { tower() > 0 }\n",
+            "}\n",
+        );
+        let core = core(text);
+        let run = run_tests(&core, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "exact integer result exceeds the 16384-significant-bit limit"
+        );
+        assert_eq!(diagnostic.primary_span(), core.tests()[1].name_span);
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        let [secondary] = diagnostic.secondary_spans() else {
+            panic!("expected one secondary span: {diagnostic:?}");
+        };
+        let product = text.find("x * x").unwrap();
+        assert_eq!(
+            (
+                secondary.span().start().bytes(),
+                secondary.span().end().bytes()
+            ),
+            (
+                u32::try_from(product).unwrap(),
+                u32::try_from(product + 5).unwrap()
+            ),
+            "the secondary span is the product"
+        );
+        assert_eq!(
+            secondary.label(),
+            "result is too large for the reference evaluator"
+        );
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                "`Int` is unbounded; this is a resource limit, not a finite width",
+                "no test outcome is reported",
+            ]
+        );
+
+        // Calls nested past the depth limit stop at the test's title too,
+        // with the call that went too deep as a secondary label.
+        let depth = MAX_CALL_DEPTH + 1;
+        let mut text = String::from("edition 2026; module deep {\n");
+        for level in 0..depth {
+            text.push_str(&format!(
+                "  spec f{level}() -> Int {{ f{}() }}\n",
+                level + 1
+            ));
+        }
+        text.push_str(&format!("  spec f{depth}() -> Int {{ 1 }}\n"));
+        text.push_str("  test \"deep\" { f0() == 1 }\n}\n");
+        let deep = self::core(&text);
+        let run = run_tests(&deep, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation call depth limit exceeded"
+        );
+        assert_eq!(diagnostic.primary_span(), deep.tests()[0].name_span);
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        let [secondary] = diagnostic.secondary_spans() else {
+            panic!("expected one secondary span: {diagnostic:?}");
+        };
+        assert_eq!(secondary.label(), "this call exceeds the depth limit");
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                format!("at most {MAX_CALL_DEPTH} nested calls are permitted"),
+                String::from("no test outcome is reported"),
+            ]
+        );
     }
 
     #[test]

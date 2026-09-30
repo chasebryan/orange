@@ -477,6 +477,11 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/eval.rs",
+        test: "every_limit_that_stops_a_test_is_reported_at_its_title",
+        rules: &["S3Q-STOP-01"],
+    },
+    TestEvidence {
+        source_path: "src/eval.rs",
         test: "a_module_without_tests_passes_them_all",
         rules: &["S3Q-RUN-01", "S3Q-COMPAT-01"],
     },
@@ -1053,8 +1058,39 @@ fn s3q_a_test_that_stops_ends_the_run_with_no_report() {
             "a stopped run reports no steps"
         );
     }
+
+    // Any other limit stops the run at the test's title too, with the place
+    // the limit was reached as a secondary label.
+    let grow = directory.join("grow.or");
+    fs::write(&grow, GROWING_PROGRAM).unwrap();
+    let output = run_twice(&["test", "--stats"], &grow, "grow");
+    assert_failure(
+        &output,
+        &["ORC0301"],
+        &["grow.or:4:8"],
+        &[
+            "error[ORC0301]: exact integer result exceeds the 16384-significant-bit limit\n",
+            " evaluation stopped while evaluating this test\n",
+            " result is too large for the reference evaluator\n",
+            "= note: `Int` is unbounded; this is a resource limit, not a finite width\n",
+            "= note: no test outcome is reported\n",
+        ],
+        "grow",
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stderr).contains("--steps"),
+        "a limit other than the budget names no option"
+    );
     fs::remove_dir_all(&directory).unwrap();
 }
+
+const GROWING_PROGRAM: &str = concat!(
+    "edition 2026;\n",
+    "module grow {\n",
+    "  spec tower() -> Int { for i in 0..15 with x: Int = 2 { x * x } }\n",
+    "  test \"a tower of squares\" { tower() > 0 }\n",
+    "}\n",
+);
 
 #[test]
 fn s3q_test_takes_one_source_and_the_step_options_but_not_spec() {

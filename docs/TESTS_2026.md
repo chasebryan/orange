@@ -250,10 +250,15 @@ tests in source order:
 - **A test that stops.** A test that exceeds the budget, or any other
   evaluation limit, stops the run. Nothing is written to standard output, the
   exit status is 1, and the diagnostic is `ORC0301` at the test's title,
-  labeled "evaluation stopped while evaluating this test", with the notes
-  "at most N evaluation steps are permitted" and "no test outcome is
-  reported"; while N is below the maximum, `orangec` adds "`orangec test
-  --steps N` sets the budget, up to 1073741824 steps".
+  labeled "evaluation stopped while evaluating this test", with the limit's
+  message and note followed by "no test outcome is reported". For the
+  budget the note is "at most N evaluation steps are permitted", and while N
+  is below the maximum, `orangec` adds "`orangec test --steps N` sets the
+  budget, up to 1073741824 steps". A limit reached at one place in the
+  source, an `Int` of more than 16,384 significant bits or a call nested
+  more than 256 deep, marks that place with a secondary label, "result is
+  too large for the reference evaluator" or "this call exceeds the depth
+  limit", as `orangec eval` does.
 - **`--stats`.** Standard error gets, after the report has been written to
   standard output in full, one line for each test, `test "TITLE": N steps`,
   and a last line `total: T of B steps`. If the report cannot be written, no
@@ -310,7 +315,7 @@ the same rules as the S3b through S3p runners.
 | `S3Q-EQUAL-01` | Section 6 | `==` and `!=` compare values of every type, arrays and tuples whole, typed by the other operand when one is written out; two written-out operands are `ORC0227`, and an order on arrays or tuples is `ORC0215` with the specified notes. | CLI and unit |
 | `S3Q-COST-01` | Section 7 | A comparison compares every part at the specified cost, independent of where its operands differ, up to arrays of 65,536 elements. | CLI and unit |
 | `S3Q-RUN-01` | Section 8 | `orangec test` runs the root's tests in source order under one budget and writes the specified report, with both values and the first difference of a failed `left == right`, exiting 0 when all pass and 1 when any fails. | CLI and unit |
-| `S3Q-STOP-01` | Section 8 | A test that stops ends the run with no report and `ORC0301` at its title with the specified label and notes, the budget note naming `orangec test --steps N`. | Generated CLI and unit |
+| `S3Q-STOP-01` | Section 8 | A test that stops, at the budget or any other limit, ends the run with no report and `ORC0301` at its title with the specified label, secondary label, and notes, the budget note naming `orangec test --steps N`. | Generated CLI and unit |
 | `S3Q-OPTIONS-01` | Section 8 | `--steps` and `--stats` apply to `eval` and `test`, `--spec` only to `eval`, `test` takes exactly one source, and the step report follows the committed report. | Generated CLI and unit |
 | `S3Q-RES-01` | Section 9 | Title, outcome, and compared-value storage is reserved before it is written, and a failure gives no partial report. | Unit |
 | `S3Q-COMPAT-01` | Section 11 | S3p sources keep their meaning, Core values, and output bytes, with only the specified diagnostic changes. | CLI and unit |
