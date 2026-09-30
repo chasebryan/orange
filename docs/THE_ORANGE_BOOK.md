@@ -3930,11 +3930,11 @@ pays, as it does for sizes: every instance is checked in full, within the
 same per-source budgets. Finding the instance of a call reads each of its
 arguments once, so calls nested in each other's arguments cost work in
 proportion to their depth. The same change removed a cost that S3m had left:
-a sized call whose argument was a conditional read each branch twice, so each
-level of nesting doubled the work of checking: 31 levels took more than a
-minute, and each level more doubled it. Every source S3n accepted has the same Core,
-values, and output under S3o, since no source it accepted wrote braces after
-a size's `in`.
+a sized call whose argument was a conditional read that argument twice when
+its first branch gave no length, so each level of nesting doubled the work of
+checking, and a source of 31 levels and 1,248 bytes did not finish in two
+minutes. Every source S3n accepted has the same Core, values, and output
+under S3o, since no source it accepted wrote braces after a size's `in`.
 
 That leaves seams. A list is written in each function, so several functions
 over the same fields repeat it, and nothing yet names a list once. A `type`

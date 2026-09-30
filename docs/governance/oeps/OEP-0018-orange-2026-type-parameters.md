@@ -206,7 +206,8 @@ out 256 times, which the per-source budgets already bound. Finding a call's
 instance reads each argument once, so calls nested in each other's arguments
 cost work linear in their depth at each level; the same change removes a
 doubling of work per level for sized calls whose arguments are conditionals,
-present since S3m, which let a small source take hours to check.
+present since S3m, under which a source of 31 levels and 1,248 bytes did not
+finish checking in two minutes.
 
 The reference evaluator is not constant-time, and no secrecy label or leakage
 property is defined.
