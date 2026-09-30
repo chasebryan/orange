@@ -30,8 +30,11 @@ meaning. It accepts no D-004 candidate.
 > slice may stand where a sized function's parameter of that length is required.
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, lifts this
 > document's exclusion of conversions between bytes and words: `hex"01020304" as
-> big Word[32]` is `0x01020304`. Every source this document accepts keeps its
-> meaning under both.
+> big Word[32]` is `0x01020304`.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, lists `Word[8]^n` among a function's types, so that a call may
+> name it, as `first[Word[8]^4](hex"00010203")`. Every source this document
+> accepts keeps its meaning under all three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

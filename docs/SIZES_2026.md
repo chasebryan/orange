@@ -28,8 +28,12 @@ meaning. It accepts no D-004 candidate.
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, extends this
 > document with conversions in a byte order, which may write a size-dependent
 > length after the order, as `m as big Word[32]^(16 * blocks)`, and convert a
-> size's value, as `(8 * len) as big Word[8]^8`. Every source this document
-> accepts keeps its meaning under it.
+> size's value, as `(8 * len) as big Word[8]^8`, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, admits type parameters beside size parameters, `K in {F, P, Q}`,
+> with at most four parameters in brackets and 256 instances in all, and
+> fits a call without brackets by its arguments' types, reading each argument
+> once. Every source this document accepts keeps its meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

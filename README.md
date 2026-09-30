@@ -427,7 +427,9 @@ without an `as`, and `as` also turns a residue into its least residue as an
 that compares field elements compares least residues, and
 `(x as Int) < (y as Int)` says so. A modulus may be as wide as 2^521 − 1, the
 prime of P-521. [S3j](#rounds-in-the-words-of-their-standard) puts the whole
-ladder in one loop, with the RFC's names inside it. This slice, S3i, is
+ladder in one loop, with the RFC's names inside it, and
+[S3o](#one-function-for-several-types) writes one exponentiation and one
+inverse for every field a module names. This slice, S3i, is
 implemented and tested; its specification is in review as
 [OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md).
 
@@ -771,6 +773,135 @@ of the time they took, with the same bytes. This slice, S3n, is implemented
 and tested; its specification is in review as
 [OEP-0017](docs/governance/oeps/OEP-0017-orange-2026-byte-order.md).
 
+### One function for several types
+
+Square-and-multiply raises an element to a power the same way in every field,
+and Fermat's little theorem inverts in every field of prime order. RFC 7748
+computes modulo 2^255 − 19, RFC 8439 modulo 2^130 − 5, and FIPS 203 modulo
+3329, and a program that needed all three wrote the same function three
+times. A `spec` may declare a **type parameter** in its brackets, beside or
+instead of sizes, listing the types it is written for, `K in {F, P, Q}`, and
+use its name wherever a type is written:
+
+```orange
+edition 2026;
+module fields {
+  type F = Mod[(1 << 255) - 19];
+  type P = Mod[(1 << 130) - 5];
+  type Q = Mod[3329];
+
+  // The modulus m: one more than the least residue of -1.
+  spec modulus[K in {F, P, Q}]() -> Int {
+    let minus_one: K = 0 - 1;
+    (minus_one as Int) + 1
+  }
+
+  // x^e for 0 <= e < 2^256, squaring x once for each bit of e.
+  spec pow[K in {F, P, Q}](x: K, e: Int) -> K {
+    let (square: K, power: K, rest: Int) =
+      for i in 0..256 with (square: K, power: K, rest: Int) = (x, 1, e) {
+        (square * square, if (rest % 2) == 1 { power * square } else { power }, rest / 2)
+      };
+    power
+  }
+
+  // Fermat's little theorem: x^(m - 2) inverts x in every field of prime order.
+  spec inverse[K in {F, P, Q}](x: K) -> K { pow(x, modulus[K]() - 2) }
+
+  spec inverts[K in {F, P, Q}]() -> Bool {
+    let x: K = 1234;
+    (x * inverse(x)) == 1
+  }
+
+  // FIPS 203 builds ML-KEM's transform on 17, a primitive 256th root of unity.
+  spec kem_root() -> Q { pow(17, 128) }
+}
+```
+
+```console
+$ orangec eval fields.or
+fields::modulus[F]: Int = 57896044618658097711785492504343953926634992332820282019728792003956564819949
+fields::modulus[P]: Int = 1361129467683753853853498429727072845819
+fields::modulus[Q]: Int = 3329
+fields::inverts[F]: Bool = true
+fields::inverts[P]: Bool = true
+fields::inverts[Q]: Bool = true
+fields::kem_root: Mod[3329] = 3328
+```
+
+`pow` stands for three functions, `pow[F]`, `pow[P]`, and `pow[Q]`, and the
+compiler checks each before anything runs, exactly as it would check it
+written out with that field, so every operator, literal, and call is checked
+in every field. A call names its instance by its types, as `modulus[K]()`, or
+lets its arguments' types choose, as `inverse(x)` does with `x: K`; where they
+do not decide, the type the call's place expects does, so `pow(17, 128)` in
+`kem_root` is `pow[Q]`, and 17^128 is −1 modulo 3329. A function that is
+wrong for one of its types is reported in that instance:
+
+```orange
+edition 2026;
+module half {
+  type Q = Mod[3329];
+
+  spec half[K in {Word[32], Q}](x: K) -> K { x >> 1 }
+}
+```
+
+```console
+$ orangec check half.or
+error[ORC0215]: `>>` is not defined for `Mod[3329]`
+ --> half.or:5:48
+  |
+5 | ... half[K in {Word[32], Q}](x: K) -> K { x >> 1 }
+  |                                             ^^ `Mod[3329]` is required here
+  = note: shifts and rotations apply only to `Word[n]` values
+  = note: in the instance `half[Q]`, the first of `half` in error: a function is checked once for each type of its type parameters
+```
+
+FIPS 180-4 defines Ch, Maj, and the round of SHA-256 and SHA-512 by the same
+formulas on words of 32 and of 64 bits. One module writes them once for both,
+and each hash's compression function calls them without brackets, on its own
+words:
+
+```orange
+// Sections 4.1.2 and 4.1.3: the same Ch and Maj on words of either width.
+spec ch[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (~x & z) }
+spec maj[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (x & z) ^ (y & z) }
+
+// Step 3 of sections 6.2.2 and 6.4.2: one round on the working variables,
+// given the round's two Sigma values and its constant plus schedule word.
+spec round[W in {Word[32], Word[64]}](
+  v: (W, W, W, W, W, W, W, W),
+  sigma0: W,
+  sigma1: W,
+  kw: W,
+) -> (W, W, W, W, W, W, W, W) {
+  let (a: W, b: W, c: W, d: W, e: W, f: W, g: W, h: W) = v;
+  let t1: W = h + sigma1 + ch(e, f, g) + kw;
+  let t2: W = sigma0 + maj(a, b, c);
+  (t1 + t2, a, b, c, d + t1, e, f, g)
+}
+```
+
+```text
+sha2::sha512_abc: Word[8]^64 = [0xdd, 0xaf, 0x35, 0xa1, 0x93, 0x61, 0x7a, 0xba, 0xcc, 0x41, 0x73, 0x49, 0xae, 0x20, 0x41, 0x31, 0x12, 0xe6, 0xfa, 0x4e, 0x89, 0xa9, 0x7e, 0xa2, 0x0a, 0x9e, 0xee, 0xe6, 0x4b, 0x55, 0xd3, 0x9a, 0x21, 0x92, 0x99, 0x2a, 0x27, 0x4f, 0xc1, 0xa8, 0x36, 0xba, 0x3c, 0x23, 0xa3, 0xfe, 0xeb, 0xbd, 0x45, 0x4d, 0x44, 0x23, 0x64, 0x3c, 0xe8, 0x0e, 0x2a, 0x9a, 0xc9, 0x4f, 0xa5, 0x4c, 0xa4, 0x9f]
+```
+
+Nothing is generic at run time: a type parameter is a type, different in each
+instance, and the list says in the source which types a function was checked
+for. A listed type is the same for every instance, so its lengths are written
+without sizes, and a function has at most four parameters in brackets and
+256 instances, sizes and types together. The
+[field fixture](compiler/fixtures/s3o/valid-fields.or) writes its arithmetic
+once for five prime fields, those above and the order of the Curve25519
+subgroup and ML-DSA's modulus 8380417, and reproduces the square root of −1
+that RFC 8032 decodes points with and the roots of unity of FIPS 203 and FIPS
+204; the [SHA-2 fixture](compiler/fixtures/s3o/valid-sha2.or) reproduces FIPS
+180-4's digests of "abc" and of the two-block messages for SHA-256 and
+SHA-512. This slice, S3o, is implemented and tested; its specification is in
+review as
+[OEP-0018](docs/governance/oeps/OEP-0018-orange-2026-type-parameters.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -802,8 +933,9 @@ cryptography.
 | Byte strings `"..."` and `hex"..."`, `++` joins, and slices at bounds proved in range | Working; specification in review ([OEP-0015](docs/governance/oeps/OEP-0015-orange-2026-bytes.md)) |
 | Size parameters: one `spec` for every length in a range, each instance checked before anything runs | Working; specification in review ([OEP-0016](docs/governance/oeps/OEP-0016-orange-2026-sizes.md)) |
 | Byte orders: `as big` and `as little` read words as words of another width, a number, or a residue, and write numbers as words | Working; specification in review ([OEP-0017](docs/governance/oeps/OEP-0017-orange-2026-byte-order.md)) |
+| Type parameters: one `spec` for a list of types, such as several fields or word widths, each instance checked before anything runs | Working; specification in review ([OEP-0018](docs/governance/oeps/OEP-0018-orange-2026-type-parameters.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
-| Functions generic over a modulus, sizes checked once for all values, imports of names into scope | Not yet |
+| Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
 | Proof checking, claim reports, evidence bundles | Proposed; decisions open (D-005, D-006, D-007); not built |
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
@@ -884,7 +1016,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, and byte orders in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, and type parameters in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -911,9 +1043,10 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [programs of more than one module](docs/MODULES_2026.md),
   [integers modulo a constant](docs/MODULAR_2026.md),
   [blocks](docs/BLOCKS_2026.md), [tuples](docs/TUPLES_2026.md),
-  [bytes](docs/BYTES_2026.md), [sizes](docs/SIZES_2026.md), and
-  [byte order](docs/ORDER_2026.md): the definition of what the compiler
-  accepts today.
+  [bytes](docs/BYTES_2026.md), [sizes](docs/SIZES_2026.md),
+  [byte order](docs/ORDER_2026.md), and
+  [type parameters](docs/TYPE_PARAMETERS_2026.md): the definition of what the
+  compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

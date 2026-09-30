@@ -103,6 +103,15 @@ unresolved.
 > residue, and write a number as words, first word most significant or least.
 > It adds no token and no reserved word: `big` and `little` are names except
 > directly after `as` and before a type.
+>
+> The S3o slice proposed in
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md) under OEP-0018, also in
+> review, builds on S3n with type parameters: a `spec` may list the types it is
+> written for, as `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, and stands for
+> one function for each, each checked as if written out; a call names its
+> instance by its types, `pow[F](x, e)`, or lets its arguments' types and its
+> place choose. It adds no token and no reserved word: braces after a size
+> parameter's `in` hold a list of types.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

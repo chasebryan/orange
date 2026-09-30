@@ -32,8 +32,11 @@ meaning. It accepts no D-004 candidate.
 > proposed under OEP-0016, lets a loop's bounds be sizes, as `for b in
 > 0..blocks`, and [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017,
 > lets a step read a block of a message as words in one conversion, as `m[16 *
-> j..16 * j + 16] as little Word[64]^2`. Every source this document accepts
-> keeps its meaning under all four.
+> j..16 * j + 16] as little Word[64]^2`.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, lets a step's and a branch's bindings have a function's type
+> parameter as their type. Every source this document accepts keeps its
+> meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

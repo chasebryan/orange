@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3n proposed under OEP-0005 through OEP-0017, in owner review
+S3o proposed under OEP-0005 through OEP-0018, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -72,8 +72,15 @@ review under OEP-0017, adds byte orders: `x as big T` and `x as little T` read
 a word or an array of words as the words of another width with the same
 number of bits, as an `Int`, or as a `Mod[m]`, and write an `Int` or a residue
 as words, the first word most significant for `big` and least significant for
-`little`, so that `block as big Word[32]^16` gives SHA-256's message words. All
-fourteen lower to a noncanonical Typed Reference Core and are
+`little`, so that `block as big Word[32]^16` gives SHA-256's message words. The
+S3o slice, proposed in
+[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md) and in owner
+review under OEP-0018, adds type parameters: a `spec` may list the types it is
+written for, `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, and stands for one
+instance for each listed type, each checked as the function written out with
+that type; and a call names its instance by its types, `pow[F](x, e)`, or by
+its arguments' types and, where they do not decide, the type its place
+expects. All fifteen lower to a noncanonical Typed Reference Core and are
 reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
@@ -205,7 +212,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3n are implemented and await owner review under OEP-0005 through OEP-0017, both
+S3o are implemented and await owner review under OEP-0005 through OEP-0018, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -685,7 +692,8 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 size_params     = "[" size_param ("," size_param)* "]" ;
-size_param      = IDENTIFIER "in" INTEGER ".." INTEGER ;
+size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
+type_list       = "{" declared_type ("," declared_type)* "}" ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
 binding         = "let" pattern "=" expression ";" ;
@@ -741,9 +749,9 @@ conversion, a loop, a size parameter, an update, a conditional, or, at the
 head of a module, a `use` or `type` declaration begins, and `Mod` takes a
 modulus only when a
 bracket follows it. `hex` begins a hex string only when a quote follows it
-directly, and a name followed by brackets is a sized call only when the
-brackets hold integers, names, `+`, `-`, `*`, `/`, `%`, commas, and
-parentheses and `(` follows them. `big` and `little` are byte orders only
+directly, and a name followed by brackets is a call with sizes or types only
+when the brackets hold integers, names, a name's `[n]`, `+`, `-`, `*`, `/`,
+`%`, `^`, commas, and parentheses and `(` follows them. `big` and `little` are byte orders only
 directly after `as` and before `(` or a name other than `as` and `with`, and
 only after one may a conversion's type have a length. `true` and `false` are the `Bool` values only
 where no parameter, binding, or loop name of that spelling is in scope. For
@@ -784,6 +792,9 @@ module demo {
   spec six() -> Int { total([1, 2, 3]) }
   spec text() -> Word[32] { "abcd" as big Word[32] }
   spec bytes() -> Word[8]^4 { let w: Word[32] = 0x01020304; w as little Word[8]^4 }
+  spec double[K in {Word[8], Z7}](x: K) -> K { x + x }
+  spec doubled() -> (Word[8], Z7) { (double(200), double[Z7](5)) }
+  spec one[K in {Int, Z7}]() -> K { 1 }
 }
 ```
 
@@ -798,6 +809,7 @@ immediately before an integer token is that literal's sign, so the S3a body
 The parser accepts generic type syntax so unsupported forms receive semantic
 diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
 `Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations,
+in a function with type parameters their names,
 arrays `T^n` of them with n from 1 through 256, and tuples `(T, U, ...)` of two
 through 16 of those types and arrays, none of them a tuple, and checks
 every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
@@ -833,13 +845,20 @@ steps and branches around it, each name of a tuple pattern among them; Orange
 has no shadowing, so none of these may repeat a name in scope. Calls name typed `spec` functions of the same module, or, as
 `m::f(...)`, of a module it uses, and each module's call graph must be
 acyclic, as must the uses of a program. A `spec` with size parameters
-`[n in a..b, ...]`, at most four with a < b ≤ 65536 and at most 256
-instances in all, is checked once for each value of its sizes, as the
-function written out with that value; a size, built from integer literals and
+`[n in a..b, ...]`, each with a < b ≤ 65536, is checked once for each value
+of its sizes, as the function written out with that value; a size, built from integer literals and
 size parameters with `+`, `-`, `*`, `/`, `%`, and parentheses, writes an array
 length, a fill length, or a loop bound, and a size parameter's name is an
 `Int` constant. A call `f[2](x)` names its instance by its sizes, and `f(x)`
 names the one instance whose array parameters have its arguments' lengths.
+A type parameter `[K in {T, U, ...}]` lists distinct types, each resolved
+once and written without sizes; its name is a type in the function's
+signature and body, not a value, and the function is checked once for each of
+its types. A function has at most four size and type parameters and 256
+instances in all, one for each combination of its sizes' values and types.
+A call `f[T](x)` names its instance by its types as well as its sizes, and
+`f(x)` names the one instance whose parameters have its arguments' types,
+and among several, the one whose result has the type its place expects.
 A loop runs over bounds that are literals or sizes with
 0 ≤ a < b ≤ 65536, and every index is proved in range before evaluation: an
 expression of literals, sizes, and loop indices by its values, and an index
@@ -861,8 +880,8 @@ reported type is derived from its value, so a type/value mismatch is not
 representable at the public Core boundary.
 
 `orangec eval` prints every typed specification without parameters of the
-root module in source order, every instance of a sized one in order and named
-by its sizes; the functions of the modules it uses run only
+root module in source order, every instance of one with sizes or types in
+order and named by them; the functions of the modules it uses run only
 when called. Functions with parameters are checked but run only when called,
 and words print as fixed-width lowercase hexadecimal:
 
@@ -884,11 +903,14 @@ demo::zeros[2]: Word[8]^2 = [0x00, 0x00]
 demo::six: Int = 6
 demo::text: Word[32] = 0x61626364
 demo::bytes: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
+demo::doubled: (Word[8], Mod[7]) = (0x90, 3)
+demo::one[Int]: Int = 1
+demo::one[Z7]: Mod[7] = 1
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3n rules, limits, and non-claims are in
+through S3o rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -900,8 +922,10 @@ through S3n rules, limits, and non-claims are in
 [`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md),
 [`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md),
 [`docs/BYTES_2026.md`](../docs/BYTES_2026.md),
-[`docs/SIZES_2026.md`](../docs/SIZES_2026.md), and
-[`docs/ORDER_2026.md`](../docs/ORDER_2026.md). None of them defines
+[`docs/SIZES_2026.md`](../docs/SIZES_2026.md),
+[`docs/ORDER_2026.md`](../docs/ORDER_2026.md), and
+[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md). None of
+them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1388,6 +1412,40 @@ element more than an array may. This corpus establishes the tested behavior of
 one implementation; it does not accept OEP-0017, prove the rules sound, or
 complete S3.
 
+## S3o type parameter conformance
+
+`fixtures/s3o/` contains an exact five-program corpus for the proposed S3o
+behavior, of which three must evaluate successfully and two must fail closed.
+The accepted programs write exponentiation, Fermat inversion, and Euler's
+criterion once for five prime fields, the field and subgroup order of
+Curve25519, the field of Poly1305, and the moduli of ML-KEM and ML-DSA,
+reproducing each modulus, RFC 8032's square root of −1, and the primitive
+roots of unity of FIPS 203 and FIPS 204; write Ch, Maj, the round, and the
+final addition of SHA-256 and SHA-512 once for words of both widths,
+reproducing FIPS 180-4's digests of "abc" and of its two-block messages; and
+exercise one body for `Int`, a word, and a residue, conversions to a type
+parameter, arrays, tuples, and loops of it, `Bool`, array, and tuple types in
+a list, sizes beside types, typed roots evaluated once for each instance, and
+calls named by their types or fitted by their arguments and their place. The
+rejected programs cover a type listed twice, a type parameter named like a
+built-in type, a declared type, or another parameter, a size inside a listed
+type, unknown and malformed listed types, too many instances, a type
+parameter's name as a value, an instance in error named in a note, an
+unlisted type entry, a value as a type entry, too many entries, a call whose
+type nothing decides, a call that fits no instance, and a call fitted to the
+wrong result; and an empty list, a trailing comma, a missing comma, an
+unclosed list, and a fifth parameter in brackets.
+
+`crates/orangec/tests/s3o_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3n runner. It parses the 10-rule S3o index in
+`docs/TYPE_PARAMETERS_2026.md`, binds every rule to named CLI, generated-CLI,
+or unit tests declared exactly once at their harness locations, and generates
+a program whose one function lists 64 residue types beside a size of four
+values, evaluating all 256 instances, and one whose list adds `Int` for 260
+instances and an error. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0018, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1435,6 +1493,8 @@ complete S3.
   rule-index, and instance-limit runner;
 - `crates/orangec/tests/s3n_conformance.rs`: exact repeatable S3n corpus,
   rule-index, and width runner;
+- `crates/orangec/tests/s3o_conformance.rs`: exact repeatable S3o corpus,
+  rule-index, and instance-limit runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1452,6 +1512,7 @@ complete S3.
 - `fixtures/s3l/`: exact three-positive/three-negative S3l CLI fixture corpus;
 - `fixtures/s3m/`: exact four-positive/two-negative S3m CLI fixture corpus;
 - `fixtures/s3n/`: exact six-positive/two-negative S3n CLI fixture corpus;
+- `fixtures/s3o/`: exact three-positive/two-negative S3o CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

@@ -47,7 +47,11 @@ language meaning. It accepts no D-004 candidate.
 > and bindings, and [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017,
 > lets a conversion name a byte order, `x as big T` or `x as little T`, and then
 > convert words to words of another width, to `Int`, or to `Mod[m]`, and back.
-> Every source this document accepts keeps its meaning under all eleven.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, lets a binding's type and a conversion's target be a function's
+> type parameter, as `let x: K = 3;` and `n as K`, a different type in each
+> instance; a binding may share a type parameter's name, which names no value.
+> Every source this document accepts keeps its meaning under all twelve.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

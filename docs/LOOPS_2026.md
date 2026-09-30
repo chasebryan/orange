@@ -41,8 +41,11 @@ meaning. It accepts no D-004 candidate.
 > proposed under OEP-0016, lets a loop's bounds be sizes, as `for b in
 > 0..blocks`, fixed in each instance of a sized function, and
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, reads a block of
-> words in one conversion where a loop read them a byte at a time. Every source
-> this document accepts keeps its meaning under all nine.
+> words in one conversion where a loop read them a byte at a time, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
+> OEP-0018, lets a loop's accumulators have a function's type parameter as
+> their type, as `with sum: K = 0`. Every source this document accepts keeps
+> its meaning under all ten.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

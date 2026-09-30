@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.16
+Manuscript version: 0.17
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -111,9 +111,11 @@ ChaCha20's quarter round gives its four words at once, the S3l slice
 writes bytes as the standards print them, so that RFC 4231's key is "Jefe"
 and SHA-256's padding is joined with `++`, the S3m slice lets one `spec`
 stand for every length in a range, so that SHA-256 is written once for every
-message from 1 through 119 bytes, and the S3n slice reads and writes words in
+message from 1 through 119 bytes, the S3n slice reads and writes words in
 the byte order a standard names, so that SHA-256 reads a block as sixteen
-big-endian words in one conversion. None of them
+big-endian words in one conversion, and the S3o slice lets one `spec` stand
+for a list of types, so that exponentiation is written once for five prime
+fields and SHA-256 and SHA-512 share one round. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -325,9 +327,12 @@ gives several values and a loop carries several accumulators, the S3l
 slice, also in review, adds byte strings, joins, and slices, so that a
 program writes bytes as the standards print them, the S3m slice, also in
 review, adds size parameters, so that one function stands for every length
-in a range and is checked for each, and the S3n slice, also in review, adds
+in a range and is checked for each, the S3n slice, also in review, adds
 byte orders, so that words are read from bytes, and written back, in one
-conversion in the order a standard names.
+conversion in the order a standard names, and the S3o slice, also in review,
+adds type parameters, so that one function stands for a list of types, such
+as several prime fields or both of SHA-2's word widths, and is checked for
+each.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -837,7 +842,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, and byte-order slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, and type-parameter slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -1083,7 +1088,9 @@ run, the last two with their bounds as `Int` operands. Each instance of a
 sized function is one Core function that records its sizes, and a size's
 name in an expression is an `Int` literal, so sizes add no node at all. A
 conversion in a byte order is one node that records its operand's type and
-its order.
+its order. Each instance of a function with type parameters is likewise one
+Core function that records its types, each as its position in its list, and
+every type in its body is concrete, so type parameters add no node either.
 
 The Core is bounded in the same spirit as the lexer and parser: at most
 262,144 Core nodes, 1,048,576 semantic events, and 100 ordinary semantic
@@ -1137,7 +1144,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The fourteen current slices complete bounded parts of the roadmap's S3 stage:
+The fifteen current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1149,9 +1156,12 @@ a loop's step and a branch, then tuples, so that a loop carries several
 values, then byte strings, joins, and slices at bounds proved in range,
 then size parameters, so that one function serves every length in a range
 and is checked once for each, then byte orders, so that words are read from
-bytes and written back in the order a standard names.
+bytes and written back in the order a standard names, then type parameters,
+so that one function serves a list of fields or word widths and is checked
+once for each.
 The rest of S3 adds the remaining substance of a language: records with named
-fields, functions generic over moduli, and explicit failure
+fields, functions generic over any modulus rather than a listed few, and
+explicit failure
 semantics,
 together with one conformance case per normative rule. Each addition follows the same
 pattern as the slices before it: a normative rule, a diagnostic for
@@ -1702,9 +1712,10 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [blocks specification](BLOCKS_2026.md) of S3j, the
 [tuples specification](TUPLES_2026.md) of S3k, the
 [bytes specification](BYTES_2026.md) of S3l, the
-[sizes specification](SIZES_2026.md) of S3m, and the
-[byte order specification](ORDER_2026.md) of S3n. S3b through S3n
-are implemented and tested, but their specifications are **proposed**:
+[sizes specification](SIZES_2026.md) of S3m, the
+[byte order specification](ORDER_2026.md) of S3n, and the
+[type parameters specification](TYPE_PARAMETERS_2026.md) of S3o. S3b through
+S3o are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1716,8 +1727,9 @@ are implemented and tested, but their specifications are **proposed**:
 [OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md),
 [OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md),
 [OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md),
-[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), and
-[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md) are in
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md),
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), and
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1803,8 +1815,8 @@ The expression slice gives grammatical roles to `,`, `:`, `+`, `-`, `*`, `&`,
 condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
 `!`, `/`, and `%`, which the lexer has always produced. The byte slice gives
 strings their role, as byte strings, and adds two tokens, `++` and the hex
-string `hex"..."`, whose `hex` touches its opening quote. The size and
-byte-order slices add no token. The remaining punctuation is lexically reserved but has no
+string `hex"..."`, whose `hex` touches its opening quote. The size,
+byte-order, and type-parameter slices add no token. The remaining punctuation is lexically reserved but has no
 grammatical role yet.
 `orangec lex` shows how any source
 tokenizes, with exact byte spans.
@@ -1823,7 +1835,8 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 size_params     = "[" size_param ("," size_param)* "]" ;
-size_param      = IDENTIFIER "in" INTEGER ".." INTEGER ;
+size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
+type_list       = "{" declared_type ("," declared_type)* "}" ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
 binding         = "let" pattern "=" expression ";" ;
@@ -1878,7 +1891,8 @@ must spell `2026` exactly. `let`, `as`, `for`, `in`, and `with` are contextual
 words: `let` starts a binding only at the start of a body, step, or branch
 item and before a name or a tuple pattern, `as` converts only directly after a complete operand, `for` starts a loop
 only before a name, `in` and `with` are words only inside a loop's header,
-`in` also between a size's name and its bounds, and `with` updates only
+`in` also between a size's or a type parameter's name and its bounds or
+list, and `with` updates only
 directly after a complete operand and before `[`. In the
 same way, `if` starts a conditional only where a condition can follow it,
 `else` is a word only after a conditional's value, `use` and `type` start
@@ -1893,10 +1907,11 @@ they gained a role. After a declared type, `^` and a length make it an array
 type; everywhere else `^` is exclusive or. One source holds one module, and a
 program joins several sources through their `use` declarations. A name
 qualified by its module, as in `sha256::initial()`, is always called. A
-name followed by square brackets and then `(` is a sized call when the
-brackets hold only integers, names, `+`, `-`, `*`, `/`, `%`, commas, and
-parentheses, as in `sha256[2](m)`; any other brackets are an index or a
-slice, as before. A typed `impl` is a syntax error, not a feature waiting to be switched
+name followed by square brackets and then `(` is a call with sizes or types
+when the brackets hold only integers, names, a name's `[n]`, `+`, `-`, `*`,
+`/`, `%`, `^`, commas, and parentheses, as in `sha256[2](m)` or
+`ch[Word[32]](e, f, g)`; any other brackets are an index or a slice, as
+before. A typed `impl` is a syntax error, not a feature waiting to be switched
 on, and a `spec` with parameters must declare a result type and a body. A `-`
 written directly before an integer is that literal's sign, so the S3a body
 `{ -42 }` is still one literal and means what it always meant.
@@ -3639,7 +3654,296 @@ order within a word, as some hash functions and ciphers number their bits,
 is not defined, and a word has no byte order of its own: a word is a number,
 and only a sequence of words spells a number in an order. The roadmap lists
 moduli written with parameters, positions given as parameters, and slices
-and words at positions computed from data next.
+and words at positions computed from data next. The next section closes a
+seam that S3m named another way: through S3n, one function could not serve
+several fields, or words of several widths, and was written again for each.
+
+### One function for several types
+
+Cryptography computes the same way in many types. Square-and-multiply raises
+an element to a power in any field, Fermat's little theorem inverts in any
+field of prime order, and Euler's criterion tells squares from nonsquares in
+any of them. RFC 7748 computes modulo 2^255 − 19, RFC 8032 also modulo the
+order of the Curve25519 subgroup, RFC 8439 modulo 2^130 − 5, and FIPS 203 and
+FIPS 204 modulo 3329 and 8380417. FIPS 180-4 defines Ch, Maj, and the round
+of SHA-256 and SHA-512 by the same formulas, once on 32-bit words and once on
+64-bit ones. Through S3n, each had to be written once for each type, word for
+word the same, and a reader compared the copies by eye.
+
+The S3o slice, proposed in the
+[type parameters specification](TYPE_PARAMETERS_2026.md), writes each once.
+Beside its sizes, or instead of them, a `spec` may declare a **type
+parameter**, a name and the list of types the function is written for, and
+write that name wherever a type is written:
+
+```orange
+type P = Mod[65521];
+
+spec seven[K in {Int, Word[16], P}]() -> K {
+  let x: K = 3;
+  x + 4
+}
+spec minus_one[K in {Word[16], P}]() -> K {
+  let n: Int = -1;
+  n as K
+}
+spec square[K in {Word[16], P}](x: K) -> K { x * x }
+spec squares() -> (Word[16], P) { (square[Word[16]](300), square[P](300)) }
+```
+
+```text
+kinds::seven[Int]: Int = 7
+kinds::seven[Word[16]]: Word[16] = 0x0007
+kinds::seven[P]: Mod[65521] = 7
+kinds::minus_one[Word[16]]: Word[16] = 0xffff
+kinds::minus_one[P]: Mod[65521] = 65520
+kinds::squares: (Word[16], Mod[65521]) = (0x5f90, 24479)
+```
+
+`seven` stands for three functions, `seven[Int]`, `seven[Word[16]]`, and
+`seven[P]`, one for each listed type, and each is an **instance**, as each
+value of a size gives one in [One algorithm for every length](#one-algorithm-for-every-length):
+the function with `K` replaced by its type. The compiler checks every
+instance before anything runs, exactly as it would check the function
+written out with that type, so `let x: K = 3` is checked as an `Int`, as a
+word, and as a residue, and `n as K` is the conversion to a word in one
+instance and to a residue in the other. The same −1 is `0xffff`, sixteen bits
+of ones, and 65520, the least residue of −1 modulo 65521, and the same
+square of 300 is 90000 modulo 2^16 in one instance and modulo 65521 in the
+other. `orangec eval` evaluates every instance of a `spec` without value
+parameters and names it by its types, as a call names it.
+
+Nothing is generic at run time. A type parameter is not a type variable that
+the checker reasons about for all types; it is a type, different in each
+instance, and the list is finite and written in the source, so the source
+says which types a function was checked for. That is exactly what a size
+already is, and the two mix: a function has at most four parameters in
+brackets, sizes and types together, and one instance for each combination of
+their values, the first parameter changing slowest, at most 256 in all.
+
+A call names its instance in brackets, as `square[P](300)`, with one entry
+for each of the callee's parameters in brackets: `Int`, `Bool`, a word, an
+array of them, a `type` declaration's name, or a type parameter of the
+caller. Without brackets, its arguments choose: the instance whose
+parameters have the arguments' types. Where they do not decide, because an
+argument is a literal that fits several types, the type the call's place
+expects does:
+
+```orange
+spec zero[K in {Int, Word[16], P}]() -> K { 0 }
+spec total[K in {Int, Word[16], P}, n in 1..4](xs: K^n) -> K {
+  for i in 0..n with sum: K = 0 { sum + xs[i] }
+}
+spec chosen() -> (Word[16], P, Int) {
+  let w: Word[16] = 40000;
+  let r: P = 40000;
+  (square(w), total([r, r, r]), total([1, 2, 3]) + zero())
+}
+```
+
+```text
+fit::chosen: (Word[16], Mod[65521], Int) = (0x1000, 54479, 6)
+```
+
+`square(w)` is `square[Word[16]]`, since `w` is a word. `total([r, r, r])`
+is `total[P, 3]`: its argument's elements are residues and there are three
+of them, so one call chooses a type and a size at once. `total([1, 2, 3])`
+has an argument whose elements are literals, which could be any of the three
+types, and so could `zero()`, which has no argument at all; each sits where
+an `Int` is expected, and each is its `Int` instance.
+
+That is enough for the fields. The
+[field fixture](../compiler/fixtures/s3o/valid-fields.or) writes
+exponentiation, inversion, and Euler's criterion once, for the five prime
+fields of Curve25519, its subgroup, Poly1305, ML-KEM, and ML-DSA:
+
+```orange
+type F = Mod[(1 << 255) - 19];
+type L = Mod[(1 << 252) + 27742317777372353535851937790883648493];
+type P = Mod[(1 << 130) - 5];
+type Q = Mod[3329];
+type D = Mod[8380417];
+
+// x^e for 0 <= e < 2^256, squaring x once for each bit of e and
+// multiplying the bits that are set into the power.
+spec pow[K in {F, L, P, Q, D}](x: K, e: Int) -> K {
+  let (square: K, power: K, rest: Int) =
+    for i in 0..256 with (square: K, power: K, rest: Int) = (x, 1, e) {
+      (square * square, if (rest % 2) == 1 { power * square } else { power }, rest / 2)
+    };
+  power
+}
+
+// Fermat's little theorem: in a field of prime order m, x^(m - 2) is the
+// inverse of x, for x not 0.
+spec inverse[K in {F, L, P, Q, D}](x: K) -> K { pow(x, modulus[K]() - 2) }
+
+// Euler's criterion: 1 for a nonzero square, -1 for a nonsquare, 0 for 0.
+spec legendre[K in {F, L, P, Q, D}](x: K) -> Int {
+  let t: K = pow(x, (modulus[K]() - 1) / 2);
+  if t == 0 { 0 } else if t == 1 { 1 } else { -1 }
+}
+
+// RFC 8032 section 5.1.3 takes square roots in F with 2^((m - 1) / 4),
+// a square root of -1.
+spec sqrt_minus_one() -> F { pow(2, (modulus[F]() - 1) / 4) }
+
+// ML-KEM's number-theoretic transform is built on 17, a primitive 256th
+// root of unity modulo 3329, and ML-DSA's on 1753, a primitive 512th root
+// of unity modulo 8380417: 17^128 and 1753^256 are both -1.
+spec kem_root() -> Q { pow(17, 128) }
+
+spec dsa_root() -> D { pow(1753, 256) }
+```
+
+```text
+fields::two_is_square[F]: Int = -1
+fields::two_is_square[L]: Int = -1
+fields::two_is_square[P]: Int = -1
+fields::two_is_square[Q]: Int = 1
+fields::two_is_square[D]: Int = 1
+fields::sqrt_minus_one: Mod[(1 << 255) - 19] = 19681161376707505956807079304988542015446066515923890162744021073123829784752
+fields::squares_to_minus_one: Bool = true
+fields::kem_root: Mod[3329] = 3328
+fields::dsa_root: Mod[8380417] = 8380416
+```
+
+Inside `inverse`, `modulus[K]()` passes the caller's own type parameter on,
+so each instance of `inverse` calls the instance of `modulus` for its own
+field, and `pow(x, ...)` takes the instance of `pow` that `x`'s type chooses.
+In `sqrt_minus_one`, `pow(2, ...)` has only literals for arguments, and the
+result `F` chooses. The five instances of `two_is_square`, a call of
+`legendre` on 2, give −1 where the modulus is 3 or 5 modulo 8 and 1 where it
+is 1 modulo 8, as the second supplement to quadratic reciprocity says, and
+the constant RFC 8032 takes square roots with squares to −1. 17^128 is 3328
+and 1753^256 is 8380416, both −1: 17 and 1753 are the roots of unity FIPS
+203 and FIPS 204 build their transforms on, and −1 shows that each has
+exactly the order its standard names, since a root of smaller order would
+divide 128 or 256 and give 1.
+
+SHA-256 and SHA-512 share their round. The
+[SHA-2 fixture](../compiler/fixtures/s3o/valid-sha2.or) writes Ch, Maj, the
+round that updates the eight working variables, and their addition to the
+hash value once, over `W in {Word[32], Word[64]}`, and each compression
+function calls them without brackets, on its own words:
+
+```orange
+// Sections 4.1.2 and 4.1.3: the same Ch and Maj on words of either width.
+spec ch[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (~x & z) }
+spec maj[W in {Word[32], Word[64]}](x: W, y: W, z: W) -> W { (x & y) ^ (x & z) ^ (y & z) }
+
+// Step 3 of sections 6.2.2 and 6.4.2: one round on the working variables,
+// given the round's two Sigma values and its constant plus schedule word.
+spec round[W in {Word[32], Word[64]}](
+  v: (W, W, W, W, W, W, W, W),
+  sigma0: W,
+  sigma1: W,
+  kw: W,
+) -> (W, W, W, W, W, W, W, W) {
+  let (a: W, b: W, c: W, d: W, e: W, f: W, g: W, h: W) = v;
+  let t1: W = h + sigma1 + ch(e, f, g) + kw;
+  let t2: W = sigma0 + maj(a, b, c);
+  (t1 + t2, a, b, c, d + t1, e, f, g)
+}
+```
+
+```orange
+round(v, big_sigma0_256(v.0), big_sigma1_256(v.4), k[t] + w[t])
+```
+
+```orange
+round(v, big_sigma0_512(v.0), big_sigma1_512(v.4), k[t] + w[t])
+```
+
+The rotations, the schedules, the constants, and the padding differ, and
+each hash keeps its own; what the standard writes once, the fixture writes
+once. Both reproduce FIPS 180-4's digests of "abc" and of the messages whose
+padding takes a second block:
+
+```text
+sha2::sha256_abc: Word[8]^32 = [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad]
+sha2::sha512_abc: Word[8]^64 = [0xdd, 0xaf, 0x35, 0xa1, 0x93, 0x61, 0x7a, 0xba, 0xcc, 0x41, 0x73, 0x49, 0xae, 0x20, 0x41, 0x31, 0x12, 0xe6, 0xfa, 0x4e, 0x89, 0xa9, 0x7e, 0xa2, 0x0a, 0x9e, 0xee, 0xe6, 0x4b, 0x55, 0xd3, 0x9a, 0x21, 0x92, 0x99, 0x2a, 0x27, 0x4f, 0xc1, 0xa8, 0x36, 0xba, 0x3c, 0x23, 0xa3, 0xfe, 0xeb, 0xbd, 0x45, 0x4d, 0x44, 0x23, 0x64, 0x3c, 0xe8, 0x0e, 0x2a, 0x9a, 0xc9, 0x4f, 0xa5, 0x4c, 0xa4, 0x9f]
+```
+
+An instance in error is reported by its name, the first of its function, as
+for sizes, and a call that its arguments and place cannot place is an error
+that says what it was given:
+
+```orange
+edition 2026;
+module errors {
+  type Q = Mod[3329];
+  spec twice[K in {Q, Mod[3329]}](x: K) -> K { x + x }
+  spec double[K in {Word[32], Q}](x: K) -> K { x + x }
+  spec unfit(x: Int) -> Int { double(x) }
+  spec unclear() -> Int { double(3) as Int }
+}
+```
+
+```text
+error[ORC0241]: `K` lists the type `Mod[3329]` twice
+ --> <stdin>:4:23
+  |
+4 |   spec twice[K in {Q, Mod[3329]}](x: K) -> K { x + x }
+  |                       ^^^^^^^^^ this is the same type as an earlier one
+ ::: <stdin>:4:20
+  |
+4 |   spec twice[K in {Q, Mod[3329]}](x: K) -> K { x + x }
+  |                    - first listed here
+  = note: a type parameter lists each type once, so that each instance has a type of its own
+```
+
+```text
+error[ORC0241]: no instance of `double` takes arguments of these types
+ --> <stdin>:6:31
+  |
+6 |   spec unfit(x: Int) -> Int { double(x) }
+  |                               ^^^^^^^^^ an argument of type `Int` is given
+  = note: `double` is defined for `K` in {Word[32], Q}
+  = note: a call that writes no brackets calls the one instance of its function whose parameters have its arguments' types, and among several, the one whose result has the type its place expects; any other call writes its types in brackets, as in `pow[F](x, e)`
+```
+
+```text
+error[ORC0239]: this call fits more than one instance of `double`, among them `double[Word[32]]` and `double[Q]`
+ --> <stdin>:7:27
+  |
+7 |   spec unclear() -> Int { double(3) as Int }
+  |                           ^^^^^^^^^ write the types in brackets
+  = note: a call that writes no brackets calls the one instance of its function whose parameters have its arguments' types, and among several, the one whose result has the type its place expects; any other call writes its types in brackets, as in `pow[F](x, e)`
+```
+
+`Q` and `Mod[3329]` are one type under two spellings, and a list names each
+type once, so that no two instances are the same function. `Int` is not
+among `double`'s types, and the error lists the ones that are. In
+`unclear`, the literal 3 fits a word and a residue, and `as Int` expects no
+type of its operand, so nothing chooses, and the error says to write the
+types in brackets. The listed types are resolved once, before any size has a
+value, so their lengths are written without sizes; a type parameter's name
+is no built-in type's, no declared type's, and no other bracket parameter's;
+and it names a type, not a value, so `K` in an expression names no value,
+while a parameter or a binding may share its spelling.
+
+Types cost nothing when a program runs: each instance is one Core function,
+as for sizes, that records its parameters' values, a type as its position in
+its list, and its name, and every type in its body is concrete. Checking
+pays, as it does for sizes: every instance is checked in full, within the
+same per-source budgets. Finding the instance of a call reads each of its
+arguments once, so calls nested in each other's arguments cost work in
+proportion to their depth. The same change removed a cost that S3m had left:
+a sized call whose argument was a conditional read each branch twice, so each
+level of nesting doubled the work of checking: 31 levels took more than a
+minute, and each level more doubled it. Every source S3n accepted has the same Core,
+values, and output under S3o, since no source it accepted wrote braces after
+a size's `in`.
+
+That leaves seams. A list is written in each function, so several functions
+over the same fields repeat it, and nothing yet names a list once. A `type`
+declaration takes no type parameter, so a field element cannot carry its
+modulus's name, and a residue type is written in a call's brackets only
+through a declaration's name. Nothing is known of all types at once, only of
+each listed one, and no bound or class of types exists. The roadmap lists
+positions given as parameters and slices and words at positions computed
+from data next.
 
 ### From bytes to a value
 
@@ -3778,7 +4082,14 @@ words converted to words of a different number of bits, and it reuses
 words nor a number, `ORC0220` for an operand with no type of its own,
 `ORC0214` for a target other than the type expected, `ORC0221` for a target
 of more than 256 words, and `ORC0108` for an array type after `as` without a
-byte order.
+byte order. The type-parameter slice adds `ORC0241` for a type listed twice,
+a type entry that is not listed or not a type, and a call that fits no
+instance by its arguments' types, and it reuses `ORC0233` for a type
+parameter named like a built-in or declared type, `ORC0218` for one named
+like another parameter in brackets, `ORC0237` for a size inside a listed
+type, `ORC0238` for more than 256 instances, `ORC0239` for a wrong number of
+entries or a call that several instances fit, `ORC0211` for a type
+parameter's name used as a value, and `ORC0101` for a malformed list.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -3899,7 +4210,13 @@ their standards name, against FIPS 180-4, RFC 8439, and RFC 7748; a generated
 source converts words of every width in both orders to words of every width
 and to `Int` against a reference computed in the runner, and converts the
 widest array to an `Int` and back, and an array one element longer is no
-type. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+type. The type parameters specification adds 10 rule identifiers and five
+sources, three valid and two invalid, including exponentiation, inversion,
+and Euler's criterion written once for five prime fields and SHA-256 and
+SHA-512 sharing one round, against RFC 7748, RFC 8032, RFC 8439, FIPS 203,
+FIPS 204, and FIPS 180-4; a generated source evaluates the 256 instances of
+one function over 64 residue types and four sizes, and one type more is 260
+instances and an error. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -3912,8 +4229,10 @@ compiler.
 
 The list of absences is long, and it is printed in the specifications rather
 than hidden: imports of names into scope, module paths and packages, modules
-that take modules as parameters, attributes, visibility, type parameters,
-sizes reasoned about for all their values at once, sizes found from anything
+that take modules as parameters, attributes, visibility, type parameters of
+`type` declarations, bounds or classes of types, types and sizes reasoned
+about for all their values at once, lists of types named once for several
+functions, sizes found from anything
 but the lengths of a call's arguments, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, arrays of arrays, tuples of tuples, arrays of
 tuples, operators on whole tuples, records with named fields, indices
@@ -3922,7 +4241,7 @@ equality of whole arrays, text beyond printable ASCII, conversions of
 arrays other than words, bit orders, loops over ranges computed at run time, early exit, short-circuit
 operators, conditionals without `else`, blocks as expressions of their own,
 moduli computed at run time,
-functions generic over a modulus, sizes on `type` declarations, distinct types by declaration, extension
+moduli written with parameters, sizes on `type` declarations, distinct types by declaration, extension
 fields, signed words, variable shift and rotation amounts, recursion, typed
 implementations,
 failure values, secrecy labels, proof terms, claims, games, targets, layout,
@@ -3944,10 +4263,11 @@ builds on S3f, through OEP-0010, S3h's, which builds on S3g, through
 OEP-0011, S3i's, which builds on S3h, through OEP-0012, S3j's, which builds
 on S3i, through OEP-0013, S3k's, which builds on S3j, through OEP-0014,
 S3l's, which builds on S3k, through OEP-0015, S3m's, which builds on S3l,
-through OEP-0016, and S3n's, which builds on S3m, through OEP-0017.
+through OEP-0016, S3n's, which builds on S3m, through OEP-0017, and S3o's,
+which builds on S3n, through OEP-0018.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All thirteen migrations so far are small: every source
+documented migration. All fourteen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -3961,8 +4281,10 @@ the same under S3k, since it writes no tuple, every source S3k accepted
 does the same under S3l, since it writes no string, `++`, or range in
 brackets, every source S3l accepted does the same under S3m, since it
 declares no size parameter and writes every length and bound as an integer,
-and every source S3m accepted does the same under S3n, since `big` or
-`little` after `as` was a type's name only where S3n still reads it as one.
+every source S3m accepted does the same under S3n, since `big` or
+`little` after `as` was a type's name only where S3n still reads it as one,
+and every source S3n accepted does the same under S3o, since it wrote no
+braces after a size's `in`.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -4687,7 +5009,12 @@ read their blocks as big-endian words and write their digests as big-endian
 bytes, ChaCha20 and Poly1305 read their keys, nonces, and blocks as
 little-endian words and numbers, and X25519 decodes and encodes its
 coordinates as little-endian numbers, and all five reproduce their published
-values. These are still fixtures, not corpus entries. A message's length is
+values. The type-parameter slice let each computation be written once for
+every type it serves: exponentiation, Fermat inversion, and Euler's
+criterion once for five prime fields, which reproduce RFC 8032's square root
+of −1 and the roots of unity of FIPS 203 and FIPS 204, and Ch, Maj, and the
+round once for SHA-256 and SHA-512, which reproduce FIPS 180-4's digests.
+These are still fixtures, not corpus entries. A message's length is
 fixed in each instance rather than read when the program runs, and no
 standard has been admitted with its provenance. The corpus remains a set of research inputs
 rather than promises.
@@ -5298,7 +5625,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3n in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3o in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -5618,9 +5945,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [blocks specification](BLOCKS_2026.md), the
 [tuples specification](TUPLES_2026.md), the
 [bytes specification](BYTES_2026.md), the
-[sizes specification](SIZES_2026.md), and the
-[byte order specification](ORDER_2026.md) are proposed under
-OEP-0005 through OEP-0017 and in the owner's review. Where this summary and those
+[sizes specification](SIZES_2026.md), the
+[byte order specification](ORDER_2026.md), and the
+[type parameters specification](TYPE_PARAMETERS_2026.md) are proposed under
+OEP-0005 through OEP-0018 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -5629,9 +5957,9 @@ The parser accepts exactly this grammar, with at most two tokens of
 lookahead, except that `if` before `(`, `-`, `[`, the word `as`, or the word
 `with` followed by `[` scans forward, without backtracking, for a brace group
 followed by `else`, and a name followed by `[` scans forward, reading each
-token at most once over a whole source, for brackets that hold only integers,
-names, `+`, `-`, `*`, `/`, `%`, commas, and parentheses followed by `(`,
-which make it a sized call:
+token at most twice over a whole source, for brackets that hold only
+integers, names, a name's `[n]`, `+`, `-`, `*`, `/`, `%`, `^`, commas, and
+parentheses followed by `(`, which make it a call with sizes or types:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
@@ -5643,7 +5971,8 @@ function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
 size_params     = "[" size_param ("," size_param)* "]" ;
-size_param      = IDENTIFIER "in" INTEGER ".." INTEGER ;
+size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
+type_list       = "{" declared_type ("," declared_type)* "}" ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
 binding         = "let" pattern "=" expression ";" ;
@@ -5701,8 +6030,8 @@ between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 starts a binding only at the start of a body, step, or branch item before a
 name or a tuple pattern, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
-`with` are words only in a loop's header, `in` also between a size's name and
-its bounds, `with` updates only after a complete
+`with` are words only in a loop's header, `in` also between a size's or a
+type parameter's name and its bounds or list, `with` updates only after a complete
 operand and before `[`, `if` starts a conditional only where a condition can
 follow it, `else` is a word only after a conditional's value, `use` and `type`
 start declarations only at the head of a module before its first function,
@@ -5787,6 +6116,16 @@ parameter's name is an `Int` constant, which index and slice analysis read as
 a literal. `f[s, ...](args)` calls the instance with those sizes, and
 `f(args)` the one instance whose array parameters have the lengths of its
 arguments. Sizes cost nothing at run time.
+A type parameter `K in {T, U, ...}` lists distinct types, resolved once and
+written without sizes; its name is a type in the function's signature and
+body, never a value, and the function stands for one instance for each
+combination of its sizes' values and types, with at most four parameters in
+brackets and 256 instances. A call's entries are `Int`, `Bool`, a word, an
+array of them, a `type` declaration's name, or the caller's type parameter,
+matched by type equality; `f(args)` calls the one instance whose parameters
+have its arguments' types, literal lengths deciding only where a type does
+not, and among several, the one whose result has the type its place
+expects. Types cost nothing at run time.
 `e as big T` and `e as little T` convert words, a word or an array of words,
 to words of the same number of bits, to `Int`, or to `Mod[m]`, and an `Int`
 or a residue to words, through the number N the words spell, their first
@@ -5862,7 +6201,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0009` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget, malformed hex string |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0240` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width |
+| `ORC0201`–`ORC0241` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1015` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness |
 
@@ -5980,9 +6319,9 @@ part are listed here so a reader can move from explanation to authority.
   [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
   [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md),
   [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md),
-  [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), [size](SIZES_2026.md), and
-  [byte order](ORDER_2026.md) specifications under OEP-0005 through OEP-0017,
-  the
+  [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), [size](SIZES_2026.md),
+  [byte order](ORDER_2026.md), and [type parameter](TYPE_PARAMETERS_2026.md)
+  specifications under OEP-0005 through OEP-0018, the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
@@ -6022,24 +6361,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.16 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.17 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.16 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.16 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, and byte-order slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.17 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.17 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, and type-parameter slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.16 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, and byte-order slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.17 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, and type-parameter slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.16 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.17 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.16 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.17 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.16 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.17 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -6093,9 +6432,11 @@ adds the [tuples specification](TUPLES_2026.md) and
 adds the [bytes specification](BYTES_2026.md) and
 [OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), version 0.15
 adds the [sizes specification](SIZES_2026.md) and
-[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), and version 0.16
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), version 0.16
 adds the [byte order specification](ORDER_2026.md) and
-[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md).
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), and version
+0.17 adds the [type parameters specification](TYPE_PARAMETERS_2026.md) and
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -6219,6 +6560,14 @@ Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
 run against the compiler at the revision that introduced it. That check is
 not independent review, and the same authorship, review, evidence, and
 provenance boundaries apply.
+
+Manuscript version 0.17 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3o type-parameter slice, and added the
+Chapter 8 section "One function for several types". It was drafted with
+Claude Code under Chase Bryan's direction on 2026-09-30, and every Orange
+example it adds was run against the compiler at the revision that introduced
+it. That check is not independent review, and the same authorship, review,
+evidence, and provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

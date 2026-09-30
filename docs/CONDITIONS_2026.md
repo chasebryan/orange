@@ -39,8 +39,10 @@ meaning. It accepts no D-004 candidate.
 > [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, computes sizes with
 > the same total, Euclidean `/` and `%`, and [`ORDER_2026.md`](ORDER_2026.md),
 > proposed under OEP-0017, adds conversions in a byte order, which are total and
-> have no failure. Every source this document accepts keeps its meaning under
-> all eight.
+> have no failure, and [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md),
+> proposed under OEP-0018, lets a conditional's branches have a function's
+> type parameter as their type, each instance checked with its own type.
+> Every source this document accepts keeps its meaning under all nine.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
