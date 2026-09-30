@@ -81,7 +81,7 @@ define_diagnostic_codes! {
     IntegerMagnitudeLimit => "ORC0205",
     /// A fixed-width word literal is negative.
     NegativeWordLiteral => "ORC0206",
-    /// A fixed-width word literal is outside its admitted unsigned range.
+    /// A word literal, or a literal of `Mod[m]`, is outside its admitted range.
     WordLiteralOutOfRange => "ORC0207",
     /// Further semantic errors were suppressed after the reporting budget.
     TooManySemanticErrors => "ORC0208",
@@ -123,6 +123,18 @@ define_diagnostic_codes! {
     NonStaticIndex => "ORC0226",
     /// The operands of a comparison have no type of their own.
     UntypedComparison => "ORC0227",
+    /// A `use` declaration names no module of the program.
+    UnknownModule => "ORC0228",
+    /// A call is qualified by a module its module does not use.
+    ModuleNotUsed => "ORC0229",
+    /// A module uses itself, directly or through other modules.
+    ModuleCycle => "ORC0230",
+    /// Two modules of a program share a name, or a module uses one twice.
+    DuplicateModule => "ORC0231",
+    /// A modulus is not a constant from 2 through 2^521 - 1.
+    InvalidModulus => "ORC0232",
+    /// A `type` declaration repeats a type name or names a built-in type.
+    DuplicateTypeName => "ORC0233",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -689,7 +701,8 @@ mod tests {
             "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
             "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
             "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223", "ORC0224",
-            "ORC0225", "ORC0226", "ORC0227", "ORC0301",
+            "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231", "ORC0232",
+            "ORC0233", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

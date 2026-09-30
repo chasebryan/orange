@@ -312,8 +312,8 @@ class RepositoryResourceBoundTests(unittest.TestCase):
         self.assertEqual(GATE0_MAXIMUM_VALIDATOR_BYTES, 448 * 1024)
         self.assertEqual(GATE0_MAXIMUM_BINARY_FILE_BYTES, 2 * 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_RUN_OUTPUTS_BYTES, 2 * 1024 * 1024)
-        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 24 * 1024 * 1024)
-        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_FILES, 512)
+        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_BYTES, 48 * 1024 * 1024)
+        self.assertEqual(GATE0_MAXIMUM_REPOSITORY_FILES, 1024)
         self.assertEqual(GATE0_MAXIMUM_REPOSITORY_PATH_BYTES, 1024)
         self.assertEqual(GATE0_MAXIMUM_RAW_PATH_METADATA_BYTES, 1024 * 1024)
         self.assertEqual(GATE0_MAXIMUM_FALLBACK_DIRECTORY_ENTRIES, 4096)
@@ -2694,7 +2694,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-07-12
 
-Manuscript version: 0.9
+Manuscript version: 0.11
 
 This is not a normative language specification.
 
@@ -2849,11 +2849,11 @@ under Chase Bryan's direction on 2026-09-28.
 
     def test_orange_book_contract_rejects_missing_wrong_or_duplicate_version(self) -> None:
         mutations = (
-            lambda text: text.replace("Manuscript version: 0.9\n\n", "", 1),
-            lambda text: text.replace("Manuscript version: 0.9", "Manuscript version: 0.8", 1),
+            lambda text: text.replace("Manuscript version: 0.11\n\n", "", 1),
+            lambda text: text.replace("Manuscript version: 0.11", "Manuscript version: 0.10", 1),
             lambda text: text.replace(
-                "Manuscript version: 0.9",
-                "Manuscript version: 0.9\n\nManuscript version: 0.9",
+                "Manuscript version: 0.11",
+                "Manuscript version: 0.11\n\nManuscript version: 0.11",
                 1,
             ),
         )

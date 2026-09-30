@@ -1,0 +1,372 @@
+// HMAC with SHA-256 and HKDF, written as their standards write them. HMAC is
+// the keyed hash of FIPS 198-1, The Keyed-Hash Message Authentication Code
+// (2008, https://doi.org/10.6028/NIST.FIPS.198-1), sections 4 and 5, first
+// published as RFC 2104 (1997, https://www.rfc-editor.org/rfc/rfc2104):
+// H((K0 xor opad) || H((K0 xor ipad) || text)) with the pads 0x5c and 0x36
+// and a key hashed first when it is longer than the block. HKDF is the
+// extract-then-expand key derivation of RFC 5869 (2010,
+// https://www.rfc-editor.org/rfc/rfc5869), sections 2.2 and 2.3, with HMAC
+// as its pseudorandom function. SHA-256 is carried along from FIPS 180-4
+// (https://doi.org/10.6028/NIST.FIPS.180-4) with the padding of any message
+// up to 247 bytes.
+//
+// A byte string is carried as its length in bytes and a `Word[32]^64`: the
+// big-endian 32-bit words of FIPS 180-4 section 5.2.1, zero after the last
+// byte. Orange has no length-generic arrays, and this one buffer (four
+// SHA-256 blocks, 256 bytes) holds every key, text, salt, IKM and info of the
+// vectors, so one `sha256` and one `hmac_sha256` serve every length.
+//
+// This file reproduces the PRK and OKM of the three SHA-256 test cases of
+// RFC 5869 appendix A. One HMAC costs about 57,000 of a file's 1,048,576
+// steps and an HKDF with L = 82 about 325,000, so the HMAC test cases of
+// RFC 4231 and the Wycheproof cases are in hmac-hkdf.or. The algorithm part
+// of the two files, through `words_8`, is the same text; only the vectors
+// and the `words_n` helpers they call differ.
+edition 2026;
+module hmac_hkdf {
+  // A word to its bytes, big-endian (FIPS 180-4 section 3.1); the inputs
+  // are already words, so only the output direction is needed.
+  spec be_bytes(x: Word[32]) -> Word[8]^4 {
+    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  }
+
+  // FIPS 180-4 section 4.1.2: the SHA-256 functions.
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+
+  // FIPS 180-4 section 4.2.2: K{256}, the first 32 bits of the fractional
+  // parts of the cube roots of the first 64 primes.
+  spec round_constants() -> Word[32]^64 {
+    [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ]
+  }
+
+  // FIPS 180-4 section 5.3.3: H(0), the first 32 bits of the fractional parts
+  // of the square roots of the first eight primes.
+  spec initial_hash() -> Word[32]^8 {
+    [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+  }
+
+  // FIPS 180-4 section 6.2.2, step 1: the message schedule W_0 through W_63.
+  spec schedule(m: Word[32]^16) -> Word[32]^64 {
+    let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] { w with [t] = m[t] };
+    for t in 16..64 with w: Word[32]^64 = head {
+      w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+    }
+  }
+
+  // FIPS 180-4 section 6.2.2, step 3: one round on the working variables a
+  // through h, carried as v = [a, b, c, d, e, f, g, h].
+  spec round(v: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+    let t1: Word[32] = v[7] + big_sigma1(v[4]) + ch(v[4], v[5], v[6]) + k + w;
+    let t2: Word[32] = big_sigma0(v[0]) + maj(v[0], v[1], v[2]);
+    [t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]]
+  }
+
+  // FIPS 180-4 section 6.2.2, steps 1 through 4: one block, H(i-1) to H(i).
+  spec compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+    let w: Word[32]^64 = schedule(m);
+    let k: Word[32]^64 = round_constants();
+    let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h { round(v, k[t], w[t]) };
+    for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + h[i] }
+  }
+
+  // Byte p of the buffer, 0 <= p < 256, set to v by or: byte p lives in
+  // word p / 4, at the shift that p % 4 selects. The shift amount must be a
+  // literal, so the four positions are a conditional. This writes the
+  // padding bit of SHA-256 and the counter octet of HKDF-Expand, the two
+  // bytes whose position depends on a length.
+  spec put_byte(m: Word[32]^64, p: Int, v: Word[8]) -> Word[32]^64 {
+    let shifted: Word[32] = if (p % 4) == 0 { (v as Word[32]) << 24 }
+      else if (p % 4) == 1 { (v as Word[32]) << 16 }
+      else if (p % 4) == 2 { (v as Word[32]) << 8 }
+      else { v as Word[32] };
+    for i in 0..64 with out: Word[32]^64 = m {
+      if i == (p / 4) { out with [i] = out[i] | shifted } else { out }
+    }
+  }
+
+  // FIPS 180-4 section 5.1.1 for a message of n bytes, n <= 247: the bit 1
+  // (the byte 0x80, since every message is whole bytes) after the message,
+  // k zero bits, and the length l = 8n as a 64-bit big-endian integer at
+  // the end of block N, N = (n + 72) / 64 = ceiling((n + 9) / 64). The high
+  // word of l is zero for every n here, so only the last word is written.
+  spec pad(m: Word[32]^64, n: Int) -> Word[32]^64 {
+    let marked: Word[32]^64 = put_byte(m, n, 0x80);
+    let blocks: Int = (n + 72) / 64;
+    for i in 0..4 with w: Word[32]^64 = marked {
+      if (i + 1) == blocks { w with [16 * i + 15] = (8 * n) as Word[32] } else { w }
+    }
+  }
+
+  // FIPS 180-4 section 6.2.2, "for i = 1 to N": the N blocks of the padded
+  // message in order, each sixteen words of the buffer, from H(0).
+  spec sha256(m: Word[32]^64, n: Int) -> Word[32]^8 {
+    let w: Word[32]^64 = pad(m, n);
+    let blocks: Int = (n + 72) / 64;
+    for i in 0..4 with h: Word[32]^8 = initial_hash() {
+      if i < blocks {
+        compress(h, [
+          w[16 * i], w[16 * i + 1], w[16 * i + 2], w[16 * i + 3],
+          w[16 * i + 4], w[16 * i + 5], w[16 * i + 6], w[16 * i + 7],
+          w[16 * i + 8], w[16 * i + 9], w[16 * i + 10], w[16 * i + 11],
+          w[16 * i + 12], w[16 * i + 13], w[16 * i + 14], w[16 * i + 15],
+        ])
+      } else { h }
+    }
+  }
+
+  // FIPS 198-1 section 4: B = 64, the block size of SHA-256 in bytes, and
+  // the pads ipad = 0x36 and opad = 0x5c repeated B times, here as words.
+  spec ipad() -> Word[32] { 0x36363636 }
+  spec opad() -> Word[32] { 0x5c5c5c5c }
+
+  // FIPS 198-1 section 4, steps 1 to 3: K0, the key brought to B bytes. A
+  // key of B bytes is used as it is; a longer key is hashed to L = 32 bytes
+  // and zeros are appended; a shorter key has zeros appended. The buffer
+  // is zero beyond the key, so its first sixteen words are the padded key.
+  spec k0(key: Word[32]^64, key_len: Int) -> Word[32]^16 {
+    let hashed: Word[32]^8 = if key_len > 64 { sha256(key, key_len) } else { [0; 8] };
+    if key_len > 64 {
+      [hashed[0], hashed[1], hashed[2], hashed[3], hashed[4], hashed[5], hashed[6], hashed[7],
+       0, 0, 0, 0, 0, 0, 0, 0]
+    } else {
+      [key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7],
+       key[8], key[9], key[10], key[11], key[12], key[13], key[14], key[15]]
+    }
+  }
+
+  // Steps 4 and 7: K0 xor ipad and K0 xor opad.
+  spec xor_pad(k: Word[32]^16, pad_word: Word[32]) -> Word[32]^16 {
+    for i in 0..16 with out: Word[32]^16 = k { out with [i] = k[i] ^ pad_word }
+  }
+
+  // FIPS 198-1 section 4, steps 4 to 9, and section 5:
+  // HMAC(K, text) = H((K0 xor opad) || H((K0 xor ipad) || text)).
+  // Step 5 appends the text, of n <= 183 bytes, to the 64-byte inner pad
+  // (so the inner message fits four blocks); step 8 appends the 32-byte
+  // inner hash to the outer pad, a 96-byte message. Truncation to t bytes
+  // is left to the caller (`leftmost_128`); the full L = 32 bytes are
+  // returned as the eight words of the hash.
+  spec hmac_sha256(key: Word[32]^64, key_len: Int, text: Word[32]^64, n: Int) -> Word[32]^8 {
+    let k: Word[32]^16 = k0(key, key_len);
+    let ki: Word[32]^16 = xor_pad(k, ipad());
+    let ko: Word[32]^16 = xor_pad(k, opad());
+    let inner: Word[32]^8 = sha256([
+      ki[0], ki[1], ki[2], ki[3], ki[4], ki[5], ki[6], ki[7],
+      ki[8], ki[9], ki[10], ki[11], ki[12], ki[13], ki[14], ki[15],
+      text[0], text[1], text[2], text[3], text[4], text[5], text[6], text[7],
+      text[8], text[9], text[10], text[11], text[12], text[13], text[14], text[15],
+      text[16], text[17], text[18], text[19], text[20], text[21], text[22], text[23],
+      text[24], text[25], text[26], text[27], text[28], text[29], text[30], text[31],
+      text[32], text[33], text[34], text[35], text[36], text[37], text[38], text[39],
+      text[40], text[41], text[42], text[43], text[44], text[45], text[46], text[47],
+    ], 64 + n);
+    sha256([
+      ko[0], ko[1], ko[2], ko[3], ko[4], ko[5], ko[6], ko[7],
+      ko[8], ko[9], ko[10], ko[11], ko[12], ko[13], ko[14], ko[15],
+      inner[0], inner[1], inner[2], inner[3], inner[4], inner[5], inner[6], inner[7],
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ], 96)
+  }
+
+  // The truncated output of FIPS 198-1 and RFC 2104 section 5: the
+  // leftmost t = 128 bits of the MAC, RFC 4231's HMAC-SHA-256-128.
+  spec leftmost_128(mac: Word[32]^8) -> Word[8]^16 {
+    for i in 0..16 with out: Word[8]^16 = [0; 16] { out with [i] = be_bytes(mac[i / 4])[i % 4] }
+  }
+
+  // RFC 5869 section 2.2: PRK = HMAC-Hash(salt, IKM), HashLen = 32. A salt
+  // that is not provided is a string of HashLen zeros; the empty salt's
+  // buffer is all zeros, so it is that string at length 32.
+  spec hkdf_extract(salt: Word[32]^64, salt_len: Int, ikm: Word[32]^64, ikm_len: Int) -> Word[32]^8 {
+    let salt_length: Int = if salt_len == 0 { 32 } else { salt_len };
+    hmac_sha256(salt, salt_length, ikm, ikm_len)
+  }
+
+  // RFC 5869 section 2.3: T(1) = HMAC-Hash(PRK, info || 0x01) and
+  // T(i) = HMAC-Hash(PRK, T(i-1) || info || i) for i > 1, i a single octet.
+  // T(i-1) is eight whole words, so info starts at word 8 of the data and
+  // only the counter octet, at byte 32 + len(info), falls inside a word.
+  spec t_i(prk: Word[32]^64, previous: Word[32]^8, info: Word[32]^64, info_len: Int, i: Int) -> Word[32]^8 {
+    let data: Word[32]^64 = if i == 1 { info } else {
+      [
+        previous[0], previous[1], previous[2], previous[3],
+        previous[4], previous[5], previous[6], previous[7],
+        info[0], info[1], info[2], info[3], info[4], info[5], info[6], info[7],
+        info[8], info[9], info[10], info[11], info[12], info[13], info[14], info[15],
+        info[16], info[17], info[18], info[19], info[20], info[21], info[22], info[23],
+        info[24], info[25], info[26], info[27], info[28], info[29], info[30], info[31],
+        info[32], info[33], info[34], info[35], info[36], info[37], info[38], info[39],
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+      ]
+    };
+    let data_len: Int = if i == 1 { info_len } else { 32 + info_len };
+    hmac_sha256(prk, 32, put_byte(data, data_len, i as Word[8]), data_len + 1)
+  }
+
+  // RFC 5869 section 2.3 with L = 42: N = ceiling(42 / 32) = 2, and OKM is
+  // the first 42 octets of T(1) || T(2).
+  spec hkdf_expand_42(prk: Word[32]^8, info: Word[32]^64, info_len: Int) -> Word[8]^42 {
+    let key: Word[32]^64 = words_8(prk);
+    let t1: Word[32]^8 = t_i(key, [0; 8], info, info_len, 1);
+    let t2: Word[32]^8 = t_i(key, t1, info, info_len, 2);
+    let okm: Word[32]^16 = [
+      t1[0], t1[1], t1[2], t1[3], t1[4], t1[5], t1[6], t1[7],
+      t2[0], t2[1], t2[2], t2[3], t2[4], t2[5], t2[6], t2[7],
+    ];
+    for i in 0..42 with out: Word[8]^42 = [0; 42] { out with [i] = be_bytes(okm[i / 4])[i % 4] }
+  }
+
+  // RFC 5869 section 2.3 with L = 82: N = 3, OKM the first 82 octets of
+  // T(1) || T(2) || T(3).
+  spec hkdf_expand_82(prk: Word[32]^8, info: Word[32]^64, info_len: Int) -> Word[8]^82 {
+    let key: Word[32]^64 = words_8(prk);
+    let t1: Word[32]^8 = t_i(key, [0; 8], info, info_len, 1);
+    let t2: Word[32]^8 = t_i(key, t1, info, info_len, 2);
+    let t3: Word[32]^8 = t_i(key, t2, info, info_len, 3);
+    let okm: Word[32]^24 = [
+      t1[0], t1[1], t1[2], t1[3], t1[4], t1[5], t1[6], t1[7],
+      t2[0], t2[1], t2[2], t2[3], t2[4], t2[5], t2[6], t2[7],
+      t3[0], t3[1], t3[2], t3[3], t3[4], t3[5], t3[6], t3[7],
+    ];
+    for i in 0..82 with out: Word[8]^82 = [0; 82] { out with [i] = be_bytes(okm[i / 4])[i % 4] }
+  }
+
+  // The words of a byte string placed at the start of an otherwise zero
+  // buffer, one spec per word count in use, since an array's length is
+  // part of its type. A string of n bytes is ceiling(n / 4) words, the last
+  // one zero-padded, and travels with n. HKDF-Expand keys HMAC with the
+  // eight words of the PRK through `words_8`; the rest serve the vectors.
+  spec words_8(w: Word[32]^8) -> Word[32]^64 {
+    for i in 0..8 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_3(w: Word[32]^3) -> Word[32]^64 {
+    for i in 0..3 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_4(w: Word[32]^4) -> Word[32]^64 {
+    for i in 0..4 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_6(w: Word[32]^6) -> Word[32]^64 {
+    for i in 0..6 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+  spec words_20(w: Word[32]^20) -> Word[32]^64 {
+    for i in 0..20 with b: Word[32]^64 = [0; 64] { b with [i] = w[i] }
+  }
+
+  // RFC 5869 appendix A.1, test case 1: IKM 0x0b repeated 22 times, salt
+  // 0x00 to 0x0c, info 0xf0 to 0xf9, L = 42. PRK as printed in Botan's
+  // hkdf.vec, [HKDF-Extract(HMAC(SHA-256))], OpenSSL's evpkdf_hkdf.txt and
+  // pyca/cryptography's rfc-5869-HKDF-SHA256.txt; OKM as printed in the
+  // same three files, Botan's under [HKDF(HMAC(SHA-256))], and in
+  // Wycheproof's hkdf_sha256_test.json tcId 1 (also cryptography's HKDF).
+  spec rfc5869_a_1_prk() -> Word[32]^8 {
+    hkdf_extract(
+      words_4([0x00010203, 0x04050607, 0x08090a0b, 0x0c000000]), 13,
+      words_6([0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0000]), 22,
+    )
+  }
+  spec rfc5869_a_1_prk_expected() -> Word[32]^8 {
+    [
+      0x07770936, 0x2c2e32df, 0x0ddc3f0d, 0xc47bba63, 0x90b6c73b, 0xb50f9c31, 0x22ec844a, 0xd7c2b3e5,
+    ]
+  }
+  spec rfc5869_a_1_okm() -> Word[8]^42 {
+    hkdf_expand_42(rfc5869_a_1_prk(), words_3([0xf0f1f2f3, 0xf4f5f6f7, 0xf8f90000]), 10)
+  }
+  spec rfc5869_a_1_okm_expected() -> Word[8]^42 {
+    [
+      0x3c, 0xb2, 0x5f, 0x25, 0xfa, 0xac, 0xd5, 0x7a, 0x90, 0x43, 0x4f, 0x64, 0xd0, 0x36, 0x2f, 0x2a,
+      0x2d, 0x2d, 0x0a, 0x90, 0xcf, 0x1a, 0x5a, 0x4c, 0x5d, 0xb0, 0x2d, 0x56, 0xec, 0xc4, 0xc5, 0xbf,
+      0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65,
+    ]
+  }
+
+  // RFC 5869 appendix A.2, test case 2: IKM 0x00 to 0x4f, salt 0x60 to
+  // 0xaf and info 0xb0 to 0xff, 80 bytes each, L = 82. The salt is longer
+  // than the block, so HMAC hashes it first, and N = 3. PRK and OKM from
+  // the same files as A.1 (Wycheproof tcId 3).
+  spec rfc5869_a_2_prk() -> Word[32]^8 {
+    hkdf_extract(
+      words_20([
+        0x60616263, 0x64656667, 0x68696a6b, 0x6c6d6e6f, 0x70717273, 0x74757677, 0x78797a7b, 0x7c7d7e7f,
+        0x80818283, 0x84858687, 0x88898a8b, 0x8c8d8e8f, 0x90919293, 0x94959697, 0x98999a9b, 0x9c9d9e9f,
+        0xa0a1a2a3, 0xa4a5a6a7, 0xa8a9aaab, 0xacadaeaf,
+      ]), 80,
+      words_20([
+        0x00010203, 0x04050607, 0x08090a0b, 0x0c0d0e0f, 0x10111213, 0x14151617, 0x18191a1b, 0x1c1d1e1f,
+        0x20212223, 0x24252627, 0x28292a2b, 0x2c2d2e2f, 0x30313233, 0x34353637, 0x38393a3b, 0x3c3d3e3f,
+        0x40414243, 0x44454647, 0x48494a4b, 0x4c4d4e4f,
+      ]), 80,
+    )
+  }
+  spec rfc5869_a_2_prk_expected() -> Word[32]^8 {
+    [
+      0x06a6b88c, 0x5853361a, 0x06104c9c, 0xeb35b45c, 0xef760014, 0x90467101, 0x4a193f40, 0xc15fc244,
+    ]
+  }
+  spec rfc5869_a_2_okm() -> Word[8]^82 {
+    hkdf_expand_82(
+      rfc5869_a_2_prk(),
+      words_20([
+        0xb0b1b2b3, 0xb4b5b6b7, 0xb8b9babb, 0xbcbdbebf, 0xc0c1c2c3, 0xc4c5c6c7, 0xc8c9cacb, 0xcccdcecf,
+        0xd0d1d2d3, 0xd4d5d6d7, 0xd8d9dadb, 0xdcdddedf, 0xe0e1e2e3, 0xe4e5e6e7, 0xe8e9eaeb, 0xecedeeef,
+        0xf0f1f2f3, 0xf4f5f6f7, 0xf8f9fafb, 0xfcfdfeff,
+      ]),
+      80,
+    )
+  }
+  spec rfc5869_a_2_okm_expected() -> Word[8]^82 {
+    [
+      0xb1, 0x1e, 0x39, 0x8d, 0xc8, 0x03, 0x27, 0xa1, 0xc8, 0xe7, 0xf7, 0x8c, 0x59, 0x6a, 0x49, 0x34,
+      0x4f, 0x01, 0x2e, 0xda, 0x2d, 0x4e, 0xfa, 0xd8, 0xa0, 0x50, 0xcc, 0x4c, 0x19, 0xaf, 0xa9, 0x7c,
+      0x59, 0x04, 0x5a, 0x99, 0xca, 0xc7, 0x82, 0x72, 0x71, 0xcb, 0x41, 0xc6, 0x5e, 0x59, 0x0e, 0x09,
+      0xda, 0x32, 0x75, 0x60, 0x0c, 0x2f, 0x09, 0xb8, 0x36, 0x77, 0x93, 0xa9, 0xac, 0xa3, 0xdb, 0x71,
+      0xcc, 0x30, 0xc5, 0x81, 0x79, 0xec, 0x3e, 0x87, 0xc1, 0x4c, 0x01, 0xd5, 0xc1, 0xf3, 0x43, 0x4f,
+      0x1d, 0x87,
+    ]
+  }
+
+  // RFC 5869 appendix A.3, test case 3: the IKM of A.1 with the salt and
+  // info both empty, L = 42; the salt becomes 32 zero bytes. PRK and OKM
+  // from the same files as A.1 (Wycheproof tcId 2).
+  spec rfc5869_a_3_prk() -> Word[32]^8 {
+    hkdf_extract(
+      [0; 64], 0,
+      words_6([0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0b0b, 0x0b0b0000]), 22,
+    )
+  }
+  spec rfc5869_a_3_prk_expected() -> Word[32]^8 {
+    [
+      0x19ef24a3, 0x2c717b16, 0x7f33a91d, 0x6f648bdf, 0x96596776, 0xafdb6377, 0xac434c1c, 0x293ccb04,
+    ]
+  }
+  spec rfc5869_a_3_okm() -> Word[8]^42 { hkdf_expand_42(rfc5869_a_3_prk(), [0; 64], 0) }
+  spec rfc5869_a_3_okm_expected() -> Word[8]^42 {
+    [
+      0x8d, 0xa4, 0xe7, 0x75, 0xa5, 0x63, 0xc1, 0x8f, 0x71, 0x5f, 0x80, 0x2a, 0x06, 0x3c, 0x5a, 0x31,
+      0xb8, 0xa1, 0x1f, 0x5c, 0x5e, 0xe1, 0x87, 0x9e, 0xc3, 0x45, 0x4e, 0x5f, 0x3c, 0x73, 0x8d, 0x2d,
+      0x9d, 0x20, 0x13, 0x95, 0xfa, 0xa4, 0xb6, 0x1a, 0x96, 0xc8,
+    ]
+  }
+}

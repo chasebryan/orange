@@ -38,9 +38,13 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > the S3e slice proposed in [`LOOPS_2026.md`](LOOPS_2026.md) under OEP-0008,
 > which adds bounded loops, the S3f slice proposed in
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md) under OEP-0009, which adds
-> `Bool`, comparisons, Euclidean division, and conditionals, and the S3g slice
+> `Bool`, comparisons, Euclidean division, and conditionals, the S3g slice
 > proposed in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) under OEP-0010, which adds
-> indices that depend on data.
+> indices that depend on data, the S3h slice proposed in
+> [`MODULES_2026.md`](MODULES_2026.md) under OEP-0011, which adds programs of
+> more than one module, and the S3i slice proposed in
+> [`MODULAR_2026.md`](MODULAR_2026.md) under OEP-0012, which adds the integers
+> modulo a constant and `type` declarations.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

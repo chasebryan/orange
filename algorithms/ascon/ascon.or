@@ -1,0 +1,521 @@
+// Ascon-AEAD128 of NIST SP 800-232, "Ascon-Based Lightweight Cryptography
+// Standards for Constrained Devices: Authenticated Encryption, Hash, and
+// Extendable Output Functions" (final, August 2025,
+// https://doi.org/10.6028/NIST.SP.800-232), written as the standard writes
+// it: the 320-bit state as five 64-bit words S0 through S4 loaded
+// little-endian, the permutation Ascon-p[rnd] of section 3 as constant
+// addition, the bitsliced 5-bit S-box and the linear diffusion layer, and
+// the AEAD of section 4 with a 128-bit rate, 12 rounds in initialization
+// and finalization and 8 between blocks. Encryption gives C || T; decryption
+// recovers P and verifies T. The file reproduces nine entries of the
+// designers' known-answer file LWC_AEAD_KAT_128_128.txt (ascon-c, the
+// reference implementation of SP 800-232) and one decryption.
+edition 2026;
+module ascon {
+  // Section 2: bytes enter a 64-bit word little-endian, the first byte in
+  // the least significant position, so that bit 0 of the state is bit 0 of
+  // the first byte. This is the convention of SP 800-232; the original Ascon
+  // submission loaded big-endian.
+  spec load_le64(
+    b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8],
+    b4: Word[8], b5: Word[8], b6: Word[8], b7: Word[8],
+  ) -> Word[64] {
+    (b0 as Word[64]) | ((b1 as Word[64]) << 8) | ((b2 as Word[64]) << 16)
+      | ((b3 as Word[64]) << 24) | ((b4 as Word[64]) << 32) | ((b5 as Word[64]) << 40)
+      | ((b6 as Word[64]) << 48) | ((b7 as Word[64]) << 56)
+  }
+
+  spec le_bytes64(x: Word[64]) -> Word[8]^8 {
+    [
+      x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8],
+      (x >> 32) as Word[8], (x >> 40) as Word[8], (x >> 48) as Word[8], (x >> 56) as Word[8],
+    ]
+  }
+
+  // Section 3.1, the constant-addition layer p_C: the round constants of
+  // the twelve rounds of Ascon-p[12], c_i = ((0xf - i) << 4) | i for i = 0
+  // through 11. The standard's table of constants lists sixteen so that up
+  // to sixteen rounds are defined; Ascon-p[12] uses the last twelve, which
+  // are these, and Ascon-p[8] the last eight, indices 4 through 11 here.
+  // The values are those of permutations.h of the reference implementation.
+  spec round_constants() -> Word[8]^12 {
+    [0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87, 0x78, 0x69, 0x5a, 0x4b]
+  }
+
+  // Section 3.1: S2 <- S2 ^ c_i.
+  spec constant_addition(s: Word[64]^5, c: Word[8]) -> Word[64]^5 {
+    s with [2] = s[2] ^ (c as Word[64])
+  }
+
+  // Section 3.2, the substitution layer p_S: the 5-bit S-box applied to
+  // the 64 columns of the state at once, written as the standard's
+  // bitsliced sequence of xor, and and not, with x0 through x4 the input
+  // words and t0 through t4 the intermediate ones, never as a table.
+  spec substitution_layer(s: Word[64]^5) -> Word[64]^5 {
+    let x0: Word[64] = s[0] ^ s[4];
+    let x1: Word[64] = s[1];
+    let x2: Word[64] = s[2] ^ s[1];
+    let x3: Word[64] = s[3];
+    let x4: Word[64] = s[4] ^ s[3];
+    let t0: Word[64] = x0 ^ (~x1 & x2);
+    let t1: Word[64] = x1 ^ (~x2 & x3);
+    let t2: Word[64] = x2 ^ (~x3 & x4);
+    let t3: Word[64] = x3 ^ (~x4 & x0);
+    let t4: Word[64] = x4 ^ (~x0 & x1);
+    [t0 ^ t4, t1 ^ t0, ~t2, t3 ^ t2, t4]
+  }
+
+  // Section 3.3, the linear diffusion layer p_L: S_i <- Sigma_i(S_i) with
+  // Sigma_i(x) = x ^ (x >>> r1) ^ (x >>> r2) and the rotation pairs (19, 28),
+  // (61, 39), (1, 6), (10, 17) and (7, 41), rotations to the right.
+  spec linear_diffusion_layer(s: Word[64]^5) -> Word[64]^5 {
+    [
+      s[0] ^ (s[0] >>> 19) ^ (s[0] >>> 28),
+      s[1] ^ (s[1] >>> 61) ^ (s[1] >>> 39),
+      s[2] ^ (s[2] >>> 1) ^ (s[2] >>> 6),
+      s[3] ^ (s[3] >>> 10) ^ (s[3] >>> 17),
+      s[4] ^ (s[4] >>> 7) ^ (s[4] >>> 41),
+    ]
+  }
+
+  // Section 3: one round p = p_L o p_S o p_C with the constant c_i.
+  spec round(s: Word[64]^5, c: Word[8]) -> Word[64]^5 {
+    linear_diffusion_layer(substitution_layer(constant_addition(s, c)))
+  }
+
+  // Section 3: Ascon-p[12], the twelve rounds with c_0 through c_11.
+  spec ascon_p12(s: Word[64]^5) -> Word[64]^5 {
+    let c: Word[8]^12 = round_constants();
+    for i in 0..12 with t: Word[64]^5 = s { round(t, c[i]) }
+  }
+
+  // Section 3: Ascon-p[8], the last eight rounds of Ascon-p[12], with c_4
+  // through c_11.
+  spec ascon_p8(s: Word[64]^5) -> Word[64]^5 {
+    let c: Word[8]^12 = round_constants();
+    for i in 4..12 with t: Word[64]^5 = s { round(t, c[i]) }
+  }
+
+  // Section 4: the initial value of Ascon-AEAD128, 0x00001000808C0001,
+  // which encodes in its bytes the algorithm identifier 1, the round
+  // numbers a = 12 and b = 8, the tag length 128 and the rate 16 bytes
+  // (constants.h of the reference implementation builds it from those
+  // fields).
+  spec iv() -> Word[64] { 0x00001000808c0001 }
+
+  // Section 4, initialization: S <- IV || K || N, S <- Ascon-p[12](S),
+  // S <- S ^ (0^192 || K). With little-endian loading K = K0 || K1 is the
+  // key's first and last eight bytes, and likewise N = N0 || N1.
+  spec initialization(k: Word[8]^16, n: Word[8]^16) -> Word[64]^5 {
+    let k0: Word[64] = load_le64(k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]);
+    let k1: Word[64] = load_le64(k[8], k[9], k[10], k[11], k[12], k[13], k[14], k[15]);
+    let n0: Word[64] = load_le64(n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7]);
+    let n1: Word[64] = load_le64(n[8], n[9], n[10], n[11], n[12], n[13], n[14], n[15]);
+    let s: Word[64]^5 = ascon_p12([iv(), k0, k1, n0, n1]);
+    [s[0], s[1], s[2], s[3] ^ k0, s[4] ^ k1]
+  }
+
+  // Section 2, padding: a string X of n bytes, n <= 32, becomes
+  // X || 0x01 || 0^*, the smallest multiple of the 16-byte rate longer than
+  // X, so at most three blocks. In the bit order of the standard the 0x01
+  // byte is a single 1 bit followed by zeros. n is a value, so the byte is
+  // placed by comparing the loop index with n rather than by an index.
+  spec pad(x: Word[8]^32, n: Int) -> Word[8]^48 {
+    let copied: Word[8]^48 = for i in 0..32 with p: Word[8]^48 = [0; 48] {
+      if i < n { p with [i] = x[i] } else { p }
+    };
+    for i in 0..48 with p: Word[8]^48 = copied {
+      if i == n { p with [i] = 0x01 } else { p }
+    }
+  }
+
+  // Section 2: the three padded 128-bit blocks as six 64-bit words, block
+  // i in words 2i and 2i + 1.
+  spec blocks(x: Word[8]^48) -> Word[64]^6 {
+    for i in 0..6 with w: Word[64]^6 = [0; 6] {
+      w with [i] = load_le64(
+        x[8 * i], x[8 * i + 1], x[8 * i + 2], x[8 * i + 3],
+        x[8 * i + 4], x[8 * i + 5], x[8 * i + 6], x[8 * i + 7],
+      )
+    }
+  }
+
+  // Section 4, processing associated data: when A is not empty, each block
+  // A_i of the padded A enters the rate, S_r <- S_r ^ A_i, followed by
+  // Ascon-p[8]; when A is empty nothing is absorbed. Then the domain
+  // separation S <- S ^ (0^319 || 1), the last bit of the state, which is
+  // the top bit of S4 in little-endian words. The padded A has
+  // adlen / 16 + 1 blocks, so block i is absorbed when i <= adlen / 16.
+  spec process_associated_data(s: Word[64]^5, a: Word[8]^32, adlen: Int) -> Word[64]^5 {
+    let w: Word[64]^6 = blocks(pad(a, adlen));
+    let absorbed: Word[64]^5 = if adlen == 0 { s } else {
+      for i in 0..3 with t: Word[64]^5 = s {
+        if i <= (adlen / 16) {
+          ascon_p8([t[0] ^ w[2 * i], t[1] ^ w[2 * i + 1], t[2], t[3], t[4]])
+        } else { t }
+      }
+    };
+    absorbed with [4] = absorbed[4] ^ 0x8000000000000000
+  }
+
+  // Section 4, processing plaintext, one block: C_i <- S_r ^ P_i and
+  // S_r <- C_i, then Ascon-p[8] for every block but the last, padded one,
+  // which finalization follows directly. The accumulator sc carries the
+  // state in words 0 through 4 and the ciphertext blocks in words 5 through
+  // 10; the caller records C_i, which is the new S_r, before the permutation.
+  spec plaintext_block(sc: Word[64]^11, p0: Word[64], p1: Word[64], full: Bool) -> Word[64]^11 {
+    let s: Word[64]^5 = [sc[0] ^ p0, sc[1] ^ p1, sc[2], sc[3], sc[4]];
+    let t: Word[64]^5 = if full { ascon_p8(s) } else { s };
+    [t[0], t[1], t[2], t[3], t[4], sc[5], sc[6], sc[7], sc[8], sc[9], sc[10]]
+  }
+
+  // Section 4, processing plaintext: the padded P has plen / 16 + 1 blocks;
+  // block i is processed when i <= plen / 16 and is a full block, followed
+  // by Ascon-p[8], when i < plen / 16. The result is the state followed by
+  // the three ciphertext blocks, the last of which still carries the
+  // padding and is truncated to plen bytes by ciphertext_bytes.
+  spec process_plaintext(s: Word[64]^5, p: Word[8]^32, plen: Int) -> Word[64]^11 {
+    let w: Word[64]^6 = blocks(pad(p, plen));
+    for i in 0..3 with sc: Word[64]^11 = [s[0], s[1], s[2], s[3], s[4], 0, 0, 0, 0, 0, 0] {
+      if i <= (plen / 16) {
+        plaintext_block(
+          (sc with [5 + 2 * i] = sc[0] ^ w[2 * i]) with [6 + 2 * i] = sc[1] ^ w[2 * i + 1],
+          w[2 * i], w[2 * i + 1], i < (plen / 16),
+        )
+      } else { sc }
+    }
+  }
+
+  // Section 4: the first plen bytes of the ciphertext blocks, little-endian
+  // within each word; the bytes at and beyond plen are zero.
+  spec ciphertext_bytes(c: Word[64]^6, plen: Int) -> Word[8]^32 {
+    for i in 0..32 with b: Word[8]^32 = [0; 32] {
+      if i < plen { b with [i] = le_bytes64(c[i / 8])[i % 8] } else { b }
+    }
+  }
+
+  // Section 4, finalization: S <- S ^ (0^128 || K || 0^64), that is
+  // S2 <- S2 ^ K0 and S3 <- S3 ^ K1, then Ascon-p[12], and the tag
+  // T <- (S3 || S4) ^ K, as sixteen bytes.
+  spec finalization(s: Word[64]^5, k: Word[8]^16) -> Word[8]^16 {
+    let k0: Word[64] = load_le64(k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[7]);
+    let k1: Word[64] = load_le64(k[8], k[9], k[10], k[11], k[12], k[13], k[14], k[15]);
+    let t: Word[64]^5 = ascon_p12([s[0], s[1], s[2] ^ k0, s[3] ^ k1, s[4]]);
+    let t3: Word[8]^8 = le_bytes64(t[3] ^ k0);
+    let t4: Word[8]^8 = le_bytes64(t[4] ^ k1);
+    [t3[0], t3[1], t3[2], t3[3], t3[4], t3[5], t3[6], t3[7],
+     t4[0], t4[1], t4[2], t4[3], t4[4], t4[5], t4[6], t4[7]]
+  }
+
+  // C || T for a ciphertext of plen bytes: the tag begins at byte plen, a
+  // position that is a value, so each output byte selects the tag byte
+  // whose position it matches. The bytes beyond plen + 16 are zero.
+  spec ciphertext_and_tag(c: Word[8]^32, plen: Int, t: Word[8]^16) -> Word[8]^48 {
+    let body: Word[8]^48 = for i in 0..32 with out: Word[8]^48 = [0; 48] {
+      if i < plen { out with [i] = c[i] } else { out }
+    };
+    for i in 0..48 with out: Word[8]^48 = body {
+      if (i >= plen) && (i < (plen + 16)) {
+        out with [i] = for j in 0..16 with v: Word[8] = 0 { if i == (plen + j) { t[j] } else { v } }
+      } else { out }
+    }
+  }
+
+  // Section 4, Algorithm 1, Ascon-AEAD128 encryption: (C, T) from K, N, A
+  // and P, for A and P of at most 32 bytes, adlen and plen their lengths,
+  // as the 48-byte string C || T followed by zeros.
+  spec ascon_aead128_encrypt(
+    k: Word[8]^16,
+    n: Word[8]^16,
+    a: Word[8]^32,
+    adlen: Int,
+    p: Word[8]^32,
+    plen: Int,
+  ) -> Word[8]^48 {
+    let after_data: Word[64]^5 = process_associated_data(initialization(k, n), a, adlen);
+    let sc: Word[64]^11 = process_plaintext(after_data, p, plen);
+    let c: Word[8]^32 = ciphertext_bytes([sc[5], sc[6], sc[7], sc[8], sc[9], sc[10]], plen);
+    let t: Word[8]^16 = finalization([sc[0], sc[1], sc[2], sc[3], sc[4]], k);
+    ciphertext_and_tag(c, plen, t)
+  }
+
+  // Section 4, Algorithm 2, processing ciphertext: P_i <- S_r ^ C_i and
+  // S_r <- C_i for every full block, and for the last block P~ is the
+  // first clen mod 16 bytes of S_r ^ C~. The keystream S_r of each block is
+  // recorded in words 5 through 10 before the block replaces it; the last
+  // block's state is not needed for P, since finalization follows.
+  spec keystream_block(sc: Word[64]^11, c0: Word[64], c1: Word[64], full: Bool) -> Word[64]^11 {
+    let s: Word[64]^5 = [c0, c1, sc[2], sc[3], sc[4]];
+    let t: Word[64]^5 = if full { ascon_p8(s) } else { s };
+    [t[0], t[1], t[2], t[3], t[4], sc[5], sc[6], sc[7], sc[8], sc[9], sc[10]]
+  }
+
+  // Section 4, Algorithm 2: the plaintext of clen bytes from C, before the
+  // tag is checked. The bytes at and beyond clen are zero.
+  spec plaintext_bytes(s: Word[64]^5, c: Word[8]^32, clen: Int) -> Word[8]^32 {
+    let w: Word[64]^6 = blocks(pad(c, clen));
+    let start: Word[64]^11 = [s[0], s[1], s[2], s[3], s[4], 0, 0, 0, 0, 0, 0];
+    let sk: Word[64]^11 = for i in 0..3 with sc: Word[64]^11 = start {
+      if i <= (clen / 16) {
+        keystream_block(
+          (sc with [5 + 2 * i] = sc[0]) with [6 + 2 * i] = sc[1],
+          w[2 * i], w[2 * i + 1], i < (clen / 16),
+        )
+      } else { sc }
+    };
+    let keystream: Word[8]^32 = ciphertext_bytes([sk[5], sk[6], sk[7], sk[8], sk[9], sk[10]], clen);
+    for i in 0..32 with p: Word[8]^32 = [0; 32] {
+      if i < clen { p with [i] = c[i] ^ keystream[i] } else { p }
+    }
+  }
+
+  // Section 4, Algorithm 2: after the last ciphertext block the state is
+  // S_r ^ pad(P~), the state encryption reaches over the same P, so the
+  // tag T' is the tag of encrypting the recovered P, and decryption
+  // succeeds when T' = T, compared byte by byte.
+  spec ascon_aead128_verify(
+    k: Word[8]^16,
+    n: Word[8]^16,
+    a: Word[8]^32,
+    adlen: Int,
+    c: Word[8]^32,
+    clen: Int,
+    t: Word[8]^16,
+  ) -> Bool {
+    let after_data: Word[64]^5 = process_associated_data(initialization(k, n), a, adlen);
+    let p: Word[8]^32 = plaintext_bytes(after_data, c, clen);
+    let sc: Word[64]^11 = process_plaintext(after_data, p, clen);
+    let computed: Word[8]^16 = finalization([sc[0], sc[1], sc[2], sc[3], sc[4]], k);
+    for i in 0..16 with same: Bool = true { same && (computed[i] == t[i]) }
+  }
+
+  // Section 4, Algorithm 2, Ascon-AEAD128 decryption: P when T verifies,
+  // and fail otherwise. Orange has no value for fail, so the result is then
+  // all zeros and the verdict of ascon_aead128_verify is false; no plaintext
+  // is released before the tag is checked.
+  spec ascon_aead128_decrypt(
+    k: Word[8]^16,
+    n: Word[8]^16,
+    a: Word[8]^32,
+    adlen: Int,
+    c: Word[8]^32,
+    clen: Int,
+    t: Word[8]^16,
+  ) -> Word[8]^32 {
+    if ascon_aead128_verify(k, n, a, adlen, c, clen, t) {
+      plaintext_bytes(process_associated_data(initialization(k, n), a, adlen), c, clen)
+    } else {
+      [0; 32]
+    }
+  }
+
+  // The inputs of LWC_AEAD_KAT_128_128.txt (generated by tests/genkat_aead.c
+  // of ascon-c): the key 00 01 ... 0f, the nonce 10 11 ... 1f, and for
+  // Count = 33 plen + adlen + 1 the plaintext 20 21 ... of plen bytes and
+  // the associated data 30 31 ... of adlen bytes.
+  spec kat_key() -> Word[8]^16 {
+    [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f]
+  }
+
+  spec kat_nonce() -> Word[8]^16 {
+    [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f]
+  }
+
+  spec kat_plaintext() -> Word[8]^32 {
+    [
+      0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+      0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
+    ]
+  }
+
+  spec kat_associated_data() -> Word[8]^32 {
+    [
+      0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
+      0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 1: 0-byte plaintext, 0-byte associated data.
+  spec kat_count_1() -> Word[8]^16 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 0, kat_plaintext(), 0,
+    );
+    for i in 0..16 with c: Word[8]^16 = [0; 16] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_1_expected() -> Word[8]^16 {
+    [
+      0x4f, 0x9c, 0x27, 0x82, 0x11, 0xbe, 0xc9, 0x31, 0x6b, 0xf6, 0x8f, 0x46, 0xee, 0x8b, 0x2e, 0xc6,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 2: 0-byte plaintext, 1-byte associated data.
+  spec kat_count_2() -> Word[8]^16 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 1, kat_plaintext(), 0,
+    );
+    for i in 0..16 with c: Word[8]^16 = [0; 16] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_2_expected() -> Word[8]^16 {
+    [
+      0xcc, 0xcb, 0x67, 0x4f, 0xe1, 0x8a, 0x09, 0xa2, 0x85, 0xd6, 0xab, 0x11, 0xb3, 0x56, 0x75, 0xc0,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 17: 0-byte plaintext, 16-byte associated data.
+  spec kat_count_17() -> Word[8]^16 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 16, kat_plaintext(), 0,
+    );
+    for i in 0..16 with c: Word[8]^16 = [0; 16] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_17_expected() -> Word[8]^16 {
+    [
+      0xe4, 0x23, 0x0c, 0xdb, 0x83, 0x30, 0xee, 0x9d, 0xc0, 0xcf, 0xd7, 0xc7, 0xb3, 0x46, 0xe6, 0xdc,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 33: 0-byte plaintext, 32-byte associated data.
+  spec kat_count_33() -> Word[8]^16 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 32, kat_plaintext(), 0,
+    );
+    for i in 0..16 with c: Word[8]^16 = [0; 16] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_33_expected() -> Word[8]^16 {
+    [
+      0xef, 0xc3, 0xe7, 0x8b, 0x02, 0xad, 0x9a, 0x80, 0xa6, 0xf0, 0x54, 0x8c, 0x5b, 0x0b, 0xb5, 0xba,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 34: 1-byte plaintext, 0-byte associated data.
+  spec kat_count_34() -> Word[8]^17 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 0, kat_plaintext(), 1,
+    );
+    for i in 0..17 with c: Word[8]^17 = [0; 17] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_34_expected() -> Word[8]^17 {
+    [
+      0xe8, 0xdd, 0x57, 0x6a, 0xba, 0x1c, 0xd3, 0xe6, 0xfc, 0x70, 0x4d, 0xe0, 0x2a, 0xed, 0xb7, 0x95,
+      0x88,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 273: 8-byte plaintext, 8-byte associated data.
+  spec kat_count_273() -> Word[8]^24 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 8, kat_plaintext(), 8,
+    );
+    for i in 0..24 with c: Word[8]^24 = [0; 24] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_273_expected() -> Word[8]^24 {
+    [
+      0xfa, 0xbe, 0x2c, 0xb1, 0xe7, 0xeb, 0xa6, 0x32, 0x40, 0x52, 0x4b, 0xc3, 0x38, 0x87, 0x25, 0x34,
+      0x1b, 0x84, 0xc3, 0x53, 0x70, 0x42, 0xde, 0xc5,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 545: 16-byte plaintext, 16-byte associated data.
+  spec kat_count_545() -> Word[8]^32 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 16, kat_plaintext(), 16,
+    );
+    for i in 0..32 with c: Word[8]^32 = [0; 32] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_545_expected() -> Word[8]^32 {
+    [
+      0x63, 0x73, 0xeb, 0xb2, 0x8b, 0xe9, 0x7c, 0x9b, 0xac, 0x09, 0x0c, 0xf3, 0x99, 0xc1, 0x3e, 0xf1,
+      0x3a, 0xbf, 0xc0, 0xd2, 0x09, 0xe8, 0xf4, 0x84, 0x4c, 0x90, 0x81, 0x4d, 0x13, 0xf3, 0x2c, 0x59,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 767: 23-byte plaintext, 7-byte associated data.
+  spec kat_count_767() -> Word[8]^39 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 7, kat_plaintext(), 23,
+    );
+    for i in 0..39 with c: Word[8]^39 = [0; 39] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_767_expected() -> Word[8]^39 {
+    [
+      0x6e, 0x02, 0x4b, 0xd4, 0x03, 0xf3, 0x86, 0xeb, 0x9d, 0x1c, 0x56, 0xf4, 0x59, 0xcf, 0xdc, 0xde,
+      0x1b, 0x2f, 0x64, 0x62, 0xf2, 0x7f, 0x58, 0x12, 0x7f, 0x1a, 0x88, 0x64, 0x4e, 0x5d, 0x0e, 0x79,
+      0xa0, 0x07, 0xed, 0x23, 0x7c, 0xd5, 0x72,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 1089: 32-byte plaintext, 32-byte associated data.
+  spec kat_count_1089() -> Word[8]^48 {
+    let ct: Word[8]^48 = ascon_aead128_encrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 32, kat_plaintext(), 32,
+    );
+    for i in 0..48 with c: Word[8]^48 = [0; 48] { c with [i] = ct[i] }
+  }
+
+  spec kat_count_1089_expected() -> Word[8]^48 {
+    [
+      0xcb, 0x34, 0xd0, 0x46, 0x60, 0xa6, 0x6d, 0xbf, 0xbe, 0x9c, 0x85, 0x66, 0x01, 0xf5, 0xb8, 0xaa,
+      0x51, 0xa4, 0x99, 0xb5, 0x5a, 0xc8, 0xf7, 0xfb, 0xef, 0xbc, 0x33, 0x1a, 0x61, 0x3e, 0xe9, 0xcd,
+      0xfd, 0x19, 0x17, 0x50, 0xa4, 0x7f, 0x21, 0x1c, 0x0a, 0x15, 0xed, 0x28, 0x17, 0x3d, 0x7c, 0xaa,
+    ]
+  }
+
+  // The ciphertext body and tag of Count = 1089, taken apart for the
+  // decryption specs.
+  spec kat_count_1089_ciphertext() -> Word[8]^32 {
+    [
+      0xcb, 0x34, 0xd0, 0x46, 0x60, 0xa6, 0x6d, 0xbf, 0xbe, 0x9c, 0x85, 0x66, 0x01, 0xf5, 0xb8, 0xaa,
+      0x51, 0xa4, 0x99, 0xb5, 0x5a, 0xc8, 0xf7, 0xfb, 0xef, 0xbc, 0x33, 0x1a, 0x61, 0x3e, 0xe9, 0xcd,
+    ]
+  }
+
+  spec kat_count_1089_tag() -> Word[8]^16 {
+    [0xfd, 0x19, 0x17, 0x50, 0xa4, 0x7f, 0x21, 0x1c, 0x0a, 0x15, 0xed, 0x28, 0x17, 0x3d, 0x7c, 0xaa]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 1089, decrypted: the plaintext PT of
+  // the entry, released because the tag verifies.
+  spec kat_count_1089_decrypt() -> Word[8]^32 {
+    ascon_aead128_decrypt(
+      kat_key(), kat_nonce(), kat_associated_data(), 32,
+      kat_count_1089_ciphertext(), 32, kat_count_1089_tag(),
+    )
+  }
+
+  spec kat_count_1089_decrypt_expected() -> Word[8]^32 {
+    [
+      0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+      0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
+    ]
+  }
+
+  // LWC_AEAD_KAT_128_128.txt, Count = 1089: the verdict of Algorithm 2.
+  spec kat_count_1089_verify() -> Bool {
+    ascon_aead128_verify(
+      kat_key(), kat_nonce(), kat_associated_data(), 32,
+      kat_count_1089_ciphertext(), 32, kat_count_1089_tag(),
+    )
+  }
+
+  spec kat_count_1089_verify_expected() -> Bool { true }
+
+  // Count = 1089 with the last tag byte changed from 0xaa to 0xab: Algorithm
+  // 2 returns fail. The verdict is the definition's; the Python reference
+  // written for this entry agrees.
+  spec kat_count_1089_altered_tag_verify() -> Bool {
+    ascon_aead128_verify(
+      kat_key(), kat_nonce(), kat_associated_data(), 32,
+      kat_count_1089_ciphertext(), 32, kat_count_1089_tag() with [15] = 0xab,
+    )
+  }
+
+  spec kat_count_1089_altered_tag_verify_expected() -> Bool { false }
+}

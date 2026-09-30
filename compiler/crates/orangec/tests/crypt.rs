@@ -435,6 +435,82 @@ fn any_orange_program_with_the_interface_is_a_scheme() {
 }
 
 #[test]
+fn a_scheme_program_may_use_modules_beside_it() {
+    let scratch = Scratch::new("modules");
+    let builtin =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemes/chacha20_poly1305.or");
+    let text = fs::read_to_string(builtin)
+        .unwrap()
+        .replace("module chacha20_poly1305 {", "module aead {");
+    scratch.write("aead.or", text.as_bytes());
+    let layered = concat!(
+        "edition 2026;\n",
+        "module layered {\n",
+        "  use aead;\n",
+        "  spec seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {\n",
+        "    aead::seal(key, nonce, ad, plaintext)\n",
+        "  }\n",
+        "  spec open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {\n",
+        "    aead::open(key, nonce, ad, sealed)\n",
+        "  }\n",
+        "  spec authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {\n",
+        "    aead::authentic(key, nonce, ad, sealed)\n",
+        "  }\n",
+        "}\n",
+    );
+    scratch.write("layered.or", layered.as_bytes());
+
+    let table = scratch.succeeds(&["schemes", "layered.or"]);
+    assert!(table.lines().nth(1).unwrap().starts_with("layered "));
+    scratch.succeeds(&["keygen", "--scheme", "./layered.or", "-o", "layered.key"]);
+    scratch.write("data", &counting(500));
+    scratch.succeeds(&[
+        "enc",
+        "--key",
+        "layered.key",
+        "--scheme",
+        "layered.or",
+        "data",
+    ]);
+    scratch.succeeds(&[
+        "dec",
+        "--key",
+        "layered.key",
+        "--scheme",
+        "layered.or",
+        "-o",
+        "out",
+        "data.orange",
+    ]);
+    assert_eq!(fs::read(scratch.path("out")).unwrap(), counting(500));
+
+    // The interface is the root's own: a used module's `authentic` does not
+    // stand in for a missing one.
+    let hollow = layered
+        .replace("module layered {", "module hollow {")
+        .replace("spec authentic(", "spec checked(");
+    scratch.write("hollow.or", hollow.as_bytes());
+    let error = scratch.fails(1, &["schemes", "hollow.or"]);
+    assert_eq!(
+        error,
+        "error[ORC1010]: `hollow` at hollow.or does not implement the sealing interface\n  = note: it has no spec named `authentic`\n"
+    );
+
+    let lonely = layered
+        .replace("module layered {", "module lonely {")
+        .replace("use aead;", "use absent;");
+    scratch.write("lonely.or", lonely.as_bytes());
+    let error = scratch.fails(1, &["schemes", "lonely.or"]);
+    assert!(error.starts_with("error[ORC1001]: "), "{error}");
+    assert!(
+        error.contains(
+            "  = note: `use absent;` in module `lonely` reads the module `absent` from this file\n"
+        ),
+        "{error}"
+    );
+}
+
+#[test]
 fn schemes_lists_the_builtins() {
     let scratch = Scratch::new("schemes");
     let table = scratch.succeeds(&["schemes"]);

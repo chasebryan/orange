@@ -26,9 +26,12 @@ meaning. It accepts no D-004 candidate.
 > one element, and fill literals, which lift the absence of loops described in
 > section 12, [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under
 > OEP-0009, adds `Bool`, comparisons, Euclidean division, and conditionals on
-> top of those, and [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under
-> OEP-0010, lets an index depend on data. Every source this document accepts
-> keeps its meaning under all three.
+> top of those, [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under
+> OEP-0010, lets an index depend on data,
+> [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
+> use others, and [`MODULAR_2026.md`](MODULAR_2026.md), proposed under
+> OEP-0012, adds arrays of residues, as `Mod[3329]^256`. Every source this
+> document accepts keeps its meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

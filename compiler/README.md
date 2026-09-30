@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3g proposed under OEP-0005 through OEP-0010, in owner review
+S3i proposed under OEP-0005 through OEP-0012, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -34,10 +34,20 @@ branches. The S3g slice, proposed in
 OEP-0010, lets an index depend on data: an index whose first typed leaf is a
 word ranges over its type, narrowed by its operators, an `Int` index may
 convert words with `as Int`, every index is still proved in range before
-evaluation, and an update or fill costs one step per 64 elements. All seven
-lower to a noncanonical Typed Reference Core and are reference-evaluated.
-Unbounded loops, typed `impl`,
-proof checking, verified lowering, and code generation do not exist.
+evaluation, and an update or fill costs one step per 64 elements. The S3h
+slice, proposed in [`docs/MODULES_2026.md`](../docs/MODULES_2026.md) and in
+owner review under OEP-0011, lets a program span several modules, one per
+file: a module declares the modules it uses, calls their functions as
+`m::f(...)`, and is checked once, after them; `orangec` reads the module `m`
+from `m.or` beside the root. The S3i slice, proposed in
+[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md) and in owner review under
+OEP-0012, adds `Mod[m]`, the integers modulo a constant m from 2 through
+2^521 - 1 written as its standard writes it, as `Mod[(1 << 255) - 19]`, whose
+`+`, `-`, and `*` reduce by themselves and whose `/` multiplies by an inverse
+and gives 0 when there is none, and `type` declarations that name a type for
+the rest of a module. All nine lower to a noncanonical Typed Reference Core
+and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+verified lowering, and code generation do not exist.
 
 This boundary was merged by
 [PR #9](https://github.com/chasebryan/orange/pull/9) as commit
@@ -60,6 +70,8 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- check compiler/fixtu
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/typed-answer.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-sha256-functions.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-chacha20-quarter-round.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
@@ -165,7 +177,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3g are implemented and await owner review under OEP-0005 through OEP-0010, both
+S3i are implemented and await owner review under OEP-0005 through OEP-0012, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -319,10 +331,17 @@ or Rust code executes. Every copied command then runs as PID 1 with private
 mount, PID, `/proc`, network, IPC, and UTS namespaces. The UTS namespace uses
 the fixed `orange-gate` hostname, and the fresh IPC namespace starts without
 System V message queues, semaphore sets, or shared-memory segments. The gate
-uses an unprivileged user namespace when the host permits it; otherwise a fixed
-non-interactive `sudo` supervisor creates only those namespaces before
-`setpriv` restores the invoking numeric user and group, clears supplementary
-groups, and enables `no_new_privs`.
+uses an unprivileged user namespace when the host permits it. Otherwise, as on
+Ubuntu 23.10 and newer, `make` asks `sudo` for the invoking account's password
+once unless a cached credential or passwordless rule already covers it. That
+path needs a `sudo` policy that keeps the credential between commands and a host
+that allows user namespaces (`user.max_user_namespaces` above zero); otherwise
+`make` stops with a message naming the setting. A fixed `sudo` supervisor then
+creates those namespaces, switches to the invoking numeric user and group
+holding only `CAP_SYS_ADMIN`, so the invoking account owns the user namespace it
+creates next, and writes that namespace's one-line maps from outside it so they
+admit only that user and group. `setpriv` then restores that user and group,
+clears supplementary groups, and enables `no_new_privs`.
 The user-namespace path retains its namespace-granted capabilities only long
 enough for `setpriv` to remove every capability from the inheritable, permitted,
 effective, bounding, and ambient sets. The privileged supervisor removes the
@@ -343,8 +362,9 @@ closes every inherited descriptor above standard error, resets ordinary
 catchable signal dispositions to default, and empties the ordinary signal mask
 before execution. The launcher also fixes hard
 ceilings of 4 GiB of virtual address space and 600 CPU seconds per process,
-512 MiB per file, 1,024 open files, 256 processes for the real user, and zero
-core-file bytes, preserving any lower inherited hard ceiling. Copied commands
+512 MiB per file, 1,024 open files, 256 processes for the real user inside the
+gate's private user namespace (the kernel exempts the global root user, so a gate
+invoked as root has no process ceiling), and zero core-file bytes, preserving any lower inherited hard ceiling. Copied commands
 receive isolated `HOME`, `TMPDIR`, and `PATH` values, disable system Git
 configuration, and bind global Git configuration to `/dev/null`; a runtime
 assertion confirms that the original checkout is unreadable. The namespace
@@ -387,7 +407,8 @@ private System V IPC tables remain readable; representative global kernel/CPU
 and dynamic `/proc/self` content is asserted unreadable. Resource ceilings are not aggregate
 cgroup budgets: virtual address space and CPU time are limited per process,
 file size is limited per file, aggregate resident memory is not capped, and the
-process ceiling includes other processes with the same real user ID.
+process ceiling counts only processes in the gate's private user namespace, not
+other processes of the same account.
 
 `orangec` accepts up to 256 source inputs in argument order. Argument parsing
 inspects at most 4 MiB (`4 * 1024 * 1024` bytes) of encoded command-line
@@ -425,6 +446,22 @@ reproduce the same bytes and metadata across both reads can evade the
 comparison. Compile untrusted filesystem trees from a stable copied file or
 standard input inside an appropriate host sandbox; full path confinement is not
 claimed.
+A source whose module has `use` declarations is the root of a program. For
+`check` and `eval`, each `use m;` reads the module `m` from the file `m.or` in
+the root file's directory, or in the current directory when the root is `-`.
+A module name is an ASCII identifier, so it names one file in that directory
+and no path outside it. Each module is read once per program, in the order a
+`use` first names it, through the same regular-file boundary, 16 MiB
+per-source limit, UTF-8 check, and shared per-invocation source budget as a
+named source, and at most 64 modules besides the root are read. A file that
+declares a module of another name is kept, so that the module graph reports
+the `use` that read it, but its own uses are not followed. A module that
+cannot be read is `ORC1001` with a note naming the `use` and its module; any
+failure to read, decode, lex, or parse a module stops that program before
+semantic analysis. `lex` reads no module, and each operand of an invocation is
+the root of its own program. A scheme program given to the sealing commands by
+path reads its modules the same way, under one 64 MiB budget shared with its
+own bytes.
 `eval` accepts exactly one source and begins output only after complete
 validation and evaluation. A host output failure can leave an
 already-written prefix, but returns status 1; a broken pipe remains quiet and
@@ -613,7 +650,9 @@ result expression:
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* function_decl* "}" ;
+use_decl        = "use" IDENTIFIER ";" ;
+type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER "(" parameters ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
@@ -624,7 +663,7 @@ empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
 declared_type   = parsed_type ("^" INTEGER)? ;
-parsed_type     = IDENTIFIER ("[" INTEGER "]")? ;
+parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | conversion | update | comparison | chain("&&")
@@ -642,7 +681,7 @@ prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
 primary         = IDENTIFIER index? | call index? | "(" expression ")"
                 | array | fill | loop | conditional ;
-call            = IDENTIFIER "(" arguments? ")" ;
+call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
@@ -654,15 +693,18 @@ conditional     = "if" expression "{" expression "}" "else" alternative ;
 alternative     = "{" expression "}" | conditional ;
 ```
 
-`let`, `as`, `for`, `in`, `with`, `if`, and `else` are contextual: they are
-ordinary names everywhere except where a binding, a conversion, a loop, an
-update, or a conditional begins. `true` and `false` are the `Bool` values only
+`let`, `as`, `for`, `in`, `with`, `if`, `else`, `use`, and `type` are
+contextual: they are ordinary names everywhere except where a binding, a
+conversion, a loop, an update, a conditional, or, at the head of a module, a
+`use` or `type` declaration begins, and `Mod` takes a modulus only when a
+bracket follows it. `true` and `false` are the `Bool` values only
 where no parameter, binding, or loop name of that spelling is in scope. For
 example:
 
 ```orange
 edition 2026;
 module demo {
+  type Z7 = Mod[7];
   spec identity() {}
   impl rounds() {}
   spec answer() -> Int { 42 }
@@ -682,6 +724,7 @@ module demo {
   spec backwards() -> Word[8]^4 { reverse([1, 2, 3, 4]) }
   spec sign(x: Int) -> Int { if x < 0 { -1 } else if x == 0 { 0 } else { 1 } }
   spec residues() -> Int^2 { [-7 % 2, sign(-7 / 2)] }
+  spec field() -> Z7^2 { [3 * 5, 1 / 3] }
 }
 ```
 
@@ -695,7 +738,8 @@ immediately before an integer token is that literal's sign, so the S3a body
 
 The parser accepts generic type syntax so unsupported forms receive semantic
 diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
-`Word[64]`, and `Bool`, and arrays `T^n` of them with n from 1 through 256, and checks
+`Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations, and
+arrays `T^n` of them with n from 1 through 256, and checks
 every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
 bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
 and `*` wrap because that is their meaning, while a literal must already fit
@@ -703,13 +747,20 @@ and never coerces, truncates, or wraps. Shift and rotation amounts are
 unsigned literals from 0 through n - 1. Division is Euclidean on `Int` and
 unsigned on words, and total: `-7 % 2` is 1, `x / 0` is 0, and `x % 0` is x.
 `Bool` has only `!`, `&&`, `||`, `==`, and `!=`, both operands of `&&` and `||`
-are always evaluated, and no conversion joins it to a number. A conditional
+are always evaluated, and no conversion joins it to a number. `Mod[m]` holds the
+least residues 0 through m - 1 of a modulus that is a constant of literals,
+`+`, `-`, `*`, `<<`, and parentheses; its literals lie strictly between -m and
+m, it has `+`, `-`, `*`, `/`, prefix `-`, `==`, and `!=` of one modulus and no
+order, and `x / y` is 0 when y has no inverse. `as` converts among `Int`,
+words, and residues by least residues, so `t[x as Int]` indexes by a residue. A conditional
 evaluates only its chosen branch. Names are the enclosing function's
 parameters and earlier bindings, and in a loop's step its index and
-accumulator; calls name typed `spec` functions of the same module, and the call
-graph must be acyclic. A loop runs over literal bounds with
-0 ≤ a < b ≤ 65536, and every index is an integer literal or an expression of
-literals and loop indices whose every value is proved in range. Duplicate names are syntactically valid, then semantic
+accumulator; calls name typed `spec` functions of the same module, or, as
+`m::f(...)`, of a module it uses, and each module's call graph must be
+acyclic, as must the uses of a program. A loop runs over literal bounds with
+0 ≤ a < b ≤ 65536, and every index is proved in range before evaluation: an
+expression of literals and loop indices by its values, and an index keyed by
+data by the range of its word type. Duplicate names are syntactically valid, then semantic
 analysis rejects a duplicate within the same declaration-kind namespace or
 parameter list. Empty declarations have no value, and a typed `impl` remains a
 syntax error.
@@ -726,8 +777,9 @@ syntax tree paired with a different source as `ORC0210`. A Core function's
 reported type is derived from its value, so a type/value mismatch is not
 representable at the public Core boundary.
 
-`orangec eval` prints every typed specification without parameters in
-source order. Functions with parameters are checked but run only when called,
+`orangec eval` prints every typed specification without parameters of the
+root module in source order; the functions of the modules it uses run only
+when called. Functions with parameters are checked but run only when called,
 and words print as fixed-width lowercase hexadecimal:
 
 ```text
@@ -737,17 +789,20 @@ demo::sample: Word[32] = 0xce20b47e
 demo::pair: Word[16]^2 = [0x1234, 0xbeef]
 demo::backwards: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
 demo::residues: Int^2 = [1, -1]
+demo::field: Mod[7]^2 = [1, 5]
 ```
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3g rules, limits, and non-claims are in
+through S3i rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
 [`docs/LOOPS_2026.md`](../docs/LOOPS_2026.md),
-[`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md), and
-[`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md). None of them defines
+[`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md),
+[`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md),
+[`docs/MODULES_2026.md`](../docs/MODULES_2026.md), and
+[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1022,6 +1077,55 @@ updates keyed by its own values. This corpus establishes the tested behavior
 of one implementation; it does not accept OEP-0010, prove the rules sound, or
 complete S3.
 
+## S3h module conformance
+
+`fixtures/s3h/` contains an exact ten-file corpus for the proposed S3h
+behavior: four programs, of which one must evaluate successfully and three must
+fail closed, and six modules they use. The accepted program uses SHA-256,
+HMAC, and HKDF as three modules, `hkdf` using `hmac` and `hmac` using
+`sha256`, and reproduces the SHA-256 example of FIPS 180-4, test cases 1 and 2
+of RFC 4231, and test case 1 of RFC 5869. The rejected programs cover a cycle
+of uses, a module that uses itself, a module used twice, a file that declares
+another module's name, calls qualified by a module not used or by the
+calling module, a function the used module does not declare, a used module's
+function called without its module, the wrong number of arguments, a result
+of the wrong type, and a module file that does not exist.
+
+`crates/orangec/tests/s3h_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3g runner, with each program's modules beside it. It
+parses the 10-rule S3h index in `docs/MODULES_2026.md`, binds every rule to
+named CLI, generated-CLI, or unit tests declared exactly once at their harness
+locations, and generates a diamond of uses read once each, a program read from
+standard input, a chain of 64 modules that links and one more that fails
+closed, a module with 65 `use` declarations, and one step budget spent across
+modules. This corpus establishes the tested behavior of one implementation; it
+does not accept OEP-0011, prove the rules sound, or complete S3.
+
+## S3i modular conformance
+
+`fixtures/s3i/` contains an exact seven-program corpus for the proposed S3i
+behavior, of which three must evaluate successfully and four must fail closed.
+The accepted programs write X25519 over `Mod[(1 << 255) - 19]` and Poly1305
+over `Mod[(1 << 130) - 5]` with no reduction in sight, reproducing the first
+test vector of RFC 7748 section 5.2 and the tag of RFC 8439 section 2.5.2, and
+compute constants in the rings their standards define: ML-KEM's zeta^128 and
+128^-1 modulo 3329, Ed25519's d and square root of -1, and P-256's generator
+on its curve. The rejected programs cover moduli that are too small, negative,
+too wide, not constant, missing, or too large to compute; `type` declarations
+out of order, naming built-in types, repeated, used before they are declared,
+or making arrays of arrays; residue literals out of range; order, remainder,
+and bitwise operators on residues; two moduli in one operator or call; `as`
+to `Bool` or an array type; and a residue used directly as an index.
+
+`crates/orangec/tests/s3i_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3h runner. It parses the 13-rule S3i index in
+`docs/MODULAR_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates 64
+`type` declarations and a 65th, the moduli 2, 2^521 - 1, and 2^521, literals
+at the edges of `Mod[3329]`, and residues as indices at the edges of their
+tables. This corpus establishes the tested behavior of one implementation; it
+does not accept OEP-0012, prove the rules sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1055,6 +1159,10 @@ complete S3.
   rule-index, and conditional-chain runner;
 - `crates/orangec/tests/s3g_conformance.rs`: exact repeatable S3g corpus,
   rule-index, and update-cost runner;
+- `crates/orangec/tests/s3h_conformance.rs`: exact repeatable S3h corpus,
+  rule-index, and module-reading runner;
+- `crates/orangec/tests/s3i_conformance.rs`: exact repeatable S3i corpus,
+  rule-index, and modulus-limit runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1064,6 +1172,9 @@ complete S3.
 - `fixtures/s3e/`: exact three-positive/four-negative S3e CLI fixture corpus;
 - `fixtures/s3f/`: exact four-positive/four-negative S3f CLI fixture corpus;
 - `fixtures/s3g/`: exact two-positive/two-negative S3g CLI fixture corpus;
+- `fixtures/s3h/`: exact one-positive/three-negative S3h CLI program corpus
+  and the six modules its programs use;
+- `fixtures/s3i/`: exact three-positive/four-negative S3i CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

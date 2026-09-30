@@ -1,0 +1,440 @@
+// HPKE, base mode, with DHKEM(X25519, HKDF-SHA256), HKDF-SHA256 and
+// ChaCha20-Poly1305: RFC 9180, "Hybrid Public Key Encryption" (Barnes, Bhargavan,
+// Lipp, Wood, 2022), https://www.rfc-editor.org/rfc/rfc9180. Orange has no
+// imports, so the entry carries its own SHA-256 (FIPS 180-4), HMAC (RFC 2104),
+// HKDF (RFC 5869), X25519 (RFC 7748) and ChaCha20-Poly1305 (RFC 8439), and
+// follows the RFC's order: the labeled KDF and DHKEM (section 4), the key
+// schedule (5.1), the context's Seal (5.2) and Export (5.3), the suite (7.1 to 7.3).
+// This file holds the KEM part only, through DHKEM and DeriveKeyPair (no
+// AEAD, no key schedule), and reproduces, from Appendix A.2, DeriveKeyPair on
+// ikmE: the private key skEm and the encapsulated key enc = pkEm = X25519(skEm, 9).
+edition 2026;
+module hpke {
+  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16) | ((b2 as Word[32]) << 8) | (b3 as Word[32])
+  }
+
+  spec be_bytes(x: Word[32]) -> Word[8]^4 {
+    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  }
+
+  // 256^i for 0 <= i < 32: the weight of byte i of a little-endian integer,
+  // and of byte 31 - i of a big-endian one.
+  spec byte_weight(i: Int) -> Int {
+    for j in 0..32 with w: Int = 1 { if j < i { w * 256 } else { w } }
+  }
+
+  // SHA-256, FIPS 180-4, as the S3e fixture writes it, generalized to a
+  // message of any length up to 119 bytes after a 64-byte prefix (the HMAC
+  // key block), which is every message HPKE hashes with this suite.
+
+  // Section 4.1.2.
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+
+  // Section 4.2.2: the first 32 bits of the fractional parts of the cube
+  // roots of the first 64 primes.
+  spec round_constants() -> Word[32]^64 {
+    [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ]
+  }
+
+  // Section 5.3.3.
+  spec initial_hash() -> Word[32]^8 {
+    [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+  }
+
+  // Section 6.2.2, step 1: sixteen words of the message schedule from the
+  // sixteen before them, W_t = sigma1(W_{t-2}) + W_{t-7} + sigma0(W_{t-15}) + W_{t-16}.
+  // The schedule is built sixteen words at a time because an update of a
+  // 32-word array costs half of an update of the 64-word schedule.
+  spec schedule_chunk(prev: Word[32]^16) -> Word[32]^16 {
+    let both: Word[32]^32 = for j in 0..16 with w: Word[32]^32 = [
+      prev[0], prev[1], prev[2], prev[3], prev[4], prev[5], prev[6], prev[7],
+      prev[8], prev[9], prev[10], prev[11], prev[12], prev[13], prev[14], prev[15],
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ] {
+      w with [16 + j] = small_sigma1(w[14 + j]) + w[9 + j] + small_sigma0(w[1 + j]) + w[j]
+    };
+    [
+      both[16], both[17], both[18], both[19], both[20], both[21], both[22], both[23],
+      both[24], both[25], both[26], both[27], both[28], both[29], both[30], both[31],
+    ]
+  }
+
+  // Section 6.2.2, step 1: the 64-word message schedule.
+  spec schedule(m: Word[32]^16) -> Word[32]^64 {
+    let w1: Word[32]^16 = schedule_chunk(m);
+    let w2: Word[32]^16 = schedule_chunk(w1);
+    let w3: Word[32]^16 = schedule_chunk(w2);
+    [
+      m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
+      m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15],
+      w1[0], w1[1], w1[2], w1[3], w1[4], w1[5], w1[6], w1[7],
+      w1[8], w1[9], w1[10], w1[11], w1[12], w1[13], w1[14], w1[15],
+      w2[0], w2[1], w2[2], w2[3], w2[4], w2[5], w2[6], w2[7],
+      w2[8], w2[9], w2[10], w2[11], w2[12], w2[13], w2[14], w2[15],
+      w3[0], w3[1], w3[2], w3[3], w3[4], w3[5], w3[6], w3[7],
+      w3[8], w3[9], w3[10], w3[11], w3[12], w3[13], w3[14], w3[15],
+    ]
+  }
+
+  // Section 6.2.2, step 3: one round on the working variables a through h.
+  spec round(v: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+    let t1: Word[32] = v[7] + big_sigma1(v[4]) + ch(v[4], v[5], v[6]) + k + w;
+    let t2: Word[32] = big_sigma0(v[0]) + maj(v[0], v[1], v[2]);
+    [t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]]
+  }
+
+  // Section 6.2.2, steps 2 through 4: one block.
+  spec compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+    let w: Word[32]^64 = schedule(m);
+    let k: Word[32]^64 = round_constants();
+    let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h { round(v, k[t], w[t]) };
+    [v[0] + h[0], v[1] + h[1], v[2] + h[2], v[3] + h[3], v[4] + h[4], v[5] + h[5], v[6] + h[6], v[7] + h[7]]
+  }
+
+  // Section 5.1.1: byte i of the padded message, whose bytes are the message
+  // through len - 1, then the bit 1 as 0x80, then zeros; the length goes into
+  // the last word separately.
+  spec padded_byte(b: Word[8], i: Int, len: Int) -> Word[8] {
+    if i < len { b } else if i == len { 0x80 } else { 0 }
+  }
+
+  // Sections 5.1.1, 5.2.1 and 6.2: the message m[0 .. len), which follows
+  // prior bytes already compressed into h, padded to one or two blocks (len
+  // at most 119) and compressed. The 64-bit length in bits of the whole
+  // message ends the last block; it is below 2^32 here, so it is the last
+  // word alone.
+  spec hash_blocks(h: Word[32]^8, m: Word[8]^128, len: Int, prior: Int) -> Word[32]^8 {
+    let last: Int = ((len + 8) / 64) * 64;
+    let bits: Int = 8 * (prior + len);
+    for k in 0..2 with state: Word[32]^8 = h {
+      if (64 * k) <= last {
+        compress(state, for t in 0..16 with w: Word[32]^16 = [0; 16] {
+          w with [t] = if (t == 15) && ((64 * k) == last) { bits as Word[32] } else {
+            load_be32(
+              padded_byte(m[64 * k + 4 * t], 64 * k + 4 * t, len),
+              padded_byte(m[64 * k + 4 * t + 1], 64 * k + 4 * t + 1, len),
+              padded_byte(m[64 * k + 4 * t + 2], 64 * k + 4 * t + 2, len),
+              padded_byte(m[64 * k + 4 * t + 3], 64 * k + 4 * t + 3, len),
+            )
+          }
+        })
+      } else { state }
+    }
+  }
+
+  // The hash value as 32 bytes, big-endian word by word.
+  spec digest(h: Word[32]^8) -> Word[8]^32 {
+    for i in 0..8 with bytes: Word[8]^32 = [0; 32] {
+      for j in 0..4 with b: Word[8]^32 = bytes { b with [4 * i + j] = be_bytes(h[i])[j] }
+    }
+  }
+
+  // HMAC-SHA256, RFC 2104 section 2, with a 32-byte key K (HKDF's PRK and
+  // Extract's salt are 32 bytes or empty): H(K xor opad || H(K xor ipad || text)).
+
+  // K padded with zeros to the 64-byte block, xored with the byte pad
+  // (ipad = 0x36 or opad = 0x5c), as sixteen words.
+  spec key_block(key: Word[8]^32, pad: Word[8]) -> Word[32]^16 {
+    let filler: Word[32] = load_be32(pad, pad, pad, pad);
+    for t in 0..8 with w: Word[32]^16 = [filler; 16] {
+      w with [t] = load_be32(key[4 * t] ^ pad, key[4 * t + 1] ^ pad, key[4 * t + 2] ^ pad, key[4 * t + 3] ^ pad)
+    }
+  }
+
+  // The outer hash's second block: the 32-byte inner hash, padded, with the
+  // length 96 bytes = 0x300 bits.
+  spec outer_block(inner: Word[32]^8) -> Word[32]^16 {
+    [
+      inner[0], inner[1], inner[2], inner[3], inner[4], inner[5], inner[6], inner[7],
+      0x80000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000300,
+    ]
+  }
+
+  spec hmac_sha256(key: Word[8]^32, text: Word[8]^128, len: Int) -> Word[8]^32 {
+    let inner: Word[32]^8 = hash_blocks(compress(initial_hash(), key_block(key, 0x36)), text, len, 64);
+    digest(compress(compress(initial_hash(), key_block(key, 0x5c)), outer_block(inner)))
+  }
+
+  // HKDF-SHA256, RFC 5869 sections 2.2 and 2.3: the KDF of RFC 9180 section 7.2,
+  // kdf_id 0x0001, Nh = 32.
+
+  // Section 2.2: a salt that is not provided is HashLen zeros; HPKE's "" salt
+  // is this value (as an HMAC key, "" and 32 zero bytes pad to the same block).
+  spec empty_salt() -> Word[8]^32 { [0; 32] }
+
+  // Section 2.2: PRK = HMAC-Hash(salt, IKM).
+  spec extract(salt: Word[8]^32, ikm: Word[8]^128, len: Int) -> Word[8]^32 { hmac_sha256(salt, ikm, len) }
+
+  // Section 2.3: OKM = T(1) || T(2) || ... with T(1) = HMAC-Hash(PRK, info || 0x01).
+  // Every L that HPKE asks of this suite (Nk = 32, Nn = 12, Nsecret = Nh = 32,
+  // and the exports of Appendix A.2, L = 32) is at most Nh, so N = 1 and the
+  // output is T(1), or its first L bytes.
+  spec expand(prk: Word[8]^32, info: Word[8]^128, len: Int) -> Word[8]^32 {
+    let text: Word[8]^128 = for i in 0..128 with t: Word[8]^128 = info {
+      if i == len { t with [i] = 0x01 } else { t }
+    };
+    hmac_sha256(prk, text, len + 1)
+  }
+
+  // RFC 9180 section 4: LabeledExtract(salt, label, ikm) is Extract(salt,
+  // "HPKE-v1" || suite_id || label || ikm) and LabeledExpand(prk, label, info, L)
+  // is Expand(prk, I2OSP(L, 2) || "HPKE-v1" || suite_id || label || info, L).
+  // Arrays have fixed lengths, so each labeled_ikm and labeled_info the RFC
+  // forms is its own spec, a 128-byte buffer with the concatenation's length
+  // beside it at the call; the ASCII of every label is in the comments. The
+  // KEM's suite_id is "KEM" || I2OSP(kem_id, 2) (section 4.1); the rest of
+  // HPKE uses "HPKE" || kem_id || kdf_id || aead_id (section 5.1).
+
+  // Section 4.1, ExtractAndExpand: labeled_ikm of eae_prk, 51 bytes.
+  spec labeled_ikm_eae_prk(dh: Word[8]^32) -> Word[8]^128 {
+    [
+      0x48, 0x50, 0x4b, 0x45, 0x2d, 0x76, 0x31,              // "HPKE-v1"
+      0x4b, 0x45, 0x4d, 0x00, 0x20,                          // "KEM" || I2OSP(0x0020, 2)
+      0x65, 0x61, 0x65, 0x5f, 0x70, 0x72, 0x6b,              // "eae_prk"
+      dh[0], dh[1], dh[2], dh[3], dh[4], dh[5], dh[6], dh[7],
+      dh[8], dh[9], dh[10], dh[11], dh[12], dh[13], dh[14], dh[15],
+      dh[16], dh[17], dh[18], dh[19], dh[20], dh[21], dh[22], dh[23],
+      dh[24], dh[25], dh[26], dh[27], dh[28], dh[29], dh[30], dh[31],
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  // Section 4.1, ExtractAndExpand: labeled_info of shared_secret, L = Nsecret = 32,
+  // 91 bytes.
+  spec labeled_info_shared_secret(kem_context: Word[8]^64) -> Word[8]^128 {
+    [
+      0x00, 0x20,                                            // I2OSP(32, 2)
+      0x48, 0x50, 0x4b, 0x45, 0x2d, 0x76, 0x31,              // "HPKE-v1"
+      0x4b, 0x45, 0x4d, 0x00, 0x20,                          // "KEM" || I2OSP(0x0020, 2)
+      0x73, 0x68, 0x61, 0x72, 0x65, 0x64, 0x5f, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74, // "shared_secret"
+      kem_context[0], kem_context[1], kem_context[2], kem_context[3], kem_context[4], kem_context[5], kem_context[6], kem_context[7],
+      kem_context[8], kem_context[9], kem_context[10], kem_context[11], kem_context[12], kem_context[13], kem_context[14], kem_context[15],
+      kem_context[16], kem_context[17], kem_context[18], kem_context[19], kem_context[20], kem_context[21], kem_context[22], kem_context[23],
+      kem_context[24], kem_context[25], kem_context[26], kem_context[27], kem_context[28], kem_context[29], kem_context[30], kem_context[31],
+      kem_context[32], kem_context[33], kem_context[34], kem_context[35], kem_context[36], kem_context[37], kem_context[38], kem_context[39],
+      kem_context[40], kem_context[41], kem_context[42], kem_context[43], kem_context[44], kem_context[45], kem_context[46], kem_context[47],
+      kem_context[48], kem_context[49], kem_context[50], kem_context[51], kem_context[52], kem_context[53], kem_context[54], kem_context[55],
+      kem_context[56], kem_context[57], kem_context[58], kem_context[59], kem_context[60], kem_context[61], kem_context[62], kem_context[63],
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  // Section 7.1.3, DeriveKeyPair: labeled_ikm of dkp_prk, 51 bytes.
+  spec labeled_ikm_dkp_prk(ikm: Word[8]^32) -> Word[8]^128 {
+    [
+      0x48, 0x50, 0x4b, 0x45, 0x2d, 0x76, 0x31,              // "HPKE-v1"
+      0x4b, 0x45, 0x4d, 0x00, 0x20,                          // "KEM" || I2OSP(0x0020, 2)
+      0x64, 0x6b, 0x70, 0x5f, 0x70, 0x72, 0x6b,              // "dkp_prk"
+      ikm[0], ikm[1], ikm[2], ikm[3], ikm[4], ikm[5], ikm[6], ikm[7],
+      ikm[8], ikm[9], ikm[10], ikm[11], ikm[12], ikm[13], ikm[14], ikm[15],
+      ikm[16], ikm[17], ikm[18], ikm[19], ikm[20], ikm[21], ikm[22], ikm[23],
+      ikm[24], ikm[25], ikm[26], ikm[27], ikm[28], ikm[29], ikm[30], ikm[31],
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  // Section 7.1.3, DeriveKeyPair: labeled_info of sk with info = "", L = Nsk = 32,
+  // 16 bytes.
+  spec labeled_info_sk() -> Word[8]^128 {
+    [
+      0x00, 0x20,                                            // I2OSP(32, 2)
+      0x48, 0x50, 0x4b, 0x45, 0x2d, 0x76, 0x31,              // "HPKE-v1"
+      0x4b, 0x45, 0x4d, 0x00, 0x20,                          // "KEM" || I2OSP(0x0020, 2)
+      0x73, 0x6b,                                            // "sk"
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  // X25519, RFC 7748 section 5, as the S3f fixture writes it: the field is
+  // the integers modulo 2^255 - 19 in exact `Int` arithmetic with `%` after
+  // every product, and the ladder's conditional swap is a conditional.
+
+  // RFC 7748 section 4.1: p = 2^255 - 19.
+  spec prime_25519() -> Int {
+    57896044618658097711785492504343953926634992332820282019728792003956564819949
+  }
+
+  // Section 5: the u-coordinate, little-endian, with its top bit cleared.
+  spec decode_u(u: Word[8]^32) -> Int {
+    let masked: Word[8]^32 = u with [31] = u[31] & 127;
+    for i in 0..32 with n: Int = 0 { n * 256 + (masked[31 - i] as Int) }
+  }
+
+  // Section 5, decodeScalar25519: the three low bits cleared, bit 255
+  // cleared, and bit 254 set. RFC 9180 section 7.1.2 calls this clamping.
+  spec clamp(k: Word[8]^32) -> Word[8]^32 {
+    (k with [0] = k[0] & 248) with [31] = (k[31] & 127) | 64
+  }
+
+  // Section 5: one rung of the ladder. With s = [x_2, z_2, x_3, z_3], it
+  // doubles (x_2 : z_2) and adds it to (x_3 : z_3), whose difference is
+  // (x_1 : 1).
+  spec ladder(x1: Int, s: Int^4) -> Int^4 {
+    let p: Int = prime_25519();
+    let a: Int = s[0] + s[1];
+    let aa: Int = (a * a) % p;
+    let b: Int = s[0] - s[1];
+    let bb: Int = (b * b) % p;
+    let e: Int = aa - bb;
+    let c: Int = s[2] + s[3];
+    let d: Int = s[2] - s[3];
+    let da: Int = (d * a) % p;
+    let cb: Int = (c * b) % p;
+    [
+      (aa * bb) % p,
+      (e * (aa + 121665 * e)) % p,
+      ((da + cb) * (da + cb)) % p,
+      (x1 * (((da - cb) * (da - cb)) % p)) % p,
+    ]
+  }
+
+  spec swap(s: Int^4) -> Int^4 { [s[2], s[3], s[0], s[1]] }
+
+  // The RFC's conditional swap before and after the rung: a set bit works
+  // on the swapped pair.
+  spec rung(x1: Int, s: Int^4, set: Bool) -> Int^4 {
+    if set { swap(ladder(x1, swap(s))) } else { ladder(x1, s) }
+  }
+
+  // b^e modulo p for 0 <= e < 2^255, from the lowest bit of e up.
+  spec power(b: Int, e: Int) -> Int {
+    let p: Int = prime_25519();
+    let s: Int^3 = for i in 0..255 with s: Int^3 = [1, b, e] {
+      [if (s[2] % 2) == 1 { (s[0] * s[1]) % p } else { s[0] }, (s[1] * s[1]) % p, s[2] / 2]
+    };
+    s[0]
+  }
+
+  // Section 5, encodeUCoordinate: 32 little-endian bytes.
+  spec encode(x: Int) -> Word[8]^32 {
+    for i in 0..32 with b: Word[8]^32 = [0; 32] { b with [i] = (x / byte_weight(i)) as Word[8] }
+  }
+
+  // Section 5: the scalar's bits from 254 down to 0 drive the ladder, and
+  // the result is x_2 / z_2.
+  spec x25519(scalar: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+    let k: Word[8]^32 = clamp(scalar);
+    let masks: Word[8]^8 = [1, 2, 4, 8, 16, 32, 64, 128];
+    let x1: Int = decode_u(u);
+    let s: Int^4 = for i in 0..255 with s: Int^4 = [1, 0, x1, 1] {
+      rung(x1, s, (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0)
+    };
+    encode((s[0] * power(s[1], prime_25519() - 2)) % prime_25519())
+  }
+
+  // RFC 9180 section 4.1, DHKEM(X25519, HKDF-SHA256): kem_id 0x0020 (section 7.1),
+  // Nsecret = Nenc = Npk = Nsk = 32. SerializePublicKey and DeserializePublicKey
+  // are the identity (7.1.1), so a public key is its 32 bytes throughout.
+
+  // Section 4.1: DH(skX, pkY) is X25519(skX, pkY); its output is Ndh = 32 bytes.
+  spec dh(sk: Word[8]^32, pk: Word[8]^32) -> Word[8]^32 { x25519(sk, pk) }
+
+  // Section 4.1, Encap: kem_context = enc || pkRm.
+  spec kem_context(enc: Word[8]^32, pkRm: Word[8]^32) -> Word[8]^64 {
+    [
+      enc[0], enc[1], enc[2], enc[3], enc[4], enc[5], enc[6], enc[7],
+      enc[8], enc[9], enc[10], enc[11], enc[12], enc[13], enc[14], enc[15],
+      enc[16], enc[17], enc[18], enc[19], enc[20], enc[21], enc[22], enc[23],
+      enc[24], enc[25], enc[26], enc[27], enc[28], enc[29], enc[30], enc[31],
+      pkRm[0], pkRm[1], pkRm[2], pkRm[3], pkRm[4], pkRm[5], pkRm[6], pkRm[7],
+      pkRm[8], pkRm[9], pkRm[10], pkRm[11], pkRm[12], pkRm[13], pkRm[14], pkRm[15],
+      pkRm[16], pkRm[17], pkRm[18], pkRm[19], pkRm[20], pkRm[21], pkRm[22], pkRm[23],
+      pkRm[24], pkRm[25], pkRm[26], pkRm[27], pkRm[28], pkRm[29], pkRm[30], pkRm[31],
+    ]
+  }
+
+  // Section 4.1, ExtractAndExpand.
+  spec extract_and_expand(dh: Word[8]^32, kem_context: Word[8]^64) -> Word[8]^32 {
+    let eae_prk: Word[8]^32 = extract(empty_salt(), labeled_ikm_eae_prk(dh), 51);
+    expand(eae_prk, labeled_info_shared_secret(kem_context), 91)
+  }
+
+  // Section 4.1, Encap: the shared secret. The RFC's Encap draws (skE, pkE)
+  // from GenerateKeyPair; here both are inputs, and enc = SerializePublicKey(pkE)
+  // = pkE. Encap's second output, enc, is that input.
+  spec encap(skE: Word[8]^32, pkE: Word[8]^32, pkR: Word[8]^32) -> Word[8]^32 {
+    extract_and_expand(dh(skE, pkR), kem_context(pkE, pkR))
+  }
+
+  // Section 7.1.3, DeriveKeyPair for X25519: the private key sk. (Its pair
+  // pk(sk) is `pk` below; there are no tuples.)
+  spec derive_key_pair_sk(ikm: Word[8]^32) -> Word[8]^32 {
+    let dkp_prk: Word[8]^32 = extract(empty_salt(), labeled_ikm_dkp_prk(ikm), 51);
+    expand(dkp_prk, labeled_info_sk(), 16)
+  }
+
+  // RFC 7748 section 6.1: the base point u = 9.
+  spec base_point() -> Word[8]^32 {
+    [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  }
+
+  // Section 3, pk(skX): the public key of a private key, X25519(sk, 9).
+  spec pk(sk: Word[8]^32) -> Word[8]^32 { x25519(sk, base_point()) }
+
+  // Vectors.
+  // RFC 9180 Appendix A.2, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20Poly1305, Base Setup Information: ikmE.
+  spec a2_ikme() -> Word[8]^32 {
+    [
+      0x90, 0x9a, 0x9b, 0x35, 0xd3, 0xdc, 0x47, 0x13, 0xa5, 0xe7, 0x2a, 0x4d, 0xa2, 0x74, 0xb5, 0x5d,
+      0x3d, 0x38, 0x21, 0xa3, 0x7e, 0x5d, 0x09, 0x9e, 0x74, 0xa6, 0x47, 0xdb, 0x58, 0x3a, 0x90, 0x4b,
+    ]
+  }
+
+  // RFC 9180 Appendix A.2, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20Poly1305, Base Setup Information: skEm = DeriveKeyPair(ikmE).sk (section 7.1.3).
+  spec rfc9180_a2_sk_em() -> Word[8]^32 {
+    derive_key_pair_sk(a2_ikme())
+  }
+
+  spec rfc9180_a2_sk_em_expected() -> Word[8]^32 {
+    [
+      0xf4, 0xec, 0x9b, 0x33, 0xb7, 0x92, 0xc3, 0x72, 0xc1, 0xd2, 0xc2, 0x06, 0x35, 0x07, 0xb6, 0x84,
+      0xef, 0x92, 0x5b, 0x8c, 0x75, 0xa4, 0x2d, 0xbc, 0xbf, 0x57, 0xd6, 0x3c, 0xcd, 0x38, 0x16, 0x00,
+    ]
+  }
+
+  // RFC 9180 Appendix A.2, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20Poly1305, Base Setup Information: pkEm = pk(DeriveKeyPair(ikmE).sk) = X25519(skEm, 9), the encapsulated key enc.
+  spec rfc9180_a2_pk_em() -> Word[8]^32 {
+    pk(derive_key_pair_sk(a2_ikme()))
+  }
+
+  spec rfc9180_a2_pk_em_expected() -> Word[8]^32 {
+    [
+      0x1a, 0xfa, 0x08, 0xd3, 0xde, 0xc0, 0x47, 0xa6, 0x43, 0x88, 0x51, 0x63, 0xf1, 0x18, 0x04, 0x76,
+      0xfa, 0x7d, 0xdb, 0x54, 0xc6, 0xa8, 0x02, 0x9e, 0xa3, 0x3f, 0x95, 0x79, 0x6b, 0xf2, 0xac, 0x4a,
+    ]
+  }
+}

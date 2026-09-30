@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::core::{
     ArrayType, CoreArray, CoreExpression, CoreFunction, CoreFunctionId, CoreModule, CoreNode,
-    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS,
+    CoreNodeKind, CoreType, CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Modulus, Residue,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, UnaryOperator};
@@ -133,9 +133,11 @@ impl EvaluationResult {
     }
 }
 
-/// Evaluates every typed Core function without parameters, in source order.
+/// Evaluates every typed Core function of the root module without
+/// parameters, in source order.
 ///
-/// Functions with parameters are evaluated only through calls.
+/// Functions with parameters, and every function of a used module, are
+/// evaluated only through calls. One step budget covers the whole program.
 #[must_use]
 pub fn evaluate(core: &CoreModule) -> EvaluationResult {
     evaluate_with_limit(core, MAX_EVALUATION_STEPS_PER_SOURCE)
@@ -195,8 +197,8 @@ impl CallResult {
 
 /// A typed Core module prepared for calls on values the host supplies.
 ///
-/// [`evaluate`] evaluates every function without parameters under one budget
-/// per source. An evaluator instead calls one function at a time on
+/// [`evaluate`] evaluates every entry function without parameters under one
+/// budget per program. An evaluator instead calls one function at a time on
 /// arguments of exactly its parameter types, and gives every call its own
 /// step limit. Literals are prepared once and shared by every call.
 pub struct Evaluator<'core> {
@@ -237,12 +239,15 @@ impl<'core> Evaluator<'core> {
         self.machine.core
     }
 
-    /// Returns the module's function named `name`, if there is one.
+    /// Returns the root module's function named `name`, if there is one.
+    ///
+    /// Functions of the modules the root uses are reached only through the
+    /// root's calls, so two modules may each declare a function of one name.
     #[must_use]
     pub fn function(&self, name: &str) -> Option<&'core CoreFunction> {
         self.machine
             .core
-            .functions
+            .entry_functions()
             .iter()
             .find(|function| function.name == name)
     }
@@ -329,6 +334,14 @@ fn host_value(value: &CoreValue, reservations: Reservations) -> Result<Value, St
                 ))?,
         )),
         CoreValue::Bool(value) => Value::Bool(*value),
+        CoreValue::Mod(residue) => Value::Mod(Rc::new(
+            residue
+                .value()
+                .try_clone_with_reservation(reservations.value_limbs)
+                .ok_or(Stop::Allocation(
+                    "exact integer storage could not be reserved",
+                ))?,
+        )),
         CoreValue::Array(array) => {
             let mut elements = Vec::new();
             if !(reservations.array)(&mut elements, array.elements().len()) {
@@ -416,13 +429,16 @@ fn reserve_frames(frames: &mut Vec<Frame<'_>>, count: usize) -> bool {
     frames.try_reserve(count).is_ok()
 }
 
-/// A runtime value. Exact integers and arrays are shared so that loading a
-/// literal, parameter, or binding never copies their contents.
+/// A runtime value. Exact integers, residues, and arrays are shared so that
+/// loading a literal, parameter, or binding never copies their contents.
 #[derive(Clone, Debug)]
 enum Value {
     Int(Rc<ExactInteger>),
     Bool(bool),
     Word(u64),
+    /// The least residue of an element of `Mod[m]`, from 0 through m - 1;
+    /// the modulus is the type's.
+    Mod(Rc<ExactInteger>),
     Array(Rc<ArrayValue>),
 }
 
@@ -534,6 +550,7 @@ fn has_type(value: &Value, ty: CoreType) -> bool {
     match (value, ty) {
         (Value::Int(_), CoreType::Int) | (Value::Bool(_), CoreType::Bool) => true,
         (Value::Word(word), ty) => word_mask(ty).is_some_and(|mask| (*word & !mask) == 0),
+        (Value::Mod(value), CoreType::Mod(modulus)) => modulus.contains(value),
         (Value::Array(array), CoreType::Array(array_type)) => array.ty == array_type,
         _ => false,
     }
@@ -548,7 +565,8 @@ enum Stop {
     InconsistentCore,
 }
 
-/// Shared `Int` literals, indexed by function, expression part, and node.
+/// Shared `Int` literals and residue literals, indexed by function,
+/// expression part, and node.
 type SharedLiterals = Vec<Vec<Vec<Option<Rc<ExactInteger>>>>>;
 
 struct Machine<'core> {
@@ -567,6 +585,14 @@ fn digits(value: &ExactInteger) -> usize {
     value.magnitude_digits()
 }
 
+/// The 32-bit digits of a modulus: the unit of the cost of arithmetic in
+/// `Mod[m]`.
+fn modulus_digits(modulus: Modulus) -> usize {
+    modulus.bits().div_ceil(32)
+}
+
+const INTEGER_STORAGE: &str = "exact integer storage could not be reserved";
+
 /// The steps of an `update` or `fill` of `length` elements: one for each 64
 /// elements it writes, or part of 64, so that a step stays about as much
 /// work as one limb operation and never costs more than one per element.
@@ -576,7 +602,7 @@ const fn bulk_cost(length: usize) -> usize {
 
 fn word_mask(ty: CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
+        CoreType::Int | CoreType::Bool | CoreType::Mod(_) | CoreType::Array(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -697,21 +723,99 @@ impl<'core> Machine<'core> {
     fn pop_int(&mut self) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Int(value) => Ok(value),
-            Value::Bool(_) | Value::Word(_) | Value::Array(_) => Err(Stop::InconsistentCore),
+            Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
+                Err(Stop::InconsistentCore)
+            }
         }
     }
 
     fn pop_bool(&mut self) -> Result<bool, Stop> {
         match self.pop()? {
             Value::Bool(value) => Ok(value),
-            Value::Int(_) | Value::Word(_) | Value::Array(_) => Err(Stop::InconsistentCore),
+            Value::Int(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
+                Err(Stop::InconsistentCore)
+            }
         }
     }
 
     fn pop_word(&mut self) -> Result<u64, Stop> {
         match self.pop()? {
             Value::Word(value) => Ok(value),
-            Value::Int(_) | Value::Bool(_) | Value::Array(_) => Err(Stop::InconsistentCore),
+            Value::Int(_) | Value::Bool(_) | Value::Mod(_) | Value::Array(_) => {
+                Err(Stop::InconsistentCore)
+            }
+        }
+    }
+
+    /// Pops a least residue of `Mod[modulus]`.
+    fn pop_residue(&mut self, modulus: Modulus) -> Result<Rc<ExactInteger>, Stop> {
+        match self.pop()? {
+            Value::Mod(value) if modulus.contains(&value) => Ok(value),
+            Value::Int(_) | Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
+                Err(Stop::InconsistentCore)
+            }
+        }
+    }
+
+    /// Applies `+`, `-`, `*`, or `/` in `Mod[modulus]` to the top two
+    /// values. Addition and subtraction cost d + 1 steps for a modulus of d
+    /// 32-bit digits, multiplication 2d^2 + 1 for the product and its
+    /// reduction, and division 64d^2 + 1 for the inverse, which the extended
+    /// Euclidean algorithm finds in at most about 46d rounds of O(d) work.
+    fn residue_binary(
+        &mut self,
+        operator: BinaryOperator,
+        modulus: Modulus,
+    ) -> Result<Value, Stop> {
+        let right = self.pop_residue(modulus)?;
+        let left = self.pop_residue(modulus)?;
+        let reserve = self.reservations.value_limbs;
+        let digits = modulus_digits(modulus);
+        let square = digits.checked_mul(digits).ok_or(Stop::Steps)?;
+        let exact = match operator {
+            BinaryOperator::Add | BinaryOperator::Subtract => {
+                self.charge(digits.saturating_add(1))?;
+                if operator == BinaryOperator::Add {
+                    left.add(&right, reserve)
+                } else {
+                    left.subtract(&right, reserve)
+                }
+            }
+            BinaryOperator::Multiply => {
+                self.charge(square.checked_mul(2).ok_or(Stop::Steps)?.saturating_add(1))?;
+                left.multiply(&right, reserve)
+            }
+            // x / y = x y^-1 when y is a unit, and 0 otherwise: x / 0 = 0.
+            BinaryOperator::Divide => {
+                self.charge(square.checked_mul(64).ok_or(Stop::Steps)?.saturating_add(1))?;
+                modulus
+                    .inverse(&right, reserve)
+                    .and_then(|inverse| left.multiply(&inverse, reserve))
+            }
+            _ => return Err(Stop::InconsistentCore),
+        };
+        let reduced = exact
+            .and_then(|exact| modulus.reduce(&exact, reserve))
+            .ok_or(Stop::Allocation(INTEGER_STORAGE))?;
+        Ok(Value::Mod(Rc::new(reduced)))
+    }
+
+    /// Pops an operand of type `from` and returns its integer value: an
+    /// `Int` itself, a word's unsigned value, or a residue's least residue.
+    fn pop_integer(&mut self, from: CoreType) -> Result<Rc<ExactInteger>, Stop> {
+        match from {
+            CoreType::Int => self.pop_int(),
+            CoreType::Mod(modulus) => self.pop_residue(modulus),
+            _ => {
+                let mask = word_mask(from).ok_or(Stop::InconsistentCore)?;
+                let word = self.pop_word()?;
+                if word & !mask != 0 {
+                    return Err(Stop::InconsistentCore);
+                }
+                ExactInteger::from_u64(word, self.reservations.value_limbs)
+                    .map(Rc::new)
+                    .ok_or(Stop::Allocation(INTEGER_STORAGE))
+            }
         }
     }
 
@@ -1072,8 +1176,9 @@ impl<'core> Machine<'core> {
         match &node.kind {
             CoreNodeKind::Literal(value) => {
                 self.charge(1)?;
-                let value = match value {
-                    CoreValue::Int(_) => {
+                let literal = value;
+                let value = match literal {
+                    CoreValue::Int(_) | CoreValue::Mod(_) => {
                         let index = usize::try_from(function.id.index())
                             .map_err(|_| Stop::InconsistentCore)?;
                         let shared = self
@@ -1083,7 +1188,10 @@ impl<'core> Machine<'core> {
                             .and_then(|literals| literals.get(offset))
                             .and_then(Option::as_ref)
                             .ok_or(Stop::InconsistentCore)?;
-                        Value::Int(Rc::clone(shared))
+                        match literal {
+                            CoreValue::Int(_) => Value::Int(Rc::clone(shared)),
+                            _ => Value::Mod(Rc::clone(shared)),
+                        }
                     }
                     CoreValue::Bool(value) => Value::Bool(*value),
                     word => Value::Word(word.word_as_u64().ok_or(Stop::InconsistentCore)?),
@@ -1180,6 +1288,22 @@ impl<'core> Machine<'core> {
                         self.charge(1)?;
                         Value::Word(!self.pop_word()? & mask)
                     }
+                    // -x = m - x for x != 0, and -0 = 0.
+                    (UnaryOperator::Negate, None) if node.ty.modulus().is_some() => {
+                        let modulus = node.ty.modulus().ok_or(Stop::InconsistentCore)?;
+                        let operand = self.pop_residue(modulus)?;
+                        self.charge(modulus_digits(modulus).saturating_add(1))?;
+                        let reserve = self.reservations.value_limbs;
+                        let negated = if operand.is_zero() {
+                            operand.try_clone_with_reservation(reserve)
+                        } else {
+                            modulus
+                                .to_exact(reserve)
+                                .and_then(|modulus| modulus.subtract(&operand, reserve))
+                        }
+                        .ok_or(Stop::Allocation(INTEGER_STORAGE))?;
+                        Value::Mod(Rc::new(negated))
+                    }
                     _ => return Err(Stop::InconsistentCore),
                 };
                 self.push(value)
@@ -1202,6 +1326,8 @@ impl<'core> Machine<'core> {
                     Value::Word(
                         word_binary(*operator, mask, left, right).ok_or(Stop::InconsistentCore)?,
                     )
+                } else if let Some(modulus) = node.ty.modulus() {
+                    self.residue_binary(*operator, modulus)?
                 } else {
                     let right = self.pop_int()?;
                     let left = self.pop_int()?;
@@ -1282,6 +1408,21 @@ impl<'core> Machine<'core> {
                         let right = self.pop_bool()?;
                         let left = self.pop_bool()?;
                         left.cmp(&right)
+                    }
+                    // Residues are compared for equality only.
+                    CoreType::Mod(_)
+                        if !matches!(
+                            operator,
+                            BinaryOperator::Equal | BinaryOperator::NotEqual
+                        ) =>
+                    {
+                        return Err(Stop::InconsistentCore);
+                    }
+                    CoreType::Mod(modulus) => {
+                        let right = self.pop_residue(*modulus)?;
+                        let left = self.pop_residue(*modulus)?;
+                        self.charge(modulus_digits(*modulus).saturating_add(1))?;
+                        left.compare(&right)
                     }
                     ty => {
                         let mask = word_mask(*ty).ok_or(Stop::InconsistentCore)?;
@@ -1446,17 +1587,27 @@ impl<'core> Machine<'core> {
                 if *from == CoreType::Bool || node.ty == CoreType::Bool {
                     return Err(Stop::InconsistentCore);
                 }
-                let value = match (word_mask(*from), word_mask(node.ty)) {
-                    (None, None) => Value::Int(self.pop_int()?),
-                    (None, Some(mask)) => Value::Word(self.pop_int()?.modulo_2_64() & mask),
-                    (Some(_), Some(mask)) => Value::Word(self.pop_word()? & mask),
-                    (Some(_), None) => {
-                        let word = self.pop_word()?;
-                        let value = ExactInteger::from_u64(word, self.reservations.value_limbs)
-                            .ok_or(Stop::Allocation(
-                                "exact integer storage could not be reserved",
-                            ))?;
-                        Value::Int(Rc::new(value))
+                let value = match (word_mask(*from), node.ty) {
+                    (Some(_), ty) if word_mask(ty).is_some() => {
+                        let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
+                        Value::Word(self.pop_word()? & mask)
+                    }
+                    // A residue's value is its least residue, and a
+                    // conversion to `Mod[m]` reduces the operand's value
+                    // modulo m, which costs one step per digit of the
+                    // operand and of m.
+                    (_, CoreType::Mod(modulus)) => {
+                        let value = self.pop_integer(*from)?;
+                        self.charge(digits(&value).saturating_mul(modulus_digits(modulus)))?;
+                        let reduced = modulus
+                            .reduce(&value, self.reservations.value_limbs)
+                            .ok_or(Stop::Allocation(INTEGER_STORAGE))?;
+                        Value::Mod(Rc::new(reduced))
+                    }
+                    (_, CoreType::Int) => Value::Int(self.pop_integer(*from)?),
+                    (_, ty) => {
+                        let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
+                        Value::Word(self.pop_integer(*from)?.modulo_2_64() & mask)
                     }
                 };
                 self.push(value)
@@ -1479,7 +1630,7 @@ fn evaluate_with_reservations(
         };
     }
     let roots = core
-        .functions
+        .entry_functions()
         .iter()
         .filter(|function| function.parameters.is_empty())
         .count();
@@ -1516,7 +1667,7 @@ fn evaluate_with_reservations(
     };
     let mut shared_module = None;
     for function in core
-        .functions
+        .entry_functions()
         .iter()
         .filter(|function| function.parameters.is_empty())
     {
@@ -1576,6 +1727,9 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
         (Value::Word(value), ty) => {
             CoreValue::word_from_u64(ty, value).ok_or(Stop::InconsistentCore)
         }
+        (Value::Mod(value), CoreType::Mod(modulus)) => {
+            result_residue(&value, modulus, reservations)
+        }
         (Value::Array(array), CoreType::Array(array_type)) if array.ty == array_type => {
             let mut elements = Vec::new();
             if !(reservations.result_array)(&mut elements, array.elements.len()) {
@@ -1611,11 +1765,29 @@ fn result_element(
         (Value::Word(value), ty) => {
             CoreValue::word_from_u64(ty, *value).ok_or(Stop::InconsistentCore)
         }
+        (Value::Mod(value), CoreType::Mod(modulus)) => result_residue(value, modulus, reservations),
         _ => Err(Stop::InconsistentCore),
     }
 }
 
-/// Shares every `Int` literal once so that evaluation never copies literal digits.
+/// Copies one least residue of `Mod[modulus]`.
+fn result_residue(
+    value: &ExactInteger,
+    modulus: Modulus,
+    reservations: Reservations,
+) -> Result<CoreValue, Stop> {
+    let value = value
+        .try_clone_with_reservation(reservations.value_limbs)
+        .ok_or(Stop::Allocation(
+            "evaluated exact integer storage could not be reserved",
+        ))?;
+    Residue::new(modulus, value)
+        .map(CoreValue::Mod)
+        .ok_or(Stop::InconsistentCore)
+}
+
+/// Shares every `Int` and residue literal once so that evaluation never
+/// copies literal digits.
 fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     let mut shared = Vec::new();
     shared.try_reserve_exact(core.functions.len()).ok()?;
@@ -1651,6 +1823,11 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
                 literals.push(match &node.kind {
                     CoreNodeKind::Literal(CoreValue::Int(value)) => Some(Rc::new(
                         value.try_clone_with_reservation(reserve_value_limbs)?,
+                    )),
+                    CoreNodeKind::Literal(CoreValue::Mod(residue)) => Some(Rc::new(
+                        residue
+                            .value()
+                            .try_clone_with_reservation(reserve_value_limbs)?,
                     )),
                     _ => None,
                 });
@@ -2712,6 +2889,27 @@ mod tests {
                 " { true } else { false }".repeat(MAX_EXPRESSION_NESTING - 1)
             ),
             format!("{}{{ x }}", "if x == 0 { 0 } else ".repeat(4096)),
+            // Residues converted in groups, a modulus nested in groups, a
+            // tall modulus, and residue arithmetic nested in groups.
+            format!(
+                "{}x{} as Word[32]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 1),
+                " as Mod[7])".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            format!(
+                "(x as Mod[{}7{}]) as Word[32]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 2),
+                ")".repeat(MAX_EXPRESSION_NESTING - 2)
+            ),
+            format!(
+                "(x as Mod[1{}]) as Word[32]",
+                " + 1".repeat(MAX_EXPRESSION_HEIGHT - 4)
+            ),
+            format!(
+                "let y: Mod[3329] = x as Mod[3329]; ({}y{}) as Word[32]",
+                "y - y * (".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
         ];
         let sources = bodies
             .iter()
@@ -3656,6 +3854,46 @@ mod tests {
         );
     }
 
+    /// A modulus that is not a constant is rejected, but the moduli written
+    /// within it, nested as deeply as the parser admits, are still evaluated
+    /// within 1 MiB of stack.
+    #[test]
+    fn deeply_nested_rejected_moduli_fit_in_one_mebibyte_of_stack() {
+        use crate::parser::MAX_EXPRESSION_NESTING;
+        let levels = (MAX_EXPRESSION_NESTING - 2) / 2;
+        let nested = format!(
+            "{}7{}",
+            "(0 as Mod[".repeat(levels),
+            "]) as Int".repeat(levels)
+        );
+        let text = format!(
+            "edition 2026; module m {{\n  spec f(x: Mod[{nested}]) -> Int {{ 0 }}\n  \
+             spec g(x: Word[32]) -> Word[32] {{ (x as Mod[{nested}]) as Word[32] }}\n}}\n"
+        );
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                let mut sources = SourceMap::new();
+                let id = sources.add("evaluate.or", text).unwrap();
+                let source = sources.get(id).unwrap();
+                let lexed = lex(source, Edition::E2026);
+                let parsed = parse(source, &lexed);
+                assert_eq!(parsed.diagnostics(), []);
+                let analyzed = analyze(source, parsed.ast().unwrap());
+                analyzed
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| (diagnostic.code(), diagnostic.label().to_owned()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        let expected = (
+            DiagnosticCode::InvalidModulus,
+            String::from("not a constant integer expression"),
+        );
+        assert_eq!(worker.join().unwrap(), vec![expected; 2 * levels]);
+    }
+
     fn bytes(values: &[u8]) -> CoreValue {
         let ty = ArrayType::new(CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap();
         CoreValue::Array(
@@ -3840,5 +4078,189 @@ mod tests {
             Some(&expected)
         );
         assert!(format!("{evaluator:?}").contains("agree"));
+    }
+
+    /// The inverse of `value` modulo `modulus` when they are coprime, and 0
+    /// otherwise, by the extended Euclidean algorithm over `i128`.
+    fn reference_inverse(value: u128, modulus: u128) -> u128 {
+        let (mut old, mut current) = (
+            i128::try_from(value).unwrap(),
+            i128::try_from(modulus).unwrap(),
+        );
+        let (mut old_coefficient, mut coefficient) = (1_i128, 0_i128);
+        while current != 0 {
+            let quotient = old.div_euclid(current);
+            (old, current) = (current, old - quotient * current);
+            (old_coefficient, coefficient) =
+                (coefficient, old_coefficient - quotient * coefficient);
+        }
+        if old == 1 {
+            u128::try_from(old_coefficient.rem_euclid(i128::try_from(modulus).unwrap())).unwrap()
+        } else {
+            0
+        }
+    }
+
+    #[test]
+    fn residue_arithmetic_matches_a_u128_reference() {
+        // Small, composite, prime, and 61- and 64-bit prime moduli.
+        let moduli: [u128; 6] = [2, 7, 256, 3329, (1 << 61) - 1, (1 << 64) - 59];
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        for (i, &modulus) in moduli.iter().enumerate() {
+            let corpus =
+                [0, 1, 2, modulus / 2, modulus - 2, modulus - 1].map(|value| value % modulus);
+            for (j, &left) in corpus.iter().enumerate() {
+                for (k, &right) in corpus.iter().enumerate() {
+                    let sum = (left + right) % modulus;
+                    let difference = (left + modulus - right) % modulus;
+                    let product = (left * right) % modulus;
+                    let quotient = (left * reference_inverse(right, modulus)) % modulus;
+                    let negation = (modulus - left) % modulus;
+                    members.push_str(&format!(
+                        "  spec r{i}_{j}_{k}() -> Mod[{modulus}]^5 {{ \
+                         let a: Mod[{modulus}] = {left}; let b: Mod[{modulus}] = {right}; \
+                         [a + b, a - b, a * b, a / b, -a] }}\n"
+                    ));
+                    expected.push(format!(
+                        "r{i}_{j}_{k} = [{sum}, {difference}, {product}, {quotient}, {negation}]"
+                    ));
+                    members.push_str(&format!(
+                        "  spec e{i}_{j}_{k}() -> Bool^2 {{ \
+                         let a: Mod[{modulus}] = {left}; let b: Mod[{modulus}] = {right}; \
+                         [a == b, a != b] }}\n"
+                    ));
+                    expected.push(format!(
+                        "e{i}_{j}_{k} = [{}, {}]",
+                        left == right,
+                        left != right
+                    ));
+                }
+            }
+        }
+        assert_eq!(values_of(&members), expected);
+    }
+
+    #[test]
+    fn conversions_reduce_into_residues_and_give_least_residues_out() {
+        let integers: [i128; 7] = [
+            0,
+            -1,
+            6,
+            7,
+            -18_446_744_073_709_551_617,
+            170_141_183_460_469_231_731_687_303_715_884_105_727,
+            -170_141_183_460_469_231_731_687_303_715_884_105_727,
+        ];
+        let moduli: [i128; 3] = [7, 256, (1 << 89) - 1];
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        for (i, &value) in integers.iter().enumerate() {
+            for (j, &modulus) in moduli.iter().enumerate() {
+                let residue = value.rem_euclid(modulus);
+                let low = u8::try_from(residue % 256).unwrap();
+                members.push_str(&format!(
+                    "  spec c{i}_{j}() -> Int^2 {{ let n: Int = {value}; \
+                     let r: Mod[{modulus}] = n as Mod[{modulus}]; \
+                     [r as Int, (r as Word[8]) as Int] }}\n"
+                ));
+                expected.push(format!("c{i}_{j} = [{residue}, {low}]"));
+            }
+        }
+        // Words reduce by their unsigned values, and residues convert
+        // between moduli through their least residues.
+        members.push_str(concat!(
+            "  spec w() -> Mod[7]^4 { let x: Word[64] = 0xffffffffffffffff; ",
+            "let y: Mod[256] = -1; let z: Mod[11] = 10; ",
+            "[x as Mod[7], y as Mod[7], z as Mod[7], (x as Word[8]) as Mod[7]] }\n",
+        ));
+        expected.push(String::from("w = [1, 3, 3, 3]"));
+        assert_eq!(values_of(&members), expected);
+    }
+
+    #[test]
+    fn residue_steps_follow_the_normative_cost_table() {
+        // For a modulus of d 32-bit digits, `+`, `-`, prefix `-`, `==`, and
+        // `!=` cost 1 + d, `*` costs 1 + 2d^2, and `/` costs 1 + 64d^2. A
+        // conversion to `Mod[m]` costs 1 + d times the operand's digits;
+        // one from a residue costs 1. A literal or a read costs 1.
+        for (members, steps) in [
+            ("  spec r() -> Mod[7] { let a: Mod[7] = 3; a + a }\n", 5),
+            ("  spec r() -> Mod[7] { let a: Mod[7] = 3; a - a }\n", 5),
+            ("  spec r() -> Mod[7] { let a: Mod[7] = 3; a * a }\n", 6),
+            ("  spec r() -> Mod[7] { let a: Mod[7] = 3; a / a }\n", 68),
+            ("  spec r() -> Mod[7] { let a: Mod[7] = 3; -a }\n", 4),
+            ("  spec r() -> Bool { let a: Mod[7] = 3; a == a }\n", 5),
+            (
+                "  spec r() -> Mod[(1 << 255) - 19] { let a: Mod[(1 << 255) - 19] = 3; a * a }\n",
+                132,
+            ),
+            (
+                "  spec r() -> Mod[(1 << 255) - 19] { let a: Mod[(1 << 255) - 19] = 3; a / a }\n",
+                4100,
+            ),
+            (
+                "  spec r() -> Mod[(1 << 64) + 13] { let a: Mod[(1 << 64) + 13] = 3; a + a }\n",
+                7,
+            ),
+            // `n` has three digits and the modulus two.
+            (
+                "  spec r() -> Mod[(1 << 61) - 1] { let n: Int = 18446744073709551616; \
+                 n as Mod[(1 << 61) - 1] }\n",
+                9,
+            ),
+            ("  spec r() -> Mod[7] { let n: Int = 0; n as Mod[7] }\n", 3),
+            ("  spec r() -> Int { let a: Mod[7] = 3; a as Int }\n", 3),
+        ] {
+            let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+            let exact = evaluate_with_limit(&core, steps);
+            assert_eq!(exact.diagnostics(), [], "{members}");
+            let short = evaluate_with_limit(&core, steps - 1);
+            assert!(short.values().is_none(), "{members}");
+        }
+    }
+
+    #[test]
+    fn residues_cross_the_call_interface_with_exact_types() {
+        let core = core(concat!(
+            "edition 2026; module ring {\n",
+            "  type F = Mod[(1 << 130) - 5];\n",
+            "  spec mul(x: F, y: F) -> F { x * y }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let mul = evaluator.function("mul").unwrap();
+        let field = evaluator.module().functions()[0].parameters()[0];
+        let Some(modulus) = field.modulus() else {
+            panic!("expected a residue type");
+        };
+        let residue = |value: u64| {
+            CoreValue::Mod(
+                Residue::new(
+                    modulus,
+                    ExactInteger::from_u64(value, reserve_value_limbs).unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        let result = evaluator
+            .call(mul, &[residue(u64::MAX), residue(u64::MAX)], 1_000)
+            .unwrap();
+        assert_eq!(result.diagnostics(), []);
+        assert_eq!(
+            result.value().unwrap().to_string(),
+            "340282366920938463426481119284349108225"
+        );
+        assert_eq!(result.value().unwrap().ty(), field);
+        // A residue of another modulus is refused before evaluation.
+        let other = Modulus::new(&ExactInteger::from_u64(7, reserve_value_limbs).unwrap()).unwrap();
+        let foreign = CoreValue::Mod(
+            Residue::new(
+                other,
+                ExactInteger::from_u64(3, reserve_value_limbs).unwrap(),
+            )
+            .unwrap(),
+        );
+        assert!(evaluator.call(mul, &[foreign, residue(1)], 1_000).is_none());
     }
 }

@@ -1,0 +1,25 @@
+// S3i conformance: residues have `+`, `-`, `*`, `/`, prefix `-`, `==`, and
+// `!=`; they have no order, no remainder, and no bits. A literal's magnitude
+// is less than the modulus, two moduli are two types, and `as` converts one
+// scalar to a number type.
+edition 2026;
+module residues {
+  type F = Mod[7];
+  type Pair = F^2;
+
+  spec order(x: F, y: F) -> Bool { x < y }
+  spec remainder(x: F) -> F { x % 2 }
+  spec complement(x: F) -> F { ~x }
+  spec bits(x: F) -> F { x & 1 }
+  spec shift(x: F) -> F { x << 1 }
+  spec large() -> F { 7 }
+  spec negative() -> F { -7 }
+  spec mixed(x: F, y: Mod[11]) -> F { x + y }
+  spec passed(y: Mod[11]) -> F { remainder(y) }
+  spec truth(x: F) -> Bool { x as Bool }
+  spec array(x: F) -> Pair { x as Pair }
+  spec index(x: F) -> Int {
+    let t: Int^7 = [0, 1, 2, 3, 4, 5, 6];
+    t[x]
+  }
+}

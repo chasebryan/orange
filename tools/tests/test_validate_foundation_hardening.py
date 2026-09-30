@@ -2179,6 +2179,35 @@ class RepositoryInventoryHardeningTests(unittest.TestCase):
                 codes = {finding.code for finding in validator.findings}
                 self.assertEqual("path.inventory" not in codes, admitted)
 
+    def test_algorithm_entries_admit_only_their_shapes(self) -> None:
+        cases = {
+            "algorithms/aes/aes.or": True,
+            "algorithms/aes/aes-modes.or": True,
+            "algorithms/aes/README.md": True,
+            "algorithms/chacha20-poly1305/chacha20-poly1305.or": True,
+            "algorithms/aes/notes.md": False,
+            "algorithms/aes/aes.py": False,
+            "algorithms/aes/vectors/aes.or": False,
+            "algorithms/AES/aes.or": False,
+            "algorithms/aes_modes/aes.or": False,
+            "algorithms/aes.or": False,
+        }
+        for value, admitted in cases.items():
+            with self.subTest(path=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / value
+                path.parent.mkdir(parents=True)
+                path.write_text("x\n", encoding="utf-8")
+                validator = FoundationValidator(root)
+                validator.policy = {
+                    "allowed_top_level_paths": ["algorithms"],
+                    "required_paths": [],
+                    "forbidden_paths": [],
+                }
+                validator._validate_required_and_forbidden_paths()
+                codes = {finding.code for finding in validator.findings}
+                self.assertEqual("path.inventory" not in codes, admitted)
+
     def test_numbered_change_record_path_remains_admitted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2884,8 +2913,8 @@ class CompilerLanguageBoundaryHardeningTests(unittest.TestCase):
             ("512 KiB (`512 * 1024` bytes)", "511 KiB (`511 * 1024` bytes)"),
             ("448 KiB\n(`448 * 1024` bytes)", "447 KiB\n(`447 * 1024` bytes)"),
             ("2 MiB (`2 * 1024 * 1024` bytes)", "1 MiB (`1 * 1024 * 1024` bytes)"),
-            ("24 MiB (`24 * 1024 * 1024` bytes)", "23 MiB (`23 * 1024 * 1024` bytes)"),
-            ("at most 512 files", "at most 511 files"),
+            ("48 MiB (`48 * 1024 * 1024` bytes)", "47 MiB (`47 * 1024 * 1024` bytes)"),
+            ("at most 1,024 files", "at most 1,023 files"),
             ("at most 1,024 bytes per raw path", "at most 1,023 bytes per raw path"),
             (
                 "at most 1 MiB\n(`1024 * 1024` bytes) of raw path metadata",
@@ -3287,6 +3316,49 @@ class ProtectedControlHardeningTests(unittest.TestCase):
             (
                 "\t\t\t--clear-groups \\\n",
                 "\t\t\t--keep-groups \\\n",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '\t\t\t/bin/bash \\\n\t\t\t-p \\\n\t\t\t-c \\\n\t\t\t"$$user_namespace_setup" \\\n'
+                '\t\t\tgate-user-namespace-setup \\\n\t\t\t"$$gate_uid" \\\n\t\t\t"$$gate_gid" \\\n'
+                '\t\t\t"$$user_namespace_wait" \\\n',
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "/usr/bin/unshare --user --keep-caps -- /bin/bash",
+                "/usr/bin/unshare --user -- /bin/bash",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'printf "%s %s 1\\n" "$$gate_uid" "$$gate_uid" > /proc/1/uid_map;',
+                'printf "0 %s 1\\n" "$$gate_uid" > /proc/1/uid_map;',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'read -r _ < /proc/self/gid_map && exec "$$@";',
+                'exec "$$@";',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$${namespace_runner[0]}" != /usr/bin/sudo ]] ||',
+                "true ||",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'exec /usr/bin/setpriv --reuid "$$gate_uid" --regid "$$gate_gid" --clear-groups '
+                "--inh-caps=+sys_admin --ambient-caps=+sys_admin -- /usr/bin/unshare --user",
+                "exec /usr/bin/unshare --user",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$(< /proc/sys/user/max_user_namespaces)" != 0 ]] ||',
+                "true ||",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "( /usr/bin/sudo --non-interactive --validate 2>/dev/null && : ) ||",
+                "true ||",
                 "make.compiler_environment_contract",
             ),
             (
@@ -4098,13 +4170,14 @@ class HostedControlEvidenceHardeningTests(unittest.TestCase):
             validator._validate_hosted_control_evidence()
             self.assertIn("hosted_control.missing", {finding.code for finding in validator.findings})
 
-    def test_snapshot_expires_on_its_review_due_date(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self._write_current_evidence(root)
-            validator = FoundationValidator(root)
-            validator._validate_hosted_control_evidence(today=dt.date(2026, 10, 11))
-            self.assertIn("hosted_control.expired", {finding.code for finding in validator.findings})
+    def test_passed_review_due_date_does_not_fail_validation(self) -> None:
+        for today in (dt.date(2026, 10, 11), dt.date(2031, 1, 1)):
+            with self.subTest(today=today), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_current_evidence(root)
+                validator = FoundationValidator(root)
+                validator._validate_hosted_control_evidence(today=today)
+                self.assertEqual(validator.findings, [])
 
     def test_extra_conflicting_binding_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

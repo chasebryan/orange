@@ -56,6 +56,20 @@ unresolved.
 > OEP-0010, also in review, builds on S3f with indices that depend on data,
 > each proved in range from its type, and cheaper updates. It changes no
 > grammar.
+>
+> The S3h slice proposed in [`MODULES_2026.md`](MODULES_2026.md) under
+> OEP-0011, also in review, builds on S3g with programs of more than one
+> module: `use` declarations at the head of a module, and calls qualified by a
+> module name, as in `sha256::compress(h, block)`. It adds no token and no
+> reserved word: `use` is recognized by position, and `::` is the existing
+> `DOUBLE_COLON` token.
+>
+> The S3i slice proposed in [`MODULAR_2026.md`](MODULAR_2026.md) under
+> OEP-0012, also in review, builds on S3h with the type `Mod[m]` of the
+> integers modulo a constant, whose modulus is an expression, as in
+> `Mod[(1 << 255) - 19]`, and `type` declarations at the head of a module. It
+> adds no token and no reserved word: `type` is recognized by position, and
+> `Mod` is an ordinary type name that takes an expression in brackets.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
