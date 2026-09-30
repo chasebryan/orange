@@ -793,7 +793,7 @@
     "tools/d006_render.py": "a4fb196825d4789123f47dd3a1bc09074f23660b8d631cc7731653d8aeae7f66",
     "tools/d006_run.py": "4aa59b4c190b82402ee45d182e249a675285cf5fa9d3faec2671391d141756e6",
     "tools/d006_shared.py": "ad1a9618bc06c7b816dab252ae306443459a9ae1611471695a468f78289239d0",
-    "tools/d011_suite.py": "d00384932552d65f890044fef954313cdefbf71403211bb0f6eebf1660dffb34",
+    "tools/d011_suite.py": "9c23c0a136029d0470e46f635ae14f51e665d4a064c0560939ab619b2271782f",
     "tools/fs_sandbox.c": "80d94ad673b9d3edf628d98e8e7659da93030a56918cc9c2193ede1fdfb76b66",
     "tools/tests/test_d004_archive.py": "026f3425de7eecdc8327ea59951abe0eee2bcde6afab596b4219e3e63741b90e",
     "tools/tests/test_d004_draft_packet.py": "628ced10b9ae7ac0c68aa3e4ffffccf4e910dfc94f46be633d2f198c231194ee",
@@ -806,7 +806,7 @@
     "tools/tests/test_d006_shared.py": "3623319acda4ecdc4f9e1f91fb092077542ee123a477595776d8b5b71addd7b1",
     "tools/tests/test_d009_draft_packet.py": "5e4b7eadf96dc432d453eed591c36aa60409a8b9a0d3b7a3b384fe4f17434184",
     "tools/tests/test_d010_draft_packet.py": "2f5c3dc83b2f83d4ebfda1203270d0f66ef82901f3bcfe4cd20edcc45cfc6d65",
-    "tools/tests/test_d011_suite.py": "a4c151844acb431894c920f19f54148ecaf0bbbaa5d13a0e98efbe20d7237be6",
+    "tools/tests/test_d011_suite.py": "96d3b285057e67a63dc9a370f0835a69eb6870b3ffad315d75395fee250f9317",
     "tools/tests/test_validate_foundation.py": "7e2a9f6c73a79a110939982a145a860dc6ff2fe9de727307fc46460e316f1217",
     "tools/tests/test_validate_foundation_hardening.py": "6008cdf2abbc5061b92fc9f1764271ed0c35c085b32a7174b3f9e374b38db150"
   },

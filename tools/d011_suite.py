@@ -1443,16 +1443,21 @@ def parse_responses(data: bytes) -> tuple[list[tuple[str, bytes]], bool]:
     return responses, True
 
 
-EVAL_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*): (.+?) = (.+)$")
+EVAL_NAME = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)")
 
 
 def parse_eval(text: str) -> dict[str, tuple[str, str]]:
+    """`module::name: Type = value` lines, split at the first `: ` and the first ` = ` without a
+    backtracking pattern."""
+
     values = {}
     for line in text.splitlines():
-        match = EVAL_LINE.match(line)
-        if match is None:
+        head, colon, rest = line.partition(": ")
+        type_name, equals, value = rest.partition(" = ")
+        match = EVAL_NAME.fullmatch(head)
+        if match is None or not colon or not equals or not type_name or not value:
             raise SuiteError(f"unrecognized evaluation line: {line[:120]}")
-        values[match.group(2)] = (match.group(3), match.group(4))
+        values[match.group(2)] = (type_name, value)
     return values
 
 

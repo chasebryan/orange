@@ -142,8 +142,11 @@ class D011OracleTests(unittest.TestCase):
         subject["expect"]["output"] = "00"
         self.assertEqual(suite.orange_verdict(subject, values)["computed"], "conflict")
         self.assertEqual(suite.apply_slices(b"abcdef", [[0, 2], [4, 6]]), b"abef")
-        with self.assertRaises(suite.SuiteError):
-            suite.parse_eval("not an evaluation line")
+        for bad in ("not an evaluation line", "m::x: Bool = ", "m::x Bool = true", "m:x: Bool = true",
+                    "m::x: = true"):
+            with self.assertRaises(suite.SuiteError):
+                suite.parse_eval(bad)
+        self.assertEqual(suite.parse_eval("m::x: Bool = a = b"), {"x": ("Bool", "a = b")})
 
 
 class D011LaboratoryLogicTests(unittest.TestCase):
