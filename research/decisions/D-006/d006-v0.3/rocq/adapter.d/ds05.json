@@ -1,0 +1,190 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-01",
+  "language": "rocq",
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "-Q",
+        "extraction",
+        "D006.Extraction",
+        "extraction/Checker.v"
+      ],
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "-Q",
+        "extraction",
+        "D006.Extraction",
+        "extraction/Extract.v"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "-Q",
+        "extraction",
+        "D006.Extraction",
+        "extraction/Checker.v"
+      ],
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "-Q",
+        "extraction",
+        "D006.Extraction",
+        "extraction/Extract.v"
+      ]
+    ]
+  },
+  "standalone": {
+    "sources": [
+      "extraction/*.v",
+      "extraction/*.ml",
+      "extraction/*.mli"
+    ],
+    "hosts": {
+      "H-01": {
+        "build": [
+          [
+            "/usr/bin/cp",
+            "{toolchain}/lib/rocq-runtime/kernel/pstring.mli",
+            "{toolchain}/lib/rocq-runtime/kernel/pstring.ml",
+            "extraction/"
+          ],
+          [
+            "/usr/bin/ocamlopt",
+            "-I",
+            "extraction",
+            "-o",
+            "extraction/checker",
+            "extraction/uint63.ml",
+            "extraction/pstring.mli",
+            "extraction/pstring.ml",
+            "extraction/extracted.mli",
+            "extraction/extracted.ml",
+            "extraction/driver.ml"
+          ]
+        ],
+        "binary": "extraction/checker",
+        "launch": [
+          "{binary}"
+        ],
+        "runtime": []
+      },
+      "H-02": {
+        "build": [
+          [
+            "/usr/bin/cp",
+            "{toolchain}/lib/rocq-runtime/kernel/pstring.mli",
+            "{toolchain}/lib/rocq-runtime/kernel/pstring.ml",
+            "extraction/"
+          ],
+          [
+            "/usr/bin/ocamlc",
+            "-I",
+            "extraction",
+            "-o",
+            "extraction/checker.byte",
+            "extraction/uint63.ml",
+            "extraction/pstring.mli",
+            "extraction/pstring.ml",
+            "extraction/extracted.mli",
+            "extraction/extracted.ml",
+            "extraction/driver.ml"
+          ]
+        ],
+        "binary": "extraction/checker.byte",
+        "launch": [
+          "/usr/bin/qemu-aarch64-static",
+          "-L",
+          "/usr/aarch64-linux-gnu",
+          "{toolchain_aarch64}/bin/ocamlrun",
+          "{binary}"
+        ],
+        "runtime": [
+          "{toolchain_aarch64}/bin/ocamlrun"
+        ]
+      }
+    },
+    "dependency": "lib/rocq-runtime/kernel/pstring.ml"
+  },
+  "classifier": [
+    {
+      "category": "unsupported_feature",
+      "phases": [
+        "build"
+      ],
+      "pattern": "cannot stat '[^']*/pstring\\.mli?': No such file or directory"
+    }
+  ],
+  "trust": {
+    "inventory": [
+      {
+        "name": "Rocq 9.2.0 extraction to OCaml",
+        "kind": "extraction",
+        "reason": "DS-05: extraction/Extract.v extracts Checker.records_line, Lrat.cnf_text, Checker.lrat_line and everything they use (decode_records, lrat_verdict, binary naturals, PositiveMap) to extraction/extracted.ml; the translation itself is trusted, not verified"
+      },
+      {
+        "name": "ExtrOCamlPString and ExtrOCamlInt63 (Rocq Stdlib 9.2.0)",
+        "kind": "extraction mapping",
+        "reason": "DS-05: the only Extract directives, as Rocq ships them: PrimString.string, make, length, get, cat, compare to the kernel's Pstring; PrimInt63.int, add, eqb, ltb, leb to Uint63.t, add, equal, lt, le; Rocq bool and prod to OCaml bool and pairs. Everything else keeps its Rocq definition"
+      },
+      {
+        "name": "Pstring (Rocq 9.2.0 kernel, lib/rocq-runtime/kernel/pstring.ml and pstring.mli)",
+        "kind": "runtime library",
+        "reason": "DS-05: the kernel's own implementation of primitive strings, compiled from the toolchain unchanged into both checkers; the driver converts files with its of_string, which refuses more than 16777211 bytes"
+      },
+      {
+        "name": "extraction/uint63.ml",
+        "kind": "runtime library (copied)",
+        "reason": "DS-05: the part of the kernel's Uint63 (lib/rocq-runtime/kernel/uint63.ml) that the extracted code and pstring.ml use (of_int, zero, l_and, add, lt, le, to_int_min, equal), copied unchanged; the kernel's full module needs a C stub from the Rocq VM library for its float conversion. 63-bit OCaml ints, so 64-bit hosts only (asserted)"
+      },
+      {
+        "name": "extraction/Checker.v",
+        "kind": "unverified definitions",
+        "reason": "DS-05: the definitions between the verified functions and the command line, extracted with them: the bytes of a primitive string (bytes_of), of which the first 4097 are decoded (decode_prefix proves this gives the verdict of the whole input), the records verdict line of semantics.md section 4 and the certificate verdict line. The lines and bytes_of are checked against the reference on the corpus, not by proof"
+      },
+      {
+        "name": "extraction/driver.ml",
+        "kind": "trusted glue",
+        "reason": "DS-05: the hand-written command line (M-11): argument parsing, reading whole files, printing the returned strings; exit status 0 with a verdict, 1 for an unreadable input or one longer than a primitive string, 2 for bad usage, 3 when the computation fails (stack or memory exhausted)"
+      },
+      {
+        "name": "OCaml 4.14.1 native compiler, runtime and standard library (TC-06, ocamlopt)",
+        "kind": "compiler and runtime",
+        "reason": "DS-05 H-01: compiles the extracted code, Pstring, Uint63 and the driver to one x86-64 executable (assembled and linked by the host's gcc and binutils) with the OCaml runtime and standard library linked in; it loads only libc and libm"
+      },
+      {
+        "name": "OCaml 4.14.1 bytecode compiler and standard library (TC-06, ocamlc)",
+        "kind": "compiler",
+        "reason": "DS-05 H-02: compiles the same sources to one bytecode executable"
+      },
+      {
+        "name": "OCaml 4.14.1 bytecode runtime for AArch64 (TC-10, ocamlrun)",
+        "kind": "runtime",
+        "reason": "DS-05 H-02: interprets the checker's bytecode; its only file outside /usr at run time"
+      },
+      {
+        "name": "qemu-user-static 8.2.2 (TC-08) with the AArch64 C library of TC-09",
+        "kind": "emulator",
+        "reason": "DS-05 H-02: runs the AArch64 ocamlrun on the x86-64 host"
+      }
+    ]
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-02",
+  "language": "lean4",
+  "environment": {
+    "LEAN_STACK_SIZE_KB": "65536"
+  },
+  "host_files": [],
+  "recheck": {
+    "DS-01": [
+      [
+        "{toolchain}/bin/leanchecker",
+        "D006.Core"
+      ]
+    ],
+    "DS-02": [
+      [
+        "{toolchain}/bin/leanchecker",
+        "D006.Sieve"
+      ]
+    ],
+    "DS-03": [
+      [
+        "{toolchain}/bin/leanchecker",
+        "D006.Records"
+      ]
+    ],
+    "DS-04": [
+      [
+        "{toolchain}/bin/leanchecker",
+        "D006.Lrat"
+      ]
+    ],
+    "DS-06": [
+      [
+        "{toolchain}/bin/leanchecker",
+        "D006.Core",
+        "D006.Sieve",
+        "D006.Records",
+        "D006.Lrat"
+      ]
+    ]
+  },
+  "artifacts": {
+    "deterministic": [
+      ".lake/build/lib/lean/D006/*.olean",
+      ".lake/build/ir/D006/*.c",
+      ".lake/build/ir/Checker/*.c"
+    ]
+  },
+  "faults": {
+    "stdlib": [
+      "lib/lean/Init",
+      "lib/lean/Init.olean"
+    ],
+    "stdlib_names": [
+      "Init"
+    ],
+    "stale": {
+      "file": "D006/Core.lean",
+      "append": "\n/-- A marker that makes this a different source. -/\ndef d006StaleBuildMarker : Nat := 0\n"
+    },
+    "cache": [
+      ".lake/build/lib/lean/D006/Core.*"
+    ]
+  },
+  "trust": {
+    "inventory": [
+      {
+        "name": "LEAN_STACK_SIZE_KB=65536",
+        "kind": "runtime setting",
+        "reason": "compiled Lean programs (leanchecker) reserve a 1 GiB main-thread stack by default, which the laboratory's 4 GiB address-space cap refuses"
+      },
+      {
+        "name": "leanchecker",
+        "kind": "kernel re-checker",
+        "reason": "the independent re-check of compiled .olean files in the timed replay"
+      }
+    ]
+  }
+}

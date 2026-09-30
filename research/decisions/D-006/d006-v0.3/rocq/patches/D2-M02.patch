@@ -1,0 +1,11 @@
+--- a/theories/Sieve.v
++++ b/theories/Sieve.v
+@@ -255,7 +255,7 @@
+       match eval s e with
+       | eok v t =>
+           match lookup (values s) x with
+-          | Some _ => next Cskip (assign_var s x v) t
++          | Some _ => next Cskip (assign_var s (x + 1)%N v) t
+           | None => stuck
+           end
+       | efail t => fail t

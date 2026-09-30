@@ -23,7 +23,7 @@ class D006SharedInputTests(unittest.TestCase):
     def test_committed_laboratory_matches_the_reference_byte_for_byte(self) -> None:
         golden = (SHARED / shared.GOLDEN).read_text(encoding="ascii")
         expected = shared.build(golden, (SHARED / shared.SEMANTICS).read_bytes())
-        present = {path.relative_to(LAB).as_posix() for path in LAB.rglob("*") if path.is_file()}
+        present = {path.relative_to(LAB).as_posix() for path in LAB.rglob("*") if path.is_file() and path.relative_to(LAB).parts[0] in shared.GENERATED_ROOTS}
         self.assertEqual(set(expected), present)
         for name, data in expected.items():
             self.assertEqual((LAB / name).read_bytes(), data, name)
@@ -41,7 +41,7 @@ class D006SharedInputTests(unittest.TestCase):
         self.assertEqual(manifest["input_manifest_sha256"], digest)
         overlay = json.loads((LAB / "protocol/suite-overlay.json").read_text(encoding="utf-8"))
         self.assertEqual(overlay["shared_inputs"]["input_manifest_sha256"], digest)
-        self.assertEqual(overlay["status"], "prerequisites_draft")
+        self.assertEqual(overlay["status"], "runner_ready")
 
     def test_overlay_names_every_v02_gap_as_closed_or_remaining(self) -> None:
         packet = json.loads((REPOSITORY_ROOT / shared.BASE["packet"]["path"]).read_text(encoding="utf-8"))

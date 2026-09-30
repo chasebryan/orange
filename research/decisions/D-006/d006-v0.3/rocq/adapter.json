@@ -1,0 +1,182 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-01",
+  "language": "rocq",
+  "build": {
+    "serial": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Core.v"
+      ]
+    ],
+    "declared_parallel": [
+      [
+        "{toolchain}/bin/coqc",
+        "-q",
+        "-Q",
+        "theories",
+        "D006",
+        "theories/Core.v"
+      ]
+    ]
+  },
+  "check": {
+    "argv": [
+      "{toolchain}/bin/coqc",
+      "-q",
+      "-Q",
+      "{src}/theories",
+      "D006",
+      "-output-directory",
+      "{audit}",
+      "{file}"
+    ]
+  },
+  "environment": {},
+  "preamble": {
+    "DS-01": "From D006 Require Import Core.\nFrom Stdlib Require Import NArith List."
+  },
+  "literals": {
+    "nat": "({}%N)",
+    "str": "\"{}\"%pstring"
+  },
+  "nat_scope": "N",
+  "list_literal": false,
+  "symbols": {
+    "T-01": "bool",
+    "T-02": "N",
+    "T-03": "D006.Core.Word",
+    "T-04": "D006.Core.Seq",
+    "T-05": "list",
+    "T-06": "D006.Core.Result",
+    "T-07": "D006.Core.DecodeError",
+    "T-08": "PrimString.string",
+    "C-01": "D006.Core.too_many",
+    "C-02": "D006.Core.truncated",
+    "C-03": "D006.Core.trailing",
+    "C-04": "D006.Core.ok",
+    "C-05": "D006.Core.err",
+    "C-06": "true",
+    "C-07": "false",
+    "C-08": "nil",
+    "C-09": "cons",
+    "F-01": "D006.Core.word_of_nat",
+    "F-02": "D006.Core.nat_of_word",
+    "F-03": "D006.Core.word_add",
+    "F-04": "D006.Core.word_xor",
+    "F-05": "D006.Core.word_and",
+    "F-06": "D006.Core.word_not",
+    "F-07": "D006.Core.word_rotl",
+    "F-08": "D006.Core.word_shl",
+    "F-09": "D006.Core.be32_of_bytes",
+    "F-10": "D006.Core.bytes_of_be32",
+    "F-11": "D006.Core.le32_of_bytes",
+    "F-12": "D006.Core.bytes_of_le32",
+    "F-13": "D006.Core.seq_map2",
+    "F-14": "D006.Core.decode_words",
+    "F-15": "D006.Core.encode_words",
+    "F-16": "D006.Core.list_length",
+    "F-17": "D006.Core.seq4",
+    "F-18": "D006.Core.chacha_qr",
+    "F-19": "D006.Core.toy_qr",
+    "F-20": "D006.Core.seq_to_list",
+    "F-21": "N.pow",
+    "F-22": "app"
+  },
+  "modules": {
+    "M-01": {
+      "declaration": "D006.Core.QuarterRound",
+      "setup": "Module {inst}_P <: D006.Core.QRParams.\n  Definition w := {w}. Definition r1 := {r1}. Definition r2 := {r2}. Definition r3 := {r3}. Definition r4 := {r4}.\nEnd {inst}_P.\nModule {inst} := D006.Core.QuarterRound {inst}_P.",
+      "function": "{inst}.qr"
+    }
+  },
+  "theorems": {
+    "D1-TH01": "D006.Core.word_bounded",
+    "D1-TH02": "D006.Core.small_naturals_are_words",
+    "D1-TH03": "D006.Core.words_are_their_values",
+    "D1-TH04": "D006.Core.addition_commutes",
+    "D1-TH05": "D006.Core.xor_cancels",
+    "D1-TH06": "D006.Core.rotations_compose",
+    "D1-TH07": "D006.Core.be32_word_round_trip",
+    "D1-TH08": "D006.Core.be32_bytes_round_trip",
+    "D1-TH09": "D006.Core.le32_word_round_trip",
+    "D1-TH10": "D006.Core.decoder_inverts_encoder",
+    "D1-TH11": "D006.Core.decoding_is_canonical",
+    "D1-TH12": "D006.Core.sequences_have_their_index_length"
+  },
+  "methods": {
+    "observation": {
+      "default": "vm_compute; reflexivity"
+    },
+    "instance": {
+      "default": "reflexivity"
+    },
+    "exhaustive": {
+      "default": "D006.Core.exhaustive_word"
+    }
+  },
+  "patches": {
+    "D1-N10": "patches/D1-N10.patch"
+  },
+  "classifier": [
+    {
+      "category": "resource_exhaustion",
+      "pattern": "Stack overflow|Out of memory|out of memory"
+    },
+    {
+      "category": "non_total",
+      "phases": [
+        "definition"
+      ],
+      "pattern": "Cannot guess decreasing argument|Recursive definition of .* is ill-formed|Recursive call to"
+    },
+    {
+      "category": "type_failure",
+      "phases": [
+        "statement"
+      ],
+      "pattern": "has type .* while it is expected to have type|Cannot infer|cannot be applied to|Illegal application|The term .* has type|could not be inferred|Unable to unify"
+    },
+    {
+      "category": "disproved_obligation",
+      "phases": [
+        "proof"
+      ],
+      "pattern": "Unable to unify|Impossible to unify|not convertible|The reflexivity"
+    },
+    {
+      "category": "proof_failure",
+      "phases": [
+        "build",
+        "proof"
+      ],
+      "pattern": "."
+    },
+    {
+      "category": "parse_failure",
+      "phases": [
+        "artifact"
+      ],
+      "pattern": "corrupted|Bad magic|truncated|End_of_file|is not a valid|incompatible|Error"
+    }
+  ],
+  "trust": {
+    "allowed_assumptions": [],
+    "inventory": [
+      {
+        "name": "Rocq 9.2.0 kernel",
+        "kind": "kernel",
+        "reason": "checks every definition and proof term"
+      },
+      {
+        "name": "bytecode virtual machine (vm_compute, vm_cast)",
+        "kind": "evaluator",
+        "reason": "the declared observation and exhaustive methods; conversion checks by the kernel's VM"
+      }
+    ]
+  }
+}

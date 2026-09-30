@@ -1,0 +1,112 @@
+{
+  "schema_version": "d006-v0.3-adapter-1",
+  "candidate": "C-01",
+  "language": "rocq",
+  "host_files": [
+    "/etc/ocamlfind.conf"
+  ],
+  "recheck": {
+    "DS-01": [
+      [
+        "{toolchain}/bin/coqchk",
+        "-silent",
+        "-Q",
+        "theories",
+        "D006",
+        "-norec",
+        "D006.Core"
+      ]
+    ],
+    "DS-02": [
+      [
+        "{toolchain}/bin/coqchk",
+        "-silent",
+        "-Q",
+        "theories",
+        "D006",
+        "-norec",
+        "D006.Sieve"
+      ]
+    ],
+    "DS-03": [
+      [
+        "{toolchain}/bin/coqchk",
+        "-silent",
+        "-Q",
+        "theories",
+        "D006",
+        "-norec",
+        "D006.Records"
+      ]
+    ],
+    "DS-04": [
+      [
+        "{toolchain}/bin/coqchk",
+        "-silent",
+        "-Q",
+        "theories",
+        "D006",
+        "-norec",
+        "D006.Lrat"
+      ]
+    ],
+    "DS-06": [
+      [
+        "{toolchain}/bin/coqchk",
+        "-silent",
+        "-Q",
+        "theories",
+        "D006",
+        "-norec",
+        "D006.Core",
+        "-norec",
+        "D006.Sieve",
+        "-norec",
+        "D006.Records",
+        "-norec",
+        "D006.Lrat"
+      ]
+    ]
+  },
+  "artifacts": {
+    "deterministic": [
+      "theories/*.vo",
+      "extraction/*.vo",
+      "extraction/extracted.ml",
+      "extraction/extracted.mli"
+    ]
+  },
+  "faults": {
+    "stdlib": [
+      "lib/coq/user-contrib/Stdlib"
+    ],
+    "stdlib_names": [
+      "Stdlib"
+    ],
+    "stale": {
+      "file": "theories/Core.v",
+      "append": "\nDefinition d006_stale_build_marker : nat := 0.\n"
+    },
+    "cache": [
+      "theories/Core.vo",
+      "theories/Core.vos",
+      "theories/Core.vok",
+      "theories/Core.glob",
+      "theories/.Core.aux"
+    ]
+  },
+  "trust": {
+    "inventory": [
+      {
+        "name": "/etc/ocamlfind.conf",
+        "kind": "host configuration",
+        "reason": "the Rocq tools locate their plugins through the host's findlib configuration (TC-06)"
+      },
+      {
+        "name": "coqchk",
+        "kind": "kernel re-checker",
+        "reason": "the independent re-check of compiled .vo files in the timed replay"
+      }
+    ]
+  }
+}
