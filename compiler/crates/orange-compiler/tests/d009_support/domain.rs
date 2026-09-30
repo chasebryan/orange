@@ -320,7 +320,7 @@ pub(crate) const SEMANTIC_BINDINGS: [SemanticBinding; SEMANTIC_BINDING_COUNT] = 
         section_end_heading: None,
         section_start_heading: None,
         normalization: SEMANTIC_NORMALIZATION,
-        normalized_sha256: "3e8b138f79afd6a2955bc3d972955145d7ab5b60008c5d98e4eca58b90bd8f6b",
+        normalized_sha256: "326774316ec42a22ef95b7a86fc66b203a7b73f592edef9b5141907d1874b794",
     },
     SemanticBinding {
         id: SemanticBindingId::DecisionRegisterD009,

@@ -29,14 +29,15 @@ timings with native ones.
 - [`tools/tests/test_d011_suite.py`](../../../tools/tests/test_d011_suite.py)
   tests the packet, the oracles and the laboratory's pure logic without
   running a compiler or emulator, and verifies every committed export.
-- [`d011-v0.1/run/d011-e-59b28dba6bd33a57cecb/`](d011-v0.1/run/d011-e-59b28dba6bd33a57cecb/)
-  is the export of the measured epoch: its `epoch.json` and `summary.json`,
-  its 1,083 records as gzip-compressed JSON lines, and a manifest.
+- [`d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/`](d011-v0.1/run/d011-e-291c7d1e803c802bcfd0/)
+  is the export of the measured epoch: its `epoch.json`, `packet.json` and
+  `summary.json`, its 1,083 records as gzip-compressed JSON lines, and a
+  manifest.
 
 Archives are written outside the repository. An export keeps an archive's
-records and binds everything else by digest: `index.json` is rebuilt from the
-record lines, `packet.json` is the committed suite packet, and the 33 driver
-ELFs under `products/` are named by SHA-256 only. `verify` rebuilds the
+epoch, packet, summary and records and binds the rest by digest: `index.json`
+is rebuilt from the record lines, and the 33 driver ELFs under `products/` are
+named by SHA-256 only. `verify` rebuilds the
 archive manifest from those parts, requires it to hash to the digest the
 export names, and then recomputes the summary from the records byte for byte.
 
@@ -66,17 +67,17 @@ ELFs and request files the epoch writes under `products/`.
 
 ## Measured epoch
 
-Epoch `d011-e-59b28dba6bd33a57cecb` ran the `measured` profile on 2026-09-30
-from 08:34 UTC, at repository commit
-`d517505d3981ba7d3c8ebbcd01b5de8995c69326` (a commit of the pull request that
+Epoch `d011-e-291c7d1e803c802bcfd0` ran the `measured` profile on 2026-09-30
+from 09:32 UTC, at repository commit
+`0d084ae9dd5dc7ff1cae6811576804aa939fb55b` (a commit of the pull request that
 added this laboratory) with a clean working tree. `orangec` and the Orange
 oracles come from the base revision
 `59caa344e176bc6d8f4e5429a00f3d82eeb2799a`. The host was a contributor
 machine (Ubuntu 24.04.4, Linux 6.18, x86-64, 4 CPUs with AES, PCLMULQDQ and
-AVX2), not owner hardware. The run took 8 minutes 50 seconds and wrote 1,083
-records. `verify` passed on the 6.5 MB archive and passes on its 130 KB
+AVX2), not owner hardware. The run took 8 minutes 32 seconds and wrote 1,083
+records. `verify` passed on the 6.5 MB archive and passes on its 225 KB
 export. Packet SHA-256:
-`a34d8e461e5964db4fbce80ec07338b4076555524e71b4a46f31478b86a9ce86`.
+`57df5286ff134f0e5b710a7c8e6f121d8d80296b334c87e1f5dac2a02da9cb9d`.
 
 The profile built `-O2`, `-O3` and `-Os` three times each, timed 30 native
 runs after one warm-up and five emulated runs, sent the request file 20 times
@@ -103,27 +104,27 @@ figures are for the `-O2` reference build):
 
 | Figure | T-X64 | T-A64 | T-RV64 |
 | --- | --- | --- | --- |
-| Build CPU / wall, ms | 17813 / 18489 | 20137 / 20669 | 8010 / 8255 |
+| Build CPU / wall, ms | 17154 / 17593 | 19416 / 19960 | 8390 / 8624 |
 | Kernel code bytes, all families | 15086 | 12020 | 20404 |
 | Crypto-profile glue / target bytes | 2106 / 108 | 1940 / 116 | 3096 / 758 |
 | Target-specific source lines | 52 | 53 | 91 |
 | Distinct kernel mnemonics | 79 | 77 | 56 |
-| Emulated known-answer median, ms (launch overhead) | 329 (15) | 416 (16) | 180 (14) |
-| Native known-answer median, ms (launch overhead) | 86 (10) | none | none |
+| Emulated known-answer median, ms (launch overhead) | 339 (15) | 333 (14) | 253 (14) |
+| Native known-answer median, ms (launch overhead) | 81 (9) | none | none |
 | Trace blocks, reference build | 1360719 | 1407283 | 177987 |
-| Trace wall time, ms | 107861 | 99659 | 41486 |
-| CI projection, ms | 132153 | 125199 | 51084 |
+| Trace wall time, ms | 100409 | 102453 | 43126 |
+| CI projection, ms | 123578 | 126699 | 53264 |
 
-The portable path's CI projection is 3153 ms. The emulated and native columns
+The portable path's CI projection is 3243 ms. The emulated and native columns
 are different quantities and are not compared.
 
 | Candidate | Gates not passing | Eligible | AX-01 | AX-02 | AX-03 | AX-04 ms | AX-05 | AX-06 | AX-07 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TE-01 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 2 | 17 | 52 | 260505 | 251 | 6 | 2 |
-| TE-02 | HG-07, HG-08 unresolved | no | 1 | 12 | 26 | 135306 | 131 | 3 | 1 |
-| TE-03 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 1 | 10 | 26 | 128352 | 130 | 6 | 1 |
-| TE-04 | none (HG-04, HG-05, HG-07, HG-08 vacuous) | yes | 0 | 5 | 0 | 3153 | 0 | 3 | 0 |
-| TE-05 | HG-01, HG-03, HG-06, HG-07, HG-08 unresolved | no | 3 | 22 | 113 | 311589 | 390 | 9 | 3 |
+| TE-01 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 2 | 17 | 52 | 253520 | 251 | 6 | 2 |
+| TE-02 | HG-07, HG-08 unresolved | no | 1 | 12 | 26 | 126821 | 131 | 3 | 1 |
+| TE-03 | HG-03, HG-06, HG-07, HG-08 unresolved | no | 1 | 10 | 26 | 129942 | 130 | 6 | 1 |
+| TE-04 | none (HG-04, HG-05, HG-07, HG-08 vacuous) | yes | 0 | 5 | 0 | 3243 | 0 | 3 | 0 |
+| TE-05 | HG-01, HG-03, HG-06, HG-07, HG-08 unresolved | no | 3 | 22 | 113 | 306784 | 390 | 9 | 3 |
 
 No gate failed. Every non-passing gate is unresolved for one of three
 reasons: owner input the contributor cannot supply (HG-07, HG-08), a tool not
@@ -133,18 +134,8 @@ passes, as the suite's anti-gaming rule 5 describes; the summary lists it as
 eligible and still concludes `inconclusive`, because the conclusion needs the
 owner's input and review scopes before any candidate is recommended.
 
-Every gate state matches the development epoch below; the measured profile
+Every gate state matches the two earlier epochs below; the measured profile
 changed counts and costs, not outcomes.
-
-## Development epoch
-
-Before the measured run, epoch `d011-e-221362817d5023f337a1` ran the `dev`
-profile on the same host (one `-O2` build per toolchain, a batch of two per
-timed run). It took 77 seconds, wrote 413 records and verified, and it
-concludes `inconclusive` by rule because a development epoch is not a result.
-It ran from the laboratory's draft commit before it was rebased onto `main`,
-so that commit is not in this repository's history; its packet is the same
-(`a34d8e46…`). Its archive is kept outside the repository and not exported.
 
 ### Tools recorded by the measured epoch
 
@@ -175,8 +166,30 @@ so that commit is not in this repository's history; its packet is the same
 | `setpriv` | util-linux 2.39.3 | `96b083b79c32fd2f0c29657e88e20c7495839349fc64ad5d0503f32d26bf8733` |
 
 `rustc` links the probe with the system `cc`, which is the same
-`x86_64-linux-gnu-gcc-13` binary. The development epoch recorded the same
-digests.
+`x86_64-linux-gnu-gcc-13` binary. The two earlier epochs recorded the same
+tools and digests.
+
+## Earlier epochs
+
+An earlier measured epoch, `d011-e-59b28dba6bd33a57cecb`, ran at 08:34 UTC
+from commit `d517505` with the previous packet
+(`a34d8e461e5964db4fbce80ec07338b4076555524e71b4a46f31478b86a9ce86`). Review
+then moved the tool version probes inside the sandbox and bound the owner's
+feature-negative and native-run attestations to a driver and a device, which
+changed the packet, so the epoch was run again. It reached the same gate
+states, counts and conclusion with different timings, and its archive is kept
+outside the repository and not exported.
+
+### Development epoch
+
+Before the measured runs, epoch `d011-e-221362817d5023f337a1` ran the `dev`
+profile on the same host (one `-O2` build per toolchain, a batch of two per
+timed run). It took 77 seconds, wrote 413 records and verified, and it
+concludes `inconclusive` by rule because a development epoch is not a result.
+It ran from the laboratory's draft commit before it was rebased onto `main`,
+so that commit is not in this repository's history; its packet is the
+previous one (`a34d8e46…`). Its archive is kept outside the repository and
+not exported.
 
 ## What a conclusive epoch still needs
 
@@ -186,13 +199,14 @@ digests.
   them HG-01 stays unresolved for T-RV64 and HG-06 for T-A64 and T-RV64.
 - Owner input: a verdict on each of the 14 inventory rows (9 required), the
   owner's own devices per tuple, a native run of an archived driver on each,
-  a SIGILL on an AArch64 device without the Cryptographic Extension (gap G-09),
+  a SIGILL from each AArch64 crypto-profile driver on a named device without
+  the Cryptographic Extension (gap G-09),
   every review scope NR-01 to NR-10, a distinguishing rule and, for DR-1, a
   solo slice capacity.
 - A new `measured` epoch with that input (`--owner-input NAME`). The run
   reads the input and records it among the epoch's records, so it cannot be
   added to this epoch afterwards. On the contributor host the measured profile
-  took 8 minutes 50 seconds.
+  took about nine minutes.
 
 ## Judgment calls
 
@@ -207,7 +221,9 @@ digests.
   whenever the portable path is. The summary labels those passes vacuous and
   AX-02 does not count them.
 - HG-08 needs more than a named device: the owner records the output digest of
-  an archived driver run natively on it, compared with the emulated output.
+  an archived driver run natively on that device, compared with the emulated
+  output, and a run naming a device the owner did not attest makes the owner
+  input invalid. An N-12 attestation settles only the driver it names.
 - The launcher maps the current user (`--map-current-user`) rather than root
   inside the namespace, and runs the unchanged `fs-sandbox` with its own caps.
 - Orange oracles are bound by path and SHA-256 at the base revision and

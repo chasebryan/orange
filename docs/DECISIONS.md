@@ -521,7 +521,7 @@ recorded in the [solo development envelope](GATE0_SUPPORT_ENVELOPES.md).
 The d011-v0.1 [native target decision suite](NATIVE_TARGET_DECISION_SUITE.md)
 compares five target envelopes, from x86-64 with AArch64 and RV64GC down to
 portable C only, on contributor-written C kernels standing in for code Orange
-does not yet generate. Epoch `d011-e-59b28dba6bd33a57cecb` ran its measured
+does not yet generate. Epoch `d011-e-291c7d1e803c802bcfd0` ran its measured
 profile on 2026-09-30 on a contributor host. No hard gate failed. The gates
 that did not pass are unresolved for want of owner input (inventory
 verification and owner hardware), of three tools that need D-018 admission (a
