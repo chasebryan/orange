@@ -765,7 +765,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "2bfcbe01fc638dae0a296c932481a75adab009c9dca24ae9d78ea3292bd433b0"
+_PHD = "00a3b835610368d2906045c1120c5a5031958a773ca6b0b3b29a52211337e2e3"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1357,7 +1357,7 @@ _D006_V03 = {"research/decisions/D-006/d006-v0.3/" + n for n in "protocol/suite-
 MINIMUM_REQUIRED_PATHS |= _D006_V03 | {"tools/d006_shared.py", "tools/tests/test_d006_shared.py"}
 DECISION_LABORATORY_SPECS["d006"]["inventory"] = DECISION_LABORATORY_SPECS["d006"]["inventory"] | _D006_V03
 DECISION_LABORATORY_SPECS["d006"]["json_identities"] += tuple(("research/decisions/D-006/d006-v0.3/" + n, f"v03_{i}_", f"v03_{i}_missing", c, r, True) for i, (n, c, r) in enumerate((
- ("protocol/suite-overlay.json", "6bbe827744ca0008f62df2d8426fa2f210d5f4407c94ac0fc87d656dedfd2166", "0050c48391815ac9d27c82b66c36e3c940900b29ac398d76fb13c04df66f9864"),
+ ("protocol/suite-overlay.json", "e185b164199ba47f8724eb3c6e8585c7ecf45c0fdab79592ccc0b2be7081c94f", "d840d4842c926de1575320e6553cf98ac5067bb4ee036daf8b42c75ca2a4979d"),
  ("protocol/toolchains.json", "4746d069981994e89533d16b931a2417e4af4e7999b5fc7f0be5855106984d4e", "9f083f33b5635958eb879275af15a40c9718064356ef9e710c8d51d3cfd95299"),
  ("shared-inputs/manifest.json", "fcc3852eea3a01b582cc3c4c52c69b559a1b4539be8ec4e1f62438aacacbcc29", "d6aed8aeebf2d523334c0d25ccd0cd81e2f9eb975de7de1413f63c052e549b30"),
  ("shared-inputs/taxonomy.json", "95dede0dab94185944e44707a9dbbc257a3d43b18ae3d971ec546bfb31952fa6", "dc49a902501daa4db325a39ac502a9129b8d3f004b23288923b976c78ed25622"),
@@ -1369,6 +1369,14 @@ DECISION_LABORATORY_SPECS["d006"]["json_identities"] += tuple(("research/decisio
  ("shared-inputs/ds06-measurement.json", "247de71ae9fae6b132169f980a8c766219de55972d281b4ebbb388e0cff5142a", "2ed8ddc9c591a540f0c24969ee9aca6c0df841d8facc6f8104afde81b4290ea6"),
  ("shared-inputs/ds07-owner-tasks.json", "edb735e5795cae6976ebac8c454ad510562095a6071e1d542591d543a17c7b87", "b7961471b0059d760926f5addacc35217f234641c87abd2e71c32903c86f4f59"),
 ))) # d006-v0.3 identities end
+# d006 epoch admissions begin
+_D006_E = {"research/decisions/D-006/d006-v0.3/" + n for n in "CONTRACT.md FINDINGS.md HARNESS_ISSUES.md RUNNER.md lean4/Checker/Main.lean lean4/D006/Core.lean lean4/D006/Lrat.lean lean4/D006/Records.lean lean4/D006/Sieve.lean lean4/Loader/OleanCheck.lean lean4/NOTES.md lean4/adapter.d/ds02.json lean4/adapter.d/ds03.json lean4/adapter.d/ds04.json lean4/adapter.d/ds05.json lean4/adapter.d/ds06.json lean4/adapter.json lean4/patches/D1-N10.patch lean4/patches/D2-M01.patch lean4/patches/D2-M02.patch lean4/patches/D2-M06.patch rocq/NOTES.md rocq/adapter.d/ds02.json rocq/adapter.d/ds03.json rocq/adapter.d/ds04.json rocq/adapter.d/ds05.json rocq/adapter.d/ds06.json rocq/adapter.json rocq/extraction/Checker.v rocq/extraction/Extract.v rocq/extraction/driver.ml rocq/extraction/uint63.ml rocq/patches/D1-N10.patch rocq/patches/D2-M01.patch rocq/patches/D2-M02.patch rocq/patches/D2-M06.patch rocq/theories/Core.v rocq/theories/Lrat.v rocq/theories/Records.v rocq/theories/Sieve.v".split()}
+MINIMUM_REQUIRED_PATHS |= _D006_E | {"tools/" + n for n in "d006_check.py d006_render.py d006_run.py tests/test_d006_run.py".split()}
+DECISION_LABORATORY_SPECS["d006"]["inventory"] |= {"research/decisions/D-006/d006-v0.3/" + n for n in "CONTRACT.md FINDINGS.md HARNESS_ISSUES.md RUNNER.md".split()}
+# d006 epoch admissions end
+# The runner binds each D-006 candidate tree per run (AM-04) and each epoch export binds its files by digest,
+# so these trees stay required paths but sit outside the lab's reviewed inventory and JSON identity closure.
+_D006_EPOCH_BOUND = tuple("research/decisions/D-006/d006-v0.3/" + d for d in ("rocq/", "lean4/", "run/"))
 DECISION_LABORATORY_SPECS["d004"]["inventory"] |= {_D004_BASE + p for p in _D004_REBOUND}
 DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-006/"] = (13, 2, True, None)
@@ -5249,7 +5257,7 @@ class FoundationValidator:
                 fail('spec', self.root / 'tools/validate_foundation.py', message)
             return
         research_root = str(specification['research_root'])
-        observed_inventory = {relative(path, self.root) for path in self.repository_files if relative(path, self.root).startswith(research_root)}
+        observed_inventory = {relative(path, self.root) for path in self.repository_files if relative(path, self.root).startswith(research_root) and not relative(path, self.root).startswith(_D006_EPOCH_BOUND)}
         expected_inventory = specification['inventory']
         if observed_inventory != expected_inventory:
             fail('research_inventory', self.root / research_root, f'decision-laboratory research paths must retain their exact reviewed inventory; missing={sorted(expected_inventory - observed_inventory)}, unexpected={sorted(observed_inventory - expected_inventory)}')
