@@ -1019,6 +1019,80 @@ fn word_binary(operator: BinaryOperator, mask: u64, left: u64, right: u64) -> Op
     Some(value & mask)
 }
 
+/// A shift or rotation amount computed from data: its sign, its magnitude
+/// when that fits 64 bits, and its residue modulo 2^64.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Amount {
+    negative: bool,
+    magnitude: Option<u64>,
+    low: u64,
+}
+
+impl Amount {
+    /// The amount of an unsigned word's value.
+    const fn of_word(value: u64) -> Self {
+        Self {
+            negative: false,
+            magnitude: Some(value),
+            low: value,
+        }
+    }
+
+    /// The amount of an `Int`, which may be negative and far larger than
+    /// any width.
+    fn of_int(value: &ExactInteger) -> Self {
+        Self {
+            negative: value.is_negative(),
+            magnitude: value.magnitude_u64(),
+            low: value.modulo_2_64(),
+        }
+    }
+}
+
+/// Shifts or rotates an n-bit word by an amount computed from data. `<<`
+/// by k gives the residue of floor(value * 2^k) modulo 2^n and `>>` by k
+/// that of floor(value * 2^-k), so a negative amount shifts the other way
+/// and a shift by n or more in either direction gives 0. A rotation turns
+/// by the least residue of k modulo n, which for a width that is a power of
+/// two is read from k's residue modulo 2^64; `>>>` by k is `<<<` by -k.
+fn word_shift_by(
+    operator: BinaryOperator,
+    bits: u32,
+    mask: u64,
+    value: u64,
+    amount: Amount,
+) -> Option<u64> {
+    if !bits.is_power_of_two() || bits > 64 {
+        return None;
+    }
+    let turn = u32::try_from(amount.low & u64::from(bits.checked_sub(1)?)).ok()?;
+    let within = amount
+        .magnitude
+        .filter(|magnitude| *magnitude < u64::from(bits))
+        .and_then(|magnitude| u32::try_from(magnitude).ok());
+    match operator {
+        BinaryOperator::RotateLeft => {
+            word_shift(BinaryOperator::RotateLeft, bits, mask, value, turn)
+        }
+        BinaryOperator::RotateRight => {
+            word_shift(BinaryOperator::RotateRight, bits, mask, value, turn)
+        }
+        BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
+            let Some(by) = within else {
+                return Some(0);
+            };
+            let left = (operator == BinaryOperator::ShiftLeft) != amount.negative;
+            let direction = if left {
+                BinaryOperator::ShiftLeft
+            } else {
+                BinaryOperator::ShiftRight
+            };
+            word_shift(direction, bits, mask, value, by)
+        }
+        _ => None,
+    }
+}
+
 /// Shifts or rotates an n-bit word by `amount`, where `amount < bits`.
 fn word_shift(
     operator: BinaryOperator,
@@ -2166,6 +2240,22 @@ impl<'core> Machine<'core> {
                 let mask = word_mask(&node.ty).ok_or(Stop::InconsistentCore)?;
                 let value = self.pop_word()?;
                 let shifted = word_shift(*operator, bits, mask, value, *amount)
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(Value::Word(shifted))
+            }
+            CoreNodeKind::ShiftBy { operator, amount } => {
+                self.charge(1)?;
+                let bits = node.ty.word_bits().ok_or(Stop::InconsistentCore)?;
+                let mask = word_mask(&node.ty).ok_or(Stop::InconsistentCore)?;
+                let by = if *amount == CoreType::Int {
+                    Amount::of_int(&*self.pop_int()?)
+                } else if word_mask(amount).is_some() {
+                    Amount::of_word(self.pop_word()?)
+                } else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let value = self.pop_word()?;
+                let shifted = word_shift_by(*operator, bits, mask, value, by)
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(Value::Word(shifted))
             }
@@ -3601,6 +3691,196 @@ mod tests {
     }
 
     #[test]
+    fn computed_shifts_and_rotations_follow_their_definition_at_every_width() {
+        // `<<` by k is floor(a * 2^k) modulo 2^n and `>>` by k is
+        // floor(a * 2^-k) modulo 2^n, so either gives 0 once |k| >= n; a
+        // rotation turns by k modulo n. Each is checked for every `Int`
+        // amount from -2n - 1 through 2n + 1, amounts at and past 64 bits,
+        // one of 16,384 bits, and every byte amount.
+        let power = |exponent: usize| {
+            let digits = "0".repeat(exponent / 4);
+            let lead = 1_u32 << (exponent % 4);
+            format!("0x{lead}{digits}")
+        };
+        let huge = [
+            (String::from("18446744073709551615"), u64::MAX),
+            (String::from("-18446744073709551615"), 1),
+            (String::from("18446744073709551616"), 0),
+            (String::from("-18446744073709551616"), 0),
+            (format!("{} + 3", power(200)), 3),
+            (format!("0 - {} - 1", power(200)), u64::MAX),
+            (power(16_383), 0),
+            (format!("0 - {}", power(16_383)), 0),
+        ];
+        for (ty, bits) in WORDS {
+            let modulus = 1_u128 << bits;
+            let mask = modulus - 1;
+            let n = i64::from(bits);
+            let shift = |value: u128, k: i64| {
+                if k >= n || k <= -n {
+                    0
+                } else if k >= 0 {
+                    (value << k) & mask
+                } else {
+                    value >> -k
+                }
+            };
+            let rotate = |value: u128, k: i64| {
+                let r = u32::try_from(k.rem_euclid(n)).unwrap();
+                ((value << r) | (value >> ((bits - r) % bits))) & mask
+            };
+            let value = word_corpus(bits)[9];
+            let mut members = format!(
+                "  spec shl(a: {ty}, k: Int) -> {ty} {{ a << k }}\n\
+                 \x20 spec shr(a: {ty}, k: Int) -> {ty} {{ a >> k }}\n\
+                 \x20 spec rotl(a: {ty}, k: Int) -> {ty} {{ a <<< k }}\n\
+                 \x20 spec rotr(a: {ty}, k: Int) -> {ty} {{ a >>> k }}\n\
+                 \x20 spec byte(a: {ty}, k: Word[8]) -> ({ty}, {ty}, {ty}, {ty}) {{\n\
+                 \x20   (a << k, a >> k, a <<< k, a >>> k)\n\
+                 \x20 }}\n"
+            );
+            let four = |values: [u128; 4]| {
+                let [a, b, c, d] = values.map(|value| render_word(bits, value));
+                format!("({a}, {b}, {c}, {d})")
+            };
+            let mut expected = Vec::new();
+            for k in -(2 * n + 1)..=(2 * n + 1) {
+                let name = format!("int{}", expected.len());
+                members.push_str(&format!(
+                    "  spec {name}() -> ({ty}, {ty}, {ty}, {ty}) {{\n\
+                     \x20   (shl({value}, {k}), shr({value}, {k}), rotl({value}, {k}), rotr({value}, {k}))\n\
+                     \x20 }}\n"
+                ));
+                expected.push(format!(
+                    "{name} = {}",
+                    four([
+                        shift(value, k),
+                        shift(value, -k),
+                        rotate(value, k),
+                        rotate(value, -k)
+                    ])
+                ));
+            }
+            // Past 63 bits the amount is only its sign, whether it is below
+            // n, and its residue modulo n, here written as a residue of
+            // 2^64 whose low bits are those of the amount.
+            for (amount, residue) in &huge {
+                let name = format!("int{}", expected.len());
+                members.push_str(&format!(
+                    "  spec {name}() -> ({ty}, {ty}, {ty}, {ty}) {{\n\
+                     \x20   (shl({value}, {amount}), shr({value}, {amount}), rotl({value}, {amount}), rotr({value}, {amount}))\n\
+                     \x20 }}\n"
+                ));
+                let turn = i64::try_from(u128::from(*residue) % u128::from(bits)).unwrap();
+                expected.push(format!(
+                    "{name} = {}",
+                    four([0, 0, rotate(value, turn), rotate(value, -turn)])
+                ));
+            }
+            for k in 0..=255_i64 {
+                let name = format!("byte{k}");
+                members.push_str(&format!(
+                    "  spec {name}() -> ({ty}, {ty}, {ty}, {ty}) {{ byte({value}, {k}) }}\n"
+                ));
+                expected.push(format!(
+                    "{name} = {}",
+                    four([
+                        shift(value, k),
+                        shift(value, -k),
+                        rotate(value, k),
+                        rotate(value, -k)
+                    ])
+                ));
+            }
+            assert_eq!(values_of(&members), expected, "{ty}");
+        }
+    }
+
+    #[test]
+    fn a_computed_amount_costs_one_step_whatever_its_size() {
+        let core = core(&format!(
+            "edition 2026; module m {{\n\
+             \x20 spec turn(a: Word[32], k: Int) -> Word[32] {{ a <<< k }}\n\
+             \x20 spec literal() -> Word[32] {{ 0x80000001 <<< 3 }}\n\
+             \x20 spec small() -> Word[32] {{ turn(0x80000001, 3) }}\n\
+             \x20 spec large() -> Word[32] {{ turn(0x80000001, 0x1{}3) }}\n\
+             \x20 spec shifted() -> Word[32] {{ turn(0x80000001, -3) }}\n\
+             }}\n",
+            "0".repeat(4_094)
+        ));
+        let result = evaluate(&core);
+        let values = result.values().unwrap();
+        let steps = values
+            .iter()
+            .map(|value| (value.name(), value.steps()))
+            .collect::<Vec<_>>();
+        // A call costs its arguments, one step for the call, and its body.
+        assert_eq!(
+            steps,
+            [("literal", 2), ("small", 6), ("large", 6), ("shifted", 6)]
+        );
+        assert_eq!(values[0].value(), values[1].value());
+        assert_eq!(values[0].value(), values[2].value());
+        assert_eq!(values[3].value(), &CoreValue::Word32(0x3000_0000));
+    }
+
+    #[test]
+    fn computed_amount_nodes_fail_closed_on_inconsistent_core() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec f(x: Word[8], k: Int) -> Word[8] { x << k }\n",
+            "  spec g() -> Word[8] { f(0x96, 3) }\n",
+            "}\n"
+        ));
+        assert_eq!(
+            base.functions[0].body.nodes[2].kind,
+            CoreNodeKind::ShiftBy {
+                operator: BinaryOperator::ShiftLeft,
+                amount: CoreType::Int,
+            }
+        );
+        let mutations: [fn(&mut CoreModule); 4] = [
+            // The amount claims to be a word, but an `Int` is given.
+            |core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::ShiftBy {
+                    operator: BinaryOperator::ShiftLeft,
+                    amount: CoreType::Word8,
+                };
+            },
+            // The amount claims to be a truth value.
+            |core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::ShiftBy {
+                    operator: BinaryOperator::ShiftLeft,
+                    amount: CoreType::Bool,
+                };
+            },
+            // The operator is not a shift or rotation.
+            |core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::ShiftBy {
+                    operator: BinaryOperator::Add,
+                    amount: CoreType::Int,
+                };
+            },
+            // The shifted value is not a word.
+            |core| {
+                core.functions[0].body.nodes[0].kind = CoreNodeKind::Parameter(1);
+            },
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
     fn sha256_round_zero_matches_the_fips_example() {
         // FIPS 180-4 example "abc": after round t = 0, a = 5d6aebcd and
         // e = fa2a4622, from the initial hash value, K0, and W0 = 61626380.
@@ -3855,6 +4135,14 @@ mod tests {
         for (members, steps) in [
             ("  spec w() -> Word[8] { (1 + 2) ^ ~3 }\n", 6),
             ("  spec w() -> Word[32] { (1 <<< 3) >> 1 }\n", 3),
+            // A shift or rotation by a computed amount also costs one step
+            // beyond its operands', whatever the amount's size.
+            ("  spec w() -> Word[32] { let k: Int = 3; 1 <<< k }\n", 4),
+            (
+                "  spec w() -> Word[32] { let k: Int = -0x1_0000_0000_0000_0000_0003; \
+                 (1 <<< k) >> k }\n",
+                6,
+            ),
             (
                 "  spec f(x: Word[8]) -> Word[8] { x + x }\n  spec w() -> Word[8] { f(7) }\n",
                 5,

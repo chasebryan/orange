@@ -57,9 +57,11 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md) under OEP-0018, which
 > adds type parameters and typed calls, the S3p slice proposed in
 > [`LENGTHS_2026.md`](LENGTHS_2026.md) under OEP-0019, which lets arrays hold
-> up to 65,536 elements and adds evaluation controls, and the S3q slice
-> proposed in [`TESTS_2026.md`](TESTS_2026.md) under OEP-0020, which adds
-> known-answer tests and whole-value equality.
+> up to 65,536 elements and adds evaluation controls, the S3q slice proposed
+> in [`TESTS_2026.md`](TESTS_2026.md) under OEP-0020, which adds known-answer
+> tests and whole-value equality, and the S3r slice proposed in
+> [`AMOUNTS_2026.md`](AMOUNTS_2026.md) under OEP-0021, which adds shift and
+> rotation amounts computed from data.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

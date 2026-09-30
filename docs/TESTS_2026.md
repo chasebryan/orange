@@ -22,6 +22,12 @@ Until then, the compiler behavior it describes exists so that the proposal
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`AMOUNTS_2026.md`](AMOUNTS_2026.md), proposed under OEP-0021, extends this
+> document with shift and rotation amounts computed from data, so a test may
+> claim what a word shifted by any `Int` or word gives. Every source this
+> document accepts keeps its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

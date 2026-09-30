@@ -52,8 +52,13 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > the functions it names, and report the steps each used.
 > [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, adds known-answer
 > tests beside a module's functions, `==` and `!=` on arrays and tuples, and
-> `orangec test`, which runs a module's tests. Every source this document
-> accepts keeps its meaning under all fifteen.
+> `orangec test`, which runs a module's tests.
+> [`AMOUNTS_2026.md`](AMOUNTS_2026.md), proposed under OEP-0021, replaces the
+> rule of section 8 that an amount is an unsigned literal: any amount that is
+> not one integer literal is an `Int` or word expression, and section 9's
+> shifts and rotations are extended to every amount, a shift by the width or
+> more giving 0 and a rotation turning by its amount modulo the width. Every
+> source this document accepts keeps its meaning under all sixteen.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

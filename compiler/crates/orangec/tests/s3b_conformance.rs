@@ -282,14 +282,14 @@ const CASES: [Case; 14] = [
     Case {
         fixture: "invalid-shift-amounts.or",
         expectation: Expectation::Failure {
-            codes: &["ORC0216", "ORC0216", "ORC0216", "ORC0216", "ORC0216"],
-            locations: &["5:49", "6:59", "7:49", "8:63", "9:50"],
+            codes: &["ORC0216", "ORC0216", "ORC0216", "ORC0216"],
+            locations: &["6:49", "7:59", "8:49", "9:58"],
             messages: &[
                 "`<<` on `Word[8]` needs an amount from 0 through 7",
                 "`>>>` on `Word[32]` needs an amount from 0 through 31",
                 "`>>` on `Word[16]` needs an amount from 0 through 15",
                 "`<<<` on `Word[64]` needs an amount from 0 through 63",
-                "amount must be an unsigned integer literal",
+                "a literal amount is from 0 through 63",
             ],
         },
         rules: &["S3B-SHIFT-01", "S3B-DIAG-01", "S3B-DETERMINISM-01"],
@@ -503,7 +503,7 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/semantics/tests.rs",
-        test: "shift_and_rotation_amounts_are_literals_below_the_width",
+        test: "literal_shift_and_rotation_amounts_are_below_the_width",
         rules: &["S3B-SHIFT-01"],
     },
     TestEvidence {

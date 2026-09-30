@@ -2122,6 +2122,9 @@ fn expression_nodes<'text>(
                 CoreNodeKind::Shift { operator, amount } => {
                     format!("shift {} {amount}", operator.as_str())
                 }
+                CoreNodeKind::ShiftBy { operator, amount } => {
+                    format!("shift-by {} {amount}", operator.as_str())
+                }
                 CoreNodeKind::Array { elements } => format!("array of {elements}"),
                 CoreNodeKind::Index { index } => format!("index {index}"),
                 CoreNodeKind::Select => String::from("select"),
@@ -2681,7 +2684,7 @@ fn operators_are_defined_only_for_their_types() {
 }
 
 #[test]
-fn shift_and_rotation_amounts_are_literals_below_the_width() {
+fn literal_shift_and_rotation_amounts_are_below_the_width() {
     let mut members = String::new();
     let mut expected = Vec::new();
     for ty in TYPES.iter().filter(|ty| **ty != CoreType::Int) {
@@ -2716,14 +2719,12 @@ fn shift_and_rotation_amounts_are_literals_below_the_width() {
         ("Word[64]", "64"),
         ("Word[64]", "0x1_0000_0000_0000_0000"),
         ("Word[8]", "-1"),
-        ("Word[8]", "x"),
-        ("Word[8]", "(1)"),
-        ("Word[8]", "1 + 1"),
+        ("Word[8]", "-0"),
     ]
     .into_iter()
     .enumerate()
     {
-        let amount_source = if amount == "1 + 1" { "(1 + 1)" } else { amount };
+        let amount_source = amount;
         members.push_str(&format!(
             "  spec bad{index}(x: {ty}) -> {ty} {{ x <<< {amount_source} }}\n"
         ));
@@ -2751,10 +2752,212 @@ fn shift_and_rotation_amounts_are_literals_below_the_width() {
             .map(|(code, source, message)| (*code, *source, message.as_str()))
             .collect::<Vec<_>>()
     );
-    assert!(
-        result.diagnostics.iter().all(|diagnostic| {
-            diagnostic.label() == "amount must be an unsigned integer literal"
-        })
+    // The label names the width's bit positions, and the note says what
+    // an amount that is not a literal may be.
+    assert!(result.diagnostics.iter().all(|diagnostic| {
+        diagnostic
+            .label()
+            .starts_with("a literal amount is from 0 through ")
+            && diagnostic.notes()
+                == [
+                    "an amount written as one integer literal is from 0 through n - 1; any \
+                     other amount is computed, an `Int` or a word, such as `x <<< r` or `x >> \
+                     (i % 8)`",
+                ]
+    }));
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .map(Diagnostic::label)
+            .collect::<Vec<_>>(),
+        [
+            "a literal amount is from 0 through 7",
+            "a literal amount is from 0 through 15",
+            "a literal amount is from 0 through 31",
+            "a literal amount is from 0 through 63",
+            "a literal amount is from 0 through 63",
+            "a literal amount is from 0 through 7",
+            "a literal amount is from 0 through 7",
+        ]
+    );
+}
+
+#[test]
+fn computed_amounts_take_the_type_of_their_first_typed_leaf() {
+    // A word amount keeps its width; any other amount is an `Int`, a group
+    // and a size included; a literal amount keeps its literal node.
+    let (fixture, core) = accepted(concat!(
+        "  spec by_word(x: Word[32], k: Word[8]) -> Word[32] { x <<< k }\n",
+        "  spec by_int(x: Word[16], k: Int) -> Word[16] { x >> k }\n",
+        "  spec by_group(x: Word[8]) -> Word[8] { x << (1) }\n",
+        "  spec by_remainder(x: Word[64], i: Int) -> Word[64] { x >>> (i % 64) }\n",
+        "  spec by_call(x: Word[8]) -> Word[8] { x << by_group(x) }\n",
+        "  spec by_size[n in 1..3](x: Word[8]) -> Word[8] { x >> n }\n",
+        "  spec by_literal(x: Word[8]) -> Word[8] { x << 1 }\n",
+    ));
+    let owned = |rows: &[(&str, &'static str, CoreType)]| {
+        rows.iter()
+            .map(|(operation, source, ty)| ((*operation).to_owned(), *source, ty.clone()))
+            .collect::<Vec<_>>()
+    };
+    let int = CoreType::Int;
+    let (w8, w16, w32, w64) = (
+        CoreType::Word8,
+        CoreType::Word16,
+        CoreType::Word32,
+        CoreType::Word64,
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[0]),
+        owned(&[
+            ("parameter 0", "x", w32.clone()),
+            ("parameter 1", "k", w8.clone()),
+            ("shift-by <<< Word[8]", "x <<< k", w32),
+        ])
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[1]),
+        owned(&[
+            ("parameter 0", "x", w16.clone()),
+            ("parameter 1", "k", int.clone()),
+            ("shift-by >> Int", "x >> k", w16),
+        ])
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[2]),
+        owned(&[
+            ("parameter 0", "x", w8.clone()),
+            ("literal 1", "1", int.clone()),
+            ("shift-by << Int", "x << (1)", w8.clone()),
+        ])
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[3]),
+        owned(&[
+            ("parameter 0", "x", w64.clone()),
+            ("parameter 1", "i", int.clone()),
+            ("literal 64", "64", int.clone()),
+            ("infix %", "i % 64", int.clone()),
+            ("shift-by >>> Int", "x >>> (i % 64)", w64),
+        ])
+    );
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[4]),
+        owned(&[
+            ("parameter 0", "x", w8.clone()),
+            ("parameter 0", "x", w8.clone()),
+            ("call #2 with 1", "by_group(x)", w8.clone()),
+            ("shift-by << Word[8]", "x << by_group(x)", w8.clone()),
+        ])
+    );
+    for instance in [5, 6] {
+        let size = if instance == 5 {
+            "literal 1"
+        } else {
+            "literal 2"
+        };
+        assert_eq!(
+            core_nodes(&fixture, &core.functions[instance]),
+            owned(&[
+                ("parameter 0", "x", w8.clone()),
+                (size, "n", int.clone()),
+                ("shift-by >> Int", "x >> n", w8.clone()),
+            ])
+        );
+    }
+    assert_eq!(
+        core_nodes(&fixture, &core.functions[7]),
+        owned(&[
+            ("parameter 0", "x", w8.clone()),
+            ("shift << 1", "x << 1", w8),
+        ])
+    );
+
+    // A computed amount of any other type is checked as an `Int` and
+    // reported inside it; shifts stay undefined for every type but words.
+    let (fixture, result) = rejected(concat!(
+        "  spec truth(x: Word[32], b: Bool) -> Word[32] { x << b }\n",
+        "  spec residue(x: Word[32], r: Mod[5]) -> Word[32] { x <<< r }\n",
+        "  spec bytes(x: Word[32], a: Word[8]^4) -> Word[32] { x >> a }\n",
+        "  spec pair(x: Word[32], p: (Int, Int)) -> Word[32] { x >>> p }\n",
+        "  spec condition(x: Word[32], i: Int) -> Word[32] { x << (i < 3) }\n",
+        "  spec number(n: Int, k: Int) -> Int { n << k }\n",
+        "  spec residues(n: Mod[7], k: Int) -> Mod[7] { n >>> k }\n",
+        "  spec unknown(x: Word[32]) -> Word[32] { x <<< y }\n",
+    ));
+    let reported = reported(&fixture, &result);
+    assert_eq!(
+        reported
+            .iter()
+            .map(|(code, source, message)| (*code, *source, message.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                DiagnosticCode::TypeMismatch,
+                "b",
+                "`b` has type `Bool`, but `Int` is required here"
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "r",
+                "`r` has type `Mod[5]`, but `Int` is required here"
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "a",
+                "`a` has type `Word[8]^4`, but `Int` is required here"
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "p",
+                "`p` has type `(Int, Int)`, but `Int` is required here"
+            ),
+            (
+                DiagnosticCode::TypeMismatch,
+                "i < 3",
+                "a comparison gives `Bool`, but `Int` is required here"
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                "<<",
+                "`<<` is not defined for `Int`"
+            ),
+            (
+                DiagnosticCode::UnsupportedOperator,
+                ">>>",
+                "`>>>` is not defined for `Mod[7]`"
+            ),
+            (
+                DiagnosticCode::UnknownParameter,
+                "y",
+                "`y` is not a parameter of `unknown`"
+            ),
+        ]
+    );
+}
+
+#[test]
+fn shifts_by_computed_amounts_range_over_their_whole_type() {
+    // A shift by a computed amount is not narrowed by its amount, so a
+    // byte shifted by one indexes 256 entries unless it is masked.
+    let (_, core) = accepted(concat!(
+        "  spec masked(t: Word[8]^16, x: Word[8], k: Int) -> Word[8] { t[(x >> k) & 15] }\n",
+        "  spec whole(t: Word[8]^256, x: Word[8], k: Word[8]) -> Word[8] { t[x << k] }\n",
+    ));
+    assert_eq!(core.functions.len(), 2);
+    let (fixture, result) =
+        rejected("  spec wide(t: Word[8]^16, x: Word[8], k: Int) -> Word[8] { t[x >> k] }\n");
+    assert_eq!(
+        reported(&fixture, &result)
+            .iter()
+            .map(|(code, source, message)| (*code, *source, message.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            DiagnosticCode::IndexOutOfRange,
+            "x >> k",
+            "this index runs from 0 through 255, out of range for `Word[8]^16`"
+        )]
     );
 }
 
