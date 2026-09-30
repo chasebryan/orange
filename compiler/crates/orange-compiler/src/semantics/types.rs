@@ -15,9 +15,10 @@ pub(super) enum TypeClass {
     /// A length written with sizes that has no value.
     Size(SizeFault),
     MissingModulus,
-    /// A declared name whose element type is already an array, followed by
-    /// the span of `^LENGTH`.
-    ArrayOfArrays(Span),
+    /// Rows of an array type that would have more than
+    /// [`MAX_ARRAY_DIMENSIONS`] dimensions or [`MAX_ARRAY_SCALARS`]
+    /// scalars, at the span of the `^LENGTH` that makes the rows.
+    ArrayShape(Span, ShapeFault),
     /// A declared name whose type is a tuple, followed by the span of
     /// `^LENGTH`.
     ArrayOfTuples(Span),
@@ -26,6 +27,15 @@ pub(super) enum TypeClass {
     /// A modulus the module's table does not hold.
     Unindexed,
     Unsupported,
+}
+
+/// Why rows of an array type are not an array type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ShapeFault {
+    /// The rows' element already has the most dimensions.
+    Dimensions,
+    /// The rows would hold this many scalars in all.
+    Scalars(u64),
 }
 
 /// The types a module fixes before its functions are checked: the value of
@@ -98,27 +108,41 @@ pub(super) fn classify_type(
     if syntax.is_tuple() {
         return classify_tuple_type(source, table, syntax);
     }
-    let scalar = classify_scalar_type(source, table, syntax);
-    match (scalar, syntax.length.as_ref()) {
-        (TypeClass::Resolved(CoreType::Array(_)), Some(length)) => {
-            TypeClass::ArrayOfArrays(length.span)
+    // Each length makes rows of the type before it: `T^n^m` is m rows of
+    // `T^n`.
+    let mut class = classify_scalar_type(source, table, syntax);
+    for length in &syntax.lengths {
+        let TypeClass::Resolved(element) = class else {
+            return class;
+        };
+        if element.as_tuple().is_some() {
+            return TypeClass::ArrayOfTuples(length.span);
         }
-        (TypeClass::Resolved(CoreType::Tuple(_)), Some(length)) => {
-            TypeClass::ArrayOfTuples(length.span)
-        }
-        (TypeClass::Resolved(element), Some(length)) => {
-            match table.sizes.array_length(source, length) {
-                Length::Admitted(count) => ArrayType::new(&element, count)
-                    .map_or(TypeClass::UnsupportedArrayLength(length.span), |array| {
-                        TypeClass::Resolved(CoreType::Array(array))
-                    }),
-                Length::Literal => TypeClass::UnsupportedArrayLength(length.span),
-                Length::Value(value) => TypeClass::ArrayLengthValue(length.span, value),
-                Length::Fault(fault) => TypeClass::Size(fault),
-            }
-        }
-        (scalar, _) => scalar,
+        class = match table.sizes.array_length(source, length) {
+            Length::Admitted(count) => ArrayType::new(&element, count).map_or_else(
+                || {
+                    element.as_array().map_or(
+                        TypeClass::UnsupportedArrayLength(length.span),
+                        |rows| {
+                            let fault = if rows.dimensions() >= MAX_ARRAY_DIMENSIONS {
+                                ShapeFault::Dimensions
+                            } else {
+                                ShapeFault::Scalars(
+                                    u64::from(rows.scalars()).saturating_mul(u64::from(count)),
+                                )
+                            };
+                            TypeClass::ArrayShape(length.span, fault)
+                        },
+                    )
+                },
+                |array| TypeClass::Resolved(CoreType::Array(array)),
+            ),
+            Length::Literal => TypeClass::UnsupportedArrayLength(length.span),
+            Length::Value(value) => TypeClass::ArrayLengthValue(length.span, value),
+            Length::Fault(fault) => TypeClass::Size(fault),
+        };
     }
+    class
 }
 
 /// Classifies a tuple type: the class of its first element that does not
@@ -317,6 +341,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             ExpressionKind::Update(update) => {
                 self.resolve_moduli_within(&update.base);
                 self.resolve_moduli_within(&update.index);
+                for index in &update.path {
+                    self.resolve_moduli_within(index);
+                }
                 self.resolve_moduli_within(&update.value);
             }
             ExpressionKind::Loop(r#loop) => {
@@ -579,10 +606,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         {
             return None;
         }
-        if let Some(length) = &syntax.length
-            && !self.event(length.span)
-        {
-            return None;
+        for length in &syntax.lengths {
+            if !self.event(length.span) {
+                return None;
+            }
         }
         let class = classify_type(self.source, &self.types, syntax);
         if !self.charge_size_events(syntax.span) {
@@ -610,23 +637,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 None
             }
-            TypeClass::ArrayOfArrays(length_span) => {
-                if self.begin_report(syntax.span) {
-                    let name = identifier_spelling_for_diagnostic(&syntax.name.text);
-                    self.diagnostics.push(
-                        Diagnostic::error(
-                            DiagnosticCode::UnsupportedType,
-                            format!("`{name}` is an array type, so this is an array of arrays"),
-                            syntax.span,
-                        )
-                        .with_label("arrays of arrays are not part of Orange 2026")
-                        .with_secondary_span(
-                            length_span,
-                            "this length would make each element an array",
-                        )
-                        .with_note("an array's elements are `Int`, `Bool`, words, or residues"),
-                    );
-                }
+            TypeClass::ArrayShape(length_span, fault) => {
+                self.report_array_shape(syntax, length_span, fault);
                 None
             }
             TypeClass::ArrayOfTuples(length_span) => {
@@ -643,7 +655,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             length_span,
                             "this length would make each element a tuple",
                         )
-                        .with_note("an array's elements are `Int`, `Bool`, words, or residues"),
+                        .with_note(
+                            "an array's elements are `Int`, `Bool`, words, residues, or arrays \
+                             of them",
+                        ),
                     );
                 }
                 None
@@ -723,6 +738,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 None
             }
         }
+    }
+
+    /// Reports rows of an array type, written at `length_span` in
+    /// `syntax`, that are not an array type.
+    #[cold]
+    #[inline(never)]
+    fn report_array_shape(&mut self, syntax: &TypeSyntax, length_span: Span, fault: ShapeFault) {
+        if !self.begin_report(syntax.span) {
+            return;
+        }
+        let diagnostic = match fault {
+            ShapeFault::Dimensions => Diagnostic::error(
+                DiagnosticCode::UnsupportedType,
+                format!("an array has at most {MAX_ARRAY_DIMENSIONS} dimensions"),
+                syntax.span,
+            )
+            .with_label(format!(
+                "this type would have {} dimensions",
+                MAX_ARRAY_DIMENSIONS.saturating_add(1)
+            ))
+            .with_secondary_span(length_span, "this length would add a fifth dimension")
+            .with_note(
+                "each `^LENGTH` makes rows of the type before it, so `Word[8]^4^4^4^4` has \
+                 four dimensions",
+            ),
+            ShapeFault::Scalars(scalars) => Diagnostic::error(
+                DiagnosticCode::UnsupportedArrayLength,
+                format!(
+                    "an array holds at most {MAX_ARRAY_SCALARS} scalars in all, but this one \
+                     would hold {scalars}"
+                ),
+                syntax.span,
+            )
+            .with_label("too many scalars")
+            .with_secondary_span(length_span, "this length multiplies the rows")
+            .with_note(
+                "an array's scalars are the product of its lengths, and 65536 is the most, \
+                 as in `Word[8]^256^256`",
+            ),
+        };
+        self.diagnostics.push(diagnostic);
     }
 
     #[cold]

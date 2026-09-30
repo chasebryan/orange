@@ -18,8 +18,8 @@ pub mod source;
 pub use core::{
     ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
     CoreFunctionId, CoreLocal, CoreLoop, CoreModule, CoreNode, CoreNodeKind, CoreTuple, CoreType,
-    CoreValue, ExactInteger, MAX_ARRAY_LENGTH, MAX_LOOP_BOUND, MAX_MODULUS_BITS,
-    MAX_TUPLE_ELEMENTS, Modulus, Residue, TupleType,
+    CoreValue, ExactInteger, MAX_ARRAY_DIMENSIONS, MAX_ARRAY_LENGTH, MAX_ARRAY_SCALARS,
+    MAX_LOOP_BOUND, MAX_MODULUS_BITS, MAX_TUPLE_ELEMENTS, Modulus, Residue, TupleType,
 };
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
 pub use edition::{Edition, ParseEditionError};

@@ -201,7 +201,7 @@ const CASES: [Case; 7] = [
         fixture: "invalid-types.or",
         expectation: Expectation::Failure {
             codes: &[
-                "ORC0233", "ORC0233", "ORC0233", "ORC0203", "ORC0203", "ORC0203", "ORC0203",
+                "ORC0233", "ORC0233", "ORC0233", "ORC0203", "ORC0221", "ORC0203", "ORC0203",
             ],
             locations: &[
                 "invalid-types.or:6:8",
@@ -222,8 +222,10 @@ const CASES: [Case; 7] = [
                 "each `type` declaration of a module names a different type",
                 "`M` is declared by a later `type` declaration; a `type` declaration uses only \
                  the names declared before it",
-                "`Block` is an array type, so this is an array of arrays",
-                "arrays of arrays are not part of Orange 2026",
+                "an array holds at most 65536 scalars in all, but this one would hold 131072",
+                "this length multiplies the rows",
+                "an array has at most 4 dimensions",
+                "this length would add a fifth dimension",
                 "the admitted types are `Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, \
                  `Word[64]`, `Mod[m]`, and the names of earlier `type` declarations",
             ],

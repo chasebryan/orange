@@ -8,9 +8,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::core::{
-    ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
-    CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreTuple, CoreType, CoreValue,
-    ExactInteger, MAX_EXACT_INTEGER_BITS, Modulus, Residue, TupleType,
+    ARRAY_DIMENSIONS, ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression,
+    CoreFunction, CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreTuple, CoreType,
+    CoreValue, ExactInteger, MAX_EXACT_INTEGER_BITS, Modulus, Residue, TupleType,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::parser::{BinaryOperator, ByteOrder, UnaryOperator};
@@ -1306,7 +1306,8 @@ impl<'core> Machine<'core> {
     /// every other part what its own comparison costs.
     ///
     /// Recursion is bounded by the depth of types: a tuple holds arrays and
-    /// scalars, and an array holds scalars.
+    /// scalars, and an array holds scalars or rows of at most three
+    /// dimensions.
     fn equal_values(&mut self, ty: &CoreType, left: &Value, right: &Value) -> Result<bool, Stop> {
         match (ty, left, right) {
             (CoreType::Array(array), Value::Array(left), Value::Array(right)) => {
@@ -1848,6 +1849,103 @@ impl<'core> Machine<'core> {
             .ok_or(Stop::InconsistentCore)
     }
 
+    /// Evaluates an update of one element of a row, `x with [i][j] = v`:
+    /// the array of type `ty`, then `indices` positions from the outermost
+    /// dimension in, then the new element, lie above `floor`. Each row on
+    /// the way is copied with its one changed element, at one step for
+    /// each 64 elements copied, or part of 64; the other rows are shared.
+    #[inline(never)]
+    fn update_path(&mut self, ty: &CoreType, indices: u32, floor: usize) -> Result<(), Stop> {
+        const LEVELS: usize = ARRAY_DIMENSIONS;
+        let outer = ty.as_array().ok_or(Stop::InconsistentCore)?;
+        let count = usize::try_from(indices).map_err(|_| Stop::InconsistentCore)?;
+        if !(2..=LEVELS).contains(&count) {
+            return Err(Stop::InconsistentCore);
+        }
+        // The array type at each level, from the outermost in.
+        let mut levels = [outer; LEVELS];
+        let mut cost = 0_usize;
+        let mut current = outer;
+        for level in 0..count {
+            *levels.get_mut(level).ok_or(Stop::InconsistentCore)? = current;
+            let length = usize::try_from(current.length()).map_err(|_| Stop::InconsistentCore)?;
+            cost = cost.saturating_add(bulk_cost(length));
+            if level.saturating_add(1) < count {
+                current = current.element().as_array().ok_or(Stop::InconsistentCore)?;
+            }
+        }
+        self.charge(cost)?;
+        if self
+            .stack
+            .len()
+            .checked_sub(count.saturating_add(2))
+            .is_none_or(|below| below < floor)
+        {
+            return Err(Stop::InconsistentCore);
+        }
+        let value = self.pop()?;
+        if !has_type(&value, &current.element()) {
+            return Err(Stop::InconsistentCore);
+        }
+        let mut positions = [0_usize; LEVELS];
+        for level in (0..count).rev() {
+            let length = levels
+                .get(level)
+                .map(|array| array.length())
+                .ok_or(Stop::InconsistentCore)?;
+            let length = usize::try_from(length).map_err(|_| Stop::InconsistentCore)?;
+            *positions.get_mut(level).ok_or(Stop::InconsistentCore)? = self.pop_position(length)?;
+        }
+        let Value::Array(base) = self.pop()? else {
+            return Err(Stop::InconsistentCore);
+        };
+        if base.ty != outer {
+            return Err(Stop::InconsistentCore);
+        }
+        // The row at each level on the way to the replaced element.
+        let mut rows: [Option<Rc<ArrayValue>>; LEVELS] = [const { None }; LEVELS];
+        let mut row = base;
+        for level in 0..count {
+            let position = *positions.get(level).ok_or(Stop::InconsistentCore)?;
+            let next = if level.saturating_add(1) < count {
+                match row.elements.get(position) {
+                    Some(Value::Array(next)) => Some(Rc::clone(next)),
+                    _ => return Err(Stop::InconsistentCore),
+                }
+            } else {
+                None
+            };
+            *rows.get_mut(level).ok_or(Stop::InconsistentCore)? = Some(row);
+            if let Some(next) = next {
+                row = next;
+            } else {
+                break;
+            }
+        }
+        let mut replacement = value;
+        for level in (0..count).rev() {
+            let row = rows
+                .get_mut(level)
+                .and_then(Option::take)
+                .ok_or(Stop::InconsistentCore)?;
+            let position = *positions.get(level).ok_or(Stop::InconsistentCore)?;
+            let mut elements = Vec::new();
+            if !(self.reservations.array)(&mut elements, row.elements.len()) {
+                return Err(Stop::Allocation(
+                    "evaluation array storage could not be reserved",
+                ));
+            }
+            elements.extend(row.elements.iter().cloned());
+            let slot = elements.get_mut(position).ok_or(Stop::InconsistentCore)?;
+            *slot = replacement;
+            replacement = Value::Array(Rc::new(ArrayValue {
+                ty: row.ty,
+                elements,
+            }));
+        }
+        self.push(replacement)
+    }
+
     /// Pops the `Int` end and then the `Int` start of a slice of `length`
     /// elements, which analysis proved to lie `length` apart from 0 up.
     /// The end is checked against the array when the run is taken.
@@ -2325,6 +2423,7 @@ impl<'core> Machine<'core> {
                 *slot = value;
                 self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
             }
+            CoreNodeKind::UpdatePath { indices } => self.update_path(&node.ty, *indices, floor),
             CoreNodeKind::Fill => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
@@ -2945,7 +3044,7 @@ fn result_value(
                 ));
             }
             // A tuple's elements are scalars and arrays, so this recursion
-            // is one level deep.
+            // is one level deeper than an array's.
             for (element, element_type) in tuple.elements.iter().zip(tuple_type.elements()) {
                 if matches!(element, Value::Tuple(_)) {
                     return Err(Stop::InconsistentCore);
@@ -2980,6 +3079,9 @@ fn result_element(
         (Value::Mod(value), CoreType::Mod(modulus)) => {
             result_residue(value, *modulus, reservations)
         }
+        // A row of an array of rows: the recursion is as deep as the
+        // array's dimensions, at most four.
+        (Value::Array(_), CoreType::Array(_)) => result_value(element.clone(), ty, reservations),
         _ => Err(Stop::InconsistentCore),
     }
 }

@@ -682,6 +682,16 @@ pub enum CoreNodeKind {
     /// A copy of an array operand subtree with the element at the index of
     /// an `Int` operand subtree replaced by a third operand subtree.
     Update,
+    /// A copy of an array operand subtree of rows with one element of a
+    /// row replaced: the element reached by `indices` `Int` operand
+    /// subtrees, one per dimension from the outermost in, is replaced by a
+    /// last operand subtree. Every row on the way is copied with its one
+    /// changed element; the others are shared.
+    UpdatePath {
+        /// The number of index subtrees, from 2 through
+        /// [`MAX_ARRAY_DIMENSIONS`].
+        indices: u32,
+    },
     /// An array of this node's type holding copies of one element subtree.
     Fill,
     /// The final accumulator of the function's loop at this index, whose
@@ -918,16 +928,34 @@ impl fmt::Display for CoreType {
 /// Longest admitted array type.
 pub const MAX_ARRAY_LENGTH: u32 = 65_536;
 
-/// A fixed-length array type `T^n`: `n` values of the scalar type `T`, for
-/// `n` from 1 through [`MAX_ARRAY_LENGTH`].
+/// Most dimensions of an array type: `T^n^m^k^l` has four.
+pub const MAX_ARRAY_DIMENSIONS: u32 = 4;
+
+/// Most scalar values an array type holds in all, counting each element of
+/// each row: the product of its lengths.
+pub const MAX_ARRAY_SCALARS: u32 = 65_536;
+
+/// [`MAX_ARRAY_DIMENSIONS`] as a count of [`ArrayType`]'s lengths.
+pub(crate) const ARRAY_DIMENSIONS: usize = 4;
+const _: () = assert!(MAX_ARRAY_DIMENSIONS == 4 && ARRAY_DIMENSIONS == 4);
+
+/// A fixed-length array type `T^n`: `n` values of the element type `T`, for
+/// `n` from 1 through [`MAX_ARRAY_LENGTH`]. The element is a scalar or
+/// itself an array, so `T^n^m` is `m` rows of `T^n`; an array has at most
+/// [`MAX_ARRAY_DIMENSIONS`] dimensions and [`MAX_ARRAY_SCALARS`] scalars.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArrayType {
-    element: Scalar,
-    length: u32,
+    scalar: Scalar,
+    /// The lengths from the innermost dimension out, in the order they are
+    /// written: `T^n^m` holds `[n, m, 0, 0]`. Lengths past `dimensions` are
+    /// 0, so that equal types have equal fields.
+    lengths: [u32; ARRAY_DIMENSIONS],
+    /// The number of dimensions, from 1 through [`MAX_ARRAY_DIMENSIONS`].
+    dimensions: u8,
 }
 
-/// The scalar element type of an array, kept separate so that an array's
-/// element is a scalar by construction.
+/// The scalar type of an array's innermost elements, kept separate so that
+/// an array never holds a tuple by construction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Scalar {
     Int,
@@ -941,11 +969,16 @@ enum Scalar {
 
 impl ArrayType {
     /// Returns the array type of `length` elements of `element`, or `None`
-    /// when `element` is an array or a tuple or `length` is outside 1
-    /// through [`MAX_ARRAY_LENGTH`].
+    /// when `element` is a tuple, `length` is outside 1 through
+    /// [`MAX_ARRAY_LENGTH`], or the array would have more than
+    /// [`MAX_ARRAY_DIMENSIONS`] dimensions or [`MAX_ARRAY_SCALARS`]
+    /// scalars.
     #[must_use]
-    pub const fn new(element: &CoreType, length: u32) -> Option<Self> {
-        let element = match element {
+    pub fn new(element: &CoreType, length: u32) -> Option<Self> {
+        if length == 0 || length > MAX_ARRAY_LENGTH {
+            return None;
+        }
+        let scalar = match element {
             CoreType::Int => Scalar::Int,
             CoreType::Bool => Scalar::Bool,
             CoreType::Word8 => Scalar::Word8,
@@ -953,18 +986,55 @@ impl ArrayType {
             CoreType::Word32 => Scalar::Word32,
             CoreType::Word64 => Scalar::Word64,
             CoreType::Mod(modulus) => Scalar::Mod(*modulus),
-            CoreType::Array(_) | CoreType::Tuple(_) => return None,
+            CoreType::Array(inner) => return inner.rows(length),
+            CoreType::Tuple(_) => return None,
         };
-        if length == 0 || length > MAX_ARRAY_LENGTH {
-            return None;
-        }
-        Some(Self { element, length })
+        Some(Self {
+            scalar,
+            lengths: [length, 0, 0, 0],
+            dimensions: 1,
+        })
     }
 
-    /// Returns the scalar element type.
+    /// Returns the array of `length` rows of this array type.
+    fn rows(self, length: u32) -> Option<Self> {
+        let scalars = self.scalars().checked_mul(length)?;
+        if scalars > MAX_ARRAY_SCALARS {
+            return None;
+        }
+        let mut lengths = self.lengths;
+        *lengths.get_mut(usize::from(self.dimensions))? = length;
+        Some(Self {
+            scalar: self.scalar,
+            lengths,
+            dimensions: self.dimensions.checked_add(1)?,
+        })
+    }
+
+    /// Returns the element type: the scalar type of a one-dimensional
+    /// array, and the row type `T^n` of an array `T^n^m`.
     #[must_use]
-    pub const fn element(self) -> CoreType {
-        match self.element {
+    pub fn element(self) -> CoreType {
+        let outer = usize::from(self.dimensions.saturating_sub(1));
+        if outer == 0 {
+            return self.scalar();
+        }
+        let mut lengths = self.lengths;
+        if let Some(length) = lengths.get_mut(outer) {
+            *length = 0;
+        }
+        CoreType::Array(Self {
+            scalar: self.scalar,
+            lengths,
+            dimensions: self.dimensions.saturating_sub(1),
+        })
+    }
+
+    /// Returns the scalar type of the innermost elements, which is the
+    /// element type of a one-dimensional array.
+    #[must_use]
+    pub const fn scalar(self) -> CoreType {
+        match self.scalar {
             Scalar::Int => CoreType::Int,
             Scalar::Bool => CoreType::Bool,
             Scalar::Word8 => CoreType::Word8,
@@ -975,10 +1045,31 @@ impl ArrayType {
         }
     }
 
-    /// Returns the number of elements.
+    /// Returns the number of elements: the length of the outermost
+    /// dimension, the last one written.
     #[must_use]
-    pub const fn length(self) -> u32 {
-        self.length
+    pub fn length(self) -> u32 {
+        self.lengths
+            .get(usize::from(self.dimensions.saturating_sub(1)))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Returns the number of dimensions, from 1 through
+    /// [`MAX_ARRAY_DIMENSIONS`].
+    #[must_use]
+    pub fn dimensions(self) -> u32 {
+        u32::from(self.dimensions)
+    }
+
+    /// Returns the number of scalars the array holds in all: the product of
+    /// its lengths, at most [`MAX_ARRAY_SCALARS`].
+    #[must_use]
+    pub fn scalars(self) -> u32 {
+        self.lengths
+            .iter()
+            .take(usize::from(self.dimensions))
+            .fold(1_u32, |product, length| product.saturating_mul(*length))
     }
 }
 
@@ -2375,8 +2466,78 @@ mod tests {
             assert_eq!(ArrayType::new(element, u32::MAX), None);
         }
         let array = CoreType::Array(ArrayType::new(&CoreType::Word32, 4).unwrap());
-        assert_eq!(ArrayType::new(&array, 2), None);
         assert_eq!(array.to_string(), "Word[32]^4");
+    }
+
+    #[test]
+    fn array_types_of_rows_have_at_most_four_dimensions_and_65536_scalars() {
+        let row = ArrayType::new(&CoreType::Word32, 4).unwrap();
+        let schedule = ArrayType::new(&CoreType::Array(row), 11).unwrap();
+        assert_eq!(schedule.length(), 11);
+        assert_eq!(schedule.element(), CoreType::Array(row));
+        assert_eq!(schedule.scalar(), CoreType::Word32);
+        assert_eq!(schedule.dimensions(), 2);
+        assert_eq!(schedule.scalars(), 44);
+        assert_eq!(row.dimensions(), 1);
+        assert_eq!(row.scalar(), row.element());
+        assert_eq!(CoreType::Array(schedule).to_string(), "Word[32]^4^11");
+        assert_ne!(schedule, ArrayType::new(&CoreType::Word32, 44).unwrap());
+        assert_ne!(
+            schedule,
+            ArrayType::new(
+                &CoreType::Array(ArrayType::new(&CoreType::Word32, 11).unwrap()),
+                4
+            )
+            .unwrap()
+        );
+
+        // Four dimensions, each written in the order of its `^`.
+        let mut ty = CoreType::Word8;
+        for (dimension, length) in [2, 3, 5, 7].into_iter().enumerate() {
+            let array = ArrayType::new(&ty, length).unwrap();
+            assert_eq!(array.dimensions(), u32::try_from(dimension).unwrap() + 1);
+            assert_eq!(array.element(), ty);
+            ty = CoreType::Array(array);
+        }
+        assert_eq!(ty.to_string(), "Word[8]^2^3^5^7");
+        assert_eq!(ty.as_array().unwrap().scalars(), 210);
+        assert_eq!(ArrayType::new(&ty, 1), None);
+
+        // A product of lengths above 65,536 is refused at any split.
+        for (inner, outer) in [(256, 256), (1, MAX_ARRAY_LENGTH), (MAX_ARRAY_LENGTH, 1)] {
+            let rows = CoreType::Array(ArrayType::new(&CoreType::Bool, inner).unwrap());
+            let array = ArrayType::new(&rows, outer).unwrap();
+            assert_eq!(array.scalars(), MAX_ARRAY_SCALARS);
+        }
+        for (inner, outer) in [(256, 257), (2, 32_769), (MAX_ARRAY_LENGTH, 2)] {
+            let rows = CoreType::Array(ArrayType::new(&CoreType::Bool, inner).unwrap());
+            assert_eq!(ArrayType::new(&rows, outer), None);
+        }
+        let rows = CoreType::Array(row);
+        assert_eq!(ArrayType::new(&rows, 0), None);
+        assert_eq!(ArrayType::new(&rows, MAX_ARRAY_LENGTH + 1), None);
+    }
+
+    #[test]
+    fn array_values_of_rows_display_their_rows() {
+        let row = ArrayType::new(&CoreType::Word8, 2).unwrap();
+        let rows = ArrayType::new(&CoreType::Array(row), 2).unwrap();
+        let value = |a, b| {
+            CoreValue::Array(
+                CoreArray::new(row, vec![CoreValue::Word8(a), CoreValue::Word8(b)]).unwrap(),
+            )
+        };
+        let table = CoreArray::new(rows, vec![value(1, 2), value(3, 4)]).unwrap();
+        assert_eq!(
+            CoreValue::Array(table.clone()).to_string(),
+            "[[0x01, 0x02], [0x03, 0x04]]"
+        );
+        assert_eq!(CoreValue::Array(table).ty(), CoreType::Array(rows));
+        assert_eq!(CoreArray::new(rows, vec![value(1, 2)]), None);
+        assert_eq!(
+            CoreArray::new(rows, vec![CoreValue::Word8(1), CoreValue::Word8(2)]),
+            None
+        );
     }
 
     #[test]
@@ -2733,6 +2894,7 @@ mod tests {
                     | CoreNodeKind::Index { .. }
                     | CoreNodeKind::Select
                     | CoreNodeKind::Update
+                    | CoreNodeKind::UpdatePath { .. }
                     | CoreNodeKind::Fill
                     | CoreNodeKind::Fold(_)
                     | CoreNodeKind::LoopIndex(_)

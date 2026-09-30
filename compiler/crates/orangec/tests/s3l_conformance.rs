@@ -211,8 +211,8 @@ const CASES: [Case; 6] = [
             messages: &[
                 "a hex string's quote follows `hex` directly, with no space, as in `hex\"00 1f a0\"`",
                 "expected a bound of the slice after `..`",
-                "a slice is taken once, from a name, a call, or a tuple's element; bind it with \
-                 `let` to select from it",
+                "a slice ends a chain of indices, as in `x[i][2..4]`; bind it with `let` to \
+                 select from it",
                 "a byte string is not indexed or sliced where it is written; bind it with `let` to \
                  select from it",
                 "`+` follows `++` without grouping parentheses",

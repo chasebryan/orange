@@ -2129,6 +2129,7 @@ fn expression_nodes<'text>(
                 CoreNodeKind::Index { index } => format!("index {index}"),
                 CoreNodeKind::Select => String::from("select"),
                 CoreNodeKind::Update => String::from("update"),
+                CoreNodeKind::UpdatePath { indices } => format!("update path of {indices}"),
                 CoreNodeKind::Fill => String::from("fill"),
                 CoreNodeKind::Fold(id) => format!("loop #{id}"),
                 CoreNodeKind::LoopIndex(id) => format!("index of loop #{id}"),
@@ -4185,8 +4186,8 @@ fn rejects_foreign_spans_in_arrays_and_indices() {
     let ExpressionKind::Index(foreign_index) = &foreign_array.elements[0].kind else {
         unreachable!();
     };
-    let foreign_length = foreign_function.parameters[0].ty.length.clone();
-    let foreign_result_length = foreign.result_type.length.clone();
+    let foreign_length = foreign_function.parameters[0].ty.lengths.clone();
+    let foreign_result_length = foreign.result_type.lengths.clone();
     fn index_mut(ast: &mut SyntaxTree) -> &mut IndexExpression {
         let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
             unreachable!();
@@ -4197,8 +4198,8 @@ fn rejects_foreign_spans_in_arrays_and_indices() {
         }
     }
     let mutations: [&dyn Fn(&mut SyntaxTree); 6] = [
-        &|ast| ast.module.functions[0].parameters[0].ty.length = foreign_length.clone(),
-        &|ast| typed_body_mut(ast).result_type.length = foreign_result_length.clone(),
+        &|ast| ast.module.functions[0].parameters[0].ty.lengths = foreign_length.clone(),
+        &|ast| typed_body_mut(ast).result_type.lengths = foreign_result_length.clone(),
         &|ast| typed_body_mut(ast).expression.span = foreign.expression.span,
         &|ast| {
             let ExpressionKind::Array(array) = &mut typed_body_mut(ast).expression.kind else {
@@ -4827,8 +4828,8 @@ fn rejects_foreign_spans_in_loops_updates_and_fills() {
                 named_of(&foreign.accumulator).name.span;
         }),
         Box::new(|ast| {
-            named_mut(&mut loop_mut(ast).accumulator).ty.length =
-                named_of(&foreign.accumulator).ty.length.clone();
+            named_mut(&mut loop_mut(ast).accumulator).ty.lengths =
+                named_of(&foreign.accumulator).ty.lengths.clone();
         }),
         Box::new(|ast| update_mut(ast).keyword_span = foreign_update.keyword_span),
         Box::new(|ast| update_mut(ast).index.span = foreign_update.index.span),
@@ -6583,10 +6584,10 @@ fn type_names_resolve_in_declaration_order_within_their_module() {
         "  type K = Mod[11];\n",
         "  type L = M;\n",
         "  type M = Word[8];\n",
-        "  type Block = Word[32]^16;\n",
+        "  type Block = Word[32]^256^256;\n",
         "  type Blocks = Block^2;\n",
         "  type N = Mod[1];\n",
-        "  spec f(x: Block^2) -> K { 0 }\n",
+        "  spec f(x: Block^1^1^1) -> K { 0 }\n",
         "  spec g(x: Unknown) -> K { 0 }\n",
         "  spec h(x: K[3]) -> K { 0 }\n",
         "  spec i(x: N) -> K { 0 }\n",
@@ -6632,14 +6633,16 @@ fn type_names_resolve_in_declaration_order_within_their_module() {
                 String::from("unsupported declared type `M`")
             ),
             (
-                DiagnosticCode::UnsupportedType,
+                DiagnosticCode::UnsupportedArrayLength,
                 "Block^2",
-                String::from("`Block` is an array type, so this is an array of arrays")
+                String::from(
+                    "an array holds at most 65536 scalars in all, but this one would hold 131072"
+                )
             ),
             (
                 DiagnosticCode::UnsupportedType,
-                "Block^2",
-                String::from("`Block` is an array type, so this is an array of arrays")
+                "Block^1^1^1",
+                String::from("an array has at most 4 dimensions")
             ),
             (
                 DiagnosticCode::UnsupportedType,
@@ -9444,8 +9447,8 @@ fn rejects_foreign_size_spans() {
         &|ast| ast.module.functions[0].sizes[0].start_span = foreign[0].sizes[0].start_span,
         &|ast| ast.module.functions[0].sizes[0].end_span = foreign[0].sizes[0].end_span,
         &|ast| {
-            ast.module.functions[0].parameters[0].ty.length =
-                foreign[0].parameters[0].ty.length.clone();
+            ast.module.functions[0].parameters[0].ty.lengths =
+                foreign[0].parameters[0].ty.lengths.clone();
         },
         &|ast| {
             let FunctionBody::Typed(body) = &mut ast.module.functions[0].body else {
@@ -9454,7 +9457,7 @@ fn rejects_foreign_size_spans() {
             let FunctionBody::Typed(other) = &foreign[0].body else {
                 unreachable!()
             };
-            body.result_type.length = other.result_type.length.clone();
+            body.result_type.lengths = other.result_type.lengths.clone();
         },
         &|ast| {
             let FunctionBody::Typed(body) = &mut ast.module.functions[1].body else {

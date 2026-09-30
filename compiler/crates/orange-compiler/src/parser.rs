@@ -1022,6 +1022,10 @@ pub struct UpdateExpression {
     pub(crate) keyword_span: Span,
     /// The replaced element's index, excluding brackets.
     pub(crate) index: Expression,
+    /// The indices within that element, each excluding its brackets:
+    /// `x with [i][j] = v` replaces element j of row i. Empty when the
+    /// element itself is replaced.
+    pub(crate) path: Vec<Expression>,
     /// The new element.
     pub(crate) value: Expression,
 }
@@ -1043,6 +1047,13 @@ impl UpdateExpression {
     #[must_use]
     pub fn index(&self) -> &Expression {
         &self.index
+    }
+
+    /// Returns the indices within the replaced element, in order: `j` of
+    /// `x with [i][j] = v`.
+    #[must_use]
+    pub fn path(&self) -> &[Expression] {
+        &self.path
     }
 
     /// Returns the new element.
@@ -1600,8 +1611,9 @@ pub struct TypeSyntax {
     pub(crate) width_span: Option<Span>,
     /// The modulus expression of `Mod[...]`, excluding brackets.
     pub(crate) modulus: Option<Box<Expression>>,
-    /// The array length, excluding `^`.
-    pub(crate) length: Option<Size>,
+    /// The array lengths, each excluding its `^`, in the order written:
+    /// `T^n^m` has `n` then `m`, and is `m` rows of `T^n`.
+    pub(crate) lengths: Vec<Size>,
     /// The element types of a tuple type `(T0, T1, ...)`, in order, and
     /// empty for every other type. A tuple type has no name: its `name` is
     /// empty and spans its `(`.
@@ -1616,16 +1628,23 @@ impl TypeSyntax {
         self.span
     }
 
-    /// Returns the exact span of the array length, excluding `^`.
+    /// Returns the exact span of the first array length, excluding `^`.
     #[must_use]
     pub fn length_span(&self) -> Option<Span> {
-        self.length.as_ref().map(Size::span)
+        self.lengths.first().map(Size::span)
     }
 
-    /// Returns the array length, excluding `^`.
+    /// Returns the first array length, excluding `^`.
     #[must_use]
-    pub const fn length(&self) -> Option<&Size> {
-        self.length.as_ref()
+    pub fn length(&self) -> Option<&Size> {
+        self.lengths.first()
+    }
+
+    /// Returns the array lengths in the order written, each excluding its
+    /// `^`: `T^n^m` has `n` then `m`.
+    #[must_use]
+    pub fn lengths(&self) -> &[Size] {
+        &self.lengths
     }
 
     /// Returns the exact type-name spelling and span.
@@ -1903,6 +1922,12 @@ const PATTERN_NOTE: &str = "a tuple pattern names two through 16 values, each wi
 const SPACED_HEX_NOTE: &str =
     "a hex string's quote follows `hex` directly, with no space, as in `hex\"00 1f a0\"`";
 
+/// Most lengths an array type writes, one per dimension.
+const DIMENSIONS: usize = crate::core::ARRAY_DIMENSIONS;
+
+const ARRAY_DIMENSIONS_NOTE: &str = "an array has at most four dimensions, as in \
+     `Word[8]^4^4^4^4`; each `^LENGTH` makes rows of the type before it";
+
 /// The note of a malformed slice.
 const SLICE_NOTE: &str = "a slice is written `x[a..b]`, the elements of `x` from index a up to but \
      not including index b, or `x[a..]` or `x[..b]` to run to the end or from the start";
@@ -1910,9 +1935,15 @@ const SLICE_NOTE: &str = "a slice is written `x[a..b]`, the elements of `x` from
 /// What an update replaces: one element at an index, or the elements of a
 /// slice, with the height of the index or of the taller bound.
 enum UpdateTarget {
-    Index(Expression, usize),
+    /// An index, the indices within that element, and their tallest
+    /// height.
+    Index(Expression, Vec<Expression>, usize),
     Slice(SliceRange, usize),
 }
+
+/// The note of a malformed update of an element of a row.
+const PATH_UPDATE_NOTE: &str = "an element of a row is updated with `x with [i][j] = v`, one \
+     index per dimension; a run of a row is updated as `x with [i] = (x[i] with [a..b] = v)`";
 
 /// The note of a malformed slice update.
 const SLICE_UPDATE_NOTE: &str = "a slice update is written `x with [a..b] = values`, the array `x` \
@@ -2406,7 +2437,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             },
             width_span: None,
             modulus: None,
-            length: None,
+            lengths: Vec::new(),
             elements: Vec::new(),
         };
         let span = self.join(keyword.span, right_brace.span);
@@ -3647,18 +3678,45 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             return Some(UpdateTarget::Slice(range, height));
         }
         // Without `..` first, an index was parsed.
-        let (index, height) = start?;
+        let (index, mut height) = start?;
         self.expect(
             TokenKind::RightBracket,
             "`]` after the index",
             "an update is written `x with [i] = value`",
         )?;
+        let mut path = Vec::new();
+        while self.current_kind() == TokenKind::LeftBracket {
+            if path.len() >= DIMENSIONS.saturating_sub(1) {
+                self.expected("`=` after the updated index", ARRAY_DIMENSIONS_NOTE);
+                return None;
+            }
+            self.bump()?;
+            let (inner_index, inner_height) = self.parse_expression(inner)?;
+            if self.current_kind() == TokenKind::DotDot {
+                self.expected("`]` after the index", PATH_UPDATE_NOTE);
+                return None;
+            }
+            self.expect(
+                TokenKind::RightBracket,
+                "`]` after the index",
+                PATH_UPDATE_NOTE,
+            )?;
+            if path.try_reserve(1).is_err() {
+                self.resource_limit_at(
+                    "parser could not allocate update storage",
+                    inner_index.span,
+                );
+                return None;
+            }
+            height = height.max(inner_height);
+            path.push(inner_index);
+        }
         self.expect(
             TokenKind::Equal,
             "`=` after the updated index",
             "an update is written `x with [i] = value`",
         )?;
-        Some(UpdateTarget::Index(index, height))
+        Some(UpdateTarget::Index(index, path, height))
     }
 
     /// Builds the update of `base` at `target` with `value`.
@@ -3671,7 +3729,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         (value, value_height): (Expression, usize),
     ) -> Option<(Expression, usize)> {
         let target_height = match &target {
-            UpdateTarget::Index(_, height) | UpdateTarget::Slice(_, height) => *height,
+            UpdateTarget::Index(_, _, height) | UpdateTarget::Slice(_, height) => *height,
         };
         let height = self.node_height(
             base_height.max(target_height).max(value_height),
@@ -3679,12 +3737,15 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         )?;
         let span = self.join(base.span, value.span);
         let kind = match target {
-            UpdateTarget::Index(index, _) => ExpressionKind::Update(Box::new(UpdateExpression {
-                base,
-                keyword_span,
-                index,
-                value,
-            })),
+            UpdateTarget::Index(index, path, _) => {
+                ExpressionKind::Update(Box::new(UpdateExpression {
+                    base,
+                    keyword_span,
+                    index,
+                    path,
+                    value,
+                }))
+            }
             UpdateTarget::Slice(range, _) => {
                 ExpressionKind::SliceUpdate(Box::new(SliceUpdateExpression {
                     base,
@@ -3848,11 +3909,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    /// Parses an optional `.k` and then an optional `[index]` after a name
-    /// or a call.
+    /// Parses an optional `.k` and then any `[index]` suffixes after a name
+    /// or a call, the last of which may be a slice.
     ///
     /// An index that is one integer token opens no nesting level, exactly as
-    /// in S3d; any other index is an expression one level deeper.
+    /// in S3d; any other index is an expression one level deeper. Each index
+    /// of `x[i][j]` opens its own level, so a chain adds height, not nesting.
     #[inline(never)]
     fn parse_index_suffix(
         &mut self,
@@ -3862,9 +3924,25 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         if self.current_kind() == TokenKind::Dot {
             return self.parse_projection(base, base_height, level);
         }
-        if self.current_kind() != TokenKind::LeftBracket {
-            return Some((base, base_height));
+        let mut current = (base, base_height);
+        while self.current_kind() == TokenKind::LeftBracket {
+            let (next, slice) = self.parse_index(current, level)?;
+            if slice {
+                return Some(next);
+            }
+            current = next;
         }
+        Some(current)
+    }
+
+    /// Parses one `[index]` or `[start..end]` after `base`, and returns the
+    /// expression with whether it is a slice, which ends the chain.
+    #[inline(never)]
+    fn parse_index(
+        &mut self,
+        (base, base_height): (Expression, usize),
+        level: usize,
+    ) -> Option<((Expression, usize), bool)> {
         let left_bracket = self.bump()?.span;
         let (index, index_height) = if self.current_kind() == TokenKind::Integer
             && self.next_kind() == TokenKind::RightBracket
@@ -3883,11 +3961,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 return None;
             }
             if self.current_kind() == TokenKind::DotDot {
-                return self.finish_slice((base, base_height), left_bracket, None, inner);
+                let slice = self.finish_slice((base, base_height), left_bracket, None, inner)?;
+                return Some((slice, true));
             }
             let index = self.parse_expression(inner)?;
             if self.current_kind() == TokenKind::DotDot {
-                return self.finish_slice((base, base_height), left_bracket, Some(index), inner);
+                let slice =
+                    self.finish_slice((base, base_height), left_bracket, Some(index), inner)?;
+                return Some((slice, true));
             }
             index
         };
@@ -3899,13 +3980,6 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             return None;
         }
         let right_bracket = self.bump()?.span;
-        if self.current_kind() == TokenKind::LeftBracket {
-            self.expected(
-                "an operator or the end of the expression",
-                "an array element is an `Int` or a word, so it cannot be indexed again",
-            );
-            return None;
-        }
         if self.current_kind() == TokenKind::Dot {
             self.expected(
                 "an operator or the end of the expression",
@@ -3916,11 +3990,14 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         let height = self.node_height(base_height.max(index_height), left_bracket)?;
         let span = self.join(base.span, right_bracket);
         self.record_node().then_some((
-            Expression {
-                span,
-                kind: ExpressionKind::Index(Box::new(IndexExpression { base, index })),
-            },
-            height,
+            (
+                Expression {
+                    span,
+                    kind: ExpressionKind::Index(Box::new(IndexExpression { base, index })),
+                },
+                height,
+            ),
+            false,
         ))
     }
 
@@ -3944,8 +4021,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         if self.current_kind() == TokenKind::LeftBracket {
             self.expected(
                 "an operator or the end of the expression",
-                "a slice is taken once, from a name, a call, or a tuple's element; bind it with \
-                 `let` to select from it",
+                "a slice ends a chain of indices, as in `x[i][2..4]`; bind it with `let` to \
+                 select from it",
             );
             return None;
         }
@@ -4954,19 +5031,25 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             }
         }
 
-        let mut length = None;
+        let mut lengths = Vec::new();
         let mut length_height = 0;
-        if array && self.current_kind() == TokenKind::Caret {
+        while array && self.current_kind() == TokenKind::Caret {
+            if lengths.len() >= DIMENSIONS {
+                self.expected(
+                    "the end of the type after its array lengths",
+                    ARRAY_DIMENSIONS_NOTE,
+                );
+                return None;
+            }
             self.bump();
             let (size, height) = self.parse_size(
                 level,
                 "a length after `^`",
-                "an array type is written `Type^LENGTH`, such as `Word[32]^16`, `Word[8]^n`, or \
-                 `Word[8]^(64 * n)`",
+                "an array type is written `Type^LENGTH`, such as `Word[32]^16`, `Word[8]^n`, \
+                 `Word[8]^(64 * n)`, or `Word[32]^4^11` for 11 rows of 4",
             )?;
             end = size.span;
-            length = Some(size);
-            length_height = height;
+            length_height = length_height.max(height);
             if self.size_continues() {
                 self.expected(
                     "the end of the type after its array length",
@@ -4975,14 +5058,11 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 );
                 return None;
             }
-            if self.current_kind() == TokenKind::Caret {
-                self.expected(
-                    "the end of the type after its array length",
-                    "an array's elements are `Int`, `Bool`, words, or residues; arrays of \
-                     arrays are not part of Orange 2026",
-                );
+            if lengths.try_reserve(1).is_err() {
+                self.resource_limit_at("parser could not allocate type storage", size.span);
                 return None;
             }
+            lengths.push(size);
         }
 
         self.record_node().then_some((
@@ -4991,7 +5071,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 name,
                 width_span,
                 modulus,
-                length,
+                lengths,
                 elements: Vec::new(),
             },
             modulus_height.max(length_height),
@@ -5011,8 +5091,8 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         if self.current_kind() == TokenKind::Caret {
             self.expected(
                 "the end of the type after the tuple",
-                "an array's elements are `Int`, `Bool`, words, or residues; arrays of \
-                 tuples are not part of Orange 2026",
+                "an array's elements are `Int`, `Bool`, words, residues, or arrays of them; \
+                 arrays of tuples are not part of Orange 2026",
             );
             return None;
         }
@@ -5026,7 +5106,7 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 },
                 width_span: None,
                 modulus: None,
-                length: None,
+                lengths: Vec::new(),
                 elements,
             },
             height,
@@ -6385,9 +6465,14 @@ mod tests {
                 shape(source, &index.index)
             ),
             ExpressionKind::Update(update) => format!(
-                "({} with [{}] = {})",
+                "({} with [{}]{} = {})",
                 shape(source, &update.base),
                 shape(source, &update.index),
+                update
+                    .path
+                    .iter()
+                    .map(|index| format!("[{}]", shape(source, index)))
+                    .collect::<String>(),
                 shape(source, &update.value)
             ),
             ExpressionKind::Loop(r#loop) => format!(
@@ -6448,7 +6533,7 @@ mod tests {
     fn type_height(ty: &TypeSyntax) -> usize {
         ty.modulus()
             .map_or(0, tree_height)
-            .max(ty.length.as_ref().map_or(0, size_height))
+            .max(ty.lengths.iter().map(size_height).max().unwrap_or(0))
             .max(ty.elements().iter().map(type_height).max().unwrap_or(0))
     }
 
@@ -6533,6 +6618,7 @@ mod tests {
             ExpressionKind::Index(index) => tree_height(&index.base).max(tree_height(&index.index)),
             ExpressionKind::Update(update) => tree_height(&update.base)
                 .max(tree_height(&update.index))
+                .max(update.path.iter().map(tree_height).max().unwrap_or(0))
                 .max(tree_height(&update.value)),
             ExpressionKind::Loop(r#loop) => tree_height(&r#loop.init)
                 .max(block_height(&r#loop.step_bindings, &r#loop.step))
@@ -7726,9 +7812,11 @@ mod tests {
             ("a[0, 1]", "expected `]` after the index"),
             ("a[0", "expected `]` after the index"),
             (
-                "a[0][1]",
+                "a[0][1].0",
                 "expected an operator or the end of the expression",
             ),
+            ("a[0][]", "expected an index after `[`"),
+            ("a[0][1", "expected `]` after the index"),
             ("(a)[0]", "expected `}` after the body expression"),
             ("[a][0]", "expected `}` after the body expression"),
             ("1[0]", "expected `}` after the body expression"),
@@ -7760,9 +7848,14 @@ mod tests {
                 "expected the end of the type after its array length",
             ),
             (
-                "Word[8]^2^2",
+                "Word[8]^2^2^2^2^2",
+                "expected the end of the type after its array lengths",
+            ),
+            (
+                "Word[8]^2^n + 1",
                 "expected the end of the type after its array length",
             ),
+            ("Word[8]^2^", "expected a length after `^`"),
         ];
         for (ty, message) in types {
             for text in [
@@ -7778,16 +7871,10 @@ mod tests {
                 assert_eq!(diagnostic.message(), message, "{text:?}");
             }
         }
-        let text = "edition 2026; module m { spec f() -> Word[8]^2^2 { [1, 2] } }";
+        let text = "edition 2026; module m { spec f() -> Word[8]^2^2^2^2^2 { [1, 2] } }";
         let (_, _, parsed) = parse_text(text);
         assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
-        assert_eq!(
-            parsed.diagnostics[0].notes(),
-            [
-                "an array's elements are `Int`, `Bool`, words, or residues; arrays of arrays are \
-                 not part of Orange 2026"
-            ]
-        );
+        assert_eq!(parsed.diagnostics[0].notes(), [ARRAY_DIMENSIONS_NOTE]);
     }
 
     #[test]
@@ -8450,7 +8537,7 @@ mod tests {
             "]]]]]",
             "a[a[a[",
             "[a,[b,[c,",
-            "a[0][0][0]",
+            "a[0][0][",
             "[][][]",
             "for for for",
             "for i in 0..",
@@ -8765,7 +8852,7 @@ mod tests {
             "type F = ;",
             "type F = Int",
             "type 1 = Int;",
-            "type F = Int^2^2;",
+            "type F = Int^2^2^2^2^2;",
             "type F = Mod[];",
             "type F = Mod[7;",
             "type F = Mod[7]] ;",
@@ -9287,8 +9374,8 @@ mod tests {
             (
                 "let t: (Int, Int)^2 = a; t",
                 "expected the end of the type after the tuple",
-                "an array's elements are `Int`, `Bool`, words, or residues; arrays of tuples \
-                 are not part of Orange 2026",
+                "an array's elements are `Int`, `Bool`, words, residues, or arrays of them; \
+                 arrays of tuples are not part of Orange 2026",
             ),
             ("(a,)", "expected another element after `,`", tuple),
             (
@@ -9616,8 +9703,8 @@ mod tests {
 
     #[test]
     fn rejects_malformed_bytes_and_slices_with_exact_messages() {
-        let once = "a slice is taken once, from a name, a call, or a tuple's element; bind it \
-                    with `let` to select from it";
+        let once = "a slice ends a chain of indices, as in `x[i][2..4]`; bind it with `let` to \
+                    select from it";
         let cases = [
             (
                 "a[..]",
@@ -9800,16 +9887,13 @@ mod tests {
         let lengths = function
             .parameters
             .iter()
-            .map(|parameter| slice(parameter.ty.length.as_ref().unwrap().span()))
+            .map(|parameter| slice(parameter.ty.lengths[0].span()))
             .collect::<Vec<_>>();
         assert_eq!(lengths, ["len", "(2 * k)"]);
         let FunctionBody::Typed(body) = &function.body else {
             panic!("expected a typed body");
         };
-        assert_eq!(
-            slice(body.result_type.length.as_ref().unwrap().span()),
-            "(len + 1)"
-        );
+        assert_eq!(slice(body.result_type.lengths[0].span()), "(len + 1)");
         let ExpressionKind::Binary(outer) = &body.expression.kind else {
             panic!("expected a join");
         };
