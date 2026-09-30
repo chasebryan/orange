@@ -1,0 +1,144 @@
+// DEV PLACEHOLDER: ChaCha20-Poly1305 (RFC 8439) behind the sealing interface.
+edition 2026;
+module ascon_aead128 {
+  // Section 2.1.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Word[32]^4 {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    [a2, b2, c2, d2]
+  }
+
+  // Section 2.3: a column round, then a diagonal round.
+  spec double_round(x: Word[32]^16) -> Word[32]^16 {
+    let q0: Word[32]^4 = quarter_round(x[0], x[4], x[8], x[12]);
+    let q1: Word[32]^4 = quarter_round(x[1], x[5], x[9], x[13]);
+    let q2: Word[32]^4 = quarter_round(x[2], x[6], x[10], x[14]);
+    let q3: Word[32]^4 = quarter_round(x[3], x[7], x[11], x[15]);
+    let d0: Word[32]^4 = quarter_round(q0[0], q1[1], q2[2], q3[3]);
+    let d1: Word[32]^4 = quarter_round(q1[0], q2[1], q3[2], q0[3]);
+    let d2: Word[32]^4 = quarter_round(q2[0], q3[1], q0[2], q1[3]);
+    let d3: Word[32]^4 = quarter_round(q3[0], q0[1], q1[2], q2[3]);
+    [
+      d0[0], d1[0], d2[0], d3[0],
+      d3[1], d0[1], d1[1], d2[1],
+      d2[2], d3[2], d0[2], d1[2],
+      d1[3], d2[3], d3[3], d0[3],
+    ]
+  }
+
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+
+  spec le_bytes(x: Word[32]) -> Word[8]^4 {
+    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
+  }
+
+  // Section 2.3: the block function. Words 4 through 11 are the key and
+  // words 13 through 15 the nonce, each read little-endian.
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[32]^16 {
+    let constants: Word[32]^16 = [
+      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      counter, 0, 0, 0,
+    ];
+    let keyed: Word[32]^16 = for i in 0..8 with s: Word[32]^16 = constants {
+      s with [4 + i] = load_le32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
+    };
+    let initial: Word[32]^16 = for i in 0..3 with s: Word[32]^16 = keyed {
+      s with [13 + i] = load_le32(nonce[4 * i], nonce[4 * i + 1], nonce[4 * i + 2], nonce[4 * i + 3])
+    };
+    let mixed: Word[32]^16 = for i in 0..10 with s: Word[32]^16 = initial { double_round(s) };
+    for i in 0..16 with s: Word[32]^16 = mixed { s with [i] = s[i] + initial[i] }
+  }
+
+  // Section 2.3: the state serialized as 64 little-endian bytes.
+  spec serialize(s: Word[32]^16) -> Word[8]^64 {
+    for i in 0..16 with bytes: Word[8]^64 = [0; 64] {
+      for j in 0..4 with b: Word[8]^64 = bytes { b with [4 * i + j] = le_bytes(s[i])[j] }
+    }
+  }
+
+  // Poly1305, section 2.5: p = 2^130 - 5.
+  spec prime() -> Int { 1361129467683753853853498429727072845819 }
+
+  spec absorb(a: Int, r: Int, block: Int) -> Int { ((a + block) * r) % prime() }
+
+  // 256^i for 0 <= i < 16.
+  spec byte_weight(i: Int) -> Int {
+    for j in 0..16 with w: Int = 1 { if j < i { w * 256 } else { w } }
+  }
+
+  spec clamp_r(key: Word[8]^32) -> Int {
+    let clamp: Word[8]^16 = [
+      0xff, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+      0xfc, 0xff, 0xff, 0x0f, 0xfc, 0xff, 0xff, 0x0f,
+    ];
+    for i in 0..16 with n: Int = 0 { n * 256 + ((key[15 - i] & clamp[15 - i]) as Int) }
+  }
+
+  spec pad_s(key: Word[8]^32) -> Int {
+    for i in 0..16 with n: Int = 0 { n * 256 + (key[31 - i] as Int) }
+  }
+
+  spec one_time_key(key: Word[8]^32, nonce: Word[8]^12) -> Word[8]^32 {
+    let block0: Word[8]^64 = serialize(block(key, 0, nonce));
+    for i in 0..32 with k: Word[8]^32 = [0; 32] { k with [i] = block0[i] }
+  }
+
+  spec keystream(key: Word[8]^32, nonce: Word[8]^12) -> Word[32]^64 {
+    let b1: Word[32]^16 = block(key, 1, nonce);
+    let b2: Word[32]^16 = block(key, 2, nonce);
+    let b3: Word[32]^16 = block(key, 3, nonce);
+    let b4: Word[32]^16 = block(key, 4, nonce);
+    let k1: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = [0; 64] { k with [w] = b1[w] };
+    let k2: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = k1 { k with [16 + w] = b2[w] };
+    let k3: Word[32]^64 = for w in 0..16 with k: Word[32]^64 = k2 { k with [32 + w] = b3[w] };
+    for w in 0..16 with k: Word[32]^64 = k3 { k with [48 + w] = b4[w] }
+  }
+
+  spec tag(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^16 {
+    let otk: Word[8]^32 = one_time_key(key, nonce);
+    let r: Int = clamp_r(otk);
+    let a0: Int = for j in 0..4 with a: Int = 0 {
+      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (ad[16 * j + 15 - i] as Int) })
+    };
+    let a1: Int = for j in 0..15 with a: Int = a0 {
+      absorb(a, r, for i in 0..16 with n: Int = 1 { n * 256 + (sealed[16 * j + 15 - i] as Int) })
+    };
+    let a2: Int = absorb(a1, r, 1 * 340282366920938463463374607431768211456 + 64 + 240 * 18446744073709551616);
+    let t: Int = a2 + pad_s(otk);
+    for i in 0..16 with out: Word[8]^16 = [0; 16] {
+      out with [i] = (t / byte_weight(i)) as Word[8]
+    }
+  }
+
+  spec seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
+    let ks: Word[32]^64 = keystream(key, nonce);
+    let body: Word[8]^256 = for i in 0..240 with c: Word[8]^256 = [0; 256] {
+      c with [i] = plaintext[i] ^ le_bytes(ks[i / 4])[i % 4]
+    };
+    let t: Word[8]^16 = tag(key, nonce, ad, body);
+    for i in 0..16 with c: Word[8]^256 = body { c with [240 + i] = t[i] }
+  }
+
+  spec authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
+    let t: Word[8]^16 = tag(key, nonce, ad, sealed);
+    (for i in 0..16 with d: Word[8] = 0 { d | (t[i] ^ sealed[240 + i]) }) == 0
+  }
+
+  spec open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
+    let ks: Word[32]^64 = keystream(key, nonce);
+    for i in 0..240 with p: Word[8]^240 = [0; 240] {
+      p with [i] = sealed[i] ^ le_bytes(ks[i / 4])[i % 4]
+    }
+  }
+}
