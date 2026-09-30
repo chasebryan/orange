@@ -357,6 +357,13 @@ fn digits(value: &ExactInteger) -> usize {
     value.magnitude_digits()
 }
 
+/// The steps of an `update` or `fill` of `length` elements: one for each 64
+/// elements it writes, or part of 64, so that a step stays about as much
+/// work as one limb operation and never costs more than one per element.
+const fn bulk_cost(length: usize) -> usize {
+    if length <= 64 { 1 } else { length.div_ceil(64) }
+}
+
 fn word_mask(ty: CoreType) -> Option<u64> {
     match ty {
         CoreType::Int | CoreType::Bool | CoreType::Array(_) => None,
@@ -1121,8 +1128,8 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Update => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
-                // One step per element copied.
-                self.charge(length)?;
+                // One step per 64 elements copied, or part of 64.
+                self.charge(bulk_cost(length))?;
                 if self
                     .stack
                     .len()
@@ -1153,8 +1160,8 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Fill => {
                 let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
                 let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
-                // One step per element.
-                self.charge(length)?;
+                // One step per 64 elements written, or part of 64.
+                self.charge(bulk_cost(length))?;
                 if self.stack.len() <= floor {
                     return Err(Stop::InconsistentCore);
                 }
@@ -2253,6 +2260,12 @@ mod tests {
                 "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; t[1] ^ t[0] }\n",
                 9,
             ),
+            // A word index costs its steps and one more for its conversion
+            // to `Int`.
+            (
+                "  spec a() -> Word[8] { let t: Word[8]^2 = [1, 2]; let x: Word[8] = 3; t[x & 1] }\n",
+                11,
+            ),
             // A loop costs one step and one more per iteration, plus its
             // initial value's and every step's; an index or accumulator
             // read costs one step, as does a selection.
@@ -2269,10 +2282,17 @@ mod tests {
                  for i in 0..2 with s: Word[8] = 0 { s ^ t[i] } }\n",
                 18,
             ),
-            // An update or fill of n elements costs n steps beyond its
-            // operands'.
-            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 11),
-            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 5),
+            // An update or fill of n elements costs ceil(n / 64) steps
+            // beyond its operands'.
+            ("  spec a() -> Word[8]^3 { [1, 2, 3] with [0] = 9 }\n", 9),
+            ("  spec a() -> Int^1 { [5; 1] with [0] = 9 }\n", 5),
+            ("  spec a() -> Word[8]^4 { [7; 4] }\n", 2),
+            ("  spec a() -> Word[8]^64 { [7; 64] }\n", 2),
+            ("  spec a() -> Word[8]^65 { [7; 65] }\n", 3),
+            (
+                "  spec a() -> Word[8]^256 { [7; 256] with [255] = 1 }\n",
+                11,
+            ),
             // `true`, `false`, `!`, `&&`, `||`, and every comparison of
             // words or `Bool` values cost one step; comparing integers
             // costs 1 + max(d1, d2).
@@ -2858,6 +2878,35 @@ mod tests {
                 "bound_twice = 6",
                 "longest = 0x00010000",
                 "last = 65535",
+            ]
+        );
+    }
+
+    #[test]
+    fn word_indices_select_and_update_by_value() {
+        let members = concat!(
+            "  spec squares() -> Word[8]^16 {\n",
+            "    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (i as Word[8]) * (i as Word[8]) }\n",
+            "  }\n",
+            "  spec pick(x: Word[8]) -> Word[8] { squares()[x & 15] }\n",
+            "  spec low() -> Word[8] { pick(0xf7) }\n",
+            "  spec high() -> Word[8] { pick(0x0f) }\n",
+            "  spec marked() -> Word[8]^4 { let k: Word[16] = 0x2a; [9; 4] with [k % 4] = 1 }\n",
+            "  spec swap(s: Word[8]^4, i: Word[8], j: Word[8]) -> Word[8]^4 {\n",
+            "    (s with [i & 3] = s[j & 3]) with [j & 3] = s[i & 3]\n",
+            "  }\n",
+            "  spec swapped() -> Word[8]^4 { swap([1, 2, 3, 4], 4, 7) }\n",
+            "  spec wide() -> Int { let z: Word[64] = 0xff00000000000000; let t: Int^4 = [10, 20, 30, 40]; t[(z >> 62) as Int] }\n",
+        );
+        assert_eq!(
+            values_of(members),
+            [
+                "squares = [0x00, 0x01, 0x04, 0x09, 0x10, 0x19, 0x24, 0x31, 0x40, 0x51, 0x64, 0x79, 0x90, 0xa9, 0xc4, 0xe1]",
+                "low = 0x31",
+                "high = 0xe1",
+                "marked = [0x09, 0x09, 0x01, 0x09]",
+                "swapped = [0x04, 0x02, 0x03, 0x01]",
+                "wide = 40",
             ]
         );
     }

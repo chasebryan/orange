@@ -40,9 +40,9 @@ const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
 const ADMITTED_TYPES: &str = "`Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
 const ARRAY_OPERATOR_NOTE: &str =
     "operators apply to `Int`, `Bool`, and word values; apply them to elements, such as `x[0]`";
-const STATIC_INDEX_NOTE: &str = "an index is built from integer literals and loop indices with \
-     `+`, `-`, `*`, `/`, and `%`, so that every index is known to be in range when the program \
-     is checked";
+const STATIC_INDEX_NOTE: &str = "every index is proved in range when the program is checked: a \
+     word index ranges over its type, and an `Int` index is built from integer literals, loop \
+     indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals";
 const BOOL_OPERATOR_NOTE: &str = "the operators on `Bool` are `!`, `&&`, `||`, `==`, and `!=`";
 
 /// The complete result of semantic analysis.
@@ -612,6 +612,15 @@ fn silent_type(source: &SourceFile, syntax: &TypeSyntax) -> Option<CoreType> {
 
 /// The least and greatest values an index can take, as exact integers.
 type IndexRange = (ExactInteger, ExactInteger);
+
+/// The least and greatest values of a word expression. Bounds are kept in
+/// `u128` so that no bound computation of two 64-bit words overflows.
+type WordRange = (u128, u128);
+
+/// Returns the least value of the form 2^k - 1 that is at least `value`.
+fn all_ones(value: u128) -> u128 {
+    u128::MAX.checked_shr(value.leading_zeros()).unwrap_or(0)
+}
 
 /// Returns the range of `left operator right` for the ranges of its
 /// operands, computed exactly, or `None` when storage cannot be reserved.
@@ -1808,8 +1817,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
-    /// Checks an index expression as an `Int`, then proves it in range for
-    /// `array` from the ranges of its literals and loop indices.
+    /// Checks an index expression, then proves it in range for `array`.
+    ///
+    /// The index has the type of its first typed leaf when that is a word
+    /// type, and is an `Int` otherwise. A word index ranges over its type,
+    /// narrowed by its operators, and is converted to its unsigned `Int`
+    /// value in Core; an `Int` index takes its range from its literals, loop
+    /// indices, and converted words.
     fn check_static_index(
         &mut self,
         index: &'ast Expression,
@@ -1818,21 +1832,33 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         scope: &ModuleScope<'_, 'ast>,
         output: &mut BodyOutput<'_>,
     ) -> bool {
-        if !self.check_expression(index, CoreType::Int, context, scope, output) {
+        let word = first_typed_leaf(index)
+            .and_then(|leaf| self.leaf_type(leaf, context, scope))
+            .filter(|ty| word_maximum(*ty).is_some());
+        let index_type = word.unwrap_or(CoreType::Int);
+        if !self.check_expression(index, index_type, context, scope, output) {
             return false;
         }
         let length = array.length();
-        let range = match self.static_range(index, context) {
+        let range = match word.and_then(word_maximum) {
+            Some(maximum) => {
+                let range = self.word_range(index, u128::from(maximum), context, scope);
+                Ok(self.exact_word_range(index.span, range))
+            }
+            None => self.static_range(index, context, scope),
+        };
+        let range = match range {
             Ok(range) => range,
             Err(span) => {
                 if self.begin_report(span) {
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::NonStaticIndex,
-                            "an index may use only integer literals and loop indices",
+                            "an `Int` index may use only integer literals, loop indices, and \
+                             words converted with `as Int`",
                             span,
                         )
-                        .with_label("not known when the program is checked")
+                        .with_label("this `Int` has no bound")
                         .with_note(STATIC_INDEX_NOTE),
                     );
                 }
@@ -1866,33 +1892,45 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 Diagnostic::error(DiagnosticCode::IndexOutOfRange, message, index.span)
                     .with_label(format!("indices run from 0 through {highest}"))
                     .with_note(
-                        "every value an index can take, over every loop index in it, must \
-                         select an element",
+                        "every value an index can take, over every loop index and word in it, \
+                         must select an element",
                     ),
             );
         }
-        in_range
+        match word {
+            Some(from) if in_range => self.push_node(
+                output,
+                index.span,
+                CoreType::Int,
+                CoreNodeKind::Convert { from },
+            ),
+            _ => in_range,
+        }
     }
 
-    /// Returns the least and greatest values of a well-typed index built
-    /// from literals, loop indices, parentheses, negation, `+`, `-`, `*`,
-    /// `/`, and `%`, computed exactly, or `None` when a bound's magnitude
-    /// exceeds the integer limit or storage cannot be reserved (which is
-    /// reported as a resource limit). Anything else is returned as the span
-    /// of the first such part.
+    /// Returns the least and greatest values of a well-typed `Int` index
+    /// built from literals, loop indices, words converted with `as Int`,
+    /// parentheses, negation, `+`, `-`, `*`, `/`, `%`, and conditionals,
+    /// computed exactly, or `None` when a bound's magnitude exceeds the
+    /// integer limit or storage cannot be reserved (which is reported as a
+    /// resource limit). Anything else is returned as the span of the first
+    /// such part.
     ///
     /// Parser-established expression height bounds this recursion.
     fn static_range(
         &mut self,
         index: &Expression,
         context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
     ) -> Result<Option<IndexRange>, Span> {
         let range = match &index.kind {
             ExpressionKind::Literal(literal) => self.range_literal(literal).and_then(|value| {
                 let copy = value.try_clone_with_reservation(self.reserve_range_limbs)?;
                 Some((value, copy))
             }),
-            ExpressionKind::Parenthesized(inner) => return self.static_range(inner, context),
+            ExpressionKind::Parenthesized(inner) => {
+                return self.static_range(inner, context, scope);
+            }
             ExpressionKind::Name(name) => match context.resolve(&name.text) {
                 NameResolution::LoopIndex(position) => {
                     let scope = context.loop_scopes.get(position).ok_or(name.span)?;
@@ -1905,7 +1943,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             },
             ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Negate => {
                 return Ok(self
-                    .static_range(&unary.operand, context)?
+                    .static_range(&unary.operand, context, scope)?
                     .map(|(low, high)| (high.negated(), low.negated())));
             }
             ExpressionKind::Binary(binary)
@@ -1914,20 +1952,71 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
                 ) =>
             {
-                let left = self.static_range(&binary.left, context)?;
-                let right = self.static_range(&binary.right, context)?;
+                let left = self.static_range(&binary.left, context, scope)?;
+                let right = self.static_range(&binary.right, context, scope)?;
                 let (Some(left), Some(right)) = (left, right) else {
                     return Ok(None);
                 };
                 combine_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
             }
             ExpressionKind::Binary(binary) if binary.operator.is_division() => {
-                let left = self.static_range(&binary.left, context)?;
-                let right = self.static_range(&binary.right, context)?;
+                let left = self.static_range(&binary.left, context, scope)?;
+                let right = self.static_range(&binary.right, context, scope)?;
                 let (Some(left), Some(right)) = (left, right) else {
                     return Ok(None);
                 };
                 divide_ranges(binary.operator, &left, &right, self.reserve_range_limbs)
+            }
+            ExpressionKind::Conversion(conversion) => {
+                let from = first_typed_leaf(&conversion.operand)
+                    .and_then(|leaf| self.leaf_type(leaf, context, scope));
+                match from {
+                    Some(CoreType::Int) => {
+                        return self.static_range(&conversion.operand, context, scope);
+                    }
+                    Some(from) => {
+                        let Some(maximum) = word_maximum(from) else {
+                            return Err(index.span);
+                        };
+                        let range = self.word_range(
+                            &conversion.operand,
+                            u128::from(maximum),
+                            context,
+                            scope,
+                        );
+                        return Ok(self.exact_word_range(index.span, range));
+                    }
+                    None => return Err(index.span),
+                }
+            }
+            ExpressionKind::Conditional(conditional) => {
+                let mut joined: Option<IndexRange> = None;
+                for value in conditional
+                    .arms
+                    .iter()
+                    .map(|arm| &arm.value)
+                    .chain(std::iter::once(&conditional.otherwise))
+                {
+                    let Some((low, high)) = self.static_range(value, context, scope)? else {
+                        return Ok(None);
+                    };
+                    joined = Some(match joined {
+                        None => (low, high),
+                        Some((least, greatest)) => (
+                            if low.compare(&least) == Ordering::Less {
+                                low
+                            } else {
+                                least
+                            },
+                            if high.compare(&greatest) == Ordering::Greater {
+                                high
+                            } else {
+                                greatest
+                            },
+                        ),
+                    });
+                }
+                joined
             }
             _ => return Err(index.span),
         };
@@ -1965,6 +2054,166 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             }
         }
         Some(ExactInteger::new(literal.negative, magnitude))
+    }
+
+    /// Returns the least and greatest values of a well-typed word expression
+    /// whose type's greatest value is `maximum`. Every word lies in its type,
+    /// and an operator narrows that where its result provably does not wrap:
+    /// `&`, `|`, `^`, `~`, `/`, `%`, shifts by a literal amount, and `+`,
+    /// `-`, and `*` whose bounds stay within the type. Conditionals join
+    /// their branches, and a conversion from a narrower word keeps its range.
+    /// Everything else ranges over the whole type. No bound is ever more
+    /// than `maximum`.
+    ///
+    /// Parser-established expression height bounds this recursion.
+    fn word_range(
+        &self,
+        expression: &Expression,
+        maximum: u128,
+        context: &BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+    ) -> WordRange {
+        let whole = (0, maximum);
+        match &expression.kind {
+            ExpressionKind::Literal(literal) if !literal.negative => self
+                .literal_value(literal)
+                .filter(|value| *value <= maximum)
+                .map_or(whole, |value| (value, value)),
+            ExpressionKind::Parenthesized(inner) => self.word_range(inner, maximum, context, scope),
+            ExpressionKind::Unary(unary) if unary.operator == UnaryOperator::Complement => {
+                let (low, high) = self.word_range(&unary.operand, maximum, context, scope);
+                (maximum.saturating_sub(high), maximum.saturating_sub(low))
+            }
+            ExpressionKind::Binary(binary) if binary.operator.is_shift_or_rotation() => {
+                let (low, high) = self.word_range(&binary.left, maximum, context, scope);
+                let amount = match &binary.right.kind {
+                    ExpressionKind::Literal(literal) if !literal.negative => self
+                        .literal_value(literal)
+                        .and_then(|amount| u32::try_from(amount).ok()),
+                    _ => None,
+                };
+                match (binary.operator, amount) {
+                    (BinaryOperator::ShiftRight, Some(amount)) => (
+                        low.checked_shr(amount).unwrap_or(0),
+                        high.checked_shr(amount).unwrap_or(0),
+                    ),
+                    (BinaryOperator::ShiftLeft, Some(amount)) => {
+                        match (low.checked_shl(amount), high.checked_shl(amount)) {
+                            (Some(least), Some(greatest))
+                                if greatest.checked_shr(amount) == Some(high)
+                                    && greatest <= maximum =>
+                            {
+                                (least, greatest)
+                            }
+                            _ => whole,
+                        }
+                    }
+                    _ => whole,
+                }
+            }
+            ExpressionKind::Binary(binary) => {
+                let (left_low, left_high) = self.word_range(&binary.left, maximum, context, scope);
+                let (right_low, right_high) =
+                    self.word_range(&binary.right, maximum, context, scope);
+                let within = |low: Option<u128>, high: Option<u128>| match (low, high) {
+                    (Some(low), Some(high)) if high <= maximum => (low, high),
+                    _ => whole,
+                };
+                match binary.operator {
+                    BinaryOperator::And => (0, left_high.min(right_high)),
+                    BinaryOperator::Or => {
+                        (left_low.max(right_low), all_ones(left_high.max(right_high)))
+                    }
+                    BinaryOperator::Xor => (0, all_ones(left_high.max(right_high))),
+                    BinaryOperator::Add => within(
+                        left_low.checked_add(right_low),
+                        left_high.checked_add(right_high),
+                    ),
+                    BinaryOperator::Subtract if left_low >= right_high => within(
+                        left_low.checked_sub(right_high),
+                        left_high.checked_sub(right_low),
+                    ),
+                    BinaryOperator::Multiply => within(
+                        left_low.checked_mul(right_low),
+                        left_high.checked_mul(right_high),
+                    ),
+                    // x / 0 = 0, and a quotient never exceeds its dividend.
+                    BinaryOperator::Divide => match (
+                        left_low.checked_div(right_high),
+                        left_high.checked_div(right_low),
+                    ) {
+                        (Some(low), Some(high)) => (low, high),
+                        _ => (0, left_high),
+                    },
+                    // x % 0 = x, and otherwise 0 <= x % d <= min(x, d - 1).
+                    BinaryOperator::Remainder if right_low > 0 && left_high < right_low => {
+                        (left_low, left_high)
+                    }
+                    BinaryOperator::Remainder if right_low > 0 => {
+                        (0, left_high.min(right_high.saturating_sub(1)))
+                    }
+                    BinaryOperator::Remainder => (0, left_high),
+                    _ => whole,
+                }
+            }
+            ExpressionKind::Conditional(conditional) => conditional
+                .arms
+                .iter()
+                .map(|arm| &arm.value)
+                .chain(std::iter::once(&conditional.otherwise))
+                .map(|value| self.word_range(value, maximum, context, scope))
+                .reduce(|(low, high), (least, greatest)| (low.min(least), high.max(greatest)))
+                .unwrap_or(whole),
+            ExpressionKind::Conversion(conversion) => first_typed_leaf(&conversion.operand)
+                .and_then(|leaf| self.leaf_type(leaf, context, scope))
+                .and_then(word_maximum)
+                .map(|from| self.word_range(&conversion.operand, u128::from(from), context, scope))
+                .filter(|(_, high)| *high <= maximum)
+                .unwrap_or(whole),
+            _ => whole,
+        }
+    }
+
+    /// Converts a word range to exact integers, reporting a failed
+    /// reservation as a resource limit at `span` and giving `None`.
+    fn exact_word_range(&mut self, span: Span, (low, high): WordRange) -> Option<IndexRange> {
+        let exact = |value: u128| {
+            u64::try_from(value)
+                .ok()
+                .and_then(|value| ExactInteger::from_u64(value, self.reserve_range_limbs))
+        };
+        let range = exact(low).zip(exact(high));
+        if range.is_none() {
+            self.resource_limit(span, "index range storage allocation failed");
+        }
+        range
+    }
+
+    /// Decodes a literal's magnitude without allocating, or gives `None`
+    /// when it exceeds 128 bits.
+    fn literal_value(&self, literal: &IntegerLiteral) -> Option<u128> {
+        let spelling = self.source.slice(literal.magnitude_span)?;
+        let (radix, digits) = if let Some(digits) = spelling
+            .strip_prefix("0b")
+            .or_else(|| spelling.strip_prefix("0B"))
+        {
+            (2, digits)
+        } else if let Some(digits) = spelling
+            .strip_prefix("0x")
+            .or_else(|| spelling.strip_prefix("0X"))
+        {
+            (16, digits)
+        } else {
+            (10, spelling)
+        };
+        digits
+            .chars()
+            .filter(|character| *character != '_')
+            .try_fold(0_u128, |value, character| {
+                value
+                    .checked_mul(u128::from(radix))?
+                    .checked_add(u128::from(character.to_digit(radix)?))
+            })
     }
 
     /// Checks `base with [index] = value` against `expected`, which must be
@@ -7833,12 +8082,18 @@ mod tests {
                 (
                     DiagnosticCode::NonStaticIndex,
                     "i",
-                    String::from("an index may use only integer literals and loop indices")
+                    String::from(
+                        "an `Int` index may use only integer literals, loop indices, and words \
+                         converted with `as Int`"
+                    )
                 ),
                 (
                     DiagnosticCode::NonStaticIndex,
                     "width(x)",
-                    String::from("an index may use only integer literals and loop indices")
+                    String::from(
+                        "an `Int` index may use only integer literals, loop indices, and words \
+                         converted with `as Int`"
+                    )
                 ),
                 (
                     DiagnosticCode::InvalidLoopRange,
@@ -8628,10 +8883,218 @@ mod tests {
             [(
                 DiagnosticCode::NonStaticIndex,
                 "n",
-                String::from("an index may use only integer literals and loop indices")
+                String::from(
+                    "an `Int` index may use only integer literals, loop indices, and words \
+                         converted with `as Int`"
+                )
             )]
         );
         assert_eq!(result.diagnostics[0].notes(), [STATIC_INDEX_NOTE]);
+    }
+
+    #[test]
+    fn word_indices_range_over_their_types_and_narrow_through_operators() {
+        let spec = |length: u32, index: &str| {
+            format!(
+                "  spec f(t: Word[8]^{length}, x: Word[8], y: Word[16], z: Word[64]) -> Word[8] {{ t[{index}] }}\n"
+            )
+        };
+        for (length, index) in [
+            // A word index ranges over its type.
+            (256, "x"),
+            (256, "z >> 56"),
+            (256, "y >> 8"),
+            (256, "y as Word[8]"),
+            (256, "x + x"),
+            (256, "x - 1"),
+            // `&`, `|`, `^`, `~`, `/`, `%`, and literal shifts narrow it.
+            (64, "(x >> 2) & 63"),
+            (64, "x >> 2"),
+            (16, "x & 15"),
+            (16, "15 & x"),
+            (16, "x >> 4"),
+            (16, "x % 16"),
+            (16, "y % 16"),
+            (16, "(x >> 4) ^ (x & 15)"),
+            (16, "(x & 7) | 8"),
+            (16, "x / 16"),
+            (16, "(x & 63) / 4"),
+            (32, "~(x | 224)"),
+            (32, "(x & 15) << 1"),
+            // `+`, `-`, and `*` narrow only where they cannot wrap.
+            (32, "(x & 15) + 16"),
+            (32, "(x & 15) * 2"),
+            (32, "31 - (x & 15)"),
+            // A wider word converted from a narrower one keeps its range.
+            (16, "(x & 15) as Word[16]"),
+            // Conditionals join their branches.
+            (16, "if x < 3 { x & 7 } else { 15 }"),
+            // An `Int` index may convert words.
+            (256, "((x as Int) / 2) + 128"),
+            (4, "(x as Int) % 4"),
+            (4, "(x & 3) as Int"),
+            (256, "(y as Int) / 256"),
+            (16, "if x < 3 { 0 } else { (x as Int) / 16 }"),
+        ] {
+            let (_, core) = accepted(&spec(length, index));
+            // A word index is proved in range and then converted to `Int`,
+            // so every selection takes an `Int` position.
+            let [.., root, position, select] = core.functions()[0].body().nodes() else {
+                panic!("{index}");
+            };
+            assert!(matches!(select.kind(), CoreNodeKind::Select), "{index}");
+            assert_eq!(position.ty(), CoreType::Int, "{index}");
+            if !index.contains("as Int") {
+                let CoreNodeKind::Convert { from } = position.kind() else {
+                    panic!("{index}");
+                };
+                assert_eq!(root.ty(), *from, "{index}");
+                assert_eq!(root.span(), position.span(), "{index}");
+            }
+        }
+        for (length, index, message) in [
+            (
+                16,
+                "x",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                255,
+                "x",
+                "this index runs from 0 through 255, out of range for `Word[8]^255`",
+            ),
+            (
+                256,
+                "z",
+                "this index runs from 0 through 18446744073709551615, out of range for `Word[8]^256`",
+            ),
+            (
+                16,
+                "x & 31",
+                "this index runs from 0 through 31, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "(x & 15) + 1",
+                "this index runs from 1 through 16, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "(x & 15) - 1",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "x % 17",
+                "this index runs from 0 through 16, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "x % (x & 15)",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "(x & 15) << 5",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "y as Word[8]",
+                "this index runs from 0 through 255, out of range for `Word[8]^16`",
+            ),
+            (
+                16,
+                "if x < 3 { x & 7 } else { 16 }",
+                "this index runs from 0 through 16, out of range for `Word[8]^16`",
+            ),
+            (
+                256,
+                "(x as Int) + 1",
+                "this index runs from 1 through 256, out of range for `Word[8]^256`",
+            ),
+            (
+                256,
+                "(x as Int) - 1",
+                "this index runs from -1 through 254, out of range for `Word[8]^256`",
+            ),
+        ] {
+            let (fixture, result) = rejected(&spec(length, index));
+            assert_eq!(
+                reported(&fixture, &result),
+                [(DiagnosticCode::IndexOutOfRange, index, message.to_owned())],
+                "{index}"
+            );
+        }
+        // An `Int` parameter has no bound, and neither does a word
+        // converted to `Int` and then multiplied by one.
+        for (index, part) in [("n", "n"), ("(x as Int) * n", "n")] {
+            let (fixture, result) = rejected(&format!(
+                "  spec f(t: Word[8]^4, x: Word[8], n: Int) -> Word[8] {{ t[{index}] }}\n"
+            ));
+            assert_eq!(
+                reported(&fixture, &result),
+                [(
+                    DiagnosticCode::NonStaticIndex,
+                    part,
+                    String::from(
+                        "an `Int` index may use only integer literals, loop indices, and words \
+                         converted with `as Int`"
+                    )
+                )],
+                "{index}"
+            );
+            assert_eq!(result.diagnostics[0].notes(), [STATIC_INDEX_NOTE]);
+        }
+    }
+
+    #[test]
+    fn word_index_events_and_core_nodes_follow_the_normative_accounting() {
+        // Lookup and installation (2); `t`'s uniqueness check, name, width,
+        // and length (4); `x`'s uniqueness check, name, and width (3); the
+        // result's name and width (2); then `t` (1), the index (1), `x` (1),
+        // `&` (1), and `15` (literal, prefix, and two digits: 4): 19 analysis
+        // events. Computing the range consumes none. Core is the module, one
+        // function node, one result-type node, two parameter-type nodes, and
+        // the body nodes `t`, `x`, `15`, `&`, the conversion to `Int`, and
+        // the selection: 11 nodes, each one more event.
+        let fixture = module("  spec f(t: Word[8]^16, x: Word[8]) -> Word[8] { t[x & 15] }\n");
+        let (events, nodes) = (30, 11);
+        let exact = fixture.analyze_with(Limits {
+            events,
+            nodes,
+            ..Limits::DEFAULT
+        });
+        assert_eq!(exact.diagnostics, []);
+        assert!(exact.core.is_some());
+        for (limits, label) in [
+            (
+                Limits {
+                    events: events - 1,
+                    nodes,
+                    ..Limits::DEFAULT
+                },
+                "semantic event budget exhausted",
+            ),
+            (
+                Limits {
+                    events,
+                    nodes: nodes - 1,
+                    ..Limits::DEFAULT
+                },
+                "typed Core node budget exhausted",
+            ),
+        ] {
+            let first = fixture.analyze_with(limits);
+            assert_eq!(first, fixture.analyze_with(limits));
+            assert!(first.core.is_none());
+            assert_eq!(first.diagnostics.len(), 1);
+            assert_eq!(
+                first.diagnostics[0].code(),
+                DiagnosticCode::SemanticResourceLimit
+            );
+            assert_eq!(first.diagnostics[0].label(), label);
+        }
     }
 
     #[test]

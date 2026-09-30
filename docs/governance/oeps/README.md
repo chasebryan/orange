@@ -112,3 +112,4 @@ success does not establish technical soundness or authority approval.
 | [OEP-0007](OEP-0007-orange-2026-fixed-length-arrays.md) | Review | Orange 2026 fixed-length arrays: array types, literals, and literal indices (S3d) |
 | [OEP-0008](OEP-0008-orange-2026-bounded-loops.md) | Review | Orange 2026 bounded loops, static indices, and updates: literal-range folds, indices proved in range, and functional updates (S3e) |
 | [OEP-0009](OEP-0009-orange-2026-conditions.md) | Review | Orange 2026 conditions, comparisons, and Euclidean division: Bool, total Euclidean division, and conditionals (S3f) |
+| [OEP-0010](OEP-0010-orange-2026-lookups.md) | Review | Orange 2026 lookups keyed by data: word indices proved in range from their types, and cheaper updates (S3g) |
