@@ -42,3 +42,14 @@ Contributor-produced and unreviewed.
   the runtime); the Lean checker is compiled C, 2.95 MB stripped on each host,
   statically linking the Lean runtime, GMP, libuv and libc++ and loading only
   glibc.
+- Lean address space under parallel builds (found by the epoch's first
+  attempt): `lean --threads=4 --tstack=65536` on `D006/Sieve.lean` peaks at
+  4.16 to 4.28 GiB of address space, over the 4 GiB cap, because glibc
+  reserves a 64 MiB malloc arena for most of its 14 to 16 threads. A failed
+  arena reservation is survivable, but a failed thread stack is not, so the
+  build aborted only when a thread start crossed the cap: in one of the four
+  parallel builds, the second workspace's ("failed to create thread: Resource
+  temporarily unavailable"). The correction sets
+  `MALLOC_ARENA_MAX=2` for every Lean step, which brings the build steps to
+  2.91 to 3.30 GiB (Sieve, Records, Lrat and the checker, measured outside the
+  sandbox with `--threads=4`). The sandbox caps are unchanged.

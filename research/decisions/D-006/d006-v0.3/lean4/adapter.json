@@ -56,7 +56,8 @@
     ]
   },
   "environment": {
-    "LEAN_PATH": "{src}/.lake/build/lib/lean"
+    "LEAN_PATH": "{src}/.lake/build/lib/lean",
+    "MALLOC_ARENA_MAX": "2"
   },
   "preamble": {
     "DS-01": "import D006.Core"
@@ -219,6 +220,11 @@
         "name": "Lean 4.34.1 elaborator and tactics (simp, omega, decide, rfl)",
         "kind": "elaborator",
         "reason": "construct the proof terms; outside the trusted base because the kernel re-checks every term they produce. In DS-01 to DS-03 no native_decide and no compiler; DS-04's observations and its golden-certificate step use native_decide, declared with its own inventory entry in adapter.d/ds04.json"
+      },
+      {
+        "name": "MALLOC_ARENA_MAX=2",
+        "kind": "runtime setting",
+        "reason": "glibc reserves a 64 MiB malloc arena for most new threads, which took `lean --threads=4` on D006/Sieve.lean to a 4.16 to 4.28 GiB address-space peak, over the laboratory's 4 GiB cap, so a thread could fail to start (the first epoch attempt's second-workspace parallel build aborted this way); two arenas keep every build step at or under 3.30 GiB. It changes allocation placement only, not what any step computes"
       }
     ]
   }
