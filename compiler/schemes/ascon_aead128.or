@@ -1,0 +1,261 @@
+// Ascon-AEAD128, the authenticated cipher of NIST SP 800-232, behind the
+// sealing interface of `orangec enc` and `orangec dec`.
+//
+// Key 128 bits, nonce 128 bits, tag 128 bits. The state is five 64-bit words
+// S0 through S4, and the rate is S0 and S1: a block is sixteen bytes, read as
+// two little-endian words. A chunk is 240 bytes of plaintext, fifteen whole
+// blocks, sealed with 64 bytes of associated data, four whole blocks; each is
+// followed by the padding block 0x01 00 ... 00.
+//
+// Reference code: the Orange evaluator is not constant-time, and nothing here
+// is verified.
+edition 2026;
+module ascon_aead128 {
+  // ---- The permutation Ascon-p, section 3 ----
+
+  // The round constants. Ascon-p[12] adds all twelve in order, and
+  // Ascon-p[8] the last eight.
+  spec round_constants() -> Word[64]^12 {
+    [0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87, 0x78, 0x69, 0x5a, 0x4b]
+  }
+
+  // One round: the constant addition p_C into S2, the substitution layer p_S,
+  // the 5-bit S-box on every bit slice of the state, and the linear diffusion
+  // layer p_L, which mixes each word with two rotations of itself.
+  spec round(s: Word[64]^5, c: Word[64]) -> Word[64]^5 {
+    let x0: Word[64] = s[0] ^ s[4];
+    let x1: Word[64] = s[1];
+    let x2: Word[64] = s[2] ^ c ^ s[1];
+    let x3: Word[64] = s[3];
+    let x4: Word[64] = s[4] ^ s[3];
+    let y0: Word[64] = x0 ^ ((~x1) & x2);
+    let y1: Word[64] = x1 ^ ((~x2) & x3);
+    let y2: Word[64] = x2 ^ ((~x3) & x4);
+    let y3: Word[64] = x3 ^ ((~x4) & x0);
+    let y4: Word[64] = x4 ^ ((~x0) & x1);
+    let z0: Word[64] = y0 ^ y4;
+    let z1: Word[64] = y1 ^ y0;
+    let z2: Word[64] = ~y2;
+    let z3: Word[64] = y3 ^ y2;
+    [
+      z0 ^ (z0 >>> 19) ^ (z0 >>> 28),
+      z1 ^ (z1 >>> 61) ^ (z1 >>> 39),
+      z2 ^ (z2 >>> 1) ^ (z2 >>> 6),
+      z3 ^ (z3 >>> 10) ^ (z3 >>> 17),
+      y4 ^ (y4 >>> 7) ^ (y4 >>> 41),
+    ]
+  }
+
+  spec p12(s: Word[64]^5) -> Word[64]^5 {
+    for r in 0..12 with x: Word[64]^5 = s { round(x, round_constants()[r]) }
+  }
+
+  spec p8(s: Word[64]^5) -> Word[64]^5 {
+    for r in 4..12 with x: Word[64]^5 = s { round(x, round_constants()[r]) }
+  }
+
+  // ---- Bytes and words ----
+
+  // Eight bytes as a little-endian 64-bit word, and a word as its bytes.
+  spec word(
+    b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8],
+    b4: Word[8], b5: Word[8], b6: Word[8], b7: Word[8],
+  ) -> Word[64] {
+    (b0 as Word[64]) | ((b1 as Word[64]) << 8) | ((b2 as Word[64]) << 16)
+      | ((b3 as Word[64]) << 24) | ((b4 as Word[64]) << 32) | ((b5 as Word[64]) << 40)
+      | ((b6 as Word[64]) << 48) | ((b7 as Word[64]) << 56)
+  }
+
+  spec bytes(x: Word[64]) -> Word[8]^8 {
+    [
+      x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8],
+      (x >> 32) as Word[8], (x >> 40) as Word[8], (x >> 48) as Word[8], (x >> 56) as Word[8],
+    ]
+  }
+
+  // A key, a nonce, or one block as two words.
+  spec block(b: Word[8]^16) -> Word[64]^2 {
+    [word(b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]), word(b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15])]
+  }
+
+  // A chunk of plaintext as fifteen blocks, thirty words.
+  spec plaintext_words(p: Word[8]^240) -> Word[64]^30 {
+    for w in 0..30 with out: Word[64]^30 = [0; 30] {
+      out with [w] = word(p[8 * w], p[8 * w + 1], p[8 * w + 2], p[8 * w + 3], p[8 * w + 4], p[8 * w + 5], p[8 * w + 6], p[8 * w + 7])
+    }
+  }
+
+  // A sealed chunk as sixteen blocks: fifteen of ciphertext, then the tag.
+  spec sealed_words(c: Word[8]^256) -> Word[64]^32 {
+    for w in 0..32 with out: Word[64]^32 = [0; 32] {
+      out with [w] = word(c[8 * w], c[8 * w + 1], c[8 * w + 2], c[8 * w + 3], c[8 * w + 4], c[8 * w + 5], c[8 * w + 6], c[8 * w + 7])
+    }
+  }
+
+  // ---- Ascon-AEAD128, section 4 ----
+
+  // Initialization: S = IV || K || N with the IV of Ascon-AEAD128,
+  // Ascon-p[12], and K exclusive-ored into the last 128 bits, S3 and S4.
+  spec initialize(key: Word[8]^16, nonce: Word[8]^16) -> Word[64]^5 {
+    let k: Word[64]^2 = block(key);
+    let n: Word[64]^2 = block(nonce);
+    let s: Word[64]^5 = p12([0x00001000808c0001, k[0], k[1], n[0], n[1]]);
+    [s[0], s[1], s[2], s[3] ^ k[0], s[4] ^ k[1]]
+  }
+
+  // A block exclusive-ored into the rate, then Ascon-p[8]. The rate absorbs
+  // every block of associated data and of plaintext; when it absorbs the
+  // plaintext block P_i it holds the ciphertext block C_i = S_rate xor P_i.
+  spec absorb(s: Word[64]^5, x0: Word[64], x1: Word[64]) -> Word[64]^5 {
+    p8([s[0] ^ x0, s[1] ^ x1, s[2], s[3], s[4]])
+  }
+
+  // The domain separation bit, the last bit of the state: the top of S4.
+  spec separate(s: Word[64]^5) -> Word[64]^5 {
+    [s[0], s[1], s[2], s[3], s[4] ^ 0x8000000000000000]
+  }
+
+  // Associated data: four whole blocks, the padding block, and the domain
+  // separation bit.
+  spec associate(s: Word[64]^5, ad: Word[8]^64) -> Word[64]^5 {
+    let whole: Word[64]^5 = for j in 0..4 with x: Word[64]^5 = s {
+      absorb(x,
+        word(ad[16 * j], ad[16 * j + 1], ad[16 * j + 2], ad[16 * j + 3], ad[16 * j + 4], ad[16 * j + 5], ad[16 * j + 6], ad[16 * j + 7]),
+        word(ad[16 * j + 8], ad[16 * j + 9], ad[16 * j + 10], ad[16 * j + 11], ad[16 * j + 12], ad[16 * j + 13], ad[16 * j + 14], ad[16 * j + 15]))
+    };
+    separate(absorb(whole, 1, 0))
+  }
+
+  // Finalization after whole plaintext blocks: the last block is the padding
+  // block alone, exclusive-ored into the rate with no permutation. Then K
+  // into S2 and S3, Ascon-p[12], and the tag is S3 and S4 exclusive-ored
+  // with K.
+  spec finalize(s: Word[64]^5, key: Word[8]^16) -> Word[64]^2 {
+    let k: Word[64]^2 = block(key);
+    let x: Word[64]^5 = p12([s[0] ^ 1, s[1], s[2] ^ k[0], s[3] ^ k[1], s[4]]);
+    [x[3] ^ k[0], x[4] ^ k[1]]
+  }
+
+  // A loop carries one value, so the fifteen blocks of a chunk are
+  // processed in a record of 35 words: words 0 through 29 hold the output
+  // blocks so far, and words 30 through 34 the state.
+  spec state(r: Word[64]^35) -> Word[64]^5 { [r[30], r[31], r[32], r[33], r[34]] }
+
+  spec with_state(r: Word[64]^35, s: Word[64]^5) -> Word[64]^35 {
+    for i in 0..5 with out: Word[64]^35 = r { out with [30 + i] = s[i] }
+  }
+
+  // Encryption: C_i = S_rate xor P_i, and the rate absorbs P_i.
+  spec encrypt(s: Word[64]^5, p: Word[64]^30) -> Word[64]^35 {
+    for j in 0..15 with r: Word[64]^35 = with_state([0; 35], s) {
+      (with_state(r, absorb(state(r), p[2 * j], p[2 * j + 1])) with [2 * j] = r[30] ^ p[2 * j])
+        with [2 * j + 1] = r[31] ^ p[2 * j + 1]
+    }
+  }
+
+  // Decryption: P_i = S_rate xor C_i, and the rate absorbs P_i, which leaves
+  // it holding C_i.
+  spec decrypt(s: Word[64]^5, c: Word[64]^32) -> Word[64]^35 {
+    for j in 0..15 with r: Word[64]^35 = with_state([0; 35], s) {
+      (with_state(r, absorb(state(r), r[30] ^ c[2 * j], r[31] ^ c[2 * j + 1])) with [2 * j] = r[30] ^ c[2 * j])
+        with [2 * j + 1] = r[31] ^ c[2 * j + 1]
+    }
+  }
+
+  // Interface.
+
+  spec seal(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, plaintext: Word[8]^240) -> Word[8]^256 {
+    let r: Word[64]^35 = encrypt(associate(initialize(key, nonce), ad), plaintext_words(plaintext));
+    let t: Word[64]^2 = finalize(state(r), key);
+    let c: Word[8]^256 = for i in 0..240 with out: Word[8]^256 = [0; 256] { out with [i] = bytes(r[i / 8])[i % 8] };
+    for i in 0..16 with out: Word[8]^256 = c { out with [240 + i] = bytes(t[i / 8])[i % 8] }
+  }
+
+  // The tag is recomputed from the ciphertext, which the rate takes in block
+  // by block, and compared word by word with no early exit.
+  spec authentic(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, sealed: Word[8]^256) -> Bool {
+    let c: Word[64]^32 = sealed_words(sealed);
+    let s: Word[64]^5 = for j in 0..15 with x: Word[64]^5 = associate(initialize(key, nonce), ad) {
+      p8([c[2 * j], c[2 * j + 1], x[2], x[3], x[4]])
+    };
+    let t: Word[64]^2 = finalize(s, key);
+    ((t[0] ^ c[30]) | (t[1] ^ c[31])) == 0
+  }
+
+  spec open(key: Word[8]^16, nonce: Word[8]^16, ad: Word[8]^64, sealed: Word[8]^256) -> Word[8]^240 {
+    let r: Word[64]^35 = decrypt(associate(initialize(key, nonce), ad), sealed_words(sealed));
+    for i in 0..240 with out: Word[8]^240 = [0; 240] { out with [i] = bytes(r[i / 8])[i % 8] }
+  }
+
+  // Known answers.
+  //
+  // The known-answer file of the reference implementation ascon-c,
+  // LWC_AEAD_KAT_128_128.txt, uses the key 00 01 ... 0f and the nonce
+  // 10 11 ... 1f; its data counts up the same way.
+
+  spec count_from(b: Word[8]) -> Word[8]^16 {
+    [b, b + 1, b + 2, b + 3, b + 4, b + 5, b + 6, b + 7, b + 8, b + 9, b + 10, b + 11, b + 12, b + 13, b + 14, b + 15]
+  }
+
+  // Count = 1: no associated data and no plaintext. The tag is
+  // 4F9C278211BEC9316BF68F46EE8B2EC6.
+  spec kat_count_1() -> Bool {
+    let key: Word[8]^16 = count_from(0x00);
+    let t: Word[64]^2 = finalize(separate(initialize(key, count_from(0x10))), key);
+    let expected: Word[64]^2 = block([0x4f, 0x9c, 0x27, 0x82, 0x11, 0xbe, 0xc9, 0x31, 0x6b, 0xf6, 0x8f, 0x46, 0xee, 0x8b, 0x2e, 0xc6]);
+    ((t[0] ^ expected[0]) | (t[1] ^ expected[1])) == 0
+  }
+
+  // Count = 545: the associated data 30 31 ... 3f and the plaintext
+  // 20 21 ... 2f, one block each. The ciphertext is
+  // 6373EBB28BE97C9BAC090CF399C13EF1 and the tag
+  // 3ABFC0D209E8F4844C90814D13F32C59.
+  spec kat_count_545() -> Bool {
+    let key: Word[8]^16 = count_from(0x00);
+    let a: Word[64]^2 = block(count_from(0x30));
+    let p: Word[64]^2 = block(count_from(0x20));
+    let s: Word[64]^5 = separate(absorb(absorb(initialize(key, count_from(0x10)), a[0], a[1]), 1, 0));
+    let t: Word[64]^2 = finalize(absorb(s, p[0], p[1]), key);
+    let c: Word[64]^2 = block([0x63, 0x73, 0xeb, 0xb2, 0x8b, 0xe9, 0x7c, 0x9b, 0xac, 0x09, 0x0c, 0xf3, 0x99, 0xc1, 0x3e, 0xf1]);
+    let expected: Word[64]^2 = block([0x3a, 0xbf, 0xc0, 0xd2, 0x09, 0xe8, 0xf4, 0x84, 0x4c, 0x90, 0x81, 0x4d, 0x13, 0xf3, 0x2c, 0x59]);
+    ((s[0] ^ p[0] ^ c[0]) | (s[1] ^ p[1] ^ c[1]) | (t[0] ^ expected[0]) | (t[1] ^ expected[1])) == 0
+  }
+
+  // A whole chunk in the same pattern: the key 00 01 ... 0f, the nonce
+  // 10 11 ... 1f, the associated data 30 31 ... 6f, and the plaintext
+  // 20 21 ... ff 00 ... 0f. The expected sealed chunk was computed by pyascon,
+  // the Python reference implementation for SP 800-232, which reproduces all
+  // 1,089 entries of the known-answer file. `seal` must give it, `authentic`
+  // must accept it and reject it with one bit flipped, and `open` must
+  // recover the plaintext.
+  spec chunk() -> Bool {
+    let key: Word[8]^16 = count_from(0x00);
+    let nonce: Word[8]^16 = count_from(0x10);
+    let ad: Word[8]^64 = for i in 0..64 with a: Word[8]^64 = [0; 64] { a with [i] = 0x30 + (i as Word[8]) };
+    let plaintext: Word[8]^240 = for i in 0..240 with p: Word[8]^240 = [0; 240] { p with [i] = 0x20 + (i as Word[8]) };
+    let expected: Word[8]^256 = [
+      0xe5, 0xe8, 0xc9, 0xb8, 0x3c, 0x60, 0x62, 0xe2, 0xad, 0xca, 0x9e, 0xd9, 0x3a, 0x71, 0xe7, 0xd9,
+      0xf3, 0x0f, 0x02, 0xa7, 0xea, 0xe2, 0x8d, 0xc8, 0xee, 0x8e, 0x91, 0xb3, 0xea, 0x71, 0x05, 0xb5,
+      0x3b, 0x25, 0xba, 0xee, 0xf3, 0xe5, 0x99, 0xfa, 0x54, 0x02, 0xf6, 0x72, 0x1b, 0x5a, 0x2e, 0x8f,
+      0x85, 0xd3, 0xdb, 0x3d, 0xae, 0x42, 0xee, 0x30, 0x66, 0x60, 0x2d, 0xa4, 0x71, 0x0a, 0x25, 0x2d,
+      0xb6, 0x4e, 0xae, 0x3f, 0x91, 0x62, 0x1a, 0x61, 0x57, 0x92, 0x23, 0xac, 0xc0, 0x3c, 0x07, 0x26,
+      0xec, 0xb9, 0xdf, 0x7b, 0x22, 0xb6, 0x8d, 0x4e, 0xa0, 0x8b, 0x9f, 0x8c, 0xf5, 0xb9, 0xde, 0xdc,
+      0xa1, 0x9f, 0x7b, 0x83, 0xd6, 0x9c, 0x0c, 0xd2, 0x3a, 0x50, 0x8b, 0xea, 0x9c, 0x1b, 0x48, 0xeb,
+      0x29, 0x6c, 0x03, 0xf2, 0xdf, 0xea, 0x2e, 0xc4, 0xe9, 0xd7, 0x94, 0x0b, 0x0b, 0xb1, 0x2b, 0x61,
+      0xec, 0x36, 0x76, 0x3e, 0x69, 0x14, 0xc8, 0x43, 0x21, 0x7f, 0x56, 0x46, 0x3c, 0x20, 0x68, 0x69,
+      0x95, 0x2a, 0x39, 0xaf, 0x8f, 0x95, 0xd7, 0x37, 0x9a, 0x03, 0x20, 0xe7, 0x4e, 0xe3, 0x1e, 0xb5,
+      0x6f, 0x76, 0xd6, 0xea, 0xcd, 0xc9, 0xf4, 0xdf, 0x97, 0x5f, 0xed, 0x60, 0x41, 0xf1, 0xf8, 0x34,
+      0x32, 0x91, 0x22, 0x47, 0xe6, 0x03, 0xf2, 0x67, 0xf8, 0x89, 0xd6, 0x2f, 0xa9, 0xc5, 0x72, 0x36,
+      0xf8, 0x92, 0x09, 0x8f, 0xfd, 0x0d, 0xa7, 0x65, 0xcb, 0xc6, 0x7e, 0xb6, 0xf8, 0xd0, 0x40, 0xf5,
+      0xbb, 0xa8, 0xdd, 0xe0, 0x1b, 0xa0, 0x49, 0x6e, 0x20, 0xb3, 0x60, 0xd8, 0xb9, 0xd3, 0x17, 0x61,
+      0xc6, 0x0e, 0x3d, 0x79, 0x2b, 0x3a, 0x41, 0xd6, 0x1f, 0xe9, 0x59, 0x9d, 0x53, 0x05, 0x85, 0x90,
+      0xc4, 0x20, 0x7a, 0x0d, 0x3d, 0x76, 0xd8, 0x16, 0x07, 0x43, 0x3d, 0x93, 0x09, 0xb3, 0xcb, 0x0b,
+    ];
+    let sealed: Word[8]^256 = seal(key, nonce, ad, plaintext);
+    let opened: Word[8]^240 = open(key, nonce, ad, expected);
+    let seals: Bool = (for i in 0..256 with d: Word[8] = 0 { d | (sealed[i] ^ expected[i]) }) == 0;
+    let opens: Bool = (for i in 0..240 with d: Word[8] = 0 { d | (opened[i] ^ plaintext[i]) }) == 0;
+    let tampered: Word[8]^256 = expected with [100] = expected[100] ^ 0x01;
+    seals && opens && authentic(key, nonce, ad, expected) && !authentic(key, nonce, ad, tampered)
+  }
+}

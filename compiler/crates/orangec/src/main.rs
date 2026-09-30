@@ -14,6 +14,8 @@ use orange_compiler::{
     analyze, evaluate, lex, parse, render_diagnostics,
 };
 
+mod crypt;
+
 const SUCCESS: u8 = 0;
 const COMPILATION_ERROR: u8 = 1;
 const USAGE_ERROR: u8 = 2;
@@ -27,19 +29,31 @@ const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
+    "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
+    "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
+    "       orangec schemes [<NAME>...]\n",
     "\n",
     "Commands:\n",
     "  check    Perform lexical, syntactic, and semantic validation\n",
     "  eval     Reference-evaluate one source after complete validation\n",
     "  lex      Print the deterministic token stream\n",
+    "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
+    "  enc      Seal a file with the scheme its key belongs to\n",
+    "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
+    "  schemes  List the built-in sealing schemes, or describe the named ones\n",
     "\n",
     "Options:\n",
     "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+    "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
+    "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
+    "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
     "      --                End option parsing\n",
     "  -h, --help            Print help\n",
     "  -V, --version         Print version\n",
     "\n",
-    "Use `-` as a file name to read UTF-8 source from standard input.\n",
+    "Use `-` as a file name to read UTF-8 source from standard input. Sealing runs\n",
+    "Orange programs on the reference evaluator, which is not constant-time; the\n",
+    "schemes are reference code and are not verified.\n",
 );
 
 macro_rules! define_cli_diagnostic_codes {
@@ -71,6 +85,13 @@ define_cli_diagnostic_codes! {
     MissingPhaseArtifact => "ORC1006",
     OutputTooLarge => "ORC1007",
     InvocationSourceTooLarge => "ORC1008",
+    KeyFile => "ORC1009",
+    Scheme => "ORC1010",
+    CryptInput => "ORC1011",
+    CryptOutput => "ORC1012",
+    SealedFile => "ORC1013",
+    NotAuthentic => "ORC1014",
+    Randomness => "ORC1015",
 }
 
 fn main() -> ExitCode {
@@ -309,6 +330,7 @@ fn run_with_standard_error_limit(
             &mut standard_output,
             &mut standard_error,
         ),
+        Action::Seal(options) => crypt::run(&options, &mut standard_output, &mut standard_error),
     }
 }
 
@@ -1267,6 +1289,17 @@ define_compiler_commands! {
     Check => "check",
     Eval => "eval",
     Lex => "lex",
+    Keygen => "keygen",
+    Enc => "enc",
+    Dec => "dec",
+    Schemes => "schemes",
+}
+
+impl CompilerCommand {
+    /// Returns whether this is one of the sealing commands in [`crypt`].
+    const fn seals(self) -> bool {
+        matches!(self, Self::Keygen | Self::Enc | Self::Dec | Self::Schemes)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1281,6 +1314,7 @@ enum Action {
     Help,
     Version,
     Compile(Options),
+    Seal(crypt::SealOptions),
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Action, String> {
@@ -1301,6 +1335,9 @@ fn parse_arguments_with_path_reservation(
     let mut edition = Edition::default();
     let mut edition_seen = false;
     let mut paths = Vec::new();
+    let mut scheme = None;
+    let mut key = None;
+    let mut output = None;
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -1324,11 +1361,31 @@ fn parse_arguments_with_path_reservation(
                     edition = parse_edition(&value)?;
                     continue;
                 }
+                Some(name @ ("--scheme" | "--key" | "-o" | "--output")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_sealing_option(name, value, &mut scheme, &mut key, &mut output)?;
+                    continue;
+                }
                 Some(value) => {
                     if let Some(value) = value.strip_prefix("--edition=") {
                         mark_edition_option(&mut edition_seen)?;
                         edition = value.parse().map_err(
                             |error: orange_compiler::ParseEditionError| error.to_string(),
+                        )?;
+                        continue;
+                    }
+                    if let Some((name @ ("--scheme" | "--key" | "--output"), value)) =
+                        value.split_once('=')
+                    {
+                        set_sealing_option(
+                            name,
+                            OsString::from(value),
+                            &mut scheme,
+                            &mut key,
+                            &mut output,
                         )?;
                         continue;
                     }
@@ -1339,6 +1396,14 @@ fn parse_arguments_with_path_reservation(
                 None if argument.as_encoded_bytes().starts_with(b"--edition=") => {
                     mark_edition_option(&mut edition_seen)?;
                     return Err(String::from("edition name is not valid UTF-8"));
+                }
+                None if [&b"--scheme="[..], b"--key=", b"--output="]
+                    .iter()
+                    .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>
+                {
+                    return Err(String::from(
+                        "an option value that is not valid UTF-8 must be a separate argument",
+                    ));
                 }
                 None if argument.as_encoded_bytes().first() == Some(&b'-') => {
                     let argument = RenderedSourceName::try_from_os_str(&argument)
@@ -1371,6 +1436,20 @@ fn parse_arguments_with_path_reservation(
     }
 
     let command = command.ok_or_else(|| String::from("missing command"))?;
+    if command.seals() {
+        return sealing_action(command, edition, scheme, key, output, paths);
+    }
+    for (present, name) in [
+        (scheme.is_some(), "--scheme"),
+        (key.is_some(), "--key"),
+        (output.is_some(), "--output"),
+    ] {
+        if present {
+            return Err(format!(
+                "option `{name}` applies only to keygen, enc, dec, and schemes"
+            ));
+        }
+    }
     if paths.is_empty() {
         return Err(format!(
             "command `{}` requires at least one source file",
@@ -1386,6 +1465,76 @@ fn parse_arguments_with_path_reservation(
         command,
         edition,
         paths,
+    }))
+}
+
+/// Records one sealing option, each at most once.
+fn set_sealing_option(
+    name: &str,
+    value: OsString,
+    scheme: &mut Option<OsString>,
+    key: &mut Option<PathBuf>,
+    output: &mut Option<PathBuf>,
+) -> Result<(), String> {
+    let (canonical, taken) = match name {
+        "--scheme" => ("--scheme", scheme.replace(value).is_some()),
+        "--key" => ("--key", key.replace(PathBuf::from(value)).is_some()),
+        _ => ("--output", output.replace(PathBuf::from(value)).is_some()),
+    };
+    if taken {
+        return Err(format!(
+            "option `{canonical}` may be specified at most once"
+        ));
+    }
+    Ok(())
+}
+
+/// Checks a sealing command's operands and options.
+fn sealing_action(
+    command: CompilerCommand,
+    edition: Edition,
+    scheme: Option<OsString>,
+    key: Option<PathBuf>,
+    output: Option<PathBuf>,
+    inputs: Vec<PathBuf>,
+) -> Result<Action, String> {
+    let name = command.as_str();
+    match command {
+        CompilerCommand::Keygen => {
+            if !inputs.is_empty() {
+                return Err(String::from(
+                    "command `keygen` takes no file; name the new key file with -o",
+                ));
+            }
+            if key.is_some() {
+                return Err(String::from(
+                    "command `keygen` writes its key to -o, not --key",
+                ));
+            }
+        }
+        CompilerCommand::Schemes => {
+            if scheme.is_some() || key.is_some() || output.is_some() {
+                return Err(String::from(
+                    "command `schemes` takes scheme names or paths as operands and no options",
+                ));
+            }
+        }
+        _ => {
+            if inputs.len() != 1 {
+                return Err(format!("command `{name}` requires exactly one file"));
+            }
+            if inputs.iter().any(|input| input == Path::new("-")) {
+                return Err(format!("command `{name}` reads a file, not standard input"));
+            }
+        }
+    }
+    Ok(Action::Seal(crypt::SealOptions {
+        command,
+        edition,
+        scheme,
+        key,
+        output,
+        inputs,
     }))
 }
 
@@ -1437,6 +1586,7 @@ mod tests {
             .collect::<Vec<_>>();
         let expected = [
             "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007", "ORC1008",
+            "ORC1009", "ORC1010", "ORC1011", "ORC1012", "ORC1013", "ORC1014", "ORC1015",
         ];
 
         assert_eq!(actual, expected);
@@ -1621,7 +1771,10 @@ mod tests {
             .iter()
             .map(|command| command.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(names, ["check", "eval", "lex"]);
+        assert_eq!(
+            names,
+            ["check", "eval", "lex", "keygen", "enc", "dec", "schemes"]
+        );
         assert_eq!(
             CompilerCommand::ALL
                 .iter()
@@ -3882,7 +4035,7 @@ mod tests {
         fn compile_options(self) -> Options {
             match self {
                 Self::Compile(options) => options,
-                Self::Help | Self::Version => panic!("expected compile action"),
+                Self::Help | Self::Version | Self::Seal(_) => panic!("expected compile action"),
             }
         }
     }

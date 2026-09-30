@@ -23,7 +23,8 @@ pub use core::{
 pub use diagnostic::{Diagnostic, DiagnosticCode, SecondarySpan, Severity, render_diagnostics};
 pub use edition::{Edition, ParseEditionError};
 pub use eval::{
-    EvaluatedFunction, EvaluationResult, MAX_CALL_DEPTH, MAX_EVALUATION_STEPS_PER_SOURCE, evaluate,
+    CallResult, EvaluatedFunction, EvaluationResult, Evaluator, MAX_CALL_DEPTH,
+    MAX_EVALUATION_STEPS_PER_SOURCE, evaluate,
 };
 pub use lexer::{
     Lexed, MAX_DIAGNOSTICS_PER_SOURCE as MAX_LEXICAL_DIAGNOSTICS_PER_SOURCE, MAX_TOKENS_PER_SOURCE,
