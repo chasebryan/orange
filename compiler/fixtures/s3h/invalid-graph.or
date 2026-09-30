@@ -1,0 +1,12 @@
+// S3h rejection: a module may not use itself or use a module twice, every
+// used module must have the name its file gives it, and the uses of a program
+// form no cycle.
+edition 2026;
+module graph {
+  use ring_a;
+  use graph;
+  use sha256;
+  use sha256;
+  use misnamed;
+  spec one() -> Int { 1 }
+}

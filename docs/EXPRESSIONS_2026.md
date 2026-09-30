@@ -27,10 +27,12 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > fixed-length arrays on top of it, [`LOOPS_2026.md`](LOOPS_2026.md), proposed
 > under OEP-0008, adds bounded loops on top of those,
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, adds
-> `Bool`, comparisons, Euclidean division, and conditionals, and
+> `Bool`, comparisons, Euclidean division, and conditionals,
 > [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, adds indices
-> that depend on data. Every source this document accepts keeps its meaning
-> under all five.
+> that depend on data, and [`MODULES_2026.md`](MODULES_2026.md), proposed
+> under OEP-0011, adds programs of more than one module, whose modules call
+> each other's functions by module name. Every source this document accepts
+> keeps its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

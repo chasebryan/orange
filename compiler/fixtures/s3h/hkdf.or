@@ -1,0 +1,33 @@
+// S3h conformance: HKDF of RFC 5869 with SHA-256. It uses `hmac`, which uses
+// `sha256`, so a program that uses `hkdf` holds all three modules.
+edition 2026;
+module hkdf {
+  use hmac;
+
+  // Section 2.2: PRK = HMAC-Hash(salt, IKM), for a salt of at most 64 bytes,
+  // zero-padded in `salt`, and at most 55 bytes of IKM held in `ikm`.
+  spec extract(salt: Word[8]^64, ikm: Word[8]^64, length: Int) -> Word[8]^32 {
+    hmac::mac(salt, ikm, length)
+  }
+
+  // Section 2.3: the first 42 bytes of T(1) || T(2), where
+  // T(1) = HMAC-Hash(PRK, info || 0x01) and
+  // T(2) = HMAC-Hash(PRK, T(1) || info || 0x02),
+  // for at most 22 bytes of info held in `info`.
+  spec expand_42(prk: Word[8]^32, info: Word[8]^64, length: Int) -> Word[8]^42 {
+    let key: Word[8]^64 = hmac::block(prk);
+    let first: Word[8]^64 = for j in 0..64 with b: Word[8]^64 = [0; 64] {
+      b with [j] = if j < length { info[j] } else if j == length { 0x01 } else { 0 }
+    };
+    let t1: Word[8]^32 = hmac::mac(key, first, length + 1);
+    let head: Word[8]^64 = for j in 0..32 with b: Word[8]^64 = [0; 64] { b with [j] = t1[j] };
+    let second: Word[8]^64 = for j in 32..64 with b: Word[8]^64 = head {
+      b with [j] = if j < (32 + length) { info[j - 32] }
+        else if j == (32 + length) { 0x02 }
+        else { 0 }
+    };
+    let t2: Word[8]^32 = hmac::mac(key, second, 32 + length + 1);
+    let okm: Word[8]^42 = for i in 0..32 with o: Word[8]^42 = [0; 42] { o with [i] = t1[i] };
+    for i in 32..42 with o: Word[8]^42 = okm { o with [i] = t2[i - 32] }
+  }
+}

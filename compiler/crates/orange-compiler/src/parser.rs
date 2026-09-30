@@ -45,6 +45,9 @@ pub const MAX_BINDINGS_PER_BODY: usize = 256;
 /// admitted array type.
 pub const MAX_ARRAY_ELEMENTS: usize = 256;
 
+/// Maximum `use` declarations in one module.
+pub const MAX_USES_PER_MODULE: usize = 64;
+
 /// A complete minimal Orange source file.
 ///
 /// Parsed nodes are read-only outside this crate so later stages can rely on
@@ -125,6 +128,8 @@ pub struct ModuleDeclaration {
     pub(crate) span: Span,
     /// Module name.
     pub(crate) name: Identifier,
+    /// `use` declarations in source order, all before the functions.
+    pub(crate) uses: Vec<UseDeclaration>,
     /// Functions in source order.
     pub(crate) functions: Vec<FunctionDeclaration>,
 }
@@ -142,10 +147,40 @@ impl ModuleDeclaration {
         &self.name
     }
 
+    /// Returns the `use` declarations in source order.
+    #[must_use]
+    pub fn uses(&self) -> &[UseDeclaration] {
+        &self.uses
+    }
+
     /// Returns functions in source order.
     #[must_use]
     pub fn functions(&self) -> &[FunctionDeclaration] {
         &self.functions
+    }
+}
+
+/// A `use NAME;` declaration, which names another module whose typed `spec`
+/// functions this module calls as `NAME::function(...)`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UseDeclaration {
+    /// Full declaration extent, from `use` through the semicolon.
+    pub(crate) span: Span,
+    /// The used module's name.
+    pub(crate) name: Identifier,
+}
+
+impl UseDeclaration {
+    /// Returns the full declaration extent.
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+
+    /// Returns the used module's name.
+    #[must_use]
+    pub const fn name(&self) -> &Identifier {
+        &self.name
     }
 }
 
@@ -700,6 +735,9 @@ impl ConversionExpression {
 /// A call `name(arguments)`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallExpression {
+    /// The module named before `::`, for a call of a used module's function,
+    /// boxed so that it does not enlarge every expression.
+    pub(crate) module: Option<Box<Identifier>>,
     /// Called function name.
     pub(crate) callee: Identifier,
     /// Arguments in source order.
@@ -707,6 +745,13 @@ pub struct CallExpression {
 }
 
 impl CallExpression {
+    /// Returns the module named before `::`, or `None` for a call of a
+    /// function of the calling module.
+    #[must_use]
+    pub fn module(&self) -> Option<&Identifier> {
+        self.module.as_deref()
+    }
+
     /// Returns the called function name.
     #[must_use]
     pub const fn callee(&self) -> &Identifier {
@@ -1459,11 +1504,40 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             None
         };
 
+        let mut uses = Vec::new();
+        // `use` is recognized by position, as `let` is: it starts a
+        // declaration only before the module's first function, where no
+        // other identifier may appear.
+        while !self.halted && self.current_is_word("use") {
+            let before = self.cursor;
+            if let Some(declaration) = self.parse_use_declaration() {
+                self.push_use(&mut uses, declaration);
+            }
+            if !self.halted && self.cursor == before {
+                self.bump();
+            }
+        }
+
         let mut functions = Vec::new();
         while !self.halted && !matches!(self.current_kind(), TokenKind::RightBrace | TokenKind::Eof)
         {
             let before = self.cursor;
             match self.current_kind() {
+                TokenKind::Identifier if self.current_is_word("use") => {
+                    self.report(
+                        DiagnosticCode::ExpectedFunctionDeclaration,
+                        "expected a `spec` or `impl` function declaration",
+                        self.current_span(),
+                        "a `use` declaration cannot follow a function",
+                        "`use` declarations come first in a module, before its functions",
+                    );
+                    self.recover_to(&[
+                        TokenKind::KwSpec,
+                        TokenKind::KwImpl,
+                        TokenKind::RightBrace,
+                        TokenKind::Eof,
+                    ]);
+                }
                 TokenKind::KwSpec | TokenKind::KwImpl => {
                     if let Some(function) = self.parse_function_declaration() {
                         if (self.reserve_function_slot)(&mut functions) {
@@ -1512,11 +1586,62 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 Some(ModuleDeclaration {
                     span: self.join(keyword.span, right_brace.span),
                     name,
+                    uses,
                     functions,
                 })
             }
             _ => None,
         }
+    }
+
+    /// Parses `use NAME;`, with the current token the word `use`.
+    fn parse_use_declaration(&mut self) -> Option<UseDeclaration> {
+        let keyword = self.bump()?;
+        let name = self.parse_identifier("used module");
+        let Some(name) = name else {
+            self.recover_to(&[
+                TokenKind::Semicolon,
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ]);
+            if self.current_kind() == TokenKind::Semicolon {
+                self.bump();
+            }
+            return None;
+        };
+        let semicolon = self.consume_or_recover(
+            TokenKind::Semicolon,
+            "`;` after the used module's name",
+            "a `use` declaration names one module and ends with `;`",
+            &[
+                TokenKind::KwSpec,
+                TokenKind::KwImpl,
+                TokenKind::RightBrace,
+                TokenKind::Eof,
+            ],
+        )?;
+        self.record_node().then(|| UseDeclaration {
+            span: self.join(keyword.span, semicolon.span),
+            name,
+        })
+    }
+
+    #[inline(never)]
+    fn push_use(&mut self, uses: &mut Vec<UseDeclaration>, declaration: UseDeclaration) {
+        if uses.len() >= MAX_USES_PER_MODULE {
+            self.resource_limit_at(
+                format!("module has more than {MAX_USES_PER_MODULE} `use` declarations"),
+                declaration.span,
+            );
+            return;
+        }
+        if uses.try_reserve(1).is_err() {
+            self.resource_limit_at("parser could not allocate `use` storage", declaration.span);
+            return;
+        }
+        uses.push(declaration);
     }
 
     fn parse_function_declaration(&mut self) -> Option<FunctionDeclaration> {
@@ -2291,7 +2416,12 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
             TokenKind::Identifier if self.current_is_word("if") && self.starts_conditional() => {
                 self.parse_conditional(level)
             }
-            TokenKind::Identifier if self.next_kind() == TokenKind::LeftParen => {
+            TokenKind::Identifier
+                if matches!(
+                    self.next_kind(),
+                    TokenKind::LeftParen | TokenKind::DoubleColon
+                ) =>
+            {
                 let call = self.parse_call(level)?;
                 self.parse_index_suffix(call, level)
             }
@@ -2817,7 +2947,21 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
 
     fn parse_call(&mut self, level: usize) -> Option<(Expression, usize)> {
         let inner = self.open_level(level)?;
+        let module = if self.next_kind() == TokenKind::DoubleColon {
+            let module = self.parse_identifier("module")?;
+            self.bump()?;
+            Some(Box::new(module))
+        } else {
+            None
+        };
         let callee = self.parse_identifier("called function")?;
+        if self.current_kind() != TokenKind::LeftParen {
+            self.expected(
+                "`(` after the qualified function name",
+                "a name qualified by its module is always called, as in `sha256::initial()`",
+            );
+            return None;
+        }
         self.bump()?;
         let mut arguments = Vec::new();
         let mut argument_height = 0_usize;
@@ -2843,11 +2987,16 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
         let right_paren = self.bump()?;
         let height = self.node_height(argument_height, callee.span)?;
-        let span = self.join(callee.span, right_paren.span);
+        let start = module.as_ref().map_or(callee.span, |module| module.span);
+        let span = self.join(start, right_paren.span);
         self.record_node().then_some((
             Expression {
                 span,
-                kind: ExpressionKind::Call(CallExpression { callee, arguments }),
+                kind: ExpressionKind::Call(CallExpression {
+                    module,
+                    callee,
+                    arguments,
+                }),
             },
             height,
         ))
@@ -4129,7 +4278,10 @@ mod tests {
             ExpressionKind::Literal(literal) => source.slice(literal.span).unwrap().to_owned(),
             ExpressionKind::Name(name) => name.text.clone(),
             ExpressionKind::Call(call) => format!(
-                "{}({})",
+                "{}{}({})",
+                call.module
+                    .as_ref()
+                    .map_or_else(String::new, |module| format!("{}::", module.text)),
                 call.callee.text,
                 call.arguments
                     .iter()
@@ -5993,5 +6145,189 @@ mod tests {
             assert_eq!(first, parse(source, &lexed), "{body:?}");
             assert!(first.ast.is_none(), "{body:?}");
         }
+    }
+
+    #[test]
+    fn builds_use_declarations_and_qualified_calls_with_exact_spans() {
+        let text = concat!(
+            "edition 2026; module hmac { use sha256; use  pad ; ",
+            "spec f(x: Word[32]) -> Word[32] { sha256::big_sigma0(x) ^ g(pad::k()[3]) } ",
+            "spec g(x: Word[32]) -> Word[32] { x } ",
+            "}"
+        );
+        let (sources, lexed, parsed) = parse_text(text);
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let source = sources.iter().next().unwrap();
+        let ast = parsed.ast.unwrap();
+        assert_eq!(
+            ast.module
+                .uses()
+                .iter()
+                .map(|declaration| (
+                    declaration.name().text.as_str(),
+                    source.slice(declaration.name().span).unwrap(),
+                    source.slice(declaration.span()).unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("sha256", "sha256", "use sha256;"),
+                ("pad", "pad", "use  pad ;")
+            ]
+        );
+        assert_eq!(ast.module.functions().len(), 2);
+        let FunctionBody::Typed(body) = &ast.module.functions()[0].body else {
+            panic!("expected a typed body");
+        };
+        assert_eq!(
+            shape(source, &body.expression),
+            "(sha256::big_sigma0(x) ^ g(pad::k()[3]))"
+        );
+        let ExpressionKind::Binary(binary) = &body.expression.kind else {
+            panic!("expected a binary root");
+        };
+        let ExpressionKind::Call(call) = &binary.left.kind else {
+            panic!("expected a qualified call");
+        };
+        assert_eq!(
+            call.module().map(|module| module.text.as_str()),
+            Some("sha256")
+        );
+        assert_eq!(source.slice(call.module().unwrap().span), Some("sha256"));
+        assert_eq!(call.callee().text, "big_sigma0");
+        assert_eq!(
+            source.slice(binary.left.span),
+            Some("sha256::big_sigma0(x)")
+        );
+        let ExpressionKind::Call(local) = &binary.right.kind else {
+            panic!("expected a local call");
+        };
+        assert!(local.module().is_none());
+
+        // `use` is a word only at the head of a module; elsewhere it is an
+        // ordinary name.
+        let (_, lexed, parsed) = parse_text(concat!(
+            "edition 2026; module use { ",
+            "spec use(use: Int) -> Int { let use: Int = use; use } ",
+            "spec g() -> Int { use::use(1) } ",
+            "}"
+        ));
+        assert!(lexed.diagnostics().is_empty());
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        assert!(parsed.ast.unwrap().module.uses().is_empty());
+    }
+
+    #[test]
+    fn rejects_malformed_use_declarations_and_qualified_names() {
+        let cases = [
+            "use;",
+            "use 1;",
+            "use a",
+            "use a b;",
+            "use a::b;",
+            "use a; use",
+            "spec f() -> Int { 1 } use a;",
+            "spec f() -> Int { m::g }",
+            "spec f() -> Int { m::g + 1 }",
+            "spec f() -> Int { m::(1) }",
+            "spec f() -> Int { m::g::h() }",
+            "spec f() -> Int { ::g() }",
+            "spec f() -> Int { m:: }",
+            "spec f() -> Int { 1::g() }",
+        ];
+        for member in cases {
+            let text = format!("edition 2026; module m {{ {member} }}");
+            let (_, lexed, parsed) = parse_text(&text);
+            assert!(lexed.diagnostics().is_empty(), "{member:?}");
+            assert!(parsed.ast.is_none(), "accepted {member:?}");
+            assert!(!parsed.diagnostics.is_empty(), "{member:?}");
+            assert!(
+                parsed.diagnostics.iter().all(|diagnostic| matches!(
+                    diagnostic.code(),
+                    DiagnosticCode::ExpectedSyntax
+                        | DiagnosticCode::TrailingSyntax
+                        | DiagnosticCode::ExpectedFunctionDeclaration
+                )),
+                "{member:?}: {:?}",
+                parsed.diagnostics
+            );
+        }
+
+        let (sources, _, parsed) = parse_text(concat!(
+            "edition 2026; module m { use a; ",
+            "spec f() -> Int { 1 } use b; ",
+            "spec g() -> Int { a::h } ",
+            "}"
+        ));
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(
+            parsed
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.code(),
+                    diagnostic.message(),
+                    source.slice(diagnostic.primary_span()).unwrap(),
+                    diagnostic.label(),
+                    diagnostic.notes().to_vec()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    DiagnosticCode::ExpectedFunctionDeclaration,
+                    "expected a `spec` or `impl` function declaration",
+                    "use",
+                    "a `use` declaration cannot follow a function",
+                    vec![
+                        "`use` declarations come first in a module, before its functions"
+                            .to_owned()
+                    ]
+                ),
+                (
+                    DiagnosticCode::ExpectedSyntax,
+                    "expected `(` after the qualified function name",
+                    "}",
+                    "found RIGHT_BRACE",
+                    vec![
+                        "a name qualified by its module is always called, as in `sha256::initial()`"
+                            .to_owned()
+                    ]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn bounds_use_declarations_per_module() {
+        let module = |count: usize| {
+            format!(
+                "edition 2026; module m {{ {} spec f() -> Int {{ 1 }} }}",
+                (0..count)
+                    .map(|index| format!("use u{index};"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
+        };
+        let (_, _, parsed) = parse_text(&module(MAX_USES_PER_MODULE));
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        assert_eq!(parsed.ast.unwrap().module.uses().len(), MAX_USES_PER_MODULE);
+
+        let (sources, _, parsed) = parse_text(&module(MAX_USES_PER_MODULE + 1));
+        let source = sources.iter().next().unwrap();
+        assert!(parsed.ast.is_none());
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert_eq!(
+            parsed.diagnostics[0].code(),
+            DiagnosticCode::ParserResourceLimit
+        );
+        assert_eq!(
+            parsed.diagnostics[0].message(),
+            format!("module has more than {MAX_USES_PER_MODULE} `use` declarations")
+        );
+        assert_eq!(
+            source.slice(parsed.diagnostics[0].primary_span()),
+            Some(format!("use u{MAX_USES_PER_MODULE};").as_str())
+        );
     }
 }

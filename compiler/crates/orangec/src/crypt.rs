@@ -15,7 +15,7 @@ use std::sync::mpsc;
 
 use orange_compiler::{
     ArrayType, CoreArray, CoreFunction, CoreModule, CoreType, CoreValue, Edition, Evaluator,
-    MAX_SOURCE_BYTES, RenderedSourceName, SourceMap, analyze, lex, parse, render_diagnostics,
+    RenderedSourceName, SourceMap, analyze_program, lex, parse, render_diagnostics,
 };
 
 use super::{
@@ -968,11 +968,21 @@ fn resolve_scheme(spelling: &OsStr, edition: Edition) -> Result<Scheme, String> 
             ),
         ));
     }
-    let path = Path::new(spelling);
+    let mut remaining = super::MAX_SOURCE_BYTES_PER_INVOCATION;
+    compile_path_scheme(Path::new(spelling), edition, &mut remaining)
+}
+
+/// Reads and compiles the scheme program at `path` with the modules it uses.
+/// The program and its modules share one invocation's source budget,
+/// `remaining_source_bytes`, as the sources of `orangec check` do.
+fn compile_path_scheme(
+    path: &Path,
+    edition: Edition,
+    remaining_source_bytes: &mut usize,
+) -> Result<Scheme, String> {
     let display =
-        RenderedSourceName::try_from_os_str(spelling).map_err(super::source_name_error)?;
-    let mut remaining = MAX_SOURCE_BYTES;
-    let bytes = read_source(path, &mut io::empty(), &mut remaining)
+        RenderedSourceName::try_from_os_str(path.as_os_str()).map_err(super::source_name_error)?;
+    let bytes = read_source(path, &mut io::empty(), remaining_source_bytes)
         .map_err(|error| render_read_source_error(&display, error))?;
     let text = String::from_utf8(bytes).map_err(|error| {
         render_cli_error(
@@ -985,7 +995,13 @@ fn resolve_scheme(spelling: &OsStr, edition: Edition) -> Result<Scheme, String> 
         )
     })?;
     let origin = display.to_string();
-    compile_scheme(display, text, edition, origin)
+    compile_scheme(
+        display,
+        text,
+        edition,
+        origin,
+        Some((path, remaining_source_bytes)),
+    )
 }
 
 fn compile_builtin(builtin: &Builtin, edition: Edition) -> Result<Scheme, String> {
@@ -996,6 +1012,7 @@ fn compile_builtin(builtin: &Builtin, edition: Edition) -> Result<Scheme, String
         String::from(builtin.text),
         edition,
         String::from(builtin.path),
+        None,
     )?;
     if scheme.name != builtin.name {
         return Err(inconsistent_shape());
@@ -1003,11 +1020,16 @@ fn compile_builtin(builtin: &Builtin, edition: Edition) -> Result<Scheme, String
     Ok(scheme)
 }
 
+/// Compiles a scheme program. A program read from a path may use modules,
+/// which are read from beside it as `orangec check` reads them, under what
+/// remains of the budget its own bytes were charged to; a built-in scheme is
+/// one module.
 fn compile_scheme(
     display: RenderedSourceName,
     text: String,
     edition: Edition,
     origin: String,
+    path: Option<(&Path, &mut usize)>,
 ) -> Result<Scheme, String> {
     let mut sources = SourceMap::try_new().map_err(super::source_name_error)?;
     let id = sources
@@ -1026,7 +1048,21 @@ fn compile_scheme(
         }
         PhaseResult::Missing => return Err(inconsistent_shape()),
     };
-    let analyzed = analyze(source, ast);
+    let modules = match path {
+        Some((path, remaining_source_bytes)) if !ast.module().uses().is_empty() => {
+            super::load_used_modules(path, ast, &mut sources, edition, remaining_source_bytes)?
+        }
+        _ => Vec::new(),
+    };
+    let program = modules
+        .iter()
+        .filter_map(|(id, ast)| Some((sources.get(*id)?, ast)))
+        .collect::<Vec<_>>();
+    let source = sources
+        .get(id)
+        .filter(|_| program.len() == modules.len())
+        .ok_or_else(inconsistent_shape)?;
+    let analyzed = analyze_program((source, ast), &program);
     if !analyzed.diagnostics().is_empty() {
         return Err(render_diagnostics(&sources, analyzed.diagnostics()));
     }
@@ -1060,7 +1096,7 @@ fn interface_shape(core: &CoreModule) -> Result<Shape, String> {
         ));
     }
     let function = |name: &str| {
-        core.functions()
+        core.entry_functions()
             .iter()
             .find(|function| function.name() == name)
             .ok_or_else(|| format!("it has no spec named `{name}`"))
@@ -1582,6 +1618,68 @@ mod tests {
             .find(|builtin| builtin.name == name)
             .unwrap();
         compile_builtin(builtin, Edition::E2026).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_scheme_and_its_modules_share_one_source_budget() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/orangec-tests")
+            .join(format!("orangec-scheme-budget-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        let aead = BUILTINS
+            .iter()
+            .find(|builtin| builtin.name == "chacha20_poly1305")
+            .unwrap()
+            .text
+            .replace("module chacha20_poly1305 {", "module aead {");
+        let layered = concat!(
+            "edition 2026;\n",
+            "module layered {\n",
+            "  use aead;\n",
+            "  spec seal(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, ",
+            "plaintext: Word[8]^240) -> Word[8]^256 {\n",
+            "    aead::seal(key, nonce, ad, plaintext)\n",
+            "  }\n",
+            "  spec open(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, ",
+            "sealed: Word[8]^256) -> Word[8]^240 {\n",
+            "    aead::open(key, nonce, ad, sealed)\n",
+            "  }\n",
+            "  spec authentic(key: Word[8]^32, nonce: Word[8]^12, ad: Word[8]^64, ",
+            "sealed: Word[8]^256) -> Bool {\n",
+            "    aead::authentic(key, nonce, ad, sealed)\n",
+            "  }\n",
+            "}\n",
+        );
+        fs::write(directory.join("aead.or"), &aead).unwrap();
+        let path = directory.join("layered.or");
+        fs::write(&path, layered).unwrap();
+        let total = layered.len() + aead.len();
+
+        let mut remaining = total;
+        let scheme = compile_path_scheme(&path, Edition::E2026, &mut remaining).unwrap();
+        assert_eq!(scheme.name, "layered");
+        assert_eq!(remaining, 0);
+
+        // The scheme's own bytes are charged first, so one byte less leaves
+        // too little for the module it uses.
+        let mut remaining = total - 1;
+        let error = compile_path_scheme(&path, Edition::E2026, &mut remaining)
+            .err()
+            .unwrap();
+        assert!(
+            error.starts_with("error[ORC1008]: source input `"),
+            "{error}"
+        );
+        assert!(
+            error.contains("aead.or` exceeds the remaining invocation budget"),
+            "{error}"
+        );
+        assert!(error.ends_with(
+            "  = note: `use aead;` in module `layered` reads the module `aead` from this file\n"
+        ));
+        fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

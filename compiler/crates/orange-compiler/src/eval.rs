@@ -133,9 +133,11 @@ impl EvaluationResult {
     }
 }
 
-/// Evaluates every typed Core function without parameters, in source order.
+/// Evaluates every typed Core function of the root module without
+/// parameters, in source order.
 ///
-/// Functions with parameters are evaluated only through calls.
+/// Functions with parameters, and every function of a used module, are
+/// evaluated only through calls. One step budget covers the whole program.
 #[must_use]
 pub fn evaluate(core: &CoreModule) -> EvaluationResult {
     evaluate_with_limit(core, MAX_EVALUATION_STEPS_PER_SOURCE)
@@ -195,8 +197,8 @@ impl CallResult {
 
 /// A typed Core module prepared for calls on values the host supplies.
 ///
-/// [`evaluate`] evaluates every function without parameters under one budget
-/// per source. An evaluator instead calls one function at a time on
+/// [`evaluate`] evaluates every entry function without parameters under one
+/// budget per program. An evaluator instead calls one function at a time on
 /// arguments of exactly its parameter types, and gives every call its own
 /// step limit. Literals are prepared once and shared by every call.
 pub struct Evaluator<'core> {
@@ -237,12 +239,15 @@ impl<'core> Evaluator<'core> {
         self.machine.core
     }
 
-    /// Returns the module's function named `name`, if there is one.
+    /// Returns the root module's function named `name`, if there is one.
+    ///
+    /// Functions of the modules the root uses are reached only through the
+    /// root's calls, so two modules may each declare a function of one name.
     #[must_use]
     pub fn function(&self, name: &str) -> Option<&'core CoreFunction> {
         self.machine
             .core
-            .functions
+            .entry_functions()
             .iter()
             .find(|function| function.name == name)
     }
@@ -1479,7 +1484,7 @@ fn evaluate_with_reservations(
         };
     }
     let roots = core
-        .functions
+        .entry_functions()
         .iter()
         .filter(|function| function.parameters.is_empty())
         .count();
@@ -1516,7 +1521,7 @@ fn evaluate_with_reservations(
     };
     let mut shared_module = None;
     for function in core
-        .functions
+        .entry_functions()
         .iter()
         .filter(|function| function.parameters.is_empty())
     {

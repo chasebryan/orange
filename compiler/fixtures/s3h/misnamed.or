@@ -1,0 +1,6 @@
+// S3h rejection: the file `misnamed.or` declares a module of another name,
+// so `use misnamed;` names no module of the program.
+edition 2026;
+module renamed {
+  spec one() -> Int { 1 }
+}

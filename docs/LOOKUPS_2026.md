@@ -21,6 +21,13 @@ OEP-0009. At that point it replaces the S3f and S3e clauses listed in section
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, extends this
+> document with programs of more than one module, in which a module names the
+> modules it uses and calls their functions by module name, as in
+> `sha256::compress(h, block)`. Every source this document accepts keeps its
+> meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

@@ -1,0 +1,29 @@
+// S3h conformance: HMAC of RFC 2104 with SHA-256, written over the module
+// `sha256`, whose functions it calls by that module's name.
+edition 2026;
+module hmac {
+  use sha256;
+
+  // A key of at most 64 bytes, zero-padded to the block size, exclusive-ored
+  // with a pad byte: 0x36 for the inner hash and 0x5c for the outer.
+  spec keyed(key: Word[8]^64, pad: Word[8]) -> Word[8]^64 {
+    for i in 0..64 with b: Word[8]^64 = key { b with [i] = key[i] ^ pad }
+  }
+
+  // Thirty-two bytes at the start of an otherwise zero block.
+  spec block(d: Word[8]^32) -> Word[8]^64 {
+    for i in 0..32 with b: Word[8]^64 = [0; 64] { b with [i] = d[i] }
+  }
+
+  // Section 2: H((K xor opad) || H((K xor ipad) || text)), for a key of at
+  // most 64 bytes, zero-padded in `key`, and at most 55 bytes of text held in
+  // `m`. Each padded key is one block, so each hash absorbs it first and then
+  // one last block: the text, or the inner digest.
+  spec mac(key: Word[8]^64, m: Word[8]^64, length: Int) -> Word[8]^32 {
+    let inner: Word[32]^8 = sha256::compress(sha256::initial(), keyed(key, 0x36));
+    let outer: Word[32]^8 = sha256::compress(sha256::initial(), keyed(key, 0x5c));
+    let text: Word[8]^32 =
+      sha256::digest(sha256::compress(inner, sha256::last_block(m, length, 64 + length)));
+    sha256::digest(sha256::compress(outer, sha256::last_block(block(text), 32, 96)))
+  }
+}

@@ -37,13 +37,13 @@ pub use parser::{
     IntegerLiteral, LoopExpression, MAX_ARGUMENTS_PER_CALL, MAX_ARRAY_ELEMENTS,
     MAX_BINDINGS_PER_BODY, MAX_EXPRESSION_HEIGHT, MAX_EXPRESSION_NESTING,
     MAX_PARAMETERS_PER_FUNCTION, MAX_PARSE_DIAGNOSTICS_PER_SOURCE, MAX_PARSE_EVENTS_PER_SOURCE,
-    MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE, ModuleDeclaration, Parameter,
-    ParseResult, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression, UnaryOperator,
-    UpdateExpression, parse,
+    MAX_RECOVERY_DELIMITER_DEPTH, MAX_SYNTAX_NODES_PER_SOURCE, MAX_USES_PER_MODULE,
+    ModuleDeclaration, Parameter, ParseResult, SyntaxTree, TypeSyntax, TypedBody, UnaryExpression,
+    UnaryOperator, UpdateExpression, UseDeclaration, parse,
 };
 pub use semantics::{
-    AnalysisResult, MAX_CORE_NODES_PER_SOURCE, MAX_INTEGER_BITS,
-    MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE, MAX_SEMANTIC_EVENTS_PER_SOURCE, analyze,
+    AnalysisResult, MAX_CORE_NODES_PER_SOURCE, MAX_INTEGER_BITS, MAX_MODULES_PER_PROGRAM,
+    MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE, MAX_SEMANTIC_EVENTS_PER_SOURCE, analyze, analyze_program,
 };
 pub use source::{
     LineColumn, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile, SourceId, SourceMap,

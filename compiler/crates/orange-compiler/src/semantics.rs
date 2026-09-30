@@ -29,6 +29,10 @@ pub const MAX_CORE_NODES_PER_SOURCE: usize = 262_144;
 /// Maximum semantic events performed for one source.
 pub const MAX_SEMANTIC_EVENTS_PER_SOURCE: usize = 1_048_576;
 
+/// Maximum modules in one program: the root and every module it reaches
+/// through `use` declarations.
+pub const MAX_MODULES_PER_PROGRAM: usize = 64;
+
 /// Maximum significant bits retained for one exact mathematical integer.
 pub const MAX_INTEGER_BITS: usize = 16_384;
 const _: () = assert!(MAX_INTEGER_BITS == MAX_EXACT_INTEGER_BITS);
@@ -37,6 +41,7 @@ const _: () = assert!(MAX_ARRAY_ELEMENTS == 256 && MAX_ARRAY_LENGTH == 256);
 
 const MAX_IDENTIFIER_BYTES_IN_DIAGNOSTIC: usize = 64;
 const MAX_FUNCTIONS_IN_CYCLE_DIAGNOSTIC: usize = 8;
+const MAX_MODULES_IN_CYCLE_DIAGNOSTIC: usize = 8;
 const ADMITTED_TYPES: &str = "`Int`, `Bool`, `Word[8]`, `Word[16]`, `Word[32]`, and `Word[64]`";
 const ARRAY_OPERATOR_NOTE: &str =
     "operators apply to `Int`, `Bool`, and word values; apply them to elements, such as `x[0]`";
@@ -88,21 +93,536 @@ impl AnalysisResult {
     }
 }
 
-/// Resolves and checks one successfully parsed Orange syntax tree.
+/// Resolves and checks one successfully parsed Orange syntax tree as a
+/// program of one module.
 ///
 /// Empty functions participate in namespace checking but do not enter Core.
 /// Typed `spec` functions are checked in source order against the signatures
 /// of every typed `spec` in the module, and the call graph among them must be
 /// acyclic. Within a body, each `let` binding is checked in source order
-/// before the result expression.
+/// before the result expression. No other module is supplied, so a `use`
+/// declaration names an unknown module; [`analyze_program`] checks a module
+/// together with the modules it uses.
 #[must_use]
 pub fn analyze(source: &SourceFile, ast: &SyntaxTree) -> AnalysisResult {
-    if !syntax_tree_belongs_to_source(source, ast) {
-        return invalid_semantic_input(source, |diagnostics| {
-            diagnostics.try_reserve_exact(1).is_ok()
+    analyze_program((source, ast), &[])
+}
+
+/// Resolves, checks, and links a program: a root module and the modules it
+/// uses, directly or through other modules.
+///
+/// A `use NAME;` declaration names the module of `modules` whose name is
+/// `NAME`; a supplied module the root does not reach is ignored and does not
+/// count toward [`MAX_MODULES_PER_PROGRAM`]. No other supplied module shares
+/// the name of a module of the program, a module uses each module at most
+/// once, and the uses form no cycle. Each reachable module is then checked on its
+/// own, as [`analyze`] checks one module and with its own per-source limits,
+/// in dependency order: every module after the modules it uses. A call
+/// `NAME::f(...)` resolves to the typed `spec` function `f` of the used module
+/// `NAME`.
+///
+/// The linked Core carries the root's name and extent. Its functions are
+/// those of the used modules in dependency order, then the root's, with
+/// dense identities across the program; [`CoreModule::entry_functions`]
+/// returns the root's.
+#[must_use]
+pub fn analyze_program(
+    root: (&SourceFile, &SyntaxTree),
+    modules: &[(&SourceFile, &SyntaxTree)],
+) -> AnalysisResult {
+    let (_, root_ast) = root;
+    let root_span = root_ast.module.span;
+    let mut program = Vec::new();
+    if program
+        .try_reserve_exact(modules.len().saturating_add(1))
+        .is_err()
+    {
+        return program_resource_limit(
+            root_ast.module.span,
+            "semantic program module table allocation failed",
+        );
+    }
+    program.push(root);
+    program.extend_from_slice(modules);
+    for &(source, ast) in &program {
+        if !syntax_tree_belongs_to_source(source, ast) {
+            return invalid_semantic_input(source, |diagnostics| {
+                diagnostics.try_reserve_exact(1).is_ok()
+            });
+        }
+    }
+    let graph = match ModuleGraph::build(&program, root_span) {
+        Ok(graph) => graph,
+        Err(diagnostics) => {
+            return AnalysisResult {
+                core: None,
+                diagnostics,
+            };
+        }
+    };
+    link_program(&program, &graph, root_span)
+}
+
+fn program_resource_limit(span: Span, detail: &str) -> AnalysisResult {
+    let mut diagnostics = Vec::new();
+    if diagnostics.try_reserve_exact(1).is_ok() {
+        diagnostics.push(
+            Diagnostic::error(
+                DiagnosticCode::SemanticResourceLimit,
+                "semantic analysis resource limit exceeded",
+                span,
+            )
+            .with_label(detail)
+            .with_note("semantic analysis stopped without producing Core"),
+        );
+    }
+    AnalysisResult {
+        core: None,
+        diagnostics,
+    }
+}
+
+/// The checked graph of a program's `use` declarations.
+struct ModuleGraph {
+    /// Program indices of the reachable modules in dependency order: each
+    /// module after every module it uses, the root last.
+    order: Vec<usize>,
+    /// For each program module, the program index of the module each of its
+    /// `use` declarations names, in source order; empty for a module the root
+    /// does not reach.
+    targets: Vec<Vec<usize>>,
+}
+
+/// Retains the module graph's diagnostics under the per-source bound.
+struct GraphReport {
+    diagnostics: Vec<Diagnostic>,
+    ordinary: usize,
+    limit_reported: bool,
+}
+
+impl GraphReport {
+    fn report(&mut self, build: impl FnOnce() -> Diagnostic) {
+        if self.ordinary < MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE {
+            self.ordinary = self.ordinary.saturating_add(1);
+            self.diagnostics.push(build());
+        } else if !self.limit_reported {
+            self.limit_reported = true;
+            let span = build().primary_span();
+            self.diagnostics.push(
+                Diagnostic::error(
+                    DiagnosticCode::TooManySemanticErrors,
+                    "too many semantic errors; further errors are suppressed",
+                    span,
+                )
+                .with_label("semantic diagnostic limit reached")
+                .with_note(format!(
+                    "at most {MAX_SEMANTIC_DIAGNOSTICS_PER_SOURCE} ordinary semantic diagnostics \
+                     are retained for a program's modules and their uses"
+                )),
+            );
+        }
+    }
+}
+
+impl ModuleGraph {
+    /// Checks module names and `use` declarations and orders the modules the
+    /// root reaches, stopping at the module limit. Only reachable modules are
+    /// entered, at most 64 of them with at most 64 uses each, and each is
+    /// compared with every supplied module once per name it declares or
+    /// uses, so the work is linear in the number of supplied modules. It
+    /// consumes no semantic events.
+    fn build(
+        program: &[(&SourceFile, &SyntaxTree)],
+        root_span: Span,
+    ) -> Result<Self, Vec<Diagnostic>> {
+        let count = program.len();
+        let failure = |span: Span| {
+            program_resource_limit(span, "module graph storage allocation failed").diagnostics
+        };
+        let mut report = GraphReport {
+            diagnostics: Vec::new(),
+            ordinary: 0,
+            limit_reported: false,
+        };
+        let mut targets: Vec<Vec<usize>> = Vec::new();
+        let mut state = Vec::new();
+        let mut order = Vec::new();
+        let mut path: Vec<(usize, usize)> = Vec::new();
+        let reachable = count.min(MAX_MODULES_PER_PROGRAM);
+        if report
+            .diagnostics
+            .try_reserve_exact(MAX_RETAINED_SEMANTIC_DIAGNOSTICS)
+            .is_err()
+            || targets.try_reserve_exact(count).is_err()
+            || state.try_reserve_exact(count).is_err()
+            || order.try_reserve_exact(reachable).is_err()
+            || path.try_reserve_exact(reachable).is_err()
+        {
+            return Err(failure(root_span));
+        }
+        let name_of = |index: usize| {
+            program
+                .get(index)
+                .map_or("", |(_, ast)| ast.module.name.text.as_str())
+        };
+
+        targets.extend(program.iter().map(|_| Vec::new()));
+        state.extend(program.iter().map(|_| VisitState::Unvisited));
+
+        // A depth-first search from the root enters each reachable module
+        // once, checks that no other supplied module shares its name, resolves
+        // its uses, and finds each cycle at the use that closes it. Finished
+        // modules follow the modules they use. A module the root does not
+        // reach is never entered.
+        let mut entered = 0_usize;
+        if let Some(slot) = state.first_mut() {
+            *slot = VisitState::OnPath;
+            path.push((0, 0));
+            entered = 1;
+            report_namesakes(program, 0, &mut report);
+            if !resolve_uses(program, 0, &mut targets, &mut report) {
+                return Err(failure(root_span));
+            }
+        }
+        while let Some((node, next_use)) = path.last().copied() {
+            let uses = program
+                .get(node)
+                .map_or(&[][..], |(_, ast)| ast.module.uses.as_slice());
+            let resolved = targets.get(node).map_or(&[][..], Vec::as_slice);
+            let Some((declaration, target)) = uses.get(next_use).zip(resolved.get(next_use)) else {
+                path.pop();
+                if let Some(slot) = state.get_mut(node) {
+                    *slot = VisitState::Done;
+                }
+                order.push(node);
+                continue;
+            };
+            let target = *target;
+            if let Some(top) = path.last_mut() {
+                top.1 = next_use.saturating_add(1);
+            }
+            match state.get(target) {
+                Some(VisitState::Unvisited) => {
+                    if entered >= MAX_MODULES_PER_PROGRAM {
+                        return Err(program_resource_limit(
+                            root_span,
+                            &format!("program reaches more than {MAX_MODULES_PER_PROGRAM} modules"),
+                        )
+                        .diagnostics);
+                    }
+                    entered = entered.saturating_add(1);
+                    if let Some(slot) = state.get_mut(target) {
+                        *slot = VisitState::OnPath;
+                    }
+                    path.push((target, 0));
+                    report_namesakes(program, target, &mut report);
+                    if !resolve_uses(program, target, &mut targets, &mut report) {
+                        return Err(failure(declaration.span));
+                    }
+                }
+                Some(VisitState::OnPath) => {
+                    report.report(|| {
+                        let start = path
+                            .iter()
+                            .position(|(module, _)| *module == target)
+                            .unwrap_or(0);
+                        let mut route = String::new();
+                        for (position, (module, _)) in
+                            path.get(start..).unwrap_or_default().iter().enumerate()
+                        {
+                            if position >= MAX_MODULES_IN_CYCLE_DIAGNOSTIC {
+                                route.push_str(" -> ...");
+                                break;
+                            }
+                            if position != 0 {
+                                route.push_str(" -> ");
+                            }
+                            route.push('`');
+                            route.push_str(
+                                &identifier_spelling_for_diagnostic(name_of(*module)).to_string(),
+                            );
+                            route.push('`');
+                        }
+                        let target_name = identifier_spelling_for_diagnostic(name_of(target));
+                        Diagnostic::error(
+                            DiagnosticCode::ModuleCycle,
+                            format!("module cycle {route} -> `{target_name}`"),
+                            declaration.span,
+                        )
+                        .with_label("this `use` closes the cycle")
+                        .with_note(
+                            "modules may not depend on each other in a cycle; move the functions \
+                             they share into a module that both use",
+                        )
+                    });
+                }
+                // A use that names no module was reported, and a finished
+                // module adds no cycle.
+                Some(VisitState::Done) | None => {}
+            }
+        }
+        if report.diagnostics.is_empty() {
+            Ok(Self { order, targets })
+        } else {
+            Err(report.diagnostics)
+        }
+    }
+}
+
+/// Reports each other supplied module whose name is that of `module`, a
+/// module of the program the search has just entered. A `use` resolves to
+/// the first supplied module of its name, so the module entered precedes its
+/// namesakes, and each pair is reported once, at the later module.
+fn report_namesakes(
+    program: &[(&SourceFile, &SyntaxTree)],
+    module: usize,
+    report: &mut GraphReport,
+) {
+    let Some((_, ast)) = program.get(module) else {
+        return;
+    };
+    let name = &ast.module.name;
+    for (other, (_, candidate)) in program.iter().enumerate() {
+        let repeat = &candidate.module.name;
+        if other == module || repeat.text != name.text {
+            continue;
+        }
+        let (first, repeat) = if other < module {
+            (repeat.span, name.span)
+        } else {
+            (name.span, repeat.span)
+        };
+        report.report(|| {
+            let spelling = identifier_spelling_for_diagnostic(&name.text);
+            Diagnostic::error(
+                DiagnosticCode::DuplicateModule,
+                format!("duplicate module `{spelling}`"),
+                repeat,
+            )
+            .with_label("this module repeats the name of a module of the program")
+            .with_secondary_span(first, "first module of this name is here")
+            .with_note(
+                "a `use` names one module, so no other supplied module may share the name of a \
+                 module of the program",
+            )
         });
     }
-    Analyzer::new(source, ast, Limits::DEFAULT).run()
+}
+
+/// Resolves the `use` declarations of one module when the search first
+/// enters it, reporting self-uses, repeated uses, and unknown modules. An
+/// unresolved use gets a target past the program, which the search skips.
+/// Returns whether the targets could be stored.
+fn resolve_uses(
+    program: &[(&SourceFile, &SyntaxTree)],
+    module: usize,
+    targets: &mut [Vec<usize>],
+    report: &mut GraphReport,
+) -> bool {
+    let Some((_, ast)) = program.get(module) else {
+        return false;
+    };
+    let uses = &ast.module.uses;
+    let Some(resolved) = targets.get_mut(module) else {
+        return false;
+    };
+    if resolved.try_reserve_exact(uses.len()).is_err() {
+        return false;
+    }
+    let own = &ast.module.name;
+    for (index, declaration) in uses.iter().enumerate() {
+        let name = &declaration.name;
+        let earlier = uses.get(..index).and_then(|earlier| {
+            earlier
+                .iter()
+                .find(|candidate| candidate.name.text == name.text)
+        });
+        let target = program
+            .iter()
+            .position(|(_, candidate)| candidate.module.name.text == name.text);
+        if let Some(earlier) = earlier {
+            report.report(|| {
+                let spelling = identifier_spelling_for_diagnostic(&name.text);
+                Diagnostic::error(
+                    DiagnosticCode::DuplicateModule,
+                    format!("module `{spelling}` is used twice"),
+                    declaration.span,
+                )
+                .with_label("this declaration repeats an earlier `use`")
+                .with_secondary_span(earlier.span, "first used here")
+                .with_note("a module names each module it uses once")
+            });
+            resolved.push(usize::MAX);
+        } else if name.text == own.text {
+            report.report(|| {
+                let spelling = identifier_spelling_for_diagnostic(&name.text);
+                Diagnostic::error(
+                    DiagnosticCode::ModuleCycle,
+                    format!("module `{spelling}` uses itself"),
+                    declaration.span,
+                )
+                .with_label("this `use` names its own module")
+                .with_note("a module calls its own functions without a module name, as in `f(x)`")
+            });
+            resolved.push(usize::MAX);
+        } else if let Some(target) = target {
+            resolved.push(target);
+        } else {
+            report.report(|| {
+                let spelling = identifier_spelling_for_diagnostic(&name.text);
+                Diagnostic::error(
+                    DiagnosticCode::UnknownModule,
+                    format!("no module named `{spelling}` in this program"),
+                    name.span,
+                )
+                .with_label("unknown module")
+                .with_note(
+                    "a `use` declaration names another module of the program; `orangec` \
+                     reads the module `NAME` from the file `NAME.or` beside the file that uses it",
+                )
+            });
+            resolved.push(usize::MAX);
+        }
+    }
+    true
+}
+
+/// The name tables of a checked module that later modules call into.
+struct ModuleTables<'ast> {
+    declarations: DeclarationIndex<'ast>,
+    signatures: Vec<Option<Signature>>,
+}
+
+/// What analysis of one module of a program produced.
+struct ModuleOutcome<'ast> {
+    core: Option<CoreModule>,
+    diagnostics: Vec<Diagnostic>,
+    /// Present once the module's declarations and signatures are complete,
+    /// even if its bodies have errors.
+    tables: Option<ModuleTables<'ast>>,
+}
+
+fn typed_spec_count(ast: &SyntaxTree) -> usize {
+    ast.module
+        .functions
+        .iter()
+        .filter(|function| {
+            function.kind == FunctionKind::Spec && matches!(function.body, FunctionBody::Typed(_))
+        })
+        .count()
+}
+
+/// Checks each reachable module in dependency order and links their Core.
+fn link_program<'ast>(
+    program: &[(&SourceFile, &'ast SyntaxTree)],
+    graph: &ModuleGraph,
+    root_span: Span,
+) -> AnalysisResult {
+    let mut tables: Vec<Option<ModuleTables<'ast>>> = Vec::new();
+    let mut cores: Vec<CoreModule> = Vec::new();
+    if tables.try_reserve_exact(program.len()).is_err()
+        || cores.try_reserve_exact(graph.order.len()).is_err()
+    {
+        return program_resource_limit(root_span, "semantic program storage allocation failed");
+    }
+    tables.extend(program.iter().map(|_| None));
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    let mut id_offset = 0_usize;
+    let mut complete = true;
+    for &index in &graph.order {
+        let Some(&(source, ast)) = program.get(index) else {
+            return program_resource_limit(root_span, "module graph index is inconsistent");
+        };
+        let resolved = graph.targets.get(index).map_or(&[][..], Vec::as_slice);
+        let mut imports = Vec::new();
+        if imports.try_reserve_exact(resolved.len()).is_err() {
+            return program_resource_limit(
+                ast.module.span,
+                "semantic import table allocation failed",
+            );
+        }
+        let mut available = true;
+        for (declaration, target) in ast.module.uses.iter().zip(resolved) {
+            match tables.get(*target).and_then(Option::as_ref) {
+                Some(table) => imports.push(ImportScope {
+                    name: &declaration.name.text,
+                    declarations: &table.declarations,
+                    signatures: &table.signatures,
+                }),
+                None => available = false,
+            }
+        }
+        // A module whose used module stopped before its names were complete
+        // is not checked; that module's analysis has already reported why.
+        let outcome = available.then(|| {
+            Analyzer::new(source, ast, Limits::DEFAULT)
+                .with_id_offset(id_offset)
+                .run_linked(
+                    &imports,
+                    |declarations, capacity| declarations.try_reserve(capacity).is_ok(),
+                    |functions, capacity| functions.try_reserve_exact(capacity).is_ok(),
+                )
+        });
+        drop(imports);
+        id_offset = id_offset.saturating_add(typed_spec_count(ast));
+        let Some(outcome) = outcome else {
+            complete = false;
+            continue;
+        };
+        if diagnostics
+            .try_reserve_exact(outcome.diagnostics.len())
+            .is_err()
+        {
+            return program_resource_limit(
+                ast.module.span,
+                "semantic program diagnostic storage allocation failed",
+            );
+        }
+        diagnostics.extend(outcome.diagnostics);
+        if let Some(slot) = tables.get_mut(index) {
+            *slot = outcome.tables;
+        }
+        match outcome.core {
+            Some(core) => cores.push(core),
+            None => complete = false,
+        }
+    }
+    if !complete || !diagnostics.is_empty() {
+        if diagnostics.is_empty() {
+            return program_resource_limit(root_span, "semantic program linking is inconsistent");
+        }
+        return AnalysisResult {
+            core: None,
+            diagnostics,
+        };
+    }
+    let Some(mut root) = cores.pop() else {
+        return program_resource_limit(root_span, "semantic program linking is inconsistent");
+    };
+    if cores.is_empty() {
+        return AnalysisResult {
+            core: Some(root),
+            diagnostics,
+        };
+    }
+    let total = cores
+        .iter()
+        .map(|core| core.functions.len())
+        .fold(root.functions.len(), usize::saturating_add);
+    let mut functions = Vec::new();
+    if functions.try_reserve_exact(total).is_err() {
+        return program_resource_limit(root_span, "typed Core function storage allocation failed");
+    }
+    for core in cores {
+        functions.extend(core.functions);
+    }
+    root.entry = functions.len();
+    functions.append(&mut root.functions);
+    root.functions = functions;
+    AnalysisResult {
+        core: Some(root),
+        diagnostics,
+    }
 }
 
 fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool {
@@ -120,6 +640,11 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
         && belongs(ast.edition.value_span)
         && belongs(ast.module.span)
         && belongs(ast.module.name.span)
+        && ast
+            .module
+            .uses
+            .iter()
+            .all(|declaration| belongs(declaration.span) && belongs(declaration.name.span))
         && ast.module.functions.iter().all(|function| {
             belongs(function.span)
                 && belongs(function.name.span)
@@ -155,6 +680,10 @@ fn expression_belongs(expression: &Expression, belongs: &impl Fn(Span) -> bool) 
             ExpressionKind::Name(name) => belongs(name.span),
             ExpressionKind::Call(call) => {
                 belongs(call.callee.span)
+                    && call
+                        .module
+                        .as_ref()
+                        .is_none_or(|module| belongs(module.span))
                     && call
                         .arguments
                         .iter()
@@ -271,6 +800,9 @@ struct Analyzer<'source, 'ast> {
     events: usize,
     halted: bool,
     limits: Limits,
+    /// Identity of this module's first typed `spec` in the linked program:
+    /// the number of typed `spec` functions in the modules checked before it.
+    id_offset: usize,
     reserve_pending_function_slot: fn(&mut Vec<PendingFunction>) -> bool,
     reserve_magnitude_limb: fn(&mut Vec<u32>) -> bool,
     reserve_range_limbs: fn(&mut Vec<u32>, usize) -> bool,
@@ -317,6 +849,34 @@ struct CallEdge {
 struct ModuleScope<'scope, 'ast> {
     declarations: &'scope DeclarationIndex<'ast>,
     signatures: &'scope [Option<Signature>],
+    /// The modules this module uses, in the order of its `use` declarations.
+    imports: &'scope [ImportScope<'scope, 'ast>],
+}
+
+/// The name and signature tables of one used module.
+struct ImportScope<'scope, 'ast> {
+    name: &'ast str,
+    declarations: &'scope DeclarationIndex<'ast>,
+    signatures: &'scope [Option<Signature>],
+}
+
+impl<'scope, 'ast> ModuleScope<'scope, 'ast> {
+    /// Returns the tables a call's function name resolves in: this module's
+    /// for an unqualified call, or the used module's for `NAME::f(...)`.
+    /// Returns `None` when `NAME` is not a module this module uses.
+    fn tables_for(
+        &self,
+        call: &CallExpression,
+    ) -> Option<(&'scope DeclarationIndex<'ast>, &'scope [Option<Signature>])> {
+        match &call.module {
+            None => Some((self.declarations, self.signatures)),
+            Some(module) => self
+                .imports
+                .iter()
+                .find(|import| import.name == module.text)
+                .map(|import| (import.declarations, import.signatures)),
+        }
+    }
 }
 
 /// Core nodes of the body being checked and the module's checked calls.
@@ -805,6 +1365,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             events: 0,
             halted: false,
             limits,
+            id_offset: 0,
             reserve_pending_function_slot,
             reserve_magnitude_limb,
             reserve_range_limbs,
@@ -815,6 +1376,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
     }
 
+    /// Places this module's typed `spec` identities after `offset` others.
+    const fn with_id_offset(mut self, offset: usize) -> Self {
+        self.id_offset = offset;
+        self
+    }
+
+    #[cfg(test)]
     fn run(self) -> AnalysisResult {
         self.run_with_reservations(
             |declarations, capacity| declarations.try_reserve(capacity).is_ok(),
@@ -822,18 +1390,35 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         )
     }
 
+    #[cfg(test)]
     fn run_with_reservations(
-        mut self,
+        self,
         reserve_declarations: impl FnOnce(&mut DeclarationIndex<'ast>, usize) -> bool,
         reserve_core_functions: impl FnOnce(&mut Vec<CoreFunction>, usize) -> bool,
     ) -> AnalysisResult {
+        let outcome = self.run_linked(&[], reserve_declarations, reserve_core_functions);
+        AnalysisResult {
+            core: outcome.core,
+            diagnostics: outcome.diagnostics,
+        }
+    }
+
+    /// Checks this module against the tables of the modules it uses, given
+    /// in the order of its `use` declarations.
+    fn run_linked(
+        mut self,
+        imports: &[ImportScope<'_, 'ast>],
+        reserve_declarations: impl FnOnce(&mut DeclarationIndex<'ast>, usize) -> bool,
+        reserve_core_functions: impl FnOnce(&mut Vec<CoreFunction>, usize) -> bool,
+    ) -> ModuleOutcome<'ast> {
         if !(self.reserve_diagnostic_slots)(
             &mut self.diagnostics,
             MAX_RETAINED_SEMANTIC_DIAGNOSTICS,
         ) {
-            return AnalysisResult {
+            return ModuleOutcome {
                 core: None,
                 diagnostics: self.diagnostics,
+                tables: None,
             };
         }
         let mut declarations = DeclarationIndex::new();
@@ -843,9 +1428,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 self.ast.module.span,
                 "semantic declaration namespace storage allocation failed",
             );
-            return AnalysisResult {
+            return ModuleOutcome {
                 core: None,
                 diagnostics: self.diagnostics,
+                tables: None,
             };
         }
         for (source_index, function) in self.ast.module.functions.iter().enumerate() {
@@ -863,13 +1449,22 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 .then_with(|| left.source_index.cmp(&right.source_index))
         });
         let Some(signatures) = self.collect_signatures() else {
-            return AnalysisResult {
+            return ModuleOutcome {
                 core: None,
                 diagnostics: self.diagnostics,
+                tables: None,
             };
         };
         let mut pending_functions = Vec::new();
         let mut call_edges = Vec::new();
+
+        // One event for each `use` declaration, whose module the program's
+        // module graph has already resolved.
+        for declaration in &self.ast.module.uses {
+            if !self.event(declaration.name.span) {
+                break;
+            }
+        }
 
         for (source_index, function) in self.ast.module.functions.iter().enumerate() {
             // One event for the declaration-key lookup.
@@ -952,6 +1547,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 let scope = ModuleScope {
                     declarations: &declarations,
                     signatures: &signatures,
+                    imports,
                 };
                 if let Some(pending) =
                     self.analyze_typed_function(function, body, context, &scope, &mut call_edges)
@@ -981,9 +1577,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         } else {
             None
         };
-        AnalysisResult {
+        ModuleOutcome {
             core,
             diagnostics: self.diagnostics,
+            tables: Some(ModuleTables {
+                declarations,
+                signatures,
+            }),
         }
     }
 
@@ -1006,7 +1606,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         for function in functions {
             let signature = match (&function.body, function.kind) {
                 (FunctionBody::Typed(body), FunctionKind::Spec) => {
-                    let Some(id) = CoreFunctionId::from_index(next_id) else {
+                    let Some(id) = self
+                        .id_offset
+                        .checked_add(next_id)
+                        .and_then(CoreFunctionId::from_index)
+                    else {
                         self.resource_limit(
                             function.span,
                             "Core function identity exceeds the u32 representation limit",
@@ -1640,13 +2244,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         match &leaf.kind {
             ExpressionKind::Name(name) => context.name_type(&name.text),
             ExpressionKind::Call(call) => {
-                let entry =
-                    first_declaration(scope.declarations, FunctionKind::Spec, &call.callee.text)?;
-                scope
-                    .signatures
-                    .get(entry.source_index)?
-                    .as_ref()?
-                    .result_type
+                let (declarations, signatures) = scope.tables_for(call)?;
+                let entry = first_declaration(declarations, FunctionKind::Spec, &call.callee.text)?;
+                signatures.get(entry.source_index)?.as_ref()?.result_type
             }
             ExpressionKind::Conversion(conversion) => silent_type(self.source, &conversion.target),
             ExpressionKind::Index(index) => self
@@ -2900,12 +3500,25 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     ) -> bool {
         let callee_name = &call.callee;
         let spelling = identifier_spelling_for_diagnostic(&callee_name.text);
-        let declaration =
-            first_declaration(scope.declarations, FunctionKind::Spec, &callee_name.text);
-        let signature =
-            declaration.and_then(|entry| scope.signatures.get(entry.source_index)?.as_ref());
+        let Some((declarations, signatures)) = scope.tables_for(call) else {
+            if let Some(module) = &call.module {
+                self.report_module_not_used(module);
+            }
+            return false;
+        };
+        let declaration = first_declaration(declarations, FunctionKind::Spec, &callee_name.text);
+        let signature = declaration.and_then(|entry| signatures.get(entry.source_index)?.as_ref());
         let Some(signature) = signature else {
             if self.begin_report(callee_name.span) {
+                let place = call.module.as_ref().map_or_else(
+                    || String::from("this module"),
+                    |module| {
+                        format!(
+                            "module `{}`",
+                            identifier_spelling_for_diagnostic(&module.text)
+                        )
+                    },
+                );
                 let mut diagnostic = if let Some(entry) = declaration {
                     Diagnostic::error(
                         DiagnosticCode::UnknownFunction,
@@ -2919,21 +3532,47 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 } else {
                     Diagnostic::error(
                         DiagnosticCode::UnknownFunction,
-                        format!("no typed `spec` function named `{spelling}` in this module"),
+                        format!("no typed `spec` function named `{spelling}` in {place}"),
                         callee_name.span,
                     )
                     .with_label("unknown function")
                 };
+                let imported_by = (call.module.is_none() && declaration.is_none())
+                    .then(|| {
+                        scope.imports.iter().find(|import| {
+                            first_declaration(
+                                import.declarations,
+                                FunctionKind::Spec,
+                                &callee_name.text,
+                            )
+                            .is_some()
+                        })
+                    })
+                    .flatten();
                 diagnostic =
-                    if first_declaration(scope.declarations, FunctionKind::Impl, &callee_name.text)
+                    if first_declaration(declarations, FunctionKind::Impl, &callee_name.text)
                         .is_some()
                     {
                         diagnostic.with_note(
                             "`impl` functions have no semantics yet and cannot be called",
                         )
-                    } else {
+                    } else if let Some(import) = imported_by {
+                        let module = identifier_spelling_for_diagnostic(import.name);
+                        diagnostic.with_note(format!(
+                            "the used module `{module}` declares `{spelling}`; call it as \
+                         `{module}::{spelling}(...)`"
+                        ))
+                    } else if call.module.is_some() {
+                        diagnostic
+                            .with_note("a qualified call names a typed `spec` of the used module")
+                    } else if scope.imports.is_empty() {
                         diagnostic
                             .with_note("calls name a typed `spec` declared in the same module")
+                    } else {
+                        diagnostic.with_note(
+                        "calls name a typed `spec` declared in the same module, or one of a used \
+                         module as `NAME::f(...)`",
+                    )
                     };
                 self.diagnostics.push(diagnostic);
             }
@@ -3024,9 +3663,43 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         )
     }
 
+    /// Reports `NAME::f(...)` where `NAME` is not a module this module uses.
+    fn report_module_not_used(&mut self, module: &Identifier) {
+        if !self.begin_report(module.span) {
+            return;
+        }
+        let spelling = identifier_spelling_for_diagnostic(&module.text);
+        let own = &self.ast.module.name;
+        let diagnostic = if module.text == own.text {
+            Diagnostic::error(
+                DiagnosticCode::ModuleNotUsed,
+                format!("`{spelling}` is the calling module"),
+                module.span,
+            )
+            .with_label("a module does not qualify calls to itself")
+            .with_note("call a function of the same module without a module name, as in `f(x)`")
+        } else {
+            Diagnostic::error(
+                DiagnosticCode::ModuleNotUsed,
+                format!(
+                    "module `{spelling}` is not used by `{}`",
+                    identifier_spelling_for_diagnostic(&own.text)
+                ),
+                module.span,
+            )
+            .with_label("no `use` declaration names this module")
+            .with_note(format!(
+                "declare `use {spelling};` at the head of the module to call its functions"
+            ))
+        };
+        self.diagnostics.push(diagnostic);
+    }
+
     /// Adds the call graph edge for an examined call to a typed `spec`. The
     /// edge does not depend on the call's types, so a cycle is reported even
-    /// through a call that is also wrong. Returns whether the edge was stored.
+    /// through a call that is also wrong. A call into a used module adds no
+    /// edge: the module graph is acyclic, so no cycle passes through it.
+    /// Returns whether the edge was stored or was not needed.
     fn record_call_edge(
         &mut self,
         context: &BodyContext<'ast>,
@@ -3034,6 +3707,9 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         span: Span,
         output: &mut BodyOutput<'_>,
     ) -> bool {
+        if usize::try_from(callee.id.index()).is_ok_and(|index| index < self.id_offset) {
+            return true;
+        }
         if !(self.reserve_call_edge_slot)(output.call_edges) {
             self.resource_limit(span, "call graph storage allocation failed");
             return false;
@@ -3229,9 +3905,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         offsets.push(0_usize);
         let mut cursor = 0_usize;
         for index in 0..function_count {
+            let global = index.checked_add(self.id_offset);
             while targets
                 .get(cursor)
-                .is_some_and(|(caller, _)| usize::try_from(caller.index()).ok() == Some(index))
+                .is_some_and(|(caller, _)| usize::try_from(caller.index()).ok() == global)
             {
                 cursor = cursor.saturating_add(1);
             }
@@ -3266,7 +3943,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     self.resource_limit(self.ast.module.span, "call graph index is inconsistent");
                     return;
                 };
-                let Ok(target) = usize::try_from(edge.callee.index()) else {
+                let Some(target) = usize::try_from(edge.callee.index())
+                    .ok()
+                    .and_then(|index| index.checked_sub(self.id_offset))
+                else {
                     self.resource_limit(edge.span, "call graph index is inconsistent");
                     return;
                 };
@@ -3405,15 +4085,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     return None;
                 }
             }
-            let Some(id) = CoreFunctionId::from_index(functions.len()) else {
+            let Some(id) = self
+                .id_offset
+                .checked_add(functions.len())
+                .and_then(CoreFunctionId::from_index)
+            else {
                 self.resource_limit(
                     pending_function.span,
                     "Core function identity exceeds the u32 representation limit",
                 );
                 return None;
             };
+            let module = self.copy_core_name(&module_name, self.ast.module.name.span)?;
             functions.push(CoreFunction {
                 id,
+                module,
                 span: pending_function.span,
                 name: pending_function.name,
                 name_span: pending_function.name_span,
@@ -3431,6 +4117,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             span: self.ast.module.span,
             name: module_name,
             functions,
+            entry: 0,
         })
     }
 
@@ -9270,5 +9957,569 @@ mod tests {
                 "case {case_index}"
             );
         }
+    }
+
+    /// Modules of one program in one source map, the first the root.
+    struct Program {
+        sources: SourceMap,
+        ids: Vec<SourceId>,
+        asts: Vec<SyntaxTree>,
+    }
+
+    impl Program {
+        fn new(texts: &[&str]) -> Self {
+            let mut sources = SourceMap::new();
+            let mut ids = Vec::new();
+            let mut asts = Vec::new();
+            for (index, text) in texts.iter().enumerate() {
+                let id = sources.add(format!("m{index}.or"), *text).unwrap();
+                let source = sources.get(id).unwrap();
+                let lexed = lex(source, Edition::E2026);
+                assert_eq!(lexed.diagnostics(), [], "{text}");
+                let parsed = parse(source, &lexed);
+                assert_eq!(parsed.diagnostics(), [], "{text}");
+                ids.push(id);
+                asts.push(parsed.into_ast().unwrap());
+            }
+            Self { sources, ids, asts }
+        }
+
+        fn modules(&self) -> Vec<(&SourceFile, &SyntaxTree)> {
+            self.ids
+                .iter()
+                .zip(&self.asts)
+                .map(|(id, ast)| (self.sources.get(*id).unwrap(), ast))
+                .collect()
+        }
+
+        fn analyze(&self) -> AnalysisResult {
+            let modules = self.modules();
+            analyze_program(modules[0], &modules[1..])
+        }
+
+        fn slice(&self, span: Span) -> &str {
+            self.sources
+                .get(span.source())
+                .unwrap()
+                .slice(span)
+                .unwrap()
+        }
+
+        /// Each diagnostic's code, message, and primary text.
+        fn report(&self, result: &AnalysisResult) -> Vec<(DiagnosticCode, String, String)> {
+            result
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| {
+                    (
+                        diagnostic.code(),
+                        diagnostic.message().to_owned(),
+                        self.slice(diagnostic.primary_span()).to_owned(),
+                    )
+                })
+                .collect()
+        }
+    }
+
+    fn call_targets(expression: &CoreExpression) -> Vec<u32> {
+        expression
+            .nodes()
+            .iter()
+            .filter_map(|node| match node.kind() {
+                CoreNodeKind::Call { function, .. } => Some(function.index()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn links_used_modules_in_dependency_order_with_dense_identities() {
+        let program = Program::new(&[
+            concat!(
+                "edition 2026; module main { use hmac; use sha; ",
+                "spec digest() -> Word[32] { hmac::tag(sha::k()) } ",
+                "spec local(x: Word[32]) -> Word[32] { x } ",
+                "spec answer() -> Int { sha::seven() * 6 } ",
+                "}"
+            ),
+            "edition 2026; module hmac { use sha; spec tag(x: Word[32]) -> Word[32] { sha::mix(x ^ 0x36363636) } }",
+            // Never reached from the root, so never checked.
+            "edition 2026; module unused { spec never() -> Int { nope } }",
+            concat!(
+                "edition 2026; module sha { ",
+                "spec k() -> Word[32] { 0x428a2f98 } ",
+                "spec mix(x: Word[32]) -> Word[32] { (x >>> 2) ^ k() } ",
+                "spec seven() -> Int { 7 } ",
+                "}"
+            ),
+        ]);
+        let result = program.analyze();
+        assert_eq!(result.diagnostics(), []);
+        assert_eq!(result, program.analyze());
+        let core = result.core().unwrap();
+        assert_eq!(core.name(), "main");
+        assert_eq!(core.span(), program.asts[0].module.span);
+        assert_eq!(
+            core.functions()
+                .iter()
+                .map(|function| (function.id().index(), function.module(), function.name()))
+                .collect::<Vec<_>>(),
+            [
+                (0, "sha", "k"),
+                (1, "sha", "mix"),
+                (2, "sha", "seven"),
+                (3, "hmac", "tag"),
+                (4, "main", "digest"),
+                (5, "main", "local"),
+                (6, "main", "answer"),
+            ]
+        );
+        assert_eq!(
+            core.entry_functions()
+                .iter()
+                .map(CoreFunction::name)
+                .collect::<Vec<_>>(),
+            ["digest", "local", "answer"]
+        );
+        assert_eq!(call_targets(core.functions()[1].body()), [0]);
+        assert_eq!(call_targets(core.functions()[3].body()), [1]);
+        assert_eq!(call_targets(core.functions()[4].body()), [0, 3]);
+        assert_eq!(call_targets(core.functions()[6].body()), [2]);
+        assert_eq!(program.slice(core.functions()[3].name_span()), "tag");
+        assert_eq!(core.functions()[3].name_span().source(), program.ids[1]);
+
+        let evaluated = crate::eval::evaluate(core);
+        assert_eq!(evaluated.diagnostics(), []);
+        let k = 0x428a_2f98_u32;
+        let digest = (k ^ 0x3636_3636).rotate_right(2) ^ k;
+        assert_eq!(
+            evaluated
+                .values()
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            [
+                format!("main::digest: Word[32] = 0x{digest:08x}"),
+                String::from("main::answer: Int = 42"),
+            ]
+        );
+
+        // A module used by no one is checked alone, as the root.
+        let alone = Program::new(&["edition 2026; module sha { spec k() -> Word[32] { 1 } }"]);
+        let core = alone.analyze().into_core().unwrap();
+        assert_eq!(core.entry_functions(), core.functions());
+        assert_eq!(core.functions()[0].module(), "sha");
+    }
+
+    #[test]
+    fn a_chain_of_sixty_four_modules_links_and_evaluates() {
+        let texts = (0..MAX_MODULES_PER_PROGRAM)
+            .map(|index| {
+                if index + 1 == MAX_MODULES_PER_PROGRAM {
+                    format!("edition 2026; module m{index} {{ spec v() -> Int {{ 1 }} }}")
+                } else {
+                    let next = index + 1;
+                    format!(
+                        "edition 2026; module m{index} {{ use m{next}; \
+                         spec v() -> Int {{ m{next}::v() + 1 }} }}"
+                    )
+                }
+            })
+            .collect::<Vec<_>>();
+        // Supplied in reverse, so that order comes from the uses alone.
+        let mut ordered = vec![texts[0].as_str()];
+        ordered.extend(texts[1..].iter().rev().map(String::as_str));
+        let program = Program::new(&ordered);
+        let core = program.analyze().into_core().unwrap();
+        assert_eq!(core.functions().len(), MAX_MODULES_PER_PROGRAM);
+        assert_eq!(core.functions()[0].module(), "m63");
+        assert_eq!(core.entry_functions().len(), 1);
+        let evaluated = crate::eval::evaluate(&core);
+        assert_eq!(
+            evaluated.values().unwrap()[0].to_string(),
+            "m0::v: Int = 64"
+        );
+
+        // Modules the root does not reach are ignored and not counted, even
+        // when they share a name with each other.
+        let mut texts = texts;
+        let unreached = (0..200)
+            .map(|index| {
+                format!(
+                    "edition 2026; module spare{} {{ use m0; use spare{}; }}",
+                    index % 150,
+                    index % 150
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut supplied = texts.iter().map(String::as_str).collect::<Vec<_>>();
+        supplied.extend(unreached.iter().map(String::as_str));
+        let program = Program::new(&supplied);
+        let core = program.analyze().into_core().unwrap();
+        assert_eq!(core.functions().len(), MAX_MODULES_PER_PROGRAM);
+        let alone = ["edition 2026; module main { spec v() -> Int { 7 } }"]
+            .into_iter()
+            .chain(texts[1..].iter().map(String::as_str))
+            .chain(["edition 2026; module m64 {}"])
+            .collect::<Vec<_>>();
+        assert_eq!(alone.len(), MAX_MODULES_PER_PROGRAM + 1);
+        let program = Program::new(&alone);
+        let core = program.analyze().into_core().unwrap();
+        assert_eq!(core.functions().len(), 1);
+        assert_eq!(
+            crate::eval::evaluate(&core).values().unwrap()[0].to_string(),
+            "main::v: Int = 7"
+        );
+
+        // A 65th reachable module stops the search before any module is
+        // checked, however many modules are supplied.
+        texts[MAX_MODULES_PER_PROGRAM - 1] =
+            String::from("edition 2026; module m63 { use m64; spec v() -> Int { m64::v() + 1 } }");
+        texts.push(String::from(
+            "edition 2026; module m64 { spec v() -> Int { 1 } }",
+        ));
+        for supplied in [
+            texts.iter().map(String::as_str).collect::<Vec<_>>(),
+            texts
+                .iter()
+                .chain(&unreached)
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        ] {
+            let program = Program::new(&supplied);
+            let result = program.analyze();
+            assert_eq!(
+                program.report(&result),
+                [(
+                    DiagnosticCode::SemanticResourceLimit,
+                    String::from("semantic analysis resource limit exceeded"),
+                    program.slice(program.asts[0].module.span).to_owned()
+                )]
+            );
+            assert_eq!(
+                result.diagnostics()[0].label(),
+                "program reaches more than 64 modules"
+            );
+        }
+    }
+
+    #[test]
+    fn a_module_of_the_program_has_no_namesake() {
+        // A supplied module that shares the root's name, or that of a used
+        // module, is reported when the search enters the module of the
+        // program; namesakes the program never reaches are ignored.
+        let program = Program::new(&[
+            "edition 2026; module main { use lib; spec v() -> Int { lib::one() } }",
+            "edition 2026; module lib { spec one() -> Int { 1 } }",
+            "edition 2026; module spare { }",
+            "edition 2026; module main { }",
+            "edition 2026; module spare { }",
+            "edition 2026; module lib { }",
+        ]);
+        let result = program.analyze();
+        assert_eq!(
+            program.report(&result),
+            [
+                (
+                    DiagnosticCode::DuplicateModule,
+                    String::from("duplicate module `main`"),
+                    String::from("main")
+                ),
+                (
+                    DiagnosticCode::DuplicateModule,
+                    String::from("duplicate module `lib`"),
+                    String::from("lib")
+                ),
+            ]
+        );
+        assert_eq!(
+            result.diagnostics()[0].primary_span().source(),
+            program.ids[3]
+        );
+        assert_eq!(
+            result.diagnostics()[0].secondary_spans()[0].span().source(),
+            program.ids[0]
+        );
+        assert_eq!(
+            result.diagnostics()[1].primary_span().source(),
+            program.ids[5]
+        );
+
+        let program = Program::new(&[
+            "edition 2026; module main { use lib; spec v() -> Int { lib::one() } }",
+            "edition 2026; module lib { spec one() -> Int { 1 } }",
+            "edition 2026; module spare { }",
+            "edition 2026; module spare { }",
+        ]);
+        assert!(program.analyze().into_core().is_some());
+    }
+
+    #[test]
+    fn module_graph_errors_name_the_use_that_causes_them() {
+        let alone = Program::new(&["edition 2026; module main { use sha; spec f() -> Int { 1 } }"]);
+        let result = alone.analyze();
+        assert_eq!(result, analyze(alone.modules()[0].0, &alone.asts[0]));
+        assert_eq!(
+            alone.report(&result),
+            [(
+                DiagnosticCode::UnknownModule,
+                String::from("no module named `sha` in this program"),
+                String::from("sha")
+            )]
+        );
+
+        let program = Program::new(&[
+            "edition 2026; module main { use a; use main; use a; use gone; }",
+            "edition 2026; module a { use b; }",
+            "edition 2026; module b { use a; use c; }",
+            "edition 2026; module c { use main; }",
+            "edition 2026; module a { }",
+        ]);
+        let result = program.analyze();
+        assert!(result.core().is_none());
+        assert_eq!(
+            program.report(&result),
+            [
+                (
+                    DiagnosticCode::ModuleCycle,
+                    String::from("module `main` uses itself"),
+                    String::from("use main;")
+                ),
+                (
+                    DiagnosticCode::DuplicateModule,
+                    String::from("module `a` is used twice"),
+                    String::from("use a;")
+                ),
+                (
+                    DiagnosticCode::UnknownModule,
+                    String::from("no module named `gone` in this program"),
+                    String::from("gone")
+                ),
+                (
+                    DiagnosticCode::DuplicateModule,
+                    String::from("duplicate module `a`"),
+                    String::from("a")
+                ),
+                (
+                    DiagnosticCode::ModuleCycle,
+                    String::from("module cycle `a` -> `b` -> `a`"),
+                    String::from("use a;")
+                ),
+                (
+                    DiagnosticCode::ModuleCycle,
+                    String::from("module cycle `main` -> `a` -> `b` -> `c` -> `main`"),
+                    String::from("use main;")
+                ),
+            ]
+        );
+        // Each module's namesakes are reported when the search first enters it.
+        let duplicate = &result.diagnostics()[3];
+        assert_eq!(duplicate.primary_span().source(), program.ids[4]);
+        assert_eq!(duplicate.secondary_spans().len(), 1);
+        assert_eq!(
+            duplicate.secondary_spans()[0].span().source(),
+            program.ids[1]
+        );
+        let twice = &result.diagnostics()[1];
+        assert_eq!(twice.primary_span().source(), program.ids[0]);
+        assert!(twice.primary_span().start() > twice.secondary_spans()[0].span().start());
+        assert_eq!(
+            result.diagnostics()[4].primary_span().source(),
+            program.ids[2]
+        );
+        assert_eq!(
+            result.diagnostics()[5].primary_span().source(),
+            program.ids[3]
+        );
+        assert_eq!(
+            result.diagnostics()[5].label(),
+            "this `use` closes the cycle"
+        );
+    }
+
+    #[test]
+    fn qualified_calls_resolve_only_in_used_modules() {
+        let program = Program::new(&[
+            concat!(
+                "edition 2026; module main { use lib; ",
+                "spec a() -> Int { other::one() } ",
+                "spec b() -> Int { main::a() } ",
+                "spec c() -> Int { lib::three() } ",
+                "spec d() -> Int { one() } ",
+                "spec e() -> Int { lib::fast() } ",
+                "spec f() -> Int { lib::two() } ",
+                "spec g() -> Word[8] { lib::one() } ",
+                "spec h() -> Int { lib::empty() } ",
+                "spec i() -> Int { lib::two(lib::one() + 1) + (g() as Int) } ",
+                "}"
+            ),
+            concat!(
+                "edition 2026; module lib { ",
+                "spec one() -> Int { 1 } ",
+                "spec two(x: Int) -> Int { x } ",
+                "impl fast() {} ",
+                "spec empty() {} ",
+                "}"
+            ),
+        ]);
+        let result = program.analyze();
+        assert_eq!(
+            program.report(&result),
+            [
+                (
+                    DiagnosticCode::ModuleNotUsed,
+                    String::from("module `other` is not used by `main`"),
+                    String::from("other")
+                ),
+                (
+                    DiagnosticCode::ModuleNotUsed,
+                    String::from("`main` is the calling module"),
+                    String::from("main")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    String::from("no typed `spec` function named `three` in module `lib`"),
+                    String::from("three")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    String::from("no typed `spec` function named `one` in this module"),
+                    String::from("one")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    String::from("no typed `spec` function named `fast` in module `lib`"),
+                    String::from("fast")
+                ),
+                (
+                    DiagnosticCode::ArgumentCountMismatch,
+                    String::from("`two` takes 1 argument but 0 were supplied"),
+                    String::from("lib::two()")
+                ),
+                (
+                    DiagnosticCode::TypeMismatch,
+                    String::from("`one` returns `Int`, but `Word[8]` is required here"),
+                    String::from("lib::one()")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    String::from("`spec` function `empty` has no typed body and cannot be called"),
+                    String::from("empty")
+                ),
+            ]
+        );
+        let notes = result
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.notes()[0].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            notes[..5],
+            [
+                "declare `use other;` at the head of the module to call its functions",
+                "call a function of the same module without a module name, as in `f(x)`",
+                "a qualified call names a typed `spec` of the used module",
+                "the used module `lib` declares `one`; call it as `lib::one(...)`",
+                "`impl` functions have no semantics yet and cannot be called",
+            ]
+        );
+        let empty = &result.diagnostics()[7];
+        assert_eq!(empty.secondary_spans()[0].span().source(), program.ids[1]);
+        assert_eq!(program.slice(empty.secondary_spans()[0].span()), "empty");
+    }
+
+    #[test]
+    fn each_module_is_checked_even_when_a_module_it_uses_has_errors() {
+        let program = Program::new(&[
+            concat!(
+                "edition 2026; module main { use lib; ",
+                "spec p() -> Int { q() } ",
+                "spec q() -> Int { p() + lib::fine() } ",
+                "spec r() -> Int { lib::gone() } ",
+                "}"
+            ),
+            "edition 2026; module lib { spec bad() -> Int { nope } spec fine() -> Int { 1 } }",
+        ]);
+        let result = program.analyze();
+        assert_eq!(
+            program.report(&result),
+            [
+                (
+                    DiagnosticCode::UnknownParameter,
+                    String::from("`nope` is not a parameter of `bad`"),
+                    String::from("nope")
+                ),
+                (
+                    DiagnosticCode::UnknownFunction,
+                    String::from("no typed `spec` function named `gone` in module `lib`"),
+                    String::from("gone")
+                ),
+                (
+                    DiagnosticCode::CallCycle,
+                    String::from("call cycle `p` -> `q` -> `p`"),
+                    String::from("p()")
+                ),
+            ]
+        );
+        assert_eq!(
+            result.diagnostics()[0].primary_span().source(),
+            program.ids[1]
+        );
+    }
+
+    #[test]
+    fn rejects_foreign_use_and_qualifier_spans_and_foreign_modules() {
+        let text = "edition 2026; module main { use lib; spec f() -> Int { lib::one() } }";
+        let lib = "edition 2026; module lib { spec one() -> Int { 1 } }";
+        let first = Program::new(&[text, lib]);
+        let second = Program::new(&[text, lib]);
+        fn call_of(ast: &mut SyntaxTree) -> &mut CallExpression {
+            match &mut typed_body_mut(ast).expression.kind {
+                ExpressionKind::Call(call) => call,
+                _ => unreachable!(),
+            }
+        }
+        let foreign_use = second.asts[0].module.uses[0].clone();
+        let foreign_module = second.asts[0].clone();
+        let mut foreign_qualifier = second.asts[0].clone();
+        let foreign_qualifier_span = call_of(&mut foreign_qualifier)
+            .module
+            .as_ref()
+            .unwrap()
+            .span;
+        let mutations: [&dyn Fn(&mut SyntaxTree); 3] = [
+            &|ast| ast.module.uses[0].span = foreign_use.span,
+            &|ast| ast.module.uses[0].name.span = foreign_use.name.span,
+            &|ast| call_of(ast).module.as_mut().unwrap().span = foreign_qualifier_span,
+        ];
+        let modules = first.modules();
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut ast = first.asts[0].clone();
+            mutate(&mut ast);
+            let result = analyze_program((modules[0].0, &ast), &modules[1..]);
+            assert!(result.core().is_none(), "case {index}");
+            assert_eq!(
+                result
+                    .diagnostics()
+                    .iter()
+                    .map(Diagnostic::code)
+                    .collect::<Vec<_>>(),
+                [DiagnosticCode::InvalidSemanticInput],
+                "case {index}"
+            );
+        }
+
+        // A used module whose tree belongs to another source.
+        let result = analyze_program(modules[0], &[(modules[1].0, &foreign_module)]);
+        assert_eq!(result.diagnostics().len(), 1);
+        assert_eq!(
+            result.diagnostics()[0].code(),
+            DiagnosticCode::InvalidSemanticInput
+        );
+        assert_eq!(
+            result.diagnostics()[0].primary_span().source(),
+            first.ids[1]
+        );
     }
 }
