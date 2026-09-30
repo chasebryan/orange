@@ -555,8 +555,8 @@ module chacha20 {
 
   // draft-irtf-cfrg-xchacha-03, appendix A.2.1 (and A.3.2.1): the 304-byte
   // "dhole" text under the key 80:81:...:9f and the 24-byte nonce
-  // 40:41:...:57:58, block counter 0, as its first 256 bytes (blocks 0 to 3)
-  // and its last 48 bytes (block 4).
+  // 40:41:...:56:58 (the draft skips 57), block counter 0, as its first 256
+  // bytes (blocks 0 to 3) and its last 48 bytes (block 4).
   spec dhole_text_head() -> Word[8]^256 {
     [
       0x54, 0x68, 0x65, 0x20, 0x64, 0x68, 0x6f, 0x6c, 0x65, 0x20, 0x28, 0x70, 0x72, 0x6f, 0x6e, 0x6f,

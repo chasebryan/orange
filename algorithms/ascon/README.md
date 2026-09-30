@@ -79,7 +79,7 @@ original Ascon loaded big-endian. And the initial value is
 0x00001000808C0001 for Ascon-AEAD128 and 0x0000080100CC0002 for
 Ascon-Hash256, encodings of the algorithm identifier, the round numbers,
 the tag or digest length and the rate that replace the submission's
-0x80400c0600000000 and 0x00400c0000000100. The reference implementation's
+0x80800c0800000000 and 0x00400c0000000100. The reference implementation's
 README (ascon-c, the designers' repository) states both changes.
 
 ### Security status
@@ -87,8 +87,8 @@ README (ascon-c, the designers' repository) states both changes.
 Ascon was selected in February 2019 as the first choice of the CAESAR
 committee's final portfolio for the lightweight use case, and on 7 February
 2023 NIST announced it as the winner of its lightweight cryptography
-standardization process, which had run since 2018 with 57 first-round
-candidates and 10 finalists. The initial public draft of SP 800-232
+standardization process, which had run since 2018 with 57 submissions
+and 10 finalists. The initial public draft of SP 800-232
 appeared in November 2024 and the final standard in August 2025.
 
 The design is a duplex sponge with a keyed initialization and a keyed
@@ -101,8 +101,9 @@ under one key (the standard's stated limit, 2^54 bytes, was not checked from
 this machine). The claim has two caveats a reader should keep. First, the
 nonce must never repeat under one key: with a repeated nonce the keystream of
 the first blocks repeats, and Baudrin, Canteaut and Perrin (ToSC 2022) gave a
-practical cube attack on the 6-round initialization in the nonce-misuse
-setting; the designers make no claim under nonce misuse. Second, decryption
+practical cube attack in the nonce-misuse setting on the 6-round
+permutation that Ascon-128 applies between data blocks (Ascon-AEAD128
+applies 8); the designers make no claim under nonce misuse. Second, decryption
 produces plaintext blocks before the tag can be checked, and Ascon makes no
 claim when unverified plaintext is released; the standard requires an
 implementation to withhold it, which the Orange `ascon_aead128_decrypt`

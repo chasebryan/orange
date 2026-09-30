@@ -178,7 +178,7 @@ about 11,400, of which the 64 single-byte updates of `serialize` are about
 serializes only 32 bytes and skips the addition, is about 6,800. The
 256-byte `encrypt` is about 116,500 steps, four blocks plus four times 64
 updates of a 256-byte array, so placing the keystream costs more than
-computing it. The whole file, 20 vector pairs with 35 block functions and 5
+computing it. The whole file, 20 vector pairs with 30 block functions and 6
 HChaCha20 calls, uses about 672,000 of the 1,048,576 steps, and 33 more
 blocks would fit; no vector had to be moved or dropped.
 
@@ -218,7 +218,7 @@ blocks would fit; no vector had to be moved or dropped.
 | `rfc8439_a2_2_tail` | RFC 8439, appendix A.2, test vector 2 | bytes 256 to 374 of the same message, counter 5 (blocks 5 and 6) |
 | `rfc8439_a2_3` | RFC 8439, appendix A.2, test vector 3 | the 127-byte "Jabberwocky" stanza, key 1c:92:40:a5:..., nonce 00...02, initial counter 42 |
 | `xchacha_draft_2_2_1` | draft-irtf-cfrg-xchacha-03, section 2.2.1 | HChaCha20 of key 00:01:...:1f and nonce 00:00:00:09:00:00:00:4a:00:00:00:00:31:41:59:27 |
-| `xchacha_draft_a2_1_head` | draft-irtf-cfrg-xchacha-03, appendix A.2.1 (A.3.2.1) | bytes 0 to 255 of the 304-byte "dhole" text, key 80:81:...:9f, nonce 40:41:...:57, block counter 0 |
+| `xchacha_draft_a2_1_head` | draft-irtf-cfrg-xchacha-03, appendix A.2.1 (A.3.2.1) | bytes 0 to 255 of the 304-byte "dhole" text, key 80:81:...:9f, nonce 40:41:...:56:58 (the draft skips 57), block counter 0 |
 | `xchacha_draft_a2_1_tail` | draft-irtf-cfrg-xchacha-03, appendix A.2.1 (A.3.2.1) | bytes 256 to 303 of the same message, under the same subkey and nonce, counter 4 |
 | `xchacha_draft_a2_2_head` | draft-irtf-cfrg-xchacha-03, appendix A.2.2 (A.3.2.2) | the same message, key and nonce from block counter 1: bytes 0 to 255 (blocks 1 to 4) |
 | `xchacha_draft_a2_2_tail` | draft-irtf-cfrg-xchacha-03, appendix A.2.2 (A.3.2.2) | bytes 256 to 303 of the same, counter 5 |
