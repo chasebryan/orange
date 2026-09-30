@@ -29,6 +29,8 @@ check-compiler:
 	gate_ipc_namespace="$$(/usr/bin/readlink -- /proc/self/ns/ipc)"; \
 	gate_uts_namespace="$$(/usr/bin/readlink -- /proc/self/ns/uts)"; \
 	namespace_setup='set -euo pipefail; toolchain_root="$$1"; gate_tools="$$2"; shift 2; /usr/bin/hostname orange-gate; /usr/bin/mount --bind "$$toolchain_root" "$$gate_tools/toolchain"; /usr/bin/mount --options remount,bind,ro,nosuid,nodev "$$gate_tools/toolchain"; /usr/bin/mount --types tmpfs --options mode=755,nosuid,nodev,noexec tmpfs /home; exec "$$@"'; \
+	user_namespace_setup='set -euo pipefail; gate_uid="$$1"; gate_gid="$$2"; user_namespace_wait="$$3"; shift 3; parent_user_namespace="$$(/usr/bin/readlink -- /proc/self/ns/user)"; { for attempt in {1..1000}; do [[ "$$(/usr/bin/readlink -- /proc/1/ns/user)" == "$$parent_user_namespace" ]] || break; /usr/bin/sleep 0.01; done; printf "%s %s 1\n" "$$gate_uid" "$$gate_uid" > /proc/1/uid_map; printf "%s %s 1\n" "$$gate_gid" "$$gate_gid" > /proc/1/gid_map; } & exec /usr/bin/setpriv --reuid "$$gate_uid" --regid "$$gate_gid" --clear-groups --inh-caps=+sys_admin --ambient-caps=+sys_admin -- /usr/bin/unshare --user --keep-caps -- /bin/bash -p -c "$$user_namespace_wait" gate-user-namespace "$$@"'; \
+	user_namespace_wait='for attempt in {1..1000}; do read -r _ < /proc/self/gid_map && exec "$$@"; /usr/bin/sleep 0.01; done; printf "%s\n" "gate user namespace was not mapped" >&2; exit 1'; \
 	namespace_runner=( \
 		/usr/bin/unshare \
 		--user \
@@ -56,6 +58,7 @@ check-compiler:
 		--no-new-privs \
 	); \
 	if ! "$${namespace_runner[@]}" /bin/true >/dev/null 2>&1; then \
+		[[ "$$(< /proc/sys/user/max_user_namespaces)" != 0 ]] || { printf '%s\n' 'orange: this host disables user namespaces (user.max_user_namespaces is 0), and the compiler check needs one for its sandbox' >&2; exit 1; }; \
 		namespace_runner=( \
 			/usr/bin/sudo \
 			--non-interactive \
@@ -76,6 +79,14 @@ check-compiler:
 			gate-namespace \
 			"$$toolchain_root" \
 			"$$gate_tools" \
+			/bin/bash \
+			-p \
+			-c \
+			"$$user_namespace_setup" \
+			gate-user-namespace-setup \
+			"$$gate_uid" \
+			"$$gate_gid" \
+			"$$user_namespace_wait" \
 			/usr/bin/setpriv \
 			--bounding-set=-all \
 			--inh-caps=-all \
@@ -85,9 +96,15 @@ check-compiler:
 			--clear-groups \
 			--no-new-privs \
 		); \
+		"$${namespace_runner[@]}" /bin/true >/dev/null 2>&1 || /usr/bin/sudo --non-interactive --validate >/dev/null 2>&1 || { \
+			printf '%s\n' 'orange: this host blocks unprivileged user namespaces, so the compiler check asks sudo to build its sandbox' >&2; \
+			/usr/bin/sudo --validate; \
+			( /usr/bin/sudo --non-interactive --validate 2>/dev/null && : ) || { printf '%s\n' 'orange: this sudo policy does not keep the password between commands; the compiler check needs cached sudo credentials (a nonzero timestamp_timeout) or a passwordless rule' >&2; exit 1; }; \
+		}; \
 		"$${namespace_runner[@]}" /bin/true; \
 	fi; \
 	run_cargo() { \
+		[[ "$${namespace_runner[0]}" != /usr/bin/sudo ]] || "$${namespace_runner[@]}" /bin/true >/dev/null 2>&1 || /usr/bin/sudo --validate; \
 		( \
 			exec 8<&- 9<&-; \
 			cd -- /; \

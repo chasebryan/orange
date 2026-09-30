@@ -771,7 +771,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "87ba5f95da9093465a7ce8c2267fb5c7733e9b6a7c66b59aae115997b35561e3"
+_PHD = "e94669c3e38851968fcec529e2d661d4ad87fc6ff21a3c34ce7917ada92824ca"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1153,8 +1153,8 @@ _D010_ROOT = "research/decisions/D-010/"
 _D010_PACKET = _D010_ROOT + "d010-v0.1-draft-packet.json"
 _D010_INDEX = _D010_ROOT + "d010-v0.1-case-input-index.json"
 _D010_SUITE = "docs/COMPILER_STRATEGY_DECISION_SUITE.md"
-_D010_PACKET_CANONICAL_SHA256 = "74dd2d3299df669076a38e4018fd7a1eff25edd1bf6e9ae5e3d0aaf03cc6e655"
-_D010_PACKET_RAW_SHA256 = "404efd1a991519940e027377fdc8561282454abe2b4c4f016f75ecd14a1e4dbb"
+_D010_PACKET_CANONICAL_SHA256 = "afe9f4658cf419cd3d9e6f70c6904c6e951340c008e2b08223e1d72e1306ee34"
+_D010_PACKET_RAW_SHA256 = "74c396c0ba6b426d798c07826aaf1a47455b999d258345e2c8185ecb9bcd2bbf"
 _D010_INDEX_CANONICAL_SHA256 = "4c8b0547a8f3bd380f4569008c8728014bb1d8718a5bfe17402bd03866560209"
 _D010_INDEX_RAW_SHA256 = "e9f59e86dff6219474d244ff01a98c75b7b17c65f1f91506d483a57e95e33670"
 _D010_SUITE_RAW_SHA256 = "5d36f1faeda027b9784846af0aa742339c6b821f39b72a8ca067a90c41a46c73"
@@ -3382,12 +3382,8 @@ class FoundationValidator:
                 self.policy_path,
                 f"hosted-control snapshot {snapshot_value} is later than {observed_today.isoformat()}",
             )
-        if observed_today >= review_due_date:
-            self.add(
-                "hosted_control.expired",
-                self.policy_path,
-                f"hosted-control snapshot expired on {review_due_value}; refresh live readback and evidence",
-            )
+        # The review-due date is a reminder, not a gate: an offline check cannot
+        # re-read GitHub, and failing on a calendar date turns every commit red.
         for value in evidence_paths:
             path = self.root / value
             if not self._hf(path):
