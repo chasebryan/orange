@@ -367,8 +367,9 @@ vectors::okm: Word[8]^42 = [0x3c, 0xb2, 0x5f, 0x25, 0xfa, 0xac, 0xd5, 0x7a, 0x90
 Nothing is imported into scope: a call into another module always names it,
 and a module declares every module it uses, so a reader sees where each
 function comes from. Modules may not use each other in a cycle, and each means
-the same whoever uses it. This slice, S3h, is implemented and tested; its
-specification is in review as
+the same whoever uses it. [S3l](#bytes-as-the-standards-print-them) writes
+the test cases' keys and messages as the RFC prints them. This slice, S3h, is
+implemented and tested; its specification is in review as
 [OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md).
 
 ### Fields as types
@@ -542,6 +543,64 @@ with no shadowing. This slice, S3k, is implemented and tested; its
 specification is in review as
 [OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md).
 
+### Bytes as the standards print them
+
+A standard prints its test inputs as text and hex, and its algorithms move
+runs of bytes. A **byte string** `"Hi There"` is the array `Word[8]^8` of the
+ASCII bytes of its text, with the escapes `\"`, `\\`, `\n`, `\r`, `\t`,
+`\0`, and `\xNN`; a **hex string** `hex"0c00000000000000"` is the array of
+its hex digit pairs, spaced wherever the reader likes between bytes. `a ++ b`
+joins two arrays, `x[a..b]` is the run of elements of `x` from index a up to,
+but not including, index b, and `x with [a..b] = v` replaces that run. SHA-256
+pads a message as FIPS 180-4 section 5.1.1 says, and reads each block's words
+as four-byte slices:
+
+```orange
+spec schedule(block: Word[8]^64) -> Word[32]^64 {
+  let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] {
+    w with [t] = word(block[4 * t..4 * t + 4])
+  };
+  for t in 16..64 with w: Word[32]^64 = head {
+    w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+  }
+}
+
+spec abc() -> Word[8]^32 { hash64("abc" ++ hex"80" ++ [0; 52] ++ hex"00000000 00000018") }
+```
+
+```text
+hmac::abc: Word[8]^32 = [0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad]
+```
+
+ChaCha20-Poly1305 reads as RFC 8439 section 2.8 writes it: the one-time key is
+the first 32 bytes of block 0, and Poly1305 reads the additional data, the
+ciphertext, their padding, and both lengths joined into one message:
+
+```orange
+spec mac_data(aad: Word[8]^12, ciphertext: Word[8]^114) -> Word[8]^160 {
+  aad ++ [0; 4] ++ ciphertext ++ [0; 14] ++ hex"0c00000000000000" ++ hex"7200000000000000"
+}
+
+spec seal(key: Word[8]^32, nonce: Word[8]^12, aad: Word[8]^12, plaintext: Word[8]^114)
+  -> Word[8]^130 {
+  let ciphertext: Word[8]^114 = encrypt(key, nonce, plaintext);
+  ciphertext ++ mac(block(key, 0, nonce)[..32], mac_data(aad, ciphertext))
+}
+```
+
+The [HMAC fixture](compiler/fixtures/s3l/valid-hmac.or) reproduces FIPS
+180-4's digest of "abc" and RFC 4231's test cases 1 and 2, keyed by twenty
+bytes 0b and by "Jefe", and the
+[AEAD fixture](compiler/fixtures/s3l/valid-aead.or) seals RFC 8439's sunscreen
+sentence, written as text, into the RFC's ciphertext and tag, and verifies the
+tag. A slice's bounds are integer literals and loop indices, so its length is
+the same at every step and every element it takes is proved to exist before
+the program runs; `x[n..n + 4]` with `n` a parameter is an error. A byte
+string holds printable ASCII: `"é"` is an error whose label writes its UTF-8
+bytes as `hex"c3 a9"`. This slice, S3l, is implemented and tested; its
+specification is in review as
+[OEP-0015](docs/governance/oeps/OEP-0015-orange-2026-bytes.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -570,6 +629,7 @@ cryptography.
 | Integers modulo a constant, `Mod[m]`, with total division, and `type` declarations | Working; specification in review ([OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md)) |
 | `let` bindings inside a loop's step and each branch of a conditional | Working; specification in review ([OEP-0013](docs/governance/oeps/OEP-0013-orange-2026-blocks.md)) |
 | Tuples, `.k`, and tuple patterns, so that a function gives several values and a loop carries several accumulators | Working; specification in review ([OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md)) |
+| Byte strings `"..."` and `hex"..."`, `++` joins, and slices at bounds proved in range | Working; specification in review ([OEP-0015](docs/governance/oeps/OEP-0015-orange-2026-bytes.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Functions generic over a size or a modulus, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
@@ -652,7 +712,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, and modular arithmetic in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, and bytes in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -678,8 +738,9 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [lookups keyed by data](docs/LOOKUPS_2026.md),
   [programs of more than one module](docs/MODULES_2026.md),
   [integers modulo a constant](docs/MODULAR_2026.md),
-  [blocks](docs/BLOCKS_2026.md), and [tuples](docs/TUPLES_2026.md): the
-  definition of what the compiler accepts today.
+  [blocks](docs/BLOCKS_2026.md), [tuples](docs/TUPLES_2026.md), and
+  [bytes](docs/BYTES_2026.md): the definition of what the compiler accepts
+  today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the
   compiler's results and this documentation beside the editor. It is a

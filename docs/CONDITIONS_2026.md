@@ -33,8 +33,10 @@ meaning. It accepts no D-004 candidate.
 > proposed under OEP-0013, lets each branch begin with `let` bindings, which
 > are evaluated only when their branch is chosen, and
 > [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
-> which a conditional may choose between as it chooses any value. Every source
-> this document accepts keeps its meaning under all five.
+> which a conditional may choose between as it chooses any value, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds `++`, whose
+> group mixes with no comparison or logical operator without parentheses.
+> Every source this document accepts keeps its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -39,8 +39,11 @@ language meaning. It accepts no D-004 candidate.
 > begin with `let` bindings, so that a round of SHA-256 names T1 and T2 as its
 > standard does, and [`TUPLES_2026.md`](TUPLES_2026.md), proposed under
 > OEP-0014, lets a binding name each element of a tuple with a pattern, as
-> `let (sum: Word[64], carry: Word[64]) = add(x, y, c);`. Every source this
-> document accepts keeps its meaning under all eight.
+> `let (sum: Word[64], carry: Word[64]) = add(x, y, c);`, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, lets a binding's
+> bytes be written as the standard prints them, as
+> `let key: Word[8]^4 = "Jefe";`. Every source this document accepts keeps
+> its meaning under all nine.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

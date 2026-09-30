@@ -1,0 +1,13 @@
+// S3l conformance: malformed byte strings, joins, slices, and slice updates.
+// Each function holds one syntax error, reported at its token.
+edition 2026;
+module bytes_syntax {
+  spec spaced() -> Word[8]^1 { hex "00" }
+  spec whole(x: Word[8]^4) -> Word[8]^4 { x[..] }
+  spec indexed(x: Word[8]^4) -> Word[8] { x[1..3][0] }
+  spec literal() -> Word[8]^2 { "abc"[0..2] }
+  spec mixed(x: Word[8]^2, y: Word[8]^2) -> Word[8]^2 { x ++ y[0] + 1 }
+  spec added(x: Word[8]^2, y: Word[8]^2) -> Word[8]^4 { x + y ++ x }
+  spec open(x: Word[8]^4) -> Word[8]^4 { x with [..] = x }
+  spec stepped(x: Word[8]^4) -> Word[8]^2 { x[0..4..2] }
+}

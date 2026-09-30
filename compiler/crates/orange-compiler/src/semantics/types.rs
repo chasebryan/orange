@@ -225,11 +225,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             return;
         }
         match &expression.kind {
-            ExpressionKind::Literal(_) | ExpressionKind::Name(_) => {}
+            ExpressionKind::Literal(_) | ExpressionKind::Name(_) | ExpressionKind::Bytes(_) => {}
             ExpressionKind::Call(call) => {
                 for argument in &call.arguments {
                     self.resolve_moduli_within(argument);
                 }
+            }
+            ExpressionKind::Slice(slice) => {
+                self.resolve_moduli_within(&slice.base);
+                self.resolve_range_moduli(&slice.range);
+            }
+            ExpressionKind::SliceUpdate(update) => {
+                self.resolve_moduli_within(&update.base);
+                self.resolve_range_moduli(&update.range);
+                self.resolve_moduli_within(&update.value);
             }
             ExpressionKind::Unary(unary) => self.resolve_moduli_within(&unary.operand),
             ExpressionKind::Binary(binary) => {
@@ -274,6 +283,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 self.resolve_block_moduli(&conditional.otherwise_bindings, &conditional.otherwise);
             }
+        }
+    }
+
+    /// Evaluates the moduli within a slice's bounds, in source order.
+    pub(super) fn resolve_range_moduli(&mut self, range: &SliceRange) {
+        for bound in range.start.iter().chain(&range.end) {
+            self.resolve_moduli_within(bound);
         }
     }
 

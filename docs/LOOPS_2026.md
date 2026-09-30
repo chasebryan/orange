@@ -35,8 +35,10 @@ meaning. It accepts no D-004 candidate.
 > step, as the working variables of a SHA-256 round are, and
 > [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets a loop
 > carry several accumulators through a tuple pattern, as
-> `with (a: Int, b: Int) = (0, 1)`. Every source this document accepts keeps
-> its meaning under all six.
+> `with (a: Int, b: Int) = (0, 1)`, and [`BYTES_2026.md`](BYTES_2026.md),
+> proposed under OEP-0015, lets a step read and replace a run of elements at
+> bounds that follow the loop index, as `w with [4 * i..4 * i + 4] = b`.
+> Every source this document accepts keeps its meaning under all seven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

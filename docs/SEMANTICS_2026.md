@@ -48,7 +48,9 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > [`BLOCKS_2026.md`](BLOCKS_2026.md) under OEP-0013, which adds `let` bindings
 > at the start of a loop's step and of each branch, and the S3k slice proposed
 > in [`TUPLES_2026.md`](TUPLES_2026.md) under OEP-0014, which adds tuples and
-> tuple patterns.
+> tuple patterns, and the S3l slice proposed in
+> [`BYTES_2026.md`](BYTES_2026.md) under OEP-0015, which adds byte strings,
+> `++`, and slices.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

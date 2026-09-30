@@ -16,6 +16,7 @@ const BLOCKS_SPECIFICATION: &str = include_str!("../../../../docs/BLOCKS_2026.md
 const S3J_CONFORMANCE_SOURCE: &str = include_str!("s3j_conformance.rs");
 const PARSER_SOURCE: &str = include_str!("../../orange-compiler/src/parser.rs");
 const SEMANTICS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics.rs");
+const SEMANTICS_TESTS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics/tests.rs");
 const CORE_SOURCE: &str = include_str!("../../orange-compiler/src/core.rs");
 const EVAL_SOURCE: &str = include_str!("../../orange-compiler/src/eval.rs");
 const DIAGNOSTIC_SOURCE: &str = include_str!("../../orange-compiler/src/diagnostic.rs");
@@ -268,37 +269,37 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         rules: &["S3J-COMPAT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "blocks_build_typed_core_with_each_binding_before_its_value",
         rules: &["S3J-SCOPE-01", "S3J-TYPE-01", "S3J-CORE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "block_names_are_unique_and_in_scope_only_within_their_block",
         rules: &["S3J-SCOPE-01", "S3J-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "a_branch_binding_gives_no_type_where_the_branch_is_a_leaf",
         rules: &["S3J-TYPE-01", "S3J-COMPAT-01", "S3J-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "unresolved_block_binding_types_are_reported_once_without_cascades",
         rules: &["S3J-TYPE-01", "S3J-COMPAT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "condition_and_comparison_errors_are_reported_once_in_checking_order",
         rules: &["S3J-COMPAT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "block_events_and_core_nodes_follow_the_normative_accounting",
         rules: &["S3J-RES-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "rejects_foreign_spans_in_blocks",
         rules: &["S3J-RES-01"],
     },
@@ -474,6 +475,7 @@ fn unit_source(source_path: &str) -> &'static str {
     match source_path {
         "src/parser.rs" => PARSER_SOURCE,
         "src/semantics.rs" => SEMANTICS_SOURCE,
+        "src/semantics/tests.rs" => SEMANTICS_TESTS_SOURCE,
         "src/core.rs" => CORE_SOURCE,
         "src/eval.rs" => EVAL_SOURCE,
         "src/diagnostic.rs" => DIAGNOSTIC_SOURCE,
@@ -482,17 +484,48 @@ fn unit_source(source_path: &str) -> &'static str {
 }
 
 /// Requires `test` to be declared exactly once, as a `#[test]` function
-/// directly inside the source's single `#[cfg(test)] mod tests` module.
+/// directly inside the source's single `#[cfg(test)] mod tests` module. The
+/// module is written inline, or in its own `tests.rs` file that its parent
+/// declares once as `#[cfg(test)] mod tests;` with no other attribute.
 fn assert_unit_test_declared(source_path: &str, test: &str) {
     let source = unit_source(source_path);
-    let marker = "\n#[cfg(test)]\nmod tests {\n";
-    assert_eq!(
-        source.matches(marker).count(),
-        1,
-        "{source_path} must have exactly one unconditional test module"
-    );
-    let (_, tests) = source.split_once(marker).unwrap();
-    let declaration = format!("\n    #[test]\n    fn {test}() {{\n");
+    let (tests, declaration) = match source_path.strip_suffix("/tests.rs") {
+        Some(parent) => {
+            let parent_path = format!("{parent}.rs");
+            let parent_source = unit_source(&parent_path);
+            assert_eq!(
+                parent_source.matches("mod tests").count(),
+                1,
+                "{parent_path} must declare exactly one test module"
+            );
+            assert_eq!(
+                parent_source
+                    .matches("\n#[cfg(test)]\nmod tests;\n")
+                    .count(),
+                1,
+                "{parent_path} must declare its test module unconditionally"
+            );
+            assert!(
+                !parent_source.contains("]\n#[cfg(test)]\nmod tests;"),
+                "{parent_path} must not add an attribute to its test module"
+            );
+            assert!(
+                !source.contains("#!["),
+                "{source_path} must not carry an inner attribute"
+            );
+            (source, format!("\n#[test]\nfn {test}() {{\n"))
+        }
+        None => {
+            let marker = "\n#[cfg(test)]\nmod tests {\n";
+            assert_eq!(
+                source.matches(marker).count(),
+                1,
+                "{source_path} must have exactly one unconditional test module"
+            );
+            let (_, tests) = source.split_once(marker).unwrap();
+            (tests, format!("\n    #[test]\n    fn {test}() {{\n"))
+        }
+    };
     assert_eq!(
         tests.matches(&declaration).count(),
         1,

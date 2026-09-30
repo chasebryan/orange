@@ -53,6 +53,8 @@ define_diagnostic_codes! {
     TooManyLexicalErrors => "ORC0007",
     /// The lexer could not retain its bounded token-stream representation.
     LexicalResourceLimit => "ORC0008",
+    /// A hex string holds something other than pairs of hex digits and spaces.
+    MalformedHexString => "ORC0009",
     /// A token required by the active grammar production was not present.
     ExpectedSyntax => "ORC0101",
     /// The source edition declaration is not exactly `edition 2026;`.
@@ -137,6 +139,10 @@ define_diagnostic_codes! {
     DuplicateTypeName => "ORC0233",
     /// A value selected by position with `.k` is not a tuple.
     NotATuple => "ORC0234",
+    /// A byte string holds a character that is not printable ASCII.
+    UnprintableByteString => "ORC0235",
+    /// A slice's bounds do not differ by the same positive number at every step.
+    SliceLength => "ORC0236",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -699,12 +705,12 @@ mod tests {
             .collect::<Vec<_>>();
         let expected = [
             "ORC0001", "ORC0002", "ORC0003", "ORC0004", "ORC0005", "ORC0006", "ORC0007", "ORC0008",
-            "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107", "ORC0108",
-            "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207", "ORC0208",
-            "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215", "ORC0216",
-            "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223", "ORC0224",
-            "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231", "ORC0232",
-            "ORC0233", "ORC0234", "ORC0301",
+            "ORC0009", "ORC0101", "ORC0102", "ORC0103", "ORC0104", "ORC0105", "ORC0106", "ORC0107",
+            "ORC0108", "ORC0201", "ORC0202", "ORC0203", "ORC0204", "ORC0205", "ORC0206", "ORC0207",
+            "ORC0208", "ORC0209", "ORC0210", "ORC0211", "ORC0212", "ORC0213", "ORC0214", "ORC0215",
+            "ORC0216", "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223",
+            "ORC0224", "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231",
+            "ORC0232", "ORC0233", "ORC0234", "ORC0235", "ORC0236", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

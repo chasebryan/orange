@@ -650,6 +650,21 @@ pub enum CoreNodeKind {
         /// elements.
         index: u32,
     },
+    /// The array of this node's type holding the elements of a first array
+    /// operand subtree followed by those of a second, of the same element
+    /// type.
+    Concat,
+    /// The array of this node's type, of length L, holding the elements of
+    /// an array operand subtree from the index given by an `Int` start
+    /// subtree up to, but not including, the index given by an `Int` end
+    /// subtree. Analysis proved that the end is the start plus L and that
+    /// both lie within the operand.
+    Slice,
+    /// A copy of an array operand subtree with its elements from the index
+    /// of an `Int` start subtree up to the index of an `Int` end subtree
+    /// replaced by the elements of a fourth, array operand subtree of that
+    /// length.
+    SliceUpdate,
 }
 
 /// Types admitted by the typed expression fragment: `Int`, `Bool`, the four
@@ -2607,7 +2622,10 @@ mod tests {
                     | CoreNodeKind::Compare { .. }
                     | CoreNodeKind::Choose(_)
                     | CoreNodeKind::Tuple { .. }
-                    | CoreNodeKind::Project { .. } => {}
+                    | CoreNodeKind::Project { .. }
+                    | CoreNodeKind::Concat
+                    | CoreNodeKind::Slice
+                    | CoreNodeKind::SliceUpdate => {}
                 }
                 match ty {
                     CoreType::Int
