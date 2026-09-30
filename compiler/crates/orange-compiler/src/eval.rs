@@ -51,6 +51,8 @@ pub struct EvaluatedFunction {
     instance: String,
     /// Exact evaluated value.
     value: CoreValue,
+    /// Steps the function's evaluation used.
+    steps: usize,
 }
 
 impl EvaluatedFunction {
@@ -98,6 +100,13 @@ impl EvaluatedFunction {
     #[must_use]
     pub const fn value(&self) -> &CoreValue {
         &self.value
+    }
+
+    /// Returns the steps the function's evaluation used, which count toward
+    /// the budget of the whole evaluation.
+    #[must_use]
+    pub const fn steps(&self) -> usize {
+        self.steps
     }
 }
 
@@ -168,6 +177,28 @@ impl EvaluationResult {
 #[must_use]
 pub fn evaluate(core: &CoreModule) -> EvaluationResult {
     evaluate_with_limit(core, MAX_EVALUATION_STEPS_PER_SOURCE)
+}
+
+/// Evaluates the typed Core functions of the root module without
+/// parameters that `select` admits, in source order, within `step_limit`
+/// steps together.
+///
+/// [`evaluate`] is this function admitting every such function within
+/// [`MAX_EVALUATION_STEPS_PER_SOURCE`] steps. Each result records the steps
+/// its function used.
+#[must_use]
+pub fn evaluate_selected(
+    core: &CoreModule,
+    step_limit: usize,
+    select: impl Fn(&CoreFunction) -> bool,
+) -> EvaluationResult {
+    evaluate_entries(
+        core,
+        step_limit,
+        &select,
+        |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+        Reservations::DEFAULT,
+    )
 }
 
 /// The result of calling one function through an [`Evaluator`].
@@ -2052,7 +2083,7 @@ impl<'core> Machine<'core> {
                 {
                     return Err(Stop::InconsistentCore);
                 }
-                let value = self.pack(from, *order, &node.ty)?;
+                let value = self.pack(from, *order, &node.ty, node.span)?;
                 self.push(value)
             }
             CoreNodeKind::Convert { from } => {
@@ -2096,9 +2127,18 @@ impl Machine<'_> {
     /// significant word first for `big` and least significant first for
     /// `little`: words convert to the words of the same number, to that
     /// number, or to its residue modulo m, and a number converts to the
-    /// words of its residue modulo 2^width.
+    /// words of its residue modulo 2^width. The number that words spell is
+    /// an `Int`, held to the exact-integer limit like every other: words of
+    /// more than 16,384 bits convert to a number only while it has at most
+    /// that many significant bits, and otherwise stop at `span`.
     #[inline(never)]
-    fn pack(&mut self, from: &CoreType, order: ByteOrder, to: &CoreType) -> Result<Value, Stop> {
+    fn pack(
+        &mut self,
+        from: &CoreType,
+        order: ByteOrder,
+        to: &CoreType,
+        span: Span,
+    ) -> Result<Value, Stop> {
         let (bits, count) = from
             .words()
             .or_else(|| to.words())
@@ -2139,9 +2179,12 @@ impl Machine<'_> {
             write_residue(&mut limbs, &value, width)?;
         }
         match to {
-            CoreType::Int => Ok(Value::Int(Rc::new(ExactInteger::from_limbs(limbs)))),
+            CoreType::Int => self.checked_int(ExactInteger::from_limbs(limbs), span),
             CoreType::Mod(modulus) => {
                 let value = ExactInteger::from_limbs(limbs);
+                if value.magnitude_bits() > MAX_EXACT_INTEGER_BITS {
+                    return Err(Stop::IntegerBits(span));
+                }
                 // As for `as Mod[m]`: one step per digit of the value and
                 // of m.
                 self.charge(digits(&value).saturating_mul(modulus_digits(*modulus)))?;
@@ -2260,6 +2303,16 @@ fn evaluate_with_reservations(
     reserve_values: impl FnOnce(&mut Vec<EvaluatedFunction>, usize) -> bool,
     reservations: Reservations,
 ) -> EvaluationResult {
+    evaluate_entries(core, step_limit, &|_| true, reserve_values, reservations)
+}
+
+fn evaluate_entries(
+    core: &CoreModule,
+    step_limit: usize,
+    select: &dyn Fn(&CoreFunction) -> bool,
+    reserve_values: impl FnOnce(&mut Vec<EvaluatedFunction>, usize) -> bool,
+    reservations: Reservations,
+) -> EvaluationResult {
     let mut diagnostics = Vec::new();
     if !(reservations.diagnostics)(&mut diagnostics, 1) {
         return EvaluationResult {
@@ -2270,7 +2323,7 @@ fn evaluate_with_reservations(
     let roots = core
         .entry_functions()
         .iter()
-        .filter(|function| function.parameters.is_empty())
+        .filter(|function| function.parameters.is_empty() && select(function))
         .count();
     let capacity = roots.min(step_limit);
     let mut values = Vec::new();
@@ -2307,7 +2360,7 @@ fn evaluate_with_reservations(
     for function in core
         .entry_functions()
         .iter()
-        .filter(|function| function.parameters.is_empty())
+        .filter(|function| function.parameters.is_empty() && select(function))
     {
         let steps_before = machine.steps;
         let value = match machine.run(function, Vec::new()) {
@@ -2364,6 +2417,7 @@ fn evaluate_with_reservations(
             sizes,
             instance,
             value,
+            steps: machine.steps.saturating_sub(steps_before),
         });
     }
     EvaluationResult {
@@ -4198,6 +4252,189 @@ mod tests {
                 format!("wraps = [{zeros}]"),
             ]
         );
+    }
+
+    #[test]
+    fn words_convert_to_numbers_only_within_the_exact_integer_limit() {
+        // Words of any admitted length convert to words of the same bits. To
+        // a number they convert while it has at most 16,384 significant bits:
+        // 2,049 bytes led by a zero spell 2^16384 - 1, which F4 = 65537
+        // divides, and led by a one they spell a number of 16,385 bits.
+        let values = values_of(concat!(
+            "  spec long() -> Word[64] {\n",
+            "    let w: Word[64]^8192 = [0x0102030405060708; 8192];\n",
+            "    let b: Word[8]^65536 = w as little Word[8]^65536;\n",
+            "    let back: Word[64]^8192 = b as big Word[64]^8192;\n",
+            "    back[8191]\n",
+            "  }\n",
+            "  spec leading_zero() -> Int {\n",
+            "    let x: Word[8]^2049 = [0; 1] ++ [0xff; 2048];\n",
+            "    (x as big Int) % 65537\n",
+            "  }\n",
+            "  spec residue() -> Mod[65537] {\n",
+            "    let x: Word[8]^2049 = [0xff; 2048] ++ [0; 1];\n",
+            "    x as little Mod[65537]\n",
+            "  }\n",
+        ));
+        assert_eq!(
+            values,
+            [
+                "long = 0x0807060504030201",
+                "leading_zero = 0",
+                "residue = 0",
+            ]
+        );
+        for (target, order, bytes) in [
+            ("Int", "big", "[1; 1] ++ [0; 2048]"),
+            ("Int", "little", "[0; 2048] ++ [1; 1]"),
+            ("Mod[65537]", "big", "[1; 1] ++ [0; 2048]"),
+            ("Mod[65537]", "little", "[0xff; 2049]"),
+        ] {
+            let (diagnostic, covered, core) = single_failure(
+                &format!(
+                    "  spec over() -> {target} {{\n    let x: Word[8]^2049 = {bytes};\n    \
+                     x as {order} {target}\n  }}\n"
+                ),
+                MAX_EVALUATION_STEPS_PER_SOURCE,
+            );
+            assert_eq!(
+                diagnostic.message(),
+                "exact integer result exceeds the 16384-significant-bit limit",
+                "{target} {order}"
+            );
+            assert_eq!(covered, format!("x as {order} {target}"));
+            let [function] = diagnostic.secondary_spans() else {
+                panic!("the bit limit must cite the evaluated function");
+            };
+            assert_eq!(function.span(), core.functions[0].name_span);
+        }
+    }
+
+    #[test]
+    fn selected_functions_are_evaluated_in_source_order_with_their_steps() {
+        let (sources, core) = analyzed(concat!(
+            "edition 2026; module m {\n",
+            "  spec a() -> Int { 1 + 2 }\n",
+            "  spec b() -> Int { 3 }\n",
+            "  spec c[n in 1..3]() -> Int { n * 2 }\n",
+            "  spec d(x: Int) -> Int { x }\n",
+            "}\n",
+        ));
+        let rendered = |result: &EvaluationResult| {
+            result
+                .values()
+                .unwrap()
+                .iter()
+                .map(|value| (value.to_string(), value.steps()))
+                .collect::<Vec<_>>()
+        };
+        let every = evaluate_selected(&core, MAX_EVALUATION_STEPS_PER_SOURCE, |_| true);
+        assert_eq!(every, evaluate(&core));
+        let owned = |rows: &[(&str, usize)]| {
+            rows.iter()
+                .map(|(value, steps)| ((*value).to_owned(), *steps))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rendered(&every),
+            owned(&[
+                ("m::a: Int = 3", 4),
+                ("m::b: Int = 3", 1),
+                ("m::c[1]: Int = 2", 4),
+                ("m::c[2]: Int = 4", 4),
+            ])
+        );
+
+        let select = |function: &CoreFunction| ["c", "a"].contains(&function.name());
+        let chosen = evaluate_selected(&core, MAX_EVALUATION_STEPS_PER_SOURCE, select);
+        let expected = owned(&[
+            ("m::a: Int = 3", 4),
+            ("m::c[1]: Int = 2", 4),
+            ("m::c[2]: Int = 4", 4),
+        ]);
+        assert_eq!(rendered(&chosen), expected);
+        let total = expected.iter().map(|(_, steps)| steps).sum::<usize>();
+        assert_eq!(rendered(&evaluate_selected(&core, total, select)), expected);
+
+        // The budget is shared: one step fewer stops the last instance.
+        let short = evaluate_selected(&core, total - 1, select);
+        assert!(short.values().is_none());
+        let [diagnostic] = short.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", short.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            sources
+                .iter()
+                .next()
+                .unwrap()
+                .slice(diagnostic.primary_span()),
+            Some("c")
+        );
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                format!("at most {} evaluation steps are permitted", total - 1),
+                String::from("no partial value set is returned"),
+            ]
+        );
+
+        let none = evaluate_selected(&core, 1, |_| false);
+        assert_eq!(none.diagnostics(), []);
+        assert_eq!(none.values(), Some(&[][..]));
+    }
+
+    #[test]
+    fn long_arrays_cost_one_step_for_each_64_elements_they_make() {
+        // Each operation is written for 256 elements and for 65,536; the
+        // difference in steps is what the extra elements cost.
+        let (_, core) = analyzed(concat!(
+            "edition 2026; module m {\n",
+            "  spec fill_short() -> Word[8]^256 { [0; 256] }\n",
+            "  spec fill_long() -> Word[8]^65536 { [0; 65536] }\n",
+            "  spec update_short() -> Word[8]^256 { let t: Word[8]^256 = [0; 256]; t with [255] = 1 }\n",
+            "  spec update_long() -> Word[8]^65536 {\n",
+            "    let t: Word[8]^65536 = [0; 65536]; t with [65535] = 1\n",
+            "  }\n",
+            "  spec join_short() -> Word[8]^256 { [0; 128] ++ [1; 128] }\n",
+            "  spec join_long() -> Word[8]^65536 { [0; 32768] ++ [1; 32768] }\n",
+            "  spec slice_short() -> Word[8]^255 { let t: Word[8]^256 = [0; 256]; t[1..] }\n",
+            "  spec slice_long() -> Word[8]^65535 { let t: Word[8]^65536 = [0; 65536]; t[1..] }\n",
+            "  spec words_short() -> Word[8]^256 {\n",
+            "    let w: Word[64]^32 = [1; 32]; w as little Word[8]^256\n",
+            "  }\n",
+            "  spec words_long() -> Word[8]^65536 {\n",
+            "    let w: Word[64]^8192 = [1; 8192]; w as little Word[8]^65536\n",
+            "  }\n",
+            "}\n",
+        ));
+        let result = evaluate(&core);
+        let steps = result
+            .values()
+            .unwrap()
+            .iter()
+            .map(|value| (value.name(), value.steps()))
+            .collect::<Vec<_>>();
+        let extra = steps
+            .chunks(2)
+            .map(|pair| (pair[1].0, pair[1].1 - pair[0].1))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            extra,
+            [
+                // 1,024 steps for 65,536 elements, against 4 for 256.
+                ("fill_long", 1_020),
+                // The fill, and an update that copies the whole array.
+                ("update_long", 2_040),
+                // Two fills of half the length, and the join.
+                ("join_long", 2_040),
+                ("slice_long", 2_040),
+                // A fill of 8,192 words and one step for each 64 bits
+                // converted: 127 and 8,160 steps more.
+                ("words_long", 8_287),
+            ]
+        );
+        assert_eq!(steps[1], ("fill_long", 1_025));
     }
 
     #[test]

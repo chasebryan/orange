@@ -166,7 +166,7 @@ const CASES: [Case; 8] = [
             codes: &["ORC0221", "ORC0221", "ORC0221", "ORC0221", "ORC0204"],
             locations: &["5:26", "6:29", "7:42", "8:26", "9:21"],
             messages: &[
-                "an array length must be a decimal integer from 1 through 256",
+                "an array length must be a decimal integer from 1 through 65536",
                 "`Word` requires an exact width of 8, 16, 32, or 64",
             ],
         },
@@ -276,7 +276,7 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/semantics/tests.rs",
-        test: "array_lengths_resolve_only_as_exact_decimals_from_1_through_256",
+        test: "array_lengths_resolve_only_as_exact_decimals_from_1_through_65536",
         rules: &["S3D-TYPE-01", "S3D-DIAG-01"],
     },
     TestEvidence {
@@ -316,7 +316,7 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
     },
     TestEvidence {
         source_path: "src/core.rs",
-        test: "array_types_hold_one_to_256_scalars_and_display_as_powers",
+        test: "array_types_hold_one_to_65536_scalars_and_display_as_powers",
         rules: &["S3D-TYPE-01", "S3D-DISPLAY-01"],
     },
     TestEvidence {
@@ -714,35 +714,35 @@ fn s3d_element_and_length_limits_are_exact() {
             "  spec many() -> Word[8]^{length} {{\n    [\n{elements}    ]\n  }}\n"
         ))
     };
-    let accepted = run_twice("eval", &literal(256, 256), "256 elements");
-    let values = (0..256)
-        .map(|index| format!("0x{index:02x}"))
+    let accepted = run_twice("eval", &literal(65_536, 65_536), "65536 elements");
+    let values = (0..65_536)
+        .map(|index| format!("0x{:02x}", index % 256))
         .collect::<Vec<_>>()
         .join(", ");
     assert_success(
         &accepted,
-        &format!("limits::many: Word[8]^256 = [{values}]\n"),
-        "256 elements",
+        &format!("limits::many: Word[8]^65536 = [{values}]\n"),
+        "65536 elements",
     );
 
-    let rejected = run_twice("eval", &literal(256, 257), "257 elements");
-    assert_eq!(rejected.status.code(), Some(1), "257 elements status");
-    assert_eq!(rejected.stdout, b"", "257 elements emitted output");
+    let rejected = run_twice("eval", &literal(65_536, 65_537), "65537 elements");
+    assert_eq!(rejected.status.code(), Some(1), "65537 elements status");
+    assert_eq!(rejected.stdout, b"", "65537 elements emitted output");
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert_eq!(diagnostic_codes(&stderr), ["ORC0106"], "{stderr}");
     assert!(
-        stderr.contains("array literal has more than 256 elements"),
+        stderr.contains("array literal has more than 65536 elements"),
         "{stderr}"
     );
-    assert_eq!(primary_locations(&stderr), ["261:7"], "{stderr}");
+    assert_eq!(primary_locations(&stderr), ["65541:7"], "{stderr}");
 
-    let long = run_twice("eval", &literal(257, 256), "length 257");
-    assert_eq!(long.status.code(), Some(1), "length 257 status");
-    assert_eq!(long.stdout, b"", "length 257 emitted output");
+    let long = run_twice("eval", &literal(65_537, 65_536), "length 65537");
+    assert_eq!(long.status.code(), Some(1), "length 65537 status");
+    assert_eq!(long.stdout, b"", "length 65537 emitted output");
     let stderr = String::from_utf8_lossy(&long.stderr);
     assert_eq!(diagnostic_codes(&stderr), ["ORC0221"], "{stderr}");
     assert!(
-        stderr.contains("an array length must be a decimal integer from 1 through 256"),
+        stderr.contains("an array length must be a decimal integer from 1 through 65536"),
         "{stderr}"
     );
     assert_eq!(primary_locations(&stderr), ["3:26"], "{stderr}");

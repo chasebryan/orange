@@ -42,10 +42,12 @@ meaning. It accepts no D-004 candidate.
 > 0..blocks`, fixed in each instance of a sized function, and
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, reads a block of
 > words in one conversion where a loop read them a byte at a time, and
-> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
-> OEP-0018, lets a loop's accumulators have a function's type parameter as
-> their type, as `with sum: K = 0`. Every source this document accepts keeps
-> its meaning under all ten.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lets a loop's accumulators have a function's type parameter as their type, as
+> `with sum: K = 0`. [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under
+> OEP-0019, lets a fill literal and an accumulator's array have up to 65,536
+> elements, as many as a loop's iterations. Every source this document accepts
+> keeps its meaning under all eleven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

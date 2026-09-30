@@ -740,9 +740,9 @@ fn s3n_orders_are_exact_for_every_width_and_at_the_limit() {
     };
 
     // Words of every width, read big-endian from the same sixteen bytes,
-    // convert in each order to words of every width and to `Int`. The
-    // widest array of the widest words is 16384 bits, the most an `Int`
-    // holds, and converts to `Int` and back exactly.
+    // convert in each order to words of every width and to `Int`. An array
+    // of 256 of the widest words is 16384 bits, the most an `Int` holds, and
+    // converts to `Int` and back exactly.
     let mut program = String::from("edition 2026;\nmodule orders {\n");
     let mut expected = String::new();
     for from in WIDTHS {
@@ -805,22 +805,22 @@ fn s3n_orders_are_exact_for_every_width_and_at_the_limit() {
     let orders = run_twice("eval", &path, "every width");
     assert_success(&orders, &expected, "every width");
 
-    // Words of more than 256 elements are no type, so no conversion reaches
-    // them.
+    // Words of more than 65536 elements are no type, so no conversion
+    // reaches them.
     let over = directory.join("over.or");
     fs::write(
         &over,
         "edition 2026;\nmodule limits {\n  \
-         spec over(x: Word[64]^256) -> Word[8]^2048 { x as little Word[8]^2048 }\n  \
-         spec inner(x: Word[64]^256) -> Int { (x as little Word[16]^1024) as big Int }\n}\n",
+         spec over(x: Word[64]^65536) -> Word[8]^524288 { x as little Word[8]^524288 }\n  \
+         spec inner(x: Word[64]^65536) -> Int { (x as little Word[16]^262144) as big Int }\n}\n",
     )
     .unwrap();
     let rejected = run_twice("check", &over, "one element more");
     assert_failure(
         &rejected,
         &["ORC0221", "ORC0221"],
-        &["over.or:3:41", "over.or:4:62"],
-        &["an array length must be a decimal integer from 1 through 256"],
+        &["over.or:3:43", "over.or:4:64"],
+        &["an array length must be a decimal integer from 1 through 65536"],
         "one element more",
     );
     fs::remove_dir_all(&directory).unwrap();

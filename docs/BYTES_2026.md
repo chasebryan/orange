@@ -31,10 +31,12 @@ meaning. It accepts no D-004 candidate.
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, lifts this
 > document's exclusion of conversions between bytes and words: `hex"01020304" as
 > big Word[32]` is `0x01020304`.
-> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
-> OEP-0018, lists `Word[8]^n` among a function's types, so that a call may
-> name it, as `first[Word[8]^4](hex"00010203")`. Every source this document
-> accepts keeps its meaning under all three.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lists `Word[8]^n` among a function's types, so that a call may name it, as
+> `first[Word[8]^4](hex"00010203")`. [`LENGTHS_2026.md`](LENGTHS_2026.md),
+> proposed under OEP-0019, lets a byte string, a join, and a slice hold up to
+> 65,536 bytes, where this document admits 256. Every source this document
+> accepts keeps its meaning under all four.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

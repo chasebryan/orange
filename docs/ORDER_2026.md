@@ -23,12 +23,15 @@ proposal can be reviewed against running code, and it establishes no accepted
 language meaning. It accepts no D-004 candidate.
 
 > [!NOTE]
-> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
-> OEP-0018, extends this document with type parameters, which may stand for
-> the target of a conversion in a byte order, each instance converting to its
-> own type: `b as big W` with `W in {Word[32]^2, Word[64]}` reads eight bytes
-> as two words in one instance and as one in the other. Every source this
-> document accepts keeps its meaning under it.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> extends this document with type parameters, which may stand for the target of
+> a conversion in a byte order, each instance converting to its own type: `b as
+> big W` with `W in {Word[32]^2, Word[64]}` reads eight bytes as two words in
+> one instance and as one in the other. [`LENGTHS_2026.md`](LENGTHS_2026.md),
+> proposed under OEP-0019, lets words have up to 65,536 elements, 4,194,304
+> bits, so a conversion to `Int` or `Mod[m]` stops at run time when its number
+> has more than 16,384 significant bits. Every source this document accepts
+> keeps its meaning under both.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

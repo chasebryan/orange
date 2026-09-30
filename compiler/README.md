@@ -80,8 +80,14 @@ written for, `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, and stands for one
 instance for each listed type, each checked as the function written out with
 that type; and a call names its instance by its types, `pow[F](x, e)`, or by
 its arguments' types and, where they do not decide, the type its place
-expects. All fifteen lower to a noncanonical Typed Reference Core and are
-reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+expects. The S3p slice, proposed in
+[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md) and in owner review under
+OEP-0019, lets an array, an array literal, and a byte string hold up to
+65,536 elements, so that a `Word[16]` indexes the longest with no check at
+run time, and gives `orangec eval` a step budget of its caller's choosing,
+`--steps`, a choice of functions, `--spec`, and a report of the steps each
+used, `--stats`. All sixteen lower to a noncanonical Typed Reference Core and
+are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -107,6 +113,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtur
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-chacha20-quarter-round.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --steps 2097152 --stats compiler/fixtures/s3p/valid-lengths.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
@@ -647,6 +654,9 @@ through a fixed buffer, while the operational 64 MiB standard-output ceiling
 above bounds the bytes actually accepted per invocation. Exceeding it is an
 unsuccessful output operation rather than an accepted partial evaluation.
 Apply caller-side time limits before using `orangec eval` on untrusted sources.
+`--steps` raises the evaluation budget up to 1073741824 steps, and an
+evaluation makes at most 64 array elements for each step, so a caller who
+raises it on an untrusted source should also cap its memory.
 
 ## Frozen lexical boundary
 
@@ -810,7 +820,7 @@ The parser accepts generic type syntax so unsupported forms receive semantic
 diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
 `Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations,
 in a function with type parameters their names,
-arrays `T^n` of them with n from 1 through 256, and tuples `(T, U, ...)` of two
+arrays `T^n` of them with n from 1 through 65536, and tuples `(T, U, ...)` of two
 through 16 of those types and arrays, none of them a tuple, and checks
 every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
 bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
@@ -833,7 +843,7 @@ for `big` and least significant for `little`.
 `p.k` selects element k of a tuple, counted from zero, and no operator,
 comparison, conversion, or index applies to a whole tuple. A byte string
 `"..."` of printable ASCII characters and escapes, or `hex"..."` of hex digit
-pairs, is the array `Word[8]^n` of its 1 through 256 bytes; `a ++ b` joins two
+pairs, is the array `Word[8]^n` of its 1 through 65536 bytes; `a ++ b` joins two
 arrays of one element type; and `x[a..b]` and `x with [a..b] = v` read and
 replace the elements from index a up to b, whose bounds are built from
 literals and loop indices and proved a fixed positive distance apart and in
@@ -908,9 +918,28 @@ demo::one[Int]: Int = 1
 demo::one[Z7]: Mod[7] = 1
 ```
 
+Three options shape an evaluation. `--steps N` sets the step budget of the
+whole evaluation, shared by every function it evaluates, from 1 through
+1073741824 (1,024 times the default of 1048576); a step-limit diagnostic
+names the option while the budget is below that. `--spec NAME`, repeatable
+for up to 64 names, evaluates only the named functions without parameters of
+the root module, every instance of one with sizes or types, in source order,
+and checks the rest; a name that matches none is `ORC1016` and evaluates
+nothing. `--stats` writes one line to standard error for each evaluated
+function and a total against the budget, after the values:
+
+```console
+$ orangec eval --steps 2097152 --spec pepin --stats compiler/fixtures/s3p/valid-lengths.or
+lengths::pepin: (Mod[65537], Mod[65537], Bool) = (65536, 21846, true)
+lengths::pepin: 1452583 steps
+total: 1452583 of 2097152 steps
+```
+
+Each of the three is a usage error with any command but `eval`.
+
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3o rules, limits, and non-claims are in
+through S3p rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -923,9 +952,9 @@ through S3o rules, limits, and non-claims are in
 [`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md),
 [`docs/BYTES_2026.md`](../docs/BYTES_2026.md),
 [`docs/SIZES_2026.md`](../docs/SIZES_2026.md),
-[`docs/ORDER_2026.md`](../docs/ORDER_2026.md), and
-[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md). None of
-them defines
+[`docs/ORDER_2026.md`](../docs/ORDER_2026.md),
+[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md), and
+[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1125,8 +1154,8 @@ whole arrays.
 `eval` protocol as the S3c runner. It parses the 17-rule S3d index in
 `docs/ARRAYS_2026.md`, binds every rule to named CLI, generated-CLI,
 parser-unit, or unit tests declared exactly once at their harness locations,
-and pins the 256-element literal limit and the 256 length limit at their exact
-boundaries with generated sources. This corpus establishes the tested behavior
+and pins the 65,536-element literal limit and the 65,536 length limit at their
+exact boundaries with generated sources. This corpus establishes the tested behavior
 of one implementation; it does not accept OEP-0007, prove the rules sound, or
 complete S3.
 
@@ -1338,7 +1367,7 @@ a value of another length or of a word, and a join of 300 elements.
 `eval` protocol as the S3k runner. It parses the 10-rule S3l index in
 `docs/BYTES_2026.md`, binds every rule to named CLI, generated-CLI, or unit
 tests declared exactly once at their harness locations, and generates byte
-strings and hex strings of 256 bytes and of 257 and byte strings holding a raw
+strings and hex strings of 65,536 bytes and of 65,537 and byte strings holding a raw
 tab and a raw delete, which the repository keeps out of its sources. This corpus establishes the
 tested behavior of one implementation; it does not accept OEP-0015, prove the
 rules sound, or complete S3.
@@ -1446,6 +1475,40 @@ instances and an error. This corpus establishes the tested behavior of one
 implementation; it does not accept OEP-0018, prove the rules sound, or
 complete S3.
 
+## S3p lengths conformance
+
+`fixtures/s3p/` contains an exact three-program corpus for the proposed S3p
+behavior, of which two must evaluate successfully and one must fail closed.
+The accepted programs write ChaCha20 and Poly1305 once for messages of 1
+through 256 whole blocks and reproduce RFC 8439's long vectors as the RFC
+prints them: the 375-byte text and ciphertext of appendix A.2 test vector 2,
+the tags of appendix A.3 test vectors 2 and 3 over the same text, and the
+265-byte ciphertext of appendix A.5, which authenticates under its tag and
+opens to the RFC's plaintext; and build a table of the 65,536 powers of 3
+modulo the Fermat prime 2^16 + 1 in rows placed with slice updates, read it
+by 16-bit words for Pepin's test, and exercise fills, joins, slices, and byte
+orders at 65,536 elements and a conversion to `Int` at the 16,384-bit limit,
+under `--steps 2097152 --stats`. The rejected program covers a length, a
+fill, a join, and a slice one element past the limit, a 16-bit index into an
+array one element short, a 32-bit index into the longest array, and a
+conversion target past the limit.
+
+`crates/orangec/tests/s3p_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3o runner, with each fixture's `eval` options. It
+parses the 11-rule S3p index in `docs/LENGTHS_2026.md`, binds every rule to
+named CLI, generated-CLI, or unit tests declared exactly once at their harness
+locations, and checks RFC 8439's values against the vectors pinned in the
+D-011 suite. It generates a literal of all 65,536 16-bit words and a byte
+string of 65,536 bytes, read with `--spec`, and one element or byte more;
+evaluations at the default budget, at exactly the steps needed, at the most
+admitted, and one step short, and every malformed `--steps`; selections of
+functions in source order, of every instance of a sized one, and of names
+that match nothing or are malformed, and a 65th name; and both output streams
+in one file, where the report follows the values, and each option with a
+command other than `eval`. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0019, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1495,6 +1558,8 @@ complete S3.
   rule-index, and width runner;
 - `crates/orangec/tests/s3o_conformance.rs`: exact repeatable S3o corpus,
   rule-index, and instance-limit runner;
+- `crates/orangec/tests/s3p_conformance.rs`: exact repeatable S3p corpus,
+  rule-index, length-limit, and evaluation-option runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1513,6 +1578,7 @@ complete S3.
 - `fixtures/s3m/`: exact four-positive/two-negative S3m CLI fixture corpus;
 - `fixtures/s3n/`: exact six-positive/two-negative S3n CLI fixture corpus;
 - `fixtures/s3o/`: exact three-positive/two-negative S3o CLI fixture corpus;
+- `fixtures/s3p/`: exact two-positive/one-negative S3p CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

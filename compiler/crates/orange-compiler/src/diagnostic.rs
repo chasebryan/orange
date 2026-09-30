@@ -111,7 +111,7 @@ define_diagnostic_codes! {
     DuplicateBinding => "ORC0219",
     /// The operand of `as` has no type of its own, such as a bare literal.
     UntypedConversionOperand => "ORC0220",
-    /// An array type's length is not a decimal integer from 1 through 256.
+    /// An array type's length is not a decimal integer from 1 through 65536.
     UnsupportedArrayLength => "ORC0221",
     /// An array literal's element count differs from the required length.
     ArrayLengthMismatch => "ORC0222",

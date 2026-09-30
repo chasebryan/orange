@@ -217,7 +217,7 @@ const CASES: [Case; 6] = [
                 "index `3` is out of range for `Word[8]^1`",
                 "in the instance `last[1]`, the first of `last` in error: a sized function is \
                  checked once for each value of its sizes",
-                "this array length is 0, but an array has 1 through 256 elements",
+                "this array length is 0, but an array has 1 through 65536 elements",
                 "in the instance `none[0]`, the first of `none` in error",
                 "`first` is defined for `n` in 1..4",
                 "this size is 4",

@@ -3548,16 +3548,19 @@ fn arrays_and_indices_build_typed_core_in_postorder() {
 }
 
 #[test]
-fn array_lengths_resolve_only_as_exact_decimals_from_1_through_256() {
+fn array_lengths_resolve_only_as_exact_decimals_from_1_through_65536() {
     for (length, resolved) in [
         ("1", Some(1)),
         ("2", Some(2)),
         ("16", Some(16)),
         ("255", Some(255)),
         ("256", Some(256)),
+        ("257", Some(257)),
+        ("1000", Some(1000)),
+        ("65536", Some(65536)),
         ("0", None),
-        ("257", None),
-        ("1000", None),
+        ("65537", None),
+        ("100000", None),
         ("01", None),
         ("007", None),
         ("0x10", None),
@@ -3584,7 +3587,7 @@ fn array_lengths_resolve_only_as_exact_decimals_from_1_through_256() {
                         DiagnosticCode::UnsupportedArrayLength,
                         length,
                         String::from(
-                            "an array length must be a decimal integer from 1 through 256"
+                            "an array length must be a decimal integer from 1 through 65536"
                         )
                     )],
                     "{length}"
@@ -3603,7 +3606,7 @@ fn array_lengths_resolve_only_as_exact_decimals_from_1_through_256() {
         "  spec b(x: Word^4) -> Int { 1 }\n",
         "  spec c(x: Word[7]^0) -> Int { 1 }\n",
         "  spec d() -> Int^0 { [1] }\n",
-        "  spec e() -> Int { let t: Word[8]^300 = [1]; 1 }\n",
+        "  spec e() -> Int { let t: Word[8]^70000 = [1]; 1 }\n",
     ));
     assert_eq!(
         reported(&fixture, &result),
@@ -3626,12 +3629,12 @@ fn array_lengths_resolve_only_as_exact_decimals_from_1_through_256() {
             (
                 DiagnosticCode::UnsupportedArrayLength,
                 "0",
-                String::from("an array length must be a decimal integer from 1 through 256")
+                String::from("an array length must be a decimal integer from 1 through 65536")
             ),
             (
                 DiagnosticCode::UnsupportedArrayLength,
-                "300",
-                String::from("an array length must be a decimal integer from 1 through 256")
+                "70000",
+                String::from("an array length must be a decimal integer from 1 through 65536")
             ),
         ]
     );
@@ -4403,7 +4406,7 @@ fn loop_update_and_fill_errors_are_reported_once_in_checking_order() {
             (
                 DiagnosticCode::UnsupportedArrayLength,
                 "0",
-                String::from("an array length must be a decimal integer from 1 through 256")
+                String::from("an array length must be a decimal integer from 1 through 65536")
             ),
             (
                 DiagnosticCode::TypeMismatch,
@@ -7962,19 +7965,90 @@ fn byte_strings_joins_and_slices_build_typed_core_in_postorder() {
 }
 
 #[test]
-fn byte_strings_hold_one_through_256_printable_bytes() {
+fn arrays_of_65536_elements_are_indexed_joined_and_sliced_at_the_limit() {
+    let (_, core) = accepted(concat!(
+        "  spec at(t: Word[8]^65536, i: Word[16]) -> Word[8] { t[i] }\n",
+        "  spec join() -> Word[8]^65536 { [0; 32768] ++ [1; 32768] }\n",
+        "  spec slice(x: Word[8]^65536) -> Word[8]^65535 { x[1..] }\n",
+        "  spec place(x: Word[16]^65536, r: Word[16]^256) -> Word[16]^65536 {\n",
+        "    for k in 0..256 with t: Word[16]^65536 = x { t with [256 * k..256 * k + 256] = r }\n",
+        "  }\n",
+        "  spec sum(t: Word[8]^65536) -> Int {\n",
+        "    for i in 0..65536 with s: Int = 0 { s + (t[i] as Int) }\n",
+        "  }\n",
+        "  spec words(w: Word[64]^8192) -> Word[8]^65536 { w as little Word[8]^65536 }\n",
+    ));
+    assert_eq!(core.functions.len(), 6);
+    assert_eq!(
+        core.functions[0].parameters,
+        [array_of(CoreType::Word8, 65_536), CoreType::Word16]
+    );
+    assert_eq!(
+        core.functions[3].result_type,
+        array_of(CoreType::Word16, 65_536)
+    );
+
+    let (fixture, result) = rejected(concat!(
+        "  spec short(t: Word[8]^65535, i: Word[16]) -> Word[8] { t[i] }\n",
+        "  spec wide(t: Word[8]^65536, i: Word[32]) -> Word[8] { t[i] }\n",
+        "  spec join() -> Word[8]^65536 { [0; 65536] ++ [0; 1] }\n",
+        "  spec slice(x: Word[8]^65536) -> Word[8]^65536 { x[1..65537] }\n",
+        "  spec fill() -> Word[8]^65536 { [0; 65537] }\n",
+    ));
+    assert_eq!(
+        reported(&fixture, &result),
+        [
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "i",
+                String::from(
+                    "this index runs from 0 through 65535, out of range for `Word[8]^65535`"
+                )
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "i",
+                String::from(
+                    "this index runs from 0 through 4294967295, out of range for `Word[8]^65536`"
+                )
+            ),
+            (
+                DiagnosticCode::ArrayLengthMismatch,
+                "++",
+                String::from(
+                    "`++` joins 65536 and 1 elements, 65537 in all, but `Word[8]^65536` has 65536"
+                )
+            ),
+            (
+                DiagnosticCode::IndexOutOfRange,
+                "1..65537",
+                String::from(
+                    "this slice reaches elements 1 through 65536, out of range for `Word[8]^65536`"
+                )
+            ),
+            (
+                DiagnosticCode::UnsupportedArrayLength,
+                "65537",
+                String::from("an array length must be a decimal integer from 1 through 65536")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn byte_strings_hold_one_through_65536_printable_bytes() {
     let at_limit = format!(
-        "  spec text() -> Word[8]^256 {{ \"{}\" }}\n  spec hex() -> Word[8]^256 {{ hex\"{}\" }}\n",
-        "a".repeat(256),
-        "01 ".repeat(256),
+        "  spec text() -> Word[8]^65536 {{ \"{}\" }}\n  spec hex() -> Word[8]^65536 {{ hex\"{}\" }}\n",
+        "a".repeat(65_536),
+        "01 ".repeat(65_536),
     );
     let (_, core) = accepted(&at_limit);
     assert_eq!(core.functions.len(), 2);
-    let long = format!("\"{}\"", "a".repeat(257));
-    let long_hex = format!("hex\"{}\"", "ff".repeat(257));
+    let long = format!("\"{}\"", "a".repeat(65_537));
+    let long_hex = format!("hex\"{}\"", "ff".repeat(65_537));
     // Decoding stops at the byte past the limit, before the character
     // that follows it.
-    let past = format!("\"{}é\"", "a".repeat(300));
+    let past = format!("\"{}é\"", "a".repeat(65_600));
     let (fixture, result) = rejected(&format!(
         concat!(
             "  spec tab() -> Word[8]^3 {{ \"a\tb\" }}\n",
@@ -7982,15 +8056,15 @@ fn byte_strings_hold_one_through_256_printable_bytes() {
             "  spec accent() -> Word[8]^3 {{ \"éa€\" }}\n",
             "  spec euro() -> Word[8]^3 {{ \"a€\" }}\n",
             "  spec empty() -> Word[8]^1 {{ \"\" }}\n",
-            "  spec long() -> Word[8]^256 {{ {long} }}\n",
-            "  spec long_hex() -> Word[8]^256 {{ {long_hex} }}\n",
-            "  spec past() -> Word[8]^256 {{ {past} }}\n",
+            "  spec long() -> Word[8]^65536 {{ {long} }}\n",
+            "  spec long_hex() -> Word[8]^65536 {{ {long_hex} }}\n",
+            "  spec past() -> Word[8]^65536 {{ {past} }}\n",
         ),
         long = long,
         long_hex = long_hex,
         past = past,
     ));
-    let too_long = String::from("a byte string holds at most 256 bytes");
+    let too_long = String::from("a byte string holds at most 65536 bytes");
     assert_eq!(
         reported(&fixture, &result),
         [
@@ -8055,7 +8129,7 @@ fn byte_strings_hold_one_through_256_printable_bytes() {
     assert_eq!(result.diagnostics[4].label(), "this string is empty");
     assert_eq!(
         result.diagnostics[5].label(),
-        "this string holds more than 256"
+        "this string holds more than 65536"
     );
 }
 
@@ -8777,7 +8851,7 @@ fn sizes_are_built_from_literals_and_size_parameters_only() {
         "  spec call[n in 1..3]() -> Word[8]^(f() + n) { [0; 1] }\n",
         "  spec other[n in 1..3]() -> Word[8]^(n << 1) { [0; 1] }\n",
         "  spec zero[n in 0..2]() -> Word[8]^n { [0; 1] }\n",
-        "  spec most[n in 255..258]() -> Word[8]^n { [0; n] }\n",
+        "  spec most[n in 65534..65536]() -> Word[8]^(n + 2) { [0; (n + 2)] }\n",
         "  spec f() -> Int { 1 }\n",
         "  spec bound[n in 1..3]() -> Int { for i in 0..(n - 1) with s: Int = 0 { s } }\n",
         "  spec order[n in 1..3]() -> Int { for i in n..1 with s: Int = 0 { s } }\n",
@@ -8808,12 +8882,14 @@ fn sizes_are_built_from_literals_and_size_parameters_only() {
             (
                 DiagnosticCode::UnsupportedArrayLength,
                 "n",
-                String::from("this array length is 0, but an array has 1 through 256 elements")
+                String::from("this array length is 0, but an array has 1 through 65536 elements")
             ),
             (
                 DiagnosticCode::UnsupportedArrayLength,
-                "n",
-                String::from("this array length is 257, but an array has 1 through 256 elements")
+                "(n + 2)",
+                String::from(
+                    "this array length is 65537, but an array has 1 through 65536 elements"
+                )
             ),
             (
                 DiagnosticCode::InvalidLoopRange,
@@ -9802,7 +9878,7 @@ fn calls_that_give_no_listed_type_are_reported_at_the_call() {
         "  spec d() -> Int { square(3) as Int }\n",
         "  spec e(x: Word[32]) -> Word[32] { square(x) }\n",
         "  spec f(x: F) -> Q { square(x) }\n",
-        "  spec g() -> F { square[Word[8]^300](3) }\n",
+        "  spec g() -> F { square[Word[8]^70000](3) }\n",
         "  spec h() -> F { sized[1]([3]) }\n",
         "  spec i(x: F) -> F { sized([x, x, x]) }\n",
         "  spec j() -> F { sized([3]) as F }\n",
@@ -9847,7 +9923,7 @@ fn calls_that_give_no_listed_type_are_reported_at_the_call() {
             ),
             (
                 DiagnosticCode::TypeParameter,
-                "Word[8]^300",
+                "Word[8]^70000",
                 String::from("`square` takes a type for `K` here")
             ),
             (

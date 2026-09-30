@@ -40,9 +40,11 @@ meaning. It accepts no D-004 candidate.
 > conversions in a byte order, which read words at positions that never depend
 > on data, and [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed
 > under OEP-0018, adds type parameters, which never depend on data: each
-> instance's types are fixed before a program runs, and every index in each
-> is proved in range as before. Every source this document accepts keeps its
-> meaning under all eight.
+> instance's types are fixed before a program runs, and every index in each is
+> proved in range as before. [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed
+> under OEP-0019, lets a table hold 65,536 entries, so that a 16-bit word
+> indexes one as a byte indexes a table of 256, proved in range as before. Every
+> source this document accepts keeps its meaning under all nine.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

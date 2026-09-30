@@ -43,7 +43,7 @@ pub const MAX_BINDINGS_PER_BODY: usize = 256;
 
 /// Maximum elements written in one array literal, which is also the longest
 /// admitted array type.
-pub const MAX_ARRAY_ELEMENTS: usize = 256;
+pub const MAX_ARRAY_ELEMENTS: usize = 65_536;
 
 /// Maximum elements of a tuple type, a tuple expression, or a tuple
 /// pattern. A tuple has at least two.

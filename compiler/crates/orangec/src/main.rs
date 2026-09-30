@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    Edition, Lexed, MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError,
-    SourceFile, SourceId, SourceMap, SyntaxTree, analyze_program, evaluate, lex, parse,
+    Diagnostic, DiagnosticCode, Edition, Lexed, MAX_EVALUATION_STEPS_PER_SOURCE,
+    MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile,
+    SourceId, SourceMap, SyntaxTree, analyze_program, evaluate_selected, lex, parse,
     render_diagnostics,
 };
 
@@ -27,9 +28,14 @@ const MAX_STANDARD_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_STANDARD_ERROR_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CONSECUTIVE_INTERRUPTED_IO_ATTEMPTS: usize = 1_024;
 const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
+/// The most steps `eval --steps` admits: 1,024 times the default budget.
+const MAX_EVALUATION_STEP_LIMIT: usize = 1 << 30;
+/// The most functions one `eval` names with `--spec`.
+const MAX_SELECTED_SPECS: usize = 64;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
+    "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
     "       orangec schemes [<NAME>...]\n",
@@ -45,6 +51,9 @@ const USAGE: &str = concat!(
     "\n",
     "Options:\n",
     "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+    "      --steps <N>       Evaluation step budget, 1 to 1073741824 [default: 1048576]\n",
+    "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
+    "      --stats           Report the steps each evaluated function used, on stderr\n",
     "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
     "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
     "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
@@ -93,6 +102,7 @@ define_cli_diagnostic_codes! {
     SealedFile => "ORC1013",
     NotAuthentic => "ORC1014",
     Randomness => "ORC1015",
+    EntryPoint => "ORC1016",
 }
 
 fn main() -> ExitCode {
@@ -650,7 +660,33 @@ fn compile_with_limits(
             };
 
             if options.command == CompilerCommand::Eval {
-                let evaluated = evaluate(core);
+                let evaluation = &options.evaluation;
+                if let Some(missing) = unmatched_spec(core, &evaluation.specs) {
+                    compilation_failed = true;
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_cli_error(
+                            CliDiagnosticCode::EntryPoint,
+                            format_args!(
+                                "module `{}` has no function `{missing}` without parameters",
+                                core.name()
+                            ),
+                            "`--spec` names a function of the evaluated module that takes no \
+                             parameters; a function with sizes is evaluated in every instance",
+                        ),
+                    );
+                    continue;
+                }
+                let evaluated = evaluate_selected(core, evaluation.steps, |function| {
+                    evaluation.specs.is_empty()
+                        || evaluation
+                            .specs
+                            .iter()
+                            .any(|spec| spec.as_str() == function.name())
+                });
                 let values = match classify_phase_result(
                     evaluated.values(),
                     evaluated.diagnostics(),
@@ -658,12 +694,13 @@ fn compile_with_limits(
                     PhaseResult::Complete(values) => values,
                     PhaseResult::Diagnosed(diagnostics) => {
                         compilation_failed = true;
+                        let hinted = with_budget_hint(diagnostics, evaluation.steps);
                         emit_error_group(
                             standard_error,
                             &mut standard_error_available,
                             &mut error_group_written,
                             &mut output_failed,
-                            &render_diagnostics(&sources, diagnostics),
+                            &render_diagnostics(&sources, hinted.as_deref().unwrap_or(diagnostics)),
                         );
                         continue;
                     }
@@ -705,6 +742,35 @@ fn compile_with_limits(
                             }
                         }
                     }
+                }
+                // The report follows the values: they are committed first, so
+                // that a terminal shows them in that order, and a failure to
+                // commit them writes no report.
+                if evaluation.stats
+                    && standard_output_available
+                    && standard_output_written
+                    && let Err(error) = flush_retry_interrupted(&mut buffered_output)
+                {
+                    standard_output_available = false;
+                    output_failed = true;
+                    if let Some(group) = output_failure_group(options.command, &error) {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                    }
+                }
+                if evaluation.stats && standard_output_available {
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_steps(values, evaluation.steps),
+                    );
                 }
             }
         }
@@ -761,6 +827,63 @@ fn compile_with_limits(
     } else {
         SUCCESS
     }
+}
+
+/// Adds to each step-limit diagnostic the option that raises the budget,
+/// while `budget` is below the most `--steps` admits; `None` when the copy
+/// cannot be allocated.
+fn with_budget_hint(diagnostics: &[Diagnostic], budget: usize) -> Option<Vec<Diagnostic>> {
+    let mut hinted = Vec::new();
+    hinted.try_reserve_exact(diagnostics.len()).ok()?;
+    for diagnostic in diagnostics {
+        let steps = diagnostic.code() == DiagnosticCode::EvaluationResourceLimit
+            && diagnostic.message() == "reference evaluation step limit exceeded";
+        hinted.push(if steps && budget < MAX_EVALUATION_STEP_LIMIT {
+            diagnostic.clone().with_note(format!(
+                "`orangec eval --steps N` sets the budget, up to {MAX_EVALUATION_STEP_LIMIT} steps"
+            ))
+        } else {
+            diagnostic.clone()
+        });
+    }
+    Some(hinted)
+}
+
+/// Returns the first of `specs` that names no function of `core`'s root
+/// module without parameters.
+fn unmatched_spec<'spec>(
+    core: &orange_compiler::CoreModule,
+    specs: &'spec [String],
+) -> Option<&'spec str> {
+    specs
+        .iter()
+        .find(|spec| {
+            !core.entry_functions().iter().any(|function| {
+                function.parameters().is_empty() && function.name() == spec.as_str()
+            })
+        })
+        .map(String::as_str)
+}
+
+/// Reports the steps each evaluated function used, one line each in the
+/// order printed, and their total against the budget.
+fn render_steps(values: &[orange_compiler::EvaluatedFunction], budget: usize) -> String {
+    let mut report = String::new();
+    let mut total = 0_usize;
+    for value in values {
+        total = total.saturating_add(value.steps());
+        let unit = if value.steps() == 1 { "step" } else { "steps" };
+        let _ = writeln!(
+            report,
+            "{}::{}{}: {} {unit}",
+            value.module(),
+            value.name(),
+            value.instance(),
+            value.steps()
+        );
+    }
+    let _ = writeln!(report, "total: {total} of {budget} steps");
+    report
 }
 
 /// Reads, lexes, and parses the modules that `root` uses, directly or
@@ -1501,6 +1624,37 @@ struct Options {
     command: CompilerCommand,
     edition: Edition,
     paths: Vec<PathBuf>,
+    evaluation: Evaluation,
+}
+
+/// How `eval` evaluates: its step budget, the functions it names, and
+/// whether it reports the steps each used.
+#[derive(Debug, Eq, PartialEq)]
+struct Evaluation {
+    /// The step budget of the whole evaluation.
+    steps: usize,
+    /// The functions without parameters to evaluate, each named once, in
+    /// the order given; empty for every one.
+    specs: Vec<String>,
+    /// Whether to report each function's steps and the total on stderr.
+    stats: bool,
+}
+
+impl Default for Evaluation {
+    fn default() -> Self {
+        Self {
+            steps: MAX_EVALUATION_STEPS_PER_SOURCE,
+            specs: Vec::new(),
+            stats: false,
+        }
+    }
+}
+
+impl Evaluation {
+    /// Returns whether any option set this evaluation away from the default.
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1532,6 +1686,8 @@ fn parse_arguments_with_path_reservation(
     let mut scheme = None;
     let mut key = None;
     let mut output = None;
+    let mut evaluation = Evaluation::default();
+    let mut steps_seen = false;
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -1555,6 +1711,18 @@ fn parse_arguments_with_path_reservation(
                     edition = parse_edition(&value)?;
                     continue;
                 }
+                Some("--stats") => {
+                    evaluation.stats = true;
+                    continue;
+                }
+                Some(name @ ("--steps" | "--spec")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_evaluation_option(name, &value, &mut evaluation, &mut steps_seen)?;
+                    continue;
+                }
                 Some(name @ ("--scheme" | "--key" | "-o" | "--output")) => {
                     let value = arguments
                         .next()
@@ -1568,6 +1736,15 @@ fn parse_arguments_with_path_reservation(
                         mark_edition_option(&mut edition_seen)?;
                         edition = value.parse().map_err(
                             |error: orange_compiler::ParseEditionError| error.to_string(),
+                        )?;
+                        continue;
+                    }
+                    if let Some((name @ ("--steps" | "--spec"), value)) = value.split_once('=') {
+                        set_evaluation_option(
+                            name,
+                            OsStr::new(value),
+                            &mut evaluation,
+                            &mut steps_seen,
                         )?;
                         continue;
                     }
@@ -1591,9 +1768,15 @@ fn parse_arguments_with_path_reservation(
                     mark_edition_option(&mut edition_seen)?;
                     return Err(String::from("edition name is not valid UTF-8"));
                 }
-                None if [&b"--scheme="[..], b"--key=", b"--output="]
-                    .iter()
-                    .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>
+                None if [
+                    &b"--scheme="[..],
+                    b"--key=",
+                    b"--output=",
+                    b"--steps=",
+                    b"--spec=",
+                ]
+                .iter()
+                .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>
                 {
                     return Err(String::from(
                         "an option value that is not valid UTF-8 must be a separate argument",
@@ -1630,6 +1813,16 @@ fn parse_arguments_with_path_reservation(
     }
 
     let command = command.ok_or_else(|| String::from("missing command"))?;
+    if command != CompilerCommand::Eval && (steps_seen || !evaluation.is_default()) {
+        let name = if steps_seen {
+            "--steps"
+        } else if evaluation.specs.is_empty() {
+            "--stats"
+        } else {
+            "--spec"
+        };
+        return Err(format!("option `{name}` applies only to eval"));
+    }
     if command.seals() {
         return sealing_action(command, edition, scheme, key, output, paths);
     }
@@ -1659,7 +1852,83 @@ fn parse_arguments_with_path_reservation(
         command,
         edition,
         paths,
+        evaluation,
     }))
+}
+
+/// Records `--steps`, at most once, or one more `--spec` name.
+fn set_evaluation_option(
+    name: &str,
+    value: &OsStr,
+    evaluation: &mut Evaluation,
+    steps_seen: &mut bool,
+) -> Result<(), String> {
+    if name == "--steps" {
+        if *steps_seen {
+            return Err(String::from(
+                "option `--steps` may be specified at most once",
+            ));
+        }
+        *steps_seen = true;
+        evaluation.steps = parse_steps(value)?;
+        return Ok(());
+    }
+    let spec = parse_spec_name(value)?;
+    if evaluation.specs.contains(&spec) {
+        return Ok(());
+    }
+    if evaluation.specs.len() >= MAX_SELECTED_SPECS {
+        return Err(format!(
+            "option `--spec` names at most {MAX_SELECTED_SPECS} functions"
+        ));
+    }
+    if evaluation.specs.try_reserve(1).is_err() {
+        return Err(String::from(
+            "could not allocate the list of `--spec` names",
+        ));
+    }
+    evaluation.specs.push(spec);
+    Ok(())
+}
+
+/// Reads a step budget: a decimal number from 1 through
+/// [`MAX_EVALUATION_STEP_LIMIT`], without sign or leading zeros.
+fn parse_steps(value: &OsStr) -> Result<usize, String> {
+    let invalid = || {
+        format!(
+            "option `--steps` takes a number of steps from 1 through {MAX_EVALUATION_STEP_LIMIT}"
+        )
+    };
+    let text = value.to_str().ok_or_else(invalid)?;
+    if text.starts_with('0') || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(invalid());
+    }
+    text.parse::<usize>()
+        .ok()
+        .filter(|steps| (1..=MAX_EVALUATION_STEP_LIMIT).contains(steps))
+        .ok_or_else(invalid)
+}
+
+/// Reads a function name: an Orange identifier, an ASCII letter or `_`
+/// followed by ASCII letters, digits, and `_`.
+fn parse_spec_name(value: &OsStr) -> Result<String, String> {
+    let invalid = || String::from("option `--spec` takes the name of a function");
+    let text = value.to_str().ok_or_else(invalid)?;
+    let mut bytes = text.bytes();
+    let starts = bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_');
+    if !starts || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+        return Err(invalid());
+    }
+    let mut name = String::new();
+    if name.try_reserve_exact(text.len()).is_err() {
+        return Err(String::from(
+            "could not allocate the list of `--spec` names",
+        ));
+    }
+    name.push_str(text);
+    Ok(name)
 }
 
 /// Records one sealing option, each at most once.
@@ -1857,7 +2126,7 @@ mod tests {
             .collect::<Vec<_>>();
         let expected = [
             "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007", "ORC1008",
-            "ORC1009", "ORC1010", "ORC1011", "ORC1012", "ORC1013", "ORC1014", "ORC1015",
+            "ORC1009", "ORC1010", "ORC1011", "ORC1012", "ORC1013", "ORC1014", "ORC1015", "ORC1016",
         ];
 
         assert_eq!(actual, expected);
@@ -1902,6 +2171,7 @@ mod tests {
             command: CompilerCommand::Lex,
             edition: Edition::CURRENT,
             paths: vec![PathBuf::from("-")],
+            evaluation: Evaluation::default(),
         };
         let mut input = b"edition 2026; module m {}".as_slice();
         let mut output = Vec::new();
@@ -1953,6 +2223,7 @@ mod tests {
             command: CompilerCommand::Check,
             edition: Edition::CURRENT,
             paths: vec![PathBuf::from("-")],
+            evaluation: Evaluation::default(),
         };
         let mut input = b"abcd".as_slice();
         let mut output = Vec::new();
@@ -1992,6 +2263,7 @@ mod tests {
             command: CompilerCommand::Check,
             edition: Edition::CURRENT,
             paths: vec![path.clone(), path],
+            evaluation: Evaluation::default(),
         };
         let mut input = b"".as_slice();
         let mut output = Vec::new();
@@ -2917,6 +3189,7 @@ mod tests {
                 command: CompilerCommand::Lex,
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
+                evaluation: Evaluation::default(),
             }))
         );
         assert_eq!(
@@ -2925,6 +3198,7 @@ mod tests {
                 command: CompilerCommand::Check,
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
+                evaluation: Evaluation::default(),
             }))
         );
         assert_eq!(
@@ -2933,7 +3207,146 @@ mod tests {
                 command: CompilerCommand::Eval,
                 edition: Edition::E2026,
                 paths: vec![PathBuf::from("one.or")],
+                evaluation: Evaluation::default(),
             }))
+        );
+    }
+
+    #[test]
+    fn evaluation_options_parse_with_exact_bounds_and_messages() {
+        use std::os::unix::ffi::OsStringExt as _;
+
+        let evaluation = |arguments: &[&str]| match parse_arguments(os_arguments(arguments)) {
+            Ok(Action::Compile(options)) => Ok(options.evaluation),
+            Ok(_) => panic!("{arguments:?} is not a compilation"),
+            Err(error) => Err(error),
+        };
+        assert_eq!(
+            evaluation(&[
+                "eval",
+                "--steps",
+                "5",
+                "--spec",
+                "a",
+                "--spec=b_2",
+                "--stats",
+                "--spec",
+                "a",
+                "one.or",
+            ]),
+            Ok(Evaluation {
+                steps: 5,
+                specs: vec![String::from("a"), String::from("b_2")],
+                stats: true,
+            })
+        );
+        assert_eq!(
+            evaluation(&["--steps=1073741824", "eval", "one.or"]).map(|value| value.steps),
+            Ok(MAX_EVALUATION_STEP_LIMIT)
+        );
+        assert_eq!(
+            evaluation(&["eval", "one.or"]),
+            Ok(Evaluation {
+                steps: MAX_EVALUATION_STEPS_PER_SOURCE,
+                specs: Vec::new(),
+                stats: false,
+            })
+        );
+
+        let steps = Err(String::from(
+            "option `--steps` takes a number of steps from 1 through 1073741824",
+        ));
+        for value in [
+            "0",
+            "01",
+            "1073741825",
+            "-1",
+            "+5",
+            "1e3",
+            "1_000",
+            " 5",
+            "",
+            "99999999999999999999999",
+        ] {
+            assert_eq!(
+                evaluation(&["eval", "--steps", value, "one.or"]),
+                steps,
+                "{value}"
+            );
+        }
+        assert_eq!(
+            evaluation(&["eval", "--steps", "5", "--steps=6", "one.or"]),
+            Err(String::from(
+                "option `--steps` may be specified at most once"
+            ))
+        );
+        assert_eq!(
+            evaluation(&["eval", "one.or", "--steps"]),
+            Err(String::from("option `--steps` requires a value"))
+        );
+
+        let spec = Err(String::from("option `--spec` takes the name of a function"));
+        for value in ["", "1a", "a-b", "m::f", "f()", "é", "a b"] {
+            assert_eq!(
+                evaluation(&["eval", "--spec", value, "one.or"]),
+                spec,
+                "{value}"
+            );
+        }
+        let names = (0..65).map(|index| format!("f{index}")).collect::<Vec<_>>();
+        let mut arguments = vec!["eval"];
+        for name in names.iter().take(64) {
+            arguments.extend(["--spec", name.as_str()]);
+        }
+        arguments.push("one.or");
+        assert_eq!(
+            evaluation(&arguments).map(|value| value.specs),
+            Ok(names[..64].to_vec())
+        );
+        arguments.pop();
+        arguments.extend(["--spec", "f64", "one.or"]);
+        assert_eq!(
+            evaluation(&arguments),
+            Err(String::from("option `--spec` names at most 64 functions"))
+        );
+
+        for (arguments, name) in [
+            (&["check", "--steps", "5", "one.or"][..], "--steps"),
+            (&["check", "--steps", "1048576", "one.or"][..], "--steps"),
+            (&["lex", "--spec", "f", "one.or"][..], "--spec"),
+            (&["check", "--stats", "one.or"][..], "--stats"),
+            (
+                &["--steps=5", "--spec=f", "--stats", "check", "one.or"][..],
+                "--steps",
+            ),
+            (&["--spec=f", "--stats", "check", "one.or"][..], "--spec"),
+            (&["enc", "--stats", "one.or"][..], "--stats"),
+        ] {
+            assert_eq!(
+                parse_arguments(os_arguments(arguments)),
+                Err(format!("option `{name}` applies only to eval")),
+                "{arguments:?}"
+            );
+        }
+
+        assert_eq!(
+            parse_arguments([
+                OsString::from_vec(b"--steps=\x80".to_vec()),
+                OsString::from("eval"),
+                OsString::from("one.or"),
+            ]),
+            Err(String::from(
+                "an option value that is not valid UTF-8 must be a separate argument"
+            ))
+        );
+        assert_eq!(
+            parse_arguments([
+                OsString::from("eval"),
+                OsString::from("--spec"),
+                OsString::from_vec(vec![0x80]),
+                OsString::from("one.or"),
+            ]),
+            Err(String::from("option `--spec` takes the name of a function"))
         );
     }
 
@@ -4073,6 +4486,110 @@ mod tests {
         assert_eq!(output.bytes, b"values::answer: Int = 42\n");
         assert_eq!(output.flush_attempts, 1);
         assert_eq!(error, b"orangec: could not write evaluation output\n");
+    }
+
+    /// Both streams of one run, in the order their bytes were written.
+    #[derive(Clone, Default)]
+    struct Transcript(std::rc::Rc<std::cell::RefCell<Vec<u8>>>);
+
+    impl Write for Transcript {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.0.borrow_mut().extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn step_report_follows_committed_values_and_is_not_written_without_them() {
+        let source =
+            b"edition 2026; module values { spec answer() -> Int { 42 } spec one() -> Word[8] { 1 } }\n";
+        let transcript = Transcript::default();
+        let mut input = source.as_slice();
+        let status = run(
+            os_arguments(&["eval", "--stats", "-"]),
+            &mut input,
+            &mut transcript.clone(),
+            &mut transcript.clone(),
+        );
+        assert_eq!(status, SUCCESS);
+        assert_eq!(
+            String::from_utf8_lossy(&transcript.0.borrow()),
+            concat!(
+                "values::answer: Int = 42\n",
+                "values::one: Word[8] = 0x01\n",
+                "values::answer: 1 step\n",
+                "values::one: 1 step\n",
+                "total: 2 of 1048576 steps\n",
+            )
+        );
+
+        let mut input = source.as_slice();
+        let mut output = FailFlush::default();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["eval", "--stats", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert_eq!(
+            output.bytes,
+            b"values::answer: Int = 42\nvalues::one: Word[8] = 0x01\n"
+        );
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(error, b"orangec: could not write evaluation output\n");
+    }
+
+    #[test]
+    fn step_limit_diagnostics_name_the_option_only_below_the_most_admitted() {
+        let mut sources = SourceMap::new();
+        let id = sources
+            .add(
+                "budget.or",
+                "edition 2026; module budget { spec two() -> Int { 1 + 1 } }\n",
+            )
+            .unwrap();
+        let source = sources.get(id).unwrap();
+        let lexed = lex(source, Edition::default());
+        let ast = parse(source, &lexed).into_ast().unwrap();
+        let analysis = analyze_program((source, &ast), &[]);
+        let stopped = evaluate_selected(analysis.core().unwrap(), 1, |_| true);
+        let diagnostics = stopped.diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message(),
+            "reference evaluation step limit exceeded"
+        );
+        let hint = "`orangec eval --steps N` sets the budget, up to 1073741824 steps";
+        for (budget, hinted) in [
+            (1, true),
+            (MAX_EVALUATION_STEPS_PER_SOURCE, true),
+            (MAX_EVALUATION_STEP_LIMIT - 1, true),
+            (MAX_EVALUATION_STEP_LIMIT, false),
+        ] {
+            let copied = with_budget_hint(diagnostics, budget).unwrap();
+            let mut expected = diagnostics[0].clone();
+            if hinted {
+                expected = expected.with_note(hint);
+            }
+            assert_eq!(copied, [expected], "{budget}");
+        }
+
+        // Every other diagnostic is copied unchanged.
+        let other = Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            "reference evaluation result allocation failed",
+            diagnostics[0].primary_span(),
+        );
+        assert_eq!(
+            with_budget_hint(std::slice::from_ref(&other), 1).unwrap(),
+            [other]
+        );
     }
 
     #[test]

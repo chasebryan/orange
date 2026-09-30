@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.17
+Manuscript version: 0.18
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -113,9 +113,11 @@ and SHA-256's padding is joined with `++`, the S3m slice lets one `spec`
 stand for every length in a range, so that SHA-256 is written once for every
 message from 1 through 119 bytes, the S3n slice reads and writes words in
 the byte order a standard names, so that SHA-256 reads a block as sixteen
-big-endian words in one conversion, and the S3o slice lets one `spec` stand
+big-endian words in one conversion, the S3o slice lets one `spec` stand
 for a list of types, so that exponentiation is written once for five prime
-fields and SHA-256 and SHA-512 share one round. None of them
+fields and SHA-256 and SHA-512 share one round, and the S3p slice lets an
+array hold 65,536 elements, so that RFC 8439's 375-byte and 265-byte vectors
+are written as the RFC prints them. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -329,10 +331,13 @@ program writes bytes as the standards print them, the S3m slice, also in
 review, adds size parameters, so that one function stands for every length
 in a range and is checked for each, the S3n slice, also in review, adds
 byte orders, so that words are read from bytes, and written back, in one
-conversion in the order a standard names, and the S3o slice, also in review,
+conversion in the order a standard names, the S3o slice, also in review,
 adds type parameters, so that one function stands for a list of types, such
 as several prime fields or both of SHA-2's word widths, and is checked for
-each.
+each, and the S3p slice, also in review, lets arrays, array literals, and byte
+strings hold up to 65,536 elements and lets `orangec eval` run under a larger
+step budget, evaluate only the functions it names, and report the steps each
+used.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -842,7 +847,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, and type-parameter slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, and length slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -1122,6 +1127,9 @@ Evaluation is bounded too. Every function of one program shares a budget of
 may exceed 16,384 significant bits. An acyclic program can still ask for an
 exponential amount of work, a function that calls another twice, twenty levels
 deep; the step budget is what stops it, with a diagnostic rather than a hang.
+The reader chooses a larger budget, up to 1,073,741,824 steps, with
+`orangec eval --steps`, and a program's steps are the same wherever it runs,
+so `--stats` reports them as exactly as the values.
 
 ### What the Core is not
 
@@ -1144,7 +1152,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The fifteen current slices complete bounded parts of the roadmap's S3 stage:
+The sixteen current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1158,7 +1166,8 @@ then size parameters, so that one function serves every length in a range
 and is checked once for each, then byte orders, so that words are read from
 bytes and written back in the order a standard names, then type parameters,
 so that one function serves a list of fields or word widths and is checked
-once for each.
+once for each, then arrays of up to 65,536 elements, so that a standard's long
+vectors are written whole.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over any modulus rather than a listed few, and
 explicit failure
@@ -1713,9 +1722,10 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [tuples specification](TUPLES_2026.md) of S3k, the
 [bytes specification](BYTES_2026.md) of S3l, the
 [sizes specification](SIZES_2026.md) of S3m, the
-[byte order specification](ORDER_2026.md) of S3n, and the
-[type parameters specification](TYPE_PARAMETERS_2026.md) of S3o. S3b through
-S3o are implemented and tested, but their specifications are **proposed**:
+[byte order specification](ORDER_2026.md) of S3n, the
+[type parameters specification](TYPE_PARAMETERS_2026.md) of S3o, and the
+[lengths specification](LENGTHS_2026.md) of S3p. S3b through
+S3p are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1728,8 +1738,9 @@ S3o are implemented and tested, but their specifications are **proposed**:
 [OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md),
 [OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md),
 [OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md),
-[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), and
-[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md) are in
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md),
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md), and
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1816,7 +1827,7 @@ condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
 `!`, `/`, and `%`, which the lexer has always produced. The byte slice gives
 strings their role, as byte strings, and adds two tokens, `++` and the hex
 string `hex"..."`, whose `hex` touches its opening quote. The size,
-byte-order, and type-parameter slices add no token. The remaining punctuation is lexically reserved but has no
+byte-order, type-parameter, and length slices add no token. The remaining punctuation is lexically reserved but has no
 grammatical role yet.
 `orangec lex` shows how any source
 tokenizes, with exact byte spans.
@@ -2085,8 +2096,8 @@ chacha20::test_vector: Word[32]^16 = [0xe4e7f110, 0x15593bd1, 0x1fdd0f50, 0xc471
 ```
 
 Three rules keep arrays as plain as the words inside them. Every length is
-written: a type states it, from 1 through 256, and a literal lists exactly that
-many elements. Every position is visible: in the array slice an index is a
+written: a type states it, from 1 through 65,536 (256 until S3p), and a
+literal lists exactly that many elements. Every position is visible: in the array slice an index is a
 literal, checked against the length before anything runs, so there is no
 out-of-range read at run time:
 
@@ -3133,9 +3144,9 @@ writes no string, `++`, or range in brackets.
 
 That leaves new seams. A slice's position never depends on data, so a message
 of variable length, or a format that reads a length and then that many bytes,
-cannot be written yet. A byte string holds printable ASCII, and an array at
-most 256 elements, so a longer message is several values and text in another
-script is written in hex. Bytes and words are converted by functions a
+cannot be written yet. A byte string holds printable ASCII, so text in
+another script is written in hex, and until S3p an array held at most 256
+elements, so a longer message was several values. Bytes and words are converted by functions a
 program writes, such as `word` above, one for each byte order. The next
 section closes one more seam: through S3l, nothing took a size as a
 parameter, so `hash64` and `hash128` were two functions where SHA-256 is one.
@@ -3359,7 +3370,7 @@ every length and bound as an integer.
 
 That leaves seams. Nothing is proved for every value of a size at once, only
 for each value in its range, one instance at a time, so a family is finite,
-and an array still holds at most 256 elements. No modulus is written with a
+and, until S3p, an array still held at most 256 elements. No modulus is written with a
 parameter, so one `spec` cannot yet serve every field, and no position is a
 parameter, so one quarter round cannot act on four positions of a whole
 state. And a size is fixed in each instance, as a slice's position is, so a
@@ -3633,8 +3644,9 @@ a byte order, an array type after `as` is still the ungrouped `^` of
 
 A conversion in a byte order costs one evaluation step for each 64 bits of
 its width, or part of 64: 8 steps for a SHA-256 block read as sixteen words,
-and at most 256, for `Word[64]^256`, the widest array, whose 16,384 bits are
-also the most an `Int` holds. A conversion to `Mod[m]` also costs what
+and 256 for `Word[64]^256`, whose 16,384 bits are also the most an `Int`
+holds; since S3p an array may be wider, and a conversion of one to a number
+stops at run time if the number passes that limit. A conversion to `Mod[m]` also costs what
 `as Mod[m]` costs. In the Core it is one `pack` node that records its
 operand's type and its order. The three schemes of `orangec enc` read and
 write their words this way, the ChaCha20 state, the key stream, the exclusive
@@ -3945,6 +3957,176 @@ each listed one, and no bound or class of types exists. The roadmap lists
 positions given as parameters and slices and words at positions computed
 from data next.
 
+### Vectors at full length
+
+The objects of cryptography are long. An ML-KEM-512 encapsulation key is 800
+bytes and its ciphertext 768; an ML-DSA-44 public key is 1,312 bytes and its
+signature 2,420; an RSA-2048 modulus, and every OAEP block under it, is 256
+bytes, and RSA-4096's are 512. Even RFC 8439 prints test vectors of 375 and
+265 bytes. Through S3o an array held at most 256 elements, so each of these
+was cut into a head and a tail, and a reader had to reassemble the RFC's
+vector from pieces. The S3p slice, proposed in the
+[lengths specification](LENGTHS_2026.md) and in the owner's review under
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), lets an array,
+an array literal, and a byte string hold up to 65,536 elements, and the
+vectors are written as printed. The text that RFC 8439 encrypts in
+appendix A.2 and authenticates in appendix A.3 is one byte string of 375
+bytes, and ChaCha20 and Poly1305 are each written once for every message of
+1 through 256 whole blocks:
+
+```orange
+// The text of test vectors A.2 #2, A.3 #2 and A.3 #3: 375 bytes.
+spec ietf() -> Word[8]^375 {
+  "Any submission to the IETF intended by the Contributor for publication as all " ++
+    "or part of an IETF Internet-Draft or RFC and any statement made within the " ++
+    "context of an IETF activity is considered an \"IETF Contribution\". Such " ++
+    "statements include oral statements in IETF sessions, as well as written and " ++
+    "electronic communications made at any time or place, which are addressed to"
+}
+
+spec mac[blocks in 1..257](key: Word[8]^32, m: Word[8]^(16 * blocks), held: Int) -> Word[8]^16 {
+  let half: Word[64]^2 = key[..16] as little Word[64]^2;
+  let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+  let s: Int = key[16..] as little Int;
+  let a: P = for j in 0..blocks with a: P = 0 {
+    let k: Int = if j == (blocks - 1) { held } else { 16 };
+    (a + (m[16 * j..16 * j + 16] as little P) + weight(k)) * r
+  };
+  ((a as Int) + s) as little Word[8]^16
+}
+
+spec a3_2() -> Word[8]^16 {
+  mac(
+    hex"00000000 00000000 00000000 00000000 36e5f6b5 c5e06070 f0efca96 227a863e",
+    ietf() ++ [0; 9],
+    7,
+  )
+}
+```
+
+The text is 23 blocks and 7 bytes, so the message is padded with nine zeros
+to 24 blocks, the call fits `mac[24]` by that length, and the last block is
+told that 7 of its bytes are the message's. Each tag is the RFC's:
+
+```text
+rfc8439::a3_2: Word[8]^16 = [0x36, 0xe5, 0xf6, 0xb5, 0xc5, 0xe0, 0x60, 0x70, 0xf0, 0xef, 0xca, 0x96, 0x22, 0x7a, 0x86, 0x3e]
+rfc8439::a3_3: Word[8]^16 = [0xf3, 0x47, 0x7e, 0x7c, 0xd9, 0x54, 0x17, 0xaf, 0x89, 0xa6, 0xb8, 0x79, 0x4c, 0x31, 0x0c, 0xf0]
+```
+
+The limit is not arbitrary. 65,536 is 2^16: the most iterations a loop has
+always had, and exactly the values of a 16-bit word. The index proofs of S3g
+are unchanged, and at the new limit they say that a `Word[16]` indexes an
+array of 65,536 elements with no check at run time, while an index into an
+array one element shorter is rejected before anything runs. A table of 16-bit
+entries is therefore as safe to read as an S-box of 256 always was.
+The lengths fixture fills a table with the powers of 3 modulo the Fermat
+prime F4 = 2^16 + 1 and reads it with Pepin's test, which says that F4 is
+prime exactly when 3^((F4 − 1)/2) is −1:
+
+```orange
+type F4 = Mod[(1 << 16) + 1];
+
+spec powers(g: F4) -> F4^65536 {
+  let (table: F4^65536, next: F4) =
+    for k in 0..256 with (t: F4^65536, x: F4) = ([0; 65536], 1) {
+      let r: F4^256 = row(x, g);
+      (t with [256 * k..256 * k + 256] = r, r[255] * g)
+    };
+  table
+}
+
+spec at(table: F4^65536, i: Word[16]) -> F4 { table[i] }
+
+spec pepin() -> (F4, F4, Bool) {
+  let table: F4^65536 = powers(3);
+  let half: F4 = at(table, 0x8000);
+  let last: F4 = at(table, 0xffff);
+  (half, last, (half == -1) && ((last * 3) == 1))
+}
+```
+
+Costs do not change with length. An update, a fill, a join, a slice, and a
+slice update of an array of n elements cost ceil(n / 64) steps, as they did,
+so every operation that makes an array makes at most 64 elements for each
+step it costs, and an evaluation's memory stays bounded by its steps. The
+price is visible in the program's shape. Updating one element of an array of
+65,536 costs 1,024 steps, so filling the table one element at a time would
+cost 65,536 × 1,024, about 67 million steps. `powers` fills each row of 256
+in an array of its own, at 4 steps an element, and places it with one slice
+update of 1,024 steps: 524,288 steps for the updates, and about 1.45 million
+for the whole test.
+
+That is more than the 1,048,576 steps a source has always had, and the
+evaluator says so, and says what to do:
+
+```text
+error[ORC0301]: reference evaluation step limit exceeded
+ --> compiler/fixtures/s3p/valid-lengths.or:38:8
+   |
+38 |   spec pepin() -> (F4, F4, Bool) {
+   |        ^^^^^ evaluation stopped while evaluating this function
+  = note: at most 1048576 evaluation steps are permitted
+  = note: no partial value set is returned
+  = note: `orangec eval --steps N` sets the budget, up to 1073741824 steps
+```
+
+`orangec eval` takes three options. `--steps N` sets the budget of the whole
+evaluation, from 1 through 1,073,741,824, a thousand and twenty-four times the
+default. `--spec NAME`, repeatable, evaluates only the named functions without
+parameters, every instance of a sized one, in source order, and checks the
+rest; a name that matches none is `ORC1016`, and nothing runs. `--stats`
+writes to standard error, after the values, the steps each function used and
+their total against the budget:
+
+```console
+$ orangec eval --steps 2097152 --spec pepin --stats compiler/fixtures/s3p/valid-lengths.or
+lengths::pepin: (Mod[65537], Mod[65537], Bool) = (65536, 21846, true)
+lengths::pepin: 1452583 steps
+total: 1452583 of 2097152 steps
+```
+
+3^32768 is 65536, which is −1 modulo F4, so F4 is prime and 3 generates its
+multiplicative group; 3^65535 is 21846, the inverse of 3. The steps are the
+cost table's and are deterministic, so the report is as reproducible as the
+values: the same source, options, and edition give the same numbers on every
+machine. They are not time, and they say nothing about a native
+implementation or about side channels.
+
+One consequence reaches back to S3n. Through S3o no array held more than
+16,384 bits, so a conversion to a number could never exceed the evaluator's
+exact-integer limit. Now 8,192 words of 64 bits are 65,536 bytes, and back,
+in one conversion each; but words convert to `Int` or `Mod[m]` only while the
+number they spell has at most 16,384 significant bits, and a larger number
+stops the evaluation at the conversion with `ORC0301`, as every exact integer
+past the limit does. The limit is on the value, not the type: 2,048 bytes of
+`0xff` spell 2^16384 − 1, which converts, and which F4 divides, since
+2^16 = −1 modulo F4:
+
+```orange
+spec widest() -> Int {
+  let ones: Word[8]^2048 = [0xff; 2048];
+  (ones as big Int) % 65537
+}
+```
+
+```text
+lengths::widest: Int = 0
+```
+
+S3p adds no syntax, no token, no reserved word, and no node to the Core. Every
+source S3o accepted has arrays of at most 256 elements and keeps its Core,
+values, output, and steps; every message that named the limit 256 now names
+65536. A sealing scheme of `orangec enc` may now seal chunks of up to 65,536
+bytes with their tag, with the file format unchanged.
+
+That leaves seams. A size still covers at most 256 instances, so one function
+covers every message of up to 256 whole blocks, not every length byte by
+byte; a message that ends inside a block is padded and cut back, as above. No
+length is known only at run time, so a format that reads a length and then
+that many bytes still cannot be written. The budget belongs to the command
+line, not the source, so a program cannot say what it expects to cost, and
+checking has its own fixed budgets, which long literals spend like any others.
+
 ### From bytes to a value
 
 It is worth following one line through the compiler, because each step is a
@@ -4089,7 +4271,11 @@ parameter named like a built-in or declared type, `ORC0218` for one named
 like another parameter in brackets, `ORC0237` for a size inside a listed
 type, `ORC0238` for more than 256 instances, `ORC0239` for a wrong number of
 entries or a call that several instances fit, `ORC0211` for a type
-parameter's name used as a value, and `ORC0101` for a malformed list.
+parameter's name used as a value, and `ORC0101` for a malformed list. The
+length slice adds no language code: its limits are the old codes with 65536
+in their messages, a number too wide for the evaluator is the `ORC0301` of
+every exact integer, and `orangec` adds `ORC1016` for a `--spec` name that
+matches no function without parameters.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -4102,6 +4288,7 @@ each use.
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
+orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -4110,7 +4297,11 @@ orangec schemes [<NAME>...]
 - `check` performs lexical, syntactic, and semantic validation of one or more
   sources and is silent on success.
 - `eval` validates exactly one program and prints the value of each typed
-  `spec` without parameters of its root module.
+  `spec` without parameters of its root module. `--steps N` sets its step
+  budget, from 1 through 1,073,741,824; `--spec NAME`, repeatable, evaluates
+  only the functions named; and `--stats` reports on standard error the
+  steps each function used, as
+  [Vectors at full length](#vectors-at-full-length) shows.
 - `lex` prints the deterministic token stream.
 - `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
   written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
@@ -4216,7 +4407,13 @@ and Euler's criterion written once for five prime fields and SHA-256 and
 SHA-512 sharing one round, against RFC 7748, RFC 8032, RFC 8439, FIPS 203,
 FIPS 204, and FIPS 180-4; a generated source evaluates the 256 instances of
 one function over 64 residue types and four sizes, and one type more is 260
-instances and an error. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+instances and an error. The lengths specification adds 11 rule identifiers
+and three sources, two valid and one invalid, including RFC 8439's 375-byte
+and 265-byte vectors written as the RFC prints them and a table of all 65,536
+powers of 3 modulo 2^16 + 1 read by 16-bit words, against the vectors of
+RFC 8439 pinned in the D-011 suite; generated sources pin literals and byte
+strings of 65,536 elements and of 65,537, and every step budget, selection,
+report, and usage error of the three new options. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -4237,6 +4434,7 @@ but the lengths of a call's arguments, contracts, effects, statements other than
 shadowing, type inference, arrays of arrays, tuples of tuples, arrays of
 tuples, operators on whole tuples, records with named fields, indices
 narrowed by conditions, slices at positions computed from data, empty arrays,
+arrays of more than 65,536 elements, step budgets written in a source,
 equality of whole arrays, text beyond printable ASCII, conversions of
 arrays other than words, bit orders, loops over ranges computed at run time, early exit, short-circuit
 operators, conditionals without `else`, blocks as expressions of their own,
@@ -4263,11 +4461,12 @@ builds on S3f, through OEP-0010, S3h's, which builds on S3g, through
 OEP-0011, S3i's, which builds on S3h, through OEP-0012, S3j's, which builds
 on S3i, through OEP-0013, S3k's, which builds on S3j, through OEP-0014,
 S3l's, which builds on S3k, through OEP-0015, S3m's, which builds on S3l,
-through OEP-0016, S3n's, which builds on S3m, through OEP-0017, and S3o's,
-which builds on S3n, through OEP-0018.
+through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
+which builds on S3n, through OEP-0018, and S3p's, which builds on S3o,
+through OEP-0019.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All fourteen migrations so far are small: every source
+documented migration. All fifteen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -4283,8 +4482,9 @@ brackets, every source S3l accepted does the same under S3m, since it
 declares no size parameter and writes every length and bound as an integer,
 every source S3m accepted does the same under S3n, since `big` or
 `little` after `as` was a type's name only where S3n still reads it as one,
-and every source S3n accepted does the same under S3o, since it wrote no
-braces after a size's `in`.
+every source S3n accepted does the same under S3o, since it wrote no
+braces after a size's `in`, and every source S3o accepted does the same under
+S3p, in the same steps, since its arrays hold at most 256 elements.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -5014,6 +5214,10 @@ every type it serves: exponentiation, Fermat inversion, and Euler's
 criterion once for five prime fields, which reproduce RFC 8032's square root
 of −1 and the roots of unity of FIPS 203 and FIPS 204, and Ch, Maj, and the
 round once for SHA-256 and SHA-512, which reproduce FIPS 180-4's digests.
+The length slice let a standard's long vectors be written whole: RFC 8439's
+375-byte text and ciphertext and its 265-byte AEAD ciphertext, each as the
+RFC prints it, reproduced byte for byte, and it leaves room for the 768-byte
+ciphertexts and 2,420-byte signatures of the post-quantum standards.
 These are still fixtures, not corpus entries. A message's length is
 fixed in each instance rather than read when the program runs, and no
 standard has been admitted with its provenance. The corpus remains a set of research inputs
@@ -5625,7 +5829,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3o in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3p in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -5946,9 +6150,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [tuples specification](TUPLES_2026.md), the
 [bytes specification](BYTES_2026.md), the
 [sizes specification](SIZES_2026.md), the
-[byte order specification](ORDER_2026.md), and the
-[type parameters specification](TYPE_PARAMETERS_2026.md) are proposed under
-OEP-0005 through OEP-0018 and in the owner's review. Where this summary and those
+[byte order specification](ORDER_2026.md), the
+[type parameters specification](TYPE_PARAMETERS_2026.md), and the
+[lengths specification](LENGTHS_2026.md) are proposed under
+OEP-0005 through OEP-0019 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -6052,8 +6257,8 @@ slices, loops, conditionals, updates, moduli, and prefix operators, and reach
 height 256; a function declares at most 4 size parameters, 64 parameters,
 and 256 bindings and has at most 256 instances, a loop's step
 or a branch at most 256 bindings, a call supplies at most 4 sizes and 256
-arguments, an array literal lists at most 256 elements, a byte string holds 1
-through 256 bytes, a tuple type, a tuple, and a tuple pattern hold at most 16
+arguments, an array literal lists at most 65,536 elements, a byte string holds 1
+through 65,536 bytes, a tuple type, a tuple, and a tuple pattern hold at most 16
 parts, and a loop's bounds and a size parameter's bounds satisfy
 0 ≤ a < b ≤ 65536. A module declares at most 64 `use` declarations and 64
 `type` declarations, and a program holds at most 64 modules, its root
@@ -6070,7 +6275,7 @@ included.
 | `Word[32]` | The integers modulo 2^32 | `0x` and 8 lowercase hex digits |
 | `Word[64]` | The integers modulo 2^64 | `0x` and 16 lowercase hex digits |
 | `Mod[m]` | The integers modulo a constant m from 2 through 2^521 − 1, as least residues 0 through m − 1 | Decimal |
-| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 256 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
+| `T^n` | Sequences of exactly n values of any type above, for n from 1 through 65,536 | The elements in order, separated by a comma and a space and enclosed in `[` and `]` |
 | `(T, U, ...)` | Tuples of 2 through 16 values, each of a scalar or array type above and never a tuple | The elements in order, separated by a comma and a space and enclosed in `(` and `)` |
 
 No other type, width, or length is accepted; a name declared by `type` stands
@@ -6171,6 +6376,7 @@ name's type, and each of its names follows the same rules.
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
+orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -6186,7 +6392,11 @@ orangec schemes [<NAME>...]
 | `dec` | Open one sealed file; output is published only if every chunk is authentic |
 | `schemes` | List the built-in schemes or check a scheme program |
 
-Options are `--edition <YEAR>` (only `2026`, at most once), `--scheme <NAME>`
+Options are `--edition <YEAR>` (only `2026`, at most once), for `eval` only
+`--steps <N>` (a step budget from 1 through 1,073,741,824, at most once;
+default 1,048,576), `--spec <NAME>` (evaluate only this function without
+parameters; up to 64 names), and `--stats` (report each evaluated function's
+steps and the total on standard error, after the values), `--scheme <NAME>`
 (a built-in name or a program path), `--key <FILE>` (default
 `$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
@@ -6203,7 +6413,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
 | `ORC0201`–`ORC0241` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
-| `ORC1001`–`ORC1015` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness |
+| `ORC1001`–`ORC1016` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` name that matches no function |
 
 Codes and their meanings are stable automation surfaces. Every resource budget
 fails closed with a diagnostic rather than a panic, hang, or partial success.
@@ -6320,8 +6530,9 @@ part are listed here so a reader can move from explanation to authority.
   [lookup](LOOKUPS_2026.md), [module](MODULES_2026.md),
   [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md),
   [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), [size](SIZES_2026.md),
-  [byte order](ORDER_2026.md), and [type parameter](TYPE_PARAMETERS_2026.md)
-  specifications under OEP-0005 through OEP-0018, the
+  [byte order](ORDER_2026.md), [type parameter](TYPE_PARAMETERS_2026.md),
+  and [length](LENGTHS_2026.md) specifications under OEP-0005 through
+  OEP-0019, the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
@@ -6361,24 +6572,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.17 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.18 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.17 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.17 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, and type-parameter slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.18 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.18 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, and length slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.17 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, and type-parameter slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.18 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, and length slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.17 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.18 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.17 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.18 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.17 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.18 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -6434,9 +6645,11 @@ adds the [bytes specification](BYTES_2026.md) and
 adds the [sizes specification](SIZES_2026.md) and
 [OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), version 0.16
 adds the [byte order specification](ORDER_2026.md) and
-[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), and version
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), version
 0.17 adds the [type parameters specification](TYPE_PARAMETERS_2026.md) and
-[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md).
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md), and
+version 0.18 adds the [lengths specification](LENGTHS_2026.md) and
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -6568,6 +6781,14 @@ Claude Code under Chase Bryan's direction on 2026-09-30, and every Orange
 example it adds was run against the compiler at the revision that introduced
 it. That check is not independent review, and the same authorship, review,
 evidence, and provenance boundaries apply.
+
+Manuscript version 0.18 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3p length slice, and added the Chapter 8
+section "Vectors at full length". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
+run against the compiler at the revision that introduced it. That check is
+not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

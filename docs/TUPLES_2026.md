@@ -31,10 +31,11 @@ meaning. It accepts no D-004 candidate.
 > parameters, whose instances may take and give tuples.
 > [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, adds conversions in
 > a byte order, which convert no tuple, and
-> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under
-> OEP-0018, lets a tuple's elements be a function's type parameter, as
-> `(K, K)`, and lists tuple types among a function's types. Every source this
-> document accepts keeps its meaning under all four.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lets a tuple's elements be a function's type parameter, as `(K, K)`, and lists
+> tuple types among a function's types. [`LENGTHS_2026.md`](LENGTHS_2026.md),
+> proposed under OEP-0019, lets a tuple hold arrays of up to 65,536 elements.
+> Every source this document accepts keeps its meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

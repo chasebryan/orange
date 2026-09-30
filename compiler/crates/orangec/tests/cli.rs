@@ -1069,6 +1069,7 @@ fn usage_errors_have_a_distinct_exit_status() {
         help,
         concat!(
             "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
+            "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",
             "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
             "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
             "       orangec schemes [<NAME>...]\n",
@@ -1084,6 +1085,9 @@ fn usage_errors_have_a_distinct_exit_status() {
             "\n",
             "Options:\n",
             "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+            "      --steps <N>       Evaluation step budget, 1 to 1073741824 [default: 1048576]\n",
+            "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
+            "      --stats           Report the steps each evaluated function used, on stderr\n",
             "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
             "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
             "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",

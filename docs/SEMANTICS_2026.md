@@ -55,7 +55,9 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > [`ORDER_2026.md`](ORDER_2026.md) under OEP-0017, which adds conversions in a
 > byte order, and the S3o slice proposed in
 > [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md) under OEP-0018, which
-> adds type parameters and typed calls.
+> adds type parameters and typed calls, and the S3p slice proposed in
+> [`LENGTHS_2026.md`](LENGTHS_2026.md) under OEP-0019, which lets arrays hold
+> up to 65,536 elements and adds evaluation controls.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

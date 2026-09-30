@@ -40,9 +40,12 @@ meaning. It accepts no D-004 candidate.
 > the same total, Euclidean `/` and `%`, and [`ORDER_2026.md`](ORDER_2026.md),
 > proposed under OEP-0017, adds conversions in a byte order, which are total and
 > have no failure, and [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md),
-> proposed under OEP-0018, lets a conditional's branches have a function's
-> type parameter as their type, each instance checked with its own type.
-> Every source this document accepts keeps its meaning under all nine.
+> proposed under OEP-0018, lets a conditional's branches have a function's type
+> parameter as their type, each instance checked with its own type.
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, adds one
+> run-time failure, a conversion of words to a number of more than 16,384
+> significant bits, which stops evaluation as every oversized integer does.
+> Every source this document accepts keeps its meaning under all ten.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

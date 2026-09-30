@@ -469,9 +469,10 @@ pub(super) fn distinct_types(types: &[Option<CoreType>]) -> bool {
 
 /// What an array length stands for.
 pub(super) enum Length {
-    /// An admitted length, from 1 through 256.
+    /// An admitted length, from 1 through [`MAX_ARRAY_LENGTH`].
     Admitted(u32),
-    /// An integer token that is not a decimal length from 1 through 256.
+    /// An integer token that is not a decimal length from 1 through
+    /// [`MAX_ARRAY_LENGTH`].
     Literal,
     /// A size expression whose value is not an admitted length.
     Value(ExactInteger),

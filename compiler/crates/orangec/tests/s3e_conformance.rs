@@ -306,7 +306,7 @@ const CASES: [Case; 7] = [
                 "this index runs from 0 through 2, out of range for `Word[8]^2`",
                 "literal is outside the range of `Word[8]`",
                 "this array has 3 elements, but `Word[8]^4` has 4",
-                "an array length must be a decimal integer from 1 through 256",
+                "an array length must be a decimal integer from 1 through 65536",
                 "an array literal cannot have type `Word[8]`",
             ],
         },

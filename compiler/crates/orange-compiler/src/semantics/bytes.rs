@@ -70,8 +70,10 @@ pub(super) fn decode_byte_string(
         .and_then(|prefix| prefix.checked_sub(1))
         .ok_or(ByteStringError::Storage)?;
     let limit = usize::try_from(MAX_ARRAY_LENGTH).map_err(|_| ByteStringError::Storage)?;
+    // Every byte takes at least one character of the spelling, so the
+    // spelling's length bounds the bytes it holds.
     let mut bytes = Vec::new();
-    if bytes.try_reserve_exact(limit).is_err() {
+    if bytes.try_reserve_exact(contents.len().min(limit)).is_err() {
         return Err(ByteStringError::Storage);
     }
     // Decoding stops at the byte past the limit, so a long spelling is
