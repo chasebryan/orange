@@ -133,6 +133,50 @@ class D006FaultVerdictTests(unittest.TestCase):
         self.assertTrue(self.verdict("D6-F01", self.DONE, "completed"))
 
 
+class D006SolverClaimTests(unittest.TestCase):
+    """DS-04's run-time cases: a solver run never becomes a proved claim without a checked certificate."""
+
+    def test_claims_follow_the_pinned_exit_codes_and_step_states(self) -> None:
+        claim = run.H.solver_claim
+        self.assertEqual(claim("failed", 10, False), "disproved_obligation")
+        self.assertEqual(claim("failed", 20, True), "certificate")
+        self.assertEqual(claim("failed", 20, False), "failed_certificate")
+        self.assertEqual(claim("completed", 0, True), "unknown")
+        self.assertEqual(claim("timeout", None, True), "timeout")
+        self.assertEqual(claim("resource_exhaustion", 20, True), "resource_exhaustion")
+        self.assertEqual(claim("crash", -9, True), "unknown")
+        self.assertEqual(claim("failed", 1, True), "unknown")
+
+    def test_the_argv_is_the_pinned_one(self) -> None:
+        spec = json.loads((REPOSITORY_ROOT / run.SHARED_DIR / "ds04-lrat-obligation.json").read_text(encoding="utf-8"))["solver"]
+        argv = run.H.solver_argv("/s/cadical", "unknown_argv", "/c.cnf", "/p.lrat")
+        self.assertEqual(argv, ["/s/cadical", *spec["unknown_argv"][1:-2], "/c.cnf", "/p.lrat"])
+        self.assertEqual(argv[1:3], ["-c", "0"])
+
+    def test_a_model_gives_x_and_y_and_both_sides_of_the_identity(self) -> None:
+        model = run.H.solver_model(b"s SATISFIABLE\nv -1 2 -3 " + b" ".join(str(v).encode() for v in range(4, 34)) + b"\nv 34 -35 0\n")
+        x, y = run.H.model_words(model)
+        self.assertEqual(x, 0xFFFFFFFD)
+        self.assertEqual(y, 1)
+        rows, left, right = run.H.counterexample_observations(x, y)
+        self.assertEqual((left, right), ((x + y) & 0xFFFFFFFF, ((x ^ y) + (x & y)) & 0xFFFFFFFF))
+        self.assertNotEqual(left, right)
+        self.assertEqual([r["id"] for r in rows], ["D4-R02-L", "D4-R02-R"])
+        self.assertIsNone(run.H.solver_model(b"s UNSATISFIABLE\n"))
+
+    def test_verdicts_need_the_exact_category_and_the_candidates_part(self) -> None:
+        ok = run.H.Outcome("D4-R02-L", "observation", True)
+        bad = run.H.Outcome("D4-R02-R", "observation", False)
+        self.assertTrue(run.H.run_time_verdict("D4-R02", "disproved_obligation", [ok, ok], 1, 2).passed)
+        self.assertFalse(run.H.run_time_verdict("D4-R02", "disproved_obligation", [ok, bad], 1, 2).passed)
+        self.assertFalse(run.H.run_time_verdict("D4-R02", "disproved_obligation", [], None, None).passed)
+        self.assertFalse(run.H.run_time_verdict("D4-R03", "timeout", []).passed)
+        self.assertTrue(run.H.run_time_verdict("D4-R04", "timeout", []).passed)
+        self.assertFalse(run.H.run_time_verdict("D4-R05", "failed_certificate", []).passed)
+        self.assertTrue(run.H.run_time_verdict("D4-R05", "failed_certificate", [ok]).passed)
+        self.assertFalse(run.H.run_time_verdict("D4-R05", "certificate", [ok]).passed)
+
+
 class D006ArchiveVerifyTests(unittest.TestCase):
     def make_archive(self, root: Path) -> Path:
         identity = {"suite_version": run.SUITE_VERSION, "bindings": [], "archives": {}, "input_manifest_sha256": "0" * 64,

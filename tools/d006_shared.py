@@ -1887,8 +1887,8 @@ def overlay(manifest_sha256: str) -> dict[str, Any]:
         ],
         "host_matrix_note": "This matrix is the tested envelope for this suite only and does not accept D-011. A different envelope reruns DS-05.",
         "execution": {
-            "ceilings": {"measured_step": ceilings, "negative_case": {"wall_seconds": 120, "memory_bytes": 4 * 1024**3, "temp_bytes": 1024**3, "output_bytes": 1024**2, "pids": 1024}, "timed_replay_step": dict(ceilings, wall_seconds=600)},
-            "timeouts": "Each step runs in its own cgroup. At the wall ceiling the whole cgroup is killed and the step is timeout. A memory kill, a temp or output overrun, or the pid limit is resource_exhaustion. Neither is ever success.",
+            "ceilings": {"measured_step": ceilings, "negative_case": {"wall_seconds": 120, "memory_bytes": 4 * 1024**3, "temp_bytes": 1024**3, "output_bytes": 1024**2, "pids": 1024}, "timed_replay_step": dict(ceilings, wall_seconds=600), "solver_zero_wall": dict(ceilings, wall_seconds=0)},
+            "timeouts": "Each step runs in its own cgroup. At the wall ceiling the whole cgroup is killed and the step is timeout. A memory kill, a temp or output overrun, or the pid limit is resource_exhaustion. Neither is ever success. The solver_zero_wall class serves only DS-04's run-time case D4-R04.",
             "cpu": {"serial": "one CPU and the candidate's one-job build setting", "declared_parallel": "four CPUs and the candidate's declared parallel build setting"},
             "network": "Every measured step runs in a new network namespace with no interfaces.",
             "filesystem": "The toolchain tree and the candidate sources are read-only. Writes go only to the step's output root and temporary directory.",

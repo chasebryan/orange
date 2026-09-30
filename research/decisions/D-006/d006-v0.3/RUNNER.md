@@ -64,6 +64,22 @@ A step ends in exactly one state: `completed`, `failed` (nonzero exit),
 (a memory kill, a temp overrun or the pid limit) or `killed_by_runner`
 (DS-06 fault F09 only). Only `completed` can count as success.
 
+## DS-04 solver runs
+
+The pinned solver runs in the sandbox with the shared argv on the shared CNF,
+which the candidate's own `cnf_text` must equal (D4-CNF01, D4-CNF02). A run
+supports a claim only through its exit code and step state: 20 with a
+certificate file hands the certificate to the candidate, 20 without one is
+`failed_certificate`, 10 is `disproved_obligation`, 0 and anything else are
+`unknown`, and a timeout or resource stop keeps its own category. D4-R01 is
+the fresh certificate. D4-R02 runs on B-C02, reads x and y from the model and
+has the candidate compute both sides of the identity at them; the case passes
+only when the two values differ. D4-R03 uses the pinned `unknown_argv`, D4-R04
+runs under the `solver_zero_wall` ceiling, and D4-R05 removes the certificate
+after an unsatisfiable run and has the candidate's checker reject the empty
+text. Each case counts as a negative in M-03; its category is the runner's,
+not a candidate diagnostic, so M-15 leaves it out.
+
 ## Archive layout
 
 ```text
@@ -84,7 +100,7 @@ schema `d006-v0.3-record-1`, the epoch, an ordinal and a profile:
 | `execution` | the attempt number, the candidates' revision and the plan |
 | `provision` | a workspace's checkout, toolchain unpack steps and candidate tree |
 | `cold_bootstrap` | unpack, build and checker-build steps from an empty root, the build state, the deterministic artifact manifest and the workspace bytes |
-| `deterministic_replay` | every positive, negative and fresh-certificate outcome, the DS-05 corpus verdicts, the projection and its digests |
+| `deterministic_replay` | every positive, negative and fresh-certificate outcome, DS-04's run-time cases, the DS-05 corpus verdicts, the projection and its digests |
 | `timed_replay` | one warmup or one pair member for one case: the re-check steps and their measurements |
 | `fault` | one DS-06 fault: its evidence, the build state, the projection digest beside the reference and whether the fault's rule was met |
 

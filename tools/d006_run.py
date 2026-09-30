@@ -99,6 +99,8 @@ CEILINGS = {
     "measured_step": {"wall_seconds": 1800, "memory_bytes": 8 << 30, "pids": 4096, "temp_bytes": 8 << 30, "output_bytes": 64 << 20},
     "negative_case": {"wall_seconds": 120, "memory_bytes": 4 << 30, "pids": 1024, "temp_bytes": 1 << 30, "output_bytes": 1 << 20},
     "timed_replay_step": {"wall_seconds": 600, "memory_bytes": 8 << 30, "pids": 4096, "temp_bytes": 8 << 30, "output_bytes": 64 << 20},
+    # D4-R04: the pinned solver under a wall ceiling of 0 seconds
+    "solver_zero_wall": {"wall_seconds": 0, "memory_bytes": 8 << 30, "pids": 4096, "temp_bytes": 8 << 30, "output_bytes": 64 << 20},
 }
 LAUNCH_FAILURES = (b"orange filesystem sandbox failed", b"unshare:", b"setpriv:", b"/usr/bin/env:")
 CPUS = {"serial": (0,), "declared_parallel": (0, 1, 2, 3)}
@@ -731,34 +733,43 @@ def fresh_root(parent: Path, name: str) -> Path:
 
 
 def check_items(cand: H.Candidate, case: str, directory: str, observations: list[dict[str, Any]]) -> list[Any]:
-    """Check extra observations of a case, re-checking items singly after a Rocq stop."""
+    return H.check_observations(cand, case, cand.work / "checks" / directory, observations, H.MEASURED_CEILING)
 
-    source = R.check_file(cand.lang, case, [], observations, [])
-    outcomes = H.run_check_source(cand, cand.work / "checks" / directory, source, H.MEASURED_CEILING)
-    if all(o.passed for o in outcomes) or cand.lang.name == "lean4":
-        return outcomes
-    single = []
-    for row in observations:
-        one = R.check_file(cand.lang, case, [], [row], [])
-        single += H.run_check_source(cand, cand.work / "checks" / directory / R.ident(row["id"]), one, H.MEASURED_CEILING)
-    return single
+
+def solve(epoch: Epoch, ctx: RunContext, ident: str, key: str, obligation: str, zero_wall: bool = False) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    """One run of the pinned solver in the sandbox on an obligation's shared CNF."""
+
+    solver = epoch.archive / epoch.packet["archives"]["solver"]["archive"]
+    cnf = epoch.repo / SHARED_DIR / H.SOLVER_CNF[obligation]
+    out = lab_owned(ctx.run_root / "solver" / ident)
+    certificate = out / "certificate.lrat"
+    argv = H.solver_argv(str(solver), key, str(cnf), str(certificate))
+    env = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C", "TZ": "UTC", "HOME": str(out), "TMPDIR": str(out)}
+    ceiling = "solver_zero_wall" if zero_wall else "measured_step"
+    launched = epoch.launcher.run(argv, out, env, CEILINGS[ceiling], Sandbox([str(solver), str(cnf.parent)], [str(out)]), ctx.cpus, out)
+    row = ctx.recorder.add(f"solver {ident}", launched, ceiling, ctx.cpus, env, out)
+    return launched, row, certificate
 
 
 def fresh_certificate(epoch: Epoch, ctx: RunContext) -> tuple[str | None, dict[str, Any]]:
-    """The run's own certificate: the pinned solver's LRAT for the carry-save obligation."""
+    """The run's own certificate (D4-R01): the pinned solver's LRAT for the carry-save obligation."""
 
-    solver = epoch.archive / epoch.packet["archives"]["solver"]["archive"]
-    cnf = epoch.repo / SHARED_DIR / "ds04-carry-save.cnf"
-    out = lab_owned(ctx.run_root / "solver")
-    argv = [str(solver), "--lrat=true", "--binary=false", "--seed=0", "-q", str(cnf), str(out / "fresh.lrat")]
-    env = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C", "TZ": "UTC", "HOME": str(out), "TMPDIR": str(out)}
-    launched = epoch.launcher.run(argv, out, env, CEILINGS["measured_step"], Sandbox([str(solver), str(cnf.parent)], [str(out)]), ctx.cpus, out)
-    row = ctx.recorder.add("solver fresh certificate", launched, "measured_step", ctx.cpus, env, out)
-    # CaDiCaL exits 20 on an unsatisfiable formula.
-    ok = launched["exit_status"] == 20 and (out / "fresh.lrat").is_file()
-    text = (out / "fresh.lrat").read_text(encoding="ascii") if ok else None
+    launched, row, certificate = solve(epoch, ctx, "D4-R01", "argv", "B-C01")
+    claim = H.solver_claim(launched["state"], launched["exit_status"], certificate.is_file())
+    text = certificate.read_text(encoding="ascii") if claim == "certificate" else None
     ctx.fresh_text = text
-    return text, {"step": row["ordinal"], "sha256": sha256(text.encode("ascii")) if text else None, "bytes": len(text) if text else None}
+    return text, {"step": row["ordinal"], "claim": claim, "sha256": sha256(text.encode("ascii")) if text else None, "bytes": len(text) if text else None}
+
+
+def run_time(epoch: Epoch, cand: H.Candidate, ctx: RunContext) -> list[Any]:
+    """D4-R02 to D4-R05 with the sandboxed solver and the candidate's own checks."""
+
+    def sandboxed(ident: str, key: str, obligation: str, zero_wall: bool) -> tuple[str, int | None, bytes, Path]:
+        ctx.label = f"DS-04 {ident}"
+        launched, _, certificate = solve(epoch, ctx, ident, key, obligation, zero_wall)
+        return launched["state"], launched["exit_status"], launched["stdout"], certificate
+
+    return H.run_time_cases(sandboxed, lambda rows: check_items(cand, "DS-04", "DS-04-run-time", rows))
 
 
 def run_cases(epoch: Epoch, cand: H.Candidate, ctx: RunContext, cases: Iterable[str], negatives: bool = True) -> dict[str, Any]:
@@ -780,6 +791,9 @@ def run_cases(epoch: Epoch, cand: H.Candidate, ctx: RunContext, cases: Iterable[
             else:
                 observations = H.certificate_observations("D4-F", text)
                 row["fresh"] = [outcome_row(o, normalize) for o in check_items(cand, case, "DS-04-fresh", observations)]
+        if case == "DS-04" and negatives:
+            expected = {"D4-R02": "disproved_obligation", "D4-R03": "unknown", "D4-R04": "timeout", "D4-R05": "failed_certificate"}
+            row["run_time"] = [{**outcome_row(o, normalize), "expected": [expected[o.ident]]} for o in run_time(epoch, cand, ctx)]
         if negatives:
             rows = []
             for negative in H.case_material(case)["negatives"]:
@@ -1444,7 +1458,7 @@ def candidate_summary(cand: str, records: list[dict[str, Any]], packet: dict[str
 
     positives = negatives = 0
     positives_total = negatives_total = 0
-    conforming = 0
+    conforming = diagnostics_total = 0
     by_category: dict[str, list[int]] = {}
     undeclared: set[str] = set()
     case_rows: dict[str, dict[str, Any]] = {}
@@ -1453,7 +1467,7 @@ def candidate_summary(cand: str, records: list[dict[str, Any]], packet: dict[str
             items = row["positives"] + row.get("fresh", [])
             state = case_rows.setdefault(case, {"runs": 0, "clean_runs": 0})
             state["runs"] += 1
-            clean = all(o["passed"] for o in items) and all(n["passed"] for n in row.get("negatives", []))
+            clean = all(o["passed"] for o in items) and all(n["passed"] for n in row.get("negatives", []) + row.get("run_time", []))
             state["clean_runs"] += clean
             for o in items:
                 if o["category"] == "undeclared_trust":
@@ -1465,10 +1479,14 @@ def candidate_summary(cand: str, records: list[dict[str, Any]], packet: dict[str
             items = row["positives"] + row.get("fresh", [])
             positives += sum(o["passed"] for o in items)
             positives_total += len(items)
-            for n in row.get("negatives", []):
+            # DS-04's run-time cases count as negatives (M-03); their category is the runner's claim, not a
+            # candidate diagnostic, so M-15 leaves them out.
+            for n in row.get("negatives", []) + row.get("run_time", []):
                 negatives_total += 1
                 negatives += n["passed"]
-                conforming += bool(n["diagnostic_conforms"])
+                if n in row.get("negatives", []):
+                    diagnostics_total += 1
+                    conforming += bool(n["diagnostic_conforms"])
                 for category in n["expected"]:
                     slot = by_category.setdefault(category, [0, 0])
                     slot[1] += 1
@@ -1546,7 +1564,7 @@ def candidate_summary(cand: str, records: list[dict[str, Any]], packet: dict[str
         "M-09": {case: v["peak_rss_bytes"] for case, v in timed_by_case.items()},
         "M-10": sizes_row or {"value": None, "reason": "DS-05 not run"},
         "M-14": {"hosts": host_pass, "required": ["H-01", "H-02"], "gate": gate(all(host_pass.get(h, False) for h in ("H-01", "H-02"))) if standalone_runs else "unresolved"},
-        "M-15": {"conforming": conforming, "total": negatives_total, "gate": gate(conforming == negatives_total and negatives_total > 0)},
+        "M-15": {"conforming": conforming, "total": diagnostics_total, "gate": gate(conforming == diagnostics_total and diagnostics_total > 0)},
         "M-16": {"gate": "unresolved", "reason": "DS-07 is owner-performed (AM-02)"},
         "M-17": {"logic_kernel": "unavailable", "extraction_distribution": "unavailable", "comparative_decision": "unavailable"},
         "M-18": {"value": None, "reason": "same-owner maintenance tasks are owner-performed"},
@@ -1561,43 +1579,6 @@ def candidate_summary(cand: str, records: list[dict[str, Any]], packet: dict[str
 EMULATOR = "/usr/bin/qemu-aarch64-static"
 STRIP = {"H-01": "/usr/bin/strip", "H-02": "/usr/bin/aarch64-linux-gnu-strip"}
 NO_TARGET = re.compile(r"Exec format error|cannot execute binary file|Could not open '|error while loading shared libraries|No such file or directory|not found")
-
-
-def reference_module() -> Any:
-    return H._reference()
-
-
-def verdict_text(verdict: tuple[Any, ...]) -> str:
-    return "accept" if verdict[0] == "accept" else f"reject {verdict[1]} {verdict[2]}"
-
-
-def corpus_items(root: Path, fresh: str | None) -> list[dict[str, Any]]:
-    """Every DS-05 corpus item with its argv tail, expected output and in-prover twin."""
-
-    ref = reference_module()
-    root.mkdir(parents=True, exist_ok=True)
-    items: list[dict[str, Any]] = []
-    expected_lines = {row["fixture"]: row["standalone"] for row in H.case_material("DS-03")["observations"] if "fixture" in row}
-    for ident, data, _ in ref.record_fixtures():
-        path = root / f"{ident}.ocr"
-        path.write_bytes(data)
-        items.append({"id": f"D5-{ident}", "args": ["records", str(path)], "expected": expected_lines[ident], "in_prover": ident.replace("R-F", "D3-O")})
-    for index, obligation in enumerate(("B-C01", "B-C02"), 1):
-        items.append({"id": f"D5-CNF-{obligation}", "args": ["cnf", obligation], "expected": ref.cnf_text(obligation).rstrip("\n"), "in_prover": f"D4-CNF{index:02d}", "multiline": True})
-    golden = (H.SHARED / "ds04-carry-save-golden.lrat").read_text(encoding="ascii")
-    for label, certificate, prefix in (("G", golden, "D4-G"), ("F", fresh, "D4-F")):
-        if certificate is None:
-            continue
-        for variant, _ in ref.VARIANTS:
-            claimed, cnf, text = ref.mutate_certificate(certificate, variant)
-            cnf_path, cert_path = root / f"{label}-{variant}.cnf", root / f"{label}-{variant}.lrat"
-            cnf_path.write_text(cnf, encoding="ascii")
-            cert_path.write_text(text, encoding="ascii")
-            items.append({"id": f"D5-{label}-{variant}", "args": ["lrat", claimed, str(cnf_path), str(cert_path)],
-                          "expected": verdict_text(ref.lrat_verdict(claimed, cnf, text)), "in_prover": f"{prefix}-{variant}"})
-    for path in root.iterdir():
-        path.chmod(0o444)
-    return items
 
 
 def closure(binary: Path, host: str) -> list[dict[str, Any]]:
@@ -1681,7 +1662,7 @@ def run_standalone(epoch: Epoch, cand: H.Candidate, ctx: RunContext, cases: dict
         for o in row.get("positives", []) + row.get("fresh", []):
             in_prover[o["id"]] = o["passed"]
     corpus = ctx.run_root / "corpus"
-    items = corpus_items(corpus, fresh)
+    items = H.standalone_corpus(corpus, fresh)
     source_rows = tree_manifest(cand.src, spec.get("sources", []))
     hosts: dict[str, Any] = {}
     checkers: dict[str, Checker] = {}

@@ -31,6 +31,8 @@ import d006_render as R  # noqa: E402
 REPO = Path(os.environ.get("ORANGE_REPO", "/home/claude/orange"))
 SHARED = REPO / "research/decisions/D-006/d006-v0.3/shared-inputs"
 TOOLCHAINS = {"rocq": "/opt/d006/rocq-9.2.0", "lean4": "/opt/d006/lean-4.34.1-linux"}
+TOOLCHAINS_AARCH64 = {"rocq": "/opt/d006/ocaml-4.14.1-aarch64", "lean4": "/opt/d006/lean-4.34.1-linux_aarch64"}
+DEV_SOLVER = "/opt/d006/cadical-src/build/cadical"
 CATEGORIES = (
     "parse_failure", "type_failure", "non_total", "proof_failure", "disproved_obligation", "unknown",
     "timeout", "resource_exhaustion", "unsupported_feature", "untrusted_solver_step",
@@ -280,11 +282,17 @@ def audits(cand: Candidate, launched: Launched, names: list[str]) -> dict[str, l
     return {name: lean.get(name) for name in names}
 
 
-def undeclared(cand: Candidate, assumptions: list[str] | None) -> list[str]:
+def undeclared(cand: Candidate, assumptions: list[str] | None, case: str) -> list[str]:
     if assumptions is None:
         return ["<no audit>"]
-    allowed = set(cand.adapter.get("trust", {}).get("allowed_assumptions", []))
-    return [a for a in assumptions if a not in allowed]
+    trust = cand.adapter.get("trust", {})
+    allowed = set(trust.get("allowed_assumptions", []))
+    # Tools that name one assumption per use (Lean's native_decide) are declared by one pattern
+    # that must match the whole name, never by listing case ids. A row with `cases` applies to
+    # those cases only, so a widening declared for one case cannot pass another's audit.
+    patterns = [re.compile(row["pattern"]) for row in trust.get("allowed_assumption_patterns", [])
+                if case in row.get("cases", [case])]
+    return [a for a in assumptions if a not in allowed and not any(p.fullmatch(a) for p in patterns)]
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +325,142 @@ def certificate_observations(prefix: str, certificate: str) -> list[dict[str, An
             "rhs": verdict_term(list(ref.lrat_verdict(claimed, cnf, text))),
         })
     return rows
+
+
+# ---------------------------------------------------------------------------
+# DS-04 run-time cases D4-R02 to D4-R05: what a solver run lets the lab claim
+
+SOLVER_CNF = {"B-C01": "ds04-carry-save.cnf", "B-C02": "ds04-carry-save-unshifted.cnf"}
+
+
+def solver_argv(solver: str, key: str, cnf: str, certificate: str) -> list[str]:
+    """The pinned argv (`argv` or `unknown_argv`) with the solver, CNF and certificate paths filled in."""
+
+    spec = shared("ds04-lrat-obligation.json")["solver"]
+    fill = {spec["tool"]: solver, "{cnf}": cnf, "{certificate}": certificate}
+    return [fill.get(a, a) for a in spec[key]]
+
+
+def solver_claim(state: str, exit_status: int | None, certificate_present: bool) -> str:
+    """The claim a solver run supports before any certificate is checked.
+
+    `certificate` means an unsatisfiability claim whose certificate the candidate must now check;
+    every other value is a taxonomy category that leaves the obligation unproved.
+    """
+
+    if state == "timeout":
+        return "timeout"
+    if state in ("resource_exhaustion", "oversized_output"):
+        return "resource_exhaustion"
+    codes = shared("ds04-lrat-obligation.json")["solver"]["exit_codes"]
+    result = codes.get(str(exit_status)) if state in ("completed", "failed") else None
+    if result == "satisfiable":
+        return "disproved_obligation"
+    if result == "unsatisfiable":
+        return "certificate" if certificate_present else "failed_certificate"
+    return "unknown"
+
+
+def solver_model(stdout: bytes) -> dict[int, bool] | None:
+    """The `v` lines of a satisfiable run as variable -> value, or None when there are none."""
+
+    model: dict[int, bool] = {}
+    for line in stdout.decode("ascii", "replace").splitlines():
+        if line.startswith("v "):
+            for token in line[2:].split():
+                literal = int(token)
+                if literal:
+                    model[abs(literal)] = literal > 0
+    return model or None
+
+
+def model_words(model: dict[int, bool]) -> tuple[int, int]:
+    """x and y from a model: bit i of x is variable 2 + i and of y is variable 2 + width + i."""
+
+    width = shared("ds04-lrat-obligation.json")["width"]
+    x = sum(1 << i for i in range(width) if model.get(2 + i))
+    y = sum(1 << i for i in range(width) if model.get(2 + width + i))
+    return x, y
+
+
+def counterexample_observations(x: int, y: int) -> tuple[list[dict[str, Any]], int, int]:
+    """Both sides of B-C02 at (x, y) as observations, with the values the reference computes."""
+
+    width = shared("ds04-lrat-obligation.json")["width"]
+    w = ["nat", str(width)]
+    mask = (1 << width) - 1
+
+    def word(n: int) -> list[Any]:
+        return ["app", ["sym", "F-01"], w, ["nat", str(n)]]
+
+    wx, wy = word(x), word(y)
+    left, right = (x + y) & mask, ((x ^ y) + (x & y)) & mask
+    rows = [
+        {"id": "D4-R02-L", "note": "left side of B-C02 at the solver's model",
+         "lhs": ["app", ["sym", "F-03"], w, wx, wy], "rhs": word(left)},
+        {"id": "D4-R02-R", "note": "right side of B-C02 at the solver's model",
+         "lhs": ["app", ["sym", "F-03"], w, ["app", ["sym", "F-04"], w, wx, wy], ["app", ["sym", "F-05"], w, wx, wy]],
+         "rhs": word(right)},
+    ]
+    return rows, left, right
+
+
+def missing_certificate_observation() -> dict[str, Any]:
+    """An absent certificate is read as empty text; the candidate's checker must not accept it."""
+
+    ref = _reference()
+    cnf = ref.cnf_text("B-C01")
+    return {"id": "D4-R05-E", "note": "the absent certificate read as empty text",
+            "lhs": ["app", ["sym", "B-F02"], ["sym", "B-C01"], ["str", cnf], ["str", ""]],
+            "rhs": verdict_term(list(ref.lrat_verdict("B-C01", cnf, "")))}
+
+
+def run_time_verdict(ident: str, claim: str, observations: list[Outcome], left: int | None = None, right: int | None = None) -> Outcome:
+    """One run-time case as a negative outcome: the exact category, and the candidate's part where it has one."""
+
+    expected = {row["id"]: row for row in shared("ds04-lrat-obligation.json")["run_time_cases"]}[ident]
+    category = {"D4-R02": "disproved_obligation", "D4-R03": "unknown", "D4-R04": "timeout", "D4-R05": "failed_certificate"}[ident]
+    failed = [o.ident for o in observations if not o.passed]
+    ok = claim == category and not failed
+    detail = f"claim {claim}"
+    if ident == "D4-R02":
+        ok = ok and left is not None and right is not None and left != right and len(observations) == 2
+        detail += f"; the prover computes {left} and {right} for the two sides" if left is not None else "; no model"
+    if ident == "D4-R05":
+        ok = ok and len(observations) == 1
+    if failed:
+        detail += f"; failed in the prover: {failed}"
+    return Outcome(ident, "run_time", ok, claim if claim != "certificate" else None, f"{expected['name']}: {detail}")
+
+
+Solve = Callable[[str, str, str, bool], tuple[str, "int | None", bytes, Path]]
+
+
+def run_time_cases(solve: Solve, check: Callable[[list[dict[str, Any]]], list[Outcome]]) -> list[Outcome]:
+    """D4-R02 to D4-R05 (D4-R01 is the fresh certificate).
+
+    ``solve(ident, argv_key, obligation, zero_wall)`` runs the pinned solver on the obligation's
+    shared CNF (which D4-CNF01 and D4-CNF02 prove equal to the candidate's cnf_text) and returns its
+    state, exit status, stdout and certificate path; ``check`` proves observations in the candidate.
+    """
+
+    outcomes = []
+    state, code, stdout, certificate = solve("D4-R02", "argv", "B-C02", False)
+    claim = solver_claim(state, code, certificate.is_file())
+    model = solver_model(stdout) if claim == "disproved_obligation" else None
+    if model:
+        rows, left, right = counterexample_observations(*model_words(model))
+        outcomes.append(run_time_verdict("D4-R02", claim, check(rows), left, right))
+    else:
+        outcomes.append(run_time_verdict("D4-R02", claim, []))
+    state, code, _, certificate = solve("D4-R03", "unknown_argv", "B-C01", False)
+    outcomes.append(run_time_verdict("D4-R03", solver_claim(state, code, certificate.is_file()), []))
+    state, code, _, certificate = solve("D4-R04", "argv", "B-C01", True)
+    outcomes.append(run_time_verdict("D4-R04", solver_claim(state, code, certificate.is_file()), []))
+    state, code, _, certificate = solve("D4-R05", "argv", "B-C01", False)
+    certificate.unlink(missing_ok=True)  # the lab loses the solver's output
+    outcomes.append(run_time_verdict("D4-R05", solver_claim(state, code, certificate.is_file()), check([missing_certificate_observation()])))
+    return outcomes
 
 
 def case_material(case: str) -> dict[str, Any]:
@@ -379,7 +523,7 @@ def write_source(cand: Candidate, directory: Path, source: R.Source) -> Path:
     return path
 
 
-def run_check_source(cand: Candidate, directory: Path, source: R.Source, ceiling: dict[str, int]) -> list[Outcome]:
+def run_check_source(cand: Candidate, case: str, directory: Path, source: R.Source, ceiling: dict[str, int]) -> list[Outcome]:
     path = write_source(cand, directory, source)
     launched = cand.check(path, ceiling)
     errs = errors(cand.lang.name, launched)
@@ -395,7 +539,7 @@ def run_check_source(cand: Candidate, directory: Path, source: R.Source, ceiling
             m = own[0]
             outcomes.append(Outcome(item.ident, item.kind, False, classify(cand.adapter, launched, m, phase_of(item, m.line)), m.text[:400], m.line))
             continue
-        extra = undeclared(cand, found.get(item.declaration))
+        extra = undeclared(cand, found.get(item.declaration), case)
         if extra:
             reached = found.get(item.declaration) is not None
             detail = f"undeclared: {extra}" if reached else "not reached (an earlier error stopped the file)" if errs else "no audit"
@@ -410,10 +554,24 @@ def run_check_source(cand: Candidate, directory: Path, source: R.Source, ceiling
     return outcomes
 
 
+def check_observations(cand: Candidate, case: str, directory: Path, observations: list[dict[str, Any]], ceiling: dict[str, int] = MEASURED_CEILING) -> list[Outcome]:
+    """Check extra observations of a case, re-checking items singly after a Rocq stop."""
+
+    source = R.check_file(cand.lang, case, [], observations, [])
+    outcomes = run_check_source(cand, case, directory, source, ceiling)
+    if all(o.passed for o in outcomes) or cand.lang.name == "lean4":
+        return outcomes
+    single = []
+    for row in observations:
+        one = R.check_file(cand.lang, case, [], [row], [])
+        single += run_check_source(cand, case, directory / R.ident(row["id"]), one, ceiling)
+    return single
+
+
 def run_positive(cand: Candidate, case: str, ceiling: dict[str, int] = MEASURED_CEILING) -> list[Outcome]:
     mat = case_material(case)
     source = R.check_file(cand.lang, case, mat["theorems"], mat["observations"], instances(cand, case))
-    outcomes = run_check_source(cand, cand.work / "checks" / case, source, ceiling)
+    outcomes = run_check_source(cand, case, cand.work / "checks" / case, source, ceiling)
     if all(o.passed for o in outcomes) or cand.lang.name == "lean4":
         return outcomes
     # Rocq stops at its first error: re-check each item on its own.
@@ -423,7 +581,7 @@ def run_positive(cand: Candidate, case: str, ceiling: dict[str, int] = MEASURED_
         observations = [o for o in mat["observations"] if o["id"] == item.ident]
         insts = [i for i in instances(cand, case) if i["id"] == item.ident]
         one = R.check_file(cand.lang, case, theorems, observations, insts)
-        single += run_check_source(cand, cand.work / "checks" / case / R.ident(item.ident), one, ceiling)
+        single += run_check_source(cand, case, cand.work / "checks" / case / R.ident(item.ident), one, ceiling)
     return single
 
 
@@ -446,7 +604,7 @@ def run_negative(cand: Candidate, case: str, negative: dict[str, Any], ceiling: 
     expected = list(negative["expected"])
     if form == "axiom_use":
         found = audits(cand, launched, [item.declaration])
-        extra = undeclared(cand, found.get(item.declaration))
+        extra = undeclared(cand, found.get(item.declaration), case)
         ok = bool(extra) and extra != ["<no audit>"]
         cat = "undeclared_trust" if ok else None
         return Outcome(negative["id"], form, ok and cat in expected, cat, f"audit reports {extra}", item.phases["audit"][0], ok, launched.wall_ms)
@@ -525,12 +683,123 @@ def load_adapter(root: Path) -> dict[str, Any]:
 
 def load_candidate(root: Path, work: Path) -> Candidate:
     adapter = load_adapter(root)
-    return Candidate(root, adapter, TOOLCHAINS[adapter["language"]], work)
+    return Candidate(root, adapter, TOOLCHAINS[adapter["language"]], work, extra={"toolchain_aarch64": TOOLCHAINS_AARCH64[adapter["language"]]})
+
+
+# ---------------------------------------------------------------------------
+# DS-05: the standalone checker's corpus (shared by the dev loop and the epoch runner)
+
+
+def verdict_text(verdict: tuple[Any, ...]) -> str:
+    return "accept" if verdict[0] == "accept" else f"reject {verdict[1]} {verdict[2]}"
+
+
+def standalone_corpus(root: Path, fresh: str | None) -> list[dict[str, Any]]:
+    """Every DS-05 corpus item with its argv tail, expected output and in-prover twin."""
+
+    ref = _reference()
+    root.mkdir(parents=True, exist_ok=True)
+    items: list[dict[str, Any]] = []
+    expected_lines = {row["fixture"]: row["standalone"] for row in case_material("DS-03")["observations"] if "fixture" in row}
+    for ident, data, _ in ref.record_fixtures():
+        path = root / f"{ident}.ocr"
+        path.write_bytes(data)
+        items.append({"id": f"D5-{ident}", "args": ["records", str(path)], "expected": expected_lines[ident], "in_prover": ident.replace("R-F", "D3-O")})
+    for index, obligation in enumerate(("B-C01", "B-C02"), 1):
+        items.append({"id": f"D5-CNF-{obligation}", "args": ["cnf", obligation], "expected": ref.cnf_text(obligation).rstrip("\n"), "in_prover": f"D4-CNF{index:02d}", "multiline": True})
+    golden = (SHARED / "ds04-carry-save-golden.lrat").read_text(encoding="ascii")
+    for label, certificate, prefix in (("G", golden, "D4-G"), ("F", fresh, "D4-F")):
+        if certificate is None:
+            continue
+        for variant, _ in ref.VARIANTS:
+            claimed, cnf, text = ref.mutate_certificate(certificate, variant)
+            cnf_path, cert_path = root / f"{label}-{variant}.cnf", root / f"{label}-{variant}.lrat"
+            cnf_path.write_text(cnf, encoding="ascii")
+            cert_path.write_text(text, encoding="ascii")
+            items.append({"id": f"D5-{label}-{variant}", "args": ["lrat", claimed, str(cnf_path), str(cert_path)],
+                          "expected": verdict_text(ref.lrat_verdict(claimed, cnf, text)), "in_prover": f"{prefix}-{variant}"})
+    for path in root.iterdir():
+        path.chmod(0o444)
+    return items
+
+
+def dev_standalone(cand: Candidate, hosts: set[str] | None, fresh: bool, only: set[str] | None) -> int:
+    """Build each host's checker and run the corpus directly (no sandbox; the epoch adds it)."""
+
+    spec = cand.adapter.get("standalone")
+    if not spec:
+        print("FAIL no standalone entry in the adapter")
+        return 1
+    corpus = cand.work / "corpus"
+    shutil.rmtree(corpus, ignore_errors=True)
+    certificate = None
+    if fresh:
+        corpus.mkdir(parents=True)
+        cnf = corpus.parent / "fresh.cnf"
+        cnf.write_text(_reference().cnf_text("B-C01"), encoding="ascii")
+        done = subprocess.run(solver_argv(DEV_SOLVER, "argv", str(cnf), str(corpus.parent / "fresh.lrat")), capture_output=True, check=False)
+        certificate = (corpus.parent / "fresh.lrat").read_text(encoding="ascii") if done.returncode == 20 else None
+        print(f"{'ok  ' if certificate else 'FAIL'} fresh certificate (solver exit {done.returncode})")
+    items = standalone_corpus(corpus, certificate)
+    failures = 0
+    for host, host_spec in spec.get("hosts", {}).items():
+        if hosts and host not in hosts:
+            continue
+        built = True
+        for step in host_spec.get("build", []):
+            launched = cand.runner([cand.fill(a, jobs="1") for a in step], cand.src, cand.environment(host_spec.get("build_environment")), MEASURED_CEILING)
+            if launched.exit_status != 0:
+                print(f"FAIL {host} build: {' '.join(launched.argv)}\n{launched.output[-4000:]}")
+                built = False
+                break
+        binary = cand.src / host_spec.get("binary", "")
+        if not built or not binary.is_file():
+            failures += 1
+            continue
+        print(f"ok   {host} build: {binary.relative_to(cand.src)} ({binary.stat().st_size} bytes)")
+        launch = [cand.fill(a).replace("{binary}", str(binary)) for a in host_spec["launch"]]
+        env = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C", "TZ": "UTC", "HOME": str(cand.work), "TMPDIR": str(cand.work),
+               **{k: cand.fill(v) for k, v in host_spec.get("environment", {}).items()}}
+        for item in items:
+            if only and item["id"] not in only:
+                continue
+            started = time.monotonic()
+            done = subprocess.run(launch + item["args"], capture_output=True, env=env, timeout=600, check=False)
+            out = done.stdout.decode("utf-8", "replace")
+            got = out.rstrip("\n") if item.get("multiline") else out.strip()
+            ok = done.returncode == 0 and got == item["expected"]
+            failures += not ok
+            shown = "(canonical CNF)" if item.get("multiline") and ok else repr(got[:120])
+            print(f"{'ok  ' if ok else 'FAIL'} {host} {item['id']:14} {int((time.monotonic() - started) * 1000)}ms expected={item['expected'][:60]!r} got={shown}")
+        usage = subprocess.run(launch, capture_output=True, env=env, timeout=60, check=False)
+        ok = usage.returncode == 2 and bool(usage.stderr.strip()) and not usage.stdout
+        failures += not ok
+        print(f"{'ok  ' if ok else 'FAIL'} {host} usage (exit {usage.returncode})")
+    return failures
+
+
+def dev_solve(cand: Candidate) -> Solve:
+    """Run the development solver directly (the epoch runs the pinned archive in the sandbox)."""
+
+    def solve(ident: str, key: str, obligation: str, zero_wall: bool) -> tuple[str, int | None, bytes, Path]:
+        out = cand.work / "solver" / ident
+        shutil.rmtree(out, ignore_errors=True)
+        out.mkdir(parents=True)
+        certificate = out / "certificate.lrat"
+        argv = solver_argv(DEV_SOLVER, key, str(SHARED / SOLVER_CNF[obligation]), str(certificate))
+        try:
+            done = subprocess.run(argv, capture_output=True, check=False, timeout=0 if zero_wall else 600)
+        except subprocess.TimeoutExpired:
+            return "timeout", None, b"", certificate
+        return ("completed" if done.returncode == 0 else "failed"), done.returncode, done.stdout, certificate
+
+    return solve
 
 
 def main(argv: list[str]) -> int:
     if len(argv) < 3 or argv[0] != "dev":
-        print("usage: d006_check.py dev CANDIDATE_DIR CASE... [--no-build] [--only ID,...] [--negatives-only|--positives-only]", file=sys.stderr)
+        print("usage: d006_check.py dev CANDIDATE_DIR CASE... [--no-build] [--only ID,...] [--negatives-only|--positives-only]\n"
+              "       (DS-04 --run-time also runs D4-R02 to D4-R05; DS-05 builds and runs the standalone checker: [--host H-01|H-02] [--fresh])", file=sys.stderr)
         return 2
     root = Path(argv[1]).resolve()
     flags = [a for a in argv[2:] if a.startswith("--")]
@@ -552,11 +821,20 @@ def main(argv: list[str]) -> int:
         print(f"build ok ({sum(b.wall_ms for b in built)} ms)")
     failures = 0
     for case in cases:
+        if case == "DS-05":
+            hosts = {argv[i + 1] for i, a in enumerate(argv) if a == "--host"} or None
+            failures += dev_standalone(cand, hosts, "--fresh" in flags, only)
+            continue
         mat = case_material(case)
         if "--negatives-only" not in flags:
             for o in run_positive(cand, case):
                 if only and o.ident not in only:
                     continue
+                status = "ok  " if o.passed else "FAIL"
+                failures += not o.passed
+                print(f"{status} {o.ident:10} {o.kind:12} {o.category or ''} {o.detail[:300]}")
+        if case == "DS-04" and "--run-time" in flags:
+            for o in run_time_cases(dev_solve(cand), lambda rows: check_observations(cand, case, cand.work / "checks" / "DS-04-run-time", rows)):
                 status = "ok  " if o.passed else "FAIL"
                 failures += not o.passed
                 print(f"{status} {o.ident:10} {o.kind:12} {o.category or ''} {o.detail[:300]}")
