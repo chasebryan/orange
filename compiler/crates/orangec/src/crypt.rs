@@ -11,6 +11,7 @@ use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 
 use orange_compiler::{
     ArrayType, CoreArray, CoreFunction, CoreModule, CoreType, CoreValue, Edition, Evaluator,
@@ -511,17 +512,31 @@ fn seal_stream(
     pending: &mut PendingOutput,
     shown_input: &str,
 ) -> Result<(), String> {
-    let mut calls = Calls::new(scheme, key, header)?;
     pending.write(header)?;
     let chunk = scheme.shape.chunk;
-    let mut plaintext = vec![0; chunk];
     let mut index: u32 = 0;
-    loop {
-        let read =
-            read_full(reader, &mut plaintext).map_err(|error| read_error(shown_input, &error))?;
-        if read == chunk {
-            let sealed = calls.seal(&chunk_nonce(prefix, index, false), &plaintext)?;
-            pending.write(&sealed)?;
+    let mut finished = false;
+    let next = || {
+        if finished {
+            return Ok(None);
+        }
+        let mut data = vec![0; chunk];
+        let read = read_full(reader, &mut data).map_err(|error| read_error(shown_input, &error))?;
+        let last = read < chunk;
+        if last {
+            data = data
+                .get(..read)
+                .and_then(|read| pad(read, chunk))
+                .ok_or_else(inconsistent_shape)?;
+            finished = true;
+        }
+        let job = Job {
+            index,
+            nonce: chunk_nonce(prefix, index, last),
+            last,
+            data,
+        };
+        if !last {
             index = index.checked_add(1).ok_or_else(|| {
                 render_cli_error(
                     CliDiagnosticCode::CryptInput,
@@ -529,13 +544,13 @@ fn seal_stream(
                     "a sealed file holds fewer than 2^32 chunks",
                 )
             })?;
-        } else {
-            let data = plaintext.get(..read).ok_or_else(inconsistent_shape)?;
-            let last = pad(data, chunk).ok_or_else(inconsistent_shape)?;
-            let sealed = calls.seal(&chunk_nonce(prefix, index, true), &last)?;
-            return pending.write(&sealed);
         }
-    }
+        Ok(Some(job))
+    };
+    let seal = |calls: &mut Calls<'_>, job: &Job| calls.seal(&job.nonce, &job.data);
+    run_chunks(scheme, key, header, next, &seal, |_, sealed| {
+        pending.write(&sealed)
+    })
 }
 
 fn open_stream(
@@ -547,10 +562,8 @@ fn open_stream(
     pending: &mut PendingOutput,
     shown_input: &str,
 ) -> Result<(), String> {
-    let mut calls = Calls::new(scheme, key, header)?;
     let sealed_bytes = scheme.shape.sealed().ok_or_else(inconsistent_shape)?;
     let mut current = vec![0; sealed_bytes];
-    let mut next = vec![0; sealed_bytes];
     let read = read_full(reader, &mut current).map_err(|error| read_error(shown_input, &error))?;
     if read != sealed_bytes {
         return Err(sealed_file_error(
@@ -559,8 +572,16 @@ fn open_stream(
         ));
     }
     let mut index: u32 = 0;
-    loop {
-        let read = read_full(reader, &mut next).map_err(|error| read_error(shown_input, &error))?;
+    let mut finished = false;
+    // A chunk is the final one when nothing follows it, so each read looks
+    // one chunk ahead.
+    let next = || {
+        if finished {
+            return Ok(None);
+        }
+        let mut following = vec![0; sealed_bytes];
+        let read =
+            read_full(reader, &mut following).map_err(|error| read_error(shown_input, &error))?;
         let last = read == 0;
         if !last && read != sealed_bytes {
             return Err(sealed_file_error(
@@ -571,30 +592,185 @@ fn open_stream(
                 ),
             ));
         }
-        let nonce = chunk_nonce(prefix, index, last);
-        if !calls.authentic(&nonce, &current)? {
+        let job = Job {
+            index,
+            nonce: chunk_nonce(prefix, index, last),
+            last,
+            data: std::mem::replace(&mut current, following),
+        };
+        if last {
+            finished = true;
+        } else {
+            index = index.checked_add(1).ok_or_else(|| {
+                sealed_file_error(shown_input, String::from("it holds more than 2^32 chunks"))
+            })?;
+        }
+        Ok(Some(job))
+    };
+    let open = |calls: &mut Calls<'_>, job: &Job| {
+        if calls.authentic(&job.nonce, &job.data)? {
+            calls.open(&job.nonce, &job.data).map(Some)
+        } else {
+            Ok(None)
+        }
+    };
+    run_chunks(scheme, key, header, next, &open, |job, opened| {
+        let Some(plaintext) = opened else {
             return Err(render_cli_error(
                 CliDiagnosticCode::NotAuthentic,
-                format_args!("chunk {index} of `{shown_input}` is not authentic"),
+                format_args!("chunk {} of `{shown_input}` is not authentic", job.index),
                 "the file was altered, cut short, or sealed with another key; nothing was written",
             ));
-        }
-        let plaintext = calls.open(&nonce, &current)?;
-        if last {
+        };
+        if job.last {
             let data = unpad(&plaintext).ok_or_else(|| {
                 sealed_file_error(
                     shown_input,
                     String::from("its authentic final chunk is not padded"),
                 )
             })?;
-            return pending.write(data);
+            pending.write(data)
+        } else {
+            pending.write(&plaintext)
         }
-        pending.write(&plaintext)?;
-        std::mem::swap(&mut current, &mut next);
-        index = index.checked_add(1).ok_or_else(|| {
-            sealed_file_error(shown_input, String::from("it holds more than 2^32 chunks"))
-        })?;
+    })
+}
+
+/// One chunk to seal or open.
+struct Job {
+    index: u32,
+    nonce: Vec<u8>,
+    last: bool,
+    data: Vec<u8>,
+}
+
+/// Chunks one worker evaluates per round.
+const CHUNKS_PER_WORKER: usize = 16;
+/// The most workers a stream uses, whatever the machine offers.
+const MAX_WORKERS: usize = 64;
+
+/// Where a worker takes its rounds of jobs and returns them with their
+/// results.
+struct Lane<T> {
+    jobs: mpsc::SyncSender<Vec<Job>>,
+    results: mpsc::Receiver<Result<Vec<(Job, T)>, String>>,
+}
+
+/// Evaluates chunks in rounds on worker threads, each with its own
+/// evaluator, and hands every result to `take` in chunk order.
+///
+/// `next` yields the chunks in order and `None` after the final one. A round
+/// gives each worker up to [`CHUNKS_PER_WORKER`] chunks. When `next` fails,
+/// the chunks read before the failure are still evaluated and taken first,
+/// so errors are reported in the order a sequential reader would meet them.
+fn run_chunks<T: Send, W>(
+    scheme: &Scheme,
+    key: &[u8],
+    header: &[u8; HEADER_BYTES],
+    mut next: impl FnMut() -> Result<Option<Job>, String>,
+    work: &W,
+    mut take: impl FnMut(&Job, T) -> Result<(), String>,
+) -> Result<(), String>
+where
+    W: Fn(&mut Calls<'_>, &Job) -> Result<T, String> + Sync,
+{
+    let workers = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .clamp(1, MAX_WORKERS);
+    std::thread::scope(|scope| {
+        let mut lanes = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let (jobs, incoming) = mpsc::sync_channel::<Vec<Job>>(1);
+            let (outgoing, results) = mpsc::sync_channel(1);
+            let spawned = std::thread::Builder::new().spawn_scoped(scope, move || {
+                chunk_worker(scheme, key, header, work, &incoming, &outgoing);
+            });
+            if spawned.is_err() {
+                break;
+            }
+            lanes.push(Lane { jobs, results });
+        }
+        if lanes.is_empty() {
+            return Err(render_cli_error(
+                CliDiagnosticCode::CryptInput,
+                "could not start a thread to evaluate the scheme",
+                "the operating system refused to create one",
+            ));
+        }
+        loop {
+            let mut stop = None;
+            let mut round = Vec::with_capacity(lanes.len());
+            for lane in &lanes {
+                let mut batch = Vec::with_capacity(CHUNKS_PER_WORKER);
+                while stop.is_none() && batch.len() < CHUNKS_PER_WORKER {
+                    match next() {
+                        Ok(Some(job)) => batch.push(job),
+                        Ok(None) => stop = Some(Ok(())),
+                        Err(error) => stop = Some(Err(error)),
+                    }
+                }
+                if batch.is_empty() {
+                    break;
+                }
+                lane.jobs.send(batch).map_err(|_| worker_failure())?;
+                round.push(lane);
+                if stop.is_some() {
+                    break;
+                }
+            }
+            for lane in round {
+                for (job, result) in lane.results.recv().map_err(|_| worker_failure())?? {
+                    take(&job, result)?;
+                }
+            }
+            if let Some(stop) = stop {
+                return stop;
+            }
+        }
+    })
+}
+
+/// A worker's loop: it prepares its evaluator on its first round and
+/// evaluates every round it receives until the stream ends.
+fn chunk_worker<T, W>(
+    scheme: &Scheme,
+    key: &[u8],
+    header: &[u8; HEADER_BYTES],
+    work: &W,
+    incoming: &mpsc::Receiver<Vec<Job>>,
+    outgoing: &mpsc::SyncSender<Result<Vec<(Job, T)>, String>>,
+) where
+    W: Fn(&mut Calls<'_>, &Job) -> Result<T, String>,
+{
+    let mut calls = None;
+    for batch in incoming {
+        let prepared = match calls.take() {
+            Some(prepared) => Ok(prepared),
+            None => Calls::new(scheme, key, header),
+        };
+        let outcome = match prepared {
+            Ok(mut prepared) => {
+                let outcome = batch
+                    .into_iter()
+                    .map(|job| work(&mut prepared, &job).map(|result| (job, result)))
+                    .collect();
+                calls = Some(prepared);
+                outcome
+            }
+            Err(error) => Err(error),
+        };
+        if outgoing.send(outcome).is_err() {
+            return;
+        }
     }
+}
+
+fn worker_failure() -> String {
+    render_cli_error(
+        CliDiagnosticCode::MissingPhaseArtifact,
+        "a thread evaluating the scheme stopped unexpectedly",
+        "this is an internal compiler failure",
+    )
 }
 
 /// A scheme's three specs, prepared for repeated calls under one key.
