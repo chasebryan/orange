@@ -3699,7 +3699,11 @@ mod tests {
                 .call(foreign, &[key.clone(), key.clone()], 1_000)
                 .is_none()
         );
-        assert!(evaluator.call(mix, &[key.clone()], 1_000).is_none());
+        assert!(
+            evaluator
+                .call(mix, std::slice::from_ref(&key), 1_000)
+                .is_none()
+        );
         assert!(
             evaluator
                 .call(mix, &[key.clone(), key.clone(), key.clone()], 1_000)

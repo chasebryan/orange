@@ -1542,3 +1542,195 @@ fn inconsistent_shape() -> String {
         "this is an internal compiler failure",
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn builtin(name: &str) -> Scheme {
+        let builtin = BUILTINS
+            .iter()
+            .find(|builtin| builtin.name == name)
+            .unwrap();
+        compile_builtin(builtin, Edition::E2026).unwrap()
+    }
+
+    #[test]
+    fn builtin_schemes_declare_their_shapes() {
+        let shapes = BUILTINS
+            .iter()
+            .map(|entry| (entry.name, builtin(entry.name).shape))
+            .collect::<Vec<_>>();
+        let shape = |key, nonce| Shape {
+            key,
+            nonce,
+            tag: 16,
+            chunk: 240,
+        };
+        assert_eq!(
+            shapes,
+            [
+                ("xchacha20_poly1305", shape(32, 24)),
+                ("chacha20_poly1305", shape(32, 12)),
+                ("ascon_aead128", shape(16, 16)),
+            ]
+        );
+        assert_eq!(
+            BUILTINS.first().map(|builtin| builtin.name),
+            Some(DEFAULT_SCHEME)
+        );
+    }
+
+    #[test]
+    fn headers_round_trip_and_parse_strictly() {
+        let scheme = builtin("chacha20_poly1305");
+        let prefix = [1, 2, 3, 4, 5, 6, 7];
+        let header = header(&scheme, &prefix).unwrap();
+        assert_eq!(
+            &header[..16],
+            b"orange\x00\x01\x20\x0c\x10\x00\x00\x00\x00\xf0"
+        );
+        assert_eq!(&header[16..40], b"chacha20_poly1305\0\0\0\0\0\0\0");
+        assert_eq!(&header[40..47], &prefix);
+        assert!(header[47..].iter().all(|byte| *byte == 0));
+        let parsed = parse_header(&header).unwrap();
+        assert_eq!(parsed.scheme, "chacha20_poly1305");
+        assert_eq!(parsed.shape, scheme.shape);
+        assert_eq!(parsed.prefix, prefix);
+
+        let altered = |at: usize, byte: u8| {
+            let mut altered = header;
+            altered[at] = byte;
+            parse_header(&altered).err().unwrap()
+        };
+        assert_eq!(
+            altered(0, b'O'),
+            "it does not begin with the `orange` magic"
+        );
+        assert_eq!(altered(6, 1), "it does not begin with the `orange` magic");
+        assert_eq!(
+            altered(7, 2),
+            "it uses format version 2, and this orangec reads version 1"
+        );
+        assert_eq!(altered(11, 1), "its reserved header byte is not zero");
+        assert_eq!(
+            altered(8, 8),
+            "its header names impossible sizes: keys are 16 to 64 bytes"
+        );
+        assert_eq!(
+            altered(9, 30),
+            "its header names impossible sizes: nonces are 12 to 29 bytes"
+        );
+        assert_eq!(
+            altered(15, 0xf1),
+            "its header names impossible sizes: a sealed chunk is at most 256 bytes"
+        );
+        assert_eq!(altered(16, 0), "its header does not name a scheme");
+        assert_eq!(altered(20, b'-'), "its header does not name a scheme");
+        assert_eq!(altered(39, b'x'), "its header does not name a scheme");
+        assert_eq!(altered(47, 1), "its nonce-prefix field is not zero-padded");
+    }
+
+    #[test]
+    fn chunk_nonces_end_in_a_counter_and_a_final_flag() {
+        assert_eq!(
+            chunk_nonce(&[0xaa; 7], 0x0102_0304, false),
+            [0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 1, 2, 3, 4, 0]
+        );
+        assert_eq!(
+            chunk_nonce(&[0xbb; 19], u32::MAX, true)[19..],
+            [0xff, 0xff, 0xff, 0xff, 1]
+        );
+    }
+
+    #[test]
+    fn the_final_chunk_is_padded_with_one_mark_and_zeros() {
+        assert_eq!(pad(b"", 4).unwrap(), [0x80, 0, 0, 0]);
+        assert_eq!(pad(b"abc", 4).unwrap(), *b"abc\x80");
+        assert_eq!(pad(b"abcd", 4), None);
+        assert_eq!(unpad(&[0x80, 0, 0, 0]), Some(&b""[..]));
+        assert_eq!(unpad(b"ab\x80\x00"), Some(&b"ab"[..]));
+        assert_eq!(unpad(b"a\x80\x80\x00"), Some(&b"a\x80"[..]));
+        assert_eq!(unpad(b"ab\x00\x00"), None);
+        assert_eq!(unpad(b"ab\x81\x00"), None);
+        assert_eq!(unpad(&[0, 0, 0, 0]), None);
+        for length in 0..16 {
+            let data = vec![0x80; length];
+            assert_eq!(unpad(&pad(&data, 16).unwrap()), Some(data.as_slice()));
+        }
+    }
+
+    #[test]
+    fn key_files_parse_strictly() {
+        let text = key_file_text("ascon_aead128", &[0xab; 16]);
+        assert_eq!(
+            text,
+            concat!(
+                "# Orange secret key for the scheme ascon_aead128.\n",
+                "# Whoever holds this file can open and forge everything sealed with it.\n",
+                "orange-key 1 ascon_aead128 abababababababababababababababab\n",
+            )
+        );
+        let key = parse_key(&text).unwrap();
+        assert_eq!(key.scheme, "ascon_aead128");
+        assert_eq!(key.bytes, [0xab; 16]);
+
+        let line = |line: &str| parse_key(line).err().unwrap();
+        assert_eq!(line(""), "it holds no key line");
+        assert_eq!(
+            line("orange-key 1 a 00000000000000000000000000000000\norange-key 1 a 00\n"),
+            "it holds more than one key line"
+        );
+        for malformed in [
+            "orange-key 1 a",
+            "orange-key 2 a 00000000000000000000000000000000",
+            "orange-key 1 a-b 00000000000000000000000000000000",
+            "orange-key  1 a 00000000000000000000000000000000",
+        ] {
+            assert_eq!(
+                line(malformed),
+                "its key line is not `orange-key 1 SCHEME HEX`",
+                "{malformed}"
+            );
+        }
+        assert_eq!(
+            line("orange-key 1 a 0000000000000000000000000000000G"),
+            "its key is not lowercase hexadecimal"
+        );
+        assert_eq!(
+            line("orange-key 1 a 000000000000000000000000000000AB"),
+            "its key is not lowercase hexadecimal"
+        );
+        assert_eq!(
+            line("orange-key 1 a 0000"),
+            "its key is not 16 to 64 bytes long"
+        );
+        assert_eq!(decode_hex("00ff7f"), Some(vec![0, 0xff, 0x7f]));
+        assert_eq!(decode_hex("0"), None);
+    }
+
+    #[test]
+    fn scheme_names_are_short_identifiers() {
+        assert!(valid_scheme_name("ascon_aead128"));
+        assert!(valid_scheme_name(&"x".repeat(24)));
+        assert!(!valid_scheme_name(""));
+        assert!(!valid_scheme_name(&"x".repeat(25)));
+        assert!(!valid_scheme_name("a-b"));
+        assert!(!valid_scheme_name("é"));
+    }
+
+    #[test]
+    fn a_scheme_seals_what_it_opens() {
+        let scheme = builtin("ascon_aead128");
+        let mut calls = Calls::new(&scheme, &[7; 16], &[9; HEADER_BYTES]).unwrap();
+        let nonce = chunk_nonce(&[5; 11], 3, true);
+        let plaintext = pad(b"attack at dawn", 240).unwrap();
+        let sealed = calls.seal(&nonce, &plaintext).unwrap();
+        assert_eq!(sealed.len(), 256);
+        assert!(calls.authentic(&nonce, &sealed).unwrap());
+        assert_eq!(calls.open(&nonce, &sealed).unwrap(), plaintext);
+        let other = chunk_nonce(&[5; 11], 3, false);
+        assert!(!calls.authentic(&other, &sealed).unwrap());
+        assert!(measure_seal(&scheme).unwrap() > 0);
+    }
+}
