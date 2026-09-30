@@ -362,6 +362,13 @@ The S3j budgets remain. S3k adds or refines the following.
   "reference evaluation result allocation failed", labeled "evaluation tuple
   storage could not be reserved" or "evaluated tuple storage could not be
   reserved". None gives partial output.
+- A resolved tuple type's element types, at most 16 of them, are then copied
+  once into one shared list, which every copy of the type reuses without
+  allocating. The Rust standard library cannot yet report the failure of that
+  allocation (its fallible form is unstable, and the compiler has no unsafe
+  code), so a failure there aborts the process, during analysis and before
+  any result is written, instead of giving `ORC0209`. It is never reported
+  as success (`SEMANTICS_2026.md` section 9).
 
 The deepest sources the limits admit, including 32 tuples nested in the
 arguments of calls, each followed by a projection, and 63 loops nested in

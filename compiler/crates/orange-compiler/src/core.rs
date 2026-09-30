@@ -898,6 +898,12 @@ impl TupleType {
     /// Returns the tuple type of `elements`, or `None` when there are fewer
     /// than two or more than [`MAX_TUPLE_ELEMENTS`] of them or one of them is
     /// a tuple.
+    ///
+    /// The element types are copied once into the shared list. Stable Rust
+    /// cannot report the failure of that allocation, of at most
+    /// [`MAX_TUPLE_ELEMENTS`] types, so its failure aborts the process
+    /// rather than returning `None`; callers reserve their own element
+    /// storage fallibly before calling this.
     #[must_use]
     pub fn new(elements: &[CoreType]) -> Option<Self> {
         let count = u32::try_from(elements.len()).ok()?;

@@ -235,7 +235,10 @@ events, Core nodes, and steps, so the analyzer's and evaluator's memory and
 native stack stay bounded; the deepest admitted sources run within 1 MiB of
 stack. The step budget of 1,048,576 is unchanged. Core whose tuples are
 inconsistent with their types stops evaluation with no values, and an
-allocation failure gives no Core or no values.
+allocation failure gives no Core or no values. The one allocation stable
+Rust cannot report, the shared list of a tuple type's at most 16 element
+types, aborts the process during analysis, before any result is written,
+when it fails.
 
 The reference evaluator is not constant-time, and no secrecy label or leakage
 property is defined.
