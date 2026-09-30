@@ -137,9 +137,10 @@ text. In summary:
   them; `use` is a word only there. A call may be qualified as `m::f(...)`,
   and a qualified name is always called.
 - **Programs.** A program is a root and every module it reaches by uses,
-  among the modules supplied with it, at most 64 in all. Module names are
-  distinct, a module uses another at most once and never itself, and uses
-  form no cycle (`ORC0228`, `ORC0230`, `ORC0231`). The graph is examined
+  among the modules supplied with it, at most 64 in all; a supplied module it
+  does not reach is ignored and not counted. No other supplied module shares
+  a name with a module of the program, a module uses another at most once and
+  never itself, and uses form no cycle (`ORC0228`, `ORC0230`, `ORC0231`). The graph is examined
   depth first from the root, and modules are ordered as the search finishes
   them, so each comes after every module it uses and the root comes last.
 - **Checking.** Each module is checked in that order, as S3g checks one
@@ -239,7 +240,9 @@ standard input, and no name reaches outside it. Every module is read under the
 same regular-file, size, and UTF-8 rules as a named source, and its bytes are
 charged to the invocation's source budget, so a program cannot read more than
 a command line could. A program reads at most 64 modules besides its root,
-each once, and the module graph is linear in the number of uses. A module
+each once; a file that declares a module of another name is kept for the
+diagnostic, but its uses are not followed. The module graph enters at most 64
+modules, so its work is linear in the number of modules supplied. A module
 file that an attacker can place beside the root changes the program's
 meaning, as the root file itself would; S3h adds no protection against a
 directory the reader does not control.

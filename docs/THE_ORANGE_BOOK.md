@@ -2320,8 +2320,8 @@ directory of the file that names it, or from the current directory when the
 source comes from standard input. A module name is an ASCII identifier, so it
 names one file in that directory and no path outside it, and each module is
 read once, however many modules use it. That is a rule of the command line,
-not of the language. A program is a root module and the modules supplied with
-it, and another host may supply them another way.
+not of the language. A program is a root module and the modules it reaches
+among those supplied with it, and another host may supply them another way.
 
 The [module fixtures](../compiler/fixtures/s3h/) write SHA-256, HMAC, and HKDF
 as three files. The program that uses them holds four modules, `hkdf` using

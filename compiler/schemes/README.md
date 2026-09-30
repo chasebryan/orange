@@ -104,7 +104,9 @@ module NAME {
   it as it does for `orangec check`: `use chacha20;` reads `chacha20.or`. The
   three specifications must be the program's own, declared in its root
   module, and they may call the used modules' functions, as in
-  `chacha20::block(key, counter, nonce)`. A built-in scheme is one module.
+  `chacha20::block(key, counter, nonce)`. The program and its modules share
+  one 64 MiB source budget, as the sources of one `orangec check` do. A
+  built-in scheme is one module.
 
 `orangec schemes PATH` compiles a program, checks its interface, seals one
 chunk of zeros, and prints its sizes and step count. A program that differs

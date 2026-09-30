@@ -446,12 +446,15 @@ A module name is an ASCII identifier, so it names one file in that directory
 and no path outside it. Each module is read once per program, in the order a
 `use` first names it, through the same regular-file boundary, 16 MiB
 per-source limit, UTF-8 check, and shared per-invocation source budget as a
-named source, and at most 64 modules besides the root are read. A module that
+named source, and at most 64 modules besides the root are read. A file that
+declares a module of another name is kept, so that the module graph reports
+the `use` that read it, but its own uses are not followed. A module that
 cannot be read is `ORC1001` with a note naming the `use` and its module; any
 failure to read, decode, lex, or parse a module stops that program before
 semantic analysis. `lex` reads no module, and each operand of an invocation is
 the root of its own program. A scheme program given to the sealing commands by
-path reads its modules the same way.
+path reads its modules the same way, under one 64 MiB budget shared with its
+own bytes.
 `eval` accepts exactly one source and begins output only after complete
 validation and evaluation. A host output failure can leave an
 already-written prefix, but returns status 1; a broken pipe remains quiet and

@@ -771,7 +771,8 @@ fn compile_with_limits(
 /// standard input; a module name is an ASCII identifier, so it names a file
 /// in that directory and nothing outside it. Each module is read once, in the
 /// order in which a `use` first names it, and every read is charged to the
-/// invocation's source budget. At most one module more than a program may
+/// invocation's source budget. The uses of a file that declares a module of
+/// another name are not followed. At most one module more than a program may
 /// hold is read, so that semantic analysis reports the limit. A module that
 /// cannot be read, lexed, or parsed stops the program with its diagnostics.
 fn load_used_modules(
@@ -795,10 +796,19 @@ fn load_used_modules(
         let uses = if next_module == 0 {
             Some(root.module().uses())
         } else {
+            // A file that declares a module of another name stays loaded, so
+            // that the module graph reports the `use` that read it, but its
+            // own uses name no module of this program and are not followed.
             next_module
                 .checked_sub(1)
-                .and_then(|index| loaded.get(index))
-                .map(|(_, ast)| ast.module().uses())
+                .and_then(|index| loaded.get(index).zip(requested.get(index)))
+                .map(|((_, ast), requested)| {
+                    if ast.module().name().text() == requested {
+                        ast.module().uses()
+                    } else {
+                        &[]
+                    }
+                })
         };
         let Some(uses) = uses else {
             return Ok(loaded);

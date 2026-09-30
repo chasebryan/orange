@@ -29,7 +29,8 @@ pub const MAX_CORE_NODES_PER_SOURCE: usize = 262_144;
 /// Maximum semantic events performed for one source.
 pub const MAX_SEMANTIC_EVENTS_PER_SOURCE: usize = 1_048_576;
 
-/// Maximum modules in one program: the root and every module supplied with it.
+/// Maximum modules in one program: the root and every module it reaches
+/// through `use` declarations.
 pub const MAX_MODULES_PER_PROGRAM: usize = 64;
 
 /// Maximum significant bits retained for one exact mathematical integer.
@@ -111,9 +112,10 @@ pub fn analyze(source: &SourceFile, ast: &SyntaxTree) -> AnalysisResult {
 /// uses, directly or through other modules.
 ///
 /// A `use NAME;` declaration names the module of `modules` whose name is
-/// `NAME`; a supplied module the root does not reach is ignored. The modules
-/// of a program have distinct names, a module uses each module at most once,
-/// and the uses form no cycle. Each reachable module is then checked on its
+/// `NAME`; a supplied module the root does not reach is ignored and does not
+/// count toward [`MAX_MODULES_PER_PROGRAM`]. No other supplied module shares
+/// the name of a module of the program, a module uses each module at most
+/// once, and the uses form no cycle. Each reachable module is then checked on its
 /// own, as [`analyze`] checks one module and with its own per-source limits,
 /// in dependency order: every module after the modules it uses. A call
 /// `NAME::f(...)` resolves to the typed `spec` function `f` of the used module
@@ -148,12 +150,6 @@ pub fn analyze_program(
                 diagnostics.try_reserve_exact(1).is_ok()
             });
         }
-    }
-    if program.len() > MAX_MODULES_PER_PROGRAM {
-        return program_resource_limit(
-            root_ast.module.span,
-            &format!("program supplies more than {MAX_MODULES_PER_PROGRAM} modules"),
-        );
     }
     let graph = match ModuleGraph::build(&program, root_span) {
         Ok(graph) => graph,
@@ -230,8 +226,11 @@ impl GraphReport {
 
 impl ModuleGraph {
     /// Checks module names and `use` declarations and orders the modules the
-    /// root reaches. The work is bounded by the module limit and the parser's
-    /// limit on `use` declarations, and consumes no semantic events.
+    /// root reaches, stopping at the module limit. Only reachable modules are
+    /// entered, at most 64 of them with at most 64 uses each, and each is
+    /// compared with every supplied module once per name it declares or
+    /// uses, so the work is linear in the number of supplied modules. It
+    /// consumes no semantic events.
     fn build(
         program: &[(&SourceFile, &SyntaxTree)],
         root_span: Span,
@@ -249,14 +248,15 @@ impl ModuleGraph {
         let mut state = Vec::new();
         let mut order = Vec::new();
         let mut path: Vec<(usize, usize)> = Vec::new();
+        let reachable = count.min(MAX_MODULES_PER_PROGRAM);
         if report
             .diagnostics
             .try_reserve_exact(MAX_RETAINED_SEMANTIC_DIAGNOSTICS)
             .is_err()
             || targets.try_reserve_exact(count).is_err()
             || state.try_reserve_exact(count).is_err()
-            || order.try_reserve_exact(count).is_err()
-            || path.try_reserve_exact(count).is_err()
+            || order.try_reserve_exact(reachable).is_err()
+            || path.try_reserve_exact(reachable).is_err()
         {
             return Err(failure(root_span));
         }
@@ -266,40 +266,20 @@ impl ModuleGraph {
                 .map_or("", |(_, ast)| ast.module.name.text.as_str())
         };
 
-        // Module names are distinct.
-        for (index, (_, ast)) in program.iter().enumerate() {
-            let name = &ast.module.name;
-            let first = program
-                .get(..index)
-                .and_then(|earlier| {
-                    earlier
-                        .iter()
-                        .find(|(_, other)| other.module.name.text == name.text)
-                })
-                .map(|(_, other)| other.module.name.span);
-            if let Some(first) = first {
-                report.report(|| {
-                    let spelling = identifier_spelling_for_diagnostic(&name.text);
-                    Diagnostic::error(
-                        DiagnosticCode::DuplicateModule,
-                        format!("duplicate module `{spelling}`"),
-                        name.span,
-                    )
-                    .with_label("this module repeats the name of another module of the program")
-                    .with_secondary_span(first, "first module of this name is here")
-                    .with_note("the modules of a program have distinct names")
-                });
-            }
-            targets.push(Vec::new());
-            state.push(VisitState::Unvisited);
-        }
+        targets.extend(program.iter().map(|_| Vec::new()));
+        state.extend(program.iter().map(|_| VisitState::Unvisited));
 
-        // A depth-first search from the root resolves each reachable module's
-        // uses when it is first entered, and finds each cycle at the use that
-        // closes it. Finished modules follow the modules they use.
+        // A depth-first search from the root enters each reachable module
+        // once, checks that no other supplied module shares its name, resolves
+        // its uses, and finds each cycle at the use that closes it. Finished
+        // modules follow the modules they use. A module the root does not
+        // reach is never entered.
+        let mut entered = 0_usize;
         if let Some(slot) = state.first_mut() {
             *slot = VisitState::OnPath;
             path.push((0, 0));
+            entered = 1;
+            report_namesakes(program, 0, &mut report);
             if !resolve_uses(program, 0, &mut targets, &mut report) {
                 return Err(failure(root_span));
             }
@@ -323,10 +303,19 @@ impl ModuleGraph {
             }
             match state.get(target) {
                 Some(VisitState::Unvisited) => {
+                    if entered >= MAX_MODULES_PER_PROGRAM {
+                        return Err(program_resource_limit(
+                            root_span,
+                            &format!("program reaches more than {MAX_MODULES_PER_PROGRAM} modules"),
+                        )
+                        .diagnostics);
+                    }
+                    entered = entered.saturating_add(1);
                     if let Some(slot) = state.get_mut(target) {
                         *slot = VisitState::OnPath;
                     }
                     path.push((target, 0));
+                    report_namesakes(program, target, &mut report);
                     if !resolve_uses(program, target, &mut targets, &mut report) {
                         return Err(failure(declaration.span));
                     }
@@ -377,6 +366,46 @@ impl ModuleGraph {
         } else {
             Err(report.diagnostics)
         }
+    }
+}
+
+/// Reports each other supplied module whose name is that of `module`, a
+/// module of the program the search has just entered. A `use` resolves to
+/// the first supplied module of its name, so the module entered precedes its
+/// namesakes, and each pair is reported once, at the later module.
+fn report_namesakes(
+    program: &[(&SourceFile, &SyntaxTree)],
+    module: usize,
+    report: &mut GraphReport,
+) {
+    let Some((_, ast)) = program.get(module) else {
+        return;
+    };
+    let name = &ast.module.name;
+    for (other, (_, candidate)) in program.iter().enumerate() {
+        let repeat = &candidate.module.name;
+        if other == module || repeat.text != name.text {
+            continue;
+        }
+        let (first, repeat) = if other < module {
+            (repeat.span, name.span)
+        } else {
+            (name.span, repeat.span)
+        };
+        report.report(|| {
+            let spelling = identifier_spelling_for_diagnostic(&name.text);
+            Diagnostic::error(
+                DiagnosticCode::DuplicateModule,
+                format!("duplicate module `{spelling}`"),
+                repeat,
+            )
+            .with_label("this module repeats the name of a module of the program")
+            .with_secondary_span(first, "first module of this name is here")
+            .with_note(
+                "a `use` names one module, so no other supplied module may share the name of a \
+                 module of the program",
+            )
+        });
     }
 }
 
@@ -10112,22 +10141,118 @@ mod tests {
             "m0::v: Int = 64"
         );
 
+        // Modules the root does not reach are ignored and not counted, even
+        // when they share a name with each other.
         let mut texts = texts;
-        texts.push(String::from("edition 2026; module extra {}"));
-        let program = Program::new(&texts.iter().map(String::as_str).collect::<Vec<_>>());
+        let unreached = (0..200)
+            .map(|index| {
+                format!(
+                    "edition 2026; module spare{} {{ use m0; use spare{}; }}",
+                    index % 150,
+                    index % 150
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut supplied = texts.iter().map(String::as_str).collect::<Vec<_>>();
+        supplied.extend(unreached.iter().map(String::as_str));
+        let program = Program::new(&supplied);
+        let core = program.analyze().into_core().unwrap();
+        assert_eq!(core.functions().len(), MAX_MODULES_PER_PROGRAM);
+        let alone = ["edition 2026; module main { spec v() -> Int { 7 } }"]
+            .into_iter()
+            .chain(texts[1..].iter().map(String::as_str))
+            .chain(["edition 2026; module m64 {}"])
+            .collect::<Vec<_>>();
+        assert_eq!(alone.len(), MAX_MODULES_PER_PROGRAM + 1);
+        let program = Program::new(&alone);
+        let core = program.analyze().into_core().unwrap();
+        assert_eq!(core.functions().len(), 1);
+        assert_eq!(
+            crate::eval::evaluate(&core).values().unwrap()[0].to_string(),
+            "main::v: Int = 7"
+        );
+
+        // A 65th reachable module stops the search before any module is
+        // checked, however many modules are supplied.
+        texts[MAX_MODULES_PER_PROGRAM - 1] =
+            String::from("edition 2026; module m63 { use m64; spec v() -> Int { m64::v() + 1 } }");
+        texts.push(String::from(
+            "edition 2026; module m64 { spec v() -> Int { 1 } }",
+        ));
+        for supplied in [
+            texts.iter().map(String::as_str).collect::<Vec<_>>(),
+            texts
+                .iter()
+                .chain(&unreached)
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        ] {
+            let program = Program::new(&supplied);
+            let result = program.analyze();
+            assert_eq!(
+                program.report(&result),
+                [(
+                    DiagnosticCode::SemanticResourceLimit,
+                    String::from("semantic analysis resource limit exceeded"),
+                    program.slice(program.asts[0].module.span).to_owned()
+                )]
+            );
+            assert_eq!(
+                result.diagnostics()[0].label(),
+                "program reaches more than 64 modules"
+            );
+        }
+    }
+
+    #[test]
+    fn a_module_of_the_program_has_no_namesake() {
+        // A supplied module that shares the root's name, or that of a used
+        // module, is reported when the search enters the module of the
+        // program; namesakes the program never reaches are ignored.
+        let program = Program::new(&[
+            "edition 2026; module main { use lib; spec v() -> Int { lib::one() } }",
+            "edition 2026; module lib { spec one() -> Int { 1 } }",
+            "edition 2026; module spare { }",
+            "edition 2026; module main { }",
+            "edition 2026; module spare { }",
+            "edition 2026; module lib { }",
+        ]);
         let result = program.analyze();
         assert_eq!(
             program.report(&result),
-            [(
-                DiagnosticCode::SemanticResourceLimit,
-                String::from("semantic analysis resource limit exceeded"),
-                program.slice(program.asts[0].module.span).to_owned()
-            )]
+            [
+                (
+                    DiagnosticCode::DuplicateModule,
+                    String::from("duplicate module `main`"),
+                    String::from("main")
+                ),
+                (
+                    DiagnosticCode::DuplicateModule,
+                    String::from("duplicate module `lib`"),
+                    String::from("lib")
+                ),
+            ]
         );
         assert_eq!(
-            result.diagnostics()[0].label(),
-            "program supplies more than 64 modules"
+            result.diagnostics()[0].primary_span().source(),
+            program.ids[3]
         );
+        assert_eq!(
+            result.diagnostics()[0].secondary_spans()[0].span().source(),
+            program.ids[0]
+        );
+        assert_eq!(
+            result.diagnostics()[1].primary_span().source(),
+            program.ids[5]
+        );
+
+        let program = Program::new(&[
+            "edition 2026; module main { use lib; spec v() -> Int { lib::one() } }",
+            "edition 2026; module lib { spec one() -> Int { 1 } }",
+            "edition 2026; module spare { }",
+            "edition 2026; module spare { }",
+        ]);
+        assert!(program.analyze().into_core().is_some());
     }
 
     #[test]
@@ -10157,11 +10282,6 @@ mod tests {
             program.report(&result),
             [
                 (
-                    DiagnosticCode::DuplicateModule,
-                    String::from("duplicate module `a`"),
-                    String::from("a")
-                ),
-                (
                     DiagnosticCode::ModuleCycle,
                     String::from("module `main` uses itself"),
                     String::from("use main;")
@@ -10177,6 +10297,11 @@ mod tests {
                     String::from("gone")
                 ),
                 (
+                    DiagnosticCode::DuplicateModule,
+                    String::from("duplicate module `a`"),
+                    String::from("a")
+                ),
+                (
                     DiagnosticCode::ModuleCycle,
                     String::from("module cycle `a` -> `b` -> `a`"),
                     String::from("use a;")
@@ -10188,14 +10313,15 @@ mod tests {
                 ),
             ]
         );
-        let duplicate = &result.diagnostics()[0];
+        // Each module's namesakes are reported when the search first enters it.
+        let duplicate = &result.diagnostics()[3];
         assert_eq!(duplicate.primary_span().source(), program.ids[4]);
         assert_eq!(duplicate.secondary_spans().len(), 1);
         assert_eq!(
             duplicate.secondary_spans()[0].span().source(),
             program.ids[1]
         );
-        let twice = &result.diagnostics()[2];
+        let twice = &result.diagnostics()[1];
         assert_eq!(twice.primary_span().source(), program.ids[0]);
         assert!(twice.primary_span().start() > twice.secondary_spans()[0].span().start());
         assert_eq!(

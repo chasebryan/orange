@@ -696,6 +696,20 @@ fn s3h_modules_are_read_beside_the_root_once_each() {
         &["no module named `left` in this program"],
         "misnamed module",
     );
+    // Its uses are not followed, so a module it names is never read.
+    fs::write(
+        directory.join("left.or"),
+        "edition 2026;\nmodule other {\n  use missing;\n}\n",
+    )
+    .unwrap();
+    let unfollowed = run_twice("check", &path, "misnamed module's uses");
+    assert_failure(
+        &unfollowed,
+        &["ORC0228", "ORC0228"],
+        &["top.or:4:7", "right.or:4:7"],
+        &["no module named `left` in this program"],
+        "misnamed module's uses",
+    );
     fs::remove_dir_all(&directory).unwrap();
 }
 
@@ -728,7 +742,7 @@ fn s3h_module_and_use_limits_are_exact() {
         &over,
         &["ORC0209"],
         &["m0.or:2:1"],
-        &["program supplies more than 64 modules"],
+        &["program reaches more than 64 modules"],
         "chain of 65",
     );
 

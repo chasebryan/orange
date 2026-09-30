@@ -126,18 +126,19 @@ module `m`.
 
 The modules of a program are the root and every module the root reaches by
 `use` declarations. Resolution is by name, among the modules supplied with the
-root. A supplied module that the root does not reach is not part of the
-program: it is not checked and contributes nothing.
+root, and a `use` names the first supplied module of its name. A supplied
+module that the root does not reach is not part of the program: it is not
+checked, does not count toward the module limit of section 9, and contributes
+nothing, unless it shares its name with a module of the program.
 
-Before any module is checked, the **module graph** is examined, in this
-order:
+Before any module is checked, the **module graph** is examined. Starting from
+the root, depth first, with each module's uses in source order, each module is
+examined when it is first reached:
 
-1. The names of the supplied modules must be distinct. A module named like an
-   earlier one is `ORC0231`, "duplicate module `m`", at its name, with the
-   first module of that name as a secondary span.
-2. Starting from the root, depth first, with each module's uses in source
-   order, each module is examined when it is first reached, and each of its
-   `use` declarations in source order:
+1. Every other supplied module of its name is `ORC0231`, "duplicate module
+   `m`", at the name of whichever of the two was supplied later, with the
+   other as a secondary span.
+2. Each of its `use` declarations is then examined in source order:
    - a module used a second time by the same module is `ORC0231`,
      "module `m` is used twice", at the second declaration, with the first as
      a secondary span;
@@ -149,6 +150,8 @@ order:
    closes a cycle. It is `ORC0230`, "module cycle `a` -> `b` -> `a`", at that
    declaration, naming the modules of the cycle in order, at most eight of
    them before `-> ...`.
+4. A use that reaches a 65th module stops the examination at once, as section
+   9 says.
 
 If the module graph has any error, analysis stops with those diagnostics and
 no module is checked. Otherwise the modules are put in **dependency order**,
@@ -264,7 +267,8 @@ so it names one file in that directory and no path outside it.
   value.
 - A file `m.or` that declares a module of another name is still read, and the
   module graph then reports `use m;` as `ORC0228`, since no module of the
-  program is named `m`.
+  program is named `m`. Its own `use` declarations name no module of the
+  program and are not followed: no file is read for them.
 
 `orangec lex` does not read used modules. When one invocation names several
 sources, each is the root of its own program.
@@ -274,9 +278,12 @@ sources, each is the root of its own program.
 The S3g budgets remain, per module. S3h adds the following.
 
 - A module has at most 64 `use` declarations (section 3).
-- A program has at most 64 modules, its root included. Supplying more is
-  `ORC0209` at the root module, labeled "program supplies more than 64
-  modules", and no module is checked.
+- A program has at most 64 modules, its root included. A use that reaches a
+  65th module is `ORC0209` at the root module, labeled "program reaches more
+  than 64 modules"; the module graph's examination stops there, that is the
+  program's only diagnostic, and no module is checked. Supplied modules that
+  the root does not reach are not counted, and the graph's work is linear in
+  the number supplied.
 - Each `use` declaration costs one semantic event of its module's budget, when
   the module is checked. The module graph consumes no events.
 - Each module is checked under its own per-source limits: at most 100 ordinary
@@ -303,13 +310,13 @@ the same rules as the S3b through S3g runners.
 | Rule ID | Clause | Executable obligation | Evidence layer |
 | --- | --- | --- | --- |
 | `S3H-SYNTAX-01` | Section 3 | `use` declarations come first in a module, `use` is a word only there, and a qualified name is always called; malformed forms are `ORC0101`, `ORC0103`, or `ORC0106`. | CLI and parser unit |
-| `S3H-GRAPH-01` | Section 4 | Module names are distinct, each use names a supplied module once and not its own module, and uses form no cycle; otherwise `ORC0228`, `ORC0230`, or `ORC0231` in the specified order. | CLI and unit |
+| `S3H-GRAPH-01` | Section 4 | No other supplied module shares a name with a module of the program, each use names a supplied module once and not its own module, and uses form no cycle; otherwise `ORC0228`, `ORC0230`, or `ORC0231` in the specified order. | CLI and unit |
 | `S3H-ORDER-01` | Section 4 | Modules are checked and linked in dependency order, each once, and a module that uses one with errors is still checked. | CLI and unit |
 | `S3H-CALL-01` | Section 5 | A qualified call resolves only in a used module and is checked as any call is; otherwise `ORC0229` or `ORC0212` with the specified notes. | CLI and unit |
 | `S3H-CORE-01` | Section 6 | Linked Core lists the used modules' functions in dependency order and then the root's, with dense identities, module names, and the root's entry. | Unit and CLI observation |
 | `S3H-EVAL-01` | Section 7 | Only the root's parameterless functions are evaluated, under one step budget; SHA-256, HMAC, and HKDF across modules match their published vectors. | CLI and unit |
 | `S3H-CLI-01` | Section 8 | `orangec` reads `m.or` beside the root, or in the current directory for standard input, once per module, and reports an unreadable module with the using module. | Generated CLI and unit |
-| `S3H-RES-01` | Section 9 | A module has at most 64 uses and a program at most 64 modules; every other budget applies per module. | Generated CLI and unit |
+| `S3H-RES-01` | Section 9 | A module has at most 64 uses and a program reaches at most 64 modules, however many are supplied; every other budget applies per module. | Generated CLI and unit |
 | `S3H-COMPAT-01` | Section 11 | S3g sources keep their meaning, Core values, messages, and output bytes. | CLI and unit |
 | `S3H-DETERMINISM-01` | Section 10 | Repeated identical inputs produce identical status, diagnostics, and output bytes. | CLI and unit |
 
@@ -350,8 +357,9 @@ qualified names other than calls, and none of the exclusions of
 A module is a unit of meaning, not of compilation. No separate compilation,
 interface file, linking of object code, or caching is defined, and nothing
 here concerns code generation. Reading `m.or` beside the root is a rule of
-`orangec`, not of the language: a program is the set of modules supplied with
-its root, and another host may supply them another way.
+`orangec`, not of the language: a program is its root and the modules it
+reaches among those supplied with it, and another host may supply them another
+way.
 
 A fixture that reproduces a standard's example value is not thereby a verified
 transcription of that standard. Tests establish the tested behavior of one
