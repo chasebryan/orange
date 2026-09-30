@@ -201,6 +201,246 @@ pub fn evaluate_selected(
     )
 }
 
+/// The outcome of one known-answer test.
+///
+/// ```compile_fail
+/// use orange_compiler::TestOutcome;
+///
+/// fn forge_pass(outcome: &mut TestOutcome) {
+///     outcome.passed = true;
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TestOutcome {
+    /// Identity of the test's Core function.
+    id: CoreFunctionId,
+    /// The test's title.
+    title: String,
+    /// Whether the test's expression was `true`.
+    passed: bool,
+    /// The values compared, left then right, when the test failed and its
+    /// expression ends in `left == right`.
+    sides: Option<(CoreValue, CoreValue)>,
+    /// Steps the test's evaluation used.
+    steps: usize,
+}
+
+impl TestOutcome {
+    /// Returns the identity of the test's Core function.
+    #[must_use]
+    pub const fn id(&self) -> CoreFunctionId {
+        self.id
+    }
+
+    /// Returns the test's title.
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Returns whether the test's expression was `true`.
+    #[must_use]
+    pub const fn passed(&self) -> bool {
+        self.passed
+    }
+
+    /// Returns the values a failed test compared, left then right, when its
+    /// expression ends in `left == right`; `None` for a test that passed or
+    /// ends otherwise.
+    #[must_use]
+    pub fn sides(&self) -> Option<(&CoreValue, &CoreValue)> {
+        self.sides.as_ref().map(|(left, right)| (left, right))
+    }
+
+    /// Returns the steps the test's evaluation used, which count toward the
+    /// budget of the whole run.
+    #[must_use]
+    pub const fn steps(&self) -> usize {
+        self.steps
+    }
+}
+
+/// The complete result of running a module's known-answer tests.
+///
+/// ```compile_fail
+/// use orange_compiler::TestRun;
+///
+/// fn replace_outcomes(run: &mut TestRun) {
+///     run.outcomes = None;
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TestRun {
+    /// Outcomes in source order, present only when every test ran to a
+    /// value.
+    outcomes: Option<Vec<TestOutcome>>,
+    /// Evaluation-resource diagnostics in deterministic source order.
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl TestRun {
+    /// Returns the outcomes in source order, or `None` when a test stopped.
+    #[must_use]
+    pub fn outcomes(&self) -> Option<&[TestOutcome]> {
+        self.outcomes.as_deref()
+    }
+
+    /// Returns evaluation-resource diagnostics in deterministic source order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Returns whether a test stopped before every test ran to a value.
+    #[must_use]
+    pub const fn has_errors(&self) -> bool {
+        self.outcomes.is_none()
+    }
+
+    /// Returns whether every test ran and passed; true for a module without
+    /// tests.
+    #[must_use]
+    pub fn passed(&self) -> bool {
+        self.outcomes
+            .as_ref()
+            .is_some_and(|outcomes| outcomes.iter().all(TestOutcome::passed))
+    }
+}
+
+/// Runs the root module's known-answer tests in source order, within
+/// `step_limit` steps together.
+///
+/// Each test's expression is evaluated as a function without parameters.
+/// A test passes when it is `true`; a test that fails and ends in
+/// `left == right` keeps both values for its report. A test that stops,
+/// at the step limit or any other resource limit, stops the run, and no
+/// outcome is returned.
+#[must_use]
+pub fn run_tests(core: &CoreModule, step_limit: usize) -> TestRun {
+    run_tests_with(core, step_limit, Reservations::DEFAULT)
+}
+
+fn run_tests_with(core: &CoreModule, step_limit: usize, reservations: Reservations) -> TestRun {
+    let failure = |result: EvaluationResult| TestRun {
+        outcomes: None,
+        diagnostics: result.diagnostics,
+    };
+    let mut diagnostics = Vec::new();
+    if !(reservations.diagnostics)(&mut diagnostics, 1) {
+        return TestRun {
+            outcomes: None,
+            diagnostics,
+        };
+    }
+    let tests = core.tests();
+    let mut outcomes = Vec::new();
+    if outcomes.try_reserve_exact(tests.len()).is_err() {
+        return failure(test_allocation_failure(
+            diagnostics,
+            core.span,
+            "test outcome storage could not be reserved",
+        ));
+    }
+    let Some(literals) = share_literals(core) else {
+        return failure(test_allocation_failure(
+            diagnostics,
+            core.span,
+            "evaluated exact integer storage could not be reserved",
+        ));
+    };
+    let mut machine = Machine {
+        core,
+        literals,
+        steps: 0,
+        step_limit,
+        reservations,
+        stack: Vec::new(),
+        frames: Vec::new(),
+        inner_frames: 0,
+    };
+    for test in tests {
+        let Some(title) = test.title.as_deref() else {
+            return failure(stopped(
+                diagnostics,
+                test,
+                Stop::InconsistentCore,
+                step_limit,
+                true,
+            ));
+        };
+        let steps_before = machine.steps;
+        let mut sides = None;
+        let passed = match machine.run_with(test, Vec::new(), Some(&mut sides)) {
+            Ok(Value::Bool(passed)) => passed,
+            Ok(_) => {
+                return failure(stopped(
+                    diagnostics,
+                    test,
+                    Stop::InconsistentCore,
+                    step_limit,
+                    false,
+                ));
+            }
+            Err(stop) => {
+                return failure(stopped(
+                    diagnostics,
+                    test,
+                    stop,
+                    step_limit,
+                    steps_before == machine.steps,
+                ));
+            }
+        };
+        let operand = test.body.root().and_then(|root| match root.kind() {
+            CoreNodeKind::Compare {
+                operator: BinaryOperator::Equal,
+                operand,
+            } => Some(operand),
+            _ => None,
+        });
+        let sides = match (passed, sides, operand) {
+            (false, Some((left, right)), Some(operand)) => {
+                let copied = result_value(left, operand, reservations)
+                    .and_then(|left| Ok((left, result_value(right, operand, reservations)?)));
+                match copied {
+                    Ok(sides) => Some(sides),
+                    Err(Stop::Allocation(label)) => {
+                        return failure(test_allocation_failure(
+                            diagnostics,
+                            test.name_span,
+                            label,
+                        ));
+                    }
+                    Err(stop) => {
+                        return failure(stopped(diagnostics, test, stop, step_limit, false));
+                    }
+                }
+            }
+            _ => None,
+        };
+        let mut owned = String::new();
+        if !(reservations.name)(&mut owned, title.len()) {
+            return failure(test_allocation_failure(
+                diagnostics,
+                test.name_span,
+                "test title storage could not be reserved",
+            ));
+        }
+        owned.push_str(title);
+        outcomes.push(TestOutcome {
+            id: test.id,
+            title: owned,
+            passed,
+            sides,
+            steps: machine.steps.saturating_sub(steps_before),
+        });
+    }
+    TestRun {
+        outcomes: Some(outcomes),
+        diagnostics,
+    }
+}
+
 /// The result of calling one function through an [`Evaluator`].
 ///
 /// ```compile_fail
@@ -823,6 +1063,28 @@ fn word_shift(
 }
 
 /// Returns whether `ordering` satisfies the comparison `operator`.
+/// Returns whether two scalars of `ty` are equal, without charge, or stops
+/// when either is not a value of `ty`.
+fn plain_equal(ty: &CoreType, left: &Value, right: &Value) -> Result<bool, Stop> {
+    match (ty, left, right) {
+        (CoreType::Bool, Value::Bool(left), Value::Bool(right)) => Ok(left == right),
+        (CoreType::Mod(modulus), Value::Mod(left), Value::Mod(right)) => {
+            if !(modulus.contains(left) && modulus.contains(right)) {
+                return Err(Stop::InconsistentCore);
+            }
+            Ok(left.compare(right) == std::cmp::Ordering::Equal)
+        }
+        (ty, Value::Word(left), Value::Word(right)) => {
+            let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
+            if (left | right) & !mask != 0 {
+                return Err(Stop::InconsistentCore);
+            }
+            Ok(left == right)
+        }
+        _ => Err(Stop::InconsistentCore),
+    }
+}
+
 fn compares(operator: BinaryOperator, ordering: std::cmp::Ordering) -> Option<bool> {
     use std::cmp::Ordering::{Equal, Greater, Less};
     Some(match operator {
@@ -964,6 +1226,70 @@ impl<'core> Machine<'core> {
 
     /// Replaces the top `length` values of the current expression with one
     /// array of type `ty` holding them in order.
+    /// Returns whether two values of `ty` are equal, comparing every part
+    /// whatever the first difference: an array of words or of `Bool` costs
+    /// one step for each 64 elements, as every array operation does, and
+    /// every other part what its own comparison costs.
+    ///
+    /// Recursion is bounded by the depth of types: a tuple holds arrays and
+    /// scalars, and an array holds scalars.
+    fn equal_values(&mut self, ty: &CoreType, left: &Value, right: &Value) -> Result<bool, Stop> {
+        match (ty, left, right) {
+            (CoreType::Array(array), Value::Array(left), Value::Array(right)) => {
+                if left.ty != *array
+                    || right.ty != *array
+                    || left.elements.len() != right.elements.len()
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let element = array.element();
+                let mut equal = true;
+                if element == CoreType::Bool || word_mask(&element).is_some() {
+                    self.charge(bulk_cost(left.elements.len()))?;
+                    for (left, right) in left.elements.iter().zip(&right.elements) {
+                        equal &= plain_equal(&element, left, right)?;
+                    }
+                } else {
+                    for (left, right) in left.elements.iter().zip(&right.elements) {
+                        equal &= self.equal_values(&element, left, right)?;
+                    }
+                }
+                Ok(equal)
+            }
+            (CoreType::Tuple(tuple), Value::Tuple(left), Value::Tuple(right)) => {
+                if left.ty != *tuple
+                    || right.ty != *tuple
+                    || left.elements.len() != tuple.elements().len()
+                    || right.elements.len() != tuple.elements().len()
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut equal = true;
+                for ((element, left), right) in tuple
+                    .elements()
+                    .iter()
+                    .zip(&left.elements)
+                    .zip(&right.elements)
+                {
+                    equal &= self.equal_values(element, left, right)?;
+                }
+                Ok(equal)
+            }
+            (CoreType::Int, Value::Int(left), Value::Int(right)) => {
+                self.charge(digits(left).max(digits(right)).saturating_add(1))?;
+                Ok(left.compare(right) == std::cmp::Ordering::Equal)
+            }
+            (CoreType::Mod(modulus), Value::Mod(_), Value::Mod(_)) => {
+                self.charge(modulus_digits(*modulus).saturating_add(1))?;
+                plain_equal(ty, left, right)
+            }
+            _ => {
+                self.charge(1)?;
+                plain_equal(ty, left, right)
+            }
+        }
+    }
+
     fn build_array(&mut self, ty: ArrayType, length: usize, floor: usize) -> Result<Value, Stop> {
         if usize::try_from(ty.length()).ok() != Some(length) {
             return Err(Stop::InconsistentCore);
@@ -1029,6 +1355,18 @@ impl<'core> Machine<'core> {
     /// Evaluates one function to completion on `arguments`, which have
     /// exactly its parameter types.
     fn run(&mut self, root: &'core CoreFunction, arguments: Vec<Value>) -> Result<Value, Stop> {
+        self.run_with(root, arguments, None)
+    }
+
+    /// Evaluates `root` on `arguments`. When `sides` is given and the root's
+    /// body ends in `left == right`, the two operands' values are kept
+    /// there as they are compared.
+    fn run_with(
+        &mut self,
+        root: &'core CoreFunction,
+        arguments: Vec<Value>,
+        mut sides: Option<&mut Option<(Value, Value)>>,
+    ) -> Result<Value, Stop> {
         self.stack.clear();
         self.frames.clear();
         self.inner_frames = 0;
@@ -1112,6 +1450,25 @@ impl<'core> Machine<'core> {
             let scope = self.scope()?;
             if let Some(frame) = self.frames.last_mut() {
                 frame.next = frame.next.saturating_add(1);
+            }
+            // The root body's last node, a comparison `==`, has its two
+            // operands on top of the stack.
+            if let Some(sides) = sides.as_deref_mut()
+                && self.frames.len() == 1
+                && part == function.locals.len()
+                && offset.saturating_add(1) == expression.nodes.len()
+                && matches!(
+                    node.kind,
+                    CoreNodeKind::Compare {
+                        operator: BinaryOperator::Equal,
+                        ..
+                    }
+                )
+            {
+                let mut operands = self.stack.iter().rev();
+                if let (Some(right), Some(left)) = (operands.next(), operands.next()) {
+                    *sides = Some((left.clone(), right.clone()));
+                }
             }
             self.step(function, base, part, offset, scope, node)?;
         }
@@ -1763,6 +2120,25 @@ impl<'core> Machine<'core> {
                         let left = self.pop_residue(*modulus)?;
                         self.charge(modulus_digits(*modulus).saturating_add(1))?;
                         left.compare(&right)
+                    }
+                    // Arrays and tuples are compared whole, for equality
+                    // only.
+                    CoreType::Array(_) | CoreType::Tuple(_)
+                        if !matches!(
+                            operator,
+                            BinaryOperator::Equal | BinaryOperator::NotEqual
+                        ) =>
+                    {
+                        return Err(Stop::InconsistentCore);
+                    }
+                    CoreType::Array(_) | CoreType::Tuple(_) => {
+                        let right = self.pop()?;
+                        let left = self.pop()?;
+                        if self.equal_values(operand, &left, &right)? {
+                            std::cmp::Ordering::Equal
+                        } else {
+                            std::cmp::Ordering::Less
+                        }
                     }
                     ty => {
                         let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
@@ -2626,20 +3002,44 @@ fn stopped(
     step_limit: usize,
     before_function: bool,
 ) -> EvaluationResult {
+    // A test is reported at its title whatever stopped it, with the place
+    // of a limit that has one as a secondary label.
+    let test = function.title.is_some();
     let diagnostic = match stop {
         Stop::Steps => Diagnostic::error(
             DiagnosticCode::EvaluationResourceLimit,
             "reference evaluation step limit exceeded",
             function.name_span,
         )
-        .with_label(if before_function {
-            "evaluation stopped before this function"
-        } else {
-            "evaluation stopped while evaluating this function"
+        .with_label(match (test, before_function) {
+            (false, true) => "evaluation stopped before this function",
+            (false, false) => "evaluation stopped while evaluating this function",
+            (true, true) => "evaluation stopped before this test",
+            (true, false) => "evaluation stopped while evaluating this test",
         })
         .with_note(format!(
             "at most {step_limit} evaluation steps are permitted"
         )),
+        Stop::CallDepth(span) if test => Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            "reference evaluation call depth limit exceeded",
+            function.name_span,
+        )
+        .with_label("evaluation stopped while evaluating this test")
+        .with_secondary_span(span, "this call exceeds the depth limit")
+        .with_note(format!(
+            "at most {MAX_CALL_DEPTH} nested calls are permitted"
+        )),
+        Stop::IntegerBits(span) if test => Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            format!(
+                "exact integer result exceeds the {MAX_EXACT_INTEGER_BITS}-significant-bit limit"
+            ),
+            function.name_span,
+        )
+        .with_label("evaluation stopped while evaluating this test")
+        .with_secondary_span(span, "result is too large for the reference evaluator")
+        .with_note("`Int` is unbounded; this is a resource limit, not a finite width"),
         Stop::CallDepth(span) => Diagnostic::error(
             DiagnosticCode::EvaluationResourceLimit,
             "reference evaluation call depth limit exceeded",
@@ -2671,18 +3071,45 @@ fn stopped(
             "reference evaluation received inconsistent Core",
             function.name_span,
         )
-        .with_label("evaluation stopped in this function"),
+        .with_label(if test {
+            "evaluation stopped in this test"
+        } else {
+            "evaluation stopped in this function"
+        }),
     };
-    evaluation_failure(
-        diagnostics,
-        diagnostic.with_note("no partial value set is returned"),
-    )
+    let note = if test {
+        NO_TEST_OUTCOME_NOTE
+    } else {
+        "no partial value set is returned"
+    };
+    evaluation_failure(diagnostics, diagnostic.with_note(note))
 }
+
+/// What a test run that stops returns.
+const NO_TEST_OUTCOME_NOTE: &str = "no test outcome is reported";
 
 fn allocation_failure(
     diagnostics: Vec<Diagnostic>,
     span: crate::source::Span,
     label: &'static str,
+) -> EvaluationResult {
+    allocation_failure_noted(diagnostics, span, label, "no partial value set is returned")
+}
+
+/// A test run's allocation failure, which reports no outcome.
+fn test_allocation_failure(
+    diagnostics: Vec<Diagnostic>,
+    span: crate::source::Span,
+    label: &'static str,
+) -> EvaluationResult {
+    allocation_failure_noted(diagnostics, span, label, NO_TEST_OUTCOME_NOTE)
+}
+
+fn allocation_failure_noted(
+    diagnostics: Vec<Diagnostic>,
+    span: crate::source::Span,
+    label: &'static str,
+    note: &'static str,
 ) -> EvaluationResult {
     evaluation_failure(
         diagnostics,
@@ -2692,7 +3119,7 @@ fn allocation_failure(
             span,
         )
         .with_label(label)
-        .with_note("no partial value set is returned"),
+        .with_note(note),
     )
 }
 
@@ -6392,5 +6819,336 @@ mod tests {
                 "case {index}"
             );
         }
+    }
+
+    #[test]
+    fn whole_values_compare_every_part_at_the_cost_of_their_parts() {
+        let core = core(concat!(
+            "edition 2026; module whole {\n",
+            "  spec bytes_1(x: Word[8]^1, y: Word[8]^1) -> Bool { x == y }\n",
+            "  spec bytes_64(x: Word[8]^64, y: Word[8]^64) -> Bool { x == y }\n",
+            "  spec bytes_65(x: Word[8]^65, y: Word[8]^65) -> Bool { x != y }\n",
+            "  spec bytes_long(x: Word[8]^65536, y: Word[8]^65536) -> Bool { x == y }\n",
+            "  spec numbers(x: Int^3, y: Int^3) -> Bool { x == y }\n",
+            "  spec pairs(p: (Word[32], Int^2), q: (Word[32], Int^2)) -> Bool { p == q }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let mut call = |name: &str, left: CoreValue, right: CoreValue| {
+            let function = evaluator.function(name).unwrap();
+            let result = evaluator.call(function, &[left, right], 1 << 20).unwrap();
+            assert_eq!(result.diagnostics(), [], "{name}");
+            let Some(CoreValue::Bool(value)) = result.value() else {
+                panic!("{name} gave {:?}", result.value());
+            };
+            (*value, result.steps())
+        };
+        // Two steps load the parameters. Words and truth values are compared
+        // in rows of 64 elements, as an update writes them, and every row is
+        // compared whether or not an earlier one differs.
+        let zeros = |length: usize| bytes(&vec![0; length]);
+        let first_differs = |length: usize| {
+            let mut values = vec![0; length];
+            values[0] = 1;
+            bytes(&values)
+        };
+        assert_eq!(call("bytes_1", zeros(1), zeros(1)), (true, 3));
+        assert_eq!(call("bytes_1", zeros(1), first_differs(1)), (false, 3));
+        assert_eq!(call("bytes_64", zeros(64), zeros(64)), (true, 3));
+        assert_eq!(call("bytes_65", zeros(65), zeros(65)), (false, 4));
+        assert_eq!(call("bytes_65", first_differs(65), zeros(65)), (true, 4));
+        assert_eq!(
+            call("bytes_long", zeros(65536), first_differs(65536)),
+            (false, 2 + 1024)
+        );
+        assert_eq!(
+            call("bytes_long", zeros(65536), zeros(65536)),
+            (true, 2 + 1024)
+        );
+        // Numbers cost what comparing each costs alone: one step more than
+        // the digits of the longer.
+        let int = |value: u64| {
+            CoreValue::Int(ExactInteger::from_u64(value, reserve_value_limbs).unwrap())
+        };
+        let ints = |values: [u64; 3]| {
+            CoreValue::Array(
+                CoreArray::new(
+                    ArrayType::new(&CoreType::Int, 3).unwrap(),
+                    values.into_iter().map(int).collect(),
+                )
+                .unwrap(),
+            )
+        };
+        // 0 has no digits, 7 one, and 2^40 two.
+        assert_eq!(
+            call("numbers", ints([0, 7, 1 << 40]), ints([0, 7, 1 << 40])),
+            (true, 2 + 1 + 2 + 3)
+        );
+        assert_eq!(
+            call("numbers", ints([1, 7, 1 << 40]), ints([0, 7, 1 << 40])),
+            (false, 2 + 2 + 2 + 3)
+        );
+        // A tuple costs the sum of its parts.
+        let pair = |word: u32, values: [u64; 2]| {
+            let elements = CoreValue::Array(
+                CoreArray::new(
+                    ArrayType::new(&CoreType::Int, 2).unwrap(),
+                    values.into_iter().map(int).collect(),
+                )
+                .unwrap(),
+            );
+            let ty = TupleType::new(&[
+                CoreType::Word32,
+                CoreType::Array(ArrayType::new(&CoreType::Int, 2).unwrap()),
+            ])
+            .unwrap();
+            CoreValue::Tuple(CoreTuple::new(ty, vec![CoreValue::Word32(word), elements]).unwrap())
+        };
+        assert_eq!(
+            call("pairs", pair(9, [1, 2]), pair(9, [1, 2])),
+            (true, 2 + 1 + 2 + 2)
+        );
+        assert_eq!(
+            call("pairs", pair(8, [1, 2]), pair(9, [1, 2])),
+            (false, 2 + 1 + 2 + 2)
+        );
+    }
+
+    const TESTED: &str = concat!(
+        "edition 2026; module tested {\n",
+        "  spec square(x: Int) -> Int { x * x }\n",
+        "  spec nine() -> Int { square(3) }\n",
+        "  test \"three squared\" { square(3) == 9 }\n",
+        "  test \"a pair\" { let p: (Int, Bool) = (square(2), true); p == (5, true) }\n",
+        "  test \"both\" { (square(1) == 1) && (square(2) == 5) }\n",
+        "  test \"not equal\" { square(2) != 4 }\n",
+        "}\n",
+    );
+
+    #[test]
+    fn tests_run_in_source_order_and_keep_what_a_failed_equality_compared() {
+        let core = core(TESTED);
+        // Evaluation runs the module's functions and never its tests.
+        let evaluated = evaluate(&core);
+        assert_eq!(
+            evaluated
+                .values()
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["tested::nine: Int = 9"]
+        );
+
+        let run = run_tests(&core, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.diagnostics(), []);
+        assert!(!run.has_errors());
+        assert!(!run.passed());
+        let outcomes = run.outcomes().unwrap();
+        let rows = outcomes
+            .iter()
+            .map(|outcome| {
+                (
+                    outcome.title(),
+                    outcome.passed(),
+                    outcome
+                        .sides()
+                        .map(|(left, right)| (left.to_string(), right.to_string())),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows,
+            [
+                ("three squared", true, None),
+                (
+                    "a pair",
+                    false,
+                    Some((String::from("(4, true)"), String::from("(5, true)")))
+                ),
+                // Only a test whose expression is one `==` keeps its sides.
+                ("both", false, None),
+                ("not equal", false, None),
+            ]
+        );
+        assert_eq!(
+            outcomes.iter().map(TestOutcome::id).collect::<Vec<_>>(),
+            core.tests()
+                .iter()
+                .map(CoreFunction::id)
+                .collect::<Vec<_>>()
+        );
+        assert!(outcomes.iter().all(|outcome| outcome.steps() > 0));
+
+        // The budget covers the whole run: exactly enough passes, and one
+        // step fewer stops the last test, and with it the run.
+        let total = outcomes.iter().map(TestOutcome::steps).sum::<usize>();
+        assert_eq!(run_tests(&core, total), run);
+        let short = run_tests(&core, total - 1);
+        assert!(short.has_errors());
+        assert!(!short.passed());
+        assert_eq!(short.outcomes(), None);
+        let [diagnostic] = short.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", short.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation step limit exceeded"
+        );
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        assert_eq!(diagnostic.primary_span(), core.tests()[3].name_span);
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                format!("at most {} evaluation steps are permitted", total - 1),
+                String::from("no test outcome is reported"),
+            ]
+        );
+        assert_eq!(run_tests(&core, total - 1), short);
+    }
+
+    #[test]
+    fn every_limit_that_stops_a_test_is_reported_at_its_title() {
+        // An `Int` past its limit stops the run at the test's title, with
+        // the operation that made it as a secondary label.
+        let text = concat!(
+            "edition 2026; module grow {\n",
+            "  spec tower() -> Int { for i in 0..15 with x: Int = 2 { x * x } }\n",
+            "  test \"first\" { true }\n",
+            "  test \"a tower of squares\" { tower() > 0 }\n",
+            "}\n",
+        );
+        let core = core(text);
+        let run = run_tests(&core, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "exact integer result exceeds the 16384-significant-bit limit"
+        );
+        assert_eq!(diagnostic.primary_span(), core.tests()[1].name_span);
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        let [secondary] = diagnostic.secondary_spans() else {
+            panic!("expected one secondary span: {diagnostic:?}");
+        };
+        let product = text.find("x * x").unwrap();
+        assert_eq!(
+            (
+                secondary.span().start().bytes(),
+                secondary.span().end().bytes()
+            ),
+            (
+                u32::try_from(product).unwrap(),
+                u32::try_from(product + 5).unwrap()
+            ),
+            "the secondary span is the product"
+        );
+        assert_eq!(
+            secondary.label(),
+            "result is too large for the reference evaluator"
+        );
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                "`Int` is unbounded; this is a resource limit, not a finite width",
+                "no test outcome is reported",
+            ]
+        );
+
+        // Calls nested past the depth limit stop at the test's title too,
+        // with the call that went too deep as a secondary label.
+        let depth = MAX_CALL_DEPTH + 1;
+        let mut text = String::from("edition 2026; module deep {\n");
+        for level in 0..depth {
+            text.push_str(&format!(
+                "  spec f{level}() -> Int {{ f{}() }}\n",
+                level + 1
+            ));
+        }
+        text.push_str(&format!("  spec f{depth}() -> Int {{ 1 }}\n"));
+        text.push_str("  test \"deep\" { f0() == 1 }\n}\n");
+        let deep = self::core(&text);
+        let run = run_tests(&deep, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation call depth limit exceeded"
+        );
+        assert_eq!(diagnostic.primary_span(), deep.tests()[0].name_span);
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        let [secondary] = diagnostic.secondary_spans() else {
+            panic!("expected one secondary span: {diagnostic:?}");
+        };
+        assert_eq!(secondary.label(), "this call exceeds the depth limit");
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                format!("at most {MAX_CALL_DEPTH} nested calls are permitted"),
+                String::from("no test outcome is reported"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_module_without_tests_passes_them_all() {
+        let core = core("edition 2026; module none { spec one() -> Int { 1 } }");
+        let run = run_tests(&core, 1);
+        assert_eq!(run.outcomes(), Some(&[][..]));
+        assert!(run.passed());
+        assert!(!run.has_errors());
+    }
+
+    #[test]
+    fn test_storage_failures_report_no_outcome() {
+        let core = core(TESTED);
+        let run = run_tests_with(
+            &core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            Reservations {
+                name: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.label(),
+            "test title storage could not be reserved"
+        );
+        assert_eq!(diagnostic.primary_span(), core.tests()[0].name_span);
+        assert_eq!(diagnostic.notes(), ["no test outcome is reported"]);
+
+        let run = run_tests_with(
+            &core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            Reservations {
+                result_array: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(diagnostic.notes(), ["no test outcome is reported"]);
+        assert_eq!(run.outcomes(), None);
     }
 }

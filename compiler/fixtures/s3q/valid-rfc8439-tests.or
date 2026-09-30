@@ -1,0 +1,133 @@
+// S3q conformance: RFC 8439's known answers written as tests. Each test
+// states one of the RFC's examples or test vectors as a claim, with the
+// inputs and the expected bytes as the RFC prints them; `orangec test` runs
+// them in order, and `orangec eval` runs the one function without
+// parameters and none of the tests.
+edition 2026;
+module rfc8439 {
+  type Quad = (Word[32], Word[32], Word[32], Word[32]);
+  type P = Mod[(1 << 130) - 5];
+
+  // Section 2.1: the quarter round on four words a, b, c, d.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    (a2, b2, c2, d2)
+  }
+
+  // Section 2.3: the block function of a 256-bit key, a 32-bit block counter
+  // and a 96-bit nonce, serialized as the state's little-endian bytes.
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[8]^64 {
+    let initial: Word[32]^16 =
+      ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+    let (x0: Word[32], x1: Word[32], x2: Word[32], x3: Word[32],
+         x4: Word[32], x5: Word[32], x6: Word[32], x7: Word[32],
+         x8: Word[32], x9: Word[32], x10: Word[32], x11: Word[32],
+         x12: Word[32], x13: Word[32], x14: Word[32], x15: Word[32]) =
+      for round in 0..10 with (
+        s0: Word[32], s1: Word[32], s2: Word[32], s3: Word[32],
+        s4: Word[32], s5: Word[32], s6: Word[32], s7: Word[32],
+        s8: Word[32], s9: Word[32], s10: Word[32], s11: Word[32],
+        s12: Word[32], s13: Word[32], s14: Word[32], s15: Word[32]
+      ) = (
+        initial[0], initial[1], initial[2], initial[3],
+        initial[4], initial[5], initial[6], initial[7],
+        initial[8], initial[9], initial[10], initial[11],
+        initial[12], initial[13], initial[14], initial[15]
+      ) {
+        let (c0: Word[32], c4: Word[32], c8: Word[32], c12: Word[32]) = quarter_round(s0, s4, s8, s12);
+        let (c1: Word[32], c5: Word[32], c9: Word[32], c13: Word[32]) = quarter_round(s1, s5, s9, s13);
+        let (c2: Word[32], c6: Word[32], c10: Word[32], c14: Word[32]) = quarter_round(s2, s6, s10, s14);
+        let (c3: Word[32], c7: Word[32], c11: Word[32], c15: Word[32]) = quarter_round(s3, s7, s11, s15);
+        let (d0: Word[32], d5: Word[32], d10: Word[32], d15: Word[32]) = quarter_round(c0, c5, c10, c15);
+        let (d1: Word[32], d6: Word[32], d11: Word[32], d12: Word[32]) = quarter_round(c1, c6, c11, c12);
+        let (d2: Word[32], d7: Word[32], d8: Word[32], d13: Word[32]) = quarter_round(c2, c7, c8, c13);
+        let (d3: Word[32], d4: Word[32], d9: Word[32], d14: Word[32]) = quarter_round(c3, c4, c9, c14);
+        (d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15)
+      };
+    let working: Word[32]^16 = [
+      x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15,
+    ];
+    let state: Word[32]^16 =
+      for i in 0..16 with out: Word[32]^16 = working { out with [i] = out[i] + initial[i] };
+    state as little Word[8]^64
+  }
+
+  // 256^k as a residue, for 0 <= k <= 16: the weight of the byte 01 that
+  // follows the k bytes of a block.
+  spec weight(k: Int) -> P {
+    for i in 0..16 with w: P = 1 { if i < k { w * 256 } else { w } }
+  }
+
+  // Section 2.5.1 for a message padded with zeros to `blocks` sixteen-byte
+  // blocks, the last of which holds `held` of the message's bytes.
+  spec mac[blocks in 1..5](key: Word[8]^32, m: Word[8]^(16 * blocks), held: Int) -> Word[8]^16 {
+    let half: Word[64]^2 = key[..16] as little Word[64]^2;
+    let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+    let s: Int = key[16..] as little Int;
+    let a: P = for j in 0..blocks with a: P = 0 {
+      let k: Int = if j == (blocks - 1) { held } else { 16 };
+      (a + (m[16 * j..16 * j + 16] as little P) + weight(k)) * r
+    };
+    ((a as Int) + s) as little Word[8]^16
+  }
+
+  // The key stream of the zero key and nonce at block 0: `eval` prints it.
+  spec zero_key_stream() -> Word[8]^64 { block([0; 32], 0, [0; 12]) }
+
+  test "2.1.1: the quarter round" {
+    quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+      == (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+  }
+
+  test "2.3.2: the block function" {
+    let key: Word[8]^32 =
+      hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617 18191a1b 1c1d1e1f";
+    let serialized: Word[8]^64 =
+      hex"10 f1 e7 e4 d1 3b 59 15 50 0f dd 1f a3 20 71 c4" ++
+        hex"c7 d1 f4 c7 33 c0 68 03 04 22 aa 9a c3 d4 6c 4e" ++
+        hex"d2 82 64 46 07 9f aa 09 14 c2 d7 05 d9 8b 02 a2" ++
+        hex"b5 12 9c d1 de 16 4e b9 cb d0 83 e8 a2 50 3c 4e";
+    block(key, 1, hex"00 00 00 09 00 00 00 4a 00 00 00 00") == serialized
+  }
+
+  test "A.1 #1: the zero key's key stream, block 0" {
+    zero_key_stream() == (
+      hex"76 b8 e0 ad a0 f1 3d 90 40 5d 6a e5 53 86 bd 28" ++
+        hex"bd d2 19 b8 a0 8d ed 1a a8 36 ef cc 8b 77 0d c7" ++
+        hex"da 41 59 7c 51 57 48 8d 77 24 e0 3f b8 d8 4a 37" ++
+        hex"6a 43 b8 f4 15 18 a1 1c c3 87 b6 69 b2 ee 65 86"
+    )
+  }
+
+  test "A.1 #2: the zero key's key stream, block 1" {
+    let expected: Word[8]^64 =
+      hex"9f 07 e7 be 55 51 38 7a 98 ba 97 7c 73 2d 08 0d" ++
+        hex"cb 0f 29 a0 48 e3 65 69 12 c6 53 3e 32 ee 7a ed" ++
+        hex"29 b7 21 76 9c e6 4e 43 d5 71 33 b0 74 d8 39 d5" ++
+        hex"31 ed 1f 28 51 0a fb 45 ac e1 0a 1f 4b 79 4d 6f";
+    block([0; 32], 1, [0; 12]) == expected
+  }
+
+  test "the nonce changes every block" {
+    block([0; 32], 1, [0; 12]) != block([0; 32], 1, hex"00 00 00 00 00 00 00 00 00 00 00 02")
+  }
+
+  test "2.5.2: Poly1305 of the Forum's name" {
+    let key: Word[8]^32 =
+      hex"85 d6 be 78 57 55 6d 33 7f 44 52 fe 42 d5 06 a8" ++
+        hex"01 03 80 8a fb 0d b2 fd 4a bf f6 af 41 49 f5 1b";
+    let message: Word[8]^34 = "Cryptographic Forum Research Group";
+    mac(key, message ++ [0; 14], 2) == hex"a8 06 1d c1 30 51 36 c6 c2 2b 8b af 0c 01 27 a9"
+  }
+
+  test "A.3 #1: Poly1305 of zeros under the zero key" {
+    mac([0; 32], [0; 64], 16) == [0; 16]
+  }
+}

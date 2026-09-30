@@ -23,6 +23,15 @@ Until then, the compiler behavior it describes exists so that the proposal
 can be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, extends this
+> document with known-answer tests and whole-value equality: `orangec test`
+> takes `--steps` and `--stats` as `eval` does and runs a module's tests under
+> one budget, `--spec` stays with `eval`, the usage error for `--steps` or
+> `--stats` with another command names both, and two arrays of 65,536
+> elements compare in 1,024 steps. Every source this document accepts keeps
+> its meaning under it.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

@@ -45,7 +45,11 @@ meaning. It accepts no D-004 candidate.
 > [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, adds one
 > run-time failure, a conversion of words to a number of more than 16,384
 > significant bits, which stops evaluation as every oversized integer does.
-> Every source this document accepts keeps its meaning under all ten.
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, defines `==` and
+> `!=` for arrays and tuples, which section 5 rejects, comparing every part at
+> the sum of the parts' costs, lets an array or tuple written out take its
+> type from the other operand, and replaces section 5's notes for an order on
+> them. Every source this document accepts keeps its meaning under all eleven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

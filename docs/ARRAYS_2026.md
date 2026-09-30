@@ -48,8 +48,10 @@ meaning. It accepts no D-004 candidate.
 > lets an array's element be a function's type parameter, as `K^n`, and lists
 > array types among a function's types. [`LENGTHS_2026.md`](LENGTHS_2026.md),
 > proposed under OEP-0019, lets an array and an array literal hold up to 65,536
-> elements, where this document admits 256. Every source this document accepts
-> keeps its meaning under all twelve.
+> elements, where this document admits 256. [`TESTS_2026.md`](TESTS_2026.md),
+> proposed under OEP-0020, defines `==` and `!=` on arrays, which compare
+> every pair of elements, where this document defines no operator on an array.
+> Every source this document accepts keeps its meaning under all thirteen.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

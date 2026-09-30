@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    Diagnostic, DiagnosticCode, Edition, Lexed, MAX_EVALUATION_STEPS_PER_SOURCE,
+    CoreValue, Diagnostic, DiagnosticCode, Edition, Lexed, MAX_EVALUATION_STEPS_PER_SOURCE,
     MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile,
-    SourceId, SourceMap, SyntaxTree, analyze_program, evaluate_selected, lex, parse,
-    render_diagnostics,
+    SourceId, SourceMap, SyntaxTree, TestOutcome, analyze_program, evaluate_selected, lex, parse,
+    render_diagnostics, run_tests,
 };
 
 mod crypt;
@@ -36,6 +36,7 @@ const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
     "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",
+    "       orangec test [--steps <N>] [--stats] <FILE>\n",
     "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
     "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
     "       orangec schemes [<NAME>...]\n",
@@ -44,6 +45,7 @@ const USAGE: &str = concat!(
     "  check    Perform lexical, syntactic, and semantic validation\n",
     "  eval     Reference-evaluate one source after complete validation\n",
     "  lex      Print the deterministic token stream\n",
+    "  test     Run one source's known-answer tests after complete validation\n",
     "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
     "  enc      Seal a file with the scheme its key belongs to\n",
     "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
@@ -53,7 +55,7 @@ const USAGE: &str = concat!(
     "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
     "      --steps <N>       Evaluation step budget, 1 to 1073741824 [default: 1048576]\n",
     "      --spec <NAME>     Evaluate only this function without parameters; repeatable\n",
-    "      --stats           Report the steps each evaluated function used, on stderr\n",
+    "      --stats           Report the steps each function or test used, on stderr\n",
     "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
     "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
     "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
@@ -553,7 +555,7 @@ fn compile_with_limits(
             );
         } else if matches!(
             options.command,
-            CompilerCommand::Check | CompilerCommand::Eval
+            CompilerCommand::Check | CompilerCommand::Eval | CompilerCommand::Test
         ) {
             let parsed = parse(source, &result);
             let ast = match classify_phase_result(parsed.ast(), parsed.diagnostics()) {
@@ -694,7 +696,8 @@ fn compile_with_limits(
                     PhaseResult::Complete(values) => values,
                     PhaseResult::Diagnosed(diagnostics) => {
                         compilation_failed = true;
-                        let hinted = with_budget_hint(diagnostics, evaluation.steps);
+                        let hinted =
+                            with_budget_hint(diagnostics, evaluation.steps, options.command);
                         emit_error_group(
                             standard_error,
                             &mut standard_error_available,
@@ -772,6 +775,92 @@ fn compile_with_limits(
                         &render_steps(values, evaluation.steps),
                     );
                 }
+            } else if options.command == CompilerCommand::Test {
+                let evaluation = &options.evaluation;
+                let run = run_tests(core, evaluation.steps);
+                let outcomes = match classify_phase_result(run.outcomes(), run.diagnostics()) {
+                    PhaseResult::Complete(outcomes) => outcomes,
+                    PhaseResult::Diagnosed(diagnostics) => {
+                        compilation_failed = true;
+                        let hinted =
+                            with_budget_hint(diagnostics, evaluation.steps, options.command);
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &render_diagnostics(&sources, hinted.as_deref().unwrap_or(diagnostics)),
+                        );
+                        continue;
+                    }
+                    PhaseResult::Missing => {
+                        compilation_failed = true;
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &render_cli_error(
+                                CliDiagnosticCode::MissingPhaseArtifact,
+                                "the test run returned neither a complete set of outcomes nor a diagnostic",
+                                "this is an internal compiler or resource failure",
+                            ),
+                        );
+                        continue;
+                    }
+                };
+                // A test that fails is the answer the command exists to give,
+                // not an error in the source: the report says which, and the
+                // exit status says whether any did.
+                if !run.passed() {
+                    compilation_failed = true;
+                }
+                // Argument validation guarantees exactly one `test` source, as
+                // for `eval`.
+                if standard_output_available {
+                    match write_test_report(&mut buffered_output, outcomes) {
+                        Ok(()) => standard_output_written = true,
+                        Err(error) => {
+                            standard_output_available = false;
+                            output_failed = true;
+                            if let Some(group) = output_failure_group(options.command, &error) {
+                                emit_error_group(
+                                    standard_error,
+                                    &mut standard_error_available,
+                                    &mut error_group_written,
+                                    &mut output_failed,
+                                    &group,
+                                );
+                            }
+                        }
+                    }
+                }
+                if evaluation.stats
+                    && standard_output_available
+                    && standard_output_written
+                    && let Err(error) = flush_retry_interrupted(&mut buffered_output)
+                {
+                    standard_output_available = false;
+                    output_failed = true;
+                    if let Some(group) = output_failure_group(options.command, &error) {
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                    }
+                }
+                if evaluation.stats && standard_output_available {
+                    emit_error_group(
+                        standard_error,
+                        &mut standard_error_available,
+                        &mut error_group_written,
+                        &mut output_failed,
+                        &render_test_steps(outcomes, evaluation.steps),
+                    );
+                }
             }
         }
     }
@@ -829,10 +918,14 @@ fn compile_with_limits(
     }
 }
 
-/// Adds to each step-limit diagnostic the option that raises the budget,
-/// while `budget` is below the most `--steps` admits; `None` when the copy
-/// cannot be allocated.
-fn with_budget_hint(diagnostics: &[Diagnostic], budget: usize) -> Option<Vec<Diagnostic>> {
+/// Adds to each step-limit diagnostic the option of `command` that raises
+/// the budget, while `budget` is below the most `--steps` admits; `None` when
+/// the copy cannot be allocated.
+fn with_budget_hint(
+    diagnostics: &[Diagnostic],
+    budget: usize,
+    command: CompilerCommand,
+) -> Option<Vec<Diagnostic>> {
     let mut hinted = Vec::new();
     hinted.try_reserve_exact(diagnostics.len()).ok()?;
     for diagnostic in diagnostics {
@@ -840,7 +933,8 @@ fn with_budget_hint(diagnostics: &[Diagnostic], budget: usize) -> Option<Vec<Dia
             && diagnostic.message() == "reference evaluation step limit exceeded";
         hinted.push(if steps && budget < MAX_EVALUATION_STEP_LIMIT {
             diagnostic.clone().with_note(format!(
-                "`orangec eval --steps N` sets the budget, up to {MAX_EVALUATION_STEP_LIMIT} steps"
+                "`orangec {} --steps N` sets the budget, up to {MAX_EVALUATION_STEP_LIMIT} steps",
+                command.as_str()
             ))
         } else {
             diagnostic.clone()
@@ -880,6 +974,86 @@ fn render_steps(values: &[orange_compiler::EvaluatedFunction], budget: usize) ->
             value.name(),
             value.instance(),
             value.steps()
+        );
+    }
+    let _ = writeln!(report, "total: {total} of {budget} steps");
+    report
+}
+
+/// Writes one line for each test in source order, the values a failed
+/// `left == right` test compared, and a closing count.
+///
+/// A title is printable ASCII without a backslash, and so without a quote,
+/// so it is written between quotes as the source wrote it.
+fn write_test_report(output: &mut impl Write, outcomes: &[TestOutcome]) -> io::Result<()> {
+    let mut failed = 0_usize;
+    for outcome in outcomes {
+        if outcome.passed() {
+            writeln!(output, "test \"{}\" ... ok", outcome.title())?;
+            continue;
+        }
+        failed = failed.saturating_add(1);
+        writeln!(output, "test \"{}\" ... FAILED", outcome.title())?;
+        if let Some((left, right)) = outcome.sides() {
+            writeln!(output, "    left:  {left}")?;
+            writeln!(output, "    right: {right}")?;
+            if let Some(place) = first_difference(left, right) {
+                writeln!(output, "    first difference at {place}")?;
+            }
+        }
+    }
+    let count = outcomes.len();
+    let noun = if count == 1 { "test" } else { "tests" };
+    let passed = count.saturating_sub(failed);
+    writeln!(output, "{count} {noun}: {passed} passed, {failed} failed")
+}
+
+/// Names the first element, or tuple part, in which two unequal values of
+/// one array or tuple type differ: `[i]` or `.k`, followed into a tuple's
+/// arrays; `None` for scalars, whose whole value is the difference.
+fn first_difference(left: &CoreValue, right: &CoreValue) -> Option<String> {
+    let (elements, other, tuple) = match (left, right) {
+        (CoreValue::Array(left), CoreValue::Array(right)) => {
+            (left.elements(), right.elements(), false)
+        }
+        (CoreValue::Tuple(left), CoreValue::Tuple(right)) => {
+            (left.elements(), right.elements(), true)
+        }
+        _ => return None,
+    };
+    let (index, (left, right)) = elements
+        .iter()
+        .zip(other)
+        .enumerate()
+        .find(|(_, (left, right))| left != right)?;
+    let mut place = if tuple {
+        format!(".{index}")
+    } else {
+        format!("[{index}]")
+    };
+    if let Some(inner) = first_difference(left, right) {
+        place.push_str(&inner);
+    }
+    Some(place)
+}
+
+/// Reports the steps each test used, one line each in source order, and
+/// their total against the budget.
+fn render_test_steps(outcomes: &[TestOutcome], budget: usize) -> String {
+    let mut report = String::new();
+    let mut total = 0_usize;
+    for outcome in outcomes {
+        total = total.saturating_add(outcome.steps());
+        let unit = if outcome.steps() == 1 {
+            "step"
+        } else {
+            "steps"
+        };
+        let _ = writeln!(
+            report,
+            "test \"{}\": {} {unit}",
+            outcome.title(),
+            outcome.steps()
         );
     }
     let _ = writeln!(report, "total: {total} of {budget} steps");
@@ -1051,10 +1225,10 @@ fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<C
     }
     match error.kind() {
         io::ErrorKind::BrokenPipe => None,
-        _ => Some(Cow::Borrowed(if command == CompilerCommand::Eval {
-            "orangec: could not write evaluation output\n"
-        } else {
-            "orangec: could not write token output\n"
+        _ => Some(Cow::Borrowed(match command {
+            CompilerCommand::Eval => "orangec: could not write evaluation output\n",
+            CompilerCommand::Test => "orangec: could not write test report\n",
+            _ => "orangec: could not write token output\n",
         })),
     }
 }
@@ -1606,6 +1780,7 @@ define_compiler_commands! {
     Check => "check",
     Eval => "eval",
     Lex => "lex",
+    Test => "test",
     Keygen => "keygen",
     Enc => "enc",
     Dec => "dec",
@@ -1647,13 +1822,6 @@ impl Default for Evaluation {
             specs: Vec::new(),
             stats: false,
         }
-    }
-}
-
-impl Evaluation {
-    /// Returns whether any option set this evaluation away from the default.
-    fn is_default(&self) -> bool {
-        *self == Self::default()
     }
 }
 
@@ -1813,15 +1981,21 @@ fn parse_arguments_with_path_reservation(
     }
 
     let command = command.ok_or_else(|| String::from("missing command"))?;
-    if command != CompilerCommand::Eval && (steps_seen || !evaluation.is_default()) {
-        let name = if steps_seen {
-            "--steps"
-        } else if evaluation.specs.is_empty() {
-            "--stats"
-        } else {
-            "--spec"
-        };
-        return Err(format!("option `{name}` applies only to eval"));
+    // `--steps` and `--stats` serve both commands that evaluate; `--spec`
+    // selects functions, which only `eval` runs.
+    let evaluates = matches!(command, CompilerCommand::Eval | CompilerCommand::Test);
+    if !evaluates && steps_seen {
+        return Err(String::from(
+            "option `--steps` applies only to eval and test",
+        ));
+    }
+    if command != CompilerCommand::Eval && !evaluation.specs.is_empty() {
+        return Err(String::from("option `--spec` applies only to eval"));
+    }
+    if !evaluates && evaluation.stats {
+        return Err(String::from(
+            "option `--stats` applies only to eval and test",
+        ));
     }
     if command.seals() {
         return sealing_action(command, edition, scheme, key, output, paths);
@@ -1843,9 +2017,10 @@ fn parse_arguments_with_path_reservation(
             command.as_str()
         ));
     }
-    if command == CompilerCommand::Eval && paths.len() != 1 {
-        return Err(String::from(
-            "command `eval` requires exactly one source file",
+    if evaluates && paths.len() != 1 {
+        return Err(format!(
+            "command `{}` requires exactly one source file",
+            command.as_str()
         ));
     }
     Ok(Action::Compile(Options {
@@ -2316,7 +2491,9 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             names,
-            ["check", "eval", "lex", "keygen", "enc", "dec", "schemes"]
+            [
+                "check", "eval", "lex", "test", "keygen", "enc", "dec", "schemes"
+            ]
         );
         assert_eq!(
             CompilerCommand::ALL
@@ -3310,21 +3487,72 @@ mod tests {
             Err(String::from("option `--spec` names at most 64 functions"))
         );
 
-        for (arguments, name) in [
-            (&["check", "--steps", "5", "one.or"][..], "--steps"),
-            (&["check", "--steps", "1048576", "one.or"][..], "--steps"),
-            (&["lex", "--spec", "f", "one.or"][..], "--spec"),
-            (&["check", "--stats", "one.or"][..], "--stats"),
+        // `--steps` and `--stats` serve `eval` and `test`; `--spec` only
+        // `eval`. The first misplaced option is named in that order.
+        for (arguments, message) in [
+            (
+                &["check", "--steps", "5", "one.or"][..],
+                "`--steps` applies only to eval and test",
+            ),
+            (
+                &["check", "--steps", "1048576", "one.or"][..],
+                "`--steps` applies only to eval and test",
+            ),
+            (
+                &["lex", "--spec", "f", "one.or"][..],
+                "`--spec` applies only to eval",
+            ),
+            (
+                &["check", "--stats", "one.or"][..],
+                "`--stats` applies only to eval and test",
+            ),
             (
                 &["--steps=5", "--spec=f", "--stats", "check", "one.or"][..],
-                "--steps",
+                "`--steps` applies only to eval and test",
             ),
-            (&["--spec=f", "--stats", "check", "one.or"][..], "--spec"),
-            (&["enc", "--stats", "one.or"][..], "--stats"),
+            (
+                &["--spec=f", "--stats", "check", "one.or"][..],
+                "`--spec` applies only to eval",
+            ),
+            (
+                &["enc", "--stats", "one.or"][..],
+                "`--stats` applies only to eval and test",
+            ),
+            (
+                &["--steps=5", "--spec=f", "--stats", "test", "one.or"][..],
+                "`--spec` applies only to eval",
+            ),
         ] {
             assert_eq!(
                 parse_arguments(os_arguments(arguments)),
-                Err(format!("option `{name}` applies only to eval")),
+                Err(format!("option {message}")),
+                "{arguments:?}"
+            );
+        }
+        let test = |arguments: &[&str]| match parse_arguments(os_arguments(arguments)) {
+            Ok(Action::Compile(options)) => Ok((options.command, options.evaluation)),
+            Ok(_) => panic!("{arguments:?} is not a compilation"),
+            Err(error) => Err(error),
+        };
+        assert_eq!(
+            test(&["test", "--steps", "7", "--stats", "one.or"]),
+            Ok((
+                CompilerCommand::Test,
+                Evaluation {
+                    steps: 7,
+                    specs: Vec::new(),
+                    stats: true,
+                }
+            ))
+        );
+        for arguments in [&["test"][..], &["test", "one.or", "two.or"][..]] {
+            assert_eq!(
+                test(arguments).map(|_| ()),
+                Err(String::from(if arguments.len() == 1 {
+                    "command `test` requires at least one source file"
+                } else {
+                    "command `test` requires exactly one source file"
+                })),
                 "{arguments:?}"
             );
         }
@@ -4546,6 +4774,157 @@ mod tests {
     }
 
     #[test]
+    fn test_report_names_each_test_and_where_a_failed_equality_first_differs() {
+        let source = concat!(
+            "edition 2026; module t {\n",
+            "  spec one() -> Word[8]^2 { [1, 2] }\n",
+            "  test \"same\" { one() == [1, 2] }\n",
+            "  test \"differs\" { one() == [1, 3] }\n",
+            "  test \"a tuple\" { let p: (Int, Word[8]^2) = (1, one()); p == (1, [1, 3]) }\n",
+            "  test \"a scalar\" { one()[0] == 2 }\n",
+            "  test \"both\" { (one() == [1, 2]) && false }\n",
+            "}\n",
+        );
+        let transcript = Transcript::default();
+        let mut input = source.as_bytes();
+        let status = run(
+            os_arguments(&["test", "--stats", "-"]),
+            &mut input,
+            &mut transcript.clone(),
+            &mut transcript.clone(),
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        let steps = String::from_utf8_lossy(&transcript.0.borrow())
+            .split_once("5 tests: 1 passed, 4 failed\n")
+            .unwrap()
+            .1
+            .to_owned();
+        assert_eq!(
+            String::from_utf8_lossy(&transcript.0.borrow()),
+            format!(
+                "{}{steps}",
+                concat!(
+                    "test \"same\" ... ok\n",
+                    "test \"differs\" ... FAILED\n",
+                    "    left:  [0x01, 0x02]\n",
+                    "    right: [0x01, 0x03]\n",
+                    "    first difference at [1]\n",
+                    "test \"a tuple\" ... FAILED\n",
+                    "    left:  (1, [0x01, 0x02])\n",
+                    "    right: (1, [0x01, 0x03])\n",
+                    "    first difference at .1[1]\n",
+                    "test \"a scalar\" ... FAILED\n",
+                    "    left:  0x01\n",
+                    "    right: 0x02\n",
+                    "test \"both\" ... FAILED\n",
+                    "5 tests: 1 passed, 4 failed\n",
+                )
+            )
+        );
+        // The report of steps follows, one line for each test in order.
+        let titles = steps
+            .lines()
+            .map(|line| line.split_once(':').unwrap().0)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            titles,
+            [
+                "test \"same\"",
+                "test \"differs\"",
+                "test \"a tuple\"",
+                "test \"a scalar\"",
+                "test \"both\"",
+                "total",
+            ]
+        );
+        assert!(steps.ends_with(" of 1048576 steps\n"), "{steps}");
+
+        // Every test passing, or none at all, is success; one test is
+        // counted in the singular.
+        for (text, report) in [
+            (
+                "edition 2026; module t { test \"one\" { true } }\n",
+                "test \"one\" ... ok\n1 test: 1 passed, 0 failed\n",
+            ),
+            (
+                "edition 2026; module t { spec f() -> Int { 1 } }\n",
+                "0 tests: 0 passed, 0 failed\n",
+            ),
+        ] {
+            let transcript = Transcript::default();
+            let mut input = text.as_bytes();
+            let status = run(
+                os_arguments(&["test", "-"]),
+                &mut input,
+                &mut transcript.clone(),
+                &mut transcript.clone(),
+            );
+            assert_eq!(status, SUCCESS, "{text}");
+            assert_eq!(String::from_utf8_lossy(&transcript.0.borrow()), report);
+        }
+
+        // A report that cannot be committed is followed by no step report.
+        let mut input = source.as_bytes();
+        let mut output = FailFlush::default();
+        let mut error = Vec::new();
+        let status = run(
+            os_arguments(&["test", "--stats", "-"]),
+            &mut input,
+            &mut output,
+            &mut error,
+        );
+        assert_eq!(status, COMPILATION_ERROR);
+        assert!(output.bytes.starts_with(b"test \"same\" ... ok\n"));
+        assert_eq!(output.flush_attempts, 1);
+        assert_eq!(error, b"orangec: could not write test report\n");
+    }
+
+    #[test]
+    fn first_differences_name_an_element_or_a_part_and_its_element() {
+        use orange_compiler::{ArrayType, CoreArray, CoreTuple, CoreType, TupleType};
+        let words = |values: &[u8]| {
+            CoreValue::Array(
+                CoreArray::new(
+                    ArrayType::new(&CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap(),
+                    values.iter().copied().map(CoreValue::Word8).collect(),
+                )
+                .unwrap(),
+            )
+        };
+        let pair = |word: u8, values: &[u8]| {
+            let array = ArrayType::new(&CoreType::Word8, 2).unwrap();
+            CoreValue::Tuple(
+                CoreTuple::new(
+                    TupleType::new(&[CoreType::Word8, CoreType::Array(array)]).unwrap(),
+                    vec![CoreValue::Word8(word), words(values)],
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(
+            first_difference(&words(&[1, 2]), &words(&[1, 3])).as_deref(),
+            Some("[1]")
+        );
+        assert_eq!(
+            first_difference(&words(&[0, 2]), &words(&[1, 3])).as_deref(),
+            Some("[0]")
+        );
+        assert_eq!(
+            first_difference(&pair(1, &[2, 3]), &pair(2, &[2, 4])).as_deref(),
+            Some(".0")
+        );
+        assert_eq!(
+            first_difference(&pair(1, &[2, 3]), &pair(1, &[2, 4])).as_deref(),
+            Some(".1[1]")
+        );
+        assert_eq!(
+            first_difference(&CoreValue::Word8(1), &CoreValue::Word8(2)),
+            None
+        );
+        assert_eq!(first_difference(&words(&[1, 2]), &words(&[1, 2])), None);
+    }
+
+    #[test]
     fn step_limit_diagnostics_name_the_option_only_below_the_most_admitted() {
         let mut sources = SourceMap::new();
         let id = sources
@@ -4565,19 +4944,30 @@ mod tests {
             diagnostics[0].message(),
             "reference evaluation step limit exceeded"
         );
-        let hint = "`orangec eval --steps N` sets the budget, up to 1073741824 steps";
-        for (budget, hinted) in [
-            (1, true),
-            (MAX_EVALUATION_STEPS_PER_SOURCE, true),
-            (MAX_EVALUATION_STEP_LIMIT - 1, true),
-            (MAX_EVALUATION_STEP_LIMIT, false),
+        // The note names the command that ran, `eval` or `test`.
+        for (command, hint) in [
+            (
+                CompilerCommand::Eval,
+                "`orangec eval --steps N` sets the budget, up to 1073741824 steps",
+            ),
+            (
+                CompilerCommand::Test,
+                "`orangec test --steps N` sets the budget, up to 1073741824 steps",
+            ),
         ] {
-            let copied = with_budget_hint(diagnostics, budget).unwrap();
-            let mut expected = diagnostics[0].clone();
-            if hinted {
-                expected = expected.with_note(hint);
+            for (budget, hinted) in [
+                (1, true),
+                (MAX_EVALUATION_STEPS_PER_SOURCE, true),
+                (MAX_EVALUATION_STEP_LIMIT - 1, true),
+                (MAX_EVALUATION_STEP_LIMIT, false),
+            ] {
+                let copied = with_budget_hint(diagnostics, budget, command).unwrap();
+                let mut expected = diagnostics[0].clone();
+                if hinted {
+                    expected = expected.with_note(hint);
+                }
+                assert_eq!(copied, [expected], "{hint} {budget}");
             }
-            assert_eq!(copied, [expected], "{budget}");
         }
 
         // Every other diagnostic is copied unchanged.
@@ -4587,7 +4977,7 @@ mod tests {
             diagnostics[0].primary_span(),
         );
         assert_eq!(
-            with_budget_hint(std::slice::from_ref(&other), 1).unwrap(),
+            with_budget_hint(std::slice::from_ref(&other), 1, CompilerCommand::Eval).unwrap(),
             [other]
         );
     }

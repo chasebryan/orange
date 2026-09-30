@@ -143,13 +143,14 @@ pub(crate) fn run(
         CompilerCommand::Enc => encrypt(options),
         CompilerCommand::Dec => decrypt(options),
         CompilerCommand::Schemes => schemes(options, standard_output),
-        CompilerCommand::Check | CompilerCommand::Eval | CompilerCommand::Lex => {
-            Err(render_cli_error(
-                CliDiagnosticCode::MissingPhaseArtifact,
-                "a compiler command reached the sealing commands",
-                "this is an internal compiler failure",
-            ))
-        }
+        CompilerCommand::Check
+        | CompilerCommand::Eval
+        | CompilerCommand::Lex
+        | CompilerCommand::Test => Err(render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "a compiler command reached the sealing commands",
+            "this is an internal compiler failure",
+        )),
     };
     match result {
         Ok(()) => {

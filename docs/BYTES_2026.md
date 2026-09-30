@@ -35,8 +35,10 @@ meaning. It accepts no D-004 candidate.
 > lists `Word[8]^n` among a function's types, so that a call may name it, as
 > `first[Word[8]^4](hex"00010203")`. [`LENGTHS_2026.md`](LENGTHS_2026.md),
 > proposed under OEP-0019, lets a byte string, a join, and a slice hold up to
-> 65,536 bytes, where this document admits 256. Every source this document
-> accepts keeps its meaning under all four.
+> 65,536 bytes, where this document admits 256. [`TESTS_2026.md`](TESTS_2026.md),
+> proposed under OEP-0020, defines `==` and `!=` on arrays, so `"ab" == x`,
+> which section 6 rejects, compares two arrays of bytes whole. Every source
+> this document accepts keeps its meaning under all five.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

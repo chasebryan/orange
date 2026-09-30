@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.18
+Manuscript version: 0.19
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -115,9 +115,11 @@ message from 1 through 119 bytes, the S3n slice reads and writes words in
 the byte order a standard names, so that SHA-256 reads a block as sixteen
 big-endian words in one conversion, the S3o slice lets one `spec` stand
 for a list of types, so that exponentiation is written once for five prime
-fields and SHA-256 and SHA-512 share one round, and the S3p slice lets an
+fields and SHA-256 and SHA-512 share one round, the S3p slice lets an
 array hold 65,536 elements, so that RFC 8439's 375-byte and 265-byte vectors
-are written as the RFC prints them. None of them
+are written as the RFC prints them, and the S3q slice lets a module state its
+known answers as tests beside its functions, so that RFC 8439's examples are
+claims the program checks. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -334,10 +336,12 @@ byte orders, so that words are read from bytes, and written back, in one
 conversion in the order a standard names, the S3o slice, also in review,
 adds type parameters, so that one function stands for a list of types, such
 as several prime fields or both of SHA-2's word widths, and is checked for
-each, and the S3p slice, also in review, lets arrays, array literals, and byte
+each, the S3p slice, also in review, lets arrays, array literals, and byte
 strings hold up to 65,536 elements and lets `orangec eval` run under a larger
 step budget, evaluate only the functions it names, and report the steps each
-used.
+used, and the S3q slice, also in review, adds known-answer tests and equality
+of whole arrays and tuples, so that a module states what its functions must
+give and `orangec test` checks it.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -847,7 +851,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, and length slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, and test slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -1152,7 +1156,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The sixteen current slices complete bounded parts of the roadmap's S3 stage:
+The seventeen current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1167,7 +1171,9 @@ and is checked once for each, then byte orders, so that words are read from
 bytes and written back in the order a standard names, then type parameters,
 so that one function serves a list of fields or word widths and is checked
 once for each, then arrays of up to 65,536 elements, so that a standard's long
-vectors are written whole.
+vectors are written whole, then known-answer tests and equality of whole
+arrays and tuples, so that a standard's examples are claims inside the
+program.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over any modulus rather than a listed few, and
 explicit failure
@@ -1723,9 +1729,10 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [bytes specification](BYTES_2026.md) of S3l, the
 [sizes specification](SIZES_2026.md) of S3m, the
 [byte order specification](ORDER_2026.md) of S3n, the
-[type parameters specification](TYPE_PARAMETERS_2026.md) of S3o, and the
-[lengths specification](LENGTHS_2026.md) of S3p. S3b through
-S3p are implemented and tested, but their specifications are **proposed**:
+[type parameters specification](TYPE_PARAMETERS_2026.md) of S3o, the
+[lengths specification](LENGTHS_2026.md) of S3p, and the
+[tests specification](TESTS_2026.md) of S3q. S3b through
+S3q are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1739,8 +1746,9 @@ S3p are implemented and tested, but their specifications are **proposed**:
 [OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md),
 [OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md),
 [OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md),
-[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md), and
-[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md) are in
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md),
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), and
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1827,7 +1835,9 @@ condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
 `!`, `/`, and `%`, which the lexer has always produced. The byte slice gives
 strings their role, as byte strings, and adds two tokens, `++` and the hex
 string `hex"..."`, whose `hex` touches its opening quote. The size,
-byte-order, type-parameter, and length slices add no token. The remaining punctuation is lexically reserved but has no
+byte-order, type-parameter, length, and test slices add no token, and the
+test slice reserves no word: `test` followed by a string begins a test only
+where a module member may begin. The remaining punctuation is lexically reserved but has no
 grammatical role yet.
 `orangec lex` shows how any source
 tokenizes, with exact byte spans.
@@ -1839,12 +1849,14 @@ The whole Orange 2026 grammar fits on a page:
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* member* "}" ;
+member          = function_decl | test_decl ;
 use_decl        = "use" IDENTIFIER ";" ;
 type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
+test_decl       = "test" STRING "{" binding* expression "}" ;
 size_params     = "[" size_param ("," size_param)* "]" ;
 size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
 type_list       = "{" declared_type ("," declared_type)* "}" ;
@@ -2904,18 +2916,21 @@ The rules are few, and each keeps a tuple a value rather than a place. A tuple
 has 2 through 16 elements, each `Int`, `Bool`, a word, a residue, or an array
 of one of them, and neither a tuple nor an array ever holds a tuple. `.k`
 follows a name or a call, and k is written in decimal, counted from zero. No
-operator, comparison, conversion, index, or update applies to a whole tuple,
+operator, order, conversion, index, or update applies to a whole tuple,
 because each would have to choose a meaning, element by element or all at
-once, that a cryptographer should see written out. So the compiler points at
-the operator, and at a position that is not there:
+once, that a cryptographer should see written out. Equality is the one
+exception, since S3q: two tuples are equal when every element is, the only
+meaning it could have (see
+[Known answers beside the algorithm](#known-answers-beside-the-algorithm)).
+So the compiler points at the operator, and at a position that is not there:
 
 ```text
-error[ORC0215]: `==` is not defined for `(Word[64], Word[64])`
- --> <stdin>:4:43
+error[ORC0215]: `<` is not defined for `(Word[64], Word[64])`
+ --> <stdin>:4:45
   |
-4 | ... spec same(p: Pair, q: Pair) -> Bool { p == q }
-  |                                             ^^ the operands have type `(Word[64], Word[64])`
-  = note: compare elements, such as `p.0 == q.0`
+4 | ... ec before(p: Pair, q: Pair) -> Bool { p < q }
+  |                                             ^ the operands have type `(Word[64], Word[64])`
+  = note: tuples are compared whole with `==` and `!=`; they have no order, so compare elements, such as `p.0 < q.0`
 ```
 
 ```text
@@ -4127,6 +4142,134 @@ that many bytes still cannot be written. The budget belongs to the command
 line, not the source, so a program cannot say what it expects to cost, and
 checking has its own fixed budgets, which long literals spend like any others.
 
+### Known answers beside the algorithm
+
+Every cryptographic standard ends in numbers: a key, a nonce, a message, and
+the bytes an implementation must produce from them. RFC 8439 prints them in
+every section and again in an appendix, and FIPS 197 walks through a whole AES
+encryption round by round. They are how an implementer knows the code is the
+algorithm and not something near it. Through S3p an Orange program could
+compute a known answer and print it, but the claim that the answer matched
+the standard lived outside the program, in a runner that compared text. The
+S3q slice, proposed in the [tests specification](TESTS_2026.md) and in the
+owner's review under
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), puts the claim in
+the program, beside the functions it is about:
+
+```orange
+test "2.1.1: the quarter round" {
+  quarter_round(0x11111111, 0x01020304, 0x9b8d6f43, 0x01234567)
+    == (0xea2a92f4, 0xcb1cf8ce, 0x4581472e, 0x5881c4bb)
+}
+
+test "2.3.2: the block function" {
+  let key: Word[8]^32 =
+    hex"00010203 04050607 08090a0b 0c0d0e0f 10111213 14151617 18191a1b 1c1d1e1f";
+  let serialized: Word[8]^64 =
+    hex"10 f1 e7 e4 d1 3b 59 15 50 0f dd 1f a3 20 71 c4" ++
+      hex"c7 d1 f4 c7 33 c0 68 03 04 22 aa 9a c3 d4 6c 4e" ++
+      hex"d2 82 64 46 07 9f aa 09 14 c2 d7 05 d9 8b 02 a2" ++
+      hex"b5 12 9c d1 de 16 4e b9 cb d0 83 e8 a2 50 3c 4e";
+  block(key, 1, hex"00 00 00 09 00 00 00 4a 00 00 00 00") == serialized
+}
+```
+
+A test is a title and a claim. The title is a quoted string that says where
+the claim comes from, here the RFC's section numbers, and it names the test in
+every report, so it is held to what a report can print: 1 through 128
+characters of printable ASCII, no backslash, and no title twice in a module.
+Each break of that rule is `ORC0242` at the title. The claim is a `Bool`
+expression, with its own `let` bindings, over the module's functions and the
+functions of the modules it uses: the test is checked as a function without
+parameters that gives a `Bool`, and a claim of any other type is the error an
+expected `Bool` gives. The word `test` is not reserved. It begins a test only
+where a module member may begin, followed by a string, so a function named
+`test` is still called as `test()`.
+
+The claims above compare a tuple of four words and an array of 64 bytes,
+which no earlier slice allowed. S3q defines `==` and `!=` for every type: two
+arrays are equal when every pair of elements at the same index is, and two
+tuples when every pair of parts at the same position is. An array, a fill,
+or a tuple written out takes its type from the other side, so neither
+`x == [1, 2, 9, 4]` nor the appendix A.1 test's `zero_key_stream() ==
+(hex"76 b8 ..." ++ ...)` needs a type written; two written out have no type
+between them and are `ORC0227`. Arrays
+and tuples have equality but no order: `<` on them is `ORC0215`, with a note
+that says to compare elements.
+
+The cost of a comparison is chosen with a cryptographer's suspicion. It
+compares every part, whether or not an earlier part differs: one step for each
+64 words or truth values of an array, what each pair costs for numbers and
+residues, and the sum of its parts for a tuple. The
+[equality fixture](../compiler/fixtures/s3q/valid-equality.or) builds two
+arrays of 256 bytes that differ in their first byte and two that differ in
+their last, and both functions cost 17 steps; two arrays of 65,536 bytes cost
+1,024 steps to compare wherever they differ. The equality a tag check needs is
+the one that does not stop early. The reference evaluator is not
+constant-time, and steps are not time, but the language no longer offers the
+early exit that a native implementation would then have to be talked out of.
+
+`orangec test` checks the program as `orangec check` does and runs the root
+module's tests in source order, under one step budget:
+
+```console
+$ orangec test compiler/fixtures/s3q/valid-rfc8439-tests.or
+test "2.1.1: the quarter round" ... ok
+test "2.3.2: the block function" ... ok
+test "A.1 #1: the zero key's key stream, block 0" ... ok
+test "A.1 #2: the zero key's key stream, block 1" ... ok
+test "the nonce changes every block" ... ok
+test "2.5.2: Poly1305 of the Forum's name" ... ok
+test "A.3 #1: Poly1305 of zeros under the zero key" ... ok
+7 tests: 7 passed, 0 failed
+```
+
+A failed claim is a result, not an error. It goes to standard output, and the
+exit status says whether every claim held: 0 when all did, 1 when any did not.
+When the claim is a single `left == right`, the report shows both values and,
+for arrays and tuples, where they first differ, as an index or a part followed
+into its elements, so a wrong byte deep in a block is found at once. The
+[failing fixture](../compiler/fixtures/s3q/failing-tests.or) shows each shape:
+
+```text
+test "an array" ... FAILED
+    left:  [0x01, 0x02, 0x03, 0x04]
+    right: [0x01, 0x02, 0x09, 0x04]
+    first difference at [2]
+test "a tuple holding an array" ... FAILED
+    left:  (0x01, [0x02, 0x03, 0x04])
+    right: (0x01, [0x02, 0x03, 0x05])
+    first difference at .1[2]
+```
+
+`--steps` and `--stats` work as they do for `eval`: the tests share one
+budget, and `--stats` writes each test's steps after the report. A test that
+exceeds the budget stops the whole run with `ORC0301` at its title and the
+note "no test outcome is reported". A claim that could not be decided is
+neither kept nor failed, so nothing else is written, and the status is 1.
+
+Only the root module's tests run. A program is checked from the file given to
+`orangec`; the modules it uses are checked for what it can call, and their
+tests are neither checked nor run until that module is the root, as in
+`orangec test sha256.or`. A module carries its own known answers, and a
+program that uses it pays nothing for them. `orangec eval` runs no test, and
+in the Core the root's tests follow its functions, each a function of result
+`Bool` that keeps its title, so the evaluator runs them with no new
+machinery.
+
+S3q adds one declaration form and one language diagnostic code, and no token,
+reserved word, type, or Core node. Every source S3p accepted keeps its Core,
+values, output, and steps, since none began a member with `test` and none
+compared arrays or tuples, which S3p rejected.
+
+That leaves seams. A test states one claim about one computation. It takes no
+parameters, so a table of vectors is several tests, and no test can claim
+that a call stops or that a source is rejected, so negative vectors still
+live in the conformance runners. A module's user cannot run the tests of the
+modules it uses. And a passing test is evidence about the reference evaluator
+at one revision, not a proof that a function meets its standard for every
+input.
+
 ### From bytes to a value
 
 It is worth following one line through the compiler, because each step is a
@@ -4275,7 +4418,12 @@ parameter's name used as a value, and `ORC0101` for a malformed list. The
 length slice adds no language code: its limits are the old codes with 65536
 in their messages, a number too wide for the evaluator is the `ORC0301` of
 every exact integer, and `orangec` adds `ORC1016` for a `--spec` name that
-matches no function without parameters.
+matches no function without parameters. The test slice adds `ORC0242` for a
+test's title that is empty, longer than 128 bytes, not printable ASCII,
+holding a backslash, or repeating another's, and it reuses `ORC0101` for a
+test without a quoted title or a body, `ORC0214` for a claim that is not a
+`Bool`, `ORC0227` for a comparison of two arrays or tuples both written out,
+and `ORC0215` for an order on arrays or tuples.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -4284,11 +4432,12 @@ each use.
 
 ### The command line
 
-`orangec` has seven commands:
+`orangec` has eight commands:
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
 orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
+orangec test [--steps <N>] [--stats] <FILE>
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -4301,7 +4450,13 @@ orangec schemes [<NAME>...]
   budget, from 1 through 1,073,741,824; `--spec NAME`, repeatable, evaluates
   only the functions named; and `--stats` reports on standard error the
   steps each function used, as
-  [Vectors at full length](#vectors-at-full-length) shows.
+  [Vectors at full length](#vectors-at-full-length) shows. It runs no test.
+- `test` validates exactly one program and runs its root module's
+  known-answer tests in source order, printing `ok` or `FAILED` for each on
+  standard output and exiting with status 1 when any fails; it takes
+  `--steps` and `--stats` as `eval` does, as
+  [Known answers beside the algorithm](#known-answers-beside-the-algorithm)
+  shows.
 - `lex` prints the deterministic token stream.
 - `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
   written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
@@ -4413,7 +4568,14 @@ and 265-byte vectors written as the RFC prints them and a table of all 65,536
 powers of 3 modulo 2^16 + 1 read by 16-bit words, against the vectors of
 RFC 8439 pinned in the D-011 suite; generated sources pin literals and byte
 strings of 65,536 elements and of 65,537, and every step budget, selection,
-report, and usage error of the three new options. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+report, and usage error of the three new options. The tests specification
+adds 12 rule identifiers and five sources, two valid, one whose tests fail,
+and two invalid, including seven of RFC 8439's examples and test vectors
+written as tests, with inputs and expected bytes as the RFC prints them;
+generated sources pin titles at and past their limits, that only the root's
+tests run, a test that stops, every option and usage error of `orangec test`,
+and comparisons of 65,536 bytes that cost the same wherever they differ. The
+complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -4432,10 +4594,11 @@ about for all their values at once, lists of types named once for several
 functions, sizes found from anything
 but the lengths of a call's arguments, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, arrays of arrays, tuples of tuples, arrays of
-tuples, operators on whole tuples, records with named fields, indices
+tuples, operators other than `==` and `!=` on whole tuples, records with named fields, indices
 narrowed by conditions, slices at positions computed from data, empty arrays,
 arrays of more than 65,536 elements, step budgets written in a source,
-equality of whole arrays, text beyond printable ASCII, conversions of
+an order on arrays or tuples, tests with parameters or expected failures,
+text beyond printable ASCII, conversions of
 arrays other than words, bit orders, loops over ranges computed at run time, early exit, short-circuit
 operators, conditionals without `else`, blocks as expressions of their own,
 moduli computed at run time,
@@ -4462,11 +4625,11 @@ OEP-0011, S3i's, which builds on S3h, through OEP-0012, S3j's, which builds
 on S3i, through OEP-0013, S3k's, which builds on S3j, through OEP-0014,
 S3l's, which builds on S3k, through OEP-0015, S3m's, which builds on S3l,
 through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
-which builds on S3n, through OEP-0018, and S3p's, which builds on S3o,
-through OEP-0019.
+which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
+through OEP-0019, and S3q's, which builds on S3p, through OEP-0020.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All fifteen migrations so far are small: every source
+documented migration. All sixteen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -4483,8 +4646,10 @@ declares no size parameter and writes every length and bound as an integer,
 every source S3m accepted does the same under S3n, since `big` or
 `little` after `as` was a type's name only where S3n still reads it as one,
 every source S3n accepted does the same under S3o, since it wrote no
-braces after a size's `in`, and every source S3o accepted does the same under
-S3p, in the same steps, since its arrays hold at most 256 elements.
+braces after a size's `in`, every source S3o accepted does the same under
+S3p, in the same steps, since its arrays hold at most 256 elements, and every
+source S3p accepted does the same under S3q, since none began a member with
+`test` or compared arrays or tuples.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -5218,6 +5383,10 @@ The length slice let a standard's long vectors be written whole: RFC 8439's
 375-byte text and ciphertext and its 265-byte AEAD ciphertext, each as the
 RFC prints it, reproduced byte for byte, and it leaves room for the 768-byte
 ciphertexts and 2,420-byte signatures of the post-quantum standards.
+The test slice moved known answers into the programs themselves: RFC 8439's
+quarter round, block function, zero-key key stream, and Poly1305 examples
+are stated as tests beside the functions they check, titled with their
+sections, and `orangec test` fails when one stops holding.
 These are still fixtures, not corpus entries. A message's length is
 fixed in each instance rather than read when the program runs, and no
 standard has been admitted with its provenance. The corpus remains a set of research inputs
@@ -5829,7 +5998,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3p in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3q in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -6151,9 +6320,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [bytes specification](BYTES_2026.md), the
 [sizes specification](SIZES_2026.md), the
 [byte order specification](ORDER_2026.md), the
-[type parameters specification](TYPE_PARAMETERS_2026.md), and the
-[lengths specification](LENGTHS_2026.md) are proposed under
-OEP-0005 through OEP-0019 and in the owner's review. Where this summary and those
+[type parameters specification](TYPE_PARAMETERS_2026.md), the
+[lengths specification](LENGTHS_2026.md), and the
+[tests specification](TESTS_2026.md) are proposed under
+OEP-0005 through OEP-0020 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -6169,12 +6339,14 @@ parentheses followed by `(`, which make it a call with sizes or types:
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* member* "}" ;
+member          = function_decl | test_decl ;
 use_decl        = "use" IDENTIFIER ";" ;
 type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
+test_decl       = "test" STRING "{" binding* expression "}" ;
 size_params     = "[" size_param ("," size_param)* "]" ;
 size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
 type_list       = "{" declared_type ("," declared_type)* "}" ;
@@ -6387,21 +6559,23 @@ orangec schemes [<NAME>...]
 | `check` | Lexical, syntactic, and semantic validation; silent on success |
 | `eval` | Validate one program, then print each typed `spec` without parameters of its root module as `module::name: Type = value`, and each instance of a sized one as `module::name[2]: Type = value` |
 | `lex` | Print the deterministic token stream with byte spans |
+| `test` | Validate one program, then run its root module's tests in source order, printing `test "TITLE" ... ok` or `... FAILED` for each and a count; status 1 when any fails |
 | `keygen` | Make a random key for a scheme, mode 0600, never replacing a file |
 | `enc` | Seal one file as `FILE.orange` with its key's scheme |
 | `dec` | Open one sealed file; output is published only if every chunk is authentic |
 | `schemes` | List the built-in schemes or check a scheme program |
 
-Options are `--edition <YEAR>` (only `2026`, at most once), for `eval` only
-`--steps <N>` (a step budget from 1 through 1,073,741,824, at most once;
-default 1,048,576), `--spec <NAME>` (evaluate only this function without
-parameters; up to 64 names), and `--stats` (report each evaluated function's
-steps and the total on standard error, after the values), `--scheme <NAME>`
+Options are `--edition <YEAR>` (only `2026`, at most once), for `eval` and
+`test` `--steps <N>` (a step budget from 1 through 1,073,741,824, at most
+once; default 1,048,576) and `--stats` (report each evaluated function's or
+test's steps and the total on standard error, after the values or the
+report), for `eval` only `--spec <NAME>` (evaluate only this function without
+parameters; up to 64 names), `--scheme <NAME>`
 (a built-in name or a program path), `--key <FILE>` (default
 `$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
-UTF-8 source from standard input, once per invocation. For `check` and `eval`,
-each `use m;` reads the module `m` from `m.or` beside the file that names it,
+UTF-8 source from standard input, once per invocation. For `check`, `eval`,
+and `test`, each `use m;` reads the module `m` from `m.or` beside the file that names it,
 or from the current directory for standard input, once per program. Exit status is 0 on
 success, 1 on a compile or input failure, and 2 on a usage error.
 
@@ -6411,7 +6585,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0009` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget, malformed hex string |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0241` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types |
+| `ORC0201`–`ORC0242` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types, a test's title that is empty, too long, unprintable, or repeated |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1016` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` name that matches no function |
 
@@ -6531,8 +6705,8 @@ part are listed here so a reader can move from explanation to authority.
   [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md),
   [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), [size](SIZES_2026.md),
   [byte order](ORDER_2026.md), [type parameter](TYPE_PARAMETERS_2026.md),
-  and [length](LENGTHS_2026.md) specifications under OEP-0005 through
-  OEP-0019, the
+  [length](LENGTHS_2026.md), and [test](TESTS_2026.md) specifications under
+  OEP-0005 through OEP-0020, the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
@@ -6572,24 +6746,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.18 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.19 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.18 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.18 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, and length slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.19 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.19 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, and test slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.18 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, and length slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.19 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, and test slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.18 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.19 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.18 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.19 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.18 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.19 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -6647,9 +6821,11 @@ adds the [sizes specification](SIZES_2026.md) and
 adds the [byte order specification](ORDER_2026.md) and
 [OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), version
 0.17 adds the [type parameters specification](TYPE_PARAMETERS_2026.md) and
-[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md), and
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md),
 version 0.18 adds the [lengths specification](LENGTHS_2026.md) and
-[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md).
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), and version 0.19
+adds the [tests specification](TESTS_2026.md) and
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -6788,6 +6964,14 @@ section "Vectors at full length". It was drafted with Claude Code under
 Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
 run against the compiler at the revision that introduced it. That check is
 not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.19 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3q test slice, and added the Chapter 8
+section "Known answers beside the algorithm". It was drafted with Claude Code
+under Chase Bryan's direction on 2026-09-30, and every Orange example it adds
+was run against the compiler at the revision that introduced it. That check
+is not independent review, and the same authorship, review, evidence, and
 provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No

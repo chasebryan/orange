@@ -120,6 +120,14 @@ unresolved.
 > `orangec eval --steps`, `--spec`, and `--stats` set a run's step budget,
 > evaluate only the functions named, and report the steps each used. It adds
 > no token and no reserved word.
+>
+> The S3q slice proposed in [`TESTS_2026.md`](TESTS_2026.md) under OEP-0020,
+> also in review, builds on S3p with known-answer tests and whole-value
+> equality: `test "TITLE" { claim }` may stand among a module's functions, its
+> claim a `Bool` checked as a function without parameters, `==` and `!=`
+> compare arrays and tuples whole, and `orangec test` runs the root module's
+> tests and reports each. It adds no token and no reserved word: `test`
+> followed by a string begins a test only where a module member may begin.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

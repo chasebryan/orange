@@ -43,8 +43,10 @@ meaning. It accepts no D-004 candidate.
 > ring; a modulus is still a constant. [`LENGTHS_2026.md`](LENGTHS_2026.md),
 > proposed under OEP-0019, lets an array of residues hold up to 65,536 elements,
 > and reads words wider than 16,384 bits as a residue only while their number
-> fits the exact-integer limit. Every source this document accepts keeps its
-> meaning under all seven.
+> fits the exact-integer limit. [`TESTS_2026.md`](TESTS_2026.md), proposed
+> under OEP-0020, admits test declarations among a module's functions in the
+> grammar of section 3, and compares arrays of residues whole with `==` and
+> `!=`. Every source this document accepts keeps its meaning under all eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

@@ -1,0 +1,5 @@
+// S3q rejection: a test is written `test "TITLE" { EXPRESSION }`.
+edition 2026;
+module invalid_test_syntax {
+  test { true }
+}

@@ -1,0 +1,47 @@
+// S3q conformance: `==` and `!=` compare values of every type, arrays and
+// tuples whole. Two values are equal exactly when every element is. Every
+// part is compared, whether or not an earlier one differs, so a comparison's
+// cost depends only on its operands' type and size: one step for each 64
+// words or truth values of an array, and for a number or a residue what
+// comparing it alone costs.
+edition 2026;
+module equality {
+  type State = (Word[32]^4, Int);
+
+  spec words() -> (Bool, Bool, Bool) {
+    let x: Word[8]^4 = [1, 2, 3, 4];
+    (x == [1, 2, 3, 4], x != [1, 2, 3, 4], x == [0, 2, 3, 4])
+  }
+
+  spec truths() -> Bool {
+    let t: Bool^3 = [true, false, true];
+    t == [true, false, true]
+  }
+
+  spec residues() -> Bool {
+    let a: Mod[7]^2 = [3, 4];
+    [3, -3] == a
+  }
+
+  spec states() -> (Bool, Bool) {
+    let s: State = ([1, 2, 3, 4], 5);
+    let t: State = ([1, 2, 3, 4], 6);
+    (s == t, s == ([1, 2, 3, 4], 5))
+  }
+
+  spec long() -> (Bool, Bool) {
+    let x: Word[8]^65536 = [0; 65536];
+    let y: Word[8]^65536 = x with [65535] = 1;
+    (x == y, x != y)
+  }
+
+  spec compared_first() -> Bool {
+    let x: Word[8]^256 = [0; 256];
+    x == (x with [0] = 1)
+  }
+
+  spec compared_last() -> Bool {
+    let x: Word[8]^256 = [0; 256];
+    x == (x with [255] = 1)
+  }
+}

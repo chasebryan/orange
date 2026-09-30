@@ -153,6 +153,8 @@ define_diagnostic_codes! {
     PackedWidth => "ORC0240",
     /// A type parameter lists a type twice, or a call gives no listed type for one.
     TypeParameter => "ORC0241",
+    /// A test's title is empty, too long, or unprintable, or repeats another's.
+    TestTitle => "ORC0242",
     /// A deterministic reference-evaluation resource budget was exhausted.
     EvaluationResourceLimit => "ORC0301",
 }
@@ -726,7 +728,7 @@ mod tests {
             "ORC0216", "ORC0217", "ORC0218", "ORC0219", "ORC0220", "ORC0221", "ORC0222", "ORC0223",
             "ORC0224", "ORC0225", "ORC0226", "ORC0227", "ORC0228", "ORC0229", "ORC0230", "ORC0231",
             "ORC0232", "ORC0233", "ORC0234", "ORC0235", "ORC0236", "ORC0237", "ORC0238", "ORC0239",
-            "ORC0240", "ORC0241", "ORC0301",
+            "ORC0240", "ORC0241", "ORC0242", "ORC0301",
         ];
 
         assert_eq!(actual, expected);

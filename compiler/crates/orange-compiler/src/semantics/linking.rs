@@ -376,8 +376,11 @@ pub(super) fn link_program<'ast>(
         // A module whose used module stopped before its names were complete
         // is not checked; that module's analysis has already reported why.
         let outcome = available.then(|| {
+            // Only the root's tests are checked; it is the program's first
+            // module.
             Analyzer::new(source, ast, Limits::DEFAULT)
                 .with_id_offset(id_offset)
+                .with_tests(index == 0)
                 .run_linked(
                     &imports,
                     |declarations, capacity| declarations.try_reserve(capacity).is_ok(),

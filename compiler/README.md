@@ -86,8 +86,13 @@ OEP-0019, lets an array, an array literal, and a byte string hold up to
 65,536 elements, so that a `Word[16]` indexes the longest with no check at
 run time, and gives `orangec eval` a step budget of its caller's choosing,
 `--steps`, a choice of functions, `--spec`, and a report of the steps each
-used, `--stats`. All sixteen lower to a noncanonical Typed Reference Core and
-are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+used, `--stats`. The S3q slice, proposed in
+[`docs/TESTS_2026.md`](../docs/TESTS_2026.md) and in owner review under
+OEP-0020, lets a module state its known answers as `test "TITLE" { claim }`
+beside its functions, compares arrays and tuples whole with `==` and `!=`,
+and adds `orangec test`, which runs the root module's tests and reports each.
+All seventeen lower to a noncanonical Typed Reference Core and are
+reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -114,6 +119,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtur
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --steps 2097152 --stats compiler/fixtures/s3p/valid-lengths.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
@@ -489,7 +495,7 @@ comparison. Compile untrusted filesystem trees from a stable copied file or
 standard input inside an appropriate host sandbox; full path confinement is not
 claimed.
 A source whose module has `use` declarations is the root of a program. For
-`check` and `eval`, each `use m;` reads the module `m` from the file `m.or` in
+`check`, `eval`, and `test`, each `use m;` reads the module `m` from the file `m.or` in
 the root file's directory, or in the current directory when the root is `-`.
 A module name is an ASCII identifier, so it names one file in that directory
 and no path outside it. Each module is read once per program, in the order a
@@ -656,7 +662,9 @@ unsuccessful output operation rather than an accepted partial evaluation.
 Apply caller-side time limits before using `orangec eval` on untrusted sources.
 `--steps` raises the evaluation budget up to 1073741824 steps, and an
 evaluation makes at most 64 array elements for each step, so a caller who
-raises it on an untrusted source should also cap its memory.
+raises it on an untrusted source should also cap its memory. The same holds
+for `orangec test`, whose report prints the values a failed `left == right`
+compared, so a test over secret material discloses it when it fails.
 
 ## Frozen lexical boundary
 
@@ -695,12 +703,14 @@ result expression:
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* member* "}" ;
+member          = function_decl | test_decl ;
 use_decl        = "use" IDENTIFIER ";" ;
 type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
+test_decl       = "test" STRING "{" binding* expression "}" ;
 size_params     = "[" size_param ("," size_param)* "]" ;
 size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
 type_list       = "{" declared_type ("," declared_type)* "}" ;
@@ -841,7 +851,10 @@ of words as the words of another width with the same number of bits, as an
 residue modulo 2 to the power of their width, the first word most significant
 for `big` and least significant for `little`.
 `p.k` selects element k of a tuple, counted from zero, and no operator,
-comparison, conversion, or index applies to a whole tuple. A byte string
+order, conversion, or index applies to a whole tuple. `==` and `!=` are
+defined for every type and compare arrays and tuples whole, every part
+whether or not an earlier one differs, and an array or tuple written out
+takes its type from the other operand. A byte string
 `"..."` of printable ASCII characters and escapes, or `hex"..."` of hex digit
 pairs, is the array `Word[8]^n` of its 1 through 65536 bytes; `a ++ b` joins two
 arrays of one element type; and `x[a..b]` and `x with [a..b] = v` read and
@@ -935,11 +948,49 @@ lengths::pepin: 1452583 steps
 total: 1452583 of 2097152 steps
 ```
 
-Each of the three is a usage error with any command but `eval`.
+`--steps` and `--stats` also apply to `orangec test`; each of the three is a
+usage error with any other command, and `--spec` with `test`.
+
+`orangec test` checks exactly one program as `check` does and runs the root
+module's known-answer tests in source order under one step budget. A test is
+`test "TITLE" { bindings; claim }` among a module's functions, its title 1
+through 128 printable ASCII characters without a backslash and unique in its
+module (`ORC0242`), and its claim a `Bool` checked as a function without
+parameters; the tests of used modules are neither checked nor run, and
+`orangec eval` runs no test. The report is written to standard output, one
+line per test and a count, with both values and the first difference of a
+failed `left == right`; status is 0 when every test passes and 1 when any
+fails, with standard error empty:
+
+```console
+$ orangec test compiler/fixtures/s3q/failing-tests.or
+test "a word, rotated" ... ok
+test "a word, rotated the wrong way" ... FAILED
+    left:  0x00000080
+    right: 0x00000100
+test "an array" ... FAILED
+    left:  [0x01, 0x02, 0x03, 0x04]
+    right: [0x01, 0x02, 0x09, 0x04]
+    first difference at [2]
+test "a tuple holding an array" ... FAILED
+    left:  (0x01, [0x02, 0x03, 0x04])
+    right: (0x01, [0x02, 0x03, 0x05])
+    first difference at .1[2]
+test "a residue" ... FAILED
+    left:  1
+    right: 2
+test "two claims at once" ... FAILED
+test "unequal, as claimed" ... ok
+7 tests: 2 passed, 5 failed
+```
+
+A test that exceeds the budget writes no report: `ORC0301` at its title, with
+the note that no test outcome is reported. `--stats` writes each test's steps
+and the total to standard error after the report.
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3p rules, limits, and non-claims are in
+through S3q rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -953,8 +1004,9 @@ through S3p rules, limits, and non-claims are in
 [`docs/BYTES_2026.md`](../docs/BYTES_2026.md),
 [`docs/SIZES_2026.md`](../docs/SIZES_2026.md),
 [`docs/ORDER_2026.md`](../docs/ORDER_2026.md),
-[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md), and
-[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md). None of them defines
+[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md),
+[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md), and
+[`docs/TESTS_2026.md`](../docs/TESTS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1194,7 +1246,7 @@ the first test vector of RFC 7748 section 5.2, Poly1305 on the example of
 RFC 8439 section 2.5.2, and ChaCha20-Poly1305 on the "sunscreen" example of
 section 2.8.2. The rejected fixtures cover conditional syntax and mixed
 operator groups; conditions, branches, operators, and conversions of the wrong
-type; comparisons without a type or of arrays; and indices whose division
+type; comparisons without a type and orders of arrays; and indices whose division
 leaves their array.
 
 `crates/orangec/tests/s3f_conformance.rs` runs the same repeatable `check` and
@@ -1326,9 +1378,8 @@ second name; names that repeat within a pattern, a parameter, a binding, or a
 loop index, a name read before its pattern is bound or after its loop; and
 tuples of another length or type, a tuple where a scalar is required, `.k` on
 an array or past the last element, an element of another type, an index,
-equality, arithmetic, or conversion of a whole tuple, a pattern of another
-type or of an unknown type, and comparisons of a tuple or an array written
-out.
+an order, arithmetic, or conversion of a whole tuple, a pattern of another
+type or of an unknown type, and orders of a tuple or an array written out.
 
 `crates/orangec/tests/s3k_conformance.rs` runs the same repeatable `check` and
 `eval` protocol as the S3j runner. It parses the 8-rule S3k index in
@@ -1509,6 +1560,43 @@ command other than `eval`. This corpus establishes the tested behavior of one
 implementation; it does not accept OEP-0019, prove the rules sound, or
 complete S3.
 
+## S3q known-answer test conformance
+
+`fixtures/s3q/` contains an exact five-program corpus for the proposed S3q
+behavior: two programs must check and run their tests or evaluate
+successfully, one must check and report failed tests with status 1, and two
+must fail closed. The accepted programs write seven of RFC 8439's examples
+and test vectors as tests, with inputs and expected bytes as the RFC prints
+them: the quarter round of section 2.1.1, the block function of section
+2.3.2, the zero key's key stream of appendix A.1 test vectors 1 and 2, a
+nonce that changes every block, Poly1305 of section 2.5.2, and appendix A.3
+test vector 1; and compare words, truth values, residues, tuples holding
+arrays, and arrays of 256 and 65,536 elements whole, with exact steps under
+`--stats` that do not depend on where the operands differ. The failing
+program's report shows a word, an array, a tuple holding an array, and a
+residue that differ, with their values and first differences, and a claim of
+two comparisons that has only its line. The rejected programs cover an empty
+title, a letter outside ASCII, a backslash, a repeated title, a claim that is not a `Bool`, an
+order on a tuple and on two tuples written out, two arrays written out, an
+unknown function, and a test without a title.
+
+`crates/orangec/tests/s3q_conformance.rs` runs each fixture's commands,
+`check`, `test`, and `eval` with their options, twice each, and requires
+identical status, standard output, and standard error. It parses the 12-rule
+S3q index in `docs/TESTS_2026.md` and binds every rule to named CLI,
+generated-CLI, parser-unit, or unit tests declared exactly once at their
+harness locations. It generates titles of 1 and 128 bytes, and titles
+holding a raw tab or delete, which the repository keeps out of its sources,
+or 129 bytes; a program whose used module has a test that
+is not a `Bool` and one that fails, neither checked nor run from the root and
+both when that module is the root; a test that stops at a budget one step
+short of the run and within the first test; both output streams in one file,
+where the step report follows the report; every usage error of `orangec
+test`; and comparisons of 65,536 bytes that differ at any position in
+identical steps. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0020, prove the rules sound, or
+complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1560,6 +1648,8 @@ complete S3.
   rule-index, and instance-limit runner;
 - `crates/orangec/tests/s3p_conformance.rs`: exact repeatable S3p corpus,
   rule-index, length-limit, and evaluation-option runner;
+- `crates/orangec/tests/s3q_conformance.rs`: exact repeatable S3q corpus,
+  rule-index, test-run, and report runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1579,6 +1669,8 @@ complete S3.
 - `fixtures/s3n/`: exact six-positive/two-negative S3n CLI fixture corpus;
 - `fixtures/s3o/`: exact three-positive/two-negative S3o CLI fixture corpus;
 - `fixtures/s3p/`: exact two-positive/one-negative S3p CLI fixture corpus;
+- `fixtures/s3q/`: exact two-positive/one-failing/two-negative S3q CLI fixture
+  corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

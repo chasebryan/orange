@@ -35,7 +35,11 @@ meaning. It accepts no D-004 candidate.
 > lets a tuple's elements be a function's type parameter, as `(K, K)`, and lists
 > tuple types among a function's types. [`LENGTHS_2026.md`](LENGTHS_2026.md),
 > proposed under OEP-0019, lets a tuple hold arrays of up to 65,536 elements.
-> Every source this document accepts keeps its meaning under all five.
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, lifts this
+> document's exclusion of comparisons of whole tuples: `==` and `!=` compare
+> two tuples part by part, and a tuple written out takes its type from the
+> other operand. Every source this document accepts keeps its meaning under
+> all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

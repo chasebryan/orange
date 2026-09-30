@@ -17,11 +17,12 @@ use crate::parser::{
     FillExpression, FunctionBody, FunctionDeclaration, FunctionKind, Identifier, IndexExpression,
     IntegerLiteral, LoopExpression, MAX_ARRAY_ELEMENTS, MAX_SIZES_PER_FUNCTION, Parameter, Pattern,
     ProjectExpression, Size, SizeParameter, SliceExpression, SliceRange, SliceUpdateExpression,
-    SyntaxTree, TupleExpression, TypeSyntax, TypedBody, TypedName, UnaryExpression, UnaryOperator,
-    UpdateExpression,
+    SyntaxTree, TestDeclaration, TupleExpression, TypeSyntax, TypedBody, TypedName,
+    UnaryExpression, UnaryOperator, UpdateExpression,
 };
 use crate::source::{SourceFile, Span, TextOffset};
 
+mod answers;
 mod bytes;
 mod linking;
 mod order;
@@ -30,6 +31,7 @@ mod sizes;
 mod tuples;
 mod types;
 
+pub use answers::MAX_TEST_TITLE_BYTES;
 use linking::*;
 use ranges::*;
 use sizes::*;
@@ -221,6 +223,31 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
     let source_id = source.id();
     let belongs = |span: Span| span.source() == source_id;
     let type_belongs = |ty: &TypeSyntax| type_belongs(ty, &belongs);
+    let function_belongs = |function: &FunctionDeclaration| {
+        belongs(function.span)
+            && belongs(function.name.span)
+            && function.sizes.iter().all(|size| {
+                belongs(size.span)
+                    && belongs(size.name.span)
+                    && belongs(size.start_span)
+                    && belongs(size.end_span)
+                    && size.types.iter().all(&type_belongs)
+            })
+            && function.parameters.iter().all(|parameter| {
+                belongs(parameter.span)
+                    && belongs(parameter.name.span)
+                    && type_belongs(&parameter.ty)
+            })
+            && match &function.body {
+                FunctionBody::Empty => true,
+                FunctionBody::Typed(body) => {
+                    belongs(body.span)
+                        && type_belongs(&body.result_type)
+                        && bindings_belong(&body.bindings, &belongs)
+                        && expression_belongs(&body.expression, &belongs)
+                }
+            }
+    };
 
     belongs(ast.span)
         && belongs(ast.edition.span)
@@ -237,30 +264,9 @@ fn syntax_tree_belongs_to_source(source: &SourceFile, ast: &SyntaxTree) -> bool 
                 && belongs(declaration.name.span)
                 && type_belongs(&declaration.ty)
         })
-        && ast.module.functions.iter().all(|function| {
-            belongs(function.span)
-                && belongs(function.name.span)
-                && function.sizes.iter().all(|size| {
-                    belongs(size.span)
-                        && belongs(size.name.span)
-                        && belongs(size.start_span)
-                        && belongs(size.end_span)
-                        && size.types.iter().all(&type_belongs)
-                })
-                && function.parameters.iter().all(|parameter| {
-                    belongs(parameter.span)
-                        && belongs(parameter.name.span)
-                        && type_belongs(&parameter.ty)
-                })
-                && match &function.body {
-                    FunctionBody::Empty => true,
-                    FunctionBody::Typed(body) => {
-                        belongs(body.span)
-                            && type_belongs(&body.result_type)
-                            && bindings_belong(&body.bindings, &belongs)
-                            && expression_belongs(&body.expression, &belongs)
-                    }
-                }
+        && ast.module.functions.iter().all(&function_belongs)
+        && ast.module.tests.iter().all(|test| {
+            belongs(test.span) && belongs(test.title.span) && function_belongs(test.function())
         })
 }
 
@@ -468,6 +474,9 @@ struct Analyzer<'source, 'ast> {
     /// Identity of this module's first typed `spec` in the linked program:
     /// the number of typed `spec` functions in the modules checked before it.
     id_offset: usize,
+    /// Whether this module's known-answer tests are checked and become part
+    /// of its Core: only the root's are.
+    tests: bool,
     reserve_pending_function_slot: fn(&mut Vec<PendingFunction>) -> bool,
     reserve_magnitude_limb: fn(&mut Vec<u32>) -> bool,
     reserve_range_limbs: fn(&mut Vec<u32>, usize) -> bool,
@@ -490,6 +499,8 @@ struct PendingFunction {
     nodes: Vec<CoreNode>,
     loops: Vec<CoreLoop>,
     conditionals: Vec<CoreConditional>,
+    /// A known-answer test's title; `None` for a function.
+    title: Option<String>,
 }
 
 /// The silently resolved signature of one typed `spec`, used to check calls
@@ -1035,6 +1046,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             halted: false,
             limits,
             id_offset: 0,
+            tests: true,
             reserve_pending_function_slot,
             reserve_magnitude_limb,
             reserve_range_limbs,
@@ -1049,6 +1061,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// Places this module's typed `spec` identities after `offset` others.
     const fn with_id_offset(mut self, offset: usize) -> Self {
         self.id_offset = offset;
+        self
+    }
+
+    /// Sets whether this module's known-answer tests are checked and become
+    /// part of its Core.
+    const fn with_tests(mut self, tests: bool) -> Self {
+        self.tests = tests;
         self
     }
 
@@ -1277,6 +1296,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
 
         if !self.halted {
             self.check_call_graph(&signatures, &call_edges);
+        }
+        if self.tests && !self.halted {
+            let scope = ModuleScope {
+                declarations: &declarations,
+                signatures: &signatures,
+                imports,
+            };
+            // The tests' identities follow every instance of the functions.
+            let first_id = signatures
+                .iter()
+                .flatten()
+                .map(|signature| signature.instances.len())
+                .fold(self.id_offset, usize::saturating_add);
+            let mut test_edges = Vec::new();
+            self.analyze_tests(&scope, first_id, &mut pending_functions, &mut test_edges);
         }
 
         let core = if self.diagnostics.is_empty() && !self.halted {
@@ -1537,6 +1571,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             nodes,
             loops,
             conditionals,
+            title: None,
         })
     }
 
@@ -3068,35 +3103,62 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         );
     }
 
-    /// Reports a comparison whose first typed leaf is an array, a fill, or a
-    /// tuple written out, which no comparison is defined for.
+    /// Reports a comparison whose operands are both arrays, fills, or
+    /// tuples written out, which take their types from where they are used.
     #[cold]
     #[inline(never)]
-    fn report_aggregate_comparison(&mut self, binary: &BinaryExpression, tuple: bool) {
-        if !self.begin_report(binary.operator_span) {
+    fn report_aggregate_comparison(&mut self, binary: &BinaryExpression, span: Span) {
+        // An order is refused whatever the literals' type would be.
+        if !matches!(
+            binary.operator,
+            BinaryOperator::Equal | BinaryOperator::NotEqual
+        ) {
+            if self.begin_report(binary.operator_span) {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        DiagnosticCode::UnsupportedOperator,
+                        format!(
+                            "`{}` is not defined for arrays and tuples",
+                            binary.operator.as_str()
+                        ),
+                        binary.operator_span,
+                    )
+                    .with_label("both operands are written out as arrays or tuples")
+                    .with_note(
+                        "arrays and tuples are compared whole with `==` and `!=`; they have no \
+                         order, so compare elements",
+                    ),
+                );
+            }
             return;
         }
-        let operator = binary.operator.as_str();
-        let (operand, note) = if tuple {
-            ("a tuple", "compare elements, such as `p.0 == q.0`")
-        } else {
-            ("an array", "compare elements, such as `x[0] == y[0]`")
-        };
+        if !self.begin_report(span) {
+            return;
+        }
         self.diagnostics.push(
             Diagnostic::error(
-                DiagnosticCode::UnsupportedOperator,
-                format!("`{operator}` is not defined for {operand}"),
-                binary.operator_span,
+                DiagnosticCode::UntypedComparison,
+                format!(
+                    "the operands of `{}` have no type of their own",
+                    binary.operator.as_str()
+                ),
+                span,
             )
-            .with_label(format!("an operand is {operand}"))
-            .with_note(note),
+            .with_label("an array or tuple written out takes its type from where it is used")
+            .with_note(
+                "compare with a typed operand, such as a name, or give one side a type with a \
+                 `let` binding",
+            ),
         );
     }
 
     /// Checks a comparison `left op right` against `expected`, which must be
     /// `Bool`. Both operands have the type of the first typed leaf of the
     /// left operand, or else of the right operand, as a conversion operand
-    /// has.
+    /// has; an array, a fill, or a tuple written out as that leaf takes the
+    /// right operand's type instead. `==` and `!=` compare values of every
+    /// type, arrays and tuples whole; `<`, `<=`, `>`, and `>=` only ordered
+    /// scalars.
     fn check_comparison(
         &mut self,
         expression: &'ast Expression,
@@ -3111,26 +3173,46 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if !result_matches {
             self.report_comparison_mismatch(expression.span, expected);
         }
-        let Some(leaf) = first_typed_leaf(&binary.left).or_else(|| first_typed_leaf(&binary.right))
-        else {
+        let right_leaf = first_typed_leaf(&binary.right);
+        let Some(leaf) = first_typed_leaf(&binary.left).or(right_leaf) else {
             self.report_untyped_comparison(expression.span, binary);
             return false;
         };
-        let Some(operand) = self.leaf_type(leaf, context, scope) else {
-            if matches!(
+        let aggregate = |leaf: &Expression| {
+            matches!(
                 leaf.kind,
                 ExpressionKind::Array(_) | ExpressionKind::Fill(_) | ExpressionKind::Tuple(_)
-            ) {
-                let tuple = matches!(leaf.kind, ExpressionKind::Tuple(_));
-                self.report_aggregate_comparison(binary, tuple);
+            )
+        };
+        let operand = match self.leaf_type(leaf, context, scope) {
+            Some(operand) => operand,
+            None if aggregate(leaf) => {
+                let other = right_leaf
+                    .filter(|other| !std::ptr::eq(*other, leaf))
+                    .and_then(|other| Some((other, self.leaf_type(other, context, scope)?)));
+                match other {
+                    Some((_, operand)) => operand,
+                    None => {
+                        // A right operand whose own check reports why it has
+                        // no type is reported there; two literals here.
+                        match right_leaf.filter(|other| !aggregate(other)) {
+                            Some(other) => {
+                                self.check_untyped(other, expected, context, scope, output);
+                            }
+                            None => self.report_aggregate_comparison(binary, expression.span),
+                        }
+                        return false;
+                    }
+                }
+            }
+            None => {
+                // The leaf's own check reports why it has no type.
+                self.check_untyped(leaf, expected, context, scope, output);
                 return false;
             }
-            // The leaf's own check reports why it has no type.
-            self.check_untyped(leaf, expected, context, scope, output);
-            return false;
         };
         let defined = match binary.operator {
-            BinaryOperator::Equal | BinaryOperator::NotEqual => operand.is_scalar(),
+            BinaryOperator::Equal | BinaryOperator::NotEqual => true,
             _ => operand.is_ordered(),
         };
         if !defined {
@@ -3148,9 +3230,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     } else if operand.is_scalar() {
                         "`Bool` values are compared with `==` and `!=`; they have no order"
                     } else if operand.as_tuple().is_some() {
-                        "compare elements, such as `p.0 == q.0`"
+                        "tuples are compared whole with `==` and `!=`; they have no order, so \
+                         compare elements, such as `p.0 < q.0`"
                     } else {
-                        "compare elements, such as `x[0] == y[0]`"
+                        "arrays are compared whole with `==` and `!=`; they have no order, so \
+                         compare elements, such as `x[0] < y[0]`"
                     }),
                 );
             }
@@ -3932,13 +4016,20 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 },
                 loops: pending_function.loops,
                 conditionals: pending_function.conditionals,
+                title: pending_function.title,
             });
         }
+        // Tests follow the functions, so they are the last of them.
+        let tests = functions
+            .iter()
+            .filter(|function| function.title.is_some())
+            .count();
         Some(CoreModule {
             span: self.ast.module.span,
             name: module_name,
             functions,
             entry: 0,
+            tests,
         })
     }
 
