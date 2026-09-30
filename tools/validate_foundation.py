@@ -794,7 +794,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "de6c94c5c5588f47a0c99c5a5cd45737140c2836ae168a2fd1d4d37edfa82075"
+_PHD = "f22e8db4bb8963b0c5c620aae9c72a3a135bb3f401fc9a343bf9e4d0c1ebf391"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1417,6 +1417,9 @@ _D006_EPOCH_BOUND = tuple("research/decisions/D-006/d006-v0.3/" + d for d in ("r
 DECISION_LABORATORY_SPECS["d004"]["inventory"] |= {_D004_BASE + p for p in _D004_REBOUND}
 DECISION_LABORATORY_INVARIANTS = {'research/decisions/D-004/': (6, 23, True, None), 'research/decisions/D-005/': (8, 9, False, ('schemas/gate0/claim-record-v0.1.schema.json', 'research/decisions/D-005/d005-v0.1/epochs/0001/shared-inputs', ('checked-test-as-functional-refinement.json', 'checked-test-masks-failed-kernel-proof.json', 'satisfied-target-leakage-with-unresolved-contexts.json', 'owner-test-as-external-validation.json', 'substituted-subject-reuses-evidence.json'))), 'research/decisions/D-006/': (2, 2, True, None), 'research/decisions/D-009/': (2, 2, True, None), 'research/decisions/D-010/': (2, 2, True, None)}
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-006/"] = (13, 2, True, None)
+# d011 admissions begin
+MINIMUM_REQUIRED_PATHS |= {"research/decisions/D-011/" + n for n in "README.md d011-v0.1/kernels/abi_probe.rs d011-v0.1/kernels/accel.c d011-v0.1/kernels/d011_kernels.h d011-v0.1/kernels/kernels.c d011-v0.1/kernels/runtime.c d011-v0.1/suite-packet.json".split()} | {"docs/NATIVE_TARGET_DECISION_SUITE.md", "tools/d011_suite.py", "tools/tests/test_d011_suite.py"}
+# d011 admissions end
 DECISION_LABORATORY_INVARIANTS["research/decisions/D-004/"] = (
     18,
     23,
