@@ -91,7 +91,13 @@ used, `--stats`. The S3q slice, proposed in
 OEP-0020, lets a module state its known answers as `test "TITLE" { claim }`
 beside its functions, compares arrays and tuples whole with `==` and `!=`,
 and adds `orangec test`, which runs the root module's tests and reports each.
-All seventeen lower to a noncanonical Typed Reference Core and are
+The S3r slice, proposed in [`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md)
+and in owner review under OEP-0021, lets a shift or rotation take an amount
+computed from data, an `Int` or a word, such as `x <<< r` or `x >> (i % 8)`,
+with a meaning at every amount: a shift is multiplication or division by a
+power of two kept to the word, so a shift by the width or more gives 0 and a
+negative amount shifts the other way, and a rotation turns by its amount
+modulo the width. All eighteen lower to a noncanonical Typed Reference Core and are
 reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
@@ -120,6 +126,7 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtur
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --steps 2097152 --stats compiler/fixtures/s3p/valid-lengths.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3r/valid-rc6.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
@@ -835,8 +842,11 @@ through 16 of those types and arrays, none of them a tuple, and checks
 every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
 bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
 and `*` wrap because that is their meaning, while a literal must already fit
-and never coerces, truncates, or wraps. Shift and rotation amounts are
-unsigned literals from 0 through n - 1. Division is Euclidean on `Int` and
+and never coerces, truncates, or wraps. A shift or rotation amount written as
+one integer literal is unsigned and from 0 through n - 1; any other amount is
+computed, an `Int` or a word of any width, and has a value at every amount: a
+shift by n or more gives 0, a negative amount shifts the other way, and a
+rotation turns by its amount modulo n. Division is Euclidean on `Int` and
 unsigned on words, and total: `-7 % 2` is 1, `x / 0` is 0, and `x % 0` is x.
 `Bool` has only `!`, `&&`, `||`, `==`, and `!=`, both operands of `&&` and `||`
 are always evaluated, and no conversion joins it to a number. `Mod[m]` holds the
@@ -990,7 +1000,7 @@ and the total to standard error after the report.
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3q rules, limits, and non-claims are in
+through S3r rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -1005,8 +1015,9 @@ through S3q rules, limits, and non-claims are in
 [`docs/SIZES_2026.md`](../docs/SIZES_2026.md),
 [`docs/ORDER_2026.md`](../docs/ORDER_2026.md),
 [`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md),
-[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md), and
-[`docs/TESTS_2026.md`](../docs/TESTS_2026.md). None of them defines
+[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md),
+[`docs/TESTS_2026.md`](../docs/TESTS_2026.md), and
+[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1597,6 +1608,41 @@ identical steps. This corpus establishes the tested behavior of one
 implementation; it does not accept OEP-0020, prove the rules sound, or
 complete S3.
 
+## S3r computed amount conformance
+
+`fixtures/s3r/` contains an exact six-program corpus for the proposed S3r
+behavior: four programs must check, run their tests, and evaluate
+successfully, and two must fail closed. The accepted programs compare every
+operator on a byte against its definition at amounts below, at, and past the
+width, of both signs, and of any size; turn a 64-bit word by a byte and shift
+by a size; reverse a byte's bits, count the set bits of a 32-byte key, and
+pick a nibble at a computed position from a table; write RC6-32/20/16 with
+its key schedule and rounds rotating by the amounts its key and data choose,
+and reproduce the paper's two 128-bit-key vectors both ways; write SHA3-256
+of FIPS 202 for messages of 1 through 133 bytes with rho turning each lane by
+(t + 1)(t + 2)/2 and iota placing bits at 2^j - 1, and reproduce NIST's
+examples for "abc" and the 448-bit message; and derive ML-KEM's transform
+constants by BitRev7 and powers of 17 modulo 3329, as FIPS 203 section 4.3
+defines them, reproducing Appendix A. Exact steps under `--stats` are pinned.
+The rejected programs cover a literal amount at the width and one with a
+sign, amounts that are a truth value, a residue, an array, or a comparison, a
+shift of an `Int`, an unknown name, an index whose computed shift ranges past
+its table, and an amount built with an operator and not grouped.
+
+`crates/orangec/tests/s3r_conformance.rs` runs each fixture's commands,
+`check`, `test`, and `eval` with their options, twice each, and requires
+identical status, standard output, and standard error. It parses the 10-rule
+S3r index in `docs/AMOUNTS_2026.md` and binds every rule to named CLI,
+generated-CLI, or unit tests declared exactly once at their harness
+locations. It generates programs that compare every operator at every width
+with a reference for `Int` amounts from -(2n + 1) through 2n + 1 and around
+2^63, 2^64, 2^126, and 2^127, and for word amounts of every width in both
+directions; programs whose amounts of 2 through 16,384 bits cost the same
+steps; and programs that write a literal amount at every width or with a
+sign, which are refused, and the same amounts grouped, which are computed.
+This corpus establishes the tested behavior of one implementation; it does
+not accept OEP-0021, prove the rules sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1650,6 +1696,8 @@ complete S3.
   rule-index, length-limit, and evaluation-option runner;
 - `crates/orangec/tests/s3q_conformance.rs`: exact repeatable S3q corpus,
   rule-index, test-run, and report runner;
+- `crates/orangec/tests/s3r_conformance.rs`: exact repeatable S3r corpus,
+  rule-index, reference-amount, and amount-cost runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1671,6 +1719,7 @@ complete S3.
 - `fixtures/s3p/`: exact two-positive/one-negative S3p CLI fixture corpus;
 - `fixtures/s3q/`: exact two-positive/one-failing/two-negative S3q CLI fixture
   corpus;
+- `fixtures/s3r/`: exact four-positive/two-negative S3r CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

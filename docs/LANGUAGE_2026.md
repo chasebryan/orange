@@ -128,6 +128,14 @@ unresolved.
 > compare arrays and tuples whole, and `orangec test` runs the root module's
 > tests and reports each. It adds no token and no reserved word: `test`
 > followed by a string begins a test only where a module member may begin.
+>
+> The S3r slice proposed in [`AMOUNTS_2026.md`](AMOUNTS_2026.md) under
+> OEP-0021, also in review, builds on S3q with computed amounts: a shift or
+> rotation may take any `Int` or word expression as its amount, `x <<< r` or
+> `x >> (i % 8)`, a shift by the width or more giving 0, a negative amount
+> shifting the other way, and a rotation turning by its amount modulo the
+> width. An amount written as one integer literal is still from 0 through
+> n - 1. It adds no token, reserved word, or diagnostic code.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

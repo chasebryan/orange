@@ -80,8 +80,8 @@ module sha256 {
 
 `Word[32]` is the ring of integers modulo 2^32, so `+`, `-`, and `*` on words
 are the ring operations: wrapping is the meaning, never an accident. `>>>` and
-`<<<` rotate, `>>` and `<<` shift, and every amount is a literal checked
-against the width. `Int` is the type of mathematical integers, with no
+`<<<` rotate, `>>` and `<<` shift, and an amount written as a literal is
+checked against the width. `Int` is the type of mathematical integers, with no
 overflow. A literal must fit its type exactly, so `256` is an error as a
 `Word[8]`, not a silent zero. Saved as `sha256.or`, the module checks and
 evaluates:
@@ -1018,6 +1018,53 @@ holding stops the build. Only the tests of the file given are run, and
 specification is in review as
 [OEP-0020](docs/governance/oeps/OEP-0020-orange-2026-tests.md).
 
+### Amounts computed from data
+
+RC6 rotates its words by amounts its data choose, and SHA-3 turns each lane of
+its state by an amount it computes. A shift or rotation takes any `Int` or
+word as its amount, written the way the standard writes it:
+
+```orange
+// "The RC6 Block Cipher": twenty rounds of
+//   t = f(B); u = f(D)
+//   A = ((A ^ t) <<< u) + S[2i]; C = ((C ^ u) <<< t) + S[2i + 1]
+//   (A, B, C, D) = (B, C, D, A)
+spec rounds(s: Word[32]^44, x: Word[32]^4) -> Registers {
+  for i in 1..21 with (a: Word[32], b: Word[32], c: Word[32], d: Word[32]) =
+    (x[0], x[1] + s[0], x[2], x[3] + s[1]) {
+    let t: Word[32] = f(b);
+    let u: Word[32] = f(d);
+    (b, ((c ^ u) <<< t) + s[2 * i + 1], d, ((a ^ t) <<< u) + s[2 * i])
+  }
+}
+```
+
+Every amount has the value the mathematics gives it. A shift by the width or
+more gives 0 and a negative amount shifts the other way, since `a << k` is
+floor(a · 2^k) kept to the word; a rotation turns by its amount modulo the
+width, so RC6's "least significant lg w bits" need no mask. Nothing is left to
+the machine: `x << 32` on a 32-bit word computed from data is 0 everywhere,
+where C leaves it undefined and x86 gives `x`. An amount written as one
+literal is still a bit position from 0 through n − 1, and a computed amount
+costs one step whatever its size.
+
+```console
+$ orangec test compiler/fixtures/s3r/valid-rc6.or
+test "RC6 paper, 128-bit key 1: encryption" ... ok
+test "RC6 paper, 128-bit key 1: decryption" ... ok
+test "RC6 paper, 128-bit key 2: encryption" ... ok
+test "RC6 paper, 128-bit key 2: decryption" ... ok
+4 tests: 4 passed, 0 failed
+```
+
+The [SHA3-256 fixture](compiler/fixtures/s3r/valid-sha3.or) computes rho's
+offsets and iota's round constants as FIPS 202 defines them and reproduces
+NIST's examples, and the [zetas fixture](compiler/fixtures/s3r/valid-zetas.or)
+derives ML-KEM's constants by reversing the bits of an index, as FIPS 203
+does. This slice, S3r, is implemented and tested; its specification is in
+review as
+[OEP-0021](docs/governance/oeps/OEP-0021-orange-2026-computed-amounts.md).
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -1052,6 +1099,7 @@ cryptography.
 | Type parameters: one `spec` for a list of types, such as several fields or word widths, each instance checked before anything runs | Working; specification in review ([OEP-0018](docs/governance/oeps/OEP-0018-orange-2026-type-parameters.md)) |
 | Arrays, literals, and byte strings of up to 65,536 elements, and `orangec eval --steps`, `--spec`, and `--stats` | Working; specification in review ([OEP-0019](docs/governance/oeps/OEP-0019-orange-2026-lengths.md)) |
 | Known-answer tests `test "TITLE" { claim }` beside the functions, `==` on whole arrays and tuples, and `orangec test` | Working; specification in review ([OEP-0020](docs/governance/oeps/OEP-0020-orange-2026-tests.md)) |
+| Shift and rotation amounts computed from data, `x <<< r` or `x >> (i % 8)`, with a value at every amount | Working; specification in review ([OEP-0021](docs/governance/oeps/OEP-0021-orange-2026-computed-amounts.md)) |
 | Typed Reference Core and reference evaluator (`orangec eval`) | Working |
 | Functions over every type rather than a listed few, sizes checked once for all values, imports of names into scope | Not yet |
 | Typed `impl` bodies and refinement between `spec` and `impl` | Not yet |
@@ -1072,6 +1120,7 @@ cd orange
 
 # Build and try the compiler
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3r/valid-sha3.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --stats compiler/fixtures/s3p/valid-rfc8439.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
@@ -1139,7 +1188,7 @@ the production compiler; there is no throwaway prototype.
 | S0 | Repository foundation: governance, CI, policy checks | Done |
 | S1 | Compiler foundation: source model, spans, diagnostics, lexer, CLI | Done |
 | S2 | Editioned grammar and bounded parser | Done |
-| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, and known-answer tests in review |
+| S3 | Name resolution, types, expressions, typed Core, reference evaluator | In progress: typed literals done; pure expressions, bindings, conversions, arrays, loops, conditions, lookups, modules, modular arithmetic, blocks, tuples, bytes, sizes, byte orders, type parameters, long arrays, known-answer tests, and computed amounts in review |
 | S4 | Proof and claim boundary | Research underway |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -1169,8 +1218,9 @@ time remaining. The [roadmap](docs/ROADMAP.md) has the details, and the
   [bytes](docs/BYTES_2026.md), [sizes](docs/SIZES_2026.md),
   [byte order](docs/ORDER_2026.md),
   [type parameters](docs/TYPE_PARAMETERS_2026.md),
-  [lengths and evaluation controls](docs/LENGTHS_2026.md), and
-  [known-answer tests](docs/TESTS_2026.md): the definition of what the
+  [lengths and evaluation controls](docs/LENGTHS_2026.md),
+  [known-answer tests](docs/TESTS_2026.md), and
+  [computed amounts](docs/AMOUNTS_2026.md): the definition of what the
   compiler accepts today.
 - [Compiler guide](compiler/README.md): commands, diagnostics, and tests.
 - [Tabula](tabula/README.md): a local workbench for writing Orange, with the

@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-09-30
 
-Manuscript version: 0.19
+Manuscript version: 0.20
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -117,9 +117,11 @@ big-endian words in one conversion, the S3o slice lets one `spec` stand
 for a list of types, so that exponentiation is written once for five prime
 fields and SHA-256 and SHA-512 share one round, the S3p slice lets an
 array hold 65,536 elements, so that RFC 8439's 375-byte and 265-byte vectors
-are written as the RFC prints them, and the S3q slice lets a module state its
+are written as the RFC prints them, the S3q slice lets a module state its
 known answers as tests beside its functions, so that RFC 8439's examples are
-claims the program checks. None of them
+claims the program checks, and the S3r slice lets a shift or rotation take an
+amount computed from data, so that RC6 and SHA-3 turn their words as their
+designers write them. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -339,9 +341,11 @@ as several prime fields or both of SHA-2's word widths, and is checked for
 each, the S3p slice, also in review, lets arrays, array literals, and byte
 strings hold up to 65,536 elements and lets `orangec eval` run under a larger
 step budget, evaluate only the functions it names, and report the steps each
-used, and the S3q slice, also in review, adds known-answer tests and equality
-of whole arrays and tuples, so that a module states what its functions must
-give and `orangec test` checks it.
+used, the S3q slice, also in review, adds known-answer tests and equality of
+whole arrays and tuples, so that a module states what its functions must give
+and `orangec test` checks it, and the S3r slice, also in review, lets the
+amount of a shift or rotation be computed from data, with the value the
+arithmetic gives at every amount.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -851,7 +855,7 @@ word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, and test slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -1156,7 +1160,7 @@ number and relationships.
 
 ### The next steps of meaning
 
-The seventeen current slices complete bounded parts of the roadmap's S3 stage:
+The eighteen current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
@@ -1173,7 +1177,8 @@ so that one function serves a list of fields or word widths and is checked
 once for each, then arrays of up to 65,536 elements, so that a standard's long
 vectors are written whole, then known-answer tests and equality of whole
 arrays and tuples, so that a standard's examples are claims inside the
-program.
+program, then shift and rotation amounts computed from data, each with the
+value the arithmetic gives.
 The rest of S3 adds the remaining substance of a language: records with named
 fields, functions generic over any modulus rather than a listed few, and
 explicit failure
@@ -1730,9 +1735,10 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [sizes specification](SIZES_2026.md) of S3m, the
 [byte order specification](ORDER_2026.md) of S3n, the
 [type parameters specification](TYPE_PARAMETERS_2026.md) of S3o, the
-[lengths specification](LENGTHS_2026.md) of S3p, and the
-[tests specification](TESTS_2026.md) of S3q. S3b through
-S3q are implemented and tested, but their specifications are **proposed**:
+[lengths specification](LENGTHS_2026.md) of S3p, the
+[tests specification](TESTS_2026.md) of S3q, and the
+[computed amounts specification](AMOUNTS_2026.md) of S3r. S3b through
+S3r are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1747,8 +1753,9 @@ S3q are implemented and tested, but their specifications are **proposed**:
 [OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md),
 [OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md),
 [OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md),
-[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), and
-[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md) are in
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md),
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), and
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1835,8 +1842,8 @@ condition slice gives roles to `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&`, `||`,
 `!`, `/`, and `%`, which the lexer has always produced. The byte slice gives
 strings their role, as byte strings, and adds two tokens, `++` and the hex
 string `hex"..."`, whose `hex` touches its opening quote. The size,
-byte-order, type-parameter, length, and test slices add no token, and the
-test slice reserves no word: `test` followed by a string begins a test only
+byte-order, type-parameter, length, test, and amount slices add no token, and
+the test slice reserves no word: `test` followed by a string begins a test only
 where a module member may begin. The remaining punctuation is lexically reserved but has no
 grammatical role yet.
 `orangec lex` shows how any source
@@ -1963,9 +1970,11 @@ The rule costs a pair of parentheses and buys an expression that means what it
 looks like. It also matches the standards. FIPS 180-4 writes the choice
 function as `(x ∧ y) ⊕ (¬x ∧ z)`, with its grouping visible, and the Orange
 transcription is `(x & y) ^ (~x & z)`, the same shape symbol for symbol. A
-shift or rotation takes exactly two operands, and its amount must be a literal
-that fits the width, so `x >>> 32` on a `Word[32]` is an error rather than a
-question about what some processor does. A comparison also takes exactly two
+shift or rotation takes exactly two operands, and an amount written as a
+literal must fit the width, so `x >>> 32` on a `Word[32]` is an error rather
+than a question about what some processor does; an amount computed from data
+has the value the arithmetic gives at every amount (see
+[Amounts the data choose](#amounts-the-data-choose)). A comparison also takes exactly two
 operands, so `a < b < c` is an error whose note says to join two comparisons
 with `&&` or `||`. Division is deliberately not grouped with multiplication:
 with integer division, `(a * b) / c` and `a * (b / c)` differ, so `a * b / c`
@@ -4270,6 +4279,144 @@ modules it uses. And a passing test is evidence about the reference evaluator
 at one revision, not a proof that a function meets its standard for every
 input.
 
+### Amounts the data choose
+
+A rotation by a fixed amount is a wire in a circuit diagram. SHA-256 turns
+its words by 2, 13, and 22 bits, and every one of those numbers is printed in
+the standard. Some designs turn words by amounts printed nowhere, because the
+data choose them. RC5 and its successor RC6 made rotations by data their
+central operation. SHA-3's rho step turns each of its 24 lanes by a triangular
+number, (t + 1)(t + 2)/2 modulo 64, where t counts the steps of a walk over
+the state. A Montgomery ladder or a square-and-multiply reads bit i of a
+scalar, `(k >> i) & 1`, and ML-KEM orders the constants of its transform by
+moving bit i of an index to bit 6 − i. Through S3q an amount was a literal,
+so each of these was a table that a reader had to check against the one line
+the standard prints. The S3r slice, proposed in the
+[computed amounts specification](AMOUNTS_2026.md) and in the owner's review
+under
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md), writes
+the line:
+
+```orange
+// FIPS 202 Algorithm 2, rho: from (x, y) = (1, 0), step t turns lane (x, y)
+// by (t + 1)(t + 2)/2 and moves to (y, 2x + 3y), coordinates modulo 5.
+spec rho_walk(a: State) -> (State, Z5, Z5) {
+  for t in 0..24 with (b: State, x: Z5, y: Z5) = (a, 1, 0) {
+    (
+      b with [(x as Int) + 5 * (y as Int)] =
+        a[(x as Int) + 5 * (y as Int)] <<< (((t + 1) * (t + 2)) / 2),
+      y,
+      2 * x + 3 * y,
+    )
+  }
+}
+```
+
+The walk's coordinates are residues modulo 5, and the offset is an `Int`
+computed from the loop index. Nothing in the program says "modulo 64",
+because a rotation already means it: `a <<< k` turns a word of n bits by k
+modulo n, whatever k is. The standard's table of offsets, whose first row
+reads 0, 1, 62, 28, 27, is written nowhere in the
+[SHA3-256 fixture](../compiler/fixtures/s3r/valid-sha3.or). The fixture
+computes it, and its tests of NIST's examples pass only if every offset is
+right.
+
+An amount is any expression of type `Int` or a word, and its type is found
+as an index's is, from its first typed leaf. In `x <<< r` with a byte r the
+amount is a `Word[8]`, and the word it turns may be a `Word[64]`; in
+`x >> (i % 8)` with a loop index i it is an `Int`. A truth value, a residue,
+or an array is not an amount, and is reported with the error an expected
+`Int` gives. A residue becomes an amount with `as Int`.
+
+What gives the slice its character is that every amount has a value, the one
+the arithmetic gives. For a word a of n bits:
+
+| Amount k | `a << k` | `a >> k` | `a <<< k` | `a >>> k` |
+| --- | --- | --- | --- | --- |
+| 0 through n − 1 | as in S3b | as in S3b | as in S3b | as in S3b |
+| n or more | 0 | 0 | turns left by k mod n | turns right by k mod n |
+| negative | `a >> −k` | `a << −k` | `a >>> −k` | `a <<< −k` |
+
+`a << k` is floor(a · 2^k) and `a >> k` is floor(a · 2^−k), each kept to the
+word, so a shift by the width or more pushes every bit out and a negative
+amount shifts the other way. A rotation is periodic, so it turns by k modulo
+n. This is a choice, and not the common one. C leaves a shift by the width or
+more undefined, and Java and x86 reduce a 32-bit shift's amount modulo 32, so
+there `x << 32` gives back x while two shifts by 16 give 0. A specification
+cannot inherit either answer: undefined behavior is not a meaning, and the
+machine's answer breaks the identity that two shifts by 16 are one shift by
+32. Orange gives the arithmetic's answer at every amount, and a backend that
+compiles a shift to an instruction that reduces its amount must add the
+comparison that makes the answer come out right.
+
+RC6 shows what that buys. Its paper defines `a <<< b` as a rotation to the
+left by the amount in the least significant lg w bits of b, which for 32-bit
+words is b modulo 32, exactly Orange's rotation by a word. So the key
+schedule and the rounds are written as the paper writes them, with no mask:
+
+```orange
+// Key schedule, v = 132 steps of mixing:
+//   A = S[i] = (S[i] + A + B) <<< 3
+//   B = L[j] = (L[j] + A + B) <<< (A + B)
+let a1: Word[32] = (s[k % 44] + a + b) <<< 3;
+let b1: Word[32] = (l[k % 4] + a1 + b) <<< (a1 + b);
+
+// Encryption, twenty rounds of
+//   A = ((A ^ t) <<< u) + S[2i]; C = ((C ^ u) <<< t) + S[2i + 1]
+(b, ((c ^ u) <<< t) + s[2 * i + 1], d, ((a ^ t) <<< u) + s[2 * i])
+```
+
+The [RC6 fixture](../compiler/fixtures/s3r/valid-rc6.or) states the paper's
+test vectors for 128-bit keys as tests, each run both ways:
+
+```console
+$ orangec test compiler/fixtures/s3r/valid-rc6.or
+test "RC6 paper, 128-bit key 1: encryption" ... ok
+test "RC6 paper, 128-bit key 1: decryption" ... ok
+test "RC6 paper, 128-bit key 2: encryption" ... ok
+test "RC6 paper, 128-bit key 2: decryption" ... ok
+4 tests: 4 passed, 0 failed
+```
+
+A third program reads bits at positions a loop computes. BitRev7, in FIPS
+203 section 4.3, reverses the seven bits of an index, and ML-KEM's
+transform takes its constants as powers of 17 in that order:
+
+```orange
+spec bit_rev7(r: Word[8]) -> Word[8] {
+  for i in 0..7 with b: Word[8] = 0 { b | (((r >> i) & 1) << (6 - i)) }
+}
+```
+
+The [zetas fixture](../compiler/fixtures/s3r/valid-zetas.or) derives all 128
+constants of the transform and all 128 of its multiplication this way, and
+its tests reproduce the start of both tables in FIPS 203's Appendix A.
+
+A literal amount keeps its old rule. `x >>> 32` written on a `Word[32]` is
+still `ORC0216`, now labeled "a literal amount is from 0 through 31", because
+a literal names a fixed bit position, and one past the width is far more
+often a slip than a wish for 0. So is a literal with a sign. Written in any
+other way, as `x << (32)` or through a name, the same number is computed and
+shifts every bit out. As an index, a shift by a computed amount ranges over
+its whole type, since the range analysis of S3g never follows an amount, so a
+table read by a nibble at a computed position masks it:
+`ones[(x >> (4 * i)) & 15]`.
+
+A computed amount costs one step, whatever its size. The evaluator reads
+only its sign, whether its magnitude has more than 64 bits, and its low 64
+bits, which settle every width, so `x <<< k` costs the same with k of 16,384
+bits as with k = 3. That is a statement about steps, not time. A rotation by
+a secret amount is where RC5 and RC6 drew the attention of timing analysis:
+on a processor without a barrel shifter a shift takes time that grows with
+its amount. What a backend makes of a shift by a possibly secret amount, a
+fixed ladder of conditional rotations by 1, 2, 4, 8, and 16 or a refusal
+under a constant-time profile, belongs to its leakage model, as a lookup at a
+secret index does since S3g.
+
+S3r adds one Core node, `shift-by`, and no token, reserved word, diagnostic
+code, or command. Every source S3q accepted keeps its Core, values, output,
+and steps, since each of its amounts was a literal below the width.
+
 ### From bytes to a value
 
 It is worth following one line through the compiler, because each step is a
@@ -4423,7 +4570,10 @@ test's title that is empty, longer than 128 bytes, not printable ASCII,
 holding a backslash, or repeating another's, and it reuses `ORC0101` for a
 test without a quoted title or a body, `ORC0214` for a claim that is not a
 `Bool`, `ORC0227` for a comparison of two arrays or tuples both written out,
-and `ORC0215` for an order on arrays or tuples.
+and `ORC0215` for an order on arrays or tuples. The amount slice adds no code:
+a literal amount past the width or with a sign is still `ORC0216`, labeled
+with the amounts a literal may be, and a computed amount of another type is
+the `ORC0214` of an expected `Int`.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -4575,7 +4725,14 @@ written as tests, with inputs and expected bytes as the RFC prints them;
 generated sources pin titles at and past their limits, that only the root's
 tests run, a test that stops, every option and usage error of `orangec test`,
 and comparisons of 65,536 bytes that cost the same wherever they differ. The
-complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+computed amounts specification adds 10 rule identifiers and six sources, four
+valid and two invalid, including RC6 with its paper's 128-bit-key vectors run
+both ways, SHA3-256 with NIST's examples, and ML-KEM's transform constants
+derived as FIPS 203 defines them; generated sources compare every shift and
+rotation at every width with its definition for amounts of every sign and
+size and of every word width, show amounts of 2 through 16,384 bits costing
+the same steps, and refuse every literal amount at the width or with a sign.
+The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -4603,7 +4760,7 @@ arrays other than words, bit orders, loops over ranges computed at run time, ear
 operators, conditionals without `else`, blocks as expressions of their own,
 moduli computed at run time,
 moduli written with parameters, sizes on `type` declarations, distinct types by declaration, extension
-fields, signed words, variable shift and rotation amounts, recursion, typed
+fields, signed words, shifts of `Int`, arithmetic shifts, recursion, typed
 implementations,
 failure values, secrecy labels, proof terms, claims, games, targets, layout,
 ABI, leakage behavior, lowering, optimization, code generation, packaging, and
@@ -4626,10 +4783,11 @@ on S3i, through OEP-0013, S3k's, which builds on S3j, through OEP-0014,
 S3l's, which builds on S3k, through OEP-0015, S3m's, which builds on S3l,
 through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
 which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
-through OEP-0019, and S3q's, which builds on S3p, through OEP-0020.
+through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
+which builds on S3q, through OEP-0021.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All sixteen migrations so far are small: every source
+documented migration. All seventeen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -4647,9 +4805,11 @@ every source S3m accepted does the same under S3n, since `big` or
 `little` after `as` was a type's name only where S3n still reads it as one,
 every source S3n accepted does the same under S3o, since it wrote no
 braces after a size's `in`, every source S3o accepted does the same under
-S3p, in the same steps, since its arrays hold at most 256 elements, and every
+S3p, in the same steps, since its arrays hold at most 256 elements, every
 source S3p accepted does the same under S3q, since none began a member with
-`test` or compared arrays or tuples.
+`test` or compared arrays or tuples, and every source S3q accepted does the
+same under S3r, in the same steps, since each of its amounts was a literal
+below the width.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -5387,6 +5547,10 @@ The test slice moved known answers into the programs themselves: RFC 8439's
 quarter round, block function, zero-key key stream, and Poly1305 examples
 are stated as tests beside the functions they check, titled with their
 sections, and `orangec test` fails when one stops holding.
+The amount slice let rotations by data be written as their designers write
+them: RC6 encrypts and decrypts its paper's vectors, SHA3-256 computes its
+rotation offsets and round constants as FIPS 202 defines them, and ML-KEM's
+transform constants are derived by reversing bits.
 These are still fixtures, not corpus entries. A message's length is
 fixed in each instance rather than read when the program runs, and no
 standard has been admitted with its provenance. The corpus remains a set of research inputs
@@ -5998,7 +6162,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3q in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3r in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -6321,9 +6485,10 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [sizes specification](SIZES_2026.md), the
 [byte order specification](ORDER_2026.md), the
 [type parameters specification](TYPE_PARAMETERS_2026.md), the
-[lengths specification](LENGTHS_2026.md), and the
-[tests specification](TESTS_2026.md) are proposed under
-OEP-0005 through OEP-0020 and in the owner's review. Where this summary and those
+[lengths specification](LENGTHS_2026.md), the
+[tests specification](TESTS_2026.md), and the
+[computed amounts specification](AMOUNTS_2026.md) are proposed under
+OEP-0005 through OEP-0021 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
@@ -6535,7 +6700,12 @@ and `==` and `!=` compare. `if c { a } else { b }` has the type of both
 branches and evaluates only the one its `Bool` condition chooses; an
 `else if` chain is one conditional per arm.
 
-The amount `k` must be an unsigned integer literal from 0 through n − 1. Calls
+An amount `k` written as one integer literal must be unsigned and from 0
+through n − 1. Any other amount is an `Int` or a word, typed by its first
+typed leaf: `a << k` is floor(a · 2^k) and `a >> k` is floor(a · 2^−k)
+modulo 2^n, so a shift by n or more is 0 and a negative amount shifts the
+other way, and a rotation turns by k modulo n, at one evaluation step
+whatever k's size. Calls
 name typed `spec` functions of the same module, or, as `m::f(...)`, of a
 module `m` it uses, pass exactly one argument per parameter, and may not form
 a cycle; nor may the uses of a program. A `let` binding states its type, is in
@@ -6705,8 +6875,9 @@ part are listed here so a reader can move from explanation to authority.
   [modular arithmetic](MODULAR_2026.md), [block](BLOCKS_2026.md),
   [tuple](TUPLES_2026.md), [byte](BYTES_2026.md), [size](SIZES_2026.md),
   [byte order](ORDER_2026.md), [type parameter](TYPE_PARAMETERS_2026.md),
-  [length](LENGTHS_2026.md), and [test](TESTS_2026.md) specifications under
-  OEP-0005 through OEP-0020, the
+  [length](LENGTHS_2026.md), [test](TESTS_2026.md), and
+  [amount](AMOUNTS_2026.md) specifications under OEP-0005 through OEP-0021,
+  the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
   behavior at the book's snapshot.
@@ -6746,24 +6917,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.19 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.20 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.19 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.19 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, and test slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.20 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.20 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
 | II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.19 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, and test slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.20 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, module, modular, block, tuple, byte, size, byte-order, type-parameter, length, test, and amount slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.19 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.20 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.19 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.20 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.19 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.20 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -6823,9 +6994,11 @@ adds the [byte order specification](ORDER_2026.md) and
 0.17 adds the [type parameters specification](TYPE_PARAMETERS_2026.md) and
 [OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md),
 version 0.18 adds the [lengths specification](LENGTHS_2026.md) and
-[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), and version 0.19
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), version 0.19
 adds the [tests specification](TESTS_2026.md) and
-[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md).
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), and version 0.20
+adds the [computed amounts specification](AMOUNTS_2026.md) and
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -6972,6 +7145,14 @@ section "Known answers beside the algorithm". It was drafted with Claude Code
 under Chase Bryan's direction on 2026-09-30, and every Orange example it adds
 was run against the compiler at the revision that introduced it. That check
 is not independent review, and the same authorship, review, evidence, and
+provenance boundaries apply.
+
+Manuscript version 0.20 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3r amount slice, and added the Chapter 8
+section "Amounts the data choose". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was
+run against the compiler at the revision that introduced it. That check is
+not independent review, and the same authorship, review, evidence, and
 provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No

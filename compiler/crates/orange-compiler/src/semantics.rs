@@ -86,6 +86,8 @@ const STATIC_INDEX_NOTE: &str = "every index is proved in range when the program
      word index ranges over its type, and an `Int` index is built from integer literals, loop \
      indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals";
 const BOOL_OPERATOR_NOTE: &str = "the operators on `Bool` are `!`, `&&`, `||`, `==`, and `!=`";
+const SHIFT_AMOUNT_NOTE: &str = "an amount written as one integer literal is from 0 through n - 1; \
+     any other amount is computed, an `Int` or a word, such as `x <<< r` or `x >> (i % 8)`";
 
 /// The complete result of semantic analysis.
 ///
@@ -1826,6 +1828,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
                 let left = self.check_expression(&binary.left, expected, context, scope, output);
                 if binary.operator.is_shift_or_rotation() {
+                    if !matches!(binary.right.kind, ExpressionKind::Literal(_)) {
+                        let amount = self.check_computed_amount(binary, context, scope, output);
+                        return match (left, amount) {
+                            (true, Some(amount)) => self.push_node(
+                                output,
+                                expression.span,
+                                expected.clone(),
+                                CoreNodeKind::ShiftBy {
+                                    operator: binary.operator,
+                                    amount,
+                                },
+                            ),
+                            _ => false,
+                        };
+                    }
                     let amount = self.check_shift_amount(binary, expected);
                     return match (left, amount) {
                         (true, Some(amount)) => self.push_node(
@@ -3857,6 +3874,25 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         defined
     }
 
+    /// Checks the amount of a shift or rotation that is not one integer
+    /// literal and returns its type. Its type is its first typed leaf's
+    /// when that is a word, and `Int` otherwise, as an index's is; every
+    /// value of that type is an amount, so no range is examined.
+    fn check_computed_amount(
+        &mut self,
+        binary: &'ast BinaryExpression,
+        context: &mut BodyContext<'ast>,
+        scope: &ModuleScope<'_, 'ast>,
+        output: &mut BodyOutput<'_>,
+    ) -> Option<CoreType> {
+        let amount = first_typed_leaf(&binary.right)
+            .and_then(|leaf| self.leaf_type(leaf, context, scope))
+            .filter(|ty| ty.word_bits().is_some())
+            .unwrap_or(CoreType::Int);
+        self.check_expression(&binary.right, &amount, context, scope, output)
+            .then_some(amount)
+    }
+
     fn check_shift_amount(
         &mut self,
         binary: &BinaryExpression,
@@ -3890,10 +3926,8 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     ),
                     amount.span,
                 )
-                .with_label("amount must be an unsigned integer literal")
-                .with_note(
-                    "amounts are fixed literals; variable amounts are not part of Orange 2026",
-                ),
+                .with_label(format!("a literal amount is from 0 through {highest}"))
+                .with_note(SHIFT_AMOUNT_NOTE),
             );
         }
         decoded

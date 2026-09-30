@@ -1,0 +1,16 @@
+// S3r conformance: amounts that are refused. A literal amount is still a
+// bit position from 0 through n - 1, and a computed amount is an `Int` or
+// a word, never a truth value, a residue, or an array; only words shift,
+// and a shift by a computed amount ranges over its whole type as an index.
+edition 2026;
+module invalid_amounts {
+  spec too_far(x: Word[32]) -> Word[32] { x << 32 }
+  spec signed(x: Word[32]) -> Word[32] { x >>> -1 }
+  spec truth(x: Word[32], b: Bool) -> Word[32] { x << b }
+  spec residue(x: Word[32], r: Mod[5]) -> Word[32] { x <<< r }
+  spec whole_array(x: Word[32], a: Word[8]^4) -> Word[32] { x >> a }
+  spec condition(x: Word[32], i: Int) -> Word[32] { x << (i < 3) }
+  spec number(n: Int, k: Int) -> Int { n << k }
+  spec unknown(x: Word[32]) -> Word[32] { x <<< y }
+  spec wide(t: Word[8]^16, x: Word[8], k: Int) -> Word[8] { t[x >> k] }
+}

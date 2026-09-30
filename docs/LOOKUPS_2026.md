@@ -43,8 +43,11 @@ meaning. It accepts no D-004 candidate.
 > instance's types are fixed before a program runs, and every index in each is
 > proved in range as before. [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed
 > under OEP-0019, lets a table hold 65,536 entries, so that a 16-bit word
-> indexes one as a byte indexes a table of 256, proved in range as before. Every
-> source this document accepts keeps its meaning under all nine.
+> indexes one as a byte indexes a table of 256, proved in range as before.
+> [`AMOUNTS_2026.md`](AMOUNTS_2026.md), proposed under OEP-0021, admits shifts
+> by amounts that are not literals, which section 5 already ranges over their
+> whole type, so `t[(x >> k) & 15]` fits a table of 16 and `t[x >> k]` does
+> not. Every source this document accepts keeps its meaning under all ten.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

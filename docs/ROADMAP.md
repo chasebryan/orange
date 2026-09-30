@@ -599,11 +599,29 @@ owner's acceptance of
 [OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), which bounds the
 S3q surface in [`TESTS_2026.md`](TESTS_2026.md) and builds on OEP-0019. Like
 the slices before it, it assumes only pure, total, deterministic meaning.
-Moduli written with parameters, so that one `spec` can serve every field
-rather than a listed few, lists of types named once for several functions,
-positions given as parameters, so that one quarter round can act on four
-positions of a whole state, slices and words at positions computed from data,
-and tests that claim a call stops or a source is rejected are the next
+
+S3r follows S3q. It lets the amount of a shift or rotation be computed: any
+`Int` or word expression, typed by its first typed leaf, such as `x <<< r` or
+`x >> (i % 8)`. Every amount has a value: `a << k` and `a >> k` are
+floor(a · 2^k) and floor(a · 2^−k) modulo 2^n, so a shift by the width or more
+gives 0 and a negative amount shifts the other way, and a rotation turns by
+its amount modulo the width. An amount written as one integer literal keeps
+S3b's rule, from 0 through n − 1, and a computed amount costs one step
+whatever its size. RC6-32/20/16 is written with its data-dependent rotations
+as its paper writes them and reproduces its 128-bit-key vectors both ways,
+SHA3-256 computes rho's offsets and iota's round constants as FIPS 202 defines
+them and reproduces NIST's examples, and ML-KEM's zetas are derived by
+bit reversal and exponentiation as FIPS 203 defines them. It is implemented
+and tested, and its acceptance requires the owner's acceptance of
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md), which
+bounds the S3r surface in [`AMOUNTS_2026.md`](AMOUNTS_2026.md) and builds on
+OEP-0020. Like the slices before it, it assumes only pure, total,
+deterministic meaning. Arrays of arrays, so that a state or a key schedule is
+a table of rows, moduli written with parameters, so that one `spec` can serve
+every field rather than a listed few, lists of types named once for several
+functions, positions given as parameters, so that one quarter round can act on
+four positions of a whole state, slices and words at positions computed from
+data, and tests that claim a call stops or a source is rejected are the next
 candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a

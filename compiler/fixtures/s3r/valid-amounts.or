@@ -1,0 +1,98 @@
+// S3r conformance: shifts and rotations by amounts computed from data.
+// For a word a of n bits and an integer k, `a << k` is floor(a * 2^k)
+// modulo 2^n and `a >> k` is floor(a * 2^-k) modulo 2^n, so a shift by n
+// or more gives 0 and a negative amount shifts the other way; `a <<< k`
+// turns a left by k modulo n and `a >>> k` turns it right. An amount is an
+// `Int` or a word of any width, and on the amounts a literal may be, 0
+// through n - 1, each agrees with the literal form.
+edition 2026;
+module amounts {
+  spec shl(a: Word[8], k: Int) -> Word[8] { a << k }
+  spec shr(a: Word[8], k: Int) -> Word[8] { a >> k }
+  spec rotl(a: Word[8], k: Int) -> Word[8] { a <<< k }
+  spec rotr(a: Word[8], k: Int) -> Word[8] { a >>> k }
+
+  // Every shift and rotation of 0x96 by -9 through 9, in that order.
+  spec table() -> (Word[8]^19, Word[8]^19, Word[8]^19, Word[8]^19) {
+    for i in 0..19 with (l: Word[8]^19, r: Word[8]^19, p: Word[8]^19, q: Word[8]^19) =
+      ([0; 19], [0; 19], [0; 19], [0; 19]) {
+      (
+        l with [i] = shl(0x96, i - 9),
+        r with [i] = shr(0x96, i - 9),
+        p with [i] = rotl(0x96, i - 9),
+        q with [i] = rotr(0x96, i - 9),
+      )
+    }
+  }
+
+  // The bits of a byte in the opposite order, as CRC-32 and GHASH read
+  // their inputs: bit i moves to bit 7 - i.
+  spec reflect(x: Word[8]) -> Word[8] {
+    for i in 0..8 with r: Word[8] = 0 { r | (((x >> i) & 1) << (7 - i)) }
+  }
+
+  // The number of set bits of a 32-byte key, read one bit at a time from
+  // the least significant bit of each byte.
+  spec weight(key: Word[8]^32) -> Word[16] {
+    for i in 0..256 with n: Word[16] = 0 { n + (((key[i / 8] >> (i % 8)) & 1) as Word[16]) }
+  }
+
+  // A shift by a computed amount ranges over its whole type as an index, so
+  // a nibble at a computed position selects from a table of sixteen: here
+  // the number of set bits of a byte, four bits at a time.
+  spec nibble_weight(x: Word[8]) -> Word[8] {
+    let ones: Word[8]^16 = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
+    for i in 0..2 with n: Word[8] = 0 { n + ones[(x >> (4 * i)) & 15] }
+  }
+
+  // An amount of another width: a 64-bit word turned by a byte.
+  spec turn(x: Word[64], k: Word[8]) -> Word[64] { x <<< k }
+
+  // A size is an `Int` of its instance, and so an amount.
+  spec top[n in 1..9](x: Word[8]) -> Word[8] { x >> (8 - n) }
+
+  spec shifts() -> (Word[8]^19, Word[8]^19, Word[8]^19, Word[8]^19) { table() }
+  spec reflected() -> Word[8]^4 { [reflect(0x01), reflect(0x96), reflect(0xe0), reflect(0xff)] }
+
+  test "within the width, computed amounts agree with literals" {
+    (shl(0x96, 3) == (0x96 << 3)) && (shr(0x96, 3) == (0x96 >> 3))
+      && (rotl(0x96, 3) == (0x96 <<< 3)) && (rotr(0x96, 3) == (0x96 >>> 3))
+  }
+
+  test "a shift by the width or more gives 0" {
+    (shl(0x96, 8) == 0) && (shr(0x96, 8) == 0) && (shl(0xff, 1000) == 0)
+  }
+
+  test "a negative amount shifts the other way" {
+    (shl(0x96, -1) == 0x4b) && (shr(0x96, -1) == 0x2c) && (shl(0x96, -8) == 0)
+  }
+
+  test "a rotation turns by the amount modulo the width" {
+    (rotl(0x96, 11) == (0x96 <<< 3)) && (rotl(0x96, -1) == (0x96 >>> 1))
+      && (rotr(0x96, 8) == 0x96)
+  }
+
+  test "an amount of any size" {
+    (shl(0x96, 0x1000000000000000000000000000000000000000000000000) == 0)
+      && (rotl(0x96, 0x1000000000000000000000000000000000000000000000003) == (0x96 <<< 3))
+      && (rotl(0x96, 0 - 0x1000000000000000000000000000000000000000000000001) == (0x96 >>> 1))
+  }
+
+  test "reflect reverses the bits of a byte" { reflected() == [0x80, 0x69, 0x07, 0xff] }
+
+  test "the key of RFC 7748 section 5.2's first vector has 114 set bits" {
+    weight(hex"a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4") == 114
+  }
+
+  test "a nibble at a computed position selects from a table" {
+    (nibble_weight(0x96) == 4) && (nibble_weight(0xff) == 8) && (nibble_weight(0) == 0)
+  }
+
+  test "a byte turns a 64-bit word by its value modulo 64" {
+    (turn(0x8000000000000001, 1) == 3) && (turn(0x8000000000000001, 65) == 3)
+  }
+
+  test "the top n bits of a byte" {
+    (top[1](0x96) == 1) && (top[4](0x96) == 9) && (top[8](0x96) == 0x96)
+  }
+}

@@ -635,6 +635,18 @@ pub enum CoreNodeKind {
         /// The amount, less than the operand's word width.
         amount: u32,
     },
+    /// A shift or rotation of the first operand subtree, a word of this
+    /// node's type, by the value of the second, an amount computed from
+    /// data. For a word of n bits and an amount k, `<<` gives the residue
+    /// of floor(a * 2^k) modulo 2^n and `>>` that of floor(a * 2^-k), so a
+    /// shift by n or more in either direction gives 0, and a rotation turns
+    /// by k modulo n.
+    ShiftBy {
+        /// The shift or rotation operator.
+        operator: BinaryOperator,
+        /// The amount's type: `Int` or a word type.
+        amount: CoreType,
+    },
     /// An explicit conversion of one operand subtree to this node's type:
     /// the operand's integer value, reduced modulo 2^n when the node's type
     /// is `Word[n]`.
@@ -1558,6 +1570,11 @@ impl ExactInteger {
         } else {
             magnitude
         })
+    }
+
+    /// Returns this integer's magnitude when it has at most 64 bits.
+    pub(crate) fn magnitude_u64(&self) -> Option<u64> {
+        (self.magnitude_bits() <= 64).then(|| self.magnitude.low_u64())
     }
 
     /// Returns this integer modulo 2^64, as its representative from 0
@@ -2709,6 +2726,7 @@ mod tests {
                     | CoreNodeKind::Unary(_)
                     | CoreNodeKind::Binary(_)
                     | CoreNodeKind::Shift { .. }
+                    | CoreNodeKind::ShiftBy { .. }
                     | CoreNodeKind::Convert { .. }
                     | CoreNodeKind::Pack { .. }
                     | CoreNodeKind::Array { .. }
