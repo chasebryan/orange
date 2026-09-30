@@ -2924,6 +2924,34 @@ mod tests {
             "evaluated function name storage could not be reserved"
         );
 
+        // An instance's name in brackets is reserved as its function's is.
+        let instance_core = core(concat!(
+            "edition 2026; module values {\n",
+            "  spec pick[K in {Word[8], Word[16]}]() -> K { 1 }\n",
+            "}\n",
+        ));
+        let instance_failure = evaluate_with_reservations(
+            &instance_core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            Reservations {
+                name: |name, bytes| {
+                    bytes != "[Word[16]]".len() && name.try_reserve_exact(bytes).is_ok()
+                },
+                ..Reservations::DEFAULT
+            },
+        );
+        assert!(instance_failure.values().is_none());
+        assert_eq!(instance_failure.diagnostics().len(), 1);
+        assert_eq!(
+            instance_failure.diagnostics()[0].primary_span(),
+            instance_core.functions[1].name_span
+        );
+        assert_eq!(
+            instance_failure.diagnostics()[0].label(),
+            "evaluated function instance storage could not be reserved"
+        );
+
         let value_core = core(concat!(
             "edition 2026; module values {\n",
             "  spec first() -> Word[8] { 1 }\n",
