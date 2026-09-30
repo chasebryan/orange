@@ -51,6 +51,18 @@ unresolved.
 > operators, Euclidean division, and conditionals. It gives meaning to tokens
 > the lexer already produces, and it adds no token and no reserved word:
 > `if` and `else` are recognized by position, and `true` and `false` by scope.
+>
+> The S3g slice proposed in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) under
+> OEP-0010, also in review, builds on S3f with indices that depend on data,
+> each proved in range from its type, and cheaper updates. It changes no
+> grammar.
+>
+> The S3h slice proposed in [`MODULES_2026.md`](MODULES_2026.md) under
+> OEP-0011, also in review, builds on S3g with programs of more than one
+> module: `use` declarations at the head of a module, and calls qualified by a
+> module name, as in `sha256::compress(h, block)`. It adds no token and no
+> reserved word: `use` is recognized by position, and `::` is the existing
+> `DOUBLE_COLON` token.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

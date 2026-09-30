@@ -3319,6 +3319,49 @@ class ProtectedControlHardeningTests(unittest.TestCase):
                 "make.compiler_environment_contract",
             ),
             (
+                '\t\t\t/bin/bash \\\n\t\t\t-p \\\n\t\t\t-c \\\n\t\t\t"$$user_namespace_setup" \\\n'
+                '\t\t\tgate-user-namespace-setup \\\n\t\t\t"$$gate_uid" \\\n\t\t\t"$$gate_gid" \\\n'
+                '\t\t\t"$$user_namespace_wait" \\\n',
+                "",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "/usr/bin/unshare --user --keep-caps -- /bin/bash",
+                "/usr/bin/unshare --user -- /bin/bash",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'printf "%s %s 1\\n" "$$gate_uid" "$$gate_uid" > /proc/1/uid_map;',
+                'printf "0 %s 1\\n" "$$gate_uid" > /proc/1/uid_map;',
+                "make.compiler_environment_contract",
+            ),
+            (
+                'read -r _ < /proc/self/gid_map && exec "$$@";',
+                'exec "$$@";',
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$${namespace_runner[0]}" != /usr/bin/sudo ]] ||',
+                "true ||",
+                "make.compiler_environment_contract",
+            ),
+            (
+                'exec /usr/bin/setpriv --reuid "$$gate_uid" --regid "$$gate_gid" --clear-groups '
+                "--inh-caps=+sys_admin --ambient-caps=+sys_admin -- /usr/bin/unshare --user",
+                "exec /usr/bin/unshare --user",
+                "make.compiler_environment_contract",
+            ),
+            (
+                '[[ "$$(< /proc/sys/user/max_user_namespaces)" != 0 ]] ||',
+                "true ||",
+                "make.compiler_environment_contract",
+            ),
+            (
+                "( /usr/bin/sudo --non-interactive --validate 2>/dev/null && : ) ||",
+                "true ||",
+                "make.compiler_environment_contract",
+            ),
+            (
                 "--bounding-set=-all \\\n",
                 "--bounding-set=+all \\\n",
                 "make.compiler_environment_contract",
@@ -4127,13 +4170,14 @@ class HostedControlEvidenceHardeningTests(unittest.TestCase):
             validator._validate_hosted_control_evidence()
             self.assertIn("hosted_control.missing", {finding.code for finding in validator.findings})
 
-    def test_snapshot_expires_on_its_review_due_date(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            self._write_current_evidence(root)
-            validator = FoundationValidator(root)
-            validator._validate_hosted_control_evidence(today=dt.date(2026, 10, 11))
-            self.assertIn("hosted_control.expired", {finding.code for finding in validator.findings})
+    def test_passed_review_due_date_does_not_fail_validation(self) -> None:
+        for today in (dt.date(2026, 10, 11), dt.date(2031, 1, 1)):
+            with self.subTest(today=today), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self._write_current_evidence(root)
+                validator = FoundationValidator(root)
+                validator._validate_hosted_control_evidence(today=today)
+                self.assertEqual(validator.findings, [])
 
     def test_extra_conflicting_binding_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

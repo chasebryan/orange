@@ -6,9 +6,9 @@ By Chase Bryan
 
 Status: living pre-alpha reader guide
 
-Snapshot: 2026-09-29
+Snapshot: 2026-09-30
 
-Manuscript version: 0.8
+Manuscript version: 0.10
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -98,7 +98,11 @@ slice adds fixed-length arrays, so that a cipher's whole state is one value,
 the S3e slice adds loops over literal ranges, so that a standard's rounds are
 one expression, and the S3f slice adds truth values, comparisons, Euclidean
 division, and conditionals, so that a prime field and a key exchange can be
-written as their standards write them. None of them adds typed
+written as their standards write them, the S3g slice lets an index depend
+on data, still proved in range, so that AES's S-box is a lookup, as FIPS 197
+writes it, and the S3h slice lets a program span several modules, so that
+HMAC is written over SHA-256 by name, as RFC 2104 defines it. None of them
+adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
@@ -296,9 +300,12 @@ specification is in the owner's review, adds pure functions over integers and
 machine words, the S3c slice, also in review, adds `let` bindings and
 explicit `as` conversions, the S3d slice, also in review, adds fixed-length
 arrays of those types, the S3e slice, also in review, adds loops over literal
-ranges, indices proved in range, and updates of one element, and the S3f
+ranges, indices proved in range, and updates of one element, the S3f
 slice, also in review, adds `Bool`, comparisons, Euclidean division, and
-conditionals.
+conditionals, the S3g slice, also in review, lets an index depend on data
+while still proving it in range, and the S3h slice, also in review, lets a
+module use other modules, each in its own file, and call their functions by
+module name.
 
 PR #9 merged that bounded pre-alpha implementation and its normative records as
 commit `6c0bd3021cf2df603e08808e4660724ca1e2b2a5`. The larger S3 milestone and
@@ -340,8 +347,8 @@ demo::sample: Word[32] = 0x1f85c98c
 Empty declarations still have no type, value, or execution meaning, and a
 function with parameters runs only when it is called. The Core is noncanonical
 and carries no proof identity or relationship between a `spec` and an `impl`.
-The fragment has no bindings, control flow, recursion, general failure values,
-proof terms, targets, ABI rules, or code generation.
+The fragment has no recursion, general failure values, proof terms, targets,
+ABI rules, or code generation.
 The reserved words `game`, `proof`, and `claim` still introduce no usable
 constructs.
 
@@ -771,7 +778,13 @@ with a reduction. The first run of all 25 candidate-case units, on 2026-09-28,
 passed every case for ST-REL, ST-UNI, ST-DUAL, and ST-MIRROR and failed every
 case for ST-HOST, whose delegated hosts depend on the open D-006 and D-011
 decisions. The cases could not tell the four passing candidates apart, so the
-run selects nothing. Its results are contributor-produced and unreviewed.
+run selects nothing. Its results are contributor-produced and unreviewed. A
+second suite adds two cases, semantic evolution and relabeling within one
+authority, and five cost measures. Its run, on the same day, closed all seven
+cases for the same four candidates, and under the isolation-first rule, which
+the owner chose knowing which candidate each offered rule would leave, only
+ST-REL remains. That result is also contributor-produced and unreviewed. It is
+not a recommendation, and D-004 remains proposed.
 
 ### What exists in the language now
 
@@ -783,15 +796,18 @@ without a conflict while two `spec rounds` declarations are an error. The words
 specifications have meaning: pure `spec` functions over `Int`, `Bool`, and
 `Word[8]` through `Word[64]` and fixed-length arrays of them, built from
 literals, parameters, calls, operators, comparisons, `let` bindings, explicit
-conversions, array literals, indices, bounded loops, updates, and
-conditionals. An `impl` body must still be empty.
+conversions, array literals, indices, including indices keyed by data, bounded
+loops, updates, and conditionals. An `impl` body must still be empty. A
+program may span several modules, one per file: a module names the modules it
+uses at its head and calls their functions by module name, as in
+`sha256::compress(h, block)`, and nothing is imported into its scope.
 
 Even that small surface already follows the chapter's rules. `Int` and each
 word width are distinct types, and a value moves between them only through a
 written `as`, never implicitly. A same-named
 `spec` and `impl` have no relation. Nothing in the Typed Reference Core
 pretends to be a Spec Core, and the Core records no claim. The expression,
-binding, array, loop, and condition slices were built to fit inside every candidate's
+binding, array, loop, condition, lookup, and module slices were built to fit inside every candidate's
 specification stratum: they are pure, total, and deterministic, so the strata decision can
 place them without changing a line of source.
 
@@ -881,11 +897,13 @@ Parsing checks that the tokens have one of a small number of shapes. The
 parser reads them in order and never backtracks: one token of lookahead decides
 almost everything, and a second is consulted only in a few places, such as
 telling a call from a name and a literal's sign from negation. The one longer
-look is at `if` before `(`, `-`, or `[`, where the parser scans ahead, without
+look is at `if` before `(`, `-`, `[`, the word `as`, or the word `with`
+followed by `[`, where the parser scans ahead, without
 backtracking, to see whether a brace group followed by `else` makes it a
 conditional. A source is exactly one edition
-declaration, `edition 2026;`, followed by exactly one module. A module contains
-`spec` and `impl` declarations. An `impl` has an empty parameter list and an
+declaration, `edition 2026;`, followed by exactly one module. A module begins
+with its `use` declarations, each naming one module it uses, and then
+contains `spec` and `impl` declarations. An `impl` has an empty parameter list and an
 empty body. A `spec` body may be empty, or the `spec` may declare parameters
 and a result type and contain exactly one expression.
 
@@ -917,10 +935,22 @@ the syntax tree in source order and does five things:
    inferred: a literal takes the type expected of it and must fit, a name must
    be a parameter of that type, a call must name a typed `spec` whose result is
    that type, and an operator must be defined on it. Literals are decoded
-   exactly, in base 2, 10, or 16.
+   exactly, in base 2, 10, or 16. An index is the one expression whose type
+   comes from what it contains: it is checked as the word type of its first
+   name, call, conversion, or element, or as an `Int` when that is not a
+   word, and it must be proved to select an element.
 4. It checks that the call graph is acyclic, so that every accepted program
    terminates.
 5. If no semantic diagnostic occurred, it constructs the Typed Reference Core.
+
+A program of several modules is analyzed one module at a time. Before any
+module is checked, the analyzer examines the uses: each must name a module of
+the program, and no module may use itself, use another twice, or be reached
+again along a cycle of uses. It then checks each module once, after every
+module it uses, against the declarations of those modules only. A call
+`sha256::compress(h, m)` is resolved in the module `sha256` and then checked
+like any other call, and because uses have no cycle, the call graph of the
+whole program is acyclic when each module's own is.
 
 The types are where the language's character first shows. `Int` is the
 type of mathematical integers. It has no maximum and does not overflow. The
@@ -977,7 +1007,9 @@ node_kind      = literal value
 Only typed specifications enter the Core. Empty `spec` and `impl` declarations
 remain valid syntax but gain no type, value, or execution meaning, and they do
 not appear. Functions keep source order and receive contiguous identifiers from
-zero. A literal written `-0x2a` becomes the mathematical integer −42, and every
+zero. The Core of a program of several modules lists the functions of the
+modules used first and the root's last, each recording its module, with
+identifiers contiguous across the whole program. A literal written `-0x2a` becomes the mathematical integer −42, and every
 spelling of negative zero becomes zero. A body is stored in postorder, each
 node after its operands and each call after its arguments, and every node
 carries its type. Parentheses leave no trace, because grouping is already the
@@ -990,8 +1022,9 @@ diagnostic. There is no partial Core. An error in one declaration does not
 authorize the others; the analyzer may keep going to report more errors, but
 the result is unsuccessful.
 
-Evaluation is the last step. `orangec eval` visits each Core function in order
-and prints one line for each function without parameters, decimal for `Int`
+Evaluation is the last step. `orangec eval` visits each of the root module's
+Core functions in order and prints one line for each function without
+parameters, decimal for `Int`
 and fixed-width lowercase hexadecimal for words, from two digits for `Word[8]`
 to sixteen for `Word[64]`:
 
@@ -1006,7 +1039,7 @@ plus sign and the leading zero in `0x0a`. The precision is not decoration. A
 reference evaluator is useful only if another implementation can be compared
 against it byte for byte.
 
-Evaluation is bounded too. Every function of one source shares a budget of
+Evaluation is bounded too. Every function of one program shares a budget of
 1,048,576 steps, the call stack holds at most 256 frames, and no `Int` result
 may exceed 16,384 significant bits. An acyclic program can still ask for an
 exponential amount of work, a function that calls another twice, twenty levels
@@ -1033,11 +1066,13 @@ number and relationships.
 
 ### The next steps of meaning
 
-The six current slices complete bounded parts of the roadmap's S3 stage:
+The eight current slices complete bounded parts of the roadmap's S3 stage:
 literals first, then pure expressions with parameters, calls, and operators
 over integers and words, then `let` bindings and explicit conversions, then
 fixed-length arrays, then loops over literal ranges with indices proved in
-range, then truth values, comparisons, Euclidean division, and conditionals.
+range, then truth values, comparisons, Euclidean division, and conditionals,
+then indices keyed by data, proved in range from their types, then programs
+of several modules, each checked once, after the modules it uses.
 The rest of S3 adds the remaining substance of a language: records of mixed
 types, a type for integers modulo a prime, and explicit failure semantics,
 together with one conformance case per normative rule. Each addition follows the same
@@ -1350,6 +1385,38 @@ carries secret and public domains alongside an executable leakage trace. It is
 where the compiler would check that its own transformations did not introduce
 a leak.
 
+### A lookup, two ways
+
+Tables raise the same question as branches. FIPS 197 defines AES's SubBytes as
+a lookup: each byte of the state selects one of the 256 entries of the S-box.
+Written directly, the lookup reads memory at an address that depends on the
+state, and so on the key. Under the baseline observation model that address
+is part of the trace, and on a machine with a cache it is part of the time as
+well. Table-driven AES was broken this way in practice: Bernstein's 2005
+cache-timing attack, and the cache attacks of Osvik, Shamir, and Tromer,
+recovered AES keys from the cache behavior of its table lookups.
+
+The constant-time alternative reads every entry. For each position j of the
+table it compares j with the index, turns the comparison into a mask, and
+accumulates the entry under that mask, so every run touches all 256 entries in
+the same order and the addresses no longer depend on the secret. The price is
+256 reads for one lookup. Bitsliced implementations go further and compute the
+S-box as a circuit of Boolean operations, with no table at all.
+
+Orange 2026 states the first form, because it is the form the standard
+states: since the [lookup slice](#tables-keyed-by-data), a specification may
+write `s[a[i]]`. That is the right place for it. A lookup in a specification
+is a function from a table and a position to an element. It has no addresses,
+so it has no trace, and a specification that had to write the scan would ask
+every reviewer to recognize SubBytes inside it. Which form a machine should
+run is this chapter's question, and it belongs to the implementation and
+target strata. There, as proposed above, an index computed from a secret
+would be a type error in a claim-bearing kernel, unless the lookup is lowered
+to a scan of the whole table and the claim says so. Until those strata exist
+Orange claims neither: a lookup
+in an Orange specification says which value results, never how a machine
+would find it.
+
 ### Testing finds; it does not prove
 
 Statistical timing tools such as `dudect` run code on real hardware and look
@@ -1376,7 +1443,9 @@ solo capacity requires it.
 The current compiler has no secrecy labels, no leakage semantics, no target
 model, and no code generation. It therefore makes no constant-time claim of any
 kind, and any such claim is outside its support envelope, which the claim model
-would record as `unsupported`. What exists is the commitment that when Orange
+would record as `unsupported`. Its language can now state a lookup keyed by
+data, and so by a secret, and it neither rejects such a lookup nor claims
+anything about how one would run. What exists is the commitment that when Orange
 does say something about leakage, it will say which observer, which layer,
 which target, and which evidence, and it will say nothing more.
 
@@ -1547,14 +1616,18 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [pure expression specification](EXPRESSIONS_2026.md) of S3b, the
 [bindings and conversions specification](BINDINGS_2026.md) of S3c, the
 [arrays specification](ARRAYS_2026.md) of S3d, the
-[loops specification](LOOPS_2026.md) of S3e, and the
-[conditions specification](CONDITIONS_2026.md) of S3f. S3b through S3f are
+[loops specification](LOOPS_2026.md) of S3e, the
+[conditions specification](CONDITIONS_2026.md) of S3f, the
+[lookups specification](LOOKUPS_2026.md) of S3g, and the
+[modules specification](MODULES_2026.md) of S3h. S3b through S3h are
 implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
-[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
-[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md) are in the
+[OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md),
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md),
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md), and
+[OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md) are in the
 owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -1645,12 +1718,13 @@ tokenizes, with exact byte spans.
 
 ### The grammar
 
-The whole Orange 2026 grammar fits in forty lines:
+The whole Orange 2026 grammar fits on a page:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* function_decl* "}" ;
+use_decl        = "use" IDENTIFIER ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER "(" parameters ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
@@ -1688,7 +1762,7 @@ loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
                   "{" expression "}" ;
 conditional     = "if" expression "{" expression "}"
                   "else" ("{" expression "}" | conditional) ;
-call            = IDENTIFIER "(" arguments? ")" ;
+call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
 
@@ -1699,11 +1773,14 @@ name, `as` converts only directly after a complete operand, `for` starts a loop
 only before a name, `in` and `with` are words only inside a loop's header, and
 `with` updates only directly after a complete operand and before `[`. In the
 same way, `if` starts a conditional only where a condition can follow it,
-`else` is a word only after a conditional's value, and `true` and `false` are
-values only where no name of that spelling is in scope. Anywhere else they are
+`else` is a word only after a conditional's value, `use` starts a declaration
+only at the head of a module, before its first function, and `true` and
+`false` are values only where no name of that spelling is in scope. Anywhere else they are
 ordinary names, so no program that used them as names changed meaning when
 they gained a role. After a declared type, `^` and a length make it an array
-type; everywhere else `^` is exclusive or. One source holds one module. A typed `impl` is a syntax error, not a feature waiting to be switched
+type; everywhere else `^` is exclusive or. One source holds one module, and a
+program joins several sources through their `use` declarations. A name
+qualified by its module, as in `sha256::initial()`, is always called. A typed `impl` is a syntax error, not a feature waiting to be switched
 on, and a `spec` with parameters must declare a result type and a body. A `-`
 written directly before an integer is that literal's sign, so the S3a body
 `{ -42 }` is still one literal and means what it always meant.
@@ -1930,7 +2007,7 @@ spec schedule(m: Word[32]^16) -> Word[32]^64 {
 ```
 
 The indices `t - 2`, `t - 7`, `t - 15`, and `t - 16` are expressions, and this
-is where Orange asks something of its checker. An index may use only integer
+is where Orange asks something of its checker. These use only integer
 literals and the indices of enclosing loops, joined by `+`, `-`, and `*`. The
 checker computes the least and the greatest value each index can take over its
 loops' ranges and rejects the program unless every one selects an element. For
@@ -1943,7 +2020,7 @@ error[ORC0223]: this index runs from -1 through 46, out of range for `Word[32]^6
   |
 4 | ... ith v: Word[32]^64 = w { v with [t] = w[t - 17] }
   |                                             ^^^^^^ indices run from 0 through 63
-  = note: every value an index can take, over every loop index in it, must select an element
+  = note: every value an index can take, over every loop index and word in it, must select an element
 ```
 
 The check is deliberately simple. It bounds each side of an operator
@@ -1952,26 +2029,22 @@ because its computed range reaches below 0. A rule that a reader can apply in
 their head is worth more here than a cleverer one that only the compiler
 understands.
 
-Two consequences follow, and both matter to a cryptographer. No index is ever
-out of range while a program runs, so evaluation has no failure to report and
-no hidden check to trust. And an index that depends on data, such as an S-box
-lookup keyed by a secret byte, cannot be written at all:
+The consequence matters to a cryptographer: no index is ever out of range
+while a program runs, so evaluation has no failure to report and no hidden
+check to trust. The price is that an index must have a bound the checker can
+see. An `Int` parameter has none, so a lookup keyed by one is refused:
 
 ```text
-error[ORC0226]: an index may use only integer literals and loop indices
+error[ORC0226]: an `Int` index may use only integer literals, loop indices, and words converted with `as Int`
  --> <stdin>:4:10
   |
 4 |     sbox[k]
-  |          ^ not known when the program is checked
-  = note: an index is built from integer literals and loop indices with `+`, `-`, and `*`, so that every index is known to be in range when the program is checked
+  |          ^ this `Int` has no bound
+  = note: every index is proved in range when the program is checked: a word index ranges over its type, and an `Int` index is built from integer literals, loop indices, and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and conditionals
 ```
 
-Table lookups indexed by secrets are the classic source of cache-timing leaks
-in software AES. Orange 2026 says nothing yet about timing, and this rule is
-not a constant-time claim about any compiled code, as
-[Chapter 6](#chapter-6-secrets-are-a-semantic-concern) explains. But a
-specification language in which a secret-dependent index cannot be expressed
-is one less thing a reviewer has to look for.
+A byte does have a bound, 0 through 255, and a lookup keyed by a byte is how
+[Tables keyed by data](#tables-keyed-by-data) writes AES.
 
 With loops, a whole primitive fits in one short module. The
 [SHA-256 fixture](../compiler/fixtures/s3e/valid-sha256.or) computes the
@@ -1993,9 +2066,10 @@ checker proves lies between 0 and 63. The encryption of the "sunscreen"
 plaintext of section 2.4.2 then matches the RFC's 114-byte ciphertext, byte for
 byte.
 
-One seam still shows. The quarter round names its four positions literally,
-because positions passed as parameters are not static and so cannot be used as
-indices. Positions known at every call, such as a quarter round over columns 0,
+One seam still shows. The quarter round names its four positions literally. A
+position passed as an `Int` has no bound, and one passed as a word must be
+masked to the state's size, as in `s[a & 15]`, a mask the RFC does not print.
+Positions known at every call, such as a quarter round over columns 0,
 4, 8, and 12, are the natural next step.
 
 ### Choices and prime fields
@@ -2085,7 +2159,7 @@ error[ORC0223]: this index runs from 0 through 7, out of range for `Word[8]^4`
   |
 4 | ... r i in 0..8 with s: Word[8] = 0 { s ^ k[i % 0] }
   |                                             ^^^^^ indices run from 0 through 3
-  = note: every value an index can take, over every loop index in it, must select an element
+  = note: every value an index can take, over every loop index and word in it, must select an element
 ```
 
 The [X25519 fixture](../compiler/fixtures/s3f/valid-x25519.or) computes the
@@ -2113,6 +2187,163 @@ answer it with a claim rather than a keyword. The second is the field itself:
 every `%` in these modules is written by hand. A type of integers modulo a
 declared prime, whose arithmetic reduces on its own and whose values cannot
 leave the field, is the natural next step.
+
+### Tables keyed by data
+
+Much of symmetric cryptography is written with tables. FIPS 197 defines AES's
+SubBytes by the S-box, and each byte of the state selects one of its 256
+entries. DES has eight S-boxes, Camellia, ARIA, and SM4 are specified with
+tables, and the table-driven CRC reads one entry per input byte. The S3g slice,
+proposed in the [lookups specification](LOOKUPS_2026.md), lets an index depend
+on data and keeps the rule that every index is proved in range before anything
+runs. SubBytes is then one line:
+
+```orange
+spec sub_bytes(s: Word[8]^256, a: Word[8]^16) -> Word[8]^16 {
+  for i in 0..16 with b: Word[8]^16 = a { b with [i] = s[a[i]] }
+}
+```
+
+The proof is the index's type. An index whose first name, call, conversion, or
+element is a word is checked as that word, and a word has a range: a byte runs
+from 0 through 255, so `a[i]` may select from any table of 256 entries.
+Operators narrow the range, each by one rule a reader can apply in their head.
+For a byte x, `x & 15` and `x >> 4` each run from 0 through 15, so either may
+index a table of 16, and `(x & 15) + 16` runs from 16 through 31. A remainder
+stays below its divisor, a conversion from a narrower word keeps its range,
+and a conditional takes the widest bounds of its values. `(x & 15) - 1` could
+wrap, because `x & 15` may be 0, so like every operator that could wrap it
+ranges over its whole type. When the range does not fit, the error names it:
+
+```text
+error[ORC0223]: this index runs from 1 through 16, out of range for `Word[8]^16`
+ --> <stdin>:4:7
+  |
+4 |     t[(x & 15) + 1]
+  |       ^^^^^^^^^^^^ indices run from 0 through 15
+  = note: every value an index can take, over every loop index and word in it, must select an element
+```
+
+An `Int` index is still built from literals and loop indices, and it may now
+also convert a word with `as Int` and choose with a conditional. That is how
+the S-box itself is written. Section 5.1.1 of FIPS 197 defines it as the
+multiplicative inverse in GF(2^8) followed by an affine map, and the inverse
+of g^k, for a generator g, is g^(255 − k), read off tables of powers and
+logarithms:
+
+```orange
+spec substitute(exp: Word[8]^256, log: Word[8]^256, a: Word[8]) -> Word[8] {
+  let b: Word[8] = if a == 0 { 0 } else { exp[(255 - (log[a] as Int)) % 255] };
+  b ^ (b <<< 1) ^ (b <<< 2) ^ (b <<< 3) ^ (b <<< 4) ^ 0x63
+}
+```
+
+`log[a]` is a word index, and `(255 - (log[a] as Int)) % 255` is an `Int`
+index that runs from 0 through 254. The
+[AES-128 fixture](../compiler/fixtures/s3g/valid-aes128.or) builds the tables
+themselves with updates keyed by data: `t with [exp[i]] = i as Word[8]` stores
+each logarithm where its power points, and the inverse S-box is the S-box read
+backwards, `t with [s[i]] = i as Word[8]`. It derives all 256 entries, checks
+the example of section 5.1.1, where 0x53 becomes 0xed, encrypts the examples of
+Appendices B and C.1 to their published ciphertexts, and decrypts C.1 back to
+its plaintext:
+
+```text
+aes::example_substitution: Word[8] = 0xed
+aes::example_c1: Word[8]^16 = [0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a]
+aes::example_c1_inverse: Word[8]^16 = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+```
+
+Tables built this way take many updates, and the loop slice charged one
+evaluation step for every element an update copied. The lookup slice charges
+one step per 64 elements, or part of 64: changing one entry of a 256-entry
+table costs 4 steps rather than 256, and no update costs more than before.
+
+Two seams show. The first is timing again, and it is the sharpest yet. A lookup
+keyed by a secret byte is the pattern that made table-driven AES a textbook
+cache-timing leak, and through S3f an Orange specification could not state one
+at all. S3g states it, because it is what the standard states, and leaves the
+question where [a lookup, two ways](#a-lookup-two-ways) puts it: a
+specification's lookup has no addresses, and whether compiled code may perform
+it, must scan the whole table, or must be rejected is a decision for the
+implementation and target strata. Meanwhile a reviewer can still find every
+lookup, because every index not built from literals and loop indices is one.
+The second seam is the range rule itself. It reads only the syntax of the
+index, so `if x < 16 { t[x] } else { 0 }` is rejected for a table of 16 even
+though it never selects outside it. The same choice is written `t[x & 15]`,
+whose range a reader can see.
+
+### Standards built on standards
+
+Cryptographic standards are written in layers, and each cites the one beneath
+it. RFC 2104 defines HMAC over any iterated hash function, RFC 5869 defines
+HKDF over HMAC, and an AEAD is built from a cipher and an authenticator.
+Through S3g an Orange program was one module, so every construction carried
+its own copy of every primitive beneath it. The S3h slice, proposed in the
+[modules specification](MODULES_2026.md), lets a module name the modules it
+uses at its head and call their functions by module name:
+
+```orange
+module hkdf {
+  use hmac;
+
+  spec extract(salt: Word[8]^64, ikm: Word[8]^64, length: Int) -> Word[8]^32 {
+    hmac::mac(salt, ikm, length)
+  }
+}
+```
+
+That is section 2.2 of RFC 5869, PRK = HMAC-Hash(salt, IKM), in one line, and
+three rules keep its meaning plain. Nothing is imported into scope: `extract`
+may call `hmac::mac`, but not `mac`, and not `sha256::compress`, which `hmac`
+uses and `hkdf` does not. A call into another module always names it, and a
+module declares every module it uses, so a reader sees where each function
+comes from without searching, and two modules may each declare a function
+named `block` without either noticing. A module means what it meant alone: it
+is checked once, against the declarations of the modules it uses, and gives
+the same Core whoever uses it. And the uses of a program form no cycle, so
+every module is checked after the modules it uses, and the call graph stays
+acyclic without any analysis across modules. A cycle is reported at the `use`
+that closes it:
+
+```text
+error[ORC0230]: module cycle `ring_a` -> `ring_b` -> `ring_a`
+ --> ring_b.or:4:3
+  |
+4 |   use ring_a;
+  |   ^^^^^^^^^^^ this `use` closes the cycle
+  = note: modules may not depend on each other in a cycle; move the functions they share into a module that both use
+```
+
+`orangec` finds a module by its name: `use hmac;` reads `hmac.or` from the
+directory of the file that names it, or from the current directory when the
+source comes from standard input. A module name is an ASCII identifier, so it
+names one file in that directory and no path outside it, and each module is
+read once, however many modules use it. That is a rule of the command line,
+not of the language. A program is a root module and the modules it reaches
+among those supplied with it, and another host may supply them another way.
+
+The [module fixtures](../compiler/fixtures/s3h/) write SHA-256, HMAC, and HKDF
+as three files. The program that uses them holds four modules, `hkdf` using
+`hmac` and `hmac` using `sha256`, and `orangec eval` prints only the root's
+values: the SHA-256 digest of "abc" from FIPS 180-4, test cases 1 and 2 of RFC
+4231, and the pseudorandom key and output key material of RFC 5869's first
+test case:
+
+```text
+vectors::prk: Word[8]^32 = [0x07, 0x77, 0x09, 0x36, 0x2c, 0x2e, 0x32, 0xdf, 0x0d, 0xdc, 0x3f, 0x0d, 0xc4, 0x7b, 0xba, 0x63, 0x90, 0xb6, 0xc7, 0x3b, 0xb5, 0x0f, 0x9c, 0x31, 0x22, 0xec, 0x84, 0x4a, 0xd7, 0xc2, 0xb3, 0xe5]
+vectors::okm: Word[8]^42 = [0x3c, 0xb2, 0x5f, 0x25, 0xfa, 0xac, 0xd5, 0x7a, 0x90, 0x43, 0x4f, 0x64, 0xd0, 0x36, 0x2f, 0x2a, 0x2d, 0x2d, 0x0a, 0x90, 0xcf, 0x1a, 0x5a, 0x4c, 0x5d, 0xb0, 0x2d, 0x56, 0xec, 0xc4, 0xc5, 0xbf, 0x34, 0x00, 0x72, 0x08, 0xd5, 0xb8, 0x87, 0x18, 0x58, 0x65]
+```
+
+The seam this slice shows lies between a module and the file that holds it. A
+file placed beside a program under a used module's name changes the
+program's meaning exactly as editing the program would, and S3h pins nothing:
+no digest, signature, or lock records which bytes a program's modules had. A
+program is only as trustworthy as its directory until the evidence bundles of
+[Chapter 14](#chapter-14-evidence-that-survives-the-build) record every module
+by digest. The slice also stops short of generic modules. The `hmac` module is
+HMAC-SHA-256, not HMAC over any hash, because a module cannot yet take another
+module as a parameter.
 
 ### From bytes to a value
 
@@ -2205,7 +2436,13 @@ for a computed index whose range leaves the array. The condition slice adds
 `ORC0227` for a comparison whose operands have no type of their own, such as
 `1 < 2`, and reuses `ORC0214` for a condition that is not a `Bool` and
 `ORC0215` for an operator that a type does not have, such as `<` on `Bool`
-values or `&&` on words.
+values or `&&` on words. The lookup slice adds no code. It narrows `ORC0226` to
+an `Int` index without a bound and reports a word index whose range leaves its
+array as `ORC0223`, naming the range. The module slice adds `ORC0228` for a
+`use` that names no module of the program, `ORC0229` for a call qualified by
+a module its module does not use, `ORC0230` for a module that uses itself or
+a cycle of uses, and `ORC0231` for two modules of one name or a module used
+twice.
 
 One mistake is never reported twice through its consequences. A call to an
 unknown function stops there, without complaints about its arguments, and a
@@ -2214,17 +2451,35 @@ each use.
 
 ### The command line
 
-`orangec` has three commands:
+`orangec` has seven commands:
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
+orangec keygen [--scheme <NAME>] [-o <FILE>]
+orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
+orangec schemes [<NAME>...]
 ```
 
 - `check` performs lexical, syntactic, and semantic validation of one or more
   sources and is silent on success.
-- `eval` validates exactly one source and prints the value of each typed
-  `spec` without parameters.
+- `eval` validates exactly one program and prints the value of each typed
+  `spec` without parameters of its root module.
 - `lex` prints the deterministic token stream.
+- `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
+  written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
+  `FILE.orange`, and `orangec dec FILE.orange` writes the file back only when
+  every chunk is authentic. A scheme is any Orange program with the
+  specifications `seal`, `open`, and `authentic`, and it may use other
+  modules; XChaCha20-Poly1305, the default, ChaCha20-Poly1305, and
+  Ascon-AEAD128 are built in. The [scheme guide](../compiler/schemes/README.md)
+  gives the interface and the sealed-file format, and states the limits: the
+  ciphers run on the reference evaluator, which is not constant-time, nothing
+  about them is verified, and keys are stored unencrypted.
+
+`check` and `eval` treat each source as the root of a program and read the
+modules it uses from beside it, as
+[Standards built on standards](#standards-built-on-standards) describes; `lex`
+reads only the source it is given.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints `orangec 0.0.1 (Orange edition 2026)`.
@@ -2269,7 +2524,15 @@ sources, four valid and four invalid, including X25519 against the first test
 vector of RFC 7748, Poly1305 against RFC 8439 section 2.5.2, and the
 ChaCha20-Poly1305 seal of section 2.8.2; generated sources run a conditional
 of 4096 arms and show that a branch the step budget could never finish costs
-nothing unless it is chosen. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
+nothing unless it is chosen. The lookup specification adds 10 rule identifiers
+and four sources, two valid and two invalid, including AES-128 against FIPS 197
+and a table-driven CRC-32 against its check value; generated sources spend the
+step budget exactly and invert a permutation of 256 bytes by updates keyed by
+its own values. The module specification adds 10 rule identifiers and four
+programs over six modules, one valid and three invalid, in which SHA-256,
+HMAC, and HKDF are three modules that reproduce the examples of FIPS 180-4,
+RFC 4231, and RFC 5869; generated programs read a diamond of uses once each
+and link a chain of 64 modules. The complete test suite covers the lexer, parser, semantic analyzer, Core, evaluator,
 diagnostics, resource limits, and command-line behavior.
 
 The documents are careful about what those tests mean. A named test is evidence
@@ -2281,10 +2544,10 @@ compiler.
 ### What Orange 2026 does not have
 
 The list of absences is long, and it is printed in the specifications rather
-than hidden: imports, multiple modules, attributes, visibility, generic
-arguments, contracts, effects, statements other than `let`, mutation,
-shadowing, type inference, mixed-type tuples, arrays of arrays, indices that
-depend on data, loops over computed ranges, early exit, short-circuit
+than hidden: imports of names into scope, module paths and packages, modules
+that take modules as parameters, attributes, visibility, generic arguments, contracts, effects, statements other than `let`, mutation,
+shadowing, type inference, mixed-type tuples, arrays of arrays, indices
+narrowed by conditions, loops over computed ranges, early exit, short-circuit
 operators, conditionals without `else`, a type of integers modulo a prime,
 signed words, variable shift and rotation amounts, recursion, typed
 implementations,
@@ -2302,14 +2565,18 @@ only what every candidate gives the specification stratum: pure, total,
 deterministic meaning over mathematical values. Accepting it is the owner's
 decision, through OEP-0005, S3c's, which builds on it, through OEP-0006,
 S3d's, which builds on S3c, through OEP-0007, S3e's, which builds on S3d,
-through OEP-0008, and S3f's, which builds on S3e, through OEP-0009.
+through OEP-0008, S3f's, which builds on S3e, through OEP-0009, S3g's, which
+builds on S3f, through OEP-0010, and S3h's, which builds on S3g, through
+OEP-0011.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All five migrations so far are small: every source
+documented migration. All seven migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
-under S3e, and every source S3e accepted does the same under S3f.
+under S3e, every source S3e accepted does the same under S3f, every source
+S3f accepted does the same under S3g, where it costs no more steps, and every
+source S3g accepted does the same under S3h, as a program of one module.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -3003,8 +3270,15 @@ remainder, a truth value, and a choice, which is what prime-field arithmetic
 needs. X25519 now computes the first test vector of RFC 7748 with a
 255-rung Montgomery ladder over the integers modulo 2^255 − 19, Poly1305
 reproduces the tag of RFC 8439 section 2.5.2, and ChaCha20-Poly1305 seals the
-section 2.8.2 message to its published ciphertext and tag. These are still
-fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
+section 2.8.2 message to its published ciphertext and tag. The lookup slice
+let a byte select from a table. AES-128 now derives its S-box as FIPS 197
+defines it and encrypts the examples of Appendices B and C.1 to their published
+ciphertexts, and a table-driven CRC-32 reproduces its check value. The module
+slice let each standard be written once and used by name: SHA-256, HMAC, and
+HKDF are three modules, and a program that uses them reproduces the
+HMAC-SHA-256 test cases of RFC 4231 and the first test case of RFC 5869. HMAC
+is not yet generic over its hash, as the corpus plan asks. These are
+still fixtures, not corpus entries. Each message is padded into blocks by hand, because Orange 2026 has
 no byte strings and no message of variable length, and no standard has been
 admitted with its provenance. The corpus remains a set of research inputs
 rather than promises.
@@ -3615,7 +3889,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3h in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -3653,9 +3927,16 @@ reviewed protocol describes five candidate graphs and a replay plan of 25
 candidate-case units, each run three times, for 75 executions. Epoch
 `d004-e-4aaf8a83a01693d543c4` ran all 75 on 2026-09-28 with byte-identical
 repetitions. Four candidates passed every case and ST-HOST failed every case,
-so the laboratory narrowed the field without choosing. The results are
-contributor-produced and unreviewed, the selection remains null, and D-004
-remains proposed.
+so the laboratory narrowed the field without choosing. A v0.8 suite then
+added two cases and five cost measures, and epoch
+`d004-e-633e0aa831615cda3e06` ran all 105 of its executions on the same day:
+the same four candidates closed all seven cases, 28 of 35 units. The owner
+chose an isolation-first rule for telling them apart, knowing which candidate
+each offered rule would leave, and it leaves only ST-REL, which ties ST-MIRROR
+at zero isolation obligations and re-identifies six subject classes to its
+seven. Both runs are contributor-produced and unreviewed, the rule's result is
+not a recommendation until the owner disposes every candidate and hard gate,
+the selection remains null, and D-004 remains proposed.
 
 Laboratories let research run ahead of commitments without becoming
 commitments. They also make the eventual decision auditable. When D-004 is
@@ -3920,21 +4201,25 @@ The [lexical and grammar specification](LANGUAGE_2026.md) and the
 [pure expression specification](EXPRESSIONS_2026.md), the
 [bindings and conversions specification](BINDINGS_2026.md), the
 [arrays specification](ARRAYS_2026.md), the
-[loops specification](LOOPS_2026.md), and the
-[conditions specification](CONDITIONS_2026.md) are proposed under OEP-0005
-through OEP-0009 and in the owner's review. Where this summary and those
+[loops specification](LOOPS_2026.md), the
+[conditions specification](CONDITIONS_2026.md), the
+[lookups specification](LOOKUPS_2026.md), and the
+[modules specification](MODULES_2026.md) are proposed under OEP-0005
+through OEP-0011 and in the owner's review. Where this summary and those
 documents differ, they control.
 
 ### Grammar
 
 The parser accepts exactly this grammar, with at most two tokens of
-lookahead, except that `if` before `(`, `-`, or `[` scans forward, without
-backtracking, for a brace group followed by `else`:
+lookahead, except that `if` before `(`, `-`, `[`, the word `as`, or the word
+`with` followed by `[` scans forward, without backtracking, for a brace group
+followed by `else`:
 
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* function_decl* "}" ;
+use_decl        = "use" IDENTIFIER ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
                 | "spec" IDENTIFIER "(" parameters ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
@@ -3972,7 +4257,7 @@ loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
                   "{" expression "}" ;
 conditional     = "if" expression "{" expression "}"
                   "else" ("{" expression "}" | conditional) ;
-call            = IDENTIFIER "(" arguments? ")" ;
+call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
 arguments       = expression ("," expression)* ","? ;
 ```
 
@@ -3980,13 +4265,15 @@ Sources are valid UTF-8 of at most 16 MiB. Identifiers are ASCII. Integers
 may be decimal, `0b` binary, or `0x` hexadecimal, with single underscores
 between digits. `edition`, `module`, `spec`, `impl`, `game`, `proof`, and
 `claim` are reserved; the last three have no grammatical role yet. `let`, `as`,
-`for`, `in`, `with`, `if`, `else`, `true`, and `false` are not reserved: `let`
+`for`, `in`, `with`, `if`, `else`, `use`, `true`, and `false` are not reserved: `let`
 starts a binding only at the start of a body item before a name, `as` converts
 only after a complete operand, `for` starts a loop only before a name, `in` and
 `with` are words only in a loop's header, `with` updates only after a complete
 operand and before `[`, `if` starts a conditional only where a condition can
-follow it, `else` is a word only after a conditional's value, and `true` and
-`false` are values only where no name of that spelling is in scope. Line and
+follow it, `else` is a word only after a conditional's value, `use` starts a
+declaration only at the head of a module before its first function, and
+`true` and `false` are values only where no name of that spelling is in scope.
+Line and
 nested block comments are trivia. `<<`, `>>`, `<<<`, and `>>>` are single
 tokens, matched longest first. Operators from different groups, or two shifts,
 two comparisons, or two divisions, may not share a level without parentheses, and a conversion or an update shares
@@ -3996,7 +4283,8 @@ nest at most 64 levels deep, counting groups, calls, arrays, indices, loops,
 conditionals, updates, and prefix operators, and reach height 256; a function declares at
 most 64 parameters and 256 bindings, a call supplies at most 256 arguments, an
 array literal lists at most 256 elements, and a loop's bounds satisfy
-0 ≤ a < b ≤ 65536.
+0 ≤ a < b ≤ 65536. A module declares at most 64 `use` declarations, and a
+program holds at most 64 modules, its root included.
 
 ### Types and values
 
@@ -4016,7 +4304,13 @@ between any two of these types other than `Bool`: it takes the integer value
 of `e` and, for `Word[n]`, its residue modulo 2^n. The operand's type comes from its first
 name, call, conversion, or index, so a conversion of literals alone is an
 error. An array literal lists exactly as many elements as its type, and `x[k]`
-selects the element at a literal index below the length. No operator or
+selects the element at position k, which must be proved below the length
+before anything runs. An index is checked as the word type of its first name,
+call, conversion, or element, and ranges over that type, narrowed by its
+operators; otherwise it is an `Int` built from integer literals, loop indices,
+and words converted with `as Int`, using `+`, `-`, `*`, `/`, `%`, and
+conditionals. An update or fill of n elements costs one evaluation step per
+64 elements, or part of 64. No operator or
 conversion applies to a whole array, and an array's elements are never arrays.
 
 ### Operators
@@ -4040,8 +4334,9 @@ branches and evaluates only the one its `Bool` condition chooses; an
 `else if` chain is one conditional per arm.
 
 The amount `k` must be an unsigned integer literal from 0 through n − 1. Calls
-name typed `spec` functions of the same module, pass exactly one argument per
-parameter, and may not form a cycle. A `let` binding states its type, is in
+name typed `spec` functions of the same module, or, as `m::f(...)`, of a
+module `m` it uses, pass exactly one argument per parameter, and may not form
+a cycle; nor may the uses of a program. A `let` binding states its type, is in
 scope after its semicolon, and may not reuse the name of a parameter or another
 binding.
 
@@ -4049,17 +4344,28 @@ binding.
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
+orangec keygen [--scheme <NAME>] [-o <FILE>]
+orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
+orangec schemes [<NAME>...]
 ```
 
 | Command | Behavior |
 | --- | --- |
 | `check` | Lexical, syntactic, and semantic validation; silent on success |
-| `eval` | Validate one source, then print each typed `spec` without parameters as `module::name: Type = value` |
+| `eval` | Validate one program, then print each typed `spec` without parameters of its root module as `module::name: Type = value` |
 | `lex` | Print the deterministic token stream with byte spans |
+| `keygen` | Make a random key for a scheme, mode 0600, never replacing a file |
+| `enc` | Seal one file as `FILE.orange` with its key's scheme |
+| `dec` | Open one sealed file; output is published only if every chunk is authentic |
+| `schemes` | List the built-in schemes or check a scheme program |
 
-Options are `--edition <YEAR>` (only `2026`, at most once), `--` to end option
+Options are `--edition <YEAR>` (only `2026`, at most once), `--scheme <NAME>`
+(a built-in name or a program path), `--key <FILE>` (default
+`$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
-UTF-8 source from standard input, once per invocation. Exit status is 0 on
+UTF-8 source from standard input, once per invocation. For `check` and `eval`,
+each `use m;` reads the module `m` from `m.or` beside the file that names it,
+or from the current directory for standard input, once per program. Exit status is 0 on
 success, 1 on a compile or input failure, and 2 on a usage error.
 
 ### Diagnostic families
@@ -4068,9 +4374,9 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | --- | --- | --- |
 | `ORC0001`–`ORC0008` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
-| `ORC0201`–`ORC0227` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, index not built from literals and loop indices, comparison whose operands have no type |
+| `ORC0201`–`ORC0231` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
-| `ORC1001`–`ORC1008` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit |
+| `ORC1001`–`ORC1015` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness |
 
 Codes and their meanings are stable automation surfaces. Every resource budget
 fails closed with a diagnostic rather than a panic, hang, or partial success.
@@ -4088,7 +4394,7 @@ its gate; `investigate` means the alternatives need a reproducible comparison.
 | D-001 | Mission | Directed |
 | D-002 | No disposable prototype | Directed |
 | D-003 | Product form | Accepted: standalone Orange (PF-01) |
-| D-004 | Semantic strata | Proposed; first laboratory run recorded, contributor-produced and unreviewed; nothing selected |
+| D-004 | Semantic strata | Proposed; two laboratory runs recorded, contributor-produced and unreviewed; nothing selected |
 | D-005 | Public assurance model | Proposed |
 | D-006 | Proof foundation | Investigate |
 | D-007 | Orange-owned proof format and checker | Proposed; depends on D-006 |
@@ -4183,10 +4489,11 @@ part are listed here so a reader can move from explanation to authority.
   [OEP-0003](governance/oeps/OEP-0003-orange-2026-typed-literals.md), the
   proposed [expression](EXPRESSIONS_2026.md),
   [binding and conversion](BINDINGS_2026.md), [array](ARRAYS_2026.md), and
-  [loop](LOOPS_2026.md), and [condition](CONDITIONS_2026.md) specifications
-  under OEP-0005 through OEP-0009, the
-  [compiler guide](../compiler/README.md), and the compiler's own behavior at
-  the book's snapshot.
+  [loop](LOOPS_2026.md), [condition](CONDITIONS_2026.md), and
+  [lookup](LOOKUPS_2026.md), and [module](MODULES_2026.md) specifications
+  under OEP-0005 through OEP-0011, the [compiler guide](../compiler/README.md),
+  the [scheme guide](../compiler/schemes/README.md), and the compiler's own
+  behavior at the book's snapshot.
 - **Chapters 5 and 6:** the [architecture](ARCHITECTURE.md), the
   [assurance model](ASSURANCE.md), the
   [proof foundation](PROOF_FOUNDATION_DECISION_SUITE.md) and
@@ -4223,24 +4530,24 @@ controls how far its prose may go.
 
 | Part | Chapter | State | Governing boundary |
 | --- | --- | --- | --- |
-| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.8 | Directed mission; current limits; proposed claim-oriented graph |
+| I — Why Orange | 1. The Seams Are the System | Drafted in v0.1; revised in v0.10 | Directed mission; current limits; proposed claim-oriented graph |
 | I — Why Orange | 2. Claims, Not Labels | Drafted in v0.2 | Public claim model remains proposed; current evidence boundaries are directed |
-| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.8 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
-| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.8 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, and condition slices implemented, specifications in review; complete semantic Core remains open |
+| I — Why Orange | 3. One Language, Several Semantic Worlds | Drafted in v0.3; revised in v0.10 | PF-01 product form accepted at exact revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; semantic strata remain proposed |
+| II — Meaning and Trust | 4. From Surface Text to Meaning | Drafted in v0.3; revised in v0.10 | Accepted typed-literal Core and evaluator exist; expression, binding, array, loop, condition, lookup, and module slices implemented, specifications in review; complete semantic Core remains open |
 | II — Meaning and Trust | 5. Proof Search Is Not Proof Checking | Drafted in v0.3 | Proof foundation and checker remain unsettled |
-| II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3 | Leakage baseline and target models remain unsettled |
+| II — Meaning and Trust | 6. Secrets Are a Semantic Concern | Drafted in v0.3; revised in v0.9 | Leakage baseline and target models remain unsettled |
 | III — Building the Language | 7. No Disposable Prototype | Drafted in v0.3 | Directed production-lineage doctrine |
-| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.8 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, and condition slices |
+| III — Building the Language | 8. Orange 2026: The Smallest Honest Slice | Drafted in v0.3; revised in v0.10 | Current parser, accepted typed-literal semantics, and the proposed expression, binding, array, loop, condition, lookup, and module slices |
 | III — Building the Language | 9. From Core to Native Bytes | Drafted in v0.3; revised in v0.4 | Compiler strategy and targets remain proposed |
 | III — Building the Language | 10. The Foreign Boundary | Drafted in v0.3 | ABI and generated interfaces remain proposed |
 | IV — Cryptography in Practice | 11. Standards as Versioned Inputs | Drafted in v0.3; revised in v0.4 | Exact source and rights decisions are required |
-| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.8 | Flagship corpus remains proposed |
+| IV — Cryptography in Practice | 12. The Corpus as Acceptance Test | Drafted in v0.3; revised in v0.10 | Flagship corpus remains proposed |
 | IV — Cryptography in Practice | 13. Interoperability and External Validation | Drafted in v0.3 | No certification or external validation is claimed |
 | V — Operating Orange | 14. Evidence That Survives the Build | Drafted in v0.3 | Package, evidence, and release formats remain proposed |
 | V — Operating Orange | 15. Offline Replay and Trust Budgets | Drafted in v0.3 | Replay is a product direction, not current behavior |
-| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.5 | Directed solo operating model |
+| V — Operating Orange | 16. Solo Work Through Incremental Gates | Drafted in v0.3; revised in v0.10 | Directed solo operating model |
 | V — Operating Orange | 17. Releases, Updates, and Failure | Drafted in v0.3 | No release is currently authorized |
-| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A and D revised in v0.8 and Appendix B in v0.5 | Must track the normative repository state |
+| Appendices | A. Current Grammar and CLI; B. Decision Ledger; C. Claim Vocabulary; D. Source Notes | Drafted in v0.3; Appendices A, B, and D revised in v0.9, and A and D in v0.10 | Must track the normative repository state |
 
 ## Sources and drafting disclosure
 
@@ -4279,7 +4586,12 @@ version 0.6 adds the [arrays specification](ARRAYS_2026.md) and
 version 0.7 adds the [loops specification](LOOPS_2026.md) and
 [OEP-0008](governance/oeps/OEP-0008-orange-2026-bounded-loops.md), and
 version 0.8 adds the [conditions specification](CONDITIONS_2026.md) and
-[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md).
+[OEP-0009](governance/oeps/OEP-0009-orange-2026-conditions.md),
+version 0.9 adds the [lookups specification](LOOKUPS_2026.md) and
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md), and
+version 0.10 adds the [modules specification](MODULES_2026.md),
+[OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md), and the
+[scheme guide](../compiler/schemes/README.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -4338,6 +4650,23 @@ Bryan's direction on 2026-09-29, and every Orange example it adds was run
 against the compiler at the revision that introduced it. That check is not
 independent review, and the same authorship, review, evidence, and provenance
 boundaries apply.
+
+Manuscript version 0.9 revised the preface, Chapters 1, 3, 4, 6, 8, 12, and 16,
+and Appendices A, B, and D for the S3g lookup slice and the second D-004
+laboratory run, and added the Chapter 6 section "A lookup, two ways" and the
+Chapter 8 section "Tables keyed by data". It was drafted with Claude Code under
+Chase Bryan's direction on 2026-09-30, and every Orange example it adds was run
+against the compiler at the revision that introduced it. That check is not
+independent review, and the same authorship, review, evidence, and provenance
+boundaries apply.
+
+Manuscript version 0.10 revised the preface, Chapters 1, 3, 4, 8, 12, and 16,
+and Appendices A and D for the S3h module slice and the sealing commands, and
+added the Chapter 8 section "Standards built on standards". It was drafted with
+Claude Code under Chase Bryan's direction on 2026-09-30, and every Orange
+example it adds was run against the compiler at the revision that introduced
+it. That check is not independent review, and the same authorship, review,
+evidence, and provenance boundaries apply.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

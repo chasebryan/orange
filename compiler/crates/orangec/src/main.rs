@@ -10,9 +10,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use orange_compiler::{
-    Edition, Lexed, MAX_SOURCE_BYTES, RenderedSourceName, SourceError, SourceFile, SourceMap,
-    analyze, evaluate, lex, parse, render_diagnostics,
+    Edition, Lexed, MAX_MODULES_PER_PROGRAM, MAX_SOURCE_BYTES, RenderedSourceName, SourceError,
+    SourceFile, SourceId, SourceMap, SyntaxTree, analyze_program, evaluate, lex, parse,
+    render_diagnostics,
 };
+
+mod crypt;
 
 const SUCCESS: u8 = 0;
 const COMPILATION_ERROR: u8 = 1;
@@ -27,19 +30,31 @@ const SOURCE_READ_BUFFER_BYTES: usize = 8 * 1024;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
+    "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
+    "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
+    "       orangec schemes [<NAME>...]\n",
     "\n",
     "Commands:\n",
     "  check    Perform lexical, syntactic, and semantic validation\n",
     "  eval     Reference-evaluate one source after complete validation\n",
     "  lex      Print the deterministic token stream\n",
+    "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
+    "  enc      Seal a file with the scheme its key belongs to\n",
+    "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
+    "  schemes  List the built-in sealing schemes, or describe the named ones\n",
     "\n",
     "Options:\n",
     "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+    "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
+    "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
+    "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
     "      --                End option parsing\n",
     "  -h, --help            Print help\n",
     "  -V, --version         Print version\n",
     "\n",
-    "Use `-` as a file name to read UTF-8 source from standard input.\n",
+    "Use `-` as a file name to read UTF-8 source from standard input. Sealing runs\n",
+    "Orange programs on the reference evaluator, which is not constant-time; the\n",
+    "schemes are reference code and are not verified.\n",
 );
 
 macro_rules! define_cli_diagnostic_codes {
@@ -71,6 +86,13 @@ define_cli_diagnostic_codes! {
     MissingPhaseArtifact => "ORC1006",
     OutputTooLarge => "ORC1007",
     InvocationSourceTooLarge => "ORC1008",
+    KeyFile => "ORC1009",
+    Scheme => "ORC1010",
+    CryptInput => "ORC1011",
+    CryptOutput => "ORC1012",
+    SealedFile => "ORC1013",
+    NotAuthentic => "ORC1014",
+    Randomness => "ORC1015",
 }
 
 fn main() -> ExitCode {
@@ -309,6 +331,7 @@ fn run_with_standard_error_limit(
             &mut standard_output,
             &mut standard_error,
         ),
+        Action::Seal(options) => crypt::run(&options, &mut standard_output, &mut standard_error),
     }
 }
 
@@ -552,7 +575,50 @@ fn compile_with_limits(
                     continue;
                 }
             };
-            let analyzed = analyze(source, ast);
+            let modules = if ast.module().uses().is_empty() {
+                Vec::new()
+            } else {
+                match load_used_modules(
+                    path,
+                    ast,
+                    &mut sources,
+                    options.edition,
+                    &mut remaining_source_bytes,
+                ) {
+                    Ok(modules) => modules,
+                    Err(group) => {
+                        compilation_failed = true;
+                        emit_error_group(
+                            standard_error,
+                            &mut standard_error_available,
+                            &mut error_group_written,
+                            &mut output_failed,
+                            &group,
+                        );
+                        continue;
+                    }
+                }
+            };
+            let program = modules
+                .iter()
+                .filter_map(|(id, ast)| Some((sources.get(*id)?, ast)))
+                .collect::<Vec<_>>();
+            let Some(source) = sources.get(id).filter(|_| program.len() == modules.len()) else {
+                compilation_failed = true;
+                emit_error_group(
+                    standard_error,
+                    &mut standard_error_available,
+                    &mut error_group_written,
+                    &mut output_failed,
+                    &render_cli_error(
+                        CliDiagnosticCode::MissingPhaseArtifact,
+                        "source insertion succeeded without a retrievable source",
+                        "this is an internal compiler failure",
+                    ),
+                );
+                continue;
+            };
+            let analyzed = analyze_program((source, ast), &program);
             let core = match classify_phase_result(analyzed.core(), analyzed.diagnostics()) {
                 PhaseResult::Complete(core) => core,
                 PhaseResult::Diagnosed(diagnostics) => {
@@ -695,6 +761,156 @@ fn compile_with_limits(
     } else {
         SUCCESS
     }
+}
+
+/// Reads, lexes, and parses the modules that `root` uses, directly or
+/// through other modules.
+///
+/// The module `NAME` of a `use NAME;` declaration is read from the file
+/// `NAME.or` in the directory of the root file, or the current directory for
+/// standard input; a module name is an ASCII identifier, so it names a file
+/// in that directory and nothing outside it. Each module is read once, in the
+/// order in which a `use` first names it, and every read is charged to the
+/// invocation's source budget. The uses of a file that declares a module of
+/// another name are not followed. At most one module more than a program may
+/// hold is read, so that semantic analysis reports the limit. A module that
+/// cannot be read, lexed, or parsed stops the program with its diagnostics.
+fn load_used_modules(
+    root_path: &Path,
+    root: &SyntaxTree,
+    sources: &mut SourceMap,
+    edition: Edition,
+    remaining_source_bytes: &mut usize,
+) -> Result<Vec<(SourceId, SyntaxTree)>, String> {
+    let directory = if root_path == Path::new("-") {
+        Path::new("")
+    } else {
+        root_path.parent().unwrap_or_else(|| Path::new(""))
+    };
+    let root_name = root.module().name().text();
+    let mut requested: Vec<String> = Vec::new();
+    let mut loaded: Vec<(SourceId, SyntaxTree)> = Vec::new();
+    // Module 0 is the root; module `n` is `loaded[n - 1]`.
+    let mut next_module = 0_usize;
+    loop {
+        let uses = if next_module == 0 {
+            Some(root.module().uses())
+        } else {
+            // A file that declares a module of another name stays loaded, so
+            // that the module graph reports the `use` that read it, but its
+            // own uses name no module of this program and are not followed.
+            next_module
+                .checked_sub(1)
+                .and_then(|index| loaded.get(index).zip(requested.get(index)))
+                .map(|((_, ast), requested)| {
+                    if ast.module().name().text() == requested {
+                        ast.module().uses()
+                    } else {
+                        &[]
+                    }
+                })
+        };
+        let Some(uses) = uses else {
+            return Ok(loaded);
+        };
+        let user = if next_module == 0 {
+            root_name
+        } else {
+            next_module
+                .checked_sub(1)
+                .and_then(|index| loaded.get(index))
+                .map_or("", |(_, ast)| ast.module().name().text())
+        }
+        .to_owned();
+        let names = uses
+            .iter()
+            .map(|declaration| declaration.name().text())
+            .filter(|name| *name != root_name && !requested.iter().any(|seen| seen == name))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        next_module = next_module.saturating_add(1);
+        for name in names {
+            if requested.contains(&name) {
+                continue;
+            }
+            if loaded.len() >= MAX_MODULES_PER_PROGRAM {
+                return Ok(loaded);
+            }
+            let path = directory.join(format!("{name}.or"));
+            let module = load_module(&path, sources, edition, remaining_source_bytes).map_err(
+                |mut group| {
+                    if group.starts_with("error[ORC1") {
+                        let _ = writeln!(
+                            group,
+                            "  = note: `use {name};` in module `{user}` reads the module `{name}` \
+                             from this file"
+                        );
+                    }
+                    group
+                },
+            )?;
+            requested.push(name);
+            loaded.push(module);
+        }
+    }
+}
+
+/// Reads, lexes, and parses one used module.
+fn load_module(
+    path: &Path,
+    sources: &mut SourceMap,
+    edition: Edition,
+    remaining_source_bytes: &mut usize,
+) -> Result<(SourceId, SyntaxTree), String> {
+    let display_name = stable_source_name(path).map_err(source_name_error)?;
+    // A used module is always a file, never standard input.
+    let bytes = read_source(path, &mut io::empty(), remaining_source_bytes)
+        .map_err(|error| render_read_source_error(&display_name, error))?;
+    let text = String::from_utf8(bytes).map_err(|error| {
+        render_cli_error(
+            CliDiagnosticCode::InvalidUtf8,
+            format_args!("source file `{display_name}` is not valid UTF-8"),
+            format_args!(
+                "invalid byte sequence begins at byte offset {}",
+                error.utf8_error().valid_up_to()
+            ),
+        )
+    })?;
+    let id = sources
+        .add_with_rendered_name(display_name, text)
+        .map_err(source_limit_error_without_name)?;
+    let missing = || {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "source insertion succeeded without a retrievable source",
+            "this is an internal compiler failure",
+        )
+    };
+    let source = sources.get(id).ok_or_else(missing)?;
+    let lexed = lex(source, edition);
+    if lexed.has_errors() {
+        return Err(if lexed.diagnostics().is_empty() {
+            render_cli_error(
+                CliDiagnosticCode::MissingPhaseArtifact,
+                "lexical analysis failed without a diagnostic",
+                "this is an internal compiler resource failure",
+            )
+        } else {
+            render_diagnostics(sources, lexed.diagnostics())
+        });
+    }
+    let parsed = parse(source, &lexed);
+    if !parsed.diagnostics().is_empty() {
+        return Err(render_diagnostics(sources, parsed.diagnostics()));
+    }
+    let ast = parsed.into_ast().ok_or_else(|| {
+        render_cli_error(
+            CliDiagnosticCode::MissingPhaseArtifact,
+            "parser returned neither a complete syntax tree nor a diagnostic",
+            "this is an internal compiler or resource failure",
+        )
+    })?;
+    Ok((id, ast))
 }
 
 fn output_failure_group(command: CompilerCommand, error: &io::Error) -> Option<Cow<'static, str>> {
@@ -1267,6 +1483,17 @@ define_compiler_commands! {
     Check => "check",
     Eval => "eval",
     Lex => "lex",
+    Keygen => "keygen",
+    Enc => "enc",
+    Dec => "dec",
+    Schemes => "schemes",
+}
+
+impl CompilerCommand {
+    /// Returns whether this is one of the sealing commands in [`crypt`].
+    const fn seals(self) -> bool {
+        matches!(self, Self::Keygen | Self::Enc | Self::Dec | Self::Schemes)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1281,6 +1508,7 @@ enum Action {
     Help,
     Version,
     Compile(Options),
+    Seal(crypt::SealOptions),
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Action, String> {
@@ -1301,6 +1529,9 @@ fn parse_arguments_with_path_reservation(
     let mut edition = Edition::default();
     let mut edition_seen = false;
     let mut paths = Vec::new();
+    let mut scheme = None;
+    let mut key = None;
+    let mut output = None;
     let mut options_enabled = true;
     let mut remaining_argument_bytes = argument_limit;
 
@@ -1324,11 +1555,31 @@ fn parse_arguments_with_path_reservation(
                     edition = parse_edition(&value)?;
                     continue;
                 }
+                Some(name @ ("--scheme" | "--key" | "-o" | "--output")) => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| format!("option `{name}` requires a value"))?;
+                    charge_argument_bytes(&mut remaining_argument_bytes, &value)?;
+                    set_sealing_option(name, value, &mut scheme, &mut key, &mut output)?;
+                    continue;
+                }
                 Some(value) => {
                     if let Some(value) = value.strip_prefix("--edition=") {
                         mark_edition_option(&mut edition_seen)?;
                         edition = value.parse().map_err(
                             |error: orange_compiler::ParseEditionError| error.to_string(),
+                        )?;
+                        continue;
+                    }
+                    if let Some((name @ ("--scheme" | "--key" | "--output"), value)) =
+                        value.split_once('=')
+                    {
+                        set_sealing_option(
+                            name,
+                            OsString::from(value),
+                            &mut scheme,
+                            &mut key,
+                            &mut output,
                         )?;
                         continue;
                     }
@@ -1339,6 +1590,14 @@ fn parse_arguments_with_path_reservation(
                 None if argument.as_encoded_bytes().starts_with(b"--edition=") => {
                     mark_edition_option(&mut edition_seen)?;
                     return Err(String::from("edition name is not valid UTF-8"));
+                }
+                None if [&b"--scheme="[..], b"--key=", b"--output="]
+                    .iter()
+                    .any(|prefix| argument.as_encoded_bytes().starts_with(prefix)) =>
+                {
+                    return Err(String::from(
+                        "an option value that is not valid UTF-8 must be a separate argument",
+                    ));
                 }
                 None if argument.as_encoded_bytes().first() == Some(&b'-') => {
                     let argument = RenderedSourceName::try_from_os_str(&argument)
@@ -1371,6 +1630,20 @@ fn parse_arguments_with_path_reservation(
     }
 
     let command = command.ok_or_else(|| String::from("missing command"))?;
+    if command.seals() {
+        return sealing_action(command, edition, scheme, key, output, paths);
+    }
+    for (present, name) in [
+        (scheme.is_some(), "--scheme"),
+        (key.is_some(), "--key"),
+        (output.is_some(), "--output"),
+    ] {
+        if present {
+            return Err(format!(
+                "option `{name}` applies only to keygen, enc, dec, and schemes"
+            ));
+        }
+    }
     if paths.is_empty() {
         return Err(format!(
             "command `{}` requires at least one source file",
@@ -1386,6 +1659,76 @@ fn parse_arguments_with_path_reservation(
         command,
         edition,
         paths,
+    }))
+}
+
+/// Records one sealing option, each at most once.
+fn set_sealing_option(
+    name: &str,
+    value: OsString,
+    scheme: &mut Option<OsString>,
+    key: &mut Option<PathBuf>,
+    output: &mut Option<PathBuf>,
+) -> Result<(), String> {
+    let (canonical, taken) = match name {
+        "--scheme" => ("--scheme", scheme.replace(value).is_some()),
+        "--key" => ("--key", key.replace(PathBuf::from(value)).is_some()),
+        _ => ("--output", output.replace(PathBuf::from(value)).is_some()),
+    };
+    if taken {
+        return Err(format!(
+            "option `{canonical}` may be specified at most once"
+        ));
+    }
+    Ok(())
+}
+
+/// Checks a sealing command's operands and options.
+fn sealing_action(
+    command: CompilerCommand,
+    edition: Edition,
+    scheme: Option<OsString>,
+    key: Option<PathBuf>,
+    output: Option<PathBuf>,
+    inputs: Vec<PathBuf>,
+) -> Result<Action, String> {
+    let name = command.as_str();
+    match command {
+        CompilerCommand::Keygen => {
+            if !inputs.is_empty() {
+                return Err(String::from(
+                    "command `keygen` takes no file; name the new key file with -o",
+                ));
+            }
+            if key.is_some() {
+                return Err(String::from(
+                    "command `keygen` writes its key to -o, not --key",
+                ));
+            }
+        }
+        CompilerCommand::Schemes => {
+            if scheme.is_some() || key.is_some() || output.is_some() {
+                return Err(String::from(
+                    "command `schemes` takes scheme names or paths as operands and no options",
+                ));
+            }
+        }
+        _ => {
+            if inputs.len() != 1 {
+                return Err(format!("command `{name}` requires exactly one file"));
+            }
+            if inputs.iter().any(|input| input == Path::new("-")) {
+                return Err(format!("command `{name}` reads a file, not standard input"));
+            }
+        }
+    }
+    Ok(Action::Seal(crypt::SealOptions {
+        command,
+        edition,
+        scheme,
+        key,
+        output,
+        inputs,
     }))
 }
 
@@ -1429,6 +1772,83 @@ mod tests {
         root
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn used_modules_are_read_once_from_the_root_directory() {
+        let directory = unix_test_root().join(format!("orangec-modules-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let files = [
+            (
+                "base.or",
+                "edition 2026; module base { spec one() -> Int { 1 } }\n",
+            ),
+            ("left.or", "edition 2026; module left { use base; }\n"),
+            (
+                "right.or",
+                "edition 2026; module right { use base; use left; }\n",
+            ),
+        ];
+        for (name, text) in files {
+            std::fs::write(directory.join(name), text).unwrap();
+        }
+        let root_path = directory.join("root.or");
+        let load = |root_text: &str| {
+            let mut sources = SourceMap::new();
+            let id = sources.add("root.or", root_text).unwrap();
+            let source = sources.get(id).unwrap();
+            let lexed = lex(source, Edition::default());
+            let ast = parse(source, &lexed).into_ast().unwrap();
+            let mut remaining = MAX_SOURCE_BYTES_PER_INVOCATION;
+            let loaded = load_used_modules(
+                &root_path,
+                &ast,
+                &mut sources,
+                Edition::default(),
+                &mut remaining,
+            );
+            let loaded = loaded.map(|modules| {
+                modules
+                    .iter()
+                    .map(|(id, ast)| {
+                        (
+                            sources.get(*id).unwrap().name().to_owned(),
+                            ast.module().name().text().to_owned(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            });
+            (loaded, MAX_SOURCE_BYTES_PER_INVOCATION - remaining)
+        };
+
+        // Each module is read once, in the order a `use` first names it; the
+        // root's own name is not read.
+        let (loaded, charged) =
+            load("edition 2026; module root { use right; use root; use base; use right; }");
+        let path_of = |name: &str| directory.join(name).display().to_string();
+        assert_eq!(
+            loaded.unwrap(),
+            [
+                (path_of("right.or"), String::from("right")),
+                (path_of("base.or"), String::from("base")),
+                (path_of("left.or"), String::from("left")),
+            ]
+        );
+        assert_eq!(
+            charged,
+            files.iter().map(|(_, text)| text.len()).sum::<usize>()
+        );
+
+        let (missing, _) = load("edition 2026; module root { use left; use gone; }");
+        let group = missing.unwrap_err();
+        assert!(group.starts_with("error[ORC1001]: could not read source file `"));
+        assert!(group.contains("gone.or`"));
+        assert!(group.ends_with(
+            "  = note: `use gone;` in module `root` reads the module `gone` from this file\n"
+        ));
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
     #[test]
     fn cli_diagnostic_code_inventory_is_exact_ordered_and_unique() {
         let actual = CliDiagnosticCode::ALL
@@ -1437,6 +1857,7 @@ mod tests {
             .collect::<Vec<_>>();
         let expected = [
             "ORC1001", "ORC1002", "ORC1003", "ORC1004", "ORC1005", "ORC1006", "ORC1007", "ORC1008",
+            "ORC1009", "ORC1010", "ORC1011", "ORC1012", "ORC1013", "ORC1014", "ORC1015",
         ];
 
         assert_eq!(actual, expected);
@@ -1621,7 +2042,10 @@ mod tests {
             .iter()
             .map(|command| command.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(names, ["check", "eval", "lex"]);
+        assert_eq!(
+            names,
+            ["check", "eval", "lex", "keygen", "enc", "dec", "schemes"]
+        );
         assert_eq!(
             CompilerCommand::ALL
                 .iter()
@@ -3882,7 +4306,7 @@ mod tests {
         fn compile_options(self) -> Options {
             match self {
                 Self::Compile(options) => options,
-                Self::Help | Self::Version => panic!("expected compile action"),
+                Self::Help | Self::Version | Self::Seal(_) => panic!("expected compile action"),
             }
         }
     }

@@ -25,10 +25,14 @@ establishes no accepted language meaning. It accepts no D-004 candidate.
 > document with typed `let` bindings and explicit `as` conversions,
 > [`ARRAYS_2026.md`](ARRAYS_2026.md), proposed under OEP-0007, adds
 > fixed-length arrays on top of it, [`LOOPS_2026.md`](LOOPS_2026.md), proposed
-> under OEP-0008, adds bounded loops on top of those, and
+> under OEP-0008, adds bounded loops on top of those,
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, adds
-> `Bool`, comparisons, Euclidean division, and conditionals. Every source this
-> document accepts keeps its meaning under all four.
+> `Bool`, comparisons, Euclidean division, and conditionals,
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, adds indices
+> that depend on data, and [`MODULES_2026.md`](MODULES_2026.md), proposed
+> under OEP-0011, adds programs of more than one module, whose modules call
+> each other's functions by module name. Every source this document accepts
+> keeps its meaning under all six.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

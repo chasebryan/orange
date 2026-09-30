@@ -1069,19 +1069,31 @@ fn usage_errors_have_a_distinct_exit_status() {
         help,
         concat!(
             "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
+            "       orangec keygen [--scheme <NAME>] [-o <FILE>]\n",
+            "       orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>\n",
+            "       orangec schemes [<NAME>...]\n",
             "\n",
             "Commands:\n",
             "  check    Perform lexical, syntactic, and semantic validation\n",
             "  eval     Reference-evaluate one source after complete validation\n",
             "  lex      Print the deterministic token stream\n",
+            "  keygen   Make a secret key for a scheme [default: xchacha20_poly1305]\n",
+            "  enc      Seal a file with the scheme its key belongs to\n",
+            "  dec      Open a sealed file, writing nothing unless all of it is authentic\n",
+            "  schemes  List the built-in sealing schemes, or describe the named ones\n",
             "\n",
             "Options:\n",
             "      --edition <YEAR>  Select the Orange edition [default: 2026; at most once]\n",
+            "      --scheme <NAME>   Scheme: a built-in name or an Orange program's path\n",
+            "      --key <FILE>      Key file [default: $XDG_CONFIG_HOME/orange/key]\n",
+            "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
             "      --                End option parsing\n",
             "  -h, --help            Print help\n",
             "  -V, --version         Print version\n",
             "\n",
-            "Use `-` as a file name to read UTF-8 source from standard input.\n",
+            "Use `-` as a file name to read UTF-8 source from standard input. Sealing runs\n",
+            "Orange programs on the reference evaluator, which is not constant-time; the\n",
+            "schemes are reference code and are not verified.\n",
         )
     );
 
@@ -1130,13 +1142,7 @@ fn usage_errors_have_a_distinct_exit_status() {
 fn daylight_horizon_example_matches_upstream_frame_deterministically() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let example = root.join("examples/daylight/daylight-horizon.or");
-    let core = root.join("examples/daylight/daylight.or");
-    let checked = orangec()
-        .arg("check")
-        .arg(&core)
-        .arg(&example)
-        .output()
-        .unwrap();
+    let checked = orangec().arg("check").arg(&example).output().unwrap();
     assert!(checked.status.success(), "{:?}", checked);
     assert!(checked.stdout.is_empty());
     assert!(checked.stderr.is_empty());
@@ -1159,19 +1165,40 @@ fn daylight_horizon_example_matches_upstream_frame_deterministically() {
         frame.push(u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap());
     }
     assert_eq!(frame.len(), 219);
-    let expected = format!(
-        "daylight::example: Word[8]^219 = [{}]\n",
-        frame
-            .iter()
+    let bytes = |data: &[u8]| {
+        data.iter()
             .map(|b| format!("0x{b:02x}"))
             .collect::<Vec<_>>()
             .join(", ")
+    };
+    let plaintext = bytes(b"Daylight Horizon runs in Orange.");
+    // The program seals the example, carries the pinned frame as a literal, and
+    // opens it again; the named inputs and constants print before them.
+    let expected = format!(
+        concat!(
+            "daylight::initial_hash: Word[32]^8 = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, ",
+            "0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]\n",
+            "daylight::prime: Int = 1361129467683753853853498429727072845819\n",
+            "daylight::magic: Word[8]^7 = [0x44, 0x4c, 0x54, 0x48, 0x56, 0x31, 0x41]\n",
+            "daylight::root: Word[8]^32 = [{root}]\n",
+            "daylight::nonce: Word[8]^12 = [{nonce}]\n",
+            "daylight::authorization_tag: Word[8]^32 = [{tag}]\n",
+            "daylight::plaintext: Word[8]^32 = [{plaintext}]\n",
+            "daylight::example: Word[8]^219 = [{frame}]\n",
+            "daylight::pinned_frame: Word[8]^219 = [{frame}]\n",
+            "daylight::recovered: Word[8]^32 = [{plaintext}]\n",
+        ),
+        root = bytes(&(0..32).collect::<Vec<u8>>()),
+        nonce = bytes(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+        tag = bytes(&[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef].repeat(4)),
+        plaintext = plaintext,
+        frame = bytes(&frame),
     );
     for _ in 0..2 {
         let result = orangec().arg("eval").arg(&example).output().unwrap();
         assert!(result.status.success(), "{:?}", result);
         assert!(result.stderr.is_empty());
-        assert_eq!(result.stdout, expected.as_bytes());
+        assert_eq!(String::from_utf8(result.stdout).unwrap(), expected);
     }
 }
 

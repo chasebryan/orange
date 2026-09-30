@@ -426,9 +426,40 @@ the S3f surface in [`CONDITIONS_2026.md`](CONDITIONS_2026.md) and builds on
 OEP-0008. Like the slices before it, it assumes only pure, total,
 deterministic meaning, and it makes no timing claim: a conditional chooses a
 value, and how an implementation decides is a question for the implementation
-stratum. A type of integers modulo a declared prime, static index parameters,
-so that one quarter round can act on four positions of a whole state, and
-tuples for working variables of different roles are the next candidate slices.
+stratum.
+
+S3g follows S3f. It lets an index depend on data while still proving it in
+range before evaluation: an index whose first typed leaf is a word ranges over
+its type, narrowed by its operators, and an `Int` index may also convert words
+with `as Int` and choose with conditionals. Updates and fills cost one step
+per 64 elements, so that a table can change on every iteration of a loop. AES-128
+of FIPS 197, with its S-box derived from inverses in GF(2^8), and a
+table-driven CRC-32 are now Orange programs that reproduce the published
+examples and check value. It is implemented and tested, and its acceptance
+requires the owner's acceptance of
+[OEP-0010](governance/oeps/OEP-0010-orange-2026-lookups.md), which bounds the
+S3g surface in [`LOOKUPS_2026.md`](LOOKUPS_2026.md) and builds on OEP-0009. It
+reverses the S3e rule that made lookups keyed by data inexpressible, and like
+the slices before it, it assumes only pure, total, deterministic meaning and
+makes no timing claim: how a lookup keyed by a secret is compiled is a
+question for code generation.
+
+S3h follows S3g. It lets a program span several modules, one per file: a
+module declares the modules it uses at its head and calls their functions by
+module name, as in `sha256::compress(h, block)`. The uses of a program form no
+cycle, each module is checked once, after the modules it uses, and against
+their declarations only, and evaluation prints only the root's values under
+one step budget. `orangec` reads the module `m` from `m.or` beside the root.
+SHA-256, HMAC, and HKDF are now three modules whose program reproduces the
+examples of FIPS 180-4, RFC 4231, and RFC 5869. It is implemented and tested,
+and its acceptance requires the owner's acceptance of
+[OEP-0011](governance/oeps/OEP-0011-orange-2026-modules.md), which bounds the
+S3h surface in [`MODULES_2026.md`](MODULES_2026.md) and builds on OEP-0010.
+Like the slices before it, it assumes only pure, total, deterministic meaning.
+A type of integers modulo a declared prime, static index parameters, so that
+one quarter round can act on four positions of a whole state, tuples for
+working variables of different roles, loops with more than one accumulator,
+and array concatenation and slicing are the next candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -474,8 +505,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3f are implemented and await owner review under
-OEP-0005 through OEP-0009, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3h are implemented and await owner review under
+OEP-0005 through OEP-0011, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

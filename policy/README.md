@@ -68,10 +68,17 @@ copied command runs as PID 1 in private mount, PID, `/proc`, network, IPC, and
 UTS namespaces. The UTS namespace uses the fixed `orange-gate` hostname, and
 the fresh IPC namespace starts without System V message queues, semaphore sets,
 or shared-memory segments. The preferred path also creates an unprivileged user
-namespace. If the host rejects that mapping, a fixed non-interactive `sudo`
-supervisor creates only the remaining namespaces before `setpriv` restores the
-invoking numeric user and group, clears supplementary groups, and enables
-`no_new_privs`. Both
+namespace. If the host rejects that mapping, as Ubuntu 23.10 and newer do by
+default, `make` asks `sudo` for the invoking account's password once unless a
+cached credential or passwordless rule already covers it. That path needs a
+`sudo` policy that keeps the credential between commands and a host that allows
+user namespaces (`user.max_user_namespaces` above zero); otherwise `make` stops
+with a message naming the setting. A fixed `sudo` supervisor then creates the
+remaining namespaces, switches to the invoking numeric user and group holding
+only `CAP_SYS_ADMIN`, so the invoking account owns the user namespace it
+creates next, and writes that namespace's one-line maps from outside it so they
+admit only that user and group. `setpriv` then restores that user and group,
+clears supplementary groups, and enables `no_new_privs`. Both
 paths remove and assert empty inheritable, permitted, effective, bounding, and
 ambient capability sets, then assert the expected identity, distinct IPC and
 UTS namespace identities, fixed hostname, empty System V IPC tables, private
@@ -88,7 +95,9 @@ resets ordinary catchable signal dispositions to default, and empties the
 ordinary signal mask.
 Before execution it also fixes hard ceilings of 4 GiB of virtual address space
 and 600 CPU seconds per process, 512 MiB per file, 1,024 open files, 256 processes
-for the real user, and zero core-file bytes, preserving any lower inherited hard
+for the real user inside the gate's private user namespace (the kernel exempts
+the global root user, so a gate invoked as root has no process ceiling), and zero
+core-file bytes, preserving any lower inherited hard
 ceiling. Copied commands receive isolated `HOME`, `TMPDIR`, and `PATH` values and
 disable system Git configuration while binding global Git configuration to
 `/dev/null`; they must prove the original checkout unreadable before tests begin.
@@ -121,7 +130,7 @@ outer `/usr/bin/cat` relays that merged stream to the caller's final output sink
 The caller can still close or truncate the final sink, and the copied output
 channels are intentionally merged. The fixed host C compiler, relay, `mount`,
 `unshare`, `sudo`, and `setpriv` implementations, protected launcher,
-passwordless namespace-setup policy, user-namespace availability, kernel
+`sudo` policy that authorizes namespace setup, user-namespace availability, kernel
 namespace/Landlock enforcement, and unrelated same-account processes outside
 the private namespace remain trusted or residual boundaries. Copied commands
 can read only the gate launcher's PID-1 procfs metadata and the private System V
@@ -129,8 +138,8 @@ IPC tables; representative global kernel/CPU and dynamic `/proc/self` content is
 asserted unreadable. Resource ceilings
 are not aggregate cgroup budgets: virtual address space and CPU time are limited
 per process, file size is limited per file, aggregate resident memory is not
-capped, and the process ceiling includes other processes with the same real user
-ID.
+capped, and the process ceiling counts only processes in the gate's private user
+namespace, not other processes of the same account.
 
 The validator always binds filesystem scope to the checkout containing
 `tools/validate_foundation.py`. Its optional `--root PATH` flag is an
@@ -288,8 +297,8 @@ the archive tool, the bundle, the overlay and the committed run archive under
 closed of 35 required units and 105 of 105 result records. Both are
 contributor-produced and unreviewed, and both `roadmap_gate_credit` and
 `readiness_credit` remain `none`. None of these inventories contains an accepted
-D-004 decision or release evidence; D-004 remains proposed, S3b through S3f are
-implemented and await owner review under OEP-0005 through OEP-0009, and the
+D-004 decision or release evidence; D-004 remains proposed, S3b through S3h are
+implemented and await owner review under OEP-0005 through OEP-0011, and the
 3-of-10 (30%) binary gate-closure score is unchanged. D-005's protected Rust
 laboratory may construct canonical adapter requests and validate synthetic
 captured transport envelopes, enumerate the exact 192 in-memory transport

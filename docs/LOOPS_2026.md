@@ -24,8 +24,12 @@ meaning. It accepts no D-004 candidate.
 > [!NOTE]
 > [`CONDITIONS_2026.md`](CONDITIONS_2026.md), proposed under OEP-0009, extends
 > this document with `Bool`, comparisons, Euclidean division, and
-> conditionals, and lets a static index divide a loop index. Every source this
-> document accepts keeps its meaning under it.
+> conditionals, and lets a static index divide a loop index.
+> [`LOOKUPS_2026.md`](LOOKUPS_2026.md), proposed under OEP-0010, lifts the
+> static-index limit of section 13: an index may depend on data, and is proved
+> in range from its type. [`MODULES_2026.md`](MODULES_2026.md), proposed under
+> OEP-0011, lets a module use others. Every source this document accepts keeps
+> its meaning under all three.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
@@ -307,8 +311,9 @@ and its accumulator type. Its step's nodes count as any others. Each
 **Evaluation.** A loop costs one step and one more per iteration, beyond its
 first value's and every step's. A `loop_index` or `accumulator` read costs
 one step, and so does a `select`. An `update` or `fill` of an array of n
-elements costs n steps. A loop's steps run within the call of their function
-and add no call depth.
+elements costs ⌈n/64⌉ steps, as [`LOOKUPS_2026.md`](LOOKUPS_2026.md)
+section 8 amends this rule (OEP-0008 first charged n). A loop's steps run
+within the call of their function and add no call depth.
 
 Exhausting any budget, and any allocation failure, yields one resource
 diagnostic, no Core, and no value line. The deepest sources the limits admit,
