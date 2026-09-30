@@ -9,9 +9,10 @@ SM4 block cipher algorithm" (2016). The IETF draft
 describes it in English, and
 [RFC 8998](https://www.rfc-editor.org/rfc/rfc8998) (2021) defines the TLS 1.3
 cipher suites TLS_SM4_GCM_SM3 and TLS_SM4_CCM_SM3 that use it. SM4 is
-mandatory in Chinese commercial cryptography, is in ISO/IEC 18033-3 through
-its 2021 amendment, and ships in OpenSSL, Botan, the Linux kernel and the
-Arm and Intel instruction sets. It is a current standard: no attack on the
+the block cipher of China's commercial cryptography, is in ISO/IEC 18033-3
+through its 2021 amendment, and ships in OpenSSL, Botan and the Linux kernel,
+with dedicated instructions in Armv8.2 and in recent Intel processors. It is
+a current standard: no attack on the
 full 32 rounds is published, and the best reduced-round results stop at 23
 rounds.
 
@@ -27,9 +28,8 @@ is the reverse transformation R(X32, X33, X34, X35) = (X35, X34, X33, X32).
 The composite permutation T is the nonlinear transformation tau, which sends
 each of the four bytes of its input through one 8-bit S-box, followed by the
 linear transformation L(B) = B xor (B <<< 2) xor (B <<< 10) xor (B <<< 18)
-xor (B <<< 24). Because one word is replaced per round and the other three
-shift down, three rounds of the same key would pass every word through T
-once; the reversal R at the end makes decryption the same procedure with the
+xor (B <<< 24). One word is replaced per round and the other three shift
+down; the reversal R at the end makes decryption the same procedure with the
 round keys in the reverse order (clause 7.2), which is the only difference
 between `encrypt` and `decrypt` in the file.
 
@@ -85,14 +85,14 @@ reached 22 rounds in 2008 (Kim, Kim, Hong and Sung; Etrog and Robshaw, SAC
 differential attack by Su, Wu and Zhang (Journal of Computer Science and
 Technology, 2011) with about 2^118 chosen plaintexts and 2^126.7 encryptions,
 and multidimensional linear attacks by Cho and Nyberg (2011) and by Liu and
-Chen (2014) with data complexities near 2^122 to 2^127 known plaintexts. Later
-work with automated characteristic search has tightened the bounds on the
-best differential and linear trails and has confirmed, rather than extended,
-the 23-round frontier; every published attack on more than 22 rounds needs
-close to the whole codebook and time close to exhaustive search. The margin
-is nine rounds. No related-key, weak-key or structural attack on the full
-cipher is known; the key schedule reuses the round function, so results on
-the data path carry over to it and vice versa. With a 128-bit key and a
+Chen (2014) with data complexities near 2^122 to 2^127 known plaintexts.
+Later work through the 2010s and early 2020s, much of it with automated
+searches for differential and linear trails, has refined these complexities
+and the bounds on the best trails; to our knowledge no published attack
+reaches 24 rounds, and every attack on more than 22 rounds needs close to the
+whole codebook and time close to exhaustive search. The margin is nine
+rounds. No related-key, weak-key or structural attack on the full cipher is
+known. With a 128-bit key and a
 128-bit block, SM4 offers the same generic security as AES-128: Grover's
 algorithm halves the effective key length against a quantum adversary, and
 modes of operation meet the birthday bound after 2^64 blocks under one key.
@@ -105,10 +105,11 @@ a selection over all of them; the entry makes no constant-time claim.
 
 On standing: SMS4 was published in 2006 for WAPI (GB 15629.11), became
 GM/T 0002-2012 and then GB/T 32907-2016 (issued August 2016, in force from
-March 2017), and is one of the commercial algorithms that China's
-Cryptography Law (2020) requires in domestic products and networks.
-ISO/IEC 18033-3:2010/Amd 1:2021 added it beside AES, Camellia, SEED and the
-other 128-bit block ciphers of that standard. RFC 8998 (March 2021,
+March 2017), and is the block cipher of the SM series that Chinese
+regulation of commercial cryptography prescribes (the Cryptography Law in
+force since 2020 and the GM/T standards under it). ISO/IEC
+18033-3:2010/Amd 1:2021 added it beside the 128-bit block ciphers of that
+standard, AES, Camellia and SEED. RFC 8998 (March 2021,
 Informational) registers TLS_SM4_GCM_SM3 and TLS_SM4_CCM_SM3 for TLS 1.3 with
 IANA's "Recommended" column set to N, so they are available to
 implementations that opt in and are not negotiated by the major browsers.

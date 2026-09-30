@@ -10,7 +10,8 @@
 // and the key expansion of clause 7.3 with the system parameter FK, the
 // fixed parameters CK and the linear map L'. The S-box is packed eight
 // entries to a word. The file reproduces example 1 of Appendix A in both
-// directions and four cases of Botan's sm4.vec.
+// directions and three cases of Botan's sm4.vec, one of them in both
+// directions.
 edition 2026;
 module sm4 {
   // Bytes and words. SM4 reads its key and its blocks big-endian: a 32-bit

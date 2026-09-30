@@ -1,0 +1,750 @@
+// RSAES-OAEP of RFC 8017, PKCS #1: RSA Cryptography Specifications Version
+// 2.2 (Moriarty, Kaliski, Jonsson, Rusch, November 2016),
+// https://www.rfc-editor.org/rfc/rfc8017: the data conversion primitives
+// I2OSP and OS2IP of section 4, the primitives RSAEP and RSADP of section
+// 5.1, the mask generation function MGF1 of appendix B.2.1, and the scheme
+// RSAES-OAEP of section 7.1, encryption with the EME-OAEP encoding of
+// section 7.1.1 and decryption with the decoding checks of section 7.1.2,
+// written with exact `Int` arithmetic for the integers modulo n and byte
+// arrays for the octet strings, with the hash functions SHA-1 and SHA-256 of
+// FIPS 180-4 carried in the file. RSADP with a full-size private exponent is
+// far beyond the evaluator's step budget, so decryption is written and
+// checked but not evaluated.
+//
+// The file reproduces OAEP Examples 1.1 and 1.2 of RSA Laboratories'
+// oaep-vect.txt (a 1024-bit key, SHA-1 and MGF1-SHA-1, the seeds given), the
+// EME-OAEP decoding of Example 1.1's encoded message, and one RSAES-OAEP
+// encryption with SHA-256 and MGF1-SHA-256 under a 2048-bit test key, whose
+// expected ciphertext is the value of a Python reference of RFC 8017 that
+// the `cryptography` package decrypts to the message.
+edition 2026;
+module rsa_oaep {
+  // Bytes and words, big-endian, as FIPS 180-4 section 3.1 reads a message
+  // and as I2OSP(C, 4) writes the MGF1 counter.
+  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16) | ((b2 as Word[32]) << 8) | (b3 as Word[32])
+  }
+
+  spec be_bytes(x: Word[32]) -> Word[8]^4 {
+    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  }
+
+  // Octet j of a word, 0 <= j < 4, leftmost first: how the octets of a hash
+  // value are read out of its words when a mask is applied.
+  spec octet(w: Word[32], j: Int) -> Word[8] {
+    if j == 0 { (w >> 24) as Word[8] }
+    else if j == 1 { (w >> 16) as Word[8] }
+    else if j == 2 { (w >> 8) as Word[8] }
+    else { w as Word[8] }
+  }
+
+  // FIPS 180-4, SHA-1, the hash of the RSA Laboratories vectors and of their
+  // MGF1. Section 4.1.1: f_t is Ch for 0 <= t < 20, Parity for 20 <= t < 40,
+  // Maj for 40 <= t < 60 and Parity for 60 <= t < 80.
+  spec sha1_ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec sha1_parity(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { x ^ y ^ z }
+  spec sha1_maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+
+  spec sha1_f(t: Int, x: Word[32], y: Word[32], z: Word[32]) -> Word[32] {
+    if t < 20 { sha1_ch(x, y, z) }
+    else if t < 40 { sha1_parity(x, y, z) }
+    else if t < 60 { sha1_maj(x, y, z) }
+    else { sha1_parity(x, y, z) }
+  }
+
+  // Section 4.2.1: K_t, the four constants floor(2^30 sqrt(2)),
+  // floor(2^30 sqrt(3)), floor(2^30 sqrt(5)) and floor(2^30 sqrt(10)).
+  spec sha1_k(t: Int) -> Word[32] {
+    if t < 20 { 0x5a827999 }
+    else if t < 40 { 0x6ed9eba1 }
+    else if t < 60 { 0x8f1bbcdc }
+    else { 0xca62c1d6 }
+  }
+
+  // Section 5.3.1: H(0).
+  spec sha1_initial_hash() -> Word[32]^5 {
+    [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0]
+  }
+
+  // Section 6.1.2, step 1: the message schedule W_t, 0 <= t < 80.
+  spec sha1_schedule(m: Word[32]^16) -> Word[32]^80 {
+    let head: Word[32]^80 = for t in 0..16 with w: Word[32]^80 = [0; 80] { w with [t] = m[t] };
+    for t in 16..80 with w: Word[32]^80 = head {
+      w with [t] = (w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]) <<< 1
+    }
+  }
+
+  // Section 6.1.2, step 3: one round on the working variables a through e.
+  spec sha1_round(v: Word[32]^5, t: Int, w: Word[32]) -> Word[32]^5 {
+    let big_t: Word[32] = (v[0] <<< 5) + sha1_f(t, v[1], v[2], v[3]) + v[4] + sha1_k(t) + w;
+    [big_t, v[0], v[1] <<< 30, v[2], v[3]]
+  }
+
+  // Section 6.1.2, steps 1 through 4: one block.
+  spec sha1_compress(h: Word[32]^5, m: Word[32]^16) -> Word[32]^5 {
+    let w: Word[32]^80 = sha1_schedule(m);
+    let v: Word[32]^5 = for t in 0..80 with v: Word[32]^5 = h { sha1_round(v, t, w[t]) };
+    for i in 0..5 with out: Word[32]^5 = v { out with [i] = out[i] + h[i] }
+  }
+
+  // Section 6.1.2, "for i = 1 to N", for N = 1, 2 and 4 blocks of a padded
+  // message held as bytes (section 5.2.1 parses each block into sixteen
+  // words).
+  spec sha1_1_block(b: Word[8]^64) -> Word[32]^5 {
+    sha1_compress(sha1_initial_hash(), for t in 0..16 with w: Word[32]^16 = [0; 16] {
+      w with [t] = load_be32(b[4 * t], b[4 * t + 1], b[4 * t + 2], b[4 * t + 3])
+    })
+  }
+
+  spec sha1_2_blocks(b: Word[8]^128) -> Word[32]^5 {
+    for n in 0..2 with h: Word[32]^5 = sha1_initial_hash() {
+      sha1_compress(h, for t in 0..16 with w: Word[32]^16 = [0; 16] {
+        w with [t] = load_be32(
+          b[64 * n + 4 * t], b[64 * n + 4 * t + 1], b[64 * n + 4 * t + 2], b[64 * n + 4 * t + 3],
+        )
+      })
+    }
+  }
+
+  spec sha1_4_blocks(b: Word[8]^256) -> Word[32]^5 {
+    for n in 0..4 with h: Word[32]^5 = sha1_initial_hash() {
+      sha1_compress(h, for t in 0..16 with w: Word[32]^16 = [0; 16] {
+        w with [t] = load_be32(
+          b[64 * n + 4 * t], b[64 * n + 4 * t + 1], b[64 * n + 4 * t + 2], b[64 * n + 4 * t + 3],
+        )
+      })
+    }
+  }
+
+  // Section 5.1.1 for the empty message: the bit 1, zeros, and l = 0. This
+  // is Hash(L) for the empty label L of RFC 8017 section 7.1.1, step 2.a.
+  spec sha1_empty() -> Word[32]^5 { sha1_1_block([0; 64] with [0] = 0x80) }
+
+  // FIPS 180-4, SHA-256, the hash of the 2048-bit case. Section 4.1.2.
+  spec ch(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (~x & z) }
+  spec maj(x: Word[32], y: Word[32], z: Word[32]) -> Word[32] { (x & y) ^ (x & z) ^ (y & z) }
+  spec big_sigma0(x: Word[32]) -> Word[32] { (x >>> 2) ^ (x >>> 13) ^ (x >>> 22) }
+  spec big_sigma1(x: Word[32]) -> Word[32] { (x >>> 6) ^ (x >>> 11) ^ (x >>> 25) }
+  spec small_sigma0(x: Word[32]) -> Word[32] { (x >>> 7) ^ (x >>> 18) ^ (x >> 3) }
+  spec small_sigma1(x: Word[32]) -> Word[32] { (x >>> 17) ^ (x >>> 19) ^ (x >> 10) }
+
+  // Section 4.2.2: K{256}, the first 32 bits of the fractional parts of the
+  // cube roots of the first 64 primes.
+  spec round_constants() -> Word[32]^64 {
+    [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ]
+  }
+
+  // Section 5.3.3: H(0).
+  spec initial_hash() -> Word[32]^8 {
+    [
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+  }
+
+  // Section 6.2.2, step 1: the message schedule.
+  spec schedule(m: Word[32]^16) -> Word[32]^64 {
+    let head: Word[32]^64 = for t in 0..16 with w: Word[32]^64 = [0; 64] { w with [t] = m[t] };
+    for t in 16..64 with w: Word[32]^64 = head {
+      w with [t] = small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]
+    }
+  }
+
+  // Section 6.2.2, step 3: one round on the working variables a through h.
+  spec round(v: Word[32]^8, k: Word[32], w: Word[32]) -> Word[32]^8 {
+    let t1: Word[32] = v[7] + big_sigma1(v[4]) + ch(v[4], v[5], v[6]) + k + w;
+    let t2: Word[32] = big_sigma0(v[0]) + maj(v[0], v[1], v[2]);
+    [t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]]
+  }
+
+  // Section 6.2.2, steps 2 through 4: one block.
+  spec compress(h: Word[32]^8, m: Word[32]^16) -> Word[32]^8 {
+    let w: Word[32]^64 = schedule(m);
+    let k: Word[32]^64 = round_constants();
+    let v: Word[32]^8 = for t in 0..64 with v: Word[32]^8 = h { round(v, k[t], w[t]) };
+    for i in 0..8 with out: Word[32]^8 = v { out with [i] = out[i] + h[i] }
+  }
+
+  // Section 6.2.2, "for i = 1 to N", for N = 1 and 4 blocks of a padded
+  // message held as bytes (section 5.2.1 parses each block into sixteen
+  // words).
+  spec sha256_1_block(b: Word[8]^64) -> Word[32]^8 {
+    compress(initial_hash(), for t in 0..16 with w: Word[32]^16 = [0; 16] {
+      w with [t] = load_be32(b[4 * t], b[4 * t + 1], b[4 * t + 2], b[4 * t + 3])
+    })
+  }
+
+  spec sha256_4_blocks(b: Word[8]^256) -> Word[32]^8 {
+    for n in 0..4 with h: Word[32]^8 = initial_hash() {
+      compress(h, for t in 0..16 with w: Word[32]^16 = [0; 16] {
+        w with [t] = load_be32(
+          b[64 * n + 4 * t], b[64 * n + 4 * t + 1], b[64 * n + 4 * t + 2], b[64 * n + 4 * t + 3],
+        )
+      })
+    }
+  }
+
+  // Section 5.1.1 for the empty message: Hash(L) for the empty label L.
+  spec sha256_empty() -> Word[32]^8 { sha256_1_block([0; 64] with [0] = 0x80) }
+
+  // RFC 8017 section 4.1, I2OSP(x, xLen) for xLen = 4, 128 and 256: the
+  // base-256 digits of x, most significant first. The digits of the long
+  // integers are peeled off by division, q[i] = x / 256^i, and each is read
+  // as a residue modulo 256; x < 256^xLen is the caller's obligation.
+  spec i2osp_4(x: Int) -> Word[8]^4 { be_bytes(x as Word[32]) }
+
+  spec i2osp_128(x: Int) -> Word[8]^128 {
+    let q: Int^128 = for i in 0..127 with q: Int^128 = [x; 128] { q with [i + 1] = q[i] / 256 };
+    for i in 0..128 with b: Word[8]^128 = [0; 128] { b with [127 - i] = q[i] as Word[8] }
+  }
+
+  spec i2osp_256(x: Int) -> Word[8]^256 {
+    let q: Int^256 = for i in 0..255 with q: Int^256 = [x; 256] { q with [i + 1] = q[i] / 256 };
+    for i in 0..256 with b: Word[8]^256 = [0; 256] { b with [255 - i] = q[i] as Word[8] }
+  }
+
+  // Section 4.2, OS2IP(X) for 128 and 256 octets: the integer with the
+  // octets of X as its base-256 digits, X_1 the most significant.
+  spec os2ip_128(x: Word[8]^128) -> Int {
+    for i in 0..128 with n: Int = 0 { n * 256 + (x[i] as Int) }
+  }
+
+  spec os2ip_256(x: Word[8]^256) -> Int {
+    for i in 0..256 with n: Int = 0 { n * 256 + (x[i] as Int) }
+  }
+
+  // b^e mod n by square-and-multiply from the lowest bit of e up, as the
+  // X25519 entry writes it: s = [result, b^(2^i), e / 2^i]. The bound on
+  // the loop is the number of bits allowed for the exponent: 17 for a
+  // public exponent up to 2^17 - 1 (65537 = 2^16 + 1 is the exponent of
+  // every key here), 2048 for a private exponent d < n of a 2048-bit key.
+  spec power_17(b: Int, e: Int, n: Int) -> Int {
+    let s: Int^3 = for i in 0..17 with s: Int^3 = [1, b, e] {
+      [if (s[2] % 2) == 1 { (s[0] * s[1]) % n } else { s[0] }, (s[1] * s[1]) % n, s[2] / 2]
+    };
+    s[0]
+  }
+
+  spec power_2048(b: Int, e: Int, n: Int) -> Int {
+    let s: Int^3 = for i in 0..2048 with s: Int^3 = [1, b, e] {
+      [if (s[2] % 2) == 1 { (s[0] * s[1]) % n } else { s[0] }, (s[1] * s[1]) % n, s[2] / 2]
+    };
+    s[0]
+  }
+
+  // Section 5.1.1, RSAEP((n, e), m) = m^e mod n. The RFC's step 1, the
+  // check 0 <= m < n ("message representative out of range"), is
+  // `representative_in_range`; an evaluation cannot stop with an error, so
+  // the caller states it apart.
+  spec representative_in_range(n: Int, m: Int) -> Bool { (m >= 0) && (m < n) }
+
+  spec rsaep(n: Int, e: Int, m: Int) -> Int { power_17(m, e, n) }
+
+  // Section 5.1.2, RSADP(K, c) = c^d mod n with the first form of the
+  // private key, K = (n, d), for a 2048-bit key. Under `orangec eval` a
+  // 2048-bit modular squaring costs about 12,300 steps, so the 2,048
+  // squarings and about 1,024 multiplications of this power cost about 38
+  // million steps against a budget of 1,048,576: RSADP is checked but
+  // never evaluated in this file.
+  spec rsadp(n: Int, d: Int, c: Int) -> Int { power_2048(c, d, n) }
+
+  // Appendix B.2.1, MGF1 with SHA-1 (hLen = 20), for the two uses of
+  // section 7.1.1 with a 1024-bit key, k = 128. Each hash input, mgfSeed ||
+  // C with C = I2OSP(counter, 4), is padded here as FIPS 180-4 section
+  // 5.1.1 pads it: the octet 0x80, zeros, and the bit length in the last
+  // two octets of the last block.
+  //
+  // dbMask = MGF(seed, k - hLen - 1 = 107): ceiling(107 / 20) = 6 hashes of
+  // the 24-octet seed || C, counter = 0 through 5, one block each. T is the
+  // 120 octets of the six hash values held as thirty words, of which the
+  // mask is the leading 107 octets.
+  spec sha1_seed_counter(seed: Word[8]^20, counter: Int) -> Word[32]^5 {
+    let c: Word[8]^4 = i2osp_4(counter);
+    let text: Word[8]^64 = for i in 0..20 with b: Word[8]^64 = [0; 64] { b with [i] = seed[i] };
+    let block: Word[8]^64 = for i in 0..4 with b: Word[8]^64 = text { b with [20 + i] = c[i] };
+    sha1_1_block((block with [24] = 0x80) with [63] = 0xc0)
+  }
+
+  spec mgf1_sha1_20_107(seed: Word[8]^20) -> Word[32]^30 {
+    let h0: Word[32]^5 = sha1_seed_counter(seed, 0);
+    let h1: Word[32]^5 = sha1_seed_counter(seed, 1);
+    let h2: Word[32]^5 = sha1_seed_counter(seed, 2);
+    let h3: Word[32]^5 = sha1_seed_counter(seed, 3);
+    let h4: Word[32]^5 = sha1_seed_counter(seed, 4);
+    let h5: Word[32]^5 = sha1_seed_counter(seed, 5);
+    [
+      h0[0], h0[1], h0[2], h0[3], h0[4], h1[0], h1[1], h1[2], h1[3], h1[4],
+      h2[0], h2[1], h2[2], h2[3], h2[4], h3[0], h3[1], h3[2], h3[3], h3[4],
+      h4[0], h4[1], h4[2], h4[3], h4[4], h5[0], h5[1], h5[2], h5[3], h5[4],
+    ]
+  }
+
+  // seedMask = MGF(maskedDB, hLen = 20): one hash, counter = 0, of the
+  // 111-octet maskedDB || 0x00000000, two blocks; l = 888 = 0x0378.
+  spec mgf1_sha1_107_20(masked_db: Word[8]^107) -> Word[32]^5 {
+    let text: Word[8]^128 = for i in 0..107 with b: Word[8]^128 = [0; 128] { b with [i] = masked_db[i] };
+    sha1_2_blocks(((text with [111] = 0x80) with [126] = 0x03) with [127] = 0x78)
+  }
+
+  // Section 7.1.1, step 2, EME-OAEP encoding with SHA-1 and MGF1-SHA-1 for
+  // k = 128, the empty label L and a message M of mLen = 28 octets: lHash =
+  // Hash(L) (2.a), PS is k - mLen - 2 hLen - 2 = 58 zero octets (2.b), DB =
+  // lHash || PS || 0x01 || M is k - hLen - 1 = 107 octets (2.c), the seed
+  // is the caller's hLen octets (2.d), dbMask (2.e), maskedDB (2.f),
+  // seedMask (2.g), maskedSeed (2.h), and EM = 0x00 || maskedSeed ||
+  // maskedDB (2.i). The masks are read out of the hash words octet by octet.
+  spec eme_oaep_encode_sha1_1024(m: Word[8]^28, seed: Word[8]^20) -> Word[8]^128 {
+    let lhash: Word[32]^5 = sha1_empty();
+    let lhash_ps: Word[8]^107 = for i in 0..20 with db: Word[8]^107 = [0; 107] {
+      db with [i] = octet(lhash[i / 4], i % 4)
+    };
+    let db: Word[8]^107 = for i in 0..28 with db: Word[8]^107 = (lhash_ps with [78] = 0x01) {
+      db with [79 + i] = m[i]
+    };
+    let db_mask: Word[32]^30 = mgf1_sha1_20_107(seed);
+    let masked_db: Word[8]^107 = for i in 0..107 with x: Word[8]^107 = db {
+      x with [i] = db[i] ^ octet(db_mask[i / 4], i % 4)
+    };
+    let seed_mask: Word[32]^5 = mgf1_sha1_107_20(masked_db);
+    let masked_seed: Word[8]^20 = for i in 0..20 with x: Word[8]^20 = seed {
+      x with [i] = seed[i] ^ octet(seed_mask[i / 4], i % 4)
+    };
+    let head: Word[8]^128 = for i in 0..20 with em: Word[8]^128 = [0; 128] {
+      em with [1 + i] = masked_seed[i]
+    };
+    for i in 0..107 with em: Word[8]^128 = head { em with [21 + i] = masked_db[i] }
+  }
+
+  // Section 7.1.1, RSAES-OAEP-ENCRYPT((n, e), M, L) with the seed given
+  // (step 2.d draws it at random; the vectors record it): step 2 is the
+  // encoding, steps 3.a through 3.c are m = OS2IP(EM), c = RSAEP((n, e), m)
+  // and C = I2OSP(c, k), and step 4 outputs C. Step 1.b, mLen <= k - 2 hLen
+  // - 2, holds by the types.
+  spec rsaes_oaep_encrypt_sha1_1024(n: Int, e: Int, m: Word[8]^28, seed: Word[8]^20) -> Word[8]^128 {
+    let em: Word[8]^128 = eme_oaep_encode_sha1_1024(m, seed);
+    i2osp_128(rsaep(n, e, os2ip_128(em)))
+  }
+
+  // Section 7.1.2, step 3, EME-OAEP decoding for the same parameters:
+  // lHash = Hash(L) (3.a), EM = Y || maskedSeed || maskedDB (3.b), seedMask
+  // (3.c), seed (3.d), dbMask (3.e), and DB = lHash' || PS || 0x01 || M
+  // (3.f). The result is DB; the checks of step 3.g are
+  // `eme_oaep_decode_valid_sha1_1024`, and M is the part of DB after the
+  // first 0x01 following lHash', whose position `message_start_sha1_1024`
+  // gives.
+  spec eme_oaep_decode_sha1_1024(em: Word[8]^128) -> Word[8]^107 {
+    let masked_seed: Word[8]^20 = for i in 0..20 with x: Word[8]^20 = [0; 20] { x with [i] = em[1 + i] };
+    let masked_db: Word[8]^107 = for i in 0..107 with x: Word[8]^107 = [0; 107] { x with [i] = em[21 + i] };
+    let seed_mask: Word[32]^5 = mgf1_sha1_107_20(masked_db);
+    let seed: Word[8]^20 = for i in 0..20 with x: Word[8]^20 = masked_seed {
+      x with [i] = masked_seed[i] ^ octet(seed_mask[i / 4], i % 4)
+    };
+    let db_mask: Word[32]^30 = mgf1_sha1_20_107(seed);
+    for i in 0..107 with x: Word[8]^107 = masked_db { x with [i] = masked_db[i] ^ octet(db_mask[i / 4], i % 4) }
+  }
+
+  // Section 7.1.2, step 3.g: decryption fails if Y is nonzero, if lHash'
+  // differs from lHash, or if no 0x01 octet separates PS from M, that is,
+  // if the first octet after lHash' that is not 0x00 is not 0x01 or there
+  // is none. The three conditions are one Bool, and `&&` evaluates both of
+  // its sides: the RFC's note says an implementation must not reveal which
+  // condition failed (Manger 2001).
+  spec separator_sha1_1024(db: Word[8]^107) -> Int^2 {
+    for i in 20..107 with s: Int^2 = [107, 0] {
+      if (s[0] == 107) && (db[i] != 0) { [i, db[i] as Int] } else { s }
+    }
+  }
+
+  spec eme_oaep_decode_valid_sha1_1024(em: Word[8]^128, db: Word[8]^107) -> Bool {
+    let lhash: Word[32]^5 = sha1_empty();
+    let y_zero: Bool = em[0] == 0;
+    let lhash_equal: Bool = for i in 0..20 with ok: Bool = true {
+      ok && (db[i] == octet(lhash[i / 4], i % 4))
+    };
+    let s: Int^2 = separator_sha1_1024(db);
+    let separated: Bool = (s[0] < 107) && (s[1] == 1);
+    y_zero && lhash_equal && separated
+  }
+
+  // The index in DB of the first octet of M, one past the separator, 107
+  // when there is no separator; mLen = 107 - that index.
+  spec message_start_sha1_1024(db: Word[8]^107) -> Int { separator_sha1_1024(db)[0] + 1 }
+
+  // Section 7.1.2, RSAES-OAEP-DECRYPT(K, C, L) with K = (n, d): step 1
+  // holds by the types (C is k octets; k = 128 > 2 hLen + 2), step 2 is
+  // c = OS2IP(C), m = RSADP(K, c) and EM = I2OSP(m, k), step 3 the decoding.
+  // A 1024-bit RSADP costs about 4.7 million steps: checked, not evaluated.
+  spec rsaes_oaep_decrypt_sha1_1024(n: Int, d: Int, c: Word[8]^128) -> Word[8]^107 {
+    eme_oaep_decode_sha1_1024(i2osp_128(rsadp(n, d, os2ip_128(c))))
+  }
+
+  spec rsaes_oaep_decrypt_valid_sha1_1024(n: Int, d: Int, c: Word[8]^128) -> Bool {
+    let em: Word[8]^128 = i2osp_128(rsadp(n, d, os2ip_128(c)));
+    representative_in_range(n, os2ip_128(c))
+      && eme_oaep_decode_valid_sha1_1024(em, eme_oaep_decode_sha1_1024(em))
+  }
+
+  // Appendix B.2.1, MGF1 with SHA-256 (hLen = 32), for the two uses of
+  // section 7.1.1 with a 2048-bit key, k = 256.
+  //
+  // dbMask = MGF(seed, k - hLen - 1 = 223): ceiling(223 / 32) = 7 hashes of
+  // the 36-octet seed || C, counter = 0 through 6, one block each
+  // (l = 288 = 0x0120). T is the 224 octets of the seven hash values held
+  // as 56 words, of which the mask is the leading 223 octets.
+  spec sha256_seed_counter(seed: Word[8]^32, counter: Int) -> Word[32]^8 {
+    let c: Word[8]^4 = i2osp_4(counter);
+    let text: Word[8]^64 = for i in 0..32 with b: Word[8]^64 = [0; 64] { b with [i] = seed[i] };
+    let block: Word[8]^64 = for i in 0..4 with b: Word[8]^64 = text { b with [32 + i] = c[i] };
+    sha256_1_block(((block with [36] = 0x80) with [62] = 0x01) with [63] = 0x20)
+  }
+
+  spec mgf1_sha256_32_223(seed: Word[8]^32) -> Word[32]^56 {
+    let h0: Word[32]^8 = sha256_seed_counter(seed, 0);
+    let h1: Word[32]^8 = sha256_seed_counter(seed, 1);
+    let h2: Word[32]^8 = sha256_seed_counter(seed, 2);
+    let h3: Word[32]^8 = sha256_seed_counter(seed, 3);
+    let h4: Word[32]^8 = sha256_seed_counter(seed, 4);
+    let h5: Word[32]^8 = sha256_seed_counter(seed, 5);
+    let h6: Word[32]^8 = sha256_seed_counter(seed, 6);
+    [
+      h0[0], h0[1], h0[2], h0[3], h0[4], h0[5], h0[6], h0[7],
+      h1[0], h1[1], h1[2], h1[3], h1[4], h1[5], h1[6], h1[7],
+      h2[0], h2[1], h2[2], h2[3], h2[4], h2[5], h2[6], h2[7],
+      h3[0], h3[1], h3[2], h3[3], h3[4], h3[5], h3[6], h3[7],
+      h4[0], h4[1], h4[2], h4[3], h4[4], h4[5], h4[6], h4[7],
+      h5[0], h5[1], h5[2], h5[3], h5[4], h5[5], h5[6], h5[7],
+      h6[0], h6[1], h6[2], h6[3], h6[4], h6[5], h6[6], h6[7],
+    ]
+  }
+
+  // seedMask = MGF(maskedDB, hLen = 32): one hash, counter = 0, of the
+  // 227-octet maskedDB || 0x00000000, four blocks; l = 1816 = 0x0718.
+  spec mgf1_sha256_223_32(masked_db: Word[8]^223) -> Word[32]^8 {
+    let text: Word[8]^256 = for i in 0..223 with b: Word[8]^256 = [0; 256] { b with [i] = masked_db[i] };
+    sha256_4_blocks(((text with [227] = 0x80) with [254] = 0x07) with [255] = 0x18)
+  }
+
+  // Section 7.1.1, step 2, EME-OAEP encoding with SHA-256 and MGF1-SHA-256
+  // for k = 256, the empty label L and a message M of mLen = 64 octets:
+  // lHash = Hash(L) (2.a), PS is k - mLen - 2 hLen - 2 = 126 zero octets
+  // (2.b), DB = lHash || PS || 0x01 || M is k - hLen - 1 = 223 octets (2.c),
+  // then dbMask (2.e), maskedDB (2.f), seedMask (2.g), maskedSeed (2.h) and
+  // EM = 0x00 || maskedSeed || maskedDB (2.i), as in the SHA-1 encoding.
+  spec eme_oaep_encode_sha256_2048(m: Word[8]^64, seed: Word[8]^32) -> Word[8]^256 {
+    let lhash: Word[32]^8 = sha256_empty();
+    let lhash_ps: Word[8]^223 = for i in 0..32 with db: Word[8]^223 = [0; 223] {
+      db with [i] = octet(lhash[i / 4], i % 4)
+    };
+    let db: Word[8]^223 = for i in 0..64 with db: Word[8]^223 = (lhash_ps with [158] = 0x01) {
+      db with [159 + i] = m[i]
+    };
+    let db_mask: Word[32]^56 = mgf1_sha256_32_223(seed);
+    let masked_db: Word[8]^223 = for i in 0..223 with x: Word[8]^223 = db {
+      x with [i] = db[i] ^ octet(db_mask[i / 4], i % 4)
+    };
+    let seed_mask: Word[32]^8 = mgf1_sha256_223_32(masked_db);
+    let masked_seed: Word[8]^32 = for i in 0..32 with x: Word[8]^32 = seed {
+      x with [i] = seed[i] ^ octet(seed_mask[i / 4], i % 4)
+    };
+    let head: Word[8]^256 = for i in 0..32 with em: Word[8]^256 = [0; 256] {
+      em with [1 + i] = masked_seed[i]
+    };
+    for i in 0..223 with em: Word[8]^256 = head { em with [33 + i] = masked_db[i] }
+  }
+
+  // Section 7.1.1, RSAES-OAEP-ENCRYPT((n, e), M, L) for the 2048-bit key,
+  // steps 2 through 4 as above with k = 256.
+  spec rsaes_oaep_encrypt_sha256_2048(n: Int, e: Int, m: Word[8]^64, seed: Word[8]^32) -> Word[8]^256 {
+    let em: Word[8]^256 = eme_oaep_encode_sha256_2048(m, seed);
+    i2osp_256(rsaep(n, e, os2ip_256(em)))
+  }
+
+  // Section 7.1.2, step 3, EME-OAEP decoding with SHA-256 for k = 256:
+  // steps 3.a through 3.f give DB; step 3.g is
+  // `eme_oaep_decode_valid_sha256_2048`.
+  spec eme_oaep_decode_sha256_2048(em: Word[8]^256) -> Word[8]^223 {
+    let masked_seed: Word[8]^32 = for i in 0..32 with x: Word[8]^32 = [0; 32] { x with [i] = em[1 + i] };
+    let masked_db: Word[8]^223 = for i in 0..223 with x: Word[8]^223 = [0; 223] { x with [i] = em[33 + i] };
+    let seed_mask: Word[32]^8 = mgf1_sha256_223_32(masked_db);
+    let seed: Word[8]^32 = for i in 0..32 with x: Word[8]^32 = masked_seed {
+      x with [i] = masked_seed[i] ^ octet(seed_mask[i / 4], i % 4)
+    };
+    let db_mask: Word[32]^56 = mgf1_sha256_32_223(seed);
+    for i in 0..223 with x: Word[8]^223 = masked_db { x with [i] = masked_db[i] ^ octet(db_mask[i / 4], i % 4) }
+  }
+
+  spec separator_sha256_2048(db: Word[8]^223) -> Int^2 {
+    for i in 32..223 with s: Int^2 = [223, 0] {
+      if (s[0] == 223) && (db[i] != 0) { [i, db[i] as Int] } else { s }
+    }
+  }
+
+  spec eme_oaep_decode_valid_sha256_2048(em: Word[8]^256, db: Word[8]^223) -> Bool {
+    let lhash: Word[32]^8 = sha256_empty();
+    let y_zero: Bool = em[0] == 0;
+    let lhash_equal: Bool = for i in 0..32 with ok: Bool = true {
+      ok && (db[i] == octet(lhash[i / 4], i % 4))
+    };
+    let s: Int^2 = separator_sha256_2048(db);
+    let separated: Bool = (s[0] < 223) && (s[1] == 1);
+    y_zero && lhash_equal && separated
+  }
+
+  spec message_start_sha256_2048(db: Word[8]^223) -> Int { separator_sha256_2048(db)[0] + 1 }
+
+  // Section 7.1.2, RSAES-OAEP-DECRYPT(K, C, L) for the 2048-bit key: about
+  // 38 million steps for its RSADP, so checked, not evaluated.
+  spec rsaes_oaep_decrypt_sha256_2048(n: Int, d: Int, c: Word[8]^256) -> Word[8]^223 {
+    eme_oaep_decode_sha256_2048(i2osp_256(rsadp(n, d, os2ip_256(c))))
+  }
+
+  spec rsaes_oaep_decrypt_valid_sha256_2048(n: Int, d: Int, c: Word[8]^256) -> Bool {
+    let em: Word[8]^256 = i2osp_256(rsadp(n, d, os2ip_256(c)));
+    representative_in_range(n, os2ip_256(c))
+      && eme_oaep_decode_valid_sha256_2048(em, eme_oaep_decode_sha256_2048(em))
+  }
+
+  // RSA Laboratories oaep-vect.txt, "Example 1: A 1024-bit RSA key pair": the modulus n
+  // as the file prints it, 128 octets; the public exponent e is 0x010001 = 65537.
+  spec rsa_labs_key_1_n() -> Word[8]^128 {
+    [
+      0xa8, 0xb3, 0xb2, 0x84, 0xaf, 0x8e, 0xb5, 0x0b, 0x38, 0x70, 0x34, 0xa8, 0x60, 0xf1, 0x46, 0xc4,
+      0x91, 0x9f, 0x31, 0x87, 0x63, 0xcd, 0x6c, 0x55, 0x98, 0xc8, 0xae, 0x48, 0x11, 0xa1, 0xe0, 0xab,
+      0xc4, 0xc7, 0xe0, 0xb0, 0x82, 0xd6, 0x93, 0xa5, 0xe7, 0xfc, 0xed, 0x67, 0x5c, 0xf4, 0x66, 0x85,
+      0x12, 0x77, 0x2c, 0x0c, 0xbc, 0x64, 0xa7, 0x42, 0xc6, 0xc6, 0x30, 0xf5, 0x33, 0xc8, 0xcc, 0x72,
+      0xf6, 0x2a, 0xe8, 0x33, 0xc4, 0x0b, 0xf2, 0x58, 0x42, 0xe9, 0x84, 0xbb, 0x78, 0xbd, 0xbf, 0x97,
+      0xc0, 0x10, 0x7d, 0x55, 0xbd, 0xb6, 0x62, 0xf5, 0xc4, 0xe0, 0xfa, 0xb9, 0x84, 0x5c, 0xb5, 0x14,
+      0x8e, 0xf7, 0x39, 0x2d, 0xd3, 0xaa, 0xff, 0x93, 0xae, 0x1e, 0x6b, 0x66, 0x7b, 0xb3, 0xd4, 0x24,
+      0x76, 0x16, 0xd4, 0xf5, 0xba, 0x10, 0xd4, 0xcf, 0xd2, 0x26, 0xde, 0x88, 0xd3, 0x9f, 0x16, 0xfb,
+    ]
+  }
+
+  // The private exponent d of Example 1, for RSAES-OAEP-DECRYPT; the primes p and q
+  // of the file, for a reader who wants the second form of the key:
+  // p = d32737e7267ffe1341b2d5c0d150a81b586fb3132bed2f8d5262864a9cb9f30af38be448598d413a172efb802c21acf1c11c520c2f26a471dcad212eac7ca39d
+  // q = cc8853d1d54da630fac004f471f281c7b8982d8224a490edbeb33d3e3d5cc93c4765703d1dd791642f1f116a0dd852be2419b2af72bfe9a030e860b0288b5d77
+  spec rsa_labs_key_1_d() -> Word[8]^128 {
+    [
+      0x53, 0x33, 0x9c, 0xfd, 0xb7, 0x9f, 0xc8, 0x46, 0x6a, 0x65, 0x5c, 0x73, 0x16, 0xac, 0xa8, 0x5c,
+      0x55, 0xfd, 0x8f, 0x6d, 0xd8, 0x98, 0xfd, 0xaf, 0x11, 0x95, 0x17, 0xef, 0x4f, 0x52, 0xe8, 0xfd,
+      0x8e, 0x25, 0x8d, 0xf9, 0x3f, 0xee, 0x18, 0x0f, 0xa0, 0xe4, 0xab, 0x29, 0x69, 0x3c, 0xd8, 0x3b,
+      0x15, 0x2a, 0x55, 0x3d, 0x4a, 0xc4, 0xd1, 0x81, 0x2b, 0x8b, 0x9f, 0xa5, 0xaf, 0x0e, 0x7f, 0x55,
+      0xfe, 0x73, 0x04, 0xdf, 0x41, 0x57, 0x09, 0x26, 0xf3, 0x31, 0x1f, 0x15, 0xc4, 0xd6, 0x5a, 0x73,
+      0x2c, 0x48, 0x31, 0x16, 0xee, 0x3d, 0x3d, 0x2d, 0x0a, 0xf3, 0x54, 0x9a, 0xd9, 0xbf, 0x7c, 0xbf,
+      0xb7, 0x8a, 0xd8, 0x84, 0xf8, 0x4d, 0x5b, 0xeb, 0x04, 0x72, 0x4d, 0xc7, 0x36, 0x9b, 0x31, 0xde,
+      0xf3, 0x7d, 0x0c, 0xf5, 0x39, 0xe9, 0xcf, 0xcd, 0xd3, 0xde, 0x65, 0x37, 0x29, 0xea, 0xd5, 0xd1,
+    ]
+  }
+
+  // RSA Laboratories oaep-vect.txt, "OAEP Example 1.1": a message of 28 octets
+  // and the 20-octet seed of the file give the encryption C of the file.
+
+  spec rsa_labs_oaep_1_1_message() -> Word[8]^28 {
+    [
+      0x66, 0x28, 0x19, 0x4e, 0x12, 0x07, 0x3d, 0xb0, 0x3b, 0xa9, 0x4c, 0xda, 0x9e, 0xf9, 0x53, 0x23,
+      0x97, 0xd5, 0x0d, 0xba, 0x79, 0xb9, 0x87, 0x00, 0x4a, 0xfe, 0xfe, 0x34,
+    ]
+  }
+
+  spec rsa_labs_oaep_1_1_seed() -> Word[8]^20 {
+    [
+      0x18, 0xb7, 0x76, 0xea, 0x21, 0x06, 0x9d, 0x69, 0x77, 0x6a, 0x33, 0xe9, 0x6b, 0xad, 0x48, 0xe1,
+      0xdd, 0xa0, 0xa5, 0xef,
+    ]
+  }
+
+  spec rsa_labs_oaep_1_1() -> Word[8]^128 {
+    rsaes_oaep_encrypt_sha1_1024(
+      os2ip_128(rsa_labs_key_1_n()), 0x010001, rsa_labs_oaep_1_1_message(), rsa_labs_oaep_1_1_seed(),
+    )
+  }
+
+  spec rsa_labs_oaep_1_1_expected() -> Word[8]^128 {
+    [
+      0x35, 0x4f, 0xe6, 0x7b, 0x4a, 0x12, 0x6d, 0x5d, 0x35, 0xfe, 0x36, 0xc7, 0x77, 0x79, 0x1a, 0x3f,
+      0x7b, 0xa1, 0x3d, 0xef, 0x48, 0x4e, 0x2d, 0x39, 0x08, 0xaf, 0xf7, 0x22, 0xfa, 0xd4, 0x68, 0xfb,
+      0x21, 0x69, 0x6d, 0xe9, 0x5d, 0x0b, 0xe9, 0x11, 0xc2, 0xd3, 0x17, 0x4f, 0x8a, 0xfc, 0xc2, 0x01,
+      0x03, 0x5f, 0x7b, 0x6d, 0x8e, 0x69, 0x40, 0x2d, 0xe5, 0x45, 0x16, 0x18, 0xc2, 0x1a, 0x53, 0x5f,
+      0xa9, 0xd7, 0xbf, 0xc5, 0xb8, 0xdd, 0x9f, 0xc2, 0x43, 0xf8, 0xcf, 0x92, 0x7d, 0xb3, 0x13, 0x22,
+      0xd6, 0xe8, 0x81, 0xea, 0xa9, 0x1a, 0x99, 0x61, 0x70, 0xe6, 0x57, 0xa0, 0x5a, 0x26, 0x64, 0x26,
+      0xd9, 0x8c, 0x88, 0x00, 0x3f, 0x84, 0x77, 0xc1, 0x22, 0x70, 0x94, 0xa0, 0xd9, 0xfa, 0x1e, 0x8c,
+      0x40, 0x24, 0x30, 0x9c, 0xe1, 0xec, 0xcc, 0xb5, 0x21, 0x00, 0x35, 0xd4, 0x7a, 0xc7, 0x2e, 0x8a,
+    ]
+  }
+
+  // The decoding of Example 1.1: EME-OAEP decoding of the EM that the encoding
+  // above produces (its RSAEP is the ciphertext of the file) recovers DB =
+  // lHash || PS || 0x01 || M, with lHash = SHA-1 of the empty label, PS of
+  // 58 zero octets and M the message of the file; the checks of step 3.g
+  // pass, and M starts at index 79 of DB.
+  spec rsa_labs_oaep_1_1_em() -> Word[8]^128 {
+    eme_oaep_encode_sha1_1024(rsa_labs_oaep_1_1_message(), rsa_labs_oaep_1_1_seed())
+  }
+
+  spec rsa_labs_oaep_1_1_decoded() -> Word[8]^107 { eme_oaep_decode_sha1_1024(rsa_labs_oaep_1_1_em()) }
+
+  spec rsa_labs_oaep_1_1_decoded_expected() -> Word[8]^107 {
+    [
+      0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55, 0xbf, 0xef, 0x95, 0x60, 0x18, 0x90,
+      0xaf, 0xd8, 0x07, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x66,
+      0x28, 0x19, 0x4e, 0x12, 0x07, 0x3d, 0xb0, 0x3b, 0xa9, 0x4c, 0xda, 0x9e, 0xf9, 0x53, 0x23, 0x97,
+      0xd5, 0x0d, 0xba, 0x79, 0xb9, 0x87, 0x00, 0x4a, 0xfe, 0xfe, 0x34,
+    ]
+  }
+
+  spec rsa_labs_oaep_1_1_valid() -> Bool {
+    eme_oaep_decode_valid_sha1_1024(rsa_labs_oaep_1_1_em(), rsa_labs_oaep_1_1_decoded())
+  }
+
+  spec rsa_labs_oaep_1_1_valid_expected() -> Bool { true }
+
+  spec rsa_labs_oaep_1_1_message_start() -> Int {
+    message_start_sha1_1024(rsa_labs_oaep_1_1_decoded())
+  }
+
+  spec rsa_labs_oaep_1_1_message_start_expected() -> Int { 79 }
+
+  // RSA Laboratories oaep-vect.txt, "OAEP Example 1.2": a message of 28 octets
+  // and the 20-octet seed of the file give the encryption C of the file.
+
+  spec rsa_labs_oaep_1_2_message() -> Word[8]^28 {
+    [
+      0x75, 0x0c, 0x40, 0x47, 0xf5, 0x47, 0xe8, 0xe4, 0x14, 0x11, 0x85, 0x65, 0x23, 0x29, 0x8a, 0xc9,
+      0xba, 0xe2, 0x45, 0xef, 0xaf, 0x13, 0x97, 0xfb, 0xe5, 0x6f, 0x9d, 0xd5,
+    ]
+  }
+
+  spec rsa_labs_oaep_1_2_seed() -> Word[8]^20 {
+    [
+      0x0c, 0xc7, 0x42, 0xce, 0x4a, 0x9b, 0x7f, 0x32, 0xf9, 0x51, 0xbc, 0xb2, 0x51, 0xef, 0xd9, 0x25,
+      0xfe, 0x4f, 0xe3, 0x5f,
+    ]
+  }
+
+  spec rsa_labs_oaep_1_2() -> Word[8]^128 {
+    rsaes_oaep_encrypt_sha1_1024(
+      os2ip_128(rsa_labs_key_1_n()), 0x010001, rsa_labs_oaep_1_2_message(), rsa_labs_oaep_1_2_seed(),
+    )
+  }
+
+  spec rsa_labs_oaep_1_2_expected() -> Word[8]^128 {
+    [
+      0x64, 0x0d, 0xb1, 0xac, 0xc5, 0x8e, 0x05, 0x68, 0xfe, 0x54, 0x07, 0xe5, 0xf9, 0xb7, 0x01, 0xdf,
+      0xf8, 0xc3, 0xc9, 0x1e, 0x71, 0x6c, 0x53, 0x6f, 0xc7, 0xfc, 0xec, 0x6c, 0xb5, 0xb7, 0x1c, 0x11,
+      0x65, 0x98, 0x8d, 0x4a, 0x27, 0x9e, 0x15, 0x77, 0xd7, 0x30, 0xfc, 0x7a, 0x29, 0x93, 0x2e, 0x3f,
+      0x00, 0xc8, 0x15, 0x15, 0x23, 0x6d, 0x8d, 0x8e, 0x31, 0x01, 0x7a, 0x7a, 0x09, 0xdf, 0x43, 0x52,
+      0xd9, 0x04, 0xcd, 0xeb, 0x79, 0xaa, 0x58, 0x3a, 0xdc, 0xc3, 0x1e, 0xa6, 0x98, 0xa4, 0xc0, 0x52,
+      0x83, 0xda, 0xba, 0x90, 0x89, 0xbe, 0x54, 0x91, 0xf6, 0x7c, 0x1a, 0x4e, 0xe4, 0x8d, 0xc7, 0x4b,
+      0xbb, 0xe6, 0x64, 0x3a, 0xef, 0x84, 0x66, 0x79, 0xb4, 0xcb, 0x39, 0x5a, 0x35, 0x2d, 0x5e, 0xd1,
+      0x15, 0x91, 0x2d, 0xf6, 0x96, 0xff, 0xe0, 0x70, 0x29, 0x32, 0x94, 0x6d, 0x71, 0x49, 0x2b, 0x44,
+    ]
+  }
+
+  // A 2048-bit test key generated with the `cryptography` package
+  // (rsa.generate_private_key(65537, 2048), 2026-09-29) for the SHA-256 case; the
+  // modulus n as 256 octets, e = 65537. TEST KEY: it protects nothing.
+  spec test_key_2048_n() -> Word[8]^256 {
+    [
+      0xb0, 0xa5, 0x67, 0x4c, 0x4d, 0xd3, 0xdb, 0xbe, 0xa3, 0x91, 0xf6, 0xe1, 0x69, 0x2e, 0x50, 0xec,
+      0xa5, 0x15, 0xf1, 0x60, 0xca, 0x2e, 0xe8, 0x8a, 0x6b, 0xe4, 0x65, 0xb6, 0xfd, 0x80, 0x74, 0xff,
+      0x22, 0xa6, 0x3d, 0xea, 0x34, 0xdc, 0xd8, 0x00, 0x71, 0x65, 0xa5, 0x1e, 0x49, 0x24, 0x7f, 0x79,
+      0x73, 0x46, 0x45, 0x66, 0xcc, 0x5d, 0xe0, 0xa2, 0x31, 0x64, 0xac, 0xfe, 0xb4, 0x2b, 0x1b, 0xc9,
+      0x2c, 0x53, 0x38, 0x31, 0xa4, 0x42, 0x67, 0x68, 0x57, 0x48, 0xa5, 0x0c, 0x79, 0xa6, 0x7b, 0x13,
+      0x6b, 0x41, 0xed, 0x3c, 0x32, 0xc2, 0xe1, 0xff, 0x59, 0x3e, 0x46, 0xe4, 0x46, 0x0b, 0x13, 0xee,
+      0xef, 0xdf, 0x0b, 0xb7, 0x37, 0xbf, 0x6c, 0x64, 0xc1, 0x6b, 0xac, 0x86, 0x94, 0xb6, 0xbf, 0x9f,
+      0x0b, 0x62, 0x29, 0x14, 0x6f, 0x62, 0xdd, 0x2c, 0x06, 0xf6, 0x5e, 0xa8, 0xa2, 0x0d, 0xee, 0x51,
+      0x0d, 0x97, 0xe3, 0x98, 0x3c, 0xdd, 0x33, 0x0c, 0x76, 0x3c, 0xd9, 0x2d, 0x47, 0x78, 0x94, 0x45,
+      0x32, 0x5e, 0x5f, 0xe6, 0x84, 0xb7, 0x6a, 0x67, 0x91, 0x37, 0x84, 0x20, 0x43, 0x65, 0x5f, 0x7a,
+      0xd3, 0xec, 0xe8, 0x7b, 0xfc, 0x1f, 0xf9, 0xd3, 0x81, 0xca, 0x7f, 0x10, 0x65, 0xbf, 0x5f, 0x54,
+      0xa1, 0xee, 0x97, 0xbf, 0x5f, 0x46, 0x01, 0x79, 0xc9, 0x32, 0xb7, 0x8f, 0xdc, 0x02, 0x3f, 0xaf,
+      0x1a, 0xca, 0x16, 0x06, 0xd1, 0x9f, 0x37, 0xb9, 0xc1, 0xd8, 0x63, 0x8f, 0xea, 0x10, 0x49, 0x60,
+      0x0e, 0x88, 0x8b, 0x9c, 0xf0, 0x47, 0xb4, 0xe3, 0x78, 0x68, 0x78, 0x78, 0x45, 0xa6, 0x99, 0x89,
+      0xc8, 0x97, 0xa7, 0x0b, 0xcf, 0xa7, 0x0d, 0x0b, 0xd7, 0x8b, 0xd0, 0xa2, 0x10, 0xdb, 0x84, 0xbe,
+      0x52, 0x3a, 0x53, 0x8e, 0xe0, 0x8b, 0x64, 0x7f, 0xdc, 0x26, 0x79, 0x5f, 0xa3, 0x44, 0x82, 0x47,
+    ]
+  }
+
+  // The private exponent d of the test key, for RSAES-OAEP-DECRYPT, and its primes:
+  // p = e917cd7dae4b4fb94569f83c2e845e79afa2071756b268b30e27a618cc7544b6413f0986bc1ab17cac278ce985c82243fdffb0b045589c8c70bff4b329592b70c4f7cb005feba86cb079be769a7d2ec390ec9c2fa1146039bd06233671ad016634c45d8bb1fe37fc2fd4c9b8cd47f3d3f2ca71cd7b672327348cf99c6c2755d1
+  // q = c2017fedb8d005b037233c1092841973bd69ae8c2250527ab9c840629f2aa4f197e3dd785d612408eb0c92f6c18be42873b9a0b14228c5f1407ac917967e124044f4e5fe7dfdd3844f382f16c79fca1031bcbc7c3ce5ea457ae0f198c02a9f48de9d87adf4bc70e6fc85140f059cf99950a6004f722dfb78db6b9beebe67a497
+  spec test_key_2048_d() -> Word[8]^256 {
+    [
+      0x0f, 0xcf, 0x80, 0xd0, 0x93, 0x12, 0x0d, 0xd3, 0xe1, 0x31, 0xbc, 0xd8, 0xf8, 0x6a, 0xea, 0xad,
+      0x00, 0xff, 0xac, 0x49, 0x9f, 0x54, 0x6b, 0x2a, 0xe1, 0xdf, 0xa0, 0xfd, 0x01, 0x1b, 0xeb, 0x72,
+      0x34, 0x93, 0x3a, 0xed, 0x1e, 0x0b, 0x25, 0x92, 0xdb, 0x3e, 0x1f, 0x9f, 0xcc, 0xd3, 0x25, 0x4d,
+      0x0f, 0xb4, 0xc5, 0x47, 0x1f, 0x59, 0x48, 0x5f, 0x01, 0x5b, 0x18, 0xa2, 0xce, 0xd4, 0x76, 0xef,
+      0x09, 0x76, 0x6f, 0x61, 0x53, 0x69, 0x95, 0x76, 0x2b, 0x83, 0x21, 0xdc, 0x07, 0xd2, 0xb9, 0xfc,
+      0x5c, 0x78, 0x1b, 0xa2, 0xec, 0xe0, 0xda, 0xe2, 0x84, 0x85, 0xd9, 0x9e, 0xda, 0x92, 0xbe, 0x42,
+      0x2a, 0x1a, 0x70, 0x22, 0xd7, 0x82, 0x07, 0x7d, 0x23, 0x2a, 0x1f, 0x2d, 0xdd, 0x32, 0x02, 0xdd,
+      0x04, 0xe3, 0x50, 0x78, 0x4c, 0x44, 0x9b, 0x35, 0x88, 0x1a, 0xaa, 0xbb, 0xf4, 0x39, 0x43, 0xfb,
+      0x10, 0xa9, 0x47, 0x89, 0x69, 0x73, 0xd4, 0x81, 0xc9, 0xa5, 0xb4, 0xca, 0x5b, 0x2e, 0x13, 0x53,
+      0x5b, 0x22, 0xd1, 0x80, 0xcb, 0xbe, 0x41, 0xda, 0xc3, 0x0f, 0x13, 0xbc, 0x95, 0x35, 0x79, 0x72,
+      0x1c, 0xa6, 0xa7, 0xa8, 0x6f, 0xb9, 0x5a, 0x53, 0x2b, 0xab, 0xdc, 0x31, 0x8d, 0xdf, 0x74, 0xd1,
+      0xdf, 0x68, 0x12, 0xa2, 0xc3, 0xf5, 0x0c, 0xcd, 0x2a, 0x86, 0x09, 0x9c, 0x8b, 0x5a, 0x0c, 0x1a,
+      0x70, 0x94, 0x52, 0xfe, 0x79, 0xb6, 0x95, 0x41, 0x5c, 0x4d, 0xf3, 0x4d, 0x0f, 0x07, 0x07, 0xa4,
+      0x19, 0xb1, 0xb7, 0x63, 0xb2, 0xb6, 0xd6, 0xce, 0xc9, 0xf9, 0x40, 0x1c, 0x24, 0xdc, 0xe7, 0x12,
+      0xdd, 0x9a, 0x45, 0xfd, 0x53, 0x52, 0xb3, 0xdf, 0x9c, 0xa7, 0x0d, 0x57, 0x5c, 0x54, 0x18, 0x6a,
+      0x15, 0xba, 0x9b, 0x0b, 0x9c, 0x6a, 0xa4, 0xde, 0xbe, 0xed, 0xdd, 0x3b, 0xaa, 0x0c, 0x31, 0x71,
+    ]
+  }
+
+  // The SHA-256 case: RSAES-OAEP with SHA-256 and MGF1-SHA-256 under the test
+  // key, the 64-octet message below and a fixed 32-octet seed. The expected
+  // ciphertext is the value of the Python reference of RFC 8017 (reference.py
+  // in the scratch directory), and `cryptography` decrypts it to the message.
+
+  spec reference_oaep_sha256_2048_message() -> Word[8]^64 {
+    [
+      0x52, 0x53, 0x41, 0x45, 0x53, 0x2d, 0x4f, 0x41, 0x45, 0x50, 0x20, 0x77, 0x69, 0x74, 0x68, 0x20,
+      0x53, 0x48, 0x41, 0x2d, 0x32, 0x35, 0x36, 0x20, 0x61, 0x6e, 0x64, 0x20, 0x4d, 0x47, 0x46, 0x31,
+      0x2d, 0x53, 0x48, 0x41, 0x2d, 0x32, 0x35, 0x36, 0x2c, 0x20, 0x52, 0x46, 0x43, 0x20, 0x38, 0x30,
+      0x31, 0x37, 0x20, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x20, 0x37, 0x2e, 0x31, 0x2e, 0x31,
+    ]
+  }
+
+  spec reference_oaep_sha256_2048_seed() -> Word[8]^32 {
+    [
+      0x00, 0xe4, 0x42, 0xe8, 0xbf, 0x5f, 0x60, 0x5b, 0x7f, 0x00, 0x30, 0x89, 0x81, 0xf1, 0x5c, 0xcb,
+      0x37, 0xe0, 0x9f, 0xd9, 0x22, 0x4f, 0x4a, 0xc8, 0x84, 0x7c, 0x52, 0x86, 0xda, 0xa7, 0xd3, 0x88,
+    ]
+  }
+
+  spec reference_oaep_sha256_2048() -> Word[8]^256 {
+    rsaes_oaep_encrypt_sha256_2048(
+      os2ip_256(test_key_2048_n()), 65537, reference_oaep_sha256_2048_message(), reference_oaep_sha256_2048_seed(),
+    )
+  }
+
+  spec reference_oaep_sha256_2048_expected() -> Word[8]^256 {
+    [
+      0x97, 0x47, 0x48, 0x96, 0x78, 0x61, 0x16, 0x86, 0x86, 0xbc, 0x5f, 0x81, 0xcd, 0x4e, 0x98, 0x45,
+      0x6d, 0x22, 0x8d, 0x43, 0xf6, 0x5f, 0xdc, 0x57, 0xa3, 0x07, 0x5d, 0x2d, 0xeb, 0x3e, 0x74, 0x5e,
+      0xdf, 0x2f, 0x75, 0x96, 0x92, 0x26, 0x7c, 0x50, 0x9b, 0xf7, 0x70, 0x87, 0x0b, 0x79, 0x10, 0x82,
+      0xa0, 0x5f, 0x6c, 0x3b, 0x50, 0xc0, 0xd8, 0x76, 0x18, 0x22, 0x11, 0xc1, 0xb5, 0xf9, 0x59, 0xf3,
+      0x83, 0x26, 0x0c, 0xf4, 0x17, 0xb7, 0xad, 0x35, 0x4a, 0x56, 0x57, 0xea, 0xa1, 0x25, 0xff, 0xbe,
+      0x8c, 0x1c, 0x7b, 0x43, 0xd7, 0xda, 0x1d, 0xf9, 0xcc, 0x18, 0xa7, 0x77, 0x4a, 0x21, 0xd9, 0x43,
+      0xf2, 0x93, 0x6d, 0x15, 0x95, 0x56, 0xb6, 0xb2, 0x89, 0xee, 0x56, 0x97, 0x2a, 0x10, 0xa7, 0x42,
+      0xa1, 0x63, 0xce, 0xcf, 0x08, 0x3e, 0x9f, 0xbf, 0x25, 0xee, 0xca, 0x0b, 0x1c, 0xde, 0x32, 0x94,
+      0xd2, 0xdb, 0x48, 0x17, 0x03, 0x7c, 0xf6, 0x1d, 0xa0, 0x25, 0x6b, 0xd8, 0x2a, 0xc0, 0x4b, 0xff,
+      0xa6, 0xb4, 0xf2, 0x90, 0x77, 0xa2, 0xd3, 0xa0, 0x49, 0x4c, 0xc4, 0x16, 0x06, 0xaa, 0xd5, 0x38,
+      0x48, 0xef, 0xc6, 0x67, 0xe9, 0xc2, 0x53, 0x3c, 0x4c, 0x26, 0x89, 0xf8, 0x88, 0x6d, 0xa4, 0x62,
+      0x9c, 0x34, 0xb1, 0x13, 0xc5, 0x13, 0x17, 0xdf, 0x72, 0x66, 0x87, 0xec, 0xda, 0x4a, 0x74, 0x16,
+      0x85, 0x4d, 0x2f, 0x37, 0x2c, 0xe5, 0x46, 0xc5, 0x36, 0x0e, 0xec, 0xb4, 0xc7, 0x3a, 0x9a, 0x5c,
+      0xb1, 0xdb, 0x18, 0xe4, 0xca, 0xf8, 0x3a, 0x01, 0xd4, 0x58, 0xc6, 0x27, 0xb1, 0x90, 0xa2, 0x5d,
+      0x56, 0xbf, 0x27, 0x3e, 0xe2, 0x8d, 0x6a, 0xc7, 0xb2, 0x64, 0x00, 0xe3, 0xda, 0x75, 0xb6, 0xf0,
+      0xcd, 0x8e, 0x9a, 0x7d, 0x8c, 0x5a, 0xc0, 0x6d, 0x92, 0x56, 0x78, 0x66, 0xa1, 0x2e, 0x58, 0xd4,
+    ]
+  }
+}

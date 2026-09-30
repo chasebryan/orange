@@ -1,0 +1,408 @@
+// AES-CCM: Counter with CBC-MAC, the authenticated-encryption mode of NIST
+// SP 800-38C (2004, updated 2007), https://doi.org/10.6028/NIST.SP.800-38C,
+// with AES-128 of FIPS 197 as the block cipher; RFC 3610 (Whiting, Housley
+// and Ferguson, 2003) is the original definition. The file carries its own
+// AES-128 (the forward cipher only: CCM never inverts it), the formatting
+// function of Appendix A.2 (B_0, the associated-data blocks and the payload
+// blocks), the counter blocks of A.3, the CBC-MAC and counter-mode steps of
+// section 6.1, and the generation-encryption process of section 6.1 producing
+// C = ciphertext || tag. Buffers are fixed: a nonce of 7 to 13 bytes in a
+// 13-byte array, up to 32 bytes of associated data and 32 bytes of payload,
+// each with its length beside it, because an Orange array has one length. It
+// reproduces the examples C.1 and C.2 of Appendix C; C.3 and a Wycheproof
+// case are in aes-ccm-c3.or and the decryption-verification process of
+// section 6.2 is in aes-ccm-decrypt.or, split from this file by the step
+// budget.
+edition 2026;
+module aes_ccm {
+  spec load_be32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    ((b0 as Word[32]) << 24) | ((b1 as Word[32]) << 16) | ((b2 as Word[32]) << 8) | (b3 as Word[32])
+  }
+
+  spec be_bytes(x: Word[32]) -> Word[8]^4 {
+    [(x >> 24) as Word[8], (x >> 16) as Word[8], (x >> 8) as Word[8], x as Word[8]]
+  }
+
+  // FIPS 197 section 5.1.1, Table 4: the S-box, packed eight entries to a
+  // word so that each literal reads as a row of the table (0x637c777bf26b6fc5
+  // is 63 7c 77 7b f2 6b 6f c5); an index must be static, so a lookup is a
+  // selection over the 32 words.
+  spec s_box() -> Word[64]^32 {
+    [
+      0x637c777bf26b6fc5, 0x3001672bfed7ab76, 0xca82c97dfa5947f0, 0xadd4a2af9ca472c0,
+      0xb7fd9326363ff7cc, 0x34a5e5f171d83115, 0x04c723c31896059a, 0x071280e2eb27b275,
+      0x09832c1a1b6e5aa0, 0x523bd6b329e32f84, 0x53d100ed20fcb15b, 0x6acbbe394a4c58cf,
+      0xd0efaafb434d3385, 0x45f9027f503c9fa8, 0x51a3408f929d38f5, 0xbcb6da2110fff3d2,
+      0xcd0c13ec5f974417, 0xc4a77e3d645d1973, 0x60814fdc222a9088, 0x46eeb814de5e0bdb,
+      0xe0323a0a4906245c, 0xc2d3ac629195e479, 0xe7c8376d8dd54ea9, 0x6c56f4ea657aae08,
+      0xba78252e1ca6b4c6, 0xe8dd741f4bbd8b8a, 0x703eb5664803f60e, 0x613557b986c11d9e,
+      0xe1f8981169d98e94, 0x9b1e87e9ce5528df, 0x8ca1890dbfe64268, 0x41992d0fb054bb16,
+    ]
+  }
+
+  // The byte at position k of a word holding eight table entries.
+  spec byte_at(w: Word[64], k: Word[8]) -> Word[8] {
+    if k == 0 { (w >> 56) as Word[8] }
+    else if k == 1 { (w >> 48) as Word[8] }
+    else if k == 2 { (w >> 40) as Word[8] }
+    else if k == 3 { (w >> 32) as Word[8] }
+    else if k == 4 { (w >> 24) as Word[8] }
+    else if k == 5 { (w >> 16) as Word[8] }
+    else if k == 6 { (w >> 8) as Word[8] }
+    else { w as Word[8] }
+  }
+
+  // Entry x of a 256-entry table packed eight entries to a word.
+  spec lookup(t: Word[64]^32, x: Word[8]) -> Word[8] {
+    let w: Word[64] = for i in 0..32 with acc: Word[64] = 0 {
+      if (x >> 3) == (i as Word[8]) { t[i] } else { acc }
+    };
+    byte_at(w, x & 7)
+  }
+
+  // FIPS 197 section 4.2.1: multiplication by x in GF(2^8) modulo
+  // x^8 + x^4 + x^3 + x + 1.
+  spec xtime(a: Word[8]) -> Word[8] {
+    (a << 1) ^ (if (a & 0x80) != 0 { 0x1b } else { 0 })
+  }
+
+  // FIPS 197 section 5.2: the key expansion. RotWord, SubWord, and the round
+  // constants Rcon[i] = [x^(i-1), 00, 00, 00] for i = 1 through 10.
+  spec rot_word(w: Word[32]) -> Word[32] { w <<< 8 }
+
+  spec sub_word(sbox: Word[64]^32, w: Word[32]) -> Word[32] {
+    let b: Word[8]^4 = be_bytes(w);
+    load_be32(lookup(sbox, b[0]), lookup(sbox, b[1]), lookup(sbox, b[2]), lookup(sbox, b[3]))
+  }
+
+  spec rcon() -> Word[32]^10 {
+    [
+      0x01000000, 0x02000000, 0x04000000, 0x08000000, 0x10000000,
+      0x20000000, 0x40000000, 0x80000000, 0x1b000000, 0x36000000,
+    ]
+  }
+
+  // Section 5.2 for Nk = 4: the first four words are the key, and word i is
+  // word i - 4 xored with word i - 1, transformed every fourth word.
+  spec key_expansion(key: Word[8]^16) -> Word[32]^44 {
+    let sbox: Word[64]^32 = s_box();
+    let r: Word[32]^10 = rcon();
+    let head: Word[32]^44 = for i in 0..4 with w: Word[32]^44 = [0; 44] {
+      w with [i] = load_be32(key[4 * i], key[4 * i + 1], key[4 * i + 2], key[4 * i + 3])
+    };
+    for i in 4..44 with w: Word[32]^44 = head {
+      w with [i] = w[i - 4] ^ (
+        if (i % 4) == 0 { sub_word(sbox, rot_word(w[i - 1])) ^ r[(i / 4) - 1] } else { w[i - 1] }
+      )
+    }
+  }
+
+  // FIPS 197 section 3.4: the state is the 4 x 4 array s[r, c] = in[r + 4c],
+  // kept here in that byte order.
+  // Section 5.1.1: SubBytes.
+  spec sub_bytes(sbox: Word[64]^32, s: Word[8]^16) -> Word[8]^16 {
+    for i in 0..16 with t: Word[8]^16 = s { t with [i] = lookup(sbox, s[i]) }
+  }
+
+  // Section 5.1.2: ShiftRows, row r rotated left by r positions.
+  spec shift_rows(s: Word[8]^16) -> Word[8]^16 {
+    [
+      s[0], s[5], s[10], s[15],
+      s[4], s[9], s[14], s[3],
+      s[8], s[13], s[2], s[7],
+      s[12], s[1], s[6], s[11],
+    ]
+  }
+
+  // Section 5.1.3: MixColumns, one column multiplied by {03}x^3 + {01}x^2
+  // + {01}x + {02} modulo x^4 + 1, with {02}a = xtime(a) and {03}a = xtime(a) ^ a.
+  spec mix_column(a0: Word[8], a1: Word[8], a2: Word[8], a3: Word[8]) -> Word[8]^4 {
+    [
+      xtime(a0) ^ (xtime(a1) ^ a1) ^ a2 ^ a3,
+      a0 ^ xtime(a1) ^ (xtime(a2) ^ a2) ^ a3,
+      a0 ^ a1 ^ xtime(a2) ^ (xtime(a3) ^ a3),
+      (xtime(a0) ^ a0) ^ a1 ^ a2 ^ xtime(a3),
+    ]
+  }
+
+  spec mix_columns(s: Word[8]^16) -> Word[8]^16 {
+    let c0: Word[8]^4 = mix_column(s[0], s[1], s[2], s[3]);
+    let c1: Word[8]^4 = mix_column(s[4], s[5], s[6], s[7]);
+    let c2: Word[8]^4 = mix_column(s[8], s[9], s[10], s[11]);
+    let c3: Word[8]^4 = mix_column(s[12], s[13], s[14], s[15]);
+    [
+      c0[0], c0[1], c0[2], c0[3],
+      c1[0], c1[1], c1[2], c1[3],
+      c2[0], c2[1], c2[2], c2[3],
+      c3[0], c3[1], c3[2], c3[3],
+    ]
+  }
+
+  // Section 5.1.4: AddRoundKey, column c xored with round-key word c.
+  spec add_round_key(s: Word[8]^16, k: Word[32]^4) -> Word[8]^16 {
+    for c in 0..4 with t: Word[8]^16 = s {
+      for r in 0..4 with u: Word[8]^16 = t { u with [4 * c + r] = u[4 * c + r] ^ be_bytes(k[c])[r] }
+    }
+  }
+
+  // Section 5.1, algorithm 1: the cipher with Nr = 10 rounds over the
+  // expanded key w. The final round has no MixColumns. This is CIPH_K of
+  // SP 800-38C; CCM never inverts the block cipher.
+  spec cipher(w: Word[32]^44, input: Word[8]^16) -> Word[8]^16 {
+    let sbox: Word[64]^32 = s_box();
+    let start: Word[8]^16 = add_round_key(input, [w[0], w[1], w[2], w[3]]);
+    let rounds: Word[8]^16 = for round in 1..10 with s: Word[8]^16 = start {
+      add_round_key(
+        mix_columns(shift_rows(sub_bytes(sbox, s))),
+        [w[4 * round], w[4 * round + 1], w[4 * round + 2], w[4 * round + 3]],
+      )
+    };
+    add_round_key(shift_rows(sub_bytes(sbox, rounds)), [w[40], w[41], w[42], w[43]])
+  }
+
+  // 256^i for 0 <= i < 8: the weight of byte i, counted from the right, of
+  // an octet string that encodes an integer most significant byte first.
+  spec byte_weight(i: Int) -> Int {
+    for j in 0..8 with w: Int = 1 { if j < i { w * 256 } else { w } }
+  }
+
+  // SP 800-38C Appendix A.1: the nonce N has n bytes, 7 <= n <= 13, and
+  // q = 15 - n bytes encode a length or a counter, so that B_0 (A.2.1) and
+  // the counter blocks Ctr_i (A.3) share one layout, Flags || N || [x]_8q.
+  // The nonce travels in a 13-byte buffer with its length n beside it,
+  // because an Orange array has one length.
+  spec flags_nonce_integer(flags: Word[8], nonce: Word[8]^13, n: Int, x: Int) -> Word[8]^16 {
+    let q: Int = 15 - n;
+    let with_nonce: Word[8]^16 = for i in 0..13 with b: Word[8]^16 = [0; 16] {
+      if i < n { b with [1 + i] = nonce[i] } else { b }
+    };
+    let with_integer: Word[8]^16 = for i in 0..8 with b: Word[8]^16 = with_nonce {
+      if i < q { b with [15 - i] = (x / byte_weight(i)) as Word[8] } else { b }
+    };
+    with_integer with [0] = flags
+  }
+
+  // Appendix A.2.1: B_0 = Flags || N || Q, where Q = [Plen / 8]_8q is the
+  // payload length in octets (plen here, in bytes) and the flags byte is
+  // 0 || Adata || [(t - 2) / 2]_3 || [q - 1]_3 (Table 1), with Adata = 1
+  // when a > 0 and t = Tlen / 8 the tag length in bytes (tlen here).
+  spec b_0(nonce: Word[8]^13, n: Int, alen: Int, plen: Int, tlen: Int) -> Word[8]^16 {
+    let adata: Word[8] = if alen > 0 { 0x40 } else { 0 };
+    let t_bits: Word[8] = (((tlen - 2) / 2) as Word[8]) << 3;
+    let q_bits: Word[8] = (14 - n) as Word[8];
+    flags_nonce_integer(adata | t_bits | q_bits, nonce, n, plen)
+  }
+
+  // Appendix A.2.2, for 0 < a < 2^16 - 2^8: the associated data is encoded as
+  // [a]_16 || A and padded with zeros to a multiple of 16 bytes. A has at
+  // most 32 bytes here, so the longer encodings of a (0xff 0xfe || [a]_32
+  // and 0xff 0xff || [a]_64) do not arise, and the encoding fills at most
+  // three blocks. When a = 0 there are no such blocks and this buffer is
+  // zero.
+  spec associated_data_blocks(a: Word[8]^32, alen: Int) -> Word[8]^48 {
+    let high: Word[8] = (alen / 256) as Word[8];
+    let length: Word[8]^48 = ([0; 48] with [0] = high) with [1] = alen as Word[8];
+    for i in 0..32 with b: Word[8]^48 = length {
+      if (alen > 0) && (i < alen) { b with [2 + i] = a[i] } else { b }
+    }
+  }
+
+  // The number of associated-data blocks: 0 when a = 0, else ceil((2 + a) / 16).
+  spec associated_data_block_count(alen: Int) -> Int {
+    if alen == 0 { 0 } else { (alen + 17) / 16 }
+  }
+
+  // Appendix A.2.3: the payload padded with zeros to a multiple of 16 bytes;
+  // at most two blocks here.
+  spec payload_blocks(p: Word[8]^32, plen: Int) -> Word[8]^32 {
+    for i in 0..32 with b: Word[8]^32 = p { if i < plen { b } else { b with [i] = 0 } }
+  }
+
+  spec payload_block_count(plen: Int) -> Int { (plen + 15) / 16 }
+
+  // The byte at index k of a 32-byte buffer, k a value: a selection, as an
+  // index must be static.
+  spec byte_of(x: Word[8]^32, k: Int) -> Word[8] {
+    for i in 0..32 with acc: Word[8] = 0 { if i == k { x[i] } else { acc } }
+  }
+
+  // Appendix A.2: the formatting function, B_0 || B_1 || ... || B_r. B_0
+  // fills block 0, the associated-data blocks (if any) follow at block 1,
+  // and the payload blocks come after them, at a block index that is a
+  // value, so their bytes are placed by selection. With the buffers above,
+  // r <= 5.
+  spec formatting(
+    nonce: Word[8]^13,
+    n: Int,
+    a: Word[8]^32,
+    alen: Int,
+    p: Word[8]^32,
+    plen: Int,
+    tlen: Int,
+  ) -> Word[8]^96 {
+    let first: Word[8]^16 = b_0(nonce, n, alen, plen, tlen);
+    let ad: Word[8]^48 = associated_data_blocks(a, alen);
+    let payload: Word[8]^32 = payload_blocks(p, plen);
+    let start: Int = 16 * (1 + associated_data_block_count(alen));
+    let head: Word[8]^96 = for i in 0..16 with b: Word[8]^96 = [0; 96] { b with [i] = first[i] };
+    let with_ad: Word[8]^96 = for i in 0..48 with b: Word[8]^96 = head { b with [16 + i] = ad[i] };
+    for i in 16..96 with b: Word[8]^96 = with_ad {
+      if (i >= start) && (i < (start + plen)) {
+        b with [i] = byte_of(payload, i - start)
+      } else { b }
+    }
+  }
+
+  // r + 1, the number of formatted blocks.
+  spec formatted_block_count(alen: Int, plen: Int) -> Int {
+    1 + associated_data_block_count(alen) + payload_block_count(plen)
+  }
+
+  // Section 6.1, steps 2 to 4 (and section 6.2, steps 8 and 9): the
+  // CBC-MAC. Y_0 = CIPH_K(B_0), Y_i = B_i ^ Y_{i-1} enciphered, for
+  // 1 <= i <= r, and T = MSB_Tlen(Y_r); the bytes of T past Tlen are zero.
+  spec cbc_mac(w: Word[32]^44, b: Word[8]^96, count: Int, tlen: Int) -> Word[8]^16 {
+    let y: Word[8]^16 = for i in 0..6 with y: Word[8]^16 = [0; 16] {
+      if i < count {
+        cipher(w, [
+          b[16 * i] ^ y[0], b[16 * i + 1] ^ y[1], b[16 * i + 2] ^ y[2],
+          b[16 * i + 3] ^ y[3], b[16 * i + 4] ^ y[4], b[16 * i + 5] ^ y[5],
+          b[16 * i + 6] ^ y[6], b[16 * i + 7] ^ y[7], b[16 * i + 8] ^ y[8],
+          b[16 * i + 9] ^ y[9], b[16 * i + 10] ^ y[10], b[16 * i + 11] ^ y[11],
+          b[16 * i + 12] ^ y[12], b[16 * i + 13] ^ y[13], b[16 * i + 14] ^ y[14],
+          b[16 * i + 15] ^ y[15],
+        ])
+      } else { y }
+    };
+    for i in 0..16 with t: Word[8]^16 = y { if i < tlen { t } else { t with [i] = 0 } }
+  }
+
+  // Appendix A.3: the counter blocks Ctr_i = Flags || N || [i]_8q, whose
+  // flags byte is 0 || 0 || 000 || [q - 1]_3 (Table 2).
+  spec ctr(nonce: Word[8]^13, n: Int, i: Int) -> Word[8]^16 {
+    flags_nonce_integer((14 - n) as Word[8], nonce, n, i)
+  }
+
+  // Block j of x xored with the block S_j, for the bytes below len only. The
+  // block index is a value, so the bytes of block j are found by comparing
+  // k / 16 with j.
+  spec xor_block(y: Word[8]^32, x: Word[8]^32, s: Word[8]^16, j: Int, len: Int) -> Word[8]^32 {
+    for k in 0..32 with out: Word[8]^32 = y {
+      if ((k / 16) == j) && (k < len) { out with [k] = x[k] ^ s[k % 16] } else { out }
+    }
+  }
+
+  // Section 6.1, steps 5 to 7 (and section 6.2, steps 2 to 5): counter mode
+  // over the payload. S_j = CIPH_K(Ctr_j) for j = 1, ..., m with
+  // m = ceil(len / 16), and the result is x ^ MSB_len(S_1 || ... || S_m);
+  // at most two blocks here, and a block past the end is skipped.
+  spec counter_mode(
+    w: Word[32]^44,
+    nonce: Word[8]^13,
+    n: Int,
+    x: Word[8]^32,
+    len: Int,
+  ) -> Word[8]^32 {
+    for j in 0..2 with y: Word[8]^32 = [0; 32] {
+      if (16 * j) < len { xor_block(y, x, cipher(w, ctr(nonce, n, j + 1)), j, len) } else { y }
+    }
+  }
+
+  // S_0 = CIPH_K(Ctr_0) masks the tag: T ^ MSB_Tlen(S_0), zero past Tlen.
+  spec mask_tag(w: Word[32]^44, nonce: Word[8]^13, n: Int, t: Word[8]^16, tlen: Int) -> Word[8]^16 {
+    let s_0: Word[8]^16 = cipher(w, ctr(nonce, n, 0));
+    for i in 0..16 with u: Word[8]^16 = [0; 16] {
+      if i < tlen { u with [i] = t[i] ^ s_0[i] } else { u }
+    }
+  }
+
+  // The byte at index k of a 16-byte block, k a value.
+  spec block_byte(x: Word[8]^16, k: Int) -> Word[8] {
+    for i in 0..16 with acc: Word[8] = 0 { if i == k { x[i] } else { acc } }
+  }
+
+  // Section 6.1: the generation-encryption process. Step 1 formats N, A
+  // and P into B_0 || ... || B_r, steps 2 to 4 are the CBC-MAC, steps 5 to 7
+  // are counter mode, and step 8 returns
+  // C = (P ^ MSB_Plen(S)) || (T ^ MSB_Tlen(S_0)), Clen = Plen + Tlen. The
+  // masked tag starts at byte Plen, a value, so its bytes are placed by
+  // selection; the 48-byte result is zero past Clen.
+  spec generation_encryption(
+    key: Word[8]^16,
+    nonce: Word[8]^13,
+    n: Int,
+    a: Word[8]^32,
+    alen: Int,
+    p: Word[8]^32,
+    plen: Int,
+    tlen: Int,
+  ) -> Word[8]^48 {
+    let w: Word[32]^44 = key_expansion(key);
+    let b: Word[8]^96 = formatting(nonce, n, a, alen, p, plen, tlen);
+    let t: Word[8]^16 = cbc_mac(w, b, formatted_block_count(alen, plen), tlen);
+    let c: Word[8]^32 = counter_mode(w, nonce, n, payload_blocks(p, plen), plen);
+    let u: Word[8]^16 = mask_tag(w, nonce, n, t, tlen);
+    let body: Word[8]^48 = for i in 0..32 with out: Word[8]^48 = [0; 48] { out with [i] = c[i] };
+    for i in 0..48 with out: Word[8]^48 = body {
+      if (i >= plen) && (i < (plen + tlen)) { out with [i] = block_byte(u, i - plen) } else { out }
+    }
+  }
+
+  // SP 800-38C Appendix C.1 (Klen 128, Tlen 32, Nlen 56, Alen 64, Plen 32):
+  // C = ciphertext || T.
+  spec sp800_38c_c1() -> Word[8]^48 {
+    generation_encryption(
+      [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f],
+      [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+      7,
+      [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ],
+      8,
+      [
+        0x20, 0x21, 0x22, 0x23, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ],
+      4,
+      4,
+    )
+  }
+
+  spec sp800_38c_c1_expected() -> Word[8]^48 {
+    [
+      0x71, 0x62, 0x01, 0x5b, 0x4d, 0xac, 0x25, 0x5d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+
+  // SP 800-38C Appendix C.2 (Klen 128, Tlen 48, Nlen 64, Alen 128, Plen 128):
+  // C = ciphertext || T.
+  spec sp800_38c_c2() -> Word[8]^48 {
+    generation_encryption(
+      [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f],
+      [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00],
+      8,
+      [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ],
+      16,
+      [
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ],
+      16,
+      6,
+    )
+  }
+
+  spec sp800_38c_c2_expected() -> Word[8]^48 {
+    [
+      0xd2, 0xa1, 0xf0, 0xe0, 0x51, 0xea, 0x5f, 0x62, 0x08, 0x1a, 0x77, 0x92, 0x07, 0x3d, 0x59, 0x3d,
+      0x1f, 0xc6, 0x4f, 0xbf, 0xac, 0xcd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]
+  }
+}

@@ -1,0 +1,511 @@
+// RC6 of "The RC6 Block Cipher" (Rivest, Robshaw, Sidney, Yin; RSA
+// Laboratories, version 1.1, 20 August 1998;
+// https://people.csail.mit.edu/rivest/pubs/RRSY98.pdf), the cipher RSA
+// Laboratories submitted to NIST's AES process, one of the five finalists.
+// The file carries RC6-32/20/b with the AES parameters: 32-bit words, 20
+// rounds, and a 16-, 24- or 32-byte key. It transcribes the key schedule of
+// the paper's "Key schedule" (P32, Q32, and the three-pass mixing loop that
+// yields S[0..43]), the encryption of "Encryption and decryption" with
+// f(x) = x(2x + 1) <<< 5 and the rotations by the low five bits of a data
+// word, and the decryption that undoes it. The six test vectors appended to
+// the paper (two per key length, as carried by Crypto++'s
+// TestData/rc6val.dat) are reproduced, three of them also decrypted, with
+// three of the AES-submission known-answer tests carried by Bouncy Castle's
+// RC6Test.java and by Botan 1.11's src/tests/data/block/rc6.vec.
+edition 2026;
+module rc6 {
+  // "Details of RC6": a word is w = 32 bits, and bytes are read into words
+  // little-endian, the first byte least significant, for both the key and
+  // the block.
+  spec load_le32(b0: Word[8], b1: Word[8], b2: Word[8], b3: Word[8]) -> Word[32] {
+    (b0 as Word[32]) | ((b1 as Word[32]) << 8) | ((b2 as Word[32]) << 16)
+      | ((b3 as Word[32]) << 24)
+  }
+
+  spec le_bytes(x: Word[32]) -> Word[8]^4 {
+    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
+  }
+
+  // The block (A, B, C, D) from and to sixteen bytes.
+  spec load_block(p: Word[8]^16) -> Word[32]^4 {
+    [
+      load_le32(p[0], p[1], p[2], p[3]), load_le32(p[4], p[5], p[6], p[7]),
+      load_le32(p[8], p[9], p[10], p[11]), load_le32(p[12], p[13], p[14], p[15]),
+    ]
+  }
+
+  spec store_block(x: Word[32]^4) -> Word[8]^16 {
+    for i in 0..4 with bytes: Word[8]^16 = [0; 16] {
+      for j in 0..4 with b: Word[8]^16 = bytes { b with [4 * i + j] = le_bytes(x[i])[j] }
+    }
+  }
+
+  // "Details of RC6": a <<< b rotates the word a to the left by the amount
+  // given by the least significant lg w = 5 bits of b, and a >>> b to the
+  // right. Orange rotates by a literal only, so a rotation by a data word is
+  // a selection among the 32 literal rotations on those five bits: the
+  // data-dependent rotation is where RC6 (as RC5) makes its key and data
+  // decide the shape of the computation, and this is its honest form.
+  spec rotate_left_by(x: Word[32], amount: Word[32]) -> Word[32] {
+    let r: Word[32] = amount & 31;
+    if r == 0 { x }
+    else if r == 1 { x <<< 1 }
+    else if r == 2 { x <<< 2 }
+    else if r == 3 { x <<< 3 }
+    else if r == 4 { x <<< 4 }
+    else if r == 5 { x <<< 5 }
+    else if r == 6 { x <<< 6 }
+    else if r == 7 { x <<< 7 }
+    else if r == 8 { x <<< 8 }
+    else if r == 9 { x <<< 9 }
+    else if r == 10 { x <<< 10 }
+    else if r == 11 { x <<< 11 }
+    else if r == 12 { x <<< 12 }
+    else if r == 13 { x <<< 13 }
+    else if r == 14 { x <<< 14 }
+    else if r == 15 { x <<< 15 }
+    else if r == 16 { x <<< 16 }
+    else if r == 17 { x <<< 17 }
+    else if r == 18 { x <<< 18 }
+    else if r == 19 { x <<< 19 }
+    else if r == 20 { x <<< 20 }
+    else if r == 21 { x <<< 21 }
+    else if r == 22 { x <<< 22 }
+    else if r == 23 { x <<< 23 }
+    else if r == 24 { x <<< 24 }
+    else if r == 25 { x <<< 25 }
+    else if r == 26 { x <<< 26 }
+    else if r == 27 { x <<< 27 }
+    else if r == 28 { x <<< 28 }
+    else if r == 29 { x <<< 29 }
+    else if r == 30 { x <<< 30 }
+    else { x <<< 31 }
+  }
+
+  spec rotate_right_by(x: Word[32], amount: Word[32]) -> Word[32] {
+    let r: Word[32] = amount & 31;
+    if r == 0 { x }
+    else if r == 1 { x >>> 1 }
+    else if r == 2 { x >>> 2 }
+    else if r == 3 { x >>> 3 }
+    else if r == 4 { x >>> 4 }
+    else if r == 5 { x >>> 5 }
+    else if r == 6 { x >>> 6 }
+    else if r == 7 { x >>> 7 }
+    else if r == 8 { x >>> 8 }
+    else if r == 9 { x >>> 9 }
+    else if r == 10 { x >>> 10 }
+    else if r == 11 { x >>> 11 }
+    else if r == 12 { x >>> 12 }
+    else if r == 13 { x >>> 13 }
+    else if r == 14 { x >>> 14 }
+    else if r == 15 { x >>> 15 }
+    else if r == 16 { x >>> 16 }
+    else if r == 17 { x >>> 17 }
+    else if r == 18 { x >>> 18 }
+    else if r == 19 { x >>> 19 }
+    else if r == 20 { x >>> 20 }
+    else if r == 21 { x >>> 21 }
+    else if r == 22 { x >>> 22 }
+    else if r == 23 { x >>> 23 }
+    else if r == 24 { x >>> 24 }
+    else if r == 25 { x >>> 25 }
+    else if r == 26 { x >>> 26 }
+    else if r == 27 { x >>> 27 }
+    else if r == 28 { x >>> 28 }
+    else if r == 29 { x >>> 29 }
+    else if r == 30 { x >>> 30 }
+    else { x >>> 31 }
+  }
+
+  // "Key schedule": the magic constants for w = 32,
+  //   P32 = Odd((e - 2) 2^32) = b7e15163 and Q32 = Odd((phi - 1) 2^32) = 9e3779b9,
+  // with e the base of natural logarithms and phi the golden ratio.
+  spec p32() -> Word[32] { 0xb7e15163 }
+  spec q32() -> Word[32] { 0x9e3779b9 }
+
+  // "Key schedule", step 1: the b key bytes into c = ceil(b / 4) words
+  // L[0..c-1], little-endian. L is carried as eight words for every key
+  // length, zero beyond c, because the mixing state below has one shape.
+  spec key_words_128(k: Word[8]^16) -> Word[32]^8 {
+    for i in 0..4 with l: Word[32]^8 = [0; 8] {
+      l with [i] = load_le32(k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3])
+    }
+  }
+
+  spec key_words_192(k: Word[8]^24) -> Word[32]^8 {
+    for i in 0..6 with l: Word[32]^8 = [0; 8] {
+      l with [i] = load_le32(k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3])
+    }
+  }
+
+  spec key_words_256(k: Word[8]^32) -> Word[32]^8 {
+    for i in 0..8 with l: Word[32]^8 = [0; 8] {
+      l with [i] = load_le32(k[4 * i], k[4 * i + 1], k[4 * i + 2], k[4 * i + 3])
+    }
+  }
+
+  // "Key schedule", step 2: S[0] = P32 and S[i] = S[i - 1] + Q32 for
+  // i = 1, ..., 2r + 3, here 44 words. S, L, A and B travel through the
+  // mixing loop together as one Word[32]^54: S in positions 0 through 43,
+  // L in 44 through 51, A at 52 and B at 53, with A = B = 0 to start.
+  spec schedule_state(l: Word[32]^8) -> Word[32]^54 {
+    let s: Word[32]^54 = for i in 1..44 with s: Word[32]^54 = ([0; 54] with [0] = p32()) {
+      s with [i] = s[i - 1] + q32()
+    };
+    for i in 0..8 with st: Word[32]^54 = s { st with [44 + i] = l[i] }
+  }
+
+  // "Key schedule", step 3, the body of the mixing loop:
+  //   A = S[i] = (S[i] + A + B) <<< 3
+  //   B = L[j] = (L[j] + A + B) <<< (A + B)
+  // computed here into the A and B slots from the words S[i] and L[j]
+  // handed in; the caller stores them back into S[i] and L[j].
+  spec mix(st: Word[32]^54, s_i: Word[32], l_j: Word[32]) -> Word[32]^54 {
+    let a: Word[32] = (s_i + st[52] + st[53]) <<< 3;
+    let b: Word[32] = rotate_left_by(l_j + a + st[53], a + st[53]);
+    (st with [52] = a) with [53] = b
+  }
+
+  // The 44 round keys S[0..43] out of the mixing state.
+  spec round_keys(st: Word[32]^54) -> Word[32]^44 {
+    for i in 0..44 with s: Word[32]^44 = [0; 44] { s with [i] = st[i] }
+  }
+
+  // "Key schedule", step 3: v = 3 max(c, 2r + 4) = 132 iterations with
+  // i = (i + 1) mod 44 and j = (j + 1) mod c. A loop step is one
+  // expression, so each iteration of the paper's loop is two steps here:
+  // the first computes A and B (mix), the second stores them into S[i] and
+  // L[j]. The modulus c of j is a literal, so each key length has its own
+  // loop: c = 4 for 128-bit keys.
+  spec key_schedule_128(k: Word[8]^16) -> Word[32]^44 {
+    let initial: Word[32]^54 = schedule_state(key_words_128(k));
+    let mixed: Word[32]^54 = for h in 0..132 with st: Word[32]^54 = initial {
+      for phase in 0..2 with m: Word[32]^54 = st {
+        if phase == 0 { mix(m, m[h % 44], m[44 + (h % 4)]) }
+        else { (m with [h % 44] = m[52]) with [44 + (h % 4)] = m[53] }
+      }
+    };
+    round_keys(mixed)
+  }
+
+  // c = 6 for 192-bit keys.
+  spec key_schedule_192(k: Word[8]^24) -> Word[32]^44 {
+    let initial: Word[32]^54 = schedule_state(key_words_192(k));
+    let mixed: Word[32]^54 = for h in 0..132 with st: Word[32]^54 = initial {
+      for phase in 0..2 with m: Word[32]^54 = st {
+        if phase == 0 { mix(m, m[h % 44], m[44 + (h % 6)]) }
+        else { (m with [h % 44] = m[52]) with [44 + (h % 6)] = m[53] }
+      }
+    };
+    round_keys(mixed)
+  }
+
+  // c = 8 for 256-bit keys.
+  spec key_schedule_256(k: Word[8]^32) -> Word[32]^44 {
+    let initial: Word[32]^54 = schedule_state(key_words_256(k));
+    let mixed: Word[32]^54 = for h in 0..132 with st: Word[32]^54 = initial {
+      for phase in 0..2 with m: Word[32]^54 = st {
+        if phase == 0 { mix(m, m[h % 44], m[44 + (h % 8)]) }
+        else { (m with [h % 44] = m[52]) with [44 + (h % 8)] = m[53] }
+      }
+    };
+    round_keys(mixed)
+  }
+
+  // "Encryption and decryption": the quadratic function
+  //   f(x) = (x (2x + 1)) <<< lg w, with lg w = 5.
+  // The rotation by lg w brings the five high-order bits of x (2x + 1), which
+  // depend on every bit of x, down to the low five positions that the
+  // data-dependent rotations of the round read.
+  spec f(x: Word[32]) -> Word[32] { (x * (2 * x + 1)) <<< 5 }
+
+  // One round i of encryption on the registers (A, B, C, D):
+  //   t = f(B); u = f(D)
+  //   A = ((A ^ t) <<< u) + S[2i]
+  //   C = ((C ^ u) <<< t) + S[2i + 1]
+  //   (A, B, C, D) = (B, C, D, A)
+  spec round(x: Word[32]^4, s_2i: Word[32], s_2i_1: Word[32]) -> Word[32]^4 {
+    let t: Word[32] = f(x[1]);
+    let u: Word[32] = f(x[3]);
+    let a: Word[32] = rotate_left_by(x[0] ^ t, u) + s_2i;
+    let c: Word[32] = rotate_left_by(x[2] ^ u, t) + s_2i_1;
+    [x[1], c, x[3], a]
+  }
+
+  // Encryption with RC6-w/r/b: B = B + S[0] and D = D + S[1], the r = 20
+  // rounds, then A = A + S[2r + 2] and C = C + S[2r + 3].
+  spec encrypt(s: Word[32]^44, p: Word[8]^16) -> Word[8]^16 {
+    let x: Word[32]^4 = load_block(p);
+    let whitened: Word[32]^4 = [x[0], x[1] + s[0], x[2], x[3] + s[1]];
+    let mixed: Word[32]^4 = for i in 1..21 with y: Word[32]^4 = whitened {
+      round(y, s[2 * i], s[2 * i + 1])
+    };
+    store_block([mixed[0] + s[42], mixed[1], mixed[2] + s[43], mixed[3]])
+  }
+
+  // One round i of decryption, the round above run backwards:
+  //   (A, B, C, D) = (D, A, B, C)
+  //   u = f(D); t = f(B)
+  //   C = ((C - S[2i + 1]) >>> t) ^ u
+  //   A = ((A - S[2i]) >>> u) ^ t
+  // With x the registers before the swap, the swapped B is x[0], C is
+  // x[1], D is x[2] and A is x[3].
+  spec inverse_round(x: Word[32]^4, s_2i: Word[32], s_2i_1: Word[32]) -> Word[32]^4 {
+    let u: Word[32] = f(x[2]);
+    let t: Word[32] = f(x[0]);
+    let c: Word[32] = rotate_right_by(x[1] - s_2i_1, t) ^ u;
+    let a: Word[32] = rotate_right_by(x[3] - s_2i, u) ^ t;
+    [a, x[0], c, x[2]]
+  }
+
+  // Decryption with RC6-w/r/b: C = C - S[2r + 3] and A = A - S[2r + 2],
+  // the rounds from i = r down to 1, then D = D - S[1] and B = B - S[0].
+  spec decrypt(s: Word[32]^44, c: Word[8]^16) -> Word[8]^16 {
+    let x: Word[32]^4 = load_block(c);
+    let unwhitened: Word[32]^4 = [x[0] - s[42], x[1], x[2] - s[43], x[3]];
+    let unmixed: Word[32]^4 = for i in 0..20 with y: Word[32]^4 = unwhitened {
+      inverse_round(y, s[40 - 2 * i], s[41 - 2 * i])
+    };
+    store_block([unmixed[0], unmixed[1] - s[0], unmixed[2], unmixed[3] - s[1]])
+  }
+
+  // The paper's test vectors, two for each key length, in the order and
+  // with the values of Crypto++'s TestData/rc6val.dat (key, plaintext,
+  // ciphertext): every one encrypted, and the second of each key length
+  // also decrypted back to its plaintext.
+
+  // rc6val.dat entry 1, RC6-32/20/16:
+  //   key 00000000000000000000000000000000
+  //   plaintext 00000000000000000000000000000000
+  spec rc6_paper_128_1() -> Word[8]^16 {
+    encrypt(
+      key_schedule_128([0; 16]),
+      [0; 16],
+    )
+  }
+
+  spec rc6_paper_128_1_expected() -> Word[8]^16 {
+    [
+      0x8f, 0xc3, 0xa5, 0x36, 0x56, 0xb1, 0xf7, 0x78, 0xc1, 0x29, 0xdf, 0x4e, 0x98, 0x48, 0xa4, 0x1e,
+    ]
+  }
+
+  // rc6val.dat entry 2, RC6-32/20/16:
+  //   key 0123456789abcdef0112233445566778
+  //   plaintext 02132435465768798a9bacbdcedfe0f1
+  spec rc6_paper_128_2() -> Word[8]^16 {
+    encrypt(
+      key_schedule_128([
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+      ]),
+      [
+        0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1,
+      ],
+    )
+  }
+
+  spec rc6_paper_128_2_expected() -> Word[8]^16 {
+    [
+      0x52, 0x4e, 0x19, 0x2f, 0x47, 0x15, 0xc6, 0x23, 0x1f, 0x51, 0xf6, 0x36, 0x7e, 0xa4, 0x3f, 0x18,
+    ]
+  }
+
+  // The same entry decrypted: under the same key, the ciphertext
+  //   524e192f4715c6231f51f6367ea43f18
+  // gives the plaintext back.
+  spec rc6_paper_128_2_decrypt() -> Word[8]^16 {
+    decrypt(
+      key_schedule_128([
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+      ]),
+      [
+        0x52, 0x4e, 0x19, 0x2f, 0x47, 0x15, 0xc6, 0x23, 0x1f, 0x51, 0xf6, 0x36, 0x7e, 0xa4, 0x3f, 0x18,
+      ],
+    )
+  }
+
+  spec rc6_paper_128_2_decrypt_expected() -> Word[8]^16 {
+    [
+      0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1,
+    ]
+  }
+
+  // rc6val.dat entry 3 (also in Botan's rc6.vec), RC6-32/20/24:
+  //   key 000000000000000000000000000000000000000000000000
+  //   plaintext 00000000000000000000000000000000
+  spec rc6_paper_192_1() -> Word[8]^16 {
+    encrypt(
+      key_schedule_192([0; 24]),
+      [0; 16],
+    )
+  }
+
+  spec rc6_paper_192_1_expected() -> Word[8]^16 {
+    [
+      0x6c, 0xd6, 0x1b, 0xcb, 0x19, 0x0b, 0x30, 0x38, 0x4e, 0x8a, 0x3f, 0x16, 0x86, 0x90, 0xae, 0x82,
+    ]
+  }
+
+  // rc6val.dat entry 4 (also in Botan's rc6.vec), RC6-32/20/24:
+  //   key 0123456789abcdef0112233445566778899aabbccddeeff0
+  //   plaintext 02132435465768798a9bacbdcedfe0f1
+  spec rc6_paper_192_2() -> Word[8]^16 {
+    encrypt(
+      key_schedule_192([
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+        0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0,
+      ]),
+      [
+        0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1,
+      ],
+    )
+  }
+
+  spec rc6_paper_192_2_expected() -> Word[8]^16 {
+    [
+      0x68, 0x83, 0x29, 0xd0, 0x19, 0xe5, 0x05, 0x04, 0x1e, 0x52, 0xe9, 0x2a, 0xf9, 0x52, 0x91, 0xd4,
+    ]
+  }
+
+  // The same entry decrypted: under the same key, the ciphertext
+  //   688329d019e505041e52e92af95291d4
+  // gives the plaintext back.
+  spec rc6_paper_192_2_decrypt() -> Word[8]^16 {
+    decrypt(
+      key_schedule_192([
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+        0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0,
+      ]),
+      [
+        0x68, 0x83, 0x29, 0xd0, 0x19, 0xe5, 0x05, 0x04, 0x1e, 0x52, 0xe9, 0x2a, 0xf9, 0x52, 0x91, 0xd4,
+      ],
+    )
+  }
+
+  spec rc6_paper_192_2_decrypt_expected() -> Word[8]^16 {
+    [
+      0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1,
+    ]
+  }
+
+  // rc6val.dat entry 5 (also in Botan's rc6.vec), RC6-32/20/32:
+  //   key 0000000000000000000000000000000000000000000000000000000000000000
+  //   plaintext 00000000000000000000000000000000
+  spec rc6_paper_256_1() -> Word[8]^16 {
+    encrypt(
+      key_schedule_256([0; 32]),
+      [0; 16],
+    )
+  }
+
+  spec rc6_paper_256_1_expected() -> Word[8]^16 {
+    [
+      0x8f, 0x5f, 0xbd, 0x05, 0x10, 0xd1, 0x5f, 0xa8, 0x93, 0xfa, 0x3f, 0xda, 0x6e, 0x85, 0x7e, 0xc2,
+    ]
+  }
+
+  // rc6val.dat entry 6 (also in Botan's rc6.vec), RC6-32/20/32:
+  //   key 0123456789abcdef0112233445566778899aabbccddeeff01032547698badcfe
+  //   plaintext 02132435465768798a9bacbdcedfe0f1
+  spec rc6_paper_256_2() -> Word[8]^16 {
+    encrypt(
+      key_schedule_256([
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+        0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe,
+      ]),
+      [
+        0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1,
+      ],
+    )
+  }
+
+  spec rc6_paper_256_2_expected() -> Word[8]^16 {
+    [
+      0xc8, 0x24, 0x18, 0x16, 0xf0, 0xd7, 0xe4, 0x89, 0x20, 0xad, 0x16, 0xa1, 0x67, 0x4e, 0x5d, 0x48,
+    ]
+  }
+
+  // The same entry decrypted: under the same key, the ciphertext
+  //   c8241816f0d7e48920ad16a1674e5d48
+  // gives the plaintext back.
+  spec rc6_paper_256_2_decrypt() -> Word[8]^16 {
+    decrypt(
+      key_schedule_256([
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+        0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe,
+      ]),
+      [
+        0xc8, 0x24, 0x18, 0x16, 0xf0, 0xd7, 0xe4, 0x89, 0x20, 0xad, 0x16, 0xa1, 0x67, 0x4e, 0x5d, 0x48,
+      ],
+    )
+  }
+
+  spec rc6_paper_256_2_decrypt_expected() -> Word[8]^16 {
+    [
+      0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1,
+    ]
+  }
+
+  // Known-answer tests of the AES submission's reference implementation
+  // (rc6-unix-refc), as carried by Bouncy Castle's
+  // core/src/test/java/org/bouncycastle/crypto/test/RC6Test.java and, among
+  // 1,219 such cases, by Botan 1.11's src/tests/data/block/rc6.vec: a single
+  // set bit in the plaintext or the key.
+
+  // RC6Test.java test 0, RC6-32/20/16:
+  //   key 00000000000000000000000000000000
+  //   plaintext 80000000000000000000000000000000
+  spec bouncycastle_rc6test_0() -> Word[8]^16 {
+    encrypt(
+      key_schedule_128([0; 16]),
+      [
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ],
+    )
+  }
+
+  spec bouncycastle_rc6test_0_expected() -> Word[8]^16 {
+    [
+      0xf7, 0x1f, 0x65, 0xe7, 0xb8, 0x0c, 0x0c, 0x69, 0x66, 0xfe, 0xe6, 0x07, 0x98, 0x4b, 0x5c, 0xdf,
+    ]
+  }
+
+  // RC6Test.java test 1, RC6-32/20/24:
+  //   key 000000000000000000000000000000008000000000000000
+  //   plaintext 00000000000000000000000000000000
+  spec bouncycastle_rc6test_1() -> Word[8]^16 {
+    encrypt(
+      key_schedule_192([
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ]),
+      [0; 16],
+    )
+  }
+
+  spec bouncycastle_rc6test_1_expected() -> Word[8]^16 {
+    [
+      0xdd, 0x04, 0xc1, 0x76, 0x44, 0x0b, 0xbc, 0x66, 0x86, 0xc9, 0x0a, 0xee, 0x77, 0x5b, 0xd3, 0x68,
+    ]
+  }
+
+  // RC6Test.java test 4, RC6-32/20/32:
+  //   key 1000000000000000000000000000000000000000000000000000000000000000
+  //   plaintext 00000000000000000000000000000000
+  spec bouncycastle_rc6test_4() -> Word[8]^16 {
+    encrypt(
+      key_schedule_256([
+        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ]),
+      [0; 16],
+    )
+  }
+
+  spec bouncycastle_rc6test_4_expected() -> Word[8]^16 {
+    [
+      0x11, 0x39, 0x5d, 0x4b, 0xfe, 0x4c, 0x82, 0x58, 0x97, 0x9e, 0xe2, 0xbf, 0x2d, 0x24, 0xdf, 0xf4,
+    ]
+  }
+}
