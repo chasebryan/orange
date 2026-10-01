@@ -28,11 +28,28 @@ meaning. It accepts no D-004 candidate.
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, lets a module
 > use others and call their functions by module name,
 > [`MODULAR_2026.md`](MODULAR_2026.md), proposed under OEP-0012, adds the
-> integers modulo a constant, whose division is total in the same spirit:
-> `x / y` is 0 when y has no inverse, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
-> proposed under OEP-0013, lets each branch begin with `let` bindings, which
-> are evaluated only when their branch is chosen. Every source this document
-> accepts keeps its meaning under all four.
+> integers modulo a constant, whose division is total in the same spirit: `x /
+> y` is 0 when y has no inverse, and [`BLOCKS_2026.md`](BLOCKS_2026.md),
+> proposed under OEP-0013, lets each branch begin with `let` bindings, which are
+> evaluated only when their branch is chosen, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> which a conditional may choose between as it chooses any value, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds `++`, whose
+> group mixes with no comparison or logical operator without parentheses, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, computes sizes with
+> the same total, Euclidean `/` and `%`, and [`ORDER_2026.md`](ORDER_2026.md),
+> proposed under OEP-0017, adds conversions in a byte order, which are total and
+> have no failure, and [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md),
+> proposed under OEP-0018, lets a conditional's branches have a function's type
+> parameter as their type, each instance checked with its own type.
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, adds one
+> run-time failure, a conversion of words to a number of more than 16,384
+> significant bits, which stops evaluation as every oversized integer does.
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, defines `==` and
+> `!=` for arrays and tuples, which section 5 rejects, comparing every part at
+> the sum of the parts' costs, lets an array or tuple written out take its
+> type from the other operand, and replaces section 5's notes for an order on
+> them. Every source this document accepts keeps its meaning under all eleven.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

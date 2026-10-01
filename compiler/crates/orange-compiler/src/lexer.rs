@@ -16,6 +16,10 @@ pub const MAX_DIAGNOSTICS_PER_SOURCE: usize = 100;
 const MAX_INTEGER_SPELLING_IN_DIAGNOSTIC: usize = 80;
 const MAX_RETAINED_DIAGNOSTICS: usize = MAX_DIAGNOSTICS_PER_SOURCE.saturating_add(2);
 
+/// The note of every malformed hex string.
+const HEX_STRING_NOTE: &str = "a hex string holds bytes written as pairs of hex digits, as in \
+     `hex\"00 1f a0\"`; spaces may separate bytes but not split one";
+
 macro_rules! define_token_kinds {
     ($(#[$variant_doc:meta] $variant:ident => $name:literal,)+) => {
         /// A lexical token category.
@@ -48,6 +52,8 @@ define_token_kinds! {
     Integer => "INTEGER",
     /// A double-quoted string literal.
     String => "STRING",
+    /// A hex string `hex"..."` of hex digit pairs, optionally separated by spaces.
+    HexString => "HEX_STRING",
     /// `edition`
     KwEdition => "KW_EDITION",
     /// `module`
@@ -88,6 +94,8 @@ define_token_kinds! {
     DoubleColon => "DOUBLE_COLON",
     /// `+`
     Plus => "PLUS",
+    /// `++`
+    PlusPlus => "PLUS_PLUS",
     /// `-`
     Minus => "MINUS",
     /// `*`
@@ -426,8 +434,117 @@ impl<'source> Lexer<'source> {
             self.fail_cursor_invariant();
             return;
         };
+        // `hex` written directly before `"` opens a hex string; anywhere
+        // else it is an ordinary identifier.
+        if spelling == "hex" && self.peek_char() == Some('"') {
+            self.lex_hex_string(start);
+            return;
+        }
         let kind = keyword_kind(spelling, self.edition).unwrap_or(TokenKind::Identifier);
         self.push_token(kind, start, self.cursor);
+    }
+
+    /// Lexes the rest of a hex string after `hex`, at its opening quote.
+    ///
+    /// Its contents are hex digits in pairs, one pair per byte, and spaces,
+    /// which may separate bytes but not split one. The first character that
+    /// breaks this rule is reported; an unterminated hex string is reported
+    /// at its opening `hex"` alone.
+    fn lex_hex_string(&mut self, start: usize) {
+        if !self.advance_bytes(1) {
+            return;
+        }
+        // The first offending character, as the span of its bytes and
+        // whether it is a lone digit rather than a character that is not
+        // allowed at all.
+        let mut offense: Option<(usize, usize, bool)> = None;
+        // The start of a digit that still awaits its partner.
+        let mut pending: Option<usize> = None;
+        let mut terminated = false;
+        while let Some(character) = self.peek_char() {
+            if character == '\n' || character == '\r' {
+                break;
+            }
+            let position = self.cursor;
+            if !self.advance_char() {
+                return;
+            }
+            if character == '"' {
+                terminated = true;
+                break;
+            }
+            if offense.is_some() {
+                continue;
+            }
+            if character.is_ascii_hexdigit() {
+                pending = match pending {
+                    Some(_) => None,
+                    None => Some(position),
+                };
+            } else if character != ' ' {
+                offense = Some((position, self.cursor, false));
+            } else if let Some(lone) = pending {
+                offense = Some((lone, lone.saturating_add(1), true));
+            }
+        }
+        if !terminated {
+            let opening_end = start.saturating_add(4).min(self.text.len());
+            let span = self.span(start, opening_end);
+            self.push_ordinary_diagnostic(span, || {
+                Diagnostic::error(
+                    DiagnosticCode::UnterminatedString,
+                    "unterminated hex string",
+                    span,
+                )
+                .with_label("this hex string is never closed")
+                .with_note("pre-alpha Orange strings cannot cross a line boundary")
+            });
+        } else if let Some((offense_start, offense_end, lone)) =
+            offense.or_else(|| pending.map(|lone| (lone, lone.saturating_add(1), true)))
+        {
+            self.push_malformed_hex(offense_start, offense_end, lone);
+        }
+        self.push_token(TokenKind::HexString, start, self.cursor);
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn push_malformed_hex(&mut self, start: usize, end: usize, lone: bool) {
+        let span = self.span(start, end);
+        let Some(spelling) = self.text.get(start..end) else {
+            self.fail_cursor_invariant();
+            return;
+        };
+        let character = spelling.chars().next();
+        self.push_ordinary_diagnostic(span, move || {
+            let diagnostic = match character {
+                Some(digit) if lone => Diagnostic::error(
+                    DiagnosticCode::MalformedHexString,
+                    format!("hex digit {} has no partner", PrintableCharacter(digit)),
+                    span,
+                )
+                .with_label("a byte is written as two hex digits"),
+                Some(character) => Diagnostic::error(
+                    DiagnosticCode::MalformedHexString,
+                    format!(
+                        "{} cannot appear in a hex string",
+                        PrintableCharacter(character)
+                    ),
+                    span,
+                )
+                .with_label(if character == '\\' {
+                    "a hex string has no escapes"
+                } else {
+                    "not a hex digit or a space"
+                }),
+                None => Diagnostic::error(
+                    DiagnosticCode::MalformedHexString,
+                    "malformed hex string",
+                    span,
+                ),
+            };
+            diagnostic.with_note(HEX_STRING_NOTE)
+        });
     }
 
     fn lex_integer(&mut self, start: usize) {
@@ -632,8 +749,9 @@ impl<'source> Lexer<'source> {
             ("<<<", TokenKind::LessLessLess),
             (">>>", TokenKind::GreaterGreaterGreater),
         ];
-        const DOUBLE: [(&str, TokenKind); 12] = [
+        const DOUBLE: [(&str, TokenKind); 13] = [
             ("..", TokenKind::DotDot),
+            ("++", TokenKind::PlusPlus),
             ("::", TokenKind::DoubleColon),
             ("&&", TokenKind::AmpAmp),
             ("||", TokenKind::PipePipe),
@@ -954,6 +1072,7 @@ mod tests {
             "IDENTIFIER",
             "INTEGER",
             "STRING",
+            "HEX_STRING",
             "KW_EDITION",
             "KW_MODULE",
             "KW_SPEC",
@@ -974,6 +1093,7 @@ mod tests {
             "DOT_DOT",
             "DOUBLE_COLON",
             "PLUS",
+            "PLUS_PLUS",
             "MINUS",
             "STAR",
             "SLASH",
@@ -1035,6 +1155,7 @@ mod tests {
             ("..", TokenKind::DotDot),
             ("::", TokenKind::DoubleColon),
             ("+", TokenKind::Plus),
+            ("++", TokenKind::PlusPlus),
             ("-", TokenKind::Minus),
             ("*", TokenKind::Star),
             ("/", TokenKind::Slash),
@@ -2030,6 +2151,154 @@ mod tests {
                     "invalid diagnostic span for {text:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn lexes_hex_strings_and_concatenation_by_longest_match() {
+        let (sources, lexed) =
+            lex_text("hex\"00 1f A0\" hex \"00\" hexa\"0\" x++y +++ + + hex\"\" hex");
+        let source = sources.iter().next().unwrap();
+        assert_eq!(lexed.diagnostics(), []);
+        let tokens = lexed
+            .tokens()
+            .iter()
+            .map(|token| (token.kind, token.lexeme(source).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tokens,
+            [
+                (TokenKind::HexString, "hex\"00 1f A0\""),
+                (TokenKind::Identifier, "hex"),
+                (TokenKind::String, "\"00\""),
+                (TokenKind::Identifier, "hexa"),
+                (TokenKind::String, "\"0\""),
+                (TokenKind::Identifier, "x"),
+                (TokenKind::PlusPlus, "++"),
+                (TokenKind::Identifier, "y"),
+                (TokenKind::PlusPlus, "++"),
+                (TokenKind::Plus, "+"),
+                (TokenKind::Plus, "+"),
+                (TokenKind::Plus, "+"),
+                (TokenKind::HexString, "hex\"\""),
+                (TokenKind::Identifier, "hex"),
+                (TokenKind::Eof, ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_hex_strings_at_the_first_offense() {
+        let cases = [
+            (
+                "hex\"00 0g 1\"",
+                "'g' cannot appear in a hex string",
+                "g",
+                "not a hex digit or a space",
+            ),
+            (
+                "hex\"0x11\"",
+                "'x' cannot appear in a hex string",
+                "x",
+                "not a hex digit or a space",
+            ),
+            (
+                "hex\"\\x00\"",
+                "'\\' cannot appear in a hex string",
+                "\\",
+                "a hex string has no escapes",
+            ),
+            (
+                "hex\"00\t11\"",
+                "U+0009 cannot appear in a hex string",
+                "\t",
+                "not a hex digit or a space",
+            ),
+            (
+                "hex\"0\u{e9}\"",
+                "U+00E9 cannot appear in a hex string",
+                "\u{e9}",
+                "not a hex digit or a space",
+            ),
+            (
+                "hex\"0 0\"",
+                "hex digit '0' has no partner",
+                "0",
+                "a byte is written as two hex digits",
+            ),
+            (
+                "hex\"00 112\"",
+                "hex digit '2' has no partner",
+                "2",
+                "a byte is written as two hex digits",
+            ),
+            (
+                "hex\"a\"",
+                "hex digit 'a' has no partner",
+                "a",
+                "a byte is written as two hex digits",
+            ),
+        ];
+        for (text, message, at, label) in cases {
+            let (sources, lexed) = lex_text(text);
+            let source = sources.iter().next().unwrap();
+            assert_eq!(
+                kinds(&lexed),
+                [TokenKind::HexString, TokenKind::Eof],
+                "{text:?}"
+            );
+            assert_eq!(lexed.tokens()[0].lexeme(source), Some(text), "{text:?}");
+            assert_eq!(lexed.diagnostics().len(), 1, "{text:?}");
+            let diagnostic = &lexed.diagnostics()[0];
+            assert_eq!(
+                diagnostic.code(),
+                DiagnosticCode::MalformedHexString,
+                "{text:?}"
+            );
+            assert_eq!(diagnostic.message(), message, "{text:?}");
+            assert_eq!(
+                source.slice(diagnostic.primary_span()),
+                Some(at),
+                "{text:?}"
+            );
+            assert_eq!(diagnostic.label(), label, "{text:?}");
+            assert_eq!(diagnostic.notes(), [HEX_STRING_NOTE], "{text:?}");
+        }
+
+        // The first offense alone is reported, and a lone digit is found
+        // where a space or the closing quote meets it.
+        let (_, lexed) = lex_text("hex\"0 g 1\" hex\"1 2\"");
+        assert_eq!(
+            lexed
+                .diagnostics()
+                .iter()
+                .map(Diagnostic::message)
+                .collect::<Vec<_>>(),
+            [
+                "hex digit '0' has no partner",
+                "hex digit '1' has no partner"
+            ]
+        );
+    }
+
+    #[test]
+    fn unterminated_hex_string_is_reported_at_its_opening_alone() {
+        for ending in ["", "\n", "\r\n", "\r"] {
+            let text = format!("hex\"0g{ending}next");
+            let (sources, lexed) = lex_text(&text);
+            let source = sources.iter().next().unwrap();
+            assert_eq!(lexed.diagnostics().len(), 1, "{ending:?}");
+            let diagnostic = &lexed.diagnostics()[0];
+            assert_eq!(diagnostic.code(), DiagnosticCode::UnterminatedString);
+            assert_eq!(diagnostic.message(), "unterminated hex string");
+            assert_eq!(source.slice(diagnostic.primary_span()), Some("hex\""));
+            let expected = if ending.is_empty() {
+                "hex\"0gnext"
+            } else {
+                "hex\"0g"
+            };
+            assert_eq!(lexed.tokens()[0].kind, TokenKind::HexString);
+            assert_eq!(lexed.tokens()[0].lexeme(source), Some(expected));
         }
     }
 }

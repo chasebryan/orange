@@ -1,0 +1,212 @@
+// S3p conformance: the long test vectors of RFC 8439's appendix A, which no
+// array of 256 elements could hold, written as the RFC prints them. ChaCha20
+// encrypts the 375-byte text of test vector A.2 #2; Poly1305 authenticates
+// the same text under the keys of A.3 #2 and #3; and the 265-byte ciphertext
+// of A.5 authenticates under its tag and opens to the RFC's plaintext. Each
+// function is written once for messages of 1 through 256 whole blocks, and a
+// message that ends inside a block is padded with zeros to the block's end:
+// the key stream's unused bytes are sliced away, and Poly1305 is told how
+// many bytes of its last block are the message's.
+edition 2026;
+module rfc8439 {
+  type Quad = (Word[32], Word[32], Word[32], Word[32]);
+  type P = Mod[(1 << 130) - 5];
+
+  // Section 2.1: the quarter round on four words a, b, c, d.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    (a2, b2, c2, d2)
+  }
+
+  // Section 2.3: the block function of a 256-bit key, a 32-bit block counter
+  // and a 96-bit nonce, serialized as the state's little-endian bytes.
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[8]^64 {
+    let initial: Word[32]^16 =
+      ("expand 32-byte k" ++ key ++ (counter as little Word[8]^4) ++ nonce) as little Word[32]^16;
+    let (x0: Word[32], x1: Word[32], x2: Word[32], x3: Word[32],
+         x4: Word[32], x5: Word[32], x6: Word[32], x7: Word[32],
+         x8: Word[32], x9: Word[32], x10: Word[32], x11: Word[32],
+         x12: Word[32], x13: Word[32], x14: Word[32], x15: Word[32]) =
+      for round in 0..10 with (
+        s0: Word[32], s1: Word[32], s2: Word[32], s3: Word[32],
+        s4: Word[32], s5: Word[32], s6: Word[32], s7: Word[32],
+        s8: Word[32], s9: Word[32], s10: Word[32], s11: Word[32],
+        s12: Word[32], s13: Word[32], s14: Word[32], s15: Word[32]
+      ) = (
+        initial[0], initial[1], initial[2], initial[3],
+        initial[4], initial[5], initial[6], initial[7],
+        initial[8], initial[9], initial[10], initial[11],
+        initial[12], initial[13], initial[14], initial[15]
+      ) {
+        let (c0: Word[32], c4: Word[32], c8: Word[32], c12: Word[32]) = quarter_round(s0, s4, s8, s12);
+        let (c1: Word[32], c5: Word[32], c9: Word[32], c13: Word[32]) = quarter_round(s1, s5, s9, s13);
+        let (c2: Word[32], c6: Word[32], c10: Word[32], c14: Word[32]) = quarter_round(s2, s6, s10, s14);
+        let (c3: Word[32], c7: Word[32], c11: Word[32], c15: Word[32]) = quarter_round(s3, s7, s11, s15);
+        let (d0: Word[32], d5: Word[32], d10: Word[32], d15: Word[32]) = quarter_round(c0, c5, c10, c15);
+        let (d1: Word[32], d6: Word[32], d11: Word[32], d12: Word[32]) = quarter_round(c1, c6, c11, c12);
+        let (d2: Word[32], d7: Word[32], d8: Word[32], d13: Word[32]) = quarter_round(c2, c7, c8, c13);
+        let (d3: Word[32], d4: Word[32], d9: Word[32], d14: Word[32]) = quarter_round(c3, c4, c9, c14);
+        (d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15)
+      };
+    let working: Word[32]^16 = [
+      x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15,
+    ];
+    let state: Word[32]^16 =
+      for i in 0..16 with out: Word[32]^16 = working { out with [i] = out[i] + initial[i] };
+    state as little Word[8]^64
+  }
+
+  // Sixty-four bytes exclusive-ored with sixty-four others.
+  spec xor64(a: Word[8]^64, b: Word[8]^64) -> Word[8]^64 {
+    for i in 0..64 with c: Word[8]^64 = a { c with [i] = a[i] ^ b[i] }
+  }
+
+  // Section 2.4 for a message of `blocks` whole blocks: block j is
+  // exclusive-ored with the key stream block whose counter is counter + j.
+  // Each block is placed with one slice update, whose cost is one step for
+  // each 64 bytes of the message.
+  spec encrypt[blocks in 1..257](
+    key: Word[8]^32, counter: Word[32], nonce: Word[8]^12, plaintext: Word[8]^(64 * blocks),
+  ) -> Word[8]^(64 * blocks) {
+    for j in 0..blocks with c: Word[8]^(64 * blocks) = plaintext {
+      c with [64 * j..64 * j + 64] =
+        xor64(plaintext[64 * j..64 * j + 64], block(key, counter + (j as Word[32]), nonce))
+    }
+  }
+
+  // 256^k as a residue, for 0 <= k <= 16: the weight of the byte 01 that
+  // follows the k bytes of a block.
+  spec weight(k: Int) -> P {
+    for i in 0..16 with w: P = 1 { if i < k { w * 256 } else { w } }
+  }
+
+  // Section 2.5.1 for a message padded with zeros to `blocks` sixteen-byte
+  // blocks, the last of which holds `held` of the message's bytes, 1
+  // through 16. r and s are the key's halves, little-endian, with r clamped
+  // as two 64-bit words; the tag is the low 128 bits of the accumulator
+  // plus s.
+  spec mac[blocks in 1..257](key: Word[8]^32, m: Word[8]^(16 * blocks), held: Int) -> Word[8]^16 {
+    let half: Word[64]^2 = key[..16] as little Word[64]^2;
+    let r: P = [half[0] & 0x0ffffffc0fffffff, half[1] & 0x0ffffffc0ffffffc] as little P;
+    let s: Int = key[16..] as little Int;
+    let a: P = for j in 0..blocks with a: P = 0 {
+      let k: Int = if j == (blocks - 1) { held } else { 16 };
+      (a + (m[16 * j..16 * j + 16] as little P) + weight(k)) * r
+    };
+    ((a as Int) + s) as little Word[8]^16
+  }
+
+  // The text of test vectors A.2 #2, A.3 #2 and A.3 #3: 375 bytes.
+  spec ietf() -> Word[8]^375 {
+    "Any submission to the IETF intended by the Contributor for publication as all " ++
+      "or part of an IETF Internet-Draft or RFC and any statement made within the " ++
+      "context of an IETF activity is considered an \"IETF Contribution\". Such " ++
+      "statements include oral statements in IETF sessions, as well as written and " ++
+      "electronic communications made at any time or place, which are addressed to"
+  }
+
+  // Appendix A.2, test vector 2: key 00..01, block counter 1, nonce 00..02.
+  // The 375 bytes are padded to six blocks and the ciphertext is their first
+  // 375 bytes.
+  spec a2_2() -> Word[8]^375 {
+    encrypt(
+      hex"00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000001",
+      1,
+      hex"00000000 00000000 00000002",
+      ietf() ++ [0; 9],
+    )[..375]
+  }
+
+  // Appendix A.3, test vectors 2 and 3: the same text in 24 blocks, the last
+  // holding 7 of its bytes, under a key with r = 0 and under one with s = 0.
+  spec a3_2() -> Word[8]^16 {
+    mac(
+      hex"00000000 00000000 00000000 00000000 36e5f6b5 c5e06070 f0efca96 227a863e",
+      ietf() ++ [0; 9],
+      7,
+    )
+  }
+
+  spec a3_3() -> Word[8]^16 {
+    mac(
+      hex"36e5f6b5 c5e06070 f0efca96 227a863e 00000000 00000000 00000000 00000000",
+      ietf() ++ [0; 9],
+      7,
+    )
+  }
+
+  // Appendix A.5: the key, nonce, additional data, ciphertext and tag of an
+  // authenticated decryption, the ciphertext sixteen bytes to a line.
+  spec a5_key() -> Word[8]^32 {
+    hex"1c 92 40 a5 eb 55 d3 8a f3 33 88 86 04 f6 b5 f0" ++
+      hex"47 39 17 c1 40 2b 80 09 9d ca 5c bc 20 70 75 c0"
+  }
+
+  spec a5_nonce() -> Word[8]^12 { hex"00 00 00 00 01 02 03 04 05 06 07 08" }
+
+  spec a5_aad() -> Word[8]^12 { hex"f3 33 88 86 00 00 00 00 00 00 4e 91" }
+
+  spec a5_ciphertext() -> Word[8]^265 {
+    hex"64 a0 86 15 75 86 1a f4 60 f0 62 c7 9b e6 43 bd" ++
+      hex"5e 80 5c fd 34 5c f3 89 f1 08 67 0a c7 6c 8c b2" ++
+      hex"4c 6c fc 18 75 5d 43 ee a0 9e e9 4e 38 2d 26 b0" ++
+      hex"bd b7 b7 3c 32 1b 01 00 d4 f0 3b 7f 35 58 94 cf" ++
+      hex"33 2f 83 0e 71 0b 97 ce 98 c8 a8 4a bd 0b 94 81" ++
+      hex"14 ad 17 6e 00 8d 33 bd 60 f9 82 b1 ff 37 c8 55" ++
+      hex"97 97 a0 6e f4 f0 ef 61 c1 86 32 4e 2b 35 06 38" ++
+      hex"36 06 90 7b 6a 7c 02 b0 f9 f6 15 7b 53 c8 67 e4" ++
+      hex"b9 16 6c 76 7b 80 4d 46 a5 9b 52 16 cd e7 a4 e9" ++
+      hex"90 40 c5 a4 04 33 22 5e e2 82 a1 b0 a0 6c 52 3e" ++
+      hex"af 45 34 d7 f8 3f a1 15 5b 00 47 71 8c bc 54 6a" ++
+      hex"0d 07 2b 04 b3 56 4e ea 1b 42 22 73 f5 48 27 1a" ++
+      hex"0b b2 31 60 53 fa 76 99 19 55 eb d6 31 59 43 4e" ++
+      hex"ce bb 4e 46 6d ae 5a 10 73 a6 72 76 27 09 7a 10" ++
+      hex"49 e6 17 d9 1d 36 10 94 fa 68 f0 ff 77 98 71 30" ++
+      hex"30 5b ea ba 2e da 04 df 99 7b 71 4d 6c 6f 2c 29" ++
+      hex"a6 ad 5c b4 02 2b 02 70 9b"
+  }
+
+  spec a5_tag() -> Word[8]^16 { hex"ee ad 9d 67 89 0c bb 22 39 23 36 fe a1 85 1f 38" }
+
+  // Section 2.8: Poly1305's input is the additional data and the ciphertext,
+  // each padded with zeros to whole blocks, then both lengths as 64-bit
+  // little-endian numbers: 16 + 272 + 16 = 304 bytes, 19 whole blocks.
+  spec a5_mac_data() -> Word[8]^304 {
+    let lengths: Word[64]^2 = [12, 265];
+    a5_aad() ++ [0; 4] ++ a5_ciphertext() ++ [0; 7] ++ (lengths as little Word[8]^16)
+  }
+
+  // Section 2.8, opening: the tag is recomputed under the one-time key, the
+  // first 32 bytes of block 0, and compared with the received tag.
+  spec a5_authentic() -> Bool {
+    let one_time: Word[8]^32 = block(a5_key(), 0, a5_nonce())[..32];
+    let tag: Word[8]^16 = mac(one_time, a5_mac_data(), 16);
+    let received: Word[8]^16 = a5_tag();
+    for i in 0..16 with same: Bool = true { same && (tag[i] == received[i]) }
+  }
+
+  // The plaintext is the ciphertext exclusive-ored with the key stream from
+  // block 1, padded to five blocks and cut back to its 265 bytes.
+  spec a5_plaintext() -> Word[8]^265 {
+    encrypt(a5_key(), 1, a5_nonce(), a5_ciphertext() ++ [0; 55])[..265]
+  }
+
+  // The plaintext is the RFC's text, whose quotation marks are the UTF-8
+  // bytes e2 80 9c and e2 80 9d.
+  spec a5_opens_to_text() -> Bool {
+    let text: Word[8]^265 =
+      "Internet-Drafts are draft documents valid for a maximum of six months and " ++
+        "may be updated, replaced, or obsoleted by other documents at any time. It is " ++
+        "inappropriate to use Internet-Drafts as reference material or to cite them " ++
+        "other than as /" ++ hex"e2 80 9c" ++ "work in progress./" ++ hex"e2 80 9d";
+    let opened: Word[8]^265 = a5_plaintext();
+    for i in 0..265 with same: Bool = true { same && (opened[i] == text[i]) }
+  }
+}

@@ -1,0 +1,12 @@
+// S3k conformance: the names of tuple patterns. Each name is unique among
+// the names in scope and the pattern's other names, and is in scope where a
+// binding's or an accumulator's name is.
+edition 2026;
+module tuple_names {
+  spec within() -> Int { let (a: Int, a: Int) = (1, 2); a }
+  spec parameter(a: Int) -> Int { let (a: Int, b: Int) = (1, 2); b }
+  spec binding() -> Int { let b: Int = 1; let (a: Int, b: Int) = (1, 2); a }
+  spec index() -> Int { let r: (Int, Int) = for i in 0..2 with (i: Int, s: Int) = (0, 0) { (s, s) }; r.0 }
+  spec itself() -> Int { let (a: Int, b: Int) = (1, a); b }
+  spec after() -> Int { let r: (Int, Int) = for i in 0..2 with (a: Int, b: Int) = (0, 1) { (b, a) }; a }
+}

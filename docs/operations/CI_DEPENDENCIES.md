@@ -71,7 +71,7 @@ nondeterminism; it is not independently reproduced release evidence.
 | `scorecard.yml` | `main` and scheduled OpenSSF posture observation | Checkout, Scorecard, artifact upload, and CodeQL SARIF upload | Uses GitHub, GHCR, artifact, and code-scanning services; public Scorecard publication and OIDC are disabled |
 | `workflow-online-audit.yml` | `main`, scheduled, and manual upstream-metadata observation | Checkout and zizmor | Pulls the digest-pinned zizmor image and intentionally queries current GitHub metadata |
 
-Job deadlines are exact: `ci.yml`, `external-links.yml`, and
+Job deadlines are exact: `ci.yml` permits 30 minutes; `external-links.yml` and
 `workflow-online-audit.yml` permit 15 minutes; `dependency-review.yml` permits
 10 minutes; and `scorecard.yml` permits 20 minutes.
 

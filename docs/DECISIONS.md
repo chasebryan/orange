@@ -168,8 +168,8 @@ subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. Integrity parsing and structural oracles ratify no
 Orange semantics. D-004 remains proposed pending owner review of these results,
-S3b through S3j are implemented and await owner review under OEP-0005 through
-OEP-0013, and Orange's 3-of-10 (30%) binary gate-closure score remains
+S3b through S3r are implemented and await owner review under OEP-0005 through
+OEP-0021, and Orange's 3-of-10 (30%) binary gate-closure score remains
 unchanged; that mechanical score is not release readiness.
 
 ## D-005 — Public assurance model
@@ -517,6 +517,19 @@ owner-accessible hardware evidence, and flagship-corpus feasibility.
 
 The active solo capacity boundary that governs future target admission is
 recorded in the [solo development envelope](GATE0_SUPPORT_ENVELOPES.md).
+
+The d011-v0.1 [native target decision suite](NATIVE_TARGET_DECISION_SUITE.md)
+compares five target envelopes, from x86-64 with AArch64 and RV64GC down to
+portable C only, on contributor-written C kernels standing in for code Orange
+does not yet generate. Epoch `d011-e-291c7d1e803c802bcfd0` ran its measured
+profile on 2026-09-30 on a contributor host. No hard gate failed. The gates
+that did not pass are unresolved for want of owner input (inventory
+verification and owner hardware), of three tools that need D-018 admission (a
+RISC-V GCC and two Rust standard libraries), or of an emulated AArch64 CPU
+without the Cryptographic Extension. Only the portable-C-only envelope passes
+every gate, and only vacuously, so the conclusion is inconclusive and no
+envelope is selected. That result is contributor-produced and unreviewed; the
+[D-011 laboratory](../research/decisions/D-011/README.md) records it.
 
 ## D-012 — Baseline leakage claim
 

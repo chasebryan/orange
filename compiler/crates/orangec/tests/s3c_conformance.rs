@@ -16,6 +16,7 @@ const S3C_CONFORMANCE_SOURCE: &str = include_str!("s3c_conformance.rs");
 const LEXER_SOURCE: &str = include_str!("../../orange-compiler/src/lexer.rs");
 const PARSER_SOURCE: &str = include_str!("../../orange-compiler/src/parser.rs");
 const SEMANTICS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics.rs");
+const SEMANTICS_TESTS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics/tests.rs");
 const CORE_SOURCE: &str = include_str!("../../orange-compiler/src/core.rs");
 const EVAL_SOURCE: &str = include_str!("../../orange-compiler/src/eval.rs");
 const DIAGNOSTIC_SOURCE: &str = include_str!("../../orange-compiler/src/diagnostic.rs");
@@ -293,22 +294,22 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         rules: &["S3C-GROUP-01", "S3C-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "bindings_and_conversions_build_typed_core_in_source_order",
         rules: &["S3C-BIND-01", "S3C-CORE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "a_conversion_operand_has_the_type_of_its_first_typed_leaf",
         rules: &["S3C-CONV-TYPE-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "binding_names_are_unique_and_in_scope_only_after_their_binding",
         rules: &["S3C-SCOPE-01", "S3C-DIAG-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "conversion_errors_are_reported_once_in_checking_order",
         rules: &[
             "S3C-BIND-01",
@@ -318,32 +319,32 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "calls_inside_bindings_and_conversions_join_the_call_graph",
         rules: &["S3C-EVAL-01", "S3C-DIAG-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "binding_and_conversion_events_and_core_nodes_follow_the_normative_accounting",
         rules: &["S3C-RES-EVENT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "binding_storage_failures_return_no_partial_core",
         rules: &["S3C-RES-FAIL-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "rejects_foreign_spans_in_bindings_and_conversions",
         rules: &["S3C-RES-FAIL-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "let_and_as_are_ordinary_names_in_semantics",
         rules: &["S3C-CONTEXT-01", "S3C-COMPAT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "names_and_calls_resolve_only_to_parameters_and_typed_specs",
         rules: &["S3C-COMPAT-01"],
     },
@@ -545,6 +546,7 @@ fn unit_source(source_path: &str) -> &'static str {
         "src/lexer.rs" => LEXER_SOURCE,
         "src/parser.rs" => PARSER_SOURCE,
         "src/semantics.rs" => SEMANTICS_SOURCE,
+        "src/semantics/tests.rs" => SEMANTICS_TESTS_SOURCE,
         "src/core.rs" => CORE_SOURCE,
         "src/eval.rs" => EVAL_SOURCE,
         "src/diagnostic.rs" => DIAGNOSTIC_SOURCE,
@@ -553,17 +555,48 @@ fn unit_source(source_path: &str) -> &'static str {
 }
 
 /// Requires `test` to be declared exactly once, as a `#[test]` function
-/// directly inside the source's single `#[cfg(test)] mod tests` module.
+/// directly inside the source's single `#[cfg(test)] mod tests` module. The
+/// module is written inline, or in its own `tests.rs` file that its parent
+/// declares once as `#[cfg(test)] mod tests;` with no other attribute.
 fn assert_unit_test_declared(source_path: &str, test: &str) {
     let source = unit_source(source_path);
-    let marker = "\n#[cfg(test)]\nmod tests {\n";
-    assert_eq!(
-        source.matches(marker).count(),
-        1,
-        "{source_path} must have exactly one unconditional test module"
-    );
-    let (_, tests) = source.split_once(marker).unwrap();
-    let declaration = format!("\n    #[test]\n    fn {test}() {{\n");
+    let (tests, declaration) = match source_path.strip_suffix("/tests.rs") {
+        Some(parent) => {
+            let parent_path = format!("{parent}.rs");
+            let parent_source = unit_source(&parent_path);
+            assert_eq!(
+                parent_source.matches("mod tests").count(),
+                1,
+                "{parent_path} must declare exactly one test module"
+            );
+            assert_eq!(
+                parent_source
+                    .matches("\n#[cfg(test)]\nmod tests;\n")
+                    .count(),
+                1,
+                "{parent_path} must declare its test module unconditionally"
+            );
+            assert!(
+                !parent_source.contains("]\n#[cfg(test)]\nmod tests;"),
+                "{parent_path} must not add an attribute to its test module"
+            );
+            assert!(
+                !source.contains("#!["),
+                "{source_path} must not carry an inner attribute"
+            );
+            (source, format!("\n#[test]\nfn {test}() {{\n"))
+        }
+        None => {
+            let marker = "\n#[cfg(test)]\nmod tests {\n";
+            assert_eq!(
+                source.matches(marker).count(),
+                1,
+                "{source_path} must have exactly one unconditional test module"
+            );
+            let (_, tests) = source.split_once(marker).unwrap();
+            (tests, format!("\n    #[test]\n    fn {test}() {{\n"))
+        }
+    };
     assert_eq!(
         tests.matches(&declaration).count(),
         1,

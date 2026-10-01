@@ -1,0 +1,64 @@
+// S3n conformance: X25519 of RFC 7748 over the integers modulo 2^255 - 19,
+// decoding and encoding as the RFC's decodeLittleEndian and
+// encodeUCoordinate do. The u-coordinate is its 32 bytes, with the top bit
+// masked, read as a little-endian residue, and the result is the least
+// residue written as 32 little-endian bytes. The Montgomery ladder of
+// section 5 is written as in S3j. The result of the first test vector of
+// section 5.2 matches the RFC byte for byte.
+edition 2026;
+module x25519 {
+  // Section 4.1: the field of p = 2^255 - 19 elements.
+  type F = Mod[(1 << 255) - 19];
+  // [x_2, z_2, x_3, z_3].
+  type Ladder = F^4;
+
+  // Section 5: the scalar with its three low bits cleared, bit 255 cleared,
+  // and bit 254 set.
+  spec clamp(k: Word[8]^32) -> Word[8]^32 {
+    (k with [0] = k[0] & 248) with [31] = (k[31] & 127) | 64
+  }
+
+  // Section 5: the scalar's bits from 254 down to 0 drive the ladder, and
+  // the result is x_2 * z_2^(p - 2), which is x_2 / z_2.
+  spec x25519(scalar: Word[8]^32, u: Word[8]^32) -> Word[8]^32 {
+    let k: Word[8]^32 = clamp(scalar);
+    let masks: Word[8]^8 = [1, 2, 4, 8, 16, 32, 64, 128];
+    // decodeUCoordinate: the top bit masked, then decodeLittleEndian,
+    // reduced modulo p.
+    let x_1: F = (u with [31] = u[31] & 127) as little F;
+    // [x_2, z_2, x_3, z_3] after the step for bit t = 254 - i.
+    let ladder: Ladder = for i in 0..255 with s: Ladder = [1, 0, x_1, 1] {
+      let k_t: Bool = (k[(254 - i) / 8] & masks[(254 - i) % 8]) != 0;
+      // swap ^= k_t, where swap holds bit t + 1; clamping clears bit 255.
+      let swap: Bool = k_t != ((k[(255 - i) / 8] & masks[(255 - i) % 8]) != 0);
+      let x_2: F = if swap { s[2] } else { s[0] };
+      let z_2: F = if swap { s[3] } else { s[1] };
+      let x_3: F = if swap { s[0] } else { s[2] };
+      let z_3: F = if swap { s[1] } else { s[3] };
+      let A: F = x_2 + z_2;
+      let AA: F = A * A;
+      let B: F = x_2 - z_2;
+      let BB: F = B * B;
+      let E: F = AA - BB;
+      let C: F = x_3 + z_3;
+      let D: F = x_3 - z_3;
+      let DA: F = D * A;
+      let CB: F = C * B;
+      [AA * BB, E * (AA + 121665 * E), (DA + CB) * (DA + CB), x_1 * ((DA - CB) * (DA - CB))]
+    };
+    // The last conditional swap is by bit 0.
+    let swap: Bool = (k[0] & 1) != 0;
+    let x_2: F = if swap { ladder[2] } else { ladder[0] };
+    let z_2: F = if swap { ladder[3] } else { ladder[1] };
+    // encodeUCoordinate: the least residue as 32 little-endian bytes.
+    (x_2 / z_2) as little Word[8]^32
+  }
+
+  // Section 5.2, the first test vector.
+  spec test_vector() -> Word[8]^32 {
+    x25519(
+      hex"a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4",
+      hex"e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c",
+    )
+  }
+}

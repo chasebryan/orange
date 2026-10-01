@@ -23,10 +23,30 @@ meaning. It accepts no D-004 candidate.
 
 > [!NOTE]
 > [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, extends this
-> document with `let` bindings at the start of a loop's step and of each
-> branch of a conditional, so that the Montgomery ladder of X25519 names A,
-> AA, B, BB, E, C, D, DA, and CB inside each step, as RFC 7748 does. Every
-> source this document accepts keeps its meaning under it.
+> document with `let` bindings at the start of a loop's step and of each branch
+> of a conditional, so that the Montgomery ladder of X25519 names A, AA, B, BB,
+> E, C, D, DA, and CB inside each step, as RFC 7748 does.
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> which a `type` declaration may name, as `type Pair = (Int, Int);`, and whose
+> elements may be residues. [`BYTES_2026.md`](BYTES_2026.md), proposed under
+> OEP-0015, adds byte strings and slices, so that a Poly1305 key is written as
+> RFC 8439 prints it and its message read sixteen bytes at a time.
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds size
+> parameters, so that Poly1305 is written once for every message length; a
+> modulus is not a size. [`ORDER_2026.md`](ORDER_2026.md), proposed under
+> OEP-0017, adds conversions in a byte order, so that a Poly1305 block or an
+> X25519 coordinate is read as a residue in one conversion, as `(b ++ hex"01")
+> as little P`, and a residue is written as bytes.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> adds type parameters, so that one function serves several moduli, as `spec
+> pow[K in {F, P, Q}](x: K, e: Int) -> K`, each instance checked in its own
+> ring; a modulus is still a constant. [`LENGTHS_2026.md`](LENGTHS_2026.md),
+> proposed under OEP-0019, lets an array of residues hold up to 65,536 elements,
+> and reads words wider than 16,384 bits as a residue only while their number
+> fits the exact-integer limit. [`TESTS_2026.md`](TESTS_2026.md), proposed
+> under OEP-0020, admits test declarations among a module's functions in the
+> grammar of section 3, and compares arrays of residues whole with `==` and
+> `!=`. Every source this document accepts keeps its meaning under all eight.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

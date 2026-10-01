@@ -76,6 +76,66 @@ unresolved.
 > branch of a conditional may begin with `let` bindings, as a function's body
 > does. It adds no token and no reserved word: `let` is recognized by
 > position, as in S3c.
+>
+> The S3k slice proposed in [`TUPLES_2026.md`](TUPLES_2026.md) under
+> OEP-0014, also in review, builds on S3j with tuples: a tuple type `(T, U)`,
+> a tuple `(a, b)`, the selection `.k` of element k, and tuple patterns that
+> name each element where a binding or a loop's accumulator is declared. It
+> adds no token and no reserved word.
+>
+> The S3l slice proposed in [`BYTES_2026.md`](BYTES_2026.md) under OEP-0015,
+> also in review, builds on S3k with bytes: a string is the array of its
+> bytes, `hex"..."` writes one in hex, `++` joins two arrays, and `x[a..b]`
+> takes a run of elements at bounds proved in range. It adds two tokens,
+> `HEX_STRING` and `PLUS_PLUS`, and no reserved word: `hex` is a name unless a
+> quote follows it directly.
+>
+> The S3m slice proposed in [`SIZES_2026.md`](SIZES_2026.md) under OEP-0016,
+> also in review, builds on S3l with sizes: a `spec` may declare size parameters
+> with finite ranges, as `spec pad[len in 1..120](m: Word[8]^len)`, and stands
+> for one function for each of their values, each checked as if written out. It
+> adds no token and no reserved word: `in` is a name except between a size
+> parameter's name and its first bound.
+>
+> The S3n slice proposed in [`ORDER_2026.md`](ORDER_2026.md) under OEP-0017,
+> also in review, builds on S3m with byte orders: `x as big T` and
+> `x as little T` read words as words of another width, as a number, or as a
+> residue, and write a number as words, first word most significant or least.
+> It adds no token and no reserved word: `big` and `little` are names except
+> directly after `as` and before a type.
+>
+> The S3o slice proposed in
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md) under OEP-0018, also in
+> review, builds on S3n with type parameters: a `spec` may list the types it is
+> written for, as `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, and stands for
+> one function for each, each checked as if written out; a call names its
+> instance by its types, `pow[F](x, e)`, or lets its arguments' types and its
+> place choose. It adds no token and no reserved word: braces after a size
+> parameter's `in` hold a list of types.
+>
+> The S3p slice proposed in [`LENGTHS_2026.md`](LENGTHS_2026.md) under
+> OEP-0019, also in review, builds on S3o with long arrays and evaluation
+> controls: an array, an array literal, and a byte string hold up to 65,536
+> elements, so a `Word[16]` indexes the longest with no check at run time, and
+> `orangec eval --steps`, `--spec`, and `--stats` set a run's step budget,
+> evaluate only the functions named, and report the steps each used. It adds
+> no token and no reserved word.
+>
+> The S3q slice proposed in [`TESTS_2026.md`](TESTS_2026.md) under OEP-0020,
+> also in review, builds on S3p with known-answer tests and whole-value
+> equality: `test "TITLE" { claim }` may stand among a module's functions, its
+> claim a `Bool` checked as a function without parameters, `==` and `!=`
+> compare arrays and tuples whole, and `orangec test` runs the root module's
+> tests and reports each. It adds no token and no reserved word: `test`
+> followed by a string begins a test only where a module member may begin.
+>
+> The S3r slice proposed in [`AMOUNTS_2026.md`](AMOUNTS_2026.md) under
+> OEP-0021, also in review, builds on S3q with computed amounts: a shift or
+> rotation may take any `Int` or word expression as its amount, `x <<< r` or
+> `x >> (i % 8)`, a shift by the width or more giving 0, a negative amount
+> shifting the other way, and a rotation turning by its amount modulo the
+> width. An amount written as one integer literal is still from 0 through
+> n - 1. It adds no token, reserved word, or diagnostic code.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

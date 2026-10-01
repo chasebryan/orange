@@ -1,0 +1,80 @@
+// S3o conformance: one function for several prime fields. A type parameter
+// `K in {F, L, P, Q, D}` lists the fields a function is written for, and the
+// function is checked, and runs, once for each: the field of Curve25519
+// (RFC 7748), the order of its prime-order subgroup (RFC 8032), the field of
+// Poly1305 (RFC 8439), and the moduli of ML-KEM (FIPS 203) and ML-DSA
+// (FIPS 204).
+edition 2026;
+module fields {
+  type F = Mod[(1 << 255) - 19];
+  type L = Mod[(1 << 252) + 27742317777372353535851937790883648493];
+  type P = Mod[(1 << 130) - 5];
+  type Q = Mod[3329];
+  type D = Mod[8380417];
+
+  // The modulus m: one more than the least residue of -1.
+  spec modulus[K in {F, L, P, Q, D}]() -> Int {
+    let minus_one: K = 0 - 1;
+    (minus_one as Int) + 1
+  }
+
+  // x^e for 0 <= e < 2^256, squaring x once for each bit of e and
+  // multiplying the bits that are set into the power.
+  spec pow[K in {F, L, P, Q, D}](x: K, e: Int) -> K {
+    let (square: K, power: K, rest: Int) =
+      for i in 0..256 with (square: K, power: K, rest: Int) = (x, 1, e) {
+        (square * square, if (rest % 2) == 1 { power * square } else { power }, rest / 2)
+      };
+    power
+  }
+
+  // Fermat's little theorem: in a field of prime order m, x^(m - 2) is the
+  // inverse of x, for x not 0.
+  spec inverse[K in {F, L, P, Q, D}](x: K) -> K { pow(x, modulus[K]() - 2) }
+
+  // Euler's criterion: 1 for a nonzero square, -1 for a nonsquare, 0 for 0.
+  spec legendre[K in {F, L, P, Q, D}](x: K) -> Int {
+    let t: K = pow(x, (modulus[K]() - 1) / 2);
+    if t == 0 { 0 } else if t == 1 { 1 } else { -1 }
+  }
+
+  // Every field inverts 1234, and 2 is a square modulo m exactly when m
+  // is 1 or 7 modulo 8: modulo 3329 and 8380417, but not modulo the others.
+  spec inverts[K in {F, L, P, Q, D}]() -> Bool {
+    let x: K = 1234;
+    (x * inverse(x)) == 1
+  }
+
+  spec two_is_square[K in {F, L, P, Q, D}]() -> Int {
+    let two: K = 2;
+    legendre(two)
+  }
+
+  // RFC 8032 section 5.1.3 takes square roots in F with 2^((m - 1) / 4),
+  // a square root of -1.
+  spec sqrt_minus_one() -> F { pow(2, (modulus[F]() - 1) / 4) }
+
+  spec squares_to_minus_one() -> Bool {
+    let i: F = sqrt_minus_one();
+    (i * i) == -1
+  }
+
+  // ML-KEM's number-theoretic transform is built on 17, a primitive 256th
+  // root of unity modulo 3329, and ML-DSA's on 1753, a primitive 512th root
+  // of unity modulo 8380417: 17^128 and 1753^256 are both -1.
+  spec kem_root() -> Q { pow(17, 128) }
+
+  spec dsa_root() -> D { pow(1753, 256) }
+
+  // A size and a type together: the sum of n elements of either lattice
+  // field, called with the instance its argument's type and length choose.
+  spec sum[K in {Q, D}, n in 1..9](xs: K^n) -> K {
+    for i in 0..n with total: K = 0 { total + xs[i] }
+  }
+
+  spec coefficients() -> (Q, D) {
+    let a: Q = 3000;
+    let b: D = 8000000;
+    (sum([a, a, a]), sum([b, b, b, b, b]))
+  }
+}

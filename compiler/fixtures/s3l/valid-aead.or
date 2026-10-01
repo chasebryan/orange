@@ -1,0 +1,148 @@
+// S3l conformance: the ChaCha20-Poly1305 AEAD of RFC 8439 section 2.8, with
+// its inputs written as section 2.8.2 prints them: the plaintext as text and
+// the key, nonce and additional data in hex. Key and nonce words are
+// four-byte slices; a serialized block is written four bytes at a time by
+// slice updates; the key stream is two blocks joined by `++`; the one-time
+// Poly1305 key is the first 32 bytes of block 0; Poly1305's input is joined
+// from the additional data, the ciphertext, their padding and both lengths,
+// and its sixteen-byte blocks are slices. Sealing gives the RFC's ciphertext
+// and tag, and the tag verifies.
+edition 2026;
+module aead {
+  type Quad = (Word[32], Word[32], Word[32], Word[32]);
+  type P = Mod[(1 << 130) - 5];
+
+  // Section 2.1.
+  spec quarter_round(a: Word[32], b: Word[32], c: Word[32], d: Word[32]) -> Quad {
+    let a1: Word[32] = a + b;
+    let d1: Word[32] = (d ^ a1) <<< 16;
+    let c1: Word[32] = c + d1;
+    let b1: Word[32] = (b ^ c1) <<< 12;
+    let a2: Word[32] = a1 + b1;
+    let d2: Word[32] = (d1 ^ a2) <<< 8;
+    let c2: Word[32] = c1 + d2;
+    let b2: Word[32] = (b1 ^ c2) <<< 7;
+    (a2, b2, c2, d2)
+  }
+
+  // Four bytes, least significant first, as one word, and back.
+  spec le32(b: Word[8]^4) -> Word[32] {
+    (b[0] as Word[32]) | ((b[1] as Word[32]) << 8) | ((b[2] as Word[32]) << 16)
+      | ((b[3] as Word[32]) << 24)
+  }
+
+  spec le_bytes(x: Word[32]) -> Word[8]^4 {
+    [x as Word[8], (x >> 8) as Word[8], (x >> 16) as Word[8], (x >> 24) as Word[8]]
+  }
+
+  // Section 2.3: the block function, serialized as 64 bytes. Words 4
+  // through 11 are the key and words 13 through 15 the nonce, each read in
+  // four-byte chunks, little-endian.
+  spec block(key: Word[8]^32, counter: Word[32], nonce: Word[8]^12) -> Word[8]^64 {
+    let initial: Word[32]^16 = [
+      0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+      le32(key[0..4]), le32(key[4..8]), le32(key[8..12]), le32(key[12..16]),
+      le32(key[16..20]), le32(key[20..24]), le32(key[24..28]), le32(key[28..32]),
+      counter, le32(nonce[0..4]), le32(nonce[4..8]), le32(nonce[8..12]),
+    ];
+    let (x0: Word[32], x1: Word[32], x2: Word[32], x3: Word[32],
+         x4: Word[32], x5: Word[32], x6: Word[32], x7: Word[32],
+         x8: Word[32], x9: Word[32], x10: Word[32], x11: Word[32],
+         x12: Word[32], x13: Word[32], x14: Word[32], x15: Word[32]) =
+      for round in 0..10 with (
+        s0: Word[32], s1: Word[32], s2: Word[32], s3: Word[32],
+        s4: Word[32], s5: Word[32], s6: Word[32], s7: Word[32],
+        s8: Word[32], s9: Word[32], s10: Word[32], s11: Word[32],
+        s12: Word[32], s13: Word[32], s14: Word[32], s15: Word[32]
+      ) = (
+        initial[0], initial[1], initial[2], initial[3],
+        initial[4], initial[5], initial[6], initial[7],
+        initial[8], initial[9], initial[10], initial[11],
+        initial[12], initial[13], initial[14], initial[15]
+      ) {
+        let (c0: Word[32], c4: Word[32], c8: Word[32], c12: Word[32]) = quarter_round(s0, s4, s8, s12);
+        let (c1: Word[32], c5: Word[32], c9: Word[32], c13: Word[32]) = quarter_round(s1, s5, s9, s13);
+        let (c2: Word[32], c6: Word[32], c10: Word[32], c14: Word[32]) = quarter_round(s2, s6, s10, s14);
+        let (c3: Word[32], c7: Word[32], c11: Word[32], c15: Word[32]) = quarter_round(s3, s7, s11, s15);
+        let (d0: Word[32], d5: Word[32], d10: Word[32], d15: Word[32]) = quarter_round(c0, c5, c10, c15);
+        let (d1: Word[32], d6: Word[32], d11: Word[32], d12: Word[32]) = quarter_round(c1, c6, c11, c12);
+        let (d2: Word[32], d7: Word[32], d8: Word[32], d13: Word[32]) = quarter_round(c2, c7, c8, c13);
+        let (d3: Word[32], d4: Word[32], d9: Word[32], d14: Word[32]) = quarter_round(c3, c4, c9, c14);
+        (d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15)
+      };
+    let working: Word[32]^16 = [
+      x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15,
+    ];
+    for i in 0..16 with out: Word[8]^64 = [0; 64] {
+      out with [4 * i..4 * i + 4] = le_bytes(working[i] + initial[i])
+    }
+  }
+
+  // Section 2.4: a 114-byte message exclusive-ored with the key stream of
+  // blocks 1 and 2, of which the last 14 bytes go unused.
+  spec encrypt(key: Word[8]^32, nonce: Word[8]^12, plaintext: Word[8]^114) -> Word[8]^114 {
+    let stream: Word[8]^128 = block(key, 1, nonce) ++ block(key, 2, nonce);
+    for n in 0..114 with c: Word[8]^114 = plaintext { c with [n] = plaintext[n] ^ stream[n] }
+  }
+
+  // Section 2.5.1: a whole block is its sixteen bytes, little-endian, with
+  // the byte 01 above them.
+  spec block_number(b: Word[8]^16) -> P {
+    for i in 0..16 with n: P = 1 { n * 256 + (b[15 - i] as P) }
+  }
+
+  // 256^i for 0 <= i < 16.
+  spec byte_weight(i: Int) -> Int {
+    for j in 0..16 with w: Int = 1 { if j < i { w * 256 } else { w } }
+  }
+
+  // Section 2.5.1 for ten whole blocks. The first half of the key is r,
+  // clamped; the second half is s.
+  spec mac(key: Word[8]^32, m: Word[8]^160) -> Word[8]^16 {
+    let clamp: Word[8]^16 = hex"ffffff0f fcffff0f fcffff0f fcffff0f";
+    let r: P = for i in 0..16 with n: P = 0 { n * 256 + ((key[15 - i] & clamp[15 - i]) as P) };
+    let s: Int = for i in 0..16 with n: Int = 0 { n * 256 + (key[31 - i] as Int) };
+    let a: P = for j in 0..10 with a: P = 0 { (a + block_number(m[16 * j..16 * j + 16])) * r };
+    let tag: Int = (a as Int) + s;
+    for i in 0..16 with t: Word[8]^16 = [0; 16] { t with [i] = (tag / byte_weight(i)) as Word[8] }
+  }
+
+  // Section 2.8: the additional data padded to 16 bytes, the ciphertext
+  // padded to 128, and both lengths, 12 and 114, as 64-bit little-endian
+  // integers.
+  spec mac_data(aad: Word[8]^12, ciphertext: Word[8]^114) -> Word[8]^160 {
+    aad ++ [0; 4] ++ ciphertext ++ [0; 14] ++ hex"0c00000000000000" ++ hex"7200000000000000"
+  }
+
+  // Section 2.8: the ciphertext followed by the tag.
+  spec seal(key: Word[8]^32, nonce: Word[8]^12, aad: Word[8]^12, plaintext: Word[8]^114)
+    -> Word[8]^130 {
+    let ciphertext: Word[8]^114 = encrypt(key, nonce, plaintext);
+    ciphertext ++ mac(block(key, 0, nonce)[..32], mac_data(aad, ciphertext))
+  }
+
+  // Section 2.8.2.
+  spec key() -> Word[8]^32 {
+    hex"80818283 84858687 88898a8b 8c8d8e8f 90919293 94959697 98999a9b 9c9d9e9f"
+  }
+
+  spec nonce() -> Word[8]^12 { hex"07000000 40414243 44454647" }
+
+  spec aad() -> Word[8]^12 { hex"50515253 c0c1c2c3 c4c5c6c7" }
+
+  spec sunscreen() -> Word[8]^114 {
+    "Ladies and Gentlemen of the class of '99: " ++
+      "If I could offer you only one tip for the future, " ++
+      "sunscreen would be it."
+  }
+
+  spec sealed() -> Word[8]^130 { seal(key(), nonce(), aad(), sunscreen()) }
+
+  // The receiver recomputes the tag over the received ciphertext and
+  // compares it with the received tag, byte by byte.
+  spec verified() -> Bool {
+    let received: Word[8]^130 = sealed();
+    let tag: Word[8]^16 = mac(block(key(), 0, nonce())[..32], mac_data(aad(), received[..114]));
+    for i in 0..16 with same: Bool = true { same && (tag[i] == received[114 + i]) }
+  }
+}

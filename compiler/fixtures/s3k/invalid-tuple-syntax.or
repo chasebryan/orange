@@ -1,0 +1,15 @@
+// S3k conformance: malformed tuple types, tuples, positions, and tuple
+// patterns. Each function holds one syntax error, reported at its token.
+edition 2026;
+module tuple_syntax {
+  spec one() -> (Int) { 0 }
+  spec nested(p: ((Int, Int), Int), q: Int) -> Int { q }
+  spec array(p: (Int, Int)^2) -> Int { 0 }
+  spec lonely() -> (Int, Int) { (1,) }
+  spec leading(p: (Int, Int)) -> Int { p.01 }
+  spec twice(p: (Int, Int)) -> Int { p.0.1 }
+  spec element(x: Int^2) -> Int { x[0].1 }
+  spec untyped(p: (Int, Int)) -> Int { let (x, y) = p; x }
+  spec single() -> Int { let (x: Int) = 1; x }
+  spec accumulator() -> Int { for i in 0..2 with (s: Int, t) = (0, 0) { (t, s) } }
+}

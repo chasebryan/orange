@@ -1,0 +1,63 @@
+// S3k conformance: tuple types, tuples, the selection of an element by its
+// position, and tuple patterns in bindings and in the accumulators of loops.
+// A tuple's elements are evaluated left to right; `.k` selects element k,
+// counted from zero; a tuple pattern names each element of its value.
+edition 2026;
+module tuples {
+  type Limb = Word[64];
+  type Carried = (Limb, Limb);
+
+  // One limb of a multi-precision addition: the sum of two limbs and an
+  // incoming carry, and the carry out.
+  spec add_carry(a: Limb, b: Limb, carry: Limb) -> Carried {
+    let s: Limb = a + b;
+    let t: Limb = s + carry;
+    let out: Limb = if s < a { 1 } else { 0 };
+    (t, if t < s { out + 1 } else { out })
+  }
+
+  // A 256-bit addition of four limbs, least significant first; the sum and
+  // the carry are the loop's two accumulators.
+  spec add256(x: Limb^4, y: Limb^4) -> (Limb^4, Limb) {
+    for i in 0..4 with (sum: Limb^4, carry: Limb) = ([0; 4], 0) {
+      let (limb: Limb, out: Limb) = add_carry(x[i], y[i], carry);
+      (sum with [i] = limb, out)
+    }
+  }
+
+  spec wraps() -> (Limb^4, Limb) { add256([0xffffffffffffffff; 4], [1, 0, 0, 0]) }
+  spec top_limb() -> Limb { add256([0xffffffffffffffff, 0, 0, 0], [1, 0, 0, 0]).0[1] }
+
+  // The ninetieth Fibonacci number, from a pair of accumulators.
+  spec fibonacci() -> Int {
+    let (f: Int, g: Int) = for i in 0..90 with (a: Int, b: Int) = (0, 1) { (b, a + b) };
+    f
+  }
+
+  // The extended Euclidean algorithm: gcd(a, b) = s * a + t * b. Its six
+  // values are the loop's accumulators and stop changing once the
+  // remainder is zero; 96 steps suffice for arguments below 2^64.
+  spec extended_gcd(a: Int, b: Int) -> (Int, Int, Int) {
+    let e: (Int, Int, Int, Int, Int, Int) =
+      for i in 0..96 with (r0: Int, r1: Int, s0: Int, s1: Int, t0: Int, t1: Int) =
+        (a, b, 1, 0, 0, 1) {
+        if r1 == 0 { (r0, r1, s0, s1, t0, t1) } else {
+          let q: Int = r0 / r1;
+          (r1, r0 - q * r1, s1, s0 - q * s1, t1, t0 - q * t1)
+        }
+      };
+    (e.0, e.2, e.4)
+  }
+
+  // The inverse of 17 modulo 3120, the private exponent of a textbook RSA
+  // key with p = 61 and q = 53, and its check: 17 * 2753 = 15 * 3120 + 1.
+  spec inverse() -> Int {
+    let (g: Int, s: Int, t: Int) = extended_gcd(17, 3120);
+    if (g == 1) && ((s * 17 + t * 3120) == 1) { ((s % 3120) + 3120) % 3120 } else { 0 }
+  }
+
+  // A tuple may hold a Bool, and a branch may give a tuple.
+  spec sign(x: Int) -> (Int, Bool,) { if x < 0 { (0 - x, true) } else { (x, false) } }
+  spec unsign(p: (Int, Bool)) -> Int { if p.1 { 0 - p.0 } else { p.0 } }
+  spec round_trip() -> Int^2 { [unsign(sign(-5)), unsign(sign(5))] }
+}

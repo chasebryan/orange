@@ -16,6 +16,7 @@ const S3D_CONFORMANCE_SOURCE: &str = include_str!("s3d_conformance.rs");
 const LEXER_SOURCE: &str = include_str!("../../orange-compiler/src/lexer.rs");
 const PARSER_SOURCE: &str = include_str!("../../orange-compiler/src/parser.rs");
 const SEMANTICS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics.rs");
+const SEMANTICS_TESTS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics/tests.rs");
 const CORE_SOURCE: &str = include_str!("../../orange-compiler/src/core.rs");
 const EVAL_SOURCE: &str = include_str!("../../orange-compiler/src/eval.rs");
 const DIAGNOSTIC_SOURCE: &str = include_str!("../../orange-compiler/src/diagnostic.rs");
@@ -165,7 +166,7 @@ const CASES: [Case; 8] = [
             codes: &["ORC0221", "ORC0221", "ORC0221", "ORC0221", "ORC0204"],
             locations: &["5:26", "6:29", "7:42", "8:26", "9:21"],
             messages: &[
-                "an array length must be a decimal integer from 1 through 256",
+                "an array length must be a decimal integer from 1 through 65536",
                 "`Word` requires an exact width of 8, 16, 32, or 64",
             ],
         },
@@ -264,7 +265,7 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         rules: &["S3D-GRAMMAR-01", "S3D-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "arrays_and_indices_build_typed_core_in_postorder",
         rules: &[
             "S3D-LITERAL-01",
@@ -274,12 +275,12 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
-        test: "array_lengths_resolve_only_as_exact_decimals_from_1_through_256",
+        source_path: "src/semantics/tests.rs",
+        test: "array_lengths_resolve_only_as_exact_decimals_from_1_through_65536",
         rules: &["S3D-TYPE-01", "S3D-DIAG-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "array_errors_are_reported_once_in_checking_order",
         rules: &[
             "S3D-LITERAL-01",
@@ -289,33 +290,33 @@ const UNIT_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "operators_and_conversions_apply_to_elements_not_arrays",
         rules: &["S3D-OPERATOR-01", "S3D-DIAG-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "array_events_and_core_nodes_follow_the_normative_accounting",
         rules: &["S3D-RES-EVENT-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "array_storage_failures_return_no_partial_core",
         rules: &["S3D-RES-FAIL-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "rejects_foreign_spans_in_arrays_and_indices",
         rules: &["S3D-RES-FAIL-01"],
     },
     TestEvidence {
-        source_path: "src/semantics.rs",
+        source_path: "src/semantics/tests.rs",
         test: "let_and_as_are_ordinary_names_in_semantics",
         rules: &["S3D-COMPAT-01"],
     },
     TestEvidence {
         source_path: "src/core.rs",
-        test: "array_types_hold_one_to_256_scalars_and_display_as_powers",
+        test: "array_types_hold_one_to_65536_scalars_and_display_as_powers",
         rules: &["S3D-TYPE-01", "S3D-DISPLAY-01"],
     },
     TestEvidence {
@@ -521,6 +522,7 @@ fn unit_source(source_path: &str) -> &'static str {
         "src/lexer.rs" => LEXER_SOURCE,
         "src/parser.rs" => PARSER_SOURCE,
         "src/semantics.rs" => SEMANTICS_SOURCE,
+        "src/semantics/tests.rs" => SEMANTICS_TESTS_SOURCE,
         "src/core.rs" => CORE_SOURCE,
         "src/eval.rs" => EVAL_SOURCE,
         "src/diagnostic.rs" => DIAGNOSTIC_SOURCE,
@@ -529,17 +531,48 @@ fn unit_source(source_path: &str) -> &'static str {
 }
 
 /// Requires `test` to be declared exactly once, as a `#[test]` function
-/// directly inside the source's single `#[cfg(test)] mod tests` module.
+/// directly inside the source's single `#[cfg(test)] mod tests` module. The
+/// module is written inline, or in its own `tests.rs` file that its parent
+/// declares once as `#[cfg(test)] mod tests;` with no other attribute.
 fn assert_unit_test_declared(source_path: &str, test: &str) {
     let source = unit_source(source_path);
-    let marker = "\n#[cfg(test)]\nmod tests {\n";
-    assert_eq!(
-        source.matches(marker).count(),
-        1,
-        "{source_path} must have exactly one unconditional test module"
-    );
-    let (_, tests) = source.split_once(marker).unwrap();
-    let declaration = format!("\n    #[test]\n    fn {test}() {{\n");
+    let (tests, declaration) = match source_path.strip_suffix("/tests.rs") {
+        Some(parent) => {
+            let parent_path = format!("{parent}.rs");
+            let parent_source = unit_source(&parent_path);
+            assert_eq!(
+                parent_source.matches("mod tests").count(),
+                1,
+                "{parent_path} must declare exactly one test module"
+            );
+            assert_eq!(
+                parent_source
+                    .matches("\n#[cfg(test)]\nmod tests;\n")
+                    .count(),
+                1,
+                "{parent_path} must declare its test module unconditionally"
+            );
+            assert!(
+                !parent_source.contains("]\n#[cfg(test)]\nmod tests;"),
+                "{parent_path} must not add an attribute to its test module"
+            );
+            assert!(
+                !source.contains("#!["),
+                "{source_path} must not carry an inner attribute"
+            );
+            (source, format!("\n#[test]\nfn {test}() {{\n"))
+        }
+        None => {
+            let marker = "\n#[cfg(test)]\nmod tests {\n";
+            assert_eq!(
+                source.matches(marker).count(),
+                1,
+                "{source_path} must have exactly one unconditional test module"
+            );
+            let (_, tests) = source.split_once(marker).unwrap();
+            (tests, format!("\n    #[test]\n    fn {test}() {{\n"))
+        }
+    };
     assert_eq!(
         tests.matches(&declaration).count(),
         1,
@@ -681,35 +714,35 @@ fn s3d_element_and_length_limits_are_exact() {
             "  spec many() -> Word[8]^{length} {{\n    [\n{elements}    ]\n  }}\n"
         ))
     };
-    let accepted = run_twice("eval", &literal(256, 256), "256 elements");
-    let values = (0..256)
-        .map(|index| format!("0x{index:02x}"))
+    let accepted = run_twice("eval", &literal(65_536, 65_536), "65536 elements");
+    let values = (0..65_536)
+        .map(|index| format!("0x{:02x}", index % 256))
         .collect::<Vec<_>>()
         .join(", ");
     assert_success(
         &accepted,
-        &format!("limits::many: Word[8]^256 = [{values}]\n"),
-        "256 elements",
+        &format!("limits::many: Word[8]^65536 = [{values}]\n"),
+        "65536 elements",
     );
 
-    let rejected = run_twice("eval", &literal(256, 257), "257 elements");
-    assert_eq!(rejected.status.code(), Some(1), "257 elements status");
-    assert_eq!(rejected.stdout, b"", "257 elements emitted output");
+    let rejected = run_twice("eval", &literal(65_536, 65_537), "65537 elements");
+    assert_eq!(rejected.status.code(), Some(1), "65537 elements status");
+    assert_eq!(rejected.stdout, b"", "65537 elements emitted output");
     let stderr = String::from_utf8_lossy(&rejected.stderr);
     assert_eq!(diagnostic_codes(&stderr), ["ORC0106"], "{stderr}");
     assert!(
-        stderr.contains("array literal has more than 256 elements"),
+        stderr.contains("array literal has more than 65536 elements"),
         "{stderr}"
     );
-    assert_eq!(primary_locations(&stderr), ["261:7"], "{stderr}");
+    assert_eq!(primary_locations(&stderr), ["65541:7"], "{stderr}");
 
-    let long = run_twice("eval", &literal(257, 256), "length 257");
-    assert_eq!(long.status.code(), Some(1), "length 257 status");
-    assert_eq!(long.stdout, b"", "length 257 emitted output");
+    let long = run_twice("eval", &literal(65_537, 65_536), "length 65537");
+    assert_eq!(long.status.code(), Some(1), "length 65537 status");
+    assert_eq!(long.stdout, b"", "length 65537 emitted output");
     let stderr = String::from_utf8_lossy(&long.stderr);
     assert_eq!(diagnostic_codes(&stderr), ["ORC0221"], "{stderr}");
     assert!(
-        stderr.contains("an array length must be a decimal integer from 1 through 256"),
+        stderr.contains("an array length must be a decimal integer from 1 through 65536"),
         "{stderr}"
     );
     assert_eq!(primary_locations(&stderr), ["3:26"], "{stderr}");

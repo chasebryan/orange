@@ -25,11 +25,29 @@ meaning. It accepts no D-004 candidate.
 > [`MODULES_2026.md`](MODULES_2026.md), proposed under OEP-0011, extends this
 > document with programs of more than one module, in which a module names the
 > modules it uses and calls their functions by module name, as in
-> `sha256::compress(h, block)`, [`MODULAR_2026.md`](MODULAR_2026.md),
-> proposed under OEP-0012, adds residues, whose least residues index tables
-> through `as`, and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under
-> OEP-0013, lets a step or a branch bind a looked-up value once and read it by
-> name. Every source this document accepts keeps its meaning under all three.
+> `sha256::compress(h, block)`, [`MODULAR_2026.md`](MODULAR_2026.md), proposed
+> under OEP-0012, adds residues, whose least residues index tables through `as`,
+> and [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, lets a step
+> or a branch bind a looked-up value once and read it by name, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, lets a word
+> selected from a tuple, or named by a tuple pattern, index a table over its
+> type's range, and [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015,
+> adds slices, whose positions never depend on data: their bounds are literals
+> and loop indices, proved in range before a program runs, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds sizes, which
+> are constants in each instance and so count as literals in indices and slice
+> bounds, and [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017, adds
+> conversions in a byte order, which read words at positions that never depend
+> on data, and [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed
+> under OEP-0018, adds type parameters, which never depend on data: each
+> instance's types are fixed before a program runs, and every index in each is
+> proved in range as before. [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed
+> under OEP-0019, lets a table hold 65,536 entries, so that a 16-bit word
+> indexes one as a byte indexes a table of 256, proved in range as before.
+> [`AMOUNTS_2026.md`](AMOUNTS_2026.md), proposed under OEP-0021, admits shifts
+> by amounts that are not literals, which section 5 already ranges over their
+> whole type, so `t[(x >> k) & 15]` fits a table of 16 and `t[x >> k]` does
+> not. Every source this document accepts keeps its meaning under all ten.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

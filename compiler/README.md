@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3j proposed under OEP-0005 through OEP-0013, in owner review
+S3o proposed under OEP-0005 through OEP-0018, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -50,8 +50,55 @@ the rest of a module. The S3j slice, proposed in
 OEP-0013, lets a loop's step and each branch of a conditional begin with
 `let` bindings, as a body does: a step's bindings are evaluated afresh at
 every step, a branch's only when it is chosen, and each is in scope only
-within its step or branch. All ten lower to a noncanonical Typed Reference Core
-and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
+within its step or branch. The S3k slice, proposed in
+[`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md) and in owner review under
+OEP-0014, adds tuples: a tuple type `(T, U)` of two through 16 scalar or array
+elements, a tuple `(a, b)`, the selection `.k` of element k, and tuple patterns
+that name each element where a binding or a loop's accumulator is declared, so
+that a function gives several values and a loop carries several accumulators.
+The S3l slice, proposed in [`docs/BYTES_2026.md`](../docs/BYTES_2026.md) and in
+owner review under OEP-0015, adds bytes: a byte string `"..."` or `hex"..."` is
+the array `Word[8]^n` of its bytes, `++` joins two arrays, and a slice
+`x[a..b]` and a slice update `x with [a..b] = v` read and replace a run of
+elements whose bounds are literals and loop indices proved in range. The S3m
+slice, proposed in [`docs/SIZES_2026.md`](../docs/SIZES_2026.md) and in owner
+review under OEP-0016, adds sizes: a `spec` may declare size parameters with
+finite ranges, `spec f[n in 1..5](x: Word[8]^n)`, and stands for one instance
+for each value of its sizes, each checked as the function written out; sizes
+write array lengths, fill lengths, and loop bounds; and a call names its
+instance by its sizes, `f[2](x)`, or by its arguments' lengths. The S3n
+slice, proposed in [`docs/ORDER_2026.md`](../docs/ORDER_2026.md) and in owner
+review under OEP-0017, adds byte orders: `x as big T` and `x as little T` read
+a word or an array of words as the words of another width with the same
+number of bits, as an `Int`, or as a `Mod[m]`, and write an `Int` or a residue
+as words, the first word most significant for `big` and least significant for
+`little`, so that `block as big Word[32]^16` gives SHA-256's message words. The
+S3o slice, proposed in
+[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md) and in owner
+review under OEP-0018, adds type parameters: a `spec` may list the types it is
+written for, `spec pow[K in {F, P, Q}](x: K, e: Int) -> K`, and stands for one
+instance for each listed type, each checked as the function written out with
+that type; and a call names its instance by its types, `pow[F](x, e)`, or by
+its arguments' types and, where they do not decide, the type its place
+expects. The S3p slice, proposed in
+[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md) and in owner review under
+OEP-0019, lets an array, an array literal, and a byte string hold up to
+65,536 elements, so that a `Word[16]` indexes the longest with no check at
+run time, and gives `orangec eval` a step budget of its caller's choosing,
+`--steps`, a choice of functions, `--spec`, and a report of the steps each
+used, `--stats`. The S3q slice, proposed in
+[`docs/TESTS_2026.md`](../docs/TESTS_2026.md) and in owner review under
+OEP-0020, lets a module state its known answers as `test "TITLE" { claim }`
+beside its functions, compares arrays and tuples whole with `==` and `!=`,
+and adds `orangec test`, which runs the root module's tests and reports each.
+The S3r slice, proposed in [`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md)
+and in owner review under OEP-0021, lets a shift or rotation take an amount
+computed from data, an `Int` or a word, such as `x <<< r` or `x >> (i % 8)`,
+with a meaning at every amount: a shift is multiplication or division by a
+power of two kept to the word, so a shift by the width or more gives 0 and a
+negative amount shifts the other way, and a rotation turns by its amount
+modulo the width. All eighteen lower to a noncanonical Typed Reference Core and are
+reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
 This boundary was merged by
@@ -77,6 +124,9 @@ cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtur
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3b/valid-chacha20-quarter-round.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3h/valid-vectors.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval compiler/fixtures/s3i/valid-x25519.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- eval --steps 2097152 --stats compiler/fixtures/s3p/valid-lengths.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3q/valid-rfc8439-tests.or
+cargo run --manifest-path compiler/Cargo.toml -p orangec -- test compiler/fixtures/s3r/valid-rc6.or
 cargo run --manifest-path compiler/Cargo.toml -p orangec -- lex compiler/fixtures/hello.or
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
@@ -182,7 +232,7 @@ SC-06 and SC-07. Epoch `d004-e-633e0aa831615cda3e06` ran all 105 executions and
 closed 28 of 35 units with 105 of 105 result records, and the owner's
 isolation-first rule leaves only ST-REL; that result is contributor-produced,
 unreviewed and not a D-004 recommendation. D-004 remains proposed, S3b through
-S3j are implemented and await owner review under OEP-0005 through OEP-0013, both
+S3o are implemented and await owner review under OEP-0005 through OEP-0018, both
 `roadmap_gate_credit` and `readiness_credit` remain `none`, and Orange's 3-of-10
 (30%) binary gate-closure score is unchanged.
 
@@ -452,7 +502,7 @@ comparison. Compile untrusted filesystem trees from a stable copied file or
 standard input inside an appropriate host sandbox; full path confinement is not
 claimed.
 A source whose module has `use` declarations is the root of a program. For
-`check` and `eval`, each `use m;` reads the module `m` from the file `m.or` in
+`check`, `eval`, and `test`, each `use m;` reads the module `m` from the file `m.or` in
 the root file's directory, or in the current directory when the root is `-`.
 A module name is an ASCII identifier, so it names one file in that directory
 and no path outside it. Each module is read once per program, in the order a
@@ -617,6 +667,11 @@ through a fixed buffer, while the operational 64 MiB standard-output ceiling
 above bounds the bytes actually accepted per invocation. Exceeding it is an
 unsuccessful output operation rather than an accepted partial evaluation.
 Apply caller-side time limits before using `orangec eval` on untrusted sources.
+`--steps` raises the evaluation budget up to 1073741824 steps, and an
+evaluation makes at most 64 array elements for each step, so a caller who
+raises it on an untrusted source should also cap its memory. The same holds
+for `orangec test`, whose report prints the values a failed `left == right`
+compared, so a test over secret material discloses it when it fails.
 
 ## Frozen lexical boundary
 
@@ -655,24 +710,34 @@ result expression:
 ```text
 source_file     = edition_decl module_decl EOF ;
 edition_decl    = "edition" "2026" ";" ;
-module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* function_decl* "}" ;
+module_decl     = "module" IDENTIFIER "{" use_decl* type_decl* member* "}" ;
+member          = function_decl | test_decl ;
 use_decl        = "use" IDENTIFIER ";" ;
 type_decl       = "type" IDENTIFIER "=" declared_type ";" ;
 function_decl   = "spec" IDENTIFIER "(" ")" spec_tail
-                | "spec" IDENTIFIER "(" parameters ")" typed_tail
+                | "spec" IDENTIFIER size_params? "(" parameters? ")" typed_tail
                 | "impl" IDENTIFIER "(" ")" empty_body ;
+test_decl       = "test" STRING "{" binding* expression "}" ;
+size_params     = "[" size_param ("," size_param)* "]" ;
+size_param      = IDENTIFIER "in" (INTEGER ".." INTEGER | type_list) ;
+type_list       = "{" declared_type ("," declared_type)* "}" ;
 spec_tail       = empty_body | typed_tail ;
 typed_tail      = "->" declared_type "{" binding* expression "}" ;
-binding         = "let" IDENTIFIER ":" declared_type "=" expression ";" ;
+binding         = "let" pattern "=" expression ";" ;
+pattern         = typed_name | "(" typed_name ("," typed_name)+ ","? ")" ;
+typed_name      = IDENTIFIER ":" declared_type ;
 empty_body      = "{" "}" ;
 parameters      = parameter ("," parameter)* ","? ;
 parameter       = IDENTIFIER ":" declared_type ;
-declared_type   = parsed_type ("^" INTEGER)? ;
+declared_type   = element_type | tuple_type ;
+tuple_type      = "(" element_type ("," element_type)+ ","? ")" ;
+element_type    = parsed_type ("^" size)? ;
+size            = INTEGER | IDENTIFIER | "(" expression ")" ;
 parsed_type     = "Mod" "[" expression "]" | IDENTIFIER ("[" INTEGER "]")? ;
 
 expression      = arithmetic | chain("&") | chain("|") | chain("^") | shift
                 | conversion | update | comparison | chain("&&")
-                | chain("||") | division ;
+                | chain("||") | division | chain("++") ;
 arithmetic      = product (("+" | "-") product)* ;
 product         = prefixed ("*" prefixed)* ;
 chain(op)       = prefixed (op prefixed)+ ;
@@ -680,19 +745,26 @@ shift           = prefixed shift_operator prefixed ;
 shift_operator  = "<<" | ">>" | "<<<" | ">>>" ;
 comparison      = prefixed ("==" | "!=" | "<" | "<=" | ">" | ">=") prefixed ;
 division        = prefixed ("/" | "%") prefixed ;
-conversion      = prefixed "as" parsed_type ;
-update          = prefixed "with" "[" expression "]" "=" expression ;
+conversion      = prefixed "as" (parsed_type | tuple_type | order declared_type) ;
+order           = "big" | "little" ;
+update          = prefixed "with" "[" (expression | range) "]" "=" expression ;
 prefixed        = literal | ("-" | "~" | "!") prefixed | primary ;
 literal         = "-"? INTEGER ;
-primary         = IDENTIFIER index? | call index? | "(" expression ")"
-                | array | fill | loop | conditional ;
-call            = (IDENTIFIER "::")? IDENTIFIER "(" arguments? ")" ;
+primary         = IDENTIFIER suffix? | call suffix? | "(" expression ")"
+                | byte_string | tuple | array | fill | loop | conditional ;
+byte_string     = STRING | HEX_STRING ;
+suffix          = "." INTEGER (index | slice)? | index | slice ;
+slice           = "[" range "]" ;
+range           = expression ".." expression? | ".." expression ;
+tuple           = "(" expression ("," expression)+ ","? ")" ;
+call            = (IDENTIFIER "::")? IDENTIFIER sizes? "(" arguments? ")" ;
+sizes           = "[" expression ("," expression)* "]" ;
 arguments       = expression ("," expression)* ","? ;
 index           = "[" INTEGER "]" | "[" expression "]" ;
 array           = "[" expression ("," expression)* ","? "]" ;
-fill            = "[" expression ";" INTEGER "]" ;
-loop            = "for" IDENTIFIER "in" INTEGER ".." INTEGER
-                  "with" IDENTIFIER ":" declared_type "=" expression block ;
+fill            = "[" expression ";" size "]" ;
+loop            = "for" IDENTIFIER "in" size ".." size
+                  "with" pattern "=" expression block ;
 conditional     = "if" expression block "else" alternative ;
 alternative     = block | conditional ;
 block           = "{" binding* expression "}" ;
@@ -700,9 +772,15 @@ block           = "{" binding* expression "}" ;
 
 `let`, `as`, `for`, `in`, `with`, `if`, `else`, `use`, and `type` are
 contextual: they are ordinary names everywhere except where a binding, a
-conversion, a loop, an update, a conditional, or, at the head of a module, a
-`use` or `type` declaration begins, and `Mod` takes a modulus only when a
-bracket follows it. `true` and `false` are the `Bool` values only
+conversion, a loop, a size parameter, an update, a conditional, or, at the
+head of a module, a `use` or `type` declaration begins, and `Mod` takes a
+modulus only when a
+bracket follows it. `hex` begins a hex string only when a quote follows it
+directly, and a name followed by brackets is a call with sizes or types only
+when the brackets hold integers, names, a name's `[n]`, `+`, `-`, `*`, `/`,
+`%`, `^`, commas, and parentheses and `(` follows them. `big` and `little` are byte orders only
+directly after `as` and before `(` or a name other than `as` and `with`, and
+only after one may a conversion's type have a length. `true` and `false` are the `Bool` values only
 where no parameter, binding, or loop name of that spelling is in scope. For
 example:
 
@@ -731,6 +809,19 @@ module demo {
   spec residues() -> Int^2 { [-7 % 2, sign(-7 / 2)] }
   spec field() -> Z7^2 { [3 * 5, 1 / 3] }
   spec squares() -> Int { for i in 0..4 with s: Int = 0 { let sq: Int = i * i; s + sq } }
+  spec divmod(a: Int, b: Int) -> (Int, Int) { (a / b, a % b) }
+  spec split() -> Int { let (q: Int, r: Int) = divmod(17, 5); q * 10 + r }
+  spec fib() -> (Int, Int) { for i in 0..10 with (a: Int, b: Int) = (0, 1) { (b, a + b) } }
+  spec greeting() -> Word[8]^5 { "Hi" ++ hex"20 21" ++ "!" }
+  spec middle() -> Word[8]^3 { greeting()[1..4] }
+  spec zeros[n in 1..3]() -> Word[8]^n { [0; n] }
+  spec total[n in 1..9](x: Int^n) -> Int { for i in 0..n with s: Int = 0 { s + x[i] } }
+  spec six() -> Int { total([1, 2, 3]) }
+  spec text() -> Word[32] { "abcd" as big Word[32] }
+  spec bytes() -> Word[8]^4 { let w: Word[32] = 0x01020304; w as little Word[8]^4 }
+  spec double[K in {Word[8], Z7}](x: K) -> K { x + x }
+  spec doubled() -> (Word[8], Z7) { (double(200), double[Z7](5)) }
+  spec one[K in {Int, Z7}]() -> K { 1 }
 }
 ```
 
@@ -744,13 +835,18 @@ immediately before an integer token is that literal's sign, so the S3a body
 
 The parser accepts generic type syntax so unsupported forms receive semantic
 diagnostics. Semantics admits exactly `Int`, `Word[8]`, `Word[16]`, `Word[32]`,
-`Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations, and
-arrays `T^n` of them with n from 1 through 256, and checks
+`Word[64]`, `Bool`, and `Mod[m]`, the names of earlier `type` declarations,
+in a function with type parameters their names,
+arrays `T^n` of them with n from 1 through 65536, and tuples `(T, U, ...)` of two
+through 16 of those types and arrays, none of them a tuple, and checks
 every expression against an expected type with no inference or coercion. `Int` is mathematical within the evaluator's resource
 bounds and never wraps. `Word[n]` is the ring of integers modulo 2^n: `+`, `-`,
 and `*` wrap because that is their meaning, while a literal must already fit
-and never coerces, truncates, or wraps. Shift and rotation amounts are
-unsigned literals from 0 through n - 1. Division is Euclidean on `Int` and
+and never coerces, truncates, or wraps. A shift or rotation amount written as
+one integer literal is unsigned and from 0 through n - 1; any other amount is
+computed, an `Int` or a word of any width, and has a value at every amount: a
+shift by n or more gives 0, a negative amount shifts the other way, and a
+rotation turns by its amount modulo n. Division is Euclidean on `Int` and
 unsigned on words, and total: `-7 % 2` is 1, `x / 0` is 0, and `x % 0` is x.
 `Bool` has only `!`, `&&`, `||`, `==`, and `!=`, both operands of `&&` and `||`
 are always evaluated, and no conversion joins it to a number. `Mod[m]` holds the
@@ -758,17 +854,48 @@ least residues 0 through m - 1 of a modulus that is a constant of literals,
 `+`, `-`, `*`, `<<`, and parentheses; its literals lie strictly between -m and
 m, it has `+`, `-`, `*`, `/`, prefix `-`, `==`, and `!=` of one modulus and no
 order, and `x / y` is 0 when y has no inverse. `as` converts among `Int`,
-words, and residues by least residues, so `t[x as Int]` indexes by a residue. A conditional
+words, and residues by least residues, so `t[x as Int]` indexes by a residue.
+With a byte order, `x as big T` and `x as little T` read a word or an array
+of words as the words of another width with the same number of bits, as an
+`Int`, or as a `Mod[m]`, and write an `Int` or a residue as words by its
+residue modulo 2 to the power of their width, the first word most significant
+for `big` and least significant for `little`.
+`p.k` selects element k of a tuple, counted from zero, and no operator,
+order, conversion, or index applies to a whole tuple. `==` and `!=` are
+defined for every type and compare arrays and tuples whole, every part
+whether or not an earlier one differs, and an array or tuple written out
+takes its type from the other operand. A byte string
+`"..."` of printable ASCII characters and escapes, or `hex"..."` of hex digit
+pairs, is the array `Word[8]^n` of its 1 through 65536 bytes; `a ++ b` joins two
+arrays of one element type; and `x[a..b]` and `x with [a..b] = v` read and
+replace the elements from index a up to b, whose bounds are built from
+literals and loop indices and proved a fixed positive distance apart and in
+range at every step. A conditional
 evaluates only its chosen branch, bindings included. Names are the enclosing
 function's parameters and earlier bindings, in a loop's step its index and
 accumulator, and in a step or branch its own earlier bindings and those of the
-steps and branches around it; Orange has no shadowing, so none of these may
-repeat a name in scope. Calls name typed `spec` functions of the same module, or, as
+steps and branches around it, each name of a tuple pattern among them; Orange
+has no shadowing, so none of these may repeat a name in scope. Calls name typed `spec` functions of the same module, or, as
 `m::f(...)`, of a module it uses, and each module's call graph must be
-acyclic, as must the uses of a program. A loop runs over literal bounds with
+acyclic, as must the uses of a program. A `spec` with size parameters
+`[n in a..b, ...]`, each with a < b ≤ 65536, is checked once for each value
+of its sizes, as the function written out with that value; a size, built from integer literals and
+size parameters with `+`, `-`, `*`, `/`, `%`, and parentheses, writes an array
+length, a fill length, or a loop bound, and a size parameter's name is an
+`Int` constant. A call `f[2](x)` names its instance by its sizes, and `f(x)`
+names the one instance whose array parameters have its arguments' lengths.
+A type parameter `[K in {T, U, ...}]` lists distinct types, each resolved
+once and written without sizes; its name is a type in the function's
+signature and body, not a value, and the function is checked once for each of
+its types. A function has at most four size and type parameters and 256
+instances in all, one for each combination of its sizes' values and types.
+A call `f[T](x)` names its instance by its types as well as its sizes, and
+`f(x)` names the one instance whose parameters have its arguments' types,
+and among several, the one whose result has the type its place expects.
+A loop runs over bounds that are literals or sizes with
 0 ≤ a < b ≤ 65536, and every index is proved in range before evaluation: an
-expression of literals and loop indices by its values, and an index keyed by
-data by the range of its word type. Duplicate names are syntactically valid, then semantic
+expression of literals, sizes, and loop indices by its values, and an index
+keyed by data by the range of its word type. Duplicate names are syntactically valid, then semantic
 analysis rejects a duplicate within the same declaration-kind namespace or
 parameter list. Empty declarations have no value, and a typed `impl` remains a
 syntax error.
@@ -786,7 +913,8 @@ reported type is derived from its value, so a type/value mismatch is not
 representable at the public Core boundary.
 
 `orangec eval` prints every typed specification without parameters of the
-root module in source order; the functions of the modules it uses run only
+root module in source order, every instance of one with sizes or types in
+order and named by them; the functions of the modules it uses run only
 when called. Functions with parameters are checked but run only when called,
 and words print as fixed-width lowercase hexadecimal:
 
@@ -799,11 +927,80 @@ demo::backwards: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
 demo::residues: Int^2 = [1, -1]
 demo::field: Mod[7]^2 = [1, 5]
 demo::squares: Int = 14
+demo::split: Int = 32
+demo::fib: (Int, Int) = (55, 89)
+demo::greeting: Word[8]^5 = [0x48, 0x69, 0x20, 0x21, 0x21]
+demo::middle: Word[8]^3 = [0x69, 0x20, 0x21]
+demo::zeros[1]: Word[8]^1 = [0x00]
+demo::zeros[2]: Word[8]^2 = [0x00, 0x00]
+demo::six: Int = 6
+demo::text: Word[32] = 0x61626364
+demo::bytes: Word[8]^4 = [0x04, 0x03, 0x02, 0x01]
+demo::doubled: (Word[8], Mod[7]) = (0x90, 3)
+demo::one[Int]: Int = 1
+demo::one[Z7]: Mod[7] = 1
 ```
+
+Three options shape an evaluation. `--steps N` sets the step budget of the
+whole evaluation, shared by every function it evaluates, from 1 through
+1073741824 (1,024 times the default of 1048576); a step-limit diagnostic
+names the option while the budget is below that. `--spec NAME`, repeatable
+for up to 64 names, evaluates only the named functions without parameters of
+the root module, every instance of one with sizes or types, in source order,
+and checks the rest; a name that matches none is `ORC1016` and evaluates
+nothing. `--stats` writes one line to standard error for each evaluated
+function and a total against the budget, after the values:
+
+```console
+$ orangec eval --steps 2097152 --spec pepin --stats compiler/fixtures/s3p/valid-lengths.or
+lengths::pepin: (Mod[65537], Mod[65537], Bool) = (65536, 21846, true)
+lengths::pepin: 1452583 steps
+total: 1452583 of 2097152 steps
+```
+
+`--steps` and `--stats` also apply to `orangec test`; each of the three is a
+usage error with any other command, and `--spec` with `test`.
+
+`orangec test` checks exactly one program as `check` does and runs the root
+module's known-answer tests in source order under one step budget. A test is
+`test "TITLE" { bindings; claim }` among a module's functions, its title 1
+through 128 printable ASCII characters without a backslash and unique in its
+module (`ORC0242`), and its claim a `Bool` checked as a function without
+parameters; the tests of used modules are neither checked nor run, and
+`orangec eval` runs no test. The report is written to standard output, one
+line per test and a count, with both values and the first difference of a
+failed `left == right`; status is 0 when every test passes and 1 when any
+fails, with standard error empty:
+
+```console
+$ orangec test compiler/fixtures/s3q/failing-tests.or
+test "a word, rotated" ... ok
+test "a word, rotated the wrong way" ... FAILED
+    left:  0x00000080
+    right: 0x00000100
+test "an array" ... FAILED
+    left:  [0x01, 0x02, 0x03, 0x04]
+    right: [0x01, 0x02, 0x09, 0x04]
+    first difference at [2]
+test "a tuple holding an array" ... FAILED
+    left:  (0x01, [0x02, 0x03, 0x04])
+    right: (0x01, [0x02, 0x03, 0x05])
+    first difference at .1[2]
+test "a residue" ... FAILED
+    left:  1
+    right: 2
+test "two claims at once" ... FAILED
+test "unequal, as claimed" ... ok
+7 tests: 2 passed, 5 failed
+```
+
+A test that exceeds the budget writes no report: `ORC0301` at its title, with
+the note that no test outcome is reported. `--stats` writes each test's steps
+and the total to standard error after the report.
 
 The accepted S3a rules and non-claims are in
 [`docs/SEMANTICS_2026.md`](../docs/SEMANTICS_2026.md), and the proposed S3b
-through S3j rules, limits, and non-claims are in
+through S3r rules, limits, and non-claims are in
 [`docs/EXPRESSIONS_2026.md`](../docs/EXPRESSIONS_2026.md),
 [`docs/BINDINGS_2026.md`](../docs/BINDINGS_2026.md),
 [`docs/ARRAYS_2026.md`](../docs/ARRAYS_2026.md),
@@ -811,8 +1008,16 @@ through S3j rules, limits, and non-claims are in
 [`docs/CONDITIONS_2026.md`](../docs/CONDITIONS_2026.md),
 [`docs/LOOKUPS_2026.md`](../docs/LOOKUPS_2026.md),
 [`docs/MODULES_2026.md`](../docs/MODULES_2026.md),
-[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md), and
-[`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md). None of them defines
+[`docs/MODULAR_2026.md`](../docs/MODULAR_2026.md),
+[`docs/BLOCKS_2026.md`](../docs/BLOCKS_2026.md),
+[`docs/TUPLES_2026.md`](../docs/TUPLES_2026.md),
+[`docs/BYTES_2026.md`](../docs/BYTES_2026.md),
+[`docs/SIZES_2026.md`](../docs/SIZES_2026.md),
+[`docs/ORDER_2026.md`](../docs/ORDER_2026.md),
+[`docs/TYPE_PARAMETERS_2026.md`](../docs/TYPE_PARAMETERS_2026.md),
+[`docs/LENGTHS_2026.md`](../docs/LENGTHS_2026.md),
+[`docs/TESTS_2026.md`](../docs/TESTS_2026.md), and
+[`docs/AMOUNTS_2026.md`](../docs/AMOUNTS_2026.md). None of them defines
 unbounded loops, effects, proof meaning, implementation refinement, timing,
 target behavior, ABI, leakage property, output code, package or release
 behavior, or cryptographic construction. A function that evaluates to a
@@ -1012,8 +1217,8 @@ whole arrays.
 `eval` protocol as the S3c runner. It parses the 17-rule S3d index in
 `docs/ARRAYS_2026.md`, binds every rule to named CLI, generated-CLI,
 parser-unit, or unit tests declared exactly once at their harness locations,
-and pins the 256-element literal limit and the 256 length limit at their exact
-boundaries with generated sources. This corpus establishes the tested behavior
+and pins the 65,536-element literal limit and the 65,536 length limit at their
+exact boundaries with generated sources. This corpus establishes the tested behavior
 of one implementation; it does not accept OEP-0007, prove the rules sound, or
 complete S3.
 
@@ -1052,7 +1257,7 @@ the first test vector of RFC 7748 section 5.2, Poly1305 on the example of
 RFC 8439 section 2.5.2, and ChaCha20-Poly1305 on the "sunscreen" example of
 section 2.8.2. The rejected fixtures cover conditional syntax and mixed
 operator groups; conditions, branches, operators, and conversions of the wrong
-type; comparisons without a type or of arrays; and indices whose division
+type; comparisons without a type and orders of arrays; and indices whose division
 leaves their array.
 
 `crates/orangec/tests/s3f_conformance.rs` runs the same repeatable `check` and
@@ -1163,6 +1368,281 @@ and a branch of 256 bindings and of 257. This corpus establishes the tested
 behavior of one implementation; it does not accept OEP-0013, prove the rules
 sound, or complete S3.
 
+## S3k tuple conformance
+
+`fixtures/s3k/` contains an exact seven-program corpus for the proposed S3k
+behavior, of which four must evaluate successfully and three must fail
+closed. The accepted programs write SHA-256 with the working variables a
+through h as the loop's eight named accumulators, reproducing the digests of
+"abc" and of the two-block message of FIPS 180-4's examples; write the ChaCha20
+quarter round as a function of four words that gives four, and the block
+function with the sixteen words of its state named through each double round,
+reproducing RFC 8439's vectors of sections 2.1.1 and 2.3.2; write
+Ascon-Hash256 over a state of five named 64-bit words, reproducing entries 1,
+2, and 9 of the designers' known-answer file; and exercise a 256-bit addition
+with a sum and a carry, a pair of accumulators, the extended Euclidean
+algorithm, and tuples holding `Bool` values and chosen by conditionals. The
+rejected programs cover a tuple type of one element, a tuple type holding a
+tuple, an array of tuples, a tuple of one element, positions not written in
+decimal, a second `.k`, `.k` after an index, and patterns missing a type or a
+second name; names that repeat within a pattern, a parameter, a binding, or a
+loop index, a name read before its pattern is bound or after its loop; and
+tuples of another length or type, a tuple where a scalar is required, `.k` on
+an array or past the last element, an element of another type, an index,
+an order, arithmetic, or conversion of a whole tuple, a pattern of another
+type or of an unknown type, and orders of a tuple or an array written out.
+
+`crates/orangec/tests/s3k_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3j runner. It parses the 8-rule S3k index in
+`docs/TUPLES_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates tuple
+types, tuples, and patterns of 16 parts and of 17. This corpus establishes the
+tested behavior of one implementation; it does not accept OEP-0014, prove the
+rules sound, or complete S3.
+
+## S3l bytes conformance
+
+`fixtures/s3l/` contains an exact six-program corpus for the proposed S3l
+behavior, of which three must evaluate successfully and three must fail
+closed. The accepted programs write HMAC-SHA-256 with RFC 4231's keys and
+messages as the RFC prints them, SHA-256's padding joined with `++`, and each
+block's words read through four-byte slices, reproducing FIPS 180-4's digest
+of "abc" and RFC 4231's test cases 1 and 2; write the ChaCha20-Poly1305 AEAD of
+RFC 8439 with its plaintext as text and its key, nonce, and additional data in
+hex, the key stream and Poly1305's input joined with `++`, and the one-time key
+and each sixteen-byte block taken by slices, reproducing section 2.8.2's
+ciphertext and tag and verifying the tag; and exercise every escape, spaced
+and mixed-case hex, joins of words and of `Bool` values, open slices, slices
+and slice updates inside loops, and a rotation by slices. The rejected programs
+cover hex strings with a letter, a prefix, punctuation, an odd digit, a split
+byte, an escape, and no closing quote; `hex` spaced from its quote, a slice
+with no bounds or with a step, an index or slice of a slice or of a byte
+string, `++` mixed with `+` in either order, and a slice update with no bounds;
+and byte strings of another length or element type, with a character outside
+printable ASCII, or empty, joins of another length, into a scalar, or of a word
+or of words of another width, slices past the end, empty, backward, keyed by
+data, of a length that changes from step to step, or of a loop index times
+itself, slices of another length, element type, or base type, a slice update of
+a value of another length or of a word, and a join of 300 elements.
+
+`crates/orangec/tests/s3l_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3k runner. It parses the 10-rule S3l index in
+`docs/BYTES_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates byte
+strings and hex strings of 65,536 bytes and of 65,537 and byte strings holding a raw
+tab and a raw delete, which the repository keeps out of its sources. This corpus establishes the
+tested behavior of one implementation; it does not accept OEP-0015, prove the
+rules sound, or complete S3.
+
+## S3m sizes conformance
+
+`fixtures/s3m/` contains an exact six-program corpus for the proposed S3m
+behavior, of which four must evaluate successfully and two must fail closed.
+The accepted programs write SHA-256 once for every message of 1 through 119
+bytes, its padding with a length computed from the message's size and its
+blocks absorbed by a loop whose bound is a size, reproducing FIPS 180-4's
+digests of "abc" and of its 56-byte two-block message; write HMAC-SHA-256 once
+for every key of 1 through 63 bytes and message of 1 through 55 over that
+SHA-256, used as a module, reproducing RFC 4231's test cases 1 and 2; write
+Poly1305 once for every message of 1 through 255 bytes, reproducing RFC 8439
+section 2.5.2's tag; and exercise sums over arrays of every length, instances
+of one and two sizes displayed by their sizes, lengths computed from sizes,
+tuples of sized halves, slices bounded by a size, Euclidean division of
+sizes, and calls with and without sizes. The rejected programs cover a size
+parameter without `in`, with a named bound, or a fifth; a computed length,
+fill length, or loop bound without parentheses; a qualified sized call without
+arguments; an empty range, a bound over 65536, 361 instances, a repeated size
+name, a parameter named like a size, a length written with a parameter, an
+index out of range in the first instance, a length of 0 in the first
+instance, a size outside its range, two sizes for one, sizes for a function
+without them, a call whose argument's length fits no instance and one that
+fits two, and a cycle between two instances.
+
+`crates/orangec/tests/s3m_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3l runner. It parses the 10-rule S3m index in
+`docs/SIZES_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates a
+function of four sizes with 256 instances, a function with every array length
+from 1 through 256, and a size bound of 65536, and each with one instance or
+one bound more. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0016, prove the rules sound, or
+complete S3.
+
+## S3n byte order conformance
+
+`fixtures/s3n/` contains an exact eight-program corpus for the proposed S3n
+behavior, of which six must evaluate successfully and two must fail closed.
+The accepted programs write SHA-256 and SHA-512 with each block read as
+big-endian words and each digest written as big-endian bytes, reproducing FIPS
+180-4's digests of "abc" and of its two-block messages and an independent
+implementation's at each padding limit and at the longest message each
+admits; ChaCha20 with its state read from "expand 32-byte k", the key, the
+counter, and the nonce as little-endian words, reproducing RFC 8439's block of
+section 2.3.2 and ciphertext of section 2.4.2; Poly1305 with its key's halves
+and each block read as little-endian numbers and residues, reproducing section
+2.5.2's tag and two vectors of Appendix A.3; X25519 with its scalar and
+coordinate read and its result written as little-endian residues, reproducing
+RFC 7748 section 5.2's vector; and exercise both orders on words of every
+width, text, round trips, joined and quartered words, numbers, negative and
+oversized numbers, residues, and a size's value. The rejected programs cover
+words of different widths in both directions, a byte order between two
+numbers, from `Bool`, to `Bool`, to an array of residues, and from an array of
+`Int`, an array literal without a typed element, a target other than the
+expected type, and conversions of and to arrays of words without a byte
+order; and an array type after `as` without a byte order and `big` as a type's
+name before another `as`.
+
+`crates/orangec/tests/s3n_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3m runner. It parses the 8-rule S3n index in
+`docs/ORDER_2026.md`, binds every rule to named CLI, generated-CLI, or unit
+tests declared exactly once at their harness locations, and generates a
+program that converts words of every width in both orders to words of every
+width and to `Int`, checked against a reference computed in the runner, and
+converts `Word[64]^256` to `Int` and back, and one whose targets have one
+element more than an array may. This corpus establishes the tested behavior of
+one implementation; it does not accept OEP-0017, prove the rules sound, or
+complete S3.
+
+## S3o type parameter conformance
+
+`fixtures/s3o/` contains an exact five-program corpus for the proposed S3o
+behavior, of which three must evaluate successfully and two must fail closed.
+The accepted programs write exponentiation, Fermat inversion, and Euler's
+criterion once for five prime fields, the field and subgroup order of
+Curve25519, the field of Poly1305, and the moduli of ML-KEM and ML-DSA,
+reproducing each modulus, RFC 8032's square root of −1, and the primitive
+roots of unity of FIPS 203 and FIPS 204; write Ch, Maj, the round, and the
+final addition of SHA-256 and SHA-512 once for words of both widths,
+reproducing FIPS 180-4's digests of "abc" and of its two-block messages; and
+exercise one body for `Int`, a word, and a residue, conversions to a type
+parameter, arrays, tuples, and loops of it, `Bool`, array, and tuple types in
+a list, sizes beside types, typed roots evaluated once for each instance, and
+calls named by their types or fitted by their arguments and their place. The
+rejected programs cover a type listed twice, a type parameter named like a
+built-in type, a declared type, or another parameter, a size inside a listed
+type, unknown and malformed listed types, too many instances, a type
+parameter's name as a value, an instance in error named in a note, an
+unlisted type entry, a value as a type entry, too many entries, a call whose
+type nothing decides, a call that fits no instance, and a call fitted to the
+wrong result; and an empty list, a trailing comma, a missing comma, an
+unclosed list, and a fifth parameter in brackets.
+
+`crates/orangec/tests/s3o_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3n runner. It parses the 10-rule S3o index in
+`docs/TYPE_PARAMETERS_2026.md`, binds every rule to named CLI, generated-CLI,
+or unit tests declared exactly once at their harness locations, and generates
+a program whose one function lists 64 residue types beside a size of four
+values, evaluating all 256 instances, and one whose list adds `Int` for 260
+instances and an error. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0018, prove the rules sound, or
+complete S3.
+
+## S3p lengths conformance
+
+`fixtures/s3p/` contains an exact three-program corpus for the proposed S3p
+behavior, of which two must evaluate successfully and one must fail closed.
+The accepted programs write ChaCha20 and Poly1305 once for messages of 1
+through 256 whole blocks and reproduce RFC 8439's long vectors as the RFC
+prints them: the 375-byte text and ciphertext of appendix A.2 test vector 2,
+the tags of appendix A.3 test vectors 2 and 3 over the same text, and the
+265-byte ciphertext of appendix A.5, which authenticates under its tag and
+opens to the RFC's plaintext; and build a table of the 65,536 powers of 3
+modulo the Fermat prime 2^16 + 1 in rows placed with slice updates, read it
+by 16-bit words for Pepin's test, and exercise fills, joins, slices, and byte
+orders at 65,536 elements and a conversion to `Int` at the 16,384-bit limit,
+under `--steps 2097152 --stats`. The rejected program covers a length, a
+fill, a join, and a slice one element past the limit, a 16-bit index into an
+array one element short, a 32-bit index into the longest array, and a
+conversion target past the limit.
+
+`crates/orangec/tests/s3p_conformance.rs` runs the same repeatable `check` and
+`eval` protocol as the S3o runner, with each fixture's `eval` options. It
+parses the 11-rule S3p index in `docs/LENGTHS_2026.md`, binds every rule to
+named CLI, generated-CLI, or unit tests declared exactly once at their harness
+locations, and checks RFC 8439's values against the vectors pinned in the
+D-011 suite. It generates a literal of all 65,536 16-bit words and a byte
+string of 65,536 bytes, read with `--spec`, and one element or byte more;
+evaluations at the default budget, at exactly the steps needed, at the most
+admitted, and one step short, and every malformed `--steps`; selections of
+functions in source order, of every instance of a sized one, and of names
+that match nothing or are malformed, and a 65th name; and both output streams
+in one file, where the report follows the values, and each option with a
+command other than `eval`. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0019, prove the rules sound, or
+complete S3.
+
+## S3q known-answer test conformance
+
+`fixtures/s3q/` contains an exact five-program corpus for the proposed S3q
+behavior: two programs must check and run their tests or evaluate
+successfully, one must check and report failed tests with status 1, and two
+must fail closed. The accepted programs write seven of RFC 8439's examples
+and test vectors as tests, with inputs and expected bytes as the RFC prints
+them: the quarter round of section 2.1.1, the block function of section
+2.3.2, the zero key's key stream of appendix A.1 test vectors 1 and 2, a
+nonce that changes every block, Poly1305 of section 2.5.2, and appendix A.3
+test vector 1; and compare words, truth values, residues, tuples holding
+arrays, and arrays of 256 and 65,536 elements whole, with exact steps under
+`--stats` that do not depend on where the operands differ. The failing
+program's report shows a word, an array, a tuple holding an array, and a
+residue that differ, with their values and first differences, and a claim of
+two comparisons that has only its line. The rejected programs cover an empty
+title, a letter outside ASCII, a backslash, a repeated title, a claim that is not a `Bool`, an
+order on a tuple and on two tuples written out, two arrays written out, an
+unknown function, and a test without a title.
+
+`crates/orangec/tests/s3q_conformance.rs` runs each fixture's commands,
+`check`, `test`, and `eval` with their options, twice each, and requires
+identical status, standard output, and standard error. It parses the 12-rule
+S3q index in `docs/TESTS_2026.md` and binds every rule to named CLI,
+generated-CLI, parser-unit, or unit tests declared exactly once at their
+harness locations. It generates titles of 1 and 128 bytes, and titles
+holding a raw tab or delete, which the repository keeps out of its sources,
+or 129 bytes; a program whose used module has a test that
+is not a `Bool` and one that fails, neither checked nor run from the root and
+both when that module is the root; a test that stops at a budget one step
+short of the run and within the first test; both output streams in one file,
+where the step report follows the report; every usage error of `orangec
+test`; and comparisons of 65,536 bytes that differ at any position in
+identical steps. This corpus establishes the tested behavior of one
+implementation; it does not accept OEP-0020, prove the rules sound, or
+complete S3.
+
+## S3r computed amount conformance
+
+`fixtures/s3r/` contains an exact six-program corpus for the proposed S3r
+behavior: four programs must check, run their tests, and evaluate
+successfully, and two must fail closed. The accepted programs compare every
+operator on a byte against its definition at amounts below, at, and past the
+width, of both signs, and of any size; turn a 64-bit word by a byte and shift
+by a size; reverse a byte's bits, count the set bits of a 32-byte key, and
+pick a nibble at a computed position from a table; write RC6-32/20/16 with
+its key schedule and rounds rotating by the amounts its key and data choose,
+and reproduce the paper's two 128-bit-key vectors both ways; write SHA3-256
+of FIPS 202 for messages of 1 through 133 bytes with rho turning each lane by
+(t + 1)(t + 2)/2 and iota placing bits at 2^j - 1, and reproduce NIST's
+examples for "abc" and the 448-bit message; and derive ML-KEM's transform
+constants by BitRev7 and powers of 17 modulo 3329, as FIPS 203 section 4.3
+defines them, reproducing Appendix A. Exact steps under `--stats` are pinned.
+The rejected programs cover a literal amount at the width and one with a
+sign, amounts that are a truth value, a residue, an array, or a comparison, a
+shift of an `Int`, an unknown name, an index whose computed shift ranges past
+its table, and an amount built with an operator and not grouped.
+
+`crates/orangec/tests/s3r_conformance.rs` runs each fixture's commands,
+`check`, `test`, and `eval` with their options, twice each, and requires
+identical status, standard output, and standard error. It parses the 10-rule
+S3r index in `docs/AMOUNTS_2026.md` and binds every rule to named CLI,
+generated-CLI, or unit tests declared exactly once at their harness
+locations. It generates programs that compare every operator at every width
+with a reference for `Int` amounts from -(2n + 1) through 2n + 1 and around
+2^63, 2^64, 2^126, and 2^127, and for word amounts of every width in both
+directions; programs whose amounts of 2 through 16,384 bits cost the same
+steps; and programs that write a literal amount at every width or with a
+sign, which are refused, and the same amounts grouped, which are computed.
+This corpus establishes the tested behavior of one implementation; it does
+not accept OEP-0021, prove the rules sound, or complete S3.
+
 ## Layout
 
 - `crates/orange-compiler`: reusable source, span, diagnostic, edition, lexer,
@@ -1202,6 +1682,22 @@ sound, or complete S3.
   rule-index, and modulus-limit runner;
 - `crates/orangec/tests/s3j_conformance.rs`: exact repeatable S3j corpus,
   rule-index, and bindings-per-block runner;
+- `crates/orangec/tests/s3k_conformance.rs`: exact repeatable S3k corpus,
+  rule-index, and tuple-size runner;
+- `crates/orangec/tests/s3l_conformance.rs`: exact repeatable S3l corpus,
+  rule-index, and byte-string-length runner;
+- `crates/orangec/tests/s3m_conformance.rs`: exact repeatable S3m corpus,
+  rule-index, and instance-limit runner;
+- `crates/orangec/tests/s3n_conformance.rs`: exact repeatable S3n corpus,
+  rule-index, and width runner;
+- `crates/orangec/tests/s3o_conformance.rs`: exact repeatable S3o corpus,
+  rule-index, and instance-limit runner;
+- `crates/orangec/tests/s3p_conformance.rs`: exact repeatable S3p corpus,
+  rule-index, length-limit, and evaluation-option runner;
+- `crates/orangec/tests/s3q_conformance.rs`: exact repeatable S3q corpus,
+  rule-index, test-run, and report runner;
+- `crates/orangec/tests/s3r_conformance.rs`: exact repeatable S3r corpus,
+  rule-index, reference-amount, and amount-cost runner;
 - `fixtures/hello.or`: permanent legacy syntax fixture;
 - `fixtures/typed-answer.or`: permanent typed-literal evaluation fixture;
 - `fixtures/s3a/`: exact three-positive/seven-negative S3a CLI fixture corpus;
@@ -1215,6 +1711,15 @@ sound, or complete S3.
   and the six modules its programs use;
 - `fixtures/s3i/`: exact three-positive/four-negative S3i CLI fixture corpus;
 - `fixtures/s3j/`: exact three-positive/three-negative S3j CLI fixture corpus;
+- `fixtures/s3k/`: exact four-positive/three-negative S3k CLI fixture corpus;
+- `fixtures/s3l/`: exact three-positive/three-negative S3l CLI fixture corpus;
+- `fixtures/s3m/`: exact four-positive/two-negative S3m CLI fixture corpus;
+- `fixtures/s3n/`: exact six-positive/two-negative S3n CLI fixture corpus;
+- `fixtures/s3o/`: exact three-positive/two-negative S3o CLI fixture corpus;
+- `fixtures/s3p/`: exact two-positive/one-negative S3p CLI fixture corpus;
+- `fixtures/s3q/`: exact two-positive/one-failing/two-negative S3q CLI fixture
+  corpus;
+- `fixtures/s3r/`: exact four-positive/two-negative S3r CLI fixture corpus;
   and
 - `schemes/`: the built-in sealing schemes, each an Orange program ending in
   its known answers, and the specification of the scheme interface and

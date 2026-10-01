@@ -1,5 +1,5 @@
 ---
-number: OEP-0014
+number: OEP-0022
 title: Crypto language development plan
 authors:
   - Chase Bryan
@@ -7,7 +7,7 @@ champion: Chase Bryan
 status: Draft
 type: Informational
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-01
 discussion: owner-direction-2026-09-30-crypto-language-development-plan
 related-decisions:
   - D-002
@@ -36,7 +36,7 @@ decision-revision: null
 approval-records: []
 ---
 
-# OEP-0014: Crypto language development plan
+# OEP-0022: Crypto language development plan
 
 ## Abstract
 
@@ -73,13 +73,14 @@ only convenient notation.
 
 ## Scope and non-goals
 
-The current accepted foothold is S3a. S3b through S3j are implemented and in
-owner review under OEP-0005 through OEP-0013; implementation is not semantic
+The current accepted foothold is S3a. S3b through S3r are implemented and in
+owner review under OEP-0005 through OEP-0021; implementation is not semantic
 acceptance. The current evaluator admits `Int`, `Bool`, `Word[8]`, `Word[16]`,
-`Word[32]`, `Word[64]`, `Mod[m]`, scalar arrays of length 1 through 256, and
-transparent type aliases within those proposed slices. It has no static
-generics, nested arrays, refined representation types, typed implementation
-bodies, proof checking, or native output. The
+`Word[32]`, `Word[64]`, `Mod[m]`, scalar arrays of length 1 through 65,536,
+tuples, transparent type aliases, array concatenation and slicing, and bounded
+size and type parameters within those proposed slices. It has no nested
+arrays, refined representation types, typed implementation bodies, proof
+checking, or native output. The
 [compiler guide](../../../compiler/README.md) and proposed
 [modular arithmetic specification](../../MODULAR_2026.md) describe those limits.
 
@@ -116,6 +117,12 @@ and D-013 gate their target, leakage, and foreign-boundary claims. This plan
 selects no candidate and replaces no exact-revision acceptance requirement.
 
 ### P1 Static parameters and shapes
+
+S3k, S3l, S3m, and S3o already implement parts of P1: tuples and tuple loop
+state, concatenation and slicing, bounded size parameters, and finite type
+parameters. Their records are OEP-0014, OEP-0015, OEP-0016, and OEP-0018.
+Review these implementations against the criteria below before proposing
+remaining parameter domains or constraints; this plan does not accept them.
 
 Add static modulus and size parameters, then tuples, multiple loop accumulators,
 array concatenation, and slicing as separate bounded slices. Static values must
@@ -309,12 +316,13 @@ Acceptance criteria:
 
 ### Immediate work items
 
-- [ ] Bound the first P1 static-parameter slice: grammar, parameter domains,
-  scope, shape constraints, specialization limits, diagnostics, and conformance.
-- [ ] Refactor a modulus-generic arithmetic specification and a statically
-  positioned ChaCha20 quarter round as permanent P1 fixtures.
-- [ ] Add tuples, multiple accumulators, concatenation, and slicing in separate
-  slices where their semantics are ready; do not bundle unrelated choices.
+- [ ] Review the implemented P1 size and type parameter slices: grammar,
+  parameter domains, scope, shape constraints, specialization limits,
+  diagnostics, and conformance; identify remaining work.
+- [ ] Check a modulus-generic arithmetic specification and a statically
+  positioned ChaCha20 quarter round against the P1 criteria as permanent fixtures.
+- [ ] Review implemented tuples, tuple accumulators, concatenation, and slicing
+  against the P1 criteria; keep any remaining semantic choices in separate slices.
 - [ ] Define P2 reconstruction, abstraction, and tight/loose/canonical predicates
   with boundary fixtures and deterministic evaluation costs.
 - [ ] Prepare the P3 operation-obligation inventory while the existing S4
@@ -422,8 +430,8 @@ is not manufactured by a second tool or owner pass.
 
 ## Unresolved questions
 
-- Exact static-parameter grammar and admissible constraints, nominal versus
-  structural representations, and proof-erasure rules need bounded slice records.
+- Remaining static-parameter domains and constraints, nominal versus structural
+  representations, and proof-erasure rules need bounded slice records.
 - Wide arithmetic, operation schedules, and their derived bounds remain choices
   to specify and check; the illustrative field states do not choose a backend.
 - The existing semantic-strata, assurance, proof, solver, compiler, leakage, and
