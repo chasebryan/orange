@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3o proposed under OEP-0005 through OEP-0018, in owner review
+S3r proposed under OEP-0005 through OEP-0021, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -132,6 +132,35 @@ cargo test --manifest-path compiler/Cargo.toml -p orangec --test s2_conformance 
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3a_conformance --locked --offline
 cargo test --manifest-path compiler/Cargo.toml -p orangec --test s3b_conformance --locked --offline
 ```
+
+### Identify the compiler on your path
+
+`orangec --version` reports the package version, edition, and latest
+implemented language slice:
+
+```console
+$ orangec --version
+orangec 0.0.1 (Orange edition 2026; implemented slice S3r)
+```
+
+The slice identifies implemented behavior; its proposal's acceptance status
+is listed above. It is not a release version or a verification claim. Older
+binaries reported the same `0.0.1` package version without a slice, so that
+number alone does not show which syntax they support.
+
+If a documented example is refused, compare the compiler on your path with
+a fresh build of your checkout, from the repository root:
+
+```sh
+command -v orangec
+orangec --version
+cargo build --manifest-path compiler/Cargo.toml -p orangec --release --locked --offline
+compiler/target/release/orangec --version
+```
+
+Run the example with `compiler/target/release/orangec` to use that build
+directly. An older binary elsewhere on your path does not change when the
+checkout is rebuilt.
 
 ## Sealing files
 

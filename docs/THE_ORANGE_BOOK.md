@@ -4625,7 +4625,9 @@ modules it uses from beside it, as
 reads only the source it is given.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
-edition explicitly. `--version` prints `orangec 0.0.1 (Orange edition 2026)`.
+edition explicitly. `--version` prints
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3r)`. The slice
+identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
 failure makes `eval` print no values at all; if writing the output itself
