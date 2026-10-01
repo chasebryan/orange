@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-10-01
 
-Manuscript version: 0.22
+Manuscript version: 0.23
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -128,6 +128,11 @@ implementations, refinement, code generation, a standard library, a proof checke
 or a verified cryptographic implementation. A passing test suite is
 evidence about the implemented slice; it is not evidence that the eventual
 language or compiler is sound.
+
+The permanent source formatter now supplies one frontend tool: it lays out
+parsed syntax while preserving token spellings and comment bytes and anchors.
+It does not validate types or imports, accept the semantic proposals, or
+complete the wider developer-tool and release stages.
 
 The manuscript uses four kinds of statements:
 
@@ -4587,12 +4592,14 @@ each use.
 
 ### The command line
 
-`orangec` has eight commands:
+`orangec` has nine commands:
 
 ```text
 orangec [OPTIONS] <check|eval|lex> <FILE>...
 orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>
 orangec test [--steps <N>] [--stats] <FILE>
+orangec fmt <FILE>
+orangec fmt --check <FILE>...
 orangec keygen [--scheme <NAME>] [-o <FILE>]
 orangec <enc|dec> [--key <FILE>] [--scheme <NAME>] [-o <FILE>] <FILE>
 orangec schemes [<NAME>...]
@@ -4613,6 +4620,8 @@ orangec schemes [<NAME>...]
   [Known answers beside the algorithm](#known-answers-beside-the-algorithm)
   shows.
 - `lex` prints the deterministic token stream.
+- `fmt FILE` prints one complete formatted source; `fmt --check FILE...`
+  checks sources without printing formatted text or changing files.
 - `keygen`, `enc`, `dec`, and `schemes` seal files with authenticated ciphers
   written in Orange. `orangec keygen` makes a key, `orangec enc FILE` writes
   `FILE.orange`, and `orangec dec FILE.orange` writes the file back only when
@@ -4627,7 +4636,17 @@ orangec schemes [<NAME>...]
 `check` and `eval` treat each source as the root of a program and read the
 modules it uses from beside it, as
 [Standards built on standards](#standards-built-on-standards) describes; `lex`
-reads only the source it is given.
+and `fmt` read only the source they are given.
+
+The [formatter contract](FORMATTER_2026.md) defines a syntax-only tool. It uses
+the parsed structure to lay out whitespace between tokens, preserving every
+token's spelling and each comment's bytes, order and anchor. Before returning
+text it re-lexes and re-parses the bounded result; formatting that result again
+must leave it byte-identical. Generated layout whitespace uses LF, while bytes
+inside strings and comments are retained. Formatting does not load imports or
+check types. It changes source bytes, spans and digests and does not preserve
+or migrate source-bound proof/evidence identities. It adds no proof claim and
+leaves the S3t language marker unchanged.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
@@ -6822,7 +6841,8 @@ Options are `--edition <YEAR>` (only `2026`, at most once), for `eval` and
 once; default 1,048,576) and `--stats` (report each evaluated function's or
 test's steps and the total on standard error, after the values or the
 report), for `eval` only `--spec <NAME>` (evaluate only this function without
-parameters; up to 64 names), `--scheme <NAME>`
+parameters; up to 64 names), for `fmt` only `--check` (check one through 256
+sources without changing files; otherwise `fmt` requires exactly one source), `--scheme <NAME>`
 (a built-in name or a program path), `--key <FILE>` (default
 `$XDG_CONFIG_HOME/orange/key`), `-o` or `--output <FILE>`, `--` to end option
 parsing, `-h` or `--help`, and `-V` or `--version`. A file name of `-` reads
@@ -6838,6 +6858,7 @@ success, 1 on a compile or input failure, and 2 on a usage error.
 | `ORC0001`–`ORC0009` | Lexing | Unexpected character, unterminated comment or string, malformed integer, token budget, malformed hex string |
 | `ORC0101`–`ORC0108` | Parsing | Expected syntax, unsupported edition, trailing syntax, parser budget, ungrouped operators |
 | `ORC0201`–`ORC0242` | Semantic analysis | Duplicate function, parameter, or binding, unsupported type or word width, negative or out-of-range word, magnitude limit, unknown name or function, name used before its binding, argument count, type mismatch, undefined operator, shift amount, call cycle, conversion operand without a type, unsupported array length, wrong element count, index out of range, index on a non-array, loop range empty or too large, `Int` index without a bound, comparison whose operands have no type, a `use` naming no module, a call qualified by a module not used, a cycle of uses, a duplicate module, a modulus that is not a constant from 2 through 2^521 − 1, a `type` declaration naming a built-in type or repeating a name, `.k` on a value that is not a tuple, a byte string character that is not printable ASCII, a slice whose length changes or is not positive, a size built from anything but literals and size parameters, a size's range that is empty or too large, too many instances, a size outside its range, a wrong number of sizes, a call that fits no instance or several, words converted to words of a different width, a type listed twice, a type entry not listed or not a type, a call that fits no instance by its arguments' types, a test's title that is empty, too long, unprintable, or repeated |
+| `ORC0250`–`ORC0252` | Formatting | Formatter resource limit, inconsistent result, source requiring formatting under `--check` |
 | `ORC0301` | Evaluation | Step budget, call depth, or `Int` result size exhausted |
 | `ORC1001`–`ORC1016` | Command line | Unreadable or oversized input, invalid UTF-8, duplicate standard input, output limit, key file, scheme, sealed-file format, a chunk that is not authentic, randomness, a `--spec` name that matches no function |
 
@@ -7088,6 +7109,8 @@ and [OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md);
 version 0.22 adds the [static-modulus specification](STATIC_MODULI_2026.md),
 [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md), P2 limb
 definitions and the [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md).
+Version 0.23 adds the permanent [formatter contract](FORMATTER_2026.md) and
+its command, identity and developer-tool status boundaries.
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7255,6 +7278,12 @@ executable examples and representation work, the current slice marker and
 status ledger, and the complete 1.0 execution path. Codex using GPT-6.1
 prepared these changes under Chase Bryan's 2026-10-01 direction. The proposals
 remain in review; no foundational decision, proof or release is inferred.
+
+Manuscript version 0.23 documents the syntax-only formatter, its stdout and
+check-only interfaces, and the source identities that formatting changes.
+Codex using GPT-6.1 prepared these changes under Chase Bryan's 2026-10-01
+direction. The semantic boundary remains S3t in review; this frontend tool
+does not close S8 or establish proof, evidence or release acceptance.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

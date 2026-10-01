@@ -19,6 +19,12 @@ per algorithm holding a README and `.or` sources, and the compiler tests
 reproduce every recorded vector. Product implementation is
 allowed; product releases and third-party pull requests are not.
 
+The permanent formatter and its CLI regression harness are admitted in the
+exact frontend inventory. Its [contract](../docs/FORMATTER_2026.md) permits
+syntax-only stdout formatting and check-only comparison, with bounded
+re-lexing/re-parsing and token/comment preservation. This admission does not
+advance semantic acceptance, S8 closure or release authority.
+
 Run `scripts/ci/check-repository` for the hardened standard gate. Its POSIX
 privileged shell mode suppresses inherited interpreter startup files before the
 script executes. It rejects a symbolic link in the script's final path

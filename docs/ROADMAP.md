@@ -358,7 +358,14 @@ and an explicit claim matrix. No local test is called certification.
 
 Status: pending usable language behavior
 
-Add immutable resolution, manifests and locks, offline bundles, formatter, LSP,
+The W3 syntax-only formatter is implemented as permanent frontend tooling:
+`orangec fmt` prints one source and `fmt --check` checks sources without writing
+them. Its [contract](FORMATTER_2026.md) preserves token spellings and comments,
+and validates bounded output by re-lexing and re-parsing. This completes that
+tool boundary, not S8. LSP, documentation generation, package/evidence tools,
+and the complete developer journeys remain required.
+
+Add immutable resolution, manifests and locks, offline bundles, LSP,
 documentation generator, evidence inspector, and source archives. A solo preview
 release requires an explicit release decision, exact source and artifact
 digests, reproducible owner build instructions, known limitations, and support
