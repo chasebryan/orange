@@ -1,0 +1,6 @@
+edition 2026;
+module invalid_bounds {
+  spec zero[m in 0..2]() -> Mod[m] { 0 }
+  spec negative[m in 2..4]() -> Mod[1 - m] { 0 }
+  spec too_wide[bits in 521..523]() -> Mod[(1 << bits) - 1] { 0 }
+}

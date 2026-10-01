@@ -2,7 +2,8 @@
 
 This folder holds the major encryption algorithms written in Orange, one
 folder per algorithm, each written from its standard and evaluated against the
-vectors the standard publishes. The title names the two things an entry is
+vectors the standard publishes. Explicitly labeled mathematical representation
+definitions also carry hand-derived boundary answers. The title names the two things an entry is
 for. *Analysis*: the algorithm is laid out the way its designers laid it out,
 so that a cryptographer, cryptologist or cryptanalyst can read the structure,
 follow every constant back to its source, and see plainly which steps depend
@@ -14,18 +15,22 @@ result.
 Every entry is a reference evaluation of a specification. None of them is a
 corpus entry in the sense of [The Orange Book](../docs/THE_ORANGE_BOOK.md),
 chapter 12: no entry makes a constant-time, side-channel, performance,
-interoperability or certification claim, and the Orange 2026 slices they use
-(S3b through S3j) are proposed, not accepted. Serpent's key schedule uses a
+interoperability or certification claim, and the pure Orange 2026 extensions
+they use are proposed, not accepted. Serpent's key schedule uses a
 block, so a round key's S-box is named once inside its loop. What an entry
 does claim is narrow and checked by machine: the recorded vectors, taken from
-the sources each README names, are reproduced byte for byte.
+the sources each README names, are reproduced byte for byte. Mathematical
+boundary answers are identified separately and do not become published
+cryptographic vectors or refinement proofs.
 
 ## The entries
 
-Twenty entries, 240 vectors. Each row links the entry's README; the vector
-count is the number of `<name>` and `<name>_expected` pairs its sources
-reproduce, and the standing is the entry's own summary of the record as of
-September 2026.
+Twenty entries, 240 published cryptographic vectors and seven mathematical
+representation pairs, for 247 recorded answer pairs. Each row links the
+entry's README; its vector count covers the published cryptographic pairs.
+The X25519 source count also includes the P2 five-limb definitions; their
+seven hand-derived pairs are separate. Standing is the entry's own summary
+of the record as of September 2026.
 
 ### Block ciphers
 
@@ -69,7 +74,7 @@ September 2026.
 
 | Entry | Standard | Sources | Vectors | Standing |
 | --- | --- | --- | ---: | --- |
-| [X25519](x25519/README.md) | RFC 7748 | 4 | 4 | Current |
+| [X25519](x25519/README.md) | RFC 7748; separate mathematical limb definitions | 5 | 4 | Current |
 | [HPKE](hpke/README.md) | RFC 9180 | 4 | 17 | Current |
 
 RSA-OAEP and ML-KEM-512 are being written; each joins the index when its
@@ -105,6 +110,11 @@ $ orangec eval algorithms/chacha20/chacha20.or
 chacha20::rfc8439_2_4_2: Word[8]^114 = [0x6e, 0x2e, 0x35, 0x9a, ...]
 chacha20::rfc8439_2_4_2_expected: Word[8]^114 = [0x6e, 0x2e, 0x35, 0x9a, ...]
 ```
+
+The same pair convention records the seven mathematical P2 boundaries in
+[`field25519-limbs.or`](x25519/field25519-limbs.or). Those expected values
+are hand-derived from the documented radix and prime, rather than imported
+from a standard's cryptographic vector corpus.
 
 Two checks pair them and require equality of type and value, and require
 every source to record at least one pair:

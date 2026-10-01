@@ -1,0 +1,7 @@
+edition 2026;
+module invalid_domains {
+  spec identity[m in 2..6](x: Mod[m]) -> Mod[m] { x }
+  spec wrong_input(x: Mod[7]) -> Mod[3] { identity[3](x) }
+  spec wrong_output() -> Mod[7] { identity[3](1) }
+  spec wrong_sum[m in 2..4](x: Mod[m], y: Mod[m + 1]) -> Mod[m] { x + y }
+}

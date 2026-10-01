@@ -1088,6 +1088,31 @@ conversion requires an explicitly selected row. S3s is implemented and
 tested, with its specification in review as
 [OEP-0023](docs/governance/oeps/OEP-0023-orange-2026-nested-arrays.md).
 
+### Moduli from finite sizes
+
+One pure definition can use a different residue domain in each size instance:
+
+```orange
+edition 2026;
+module rings {
+  spec add[m in 2..8](a: Mod[m], b: Mod[m]) -> Mod[m] { a + b }
+  spec result() -> (Mod[3], Mod[4]) { (add[3](2, 2), add[4](2, 2)) }
+  test "exact domains" { (add[3](2, 2) == 1) && (add[4](2, 2) == 0) }
+}
+```
+
+Every declared instance is checked before anything runs. Modulus expressions
+can use the function's own finite size names, and each result retains its exact
+domain. Module aliases and finite type lists remain concrete. S3t is implemented
+with its [specification](docs/STATIC_MODULI_2026.md) and
+[OEP-0024](docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md) in review.
+
+The [five-limb field definitions](algorithms/x25519/field25519-limbs.or)
+also give executable reconstruction, abstraction, tight/loose/canonical
+predicates, addition, carrying and canonicalization for p = 2^255 − 19.
+Their mathematical boundary tests do not establish a refinement proof or
+verified machine arithmetic.
+
 ### Daylight Horizon example
 
 [`examples/daylight/`](examples/daylight/README.md) is Daylight Horizon v17's
@@ -1115,6 +1140,7 @@ cryptography.
 | Indices keyed by data, proved in range from their types | Working; specification in review ([OEP-0010](docs/governance/oeps/OEP-0010-orange-2026-lookups.md)) |
 | Programs of more than one module, each in its own file, with calls qualified by module | Working; specification in review ([OEP-0011](docs/governance/oeps/OEP-0011-orange-2026-modules.md)) |
 | Integers modulo a constant, `Mod[m]`, with total division, and `type` declarations | Working; specification in review ([OEP-0012](docs/governance/oeps/OEP-0012-orange-2026-modular-arithmetic.md)) |
+| Modulus expressions over own finite size parameters, with eagerly checked exact domains | Working; specification in review ([OEP-0024](docs/governance/oeps/OEP-0024-orange-2026-static-moduli.md)) |
 | `let` bindings inside a loop's step and each branch of a conditional | Working; specification in review ([OEP-0013](docs/governance/oeps/OEP-0013-orange-2026-blocks.md)) |
 | Tuples, `.k`, and tuple patterns, so that a function gives several values and a loop carries several accumulators | Working; specification in review ([OEP-0014](docs/governance/oeps/OEP-0014-orange-2026-tuples.md)) |
 | Byte strings `"..."` and `hex"..."`, `++` joins, and slices at bounds proved in range | Working; specification in review ([OEP-0015](docs/governance/oeps/OEP-0015-orange-2026-bytes.md)) |
@@ -1131,6 +1157,12 @@ cryptography.
 | Code generation, native targets, C ABI | Proposed; strategy under investigation (D-010, D-011, D-013); not built |
 | Cryptography corpus (hashes, AEADs, signatures, KEMs) | Planned |
 | Packages and releases | Planned; no release exists |
+
+The target remains the complete 1.0 product. The
+[execution record](docs/RELEASE_1_0_EXECUTION.md) maps all charter requirements
+and eight journeys to engineering and actual owner decisions. The current
+language and representation work supplies part of that path; no complete
+release or journey is claimed.
 
 ## Quick start
 

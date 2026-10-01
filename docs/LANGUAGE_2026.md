@@ -143,6 +143,12 @@ unresolved.
 > are checked and their scalar product is at most 65,536. It adds chained
 > index selections, with no new token or reserved word; repeated `^` type
 > syntax remains rejected.
+>
+> The S3t slice proposed in [`STATIC_MODULI_2026.md`](STATIC_MODULI_2026.md)
+> under OEP-0024, also in review, builds on S3s with own finite size names in
+> modulus expressions, as `Mod[(1 << bits) - 19]`. Every concrete instance is
+> checked eagerly and retains its exact residue domain. It changes no grammar,
+> token or reserved word; global aliases and finite type lists remain concrete.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

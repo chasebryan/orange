@@ -1113,7 +1113,7 @@ fn usage_errors_have_a_distinct_exit_status() {
     assert_eq!(
         String::from_utf8(version_first.stdout).unwrap(),
         format!(
-            "orangec {} (Orange edition 2026; implemented slice S3s)\n",
+            "orangec {} (Orange edition 2026; implemented slice S3t)\n",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -1148,18 +1148,20 @@ fn usage_errors_have_a_distinct_exit_status() {
 fn version_slice_has_executable_language_evidence() {
     // The package version alone cannot distinguish a literal-only compiler
     // from the later expression slices. Check the actual binary's latest
-    // slice marker together with the behavior that distinguishes S3s.
+    // slice marker together with the behavior that distinguishes S3t.
     let version = orangec().arg("--version").output().unwrap();
     assert!(version.status.success());
     assert_eq!(version.stderr, b"");
-    assert!(version.stdout.ends_with(b"; implemented slice S3s)\n"));
+    assert!(version.stdout.ends_with(b"; implemented slice S3t)\n"));
 
     let source = concat!(
         "edition 2026; module version_probe {\n",
         "  type Row = Word[8]^2;\n",
         "  type Matrix = Row^2;\n",
         "  spec sample() -> Matrix { [[1, 2], [3, 4]] }\n",
+        "  spec reduce[n in 2..4](x: Int) -> Mod[n] { x as Mod[n] }\n",
         "  test \"S3s nested arrays\" { sample()[1][0] == 3 }\n",
+        "  test \"S3t static moduli\" { (reduce[2](5) == 1) && (reduce[3](5) == 2) }\n",
         "}\n",
     );
     for _ in 0..2 {
@@ -1168,7 +1170,7 @@ fn version_slice_has_executable_language_evidence() {
         assert_eq!(output.stderr, b"");
         assert_eq!(
             output.stdout,
-            b"test \"S3s nested arrays\" ... ok\n1 test: 1 passed, 0 failed\n"
+            b"test \"S3s nested arrays\" ... ok\ntest \"S3t static moduli\" ... ok\n2 tests: 2 passed, 0 failed\n"
         );
     }
 }

@@ -34,7 +34,7 @@ const MAX_EVALUATION_STEP_LIMIT: usize = 1 << 30;
 const MAX_SELECTED_SPECS: usize = 64;
 const TOKEN_ESCAPE_BUFFER_BYTES: usize = 4 * 1024;
 /// The latest implemented language slice, not an acceptance or release status.
-const IMPLEMENTED_SLICE: &str = "S3s";
+const IMPLEMENTED_SLICE: &str = "S3t";
 const USAGE: &str = concat!(
     "Usage: orangec [OPTIONS] <check|eval|lex> <FILE>...\n",
     "       orangec eval [--steps <N>] [--spec <NAME>]... [--stats] <FILE>\n",

@@ -63,7 +63,10 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > [`AMOUNTS_2026.md`](AMOUNTS_2026.md) under OEP-0021, which adds shift and
 > rotation amounts computed from data, and the S3s slice proposed in
 > [`NESTED_ARRAYS_2026.md`](NESTED_ARRAYS_2026.md) under OEP-0023, which
-> adds bounded rectangular arrays of scalar rows.
+> adds bounded rectangular arrays of scalar rows, and the S3t slice proposed
+> in [`STATIC_MODULI_2026.md`](STATIC_MODULI_2026.md) under OEP-0024, which
+> evaluates own finite size names in modulus expressions for each eagerly
+> checked instance, retaining exact concrete residue-domain types.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

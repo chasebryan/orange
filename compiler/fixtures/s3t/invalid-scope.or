@@ -1,0 +1,7 @@
+edition 2026;
+module invalid_scope {
+  type Missing = Mod[n];
+  spec runtime(x: Int) -> Mod[x] { 0 }
+  spec unknown[n in 2..4]() -> Mod[missing + n] { 0 }
+  spec type_value[T in {Int, Word[8]}]() -> Mod[T] { 0 }
+}

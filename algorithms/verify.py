@@ -8,8 +8,10 @@ folder under algorithms/ is checked. For each `.or` file the script runs
 `<name>_expected` with the spec `<name>` and requires the two printed values to
 agree in type and value. `<name>` computes a result with the algorithm and
 `<name>_expected` states the value published with the standard or vector
-source that the file's comments cite, so a matching pair is one reproduced
-vector. Every file must carry at least one pair, must pass `check` without
+source, or a hand-derived mathematical boundary answer, as the file's comments
+identify. A matching pair is one reproduced recorded answer; the source's
+provenance distinguishes cryptographic vectors from mathematical fixtures.
+Every file must carry at least one pair, must pass `check` without
 diagnostics, and must keep the repository's text rules: LF line endings, a
 final newline, no tabs, no trailing whitespace, at most 512 KiB. Every folder
 must carry a README.md whose sections include "Analysis" and "Dissemination".

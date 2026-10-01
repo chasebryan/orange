@@ -4783,16 +4783,17 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
     /// Returns whether a name followed by `[` starts a call of a function
     /// with sizes or types, `name[sizes](arguments)`: whether the brackets
     /// hold only tokens a list of sizes and types can hold (integers, names,
-    /// `+`, `-`, `*`, `/`, `%`, `^`, parentheses, commas, and a name's `[n]`,
-    /// as in `Word[32]`) and a `(` follows them. Anything else, such as an
-    /// index that holds another index, stops the scan, so the scans of all
-    /// a source's brackets read each token at most twice.
+    /// `+`, `-`, `*`, `/`, `%`, `^`, parentheses, commas, a name's `[n]`,
+    /// as in `Word[32]`, and `Mod[expression]` with `<<`) and a `(` follows
+    /// them. Nested brackets within a modulus stop the scan. Thus the
+    /// scans of all a source's brackets read each token at most twice.
     fn starts_sized_call(&self) -> bool {
         if self.next_kind() != TokenKind::LeftBracket {
             return false;
         }
         let mut position = self.cursor.saturating_add(2);
         let mut depth = 0_usize;
+        let mut modulus = false;
         loop {
             match self.kind_at(position) {
                 TokenKind::Integer
@@ -4806,9 +4807,17 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
                 | TokenKind::Comma => {}
                 TokenKind::LeftParen => depth = depth.saturating_add(1),
                 TokenKind::RightParen if depth > 0 => depth = depth.saturating_sub(1),
+                TokenKind::LessLess if modulus => {}
+                TokenKind::LeftBracket
+                    if !modulus && self.is_word_at(position.saturating_sub(1), "Mod") =>
+                {
+                    modulus = true;
+                }
+                TokenKind::RightBracket if modulus => modulus = false,
                 // A word type given to a type parameter, as in `ch[Word[32]](e, f, g)`.
                 TokenKind::LeftBracket
-                    if self.kind_at(position.saturating_sub(1)) == TokenKind::Identifier
+                    if !modulus
+                        && self.kind_at(position.saturating_sub(1)) == TokenKind::Identifier
                         && self.kind_at(position.saturating_add(1)) == TokenKind::Integer
                         && self.kind_at(position.saturating_add(2)) == TokenKind::RightBracket =>
                 {
@@ -9869,6 +9878,8 @@ mod tests {
             // brackets, for a type such as `Word[8]^4`.
             ("a[b[1]](c)", "call 1"),
             ("a[Word[8]^4, 2](c)", "call 2"),
+            ("a[Mod[n]](c)", "call 1"),
+            ("a[Mod[(1 << bits) - 19]^4, 2](c)", "call 2"),
         ];
         for (body, shape) in shapes {
             let (_, expression) = body_expression(&spec_source(body));

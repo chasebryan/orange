@@ -8,7 +8,7 @@ Status: living pre-alpha reader guide
 
 Snapshot: 2026-10-01
 
-Manuscript version: 0.21
+Manuscript version: 0.22
 
 > The Orange Book explains why Orange exists, what it is intended to become,
 > what has actually been built, and which questions remain open. It is not a
@@ -121,7 +121,8 @@ are written as the RFC prints them, the S3q slice lets a module state its
 known answers as tests beside its functions, so that RFC 8439's examples are
 claims the program checks, and the S3r slice lets a shift or rotation take an
 amount computed from data, so that RC6 and SHA-3 turn their words as their
-designers write them. None of them
+designers write them. S3s adds tables of scalar rows, and S3t lets each finite
+size instance compute its own exact modulus. None of them
 adds typed
 implementations, refinement, code generation, a standard library, a proof checker, package or release behavior,
 or a verified cryptographic implementation. A passing test suite is
@@ -1737,8 +1738,10 @@ the accepted [typed-literal semantics](SEMANTICS_2026.md) of S3a, the
 [type parameters specification](TYPE_PARAMETERS_2026.md) of S3o, the
 [lengths specification](LENGTHS_2026.md) of S3p, the
 [tests specification](TESTS_2026.md) of S3q, and the
-[computed amounts specification](AMOUNTS_2026.md) of S3r. S3b through
-S3s are implemented and tested, but their specifications are **proposed**:
+[computed amounts specification](AMOUNTS_2026.md) of S3r, the
+[nested arrays specification](NESTED_ARRAYS_2026.md) of S3s, and the
+[static moduli specification](STATIC_MODULI_2026.md) of S3t. S3b through
+S3t are implemented and tested, but their specifications are **proposed**:
 [OEP-0005](governance/oeps/OEP-0005-orange-2026-pure-spec-expressions.md),
 [OEP-0006](governance/oeps/OEP-0006-orange-2026-bindings-and-conversions.md),
 [OEP-0007](governance/oeps/OEP-0007-orange-2026-fixed-length-arrays.md),
@@ -1754,8 +1757,10 @@ S3s are implemented and tested, but their specifications are **proposed**:
 [OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md),
 [OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md),
 [OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md),
-[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), and
-[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md) are in
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md),
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md),
+[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md), and
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) are in
 the owner's review and have not been accepted. Where this chapter and
 those documents disagree, they win.
 
@@ -4626,7 +4631,7 @@ reads only the source it is given.
 
 `-` reads UTF-8 source from standard input. `--edition 2026` selects the
 edition explicitly. `--version` prints
-`orangec 0.0.1 (Orange edition 2026; implemented slice S3s)`. The slice
+`orangec 0.0.1 (Orange edition 2026; implemented slice S3t)`. The slice
 identifies implemented behavior, not its proposal's acceptance or a release.
 The exit status is 0 on success, 1 when compilation or I/O fails, and 2 for a
 usage error. Output streams are bounded like everything else. A compiler-phase
@@ -4780,6 +4785,40 @@ proof rule, machine layout, or backend. The conformance corpus includes
 quadratic-pair arithmetic with hand-derived answers; it makes no complete
 ML-KEM claim.
 
+### A modulus for each finite size
+
+A size can now describe a residue domain as well as an array length:
+
+```orange
+edition 2026;
+module rings {
+  spec add[m in 2..8](a: Mod[m], b: Mod[m]) -> Mod[m] { a + b }
+  spec result() -> (Mod[3], Mod[4]) { (add[3](2, 2), add[4](2, 2)) }
+  test "distinct domains" { (add[3](2, 2) == 1) && (add[4](2, 2) == 0) }
+}
+```
+
+The size range is finite and excludes its upper endpoint. The analyzer checks
+every declared instance, including those no call selects. Each has a concrete
+modulus from 2 through 2^521 − 1, and that exact integer remains part of its
+type. An invalid unused instance rejects the definition. The function's own
+sizes may also occur in expressions such as `Mod[(1 << bits) - 19]`, in body
+annotations and conversions, and in direct explicit type arguments. Global
+aliases and finite type lists remain concrete; this is finite specialization,
+not universal dependent typing. The [static-modulus specification](STATIC_MODULI_2026.md)
+and [OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) remain
+in owner review.
+
+The [five-limb field definitions](../algorithms/x25519/field25519-limbs.or)
+take the next mathematical step of OEP-0022: reconstruction, abstraction and
+tight/loose/canonical predicates, followed by addition, carrying and
+canonicalization. Exact `Int` arithmetic records what the limbs mean without
+pretending a wrapping machine product is wide multiplication. Boundary and
+generated reference tests check observations. Transparent type aliases do
+not enforce the predicates, and these tests are not checked refinement proofs.
+The [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md) keeps those
+later proof, compiler, corpus and release obligations explicit.
+
 ### What Orange 2026 does not have
 
 The list of absences is long, and it is printed in the specifications rather
@@ -4787,8 +4826,8 @@ than hidden: imports of names into scope, module paths and packages, modules
 that take modules as parameters, attributes, visibility, type parameters of
 `type` declarations, bounds or classes of types, types and sizes reasoned
 about for all their values at once, lists of types named once for several
-functions, sizes found from anything
-but the lengths of a call's arguments, contracts, effects, statements other than `let`, mutation,
+functions, sizes fitted outside the finite argument and expected-result
+types, contracts, effects, statements other than `let`, mutation,
 shadowing, type inference, arrays of rank three or more, tuples of tuples, arrays of
 tuples, operators other than `==` and `!=` on whole tuples, records with named fields, indices
 narrowed by conditions, slices at positions computed from data, empty arrays,
@@ -4798,7 +4837,7 @@ text beyond printable ASCII, conversions of
 arrays other than words, bit orders, loops over ranges computed at run time, early exit, short-circuit
 operators, conditionals without `else`, blocks as expressions of their own,
 moduli computed at run time,
-moduli written with parameters, sizes on `type` declarations, distinct types by declaration, extension
+unbounded modulus parameters, sizes on `type` declarations, distinct types by declaration, extension
 fields, signed words, shifts of `Int`, arithmetic shifts, recursion, typed
 implementations,
 failure values, secrecy labels, proof terms, claims, games, targets, layout,
@@ -4824,10 +4863,10 @@ through OEP-0016, S3n's, which builds on S3m, through OEP-0017, S3o's,
 which builds on S3n, through OEP-0018, S3p's, which builds on S3o,
 through OEP-0019, S3q's, which builds on S3p, through OEP-0020, and S3r's,
 which builds on S3q, through OEP-0021, and S3s's, which builds on S3r,
-through OEP-0023.
+through OEP-0023, and S3t's, which builds on S3s, through OEP-0024.
 Orange 2026 is pre-alpha and makes no compatibility promise, but any change to
 what the programs in this chapter mean has to arrive with an explicit,
-documented migration. All eighteen migrations so far are small: every source
+documented migration. All nineteen migrations so far are small: every source
 that S3a accepted still has the same values and prints the same bytes under
 S3b, every source S3b accepted does the same under S3c, every source S3c
 accepted does the same under S3d, every source S3d accepted does the same
@@ -4851,6 +4890,8 @@ source S3p accepted does the same under S3q, since none began a member with
 same under S3r, in the same steps, since each of its amounts was a literal
 below the width. Every source S3r accepted retains its values and costs
 under S3s; rank-two type aliases and chained indices are newly admitted.
+S3t retains S3s values and costs and admits own finite size names in modulus
+expressions, while rejecting invalid concrete instances before evaluation.
 
 ## Chapter 9: From Core to Native Bytes
 
@@ -6203,7 +6244,7 @@ capability stages, each with a permanent outcome and an exit test:
 | S0 | Repository foundation | Closed for its solo scope |
 | S1 | Compiler foundation: sources, lexer, diagnostics, CLI | Closed |
 | S2 | Editioned grammar and bounded parser | Closed |
-| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3s in review |
+| S3 | Semantic core and reference evaluator | Active; S3a complete; S3b through S3t in review |
 | S4 | Proof and claim boundary | Open |
 | S5 | Compiler IRs and one output path | Open |
 | S6 | Memory, leakage, ABI, and native targets | Open |
@@ -6918,6 +6959,8 @@ part are listed here so a reader can move from explanation to authority.
   [byte order](ORDER_2026.md), [type parameter](TYPE_PARAMETERS_2026.md),
   [length](LENGTHS_2026.md), [test](TESTS_2026.md), and
   [amount](AMOUNTS_2026.md) specifications under OEP-0005 through OEP-0021,
+  [nested arrays](NESTED_ARRAYS_2026.md) under OEP-0023 and
+  [static moduli](STATIC_MODULI_2026.md) under OEP-0024,
   the
   [compiler guide](../compiler/README.md),
   the [scheme guide](../compiler/schemes/README.md), and the compiler's own
@@ -7040,6 +7083,11 @@ adds the [tests specification](TESTS_2026.md) and
 [OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), and version 0.20
 adds the [computed amounts specification](AMOUNTS_2026.md) and
 [OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md).
+Version 0.21 adds the [nested-array specification](NESTED_ARRAYS_2026.md)
+and [OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md);
+version 0.22 adds the [static-modulus specification](STATIC_MODULI_2026.md),
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md), P2 limb
+definitions and the [complete 1.0 execution record](RELEASE_1_0_EXECUTION.md).
 Appendix D lists the principal sources for each chapter.
 
 Initial manuscript version 0.1—the structure, preface, manuscript map, and
@@ -7201,6 +7249,12 @@ status ledger for S3s nested arrays, with the executable "Arrays of rows"
 example. Codex using GPT-6.1 prepared these changes under Chase Bryan's
 2026-10-01 direction. Their implementation tests are solo-produced evidence;
 they do not supply independent review or semantic acceptance.
+
+Manuscript version 0.22 updates the finite-size modulus boundary, Chapter 8's
+executable examples and representation work, the current slice marker and
+status ledger, and the complete 1.0 execution path. Codex using GPT-6.1
+prepared these changes under Chase Bryan's 2026-10-01 direction. The proposals
+remain in review; no foundational decision, proof or release is inferred.
 
 The repository has no selected outbound documentation license under D-018. No
 license or redistribution grant should be inferred from this manuscript.

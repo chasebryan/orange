@@ -1,0 +1,13 @@
+edition 2026;
+module program {
+  use static_ring;
+  spec run[m in 3..12](x: Int) -> Mod[m] {
+    static_ring::sum[m](static_ring::reduce[m](x), 1)
+  }
+  spec result() -> (Mod[7], Mod[11]) { (run[7](20), run[11](20)) }
+  test "imported signatures use the callee's selected modulus" { (run[7](20) == 0) && (run[11](20) == 10) }
+  test "argument fitting across modules preserves exact domains" {
+    let x: Mod[7] = 6;
+    static_ring::sum(x, x) == 5
+  }
+}

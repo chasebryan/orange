@@ -31,6 +31,8 @@ enum TypeArgument {
     Type(CoreType),
     /// A type that did not resolve, which was reported where it is written.
     Unresolved,
+    /// A written modular type with no value in this instance.
+    ModulusFault(ModulusFault),
     /// Something other than a type.
     NotAType,
 }
@@ -1015,7 +1017,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let parameter = signature.sizes.get(position)?;
         let listed = signature.listed.get(position)?;
-        match self.type_argument(entry) {
+        let argument = self.type_argument(entry);
+        if !self.charge_size_events(entry.span) {
+            return None;
+        }
+        match argument {
             TypeArgument::Type(ty) => {
                 // A listed type that did not resolve was reported at the
                 // callee's declaration.
@@ -1035,6 +1041,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
             }
             TypeArgument::Unresolved => None,
+            TypeArgument::ModulusFault(fault) => {
+                self.report_modulus_fault(fault);
+                None
+            }
             TypeArgument::NotAType => {
                 self.report_not_a_type(entry.span, callee, parameter);
                 None
@@ -1043,7 +1053,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     }
 
     /// Returns the type a call's entry in brackets names, without reporting:
-    /// `Int`, `Bool`, `Word[n]`, an array of one of them, a `type`
+    /// `Int`, `Bool`, `Word[n]`, `Mod[m]`, an array of one of them, a `type`
     /// declaration's name, or a type parameter of the instance being checked.
     ///
     /// Parser-established expression height bounds this recursion.
@@ -1068,6 +1078,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 }
             }
             ExpressionKind::Index(index) => match (&index.base.kind, &index.index.kind) {
+                (ExpressionKind::Name(base), _) if base.text == "Mod" => self
+                    .types
+                    .sizes
+                    .modulus(self.source, &index.index)
+                    .map_or_else(TypeArgument::ModulusFault, |modulus| {
+                        TypeArgument::Type(CoreType::Mod(modulus))
+                    }),
                 (ExpressionKind::Name(base), ExpressionKind::Literal(_)) if base.text == "Word" => {
                     let width = match self.source.slice(index.index.span) {
                         Some("8") => Some(8),
@@ -1099,6 +1116,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                             })
                     }
                     TypeArgument::Unresolved => TypeArgument::Unresolved,
+                    TypeArgument::ModulusFault(fault) => TypeArgument::ModulusFault(fault),
                     TypeArgument::Type(_) | TypeArgument::NotAType => TypeArgument::NotAType,
                 }
             }
@@ -1125,7 +1143,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             && let Some(entry) =
                 first_declaration(declarations, FunctionKind::Spec, &call.callee.text)
             && let Some(Some(signature)) = signatures.get(entry.source_index)
-            && signature.sizes.iter().any(SizeParameter::is_type)
+            && signature.fits_types()
             && signature
                 .instances
                 .first()
@@ -1163,9 +1181,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
     /// no brackets, or the indices of the first two instances that fit, or
     /// none, without reporting.
     ///
-    /// For a function with sizes only, an instance fits when its array
-    /// parameters have the lengths of the call's arguments. For a function
-    /// with type parameters, it fits when its parameters have the types of
+    /// For a function with sizes only and no size-dependent moduli, an
+    /// instance fits when its array parameters have the lengths of the
+    /// call's arguments. With type parameters or size-dependent moduli, it
+    /// fits when its parameters have the types of
     /// the call's arguments, and among several that do, the one whose
     /// result has the type `expected`, when given, is called. An argument
     /// whose length or type is not known without reporting fits every
@@ -1178,7 +1197,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         context: &BodyContext<'ast>,
         scope: &ModuleScope<'_, 'ast>,
     ) -> Result<usize, [Option<usize>; 2]> {
-        let typed = signature.sizes.iter().any(SizeParameter::is_type);
+        let typed = signature.fits_types();
         let first = signature.instances.first().ok_or([None; 2])?;
         // Types are kept on the heap: this frame is on the stack of every
         // silently typed call nested in an argument.
@@ -1278,6 +1297,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         let name = identifier_spelling_for_diagnostic(&call.callee.text);
         let typed = signature.sizes.iter().any(SizeParameter::is_type);
+        let fits_types = signature.fits_types();
         let sized = signature.sizes.iter().any(|size| !size.is_type());
         let domain = signature
             .sizes
@@ -1316,7 +1336,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 (false, true) => "write the types in brackets",
                 (true, true) => "write the sizes and types in brackets",
             })
-        } else if typed {
+        } else if fits_types {
             let types = call
                 .arguments
                 .iter()
@@ -1329,7 +1349,11 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 _ => format!("arguments of types {} are given", types.join(", ")),
             };
             Diagnostic::error(
-                DiagnosticCode::TypeParameter,
+                if typed {
+                    DiagnosticCode::TypeParameter
+                } else {
+                    DiagnosticCode::SizeRange
+                },
                 format!("no instance of `{name}` takes arguments of these types"),
                 span,
             )
@@ -1355,16 +1379,21 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             .with_label(label)
             .with_note(format!("`{name}` is defined for {domain}"))
         };
-        self.diagnostics.push(diagnostic.with_note(if typed {
-            "a call that writes no brackets calls the one instance of its function whose \
+        self.diagnostics
+            .push(diagnostic.with_note(if signature.modular_sizes && !typed {
+                "a call that writes no brackets calls the one instance whose parameters have its \
+             arguments' exact types, and among several, the one whose result has the type its \
+             place expects; any other call writes its sizes in brackets"
+            } else if typed {
+                "a call that writes no brackets calls the one instance of its function whose \
              parameters have its arguments' types, and among several, the one whose result has \
              the type its place expects; any other call writes its types in brackets, as in \
              `pow[F](x, e)`"
-        } else {
-            "a call that writes no sizes calls the one instance of its function whose array \
+            } else {
+                "a call that writes no sizes calls the one instance of its function whose array \
              parameters have the lengths of its arguments; any other call writes its sizes in \
              brackets, as in `absorb[2](p)`"
-        }));
+            }));
     }
 
     #[cold]

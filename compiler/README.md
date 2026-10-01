@@ -1,7 +1,7 @@
 # Orange compiler
 
 Status: production-lineage, pre-alpha; S3a under accepted OEP-0003; S3b through
-S3s proposed under OEP-0005 through OEP-0021 and OEP-0023, in owner review
+S3t proposed under OEP-0005 through OEP-0021, OEP-0023 and OEP-0024, in owner review
 
 This workspace contains the first executable slice of the Orange compiler. It
 is intentionally small, but its source identities, byte spans, language-edition
@@ -101,7 +101,12 @@ modulo the width. The S3s slice, proposed in
 [`docs/NESTED_ARRAYS_2026.md`](../docs/NESTED_ARRAYS_2026.md) and in owner
 review under OEP-0023, adds arrays of scalar rows with exact shapes, at most
 65,536 scalar elements, and chained indices. Rows retain their types through
-updates, slicing, concatenation, tuples, and finite specialization. All nineteen
+updates, slicing, concatenation, tuples, and finite specialization. The S3t
+slice, proposed in [`docs/STATIC_MODULI_2026.md`](../docs/STATIC_MODULI_2026.md)
+and in owner review under OEP-0024, admits own finite size names in modulus
+expressions. Every instance is checked eagerly with its exact concrete residue
+domain, including signatures, body annotations, conversions and direct type
+arguments. Module aliases and type-parameter lists remain concrete. All twenty
 lower to a noncanonical Typed Reference Core and are reference-evaluated. Unbounded loops, typed `impl`, proof checking,
 verified lowering, and code generation do not exist.
 
@@ -144,7 +149,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3s)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3t)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status
