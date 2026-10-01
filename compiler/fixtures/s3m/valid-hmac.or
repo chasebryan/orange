@@ -1,0 +1,29 @@
+// S3m conformance: HMAC-SHA-256 of RFC 2104 for every key of 1 through 63
+// bytes and every message of 1 through 55, over the sized SHA-256 of
+// `sha256.or`. The key is padded with zeros to one 64-byte block; the inner
+// hash reads 64 + len bytes and the outer 96, and each call takes the
+// instance of `sha256` those lengths fit. The MACs of RFC 4231 test cases 1
+// and 2 are the ones that RFC prints.
+edition 2026;
+module hmac {
+  use sha256;
+
+  // RFC 2104 section 2: a key of B = 64 bytes or fewer, padded with zeros.
+  spec padded[klen in 1..64](key: Word[8]^klen) -> Word[8]^64 { key ++ [0; (64 - klen)] }
+
+  // Each byte of the padded key exclusive-ored with a pad byte, 36 inside
+  // and 5c outside.
+  spec keyed(k0: Word[8]^64, pad: Word[8]) -> Word[8]^64 {
+    for i in 0..64 with out: Word[8]^64 = k0 { out with [i] = k0[i] ^ pad }
+  }
+
+  spec hmac[len in 1..56](k0: Word[8]^64, m: Word[8]^len) -> Word[8]^32 {
+    sha256::sha256(keyed(k0, 0x5c) ++ sha256::sha256(keyed(k0, 0x36) ++ m))
+  }
+
+  // RFC 4231 section 4.2, test case 1: twenty bytes 0b and "Hi There".
+  spec case1() -> Word[8]^32 { hmac(padded([0x0b; 20]), "Hi There") }
+
+  // Section 4.3, test case 2: a key shorter than the output.
+  spec case2() -> Word[8]^32 { hmac(padded("Jefe"), "what do ya want for nothing?") }
+}

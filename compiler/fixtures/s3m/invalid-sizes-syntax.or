@@ -1,0 +1,13 @@
+// S3m rejection: a size parameter is written `n in a..b` with integer bounds,
+// a function has at most four, a computed size is written in parentheses,
+// and a call of a module's sized function gives its sizes before `(`.
+edition 2026;
+module syntax {
+  spec no_in[n 1..4]() -> Int { 1 }
+  spec named_bound[n in 1..m]() -> Int { 1 }
+  spec five[a in 1..2, b in 1..2, c in 1..2, d in 1..2, e in 1..2]() -> Int { 1 }
+  spec ungrouped[n in 1..4](x: Word[8]^n + 1) -> Int { 1 }
+  spec fill[n in 1..4]() -> Word[8]^(2 * n) { [0; 2 * n] }
+  spec bound[n in 1..4]() -> Int { for i in 0..n - 1 with s: Int = 0 { s } }
+  spec qualified() -> Int { sha256::sha256[3] }
+}

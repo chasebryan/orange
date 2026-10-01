@@ -16,6 +16,7 @@ const CORE_SOURCE: &str = include_str!("../../orange-compiler/src/core.rs");
 const EVAL_SOURCE: &str = include_str!("../../orange-compiler/src/eval.rs");
 const PARSER_SOURCE: &str = include_str!("../../orange-compiler/src/parser.rs");
 const SEMANTICS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics.rs");
+const SEMANTICS_TESTS_SOURCE: &str = include_str!("../../orange-compiler/src/semantics/tests.rs");
 const SOURCE_SOURCE: &str = include_str!("../../orange-compiler/src/source.rs");
 const ORANGEC_MAIN_SOURCE: &str = include_str!("../src/main.rs");
 const CLI_TEST_SOURCE: &str = include_str!("cli.rs");
@@ -490,7 +491,7 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         rules: &["S3A-PHASE-01", "S3A-GRAMMAR-01", "S3A-ATOMIC-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "production_limits_match_the_s3a_specification",
         rules: &[
             "S3A-LIT-BITS-01",
@@ -500,22 +501,22 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "namespace_uniqueness_is_per_kind_and_cites_the_first_declaration",
         rules: &["S3A-DECL-01", "S3A-DIAG-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "independent_semantic_errors_preserve_source_order_and_responsible_spans",
         rules: &["S3A-DIAG-01", "S3A-ATOMIC-01", "S3A-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "compounded_declaration_failures_follow_semantic_traversal_order",
         rules: &["S3A-DIAG-01", "S3A-ATOMIC-01", "S3A-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "exact_ints_accept_every_sign_class_in_every_radix",
         rules: &[
             "S3A-TYPE-INT-01",
@@ -525,7 +526,7 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "integer_decoding_matches_a_deterministic_u128_reference_corpus",
         rules: &[
             "S3A-LIT-DECODE-01",
@@ -535,7 +536,7 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "multi_limb_integer_decoding_matches_independent_cross_radix_reference",
         rules: &[
             "S3A-LIT-DECODE-01",
@@ -547,7 +548,7 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "large_integer_rendering_matches_decimal_doubling_reference",
         rules: &[
             "S3A-LIT-DECODE-01",
@@ -558,7 +559,7 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "word_boundaries_are_exact_and_stably_formatted",
         rules: &[
             "S3A-TYPE-WORD8-01",
@@ -567,7 +568,7 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "every_word8_value_decodes_exactly_in_every_radix",
         rules: &[
             "S3A-TYPE-WORD8-01",
@@ -578,32 +579,32 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "typed_impls_and_unadmitted_types_fail_closed",
         rules: &["S3A-GRAMMAR-01", "S3A-TYPE-REJECT-01", "S3A-ATOMIC-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "integer_at_significant_bit_limit_is_exact",
         rules: &["S3A-LIT-BITS-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "integer_over_significant_bit_limit_is_rejected_without_core",
         rules: &["S3A-LIT-BITS-01", "S3A-ATOMIC-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "leading_zeroes_consume_no_significant_bit_or_event_budget",
         rules: &["S3A-LIT-ZEROES-01", "S3A-INT-01", "S3A-RES-EVENT-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "words_reject_negative_and_out_of_range_values_without_coercion",
         rules: &["S3A-WORD-SIGN-01", "S3A-WORD-RANGE-01", "S3A-ATOMIC-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "core_ids_follow_only_typed_specs_in_source_order",
         rules: &[
             "S3A-CORE-MEMBERSHIP-01",
@@ -612,7 +613,7 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "diagnostic_and_resource_limits_fail_closed",
         rules: &[
             "S3A-DIAG-01",
@@ -624,17 +625,17 @@ const INTERNAL_EVIDENCE: &[TestEvidence] = &[
         ],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "injected_limits_match_normative_event_and_core_node_accounting",
         rules: &["S3A-RES-CORE-01", "S3A-RES-EVENT-01", "S3A-RES-FAIL-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "analysis_is_repeatable_for_typed_success_and_failure",
         rules: &["S3A-DETERMINISM-01"],
     },
     TestEvidence {
-        source_path: "compiler/crates/orange-compiler/src/semantics.rs",
+        source_path: "compiler/crates/orange-compiler/src/semantics/tests.rs",
         test: "mutated_s3a_sources_preserve_phase_gates_and_repeatability",
         rules: &[
             "S3A-PHASE-01",
@@ -968,6 +969,7 @@ fn evidence_source(source_path: &str) -> Option<&'static str> {
         "compiler/crates/orange-compiler/src/eval.rs" => Some(EVAL_SOURCE),
         "compiler/crates/orange-compiler/src/parser.rs" => Some(PARSER_SOURCE),
         "compiler/crates/orange-compiler/src/semantics.rs" => Some(SEMANTICS_SOURCE),
+        "compiler/crates/orange-compiler/src/semantics/tests.rs" => Some(SEMANTICS_TESTS_SOURCE),
         "compiler/crates/orange-compiler/src/source.rs" => Some(SOURCE_SOURCE),
         "compiler/crates/orangec/src/main.rs" => Some(ORANGEC_MAIN_SOURCE),
         "compiler/crates/orangec/tests/cli.rs" => Some(CLI_TEST_SOURCE),
@@ -979,7 +981,8 @@ fn evidence_source(source_path: &str) -> Option<&'static str> {
 fn evidence_test_indentation(source_path: &str) -> &'static str {
     match source_path {
         "compiler/crates/orangec/tests/cli.rs"
-        | "compiler/crates/orangec/tests/s3a_conformance.rs" => "",
+        | "compiler/crates/orangec/tests/s3a_conformance.rs"
+        | "compiler/crates/orange-compiler/src/semantics/tests.rs" => "",
         _ => "    ",
     }
 }
@@ -991,6 +994,9 @@ fn expected_evidence_test_brace_stack(source: &str, source_path: &str) -> Option
     match source_path {
         "compiler/crates/orangec/tests/cli.rs"
         | "compiler/crates/orangec/tests/s3a_conformance.rs" => Some(Vec::new()),
+        "compiler/crates/orange-compiler/src/semantics/tests.rs" => {
+            file_test_module_is_unconditional(SEMANTICS_SOURCE).then(Vec::new)
+        }
         _ => {
             const TEST_MODULE: &str = "#[cfg(test)]\nmod tests {";
             let modules = source.match_indices(TEST_MODULE).collect::<Vec<_>>();
@@ -1007,6 +1013,24 @@ fn expected_evidence_test_brace_stack(source: &str, source_path: &str) -> Option
             (rust_code_brace_stack_at(source, opening) == Some(Vec::new())).then_some(vec![opening])
         }
     }
+}
+
+/// A test module kept in its own file runs only if its parent declares it
+/// exactly once, at the parent's root, under `#[cfg(test)]` and no other
+/// attribute, and the parent is not itself switched off.
+fn file_test_module_is_unconditional(parent: &str) -> bool {
+    const DECLARATION: &str = "#[cfg(test)]\nmod tests;";
+    if crate_starts_with_inner_attribute(parent) != Some(false)
+        || parent.matches("mod tests").count() != 1
+    {
+        return false;
+    }
+    let declarations = parent.match_indices(DECLARATION).collect::<Vec<_>>();
+    let [(offset, _)] = declarations.as_slice() else {
+        return false;
+    };
+    rust_code_brace_stack_at(parent, *offset) == Some(Vec::new())
+        && last_code_construct_is_outer_attribute(&parent[..*offset]) == Some(false)
 }
 
 fn exact_test_declaration(source_path: &str, test: &str) -> String {
@@ -1432,7 +1456,7 @@ fn internal_evidence_layers(source_path: &str, test: &str) -> u16 {
     };
     let specialized_layer = match (source_path, test) {
         (
-            "compiler/crates/orange-compiler/src/semantics.rs",
+            "compiler/crates/orange-compiler/src/semantics/tests.rs",
             "diagnostic_and_resource_limits_fail_closed"
             | "injected_limits_match_normative_event_and_core_node_accounting",
         )
@@ -1674,6 +1698,25 @@ fn s3a_named_evidence_scanner_rejects_disabled_and_nested_lookalikes() {
             &format!("#\u{200e}[cfg(not(test))]\n{declaration}"),
         );
         assert!(!compiler_unit_harness_is_unconditional(&controlled));
+    }
+
+    let file_module = "use crate::core;\n\n#[cfg(test)]\nmod tests;\n";
+    assert!(file_test_module_is_unconditional(file_module));
+    for disabled_file_module in [
+        "#![cfg(any())]\n#[cfg(test)]\nmod tests;\n",
+        "#[cfg(any())]\n#[cfg(test)]\nmod tests;\n",
+        "#[path = \"elsewhere.rs\"]\n#[cfg(test)]\nmod tests;\n",
+        "#[cfg(test)]\nmod tests;\n#[cfg(test)]\nmod tests;\n",
+        "#[cfg(test)]\nmod tests {}\n#[cfg(test)]\nmod tests;\n",
+        "mod inner {\n#[cfg(test)]\nmod tests;\n}\n",
+        "// #[cfg(test)]\nmod tests;\n",
+        "const LOOKALIKE: &str = \"#[cfg(test)]\nmod tests;\";\n",
+        "#[cfg(test)]\nmod other;\n",
+    ] {
+        assert!(
+            !file_test_module_is_unconditional(disabled_file_module),
+            "{disabled_file_module:?}"
+        );
     }
 
     let ordinary_preceding_item = concat!(

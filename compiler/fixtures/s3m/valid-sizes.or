@@ -1,0 +1,41 @@
+// S3m conformance: sizes. A function's size parameters take each value in
+// their ranges, and the function is checked once for each, as if written out
+// once per value. A size is an `Int` constant within its instance, so it can
+// write array lengths, fill lengths, loop bounds, indices and slice bounds. A
+// call names its instance by its sizes in brackets, or by its arguments'
+// lengths when it writes none. `orangec eval` prints every instance of a
+// function without value parameters, named as a call names it.
+edition 2026;
+module sizes {
+  // The sum of any array of 1 through 8 integers.
+  spec sum[n in 1..9](x: Int^n) -> Int {
+    for i in 0..n with s: Int = 0 { s + x[i] }
+  }
+
+  // n zero bytes, for n from 1 through 3.
+  spec zeros[n in 1..4]() -> Word[8]^n { [0; n] }
+
+  // Two sizes: four instances, the first size changing slowest.
+  spec code[a in 1..3, b in 7..9]() -> Int { (a * 10) + b }
+
+  // Lengths computed from sizes.
+  spec twice[k in 1..5](x: Word[8]^k) -> Word[8]^(2 * k) { x ++ x }
+
+  spec halves[k in 1..5](x: Word[8]^(2 * k)) -> (Word[8]^k, Word[8]^k) {
+    (x[..k], x[k..])
+  }
+
+  // The last two of 3 through 8 bytes: a slice bound written with a size.
+  spec tail[n in 3..9](x: Word[8]^n) -> Word[8]^2 { x[n - 2..] }
+
+  // Division and remainder of sizes are Euclidean and total, as for `Int`.
+  spec blocks[len in 1..4]() -> Int { ((len + 63) / 64) + ((len - 5) % 3) }
+
+  spec total() -> Int { sum([1, 2, 3]) + sum[1]([10]) }
+
+  spec pair() -> Word[8]^4 { twice(hex"ab cd") }
+
+  spec second() -> Word[8]^3 { halves("abcdef").1 }
+
+  spec last() -> Word[8]^2 { tail("hello") }
+}

@@ -758,7 +758,7 @@ class WorkflowHardeningTests(unittest.TestCase):
             ),
             (
                 "ci.yml",
-                "    timeout-minutes: 15\n",
+                "    timeout-minutes: 30\n",
                 "    timeout-minutes: 1\n",
                 "workflow.timeout",
             ),

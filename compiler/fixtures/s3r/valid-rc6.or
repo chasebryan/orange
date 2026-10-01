@@ -1,0 +1,106 @@
+// S3r conformance: RC6-32/20/16 of "The RC6 Block Cipher" (Rivest,
+// Robshaw, Sidney, and Yin, version 1.1, 1998), with 32-bit words, 20
+// rounds, and a 16-byte key. RC6 turns its words by amounts its key and
+// data choose, and the paper writes those rotations as `a <<< b`: the word
+// a rotated to the left by the amount in the least significant lg w bits
+// of b. A rotation by a word turns by that word modulo 32, so each is
+// written here as the paper writes it.
+edition 2026;
+module rc6 {
+  type Registers = (Word[32], Word[32], Word[32], Word[32]);
+  type Mixing = (Word[32]^44, Word[32]^4, Word[32], Word[32]);
+
+  // "Key schedule": the key's bytes as four little-endian words L, the
+  // table S[0] = P32 and S[i] = S[i - 1] + Q32, and v = 3 max(c, 2r + 4) =
+  // 132 steps of mixing, with i and j running around S and L:
+  //   A = S[i] = (S[i] + A + B) <<< 3
+  //   B = L[j] = (L[j] + A + B) <<< (A + B)
+  spec mixing(key: Word[8]^16) -> Mixing {
+    let magic: Word[32]^44 = for i in 1..44 with s: Word[32]^44 = [0xb7e15163; 44] {
+      s with [i] = s[i - 1] + 0x9e3779b9
+    };
+    for k in 0..132 with (s: Word[32]^44, l: Word[32]^4, a: Word[32], b: Word[32]) =
+      (magic, key as little Word[32]^4, 0, 0) {
+      let a1: Word[32] = (s[k % 44] + a + b) <<< 3;
+      let b1: Word[32] = (l[k % 4] + a1 + b) <<< (a1 + b);
+      (s with [k % 44] = a1, l with [k % 4] = b1, a1, b1)
+    }
+  }
+
+  spec key_schedule(key: Word[8]^16) -> Word[32]^44 { mixing(key).0 }
+
+  // "Encryption and decryption": f(x) = x(2x + 1) <<< lg w, with lg w = 5.
+  spec f(x: Word[32]) -> Word[32] { (x * (2 * x + 1)) <<< 5 }
+
+  // Encryption: B = B + S[0] and D = D + S[1]; twenty rounds of
+  //   t = f(B); u = f(D)
+  //   A = ((A ^ t) <<< u) + S[2i]; C = ((C ^ u) <<< t) + S[2i + 1]
+  //   (A, B, C, D) = (B, C, D, A)
+  // and A = A + S[42] and C = C + S[43].
+  spec rounds(s: Word[32]^44, x: Word[32]^4) -> Registers {
+    for i in 1..21 with (a: Word[32], b: Word[32], c: Word[32], d: Word[32]) =
+      (x[0], x[1] + s[0], x[2], x[3] + s[1]) {
+      let t: Word[32] = f(b);
+      let u: Word[32] = f(d);
+      (b, ((c ^ u) <<< t) + s[2 * i + 1], d, ((a ^ t) <<< u) + s[2 * i])
+    }
+  }
+
+  spec encrypt(key: Word[8]^16, block: Word[8]^16) -> Word[8]^16 {
+    let s: Word[32]^44 = key_schedule(key);
+    let (a: Word[32], b: Word[32], c: Word[32], d: Word[32]) =
+      rounds(s, block as little Word[32]^4);
+    [a + s[42], b, c + s[43], d] as little Word[8]^16
+  }
+
+  // Decryption undoes encryption: C = C - S[43] and A = A - S[42]; for i
+  // from 20 down to 1,
+  //   (A, B, C, D) = (D, A, B, C); u = f(D); t = f(B)
+  //   C = ((C - S[2i + 1]) >>> t) ^ u; A = ((A - S[2i]) >>> u) ^ t
+  // and D = D - S[1] and B = B - S[0].
+  spec inverse_rounds(s: Word[32]^44, x: Word[32]^4) -> Registers {
+    for k in 0..20 with (a: Word[32], b: Word[32], c: Word[32], d: Word[32]) =
+      (x[0] - s[42], x[1], x[2] - s[43], x[3]) {
+      let u: Word[32] = f(c);
+      let t: Word[32] = f(a);
+      (
+        ((d - s[40 - 2 * k]) >>> u) ^ t,
+        a,
+        ((b - s[41 - 2 * k]) >>> t) ^ u,
+        c,
+      )
+    }
+  }
+
+  spec decrypt(key: Word[8]^16, block: Word[8]^16) -> Word[8]^16 {
+    let s: Word[32]^44 = key_schedule(key);
+    let (a: Word[32], b: Word[32], c: Word[32], d: Word[32]) =
+      inverse_rounds(s, block as little Word[32]^4);
+    [a, b - s[0], c, d - s[1]] as little Word[8]^16
+  }
+
+  spec zero_key_zero_block() -> Word[8]^16 { encrypt([0; 16], [0; 16]) }
+
+  // The paper's test vectors for 128-bit keys, each run both ways.
+  test "RC6 paper, 128-bit key 1: encryption" {
+    encrypt([0; 16], [0; 16]) == hex"8fc3a536 56b1f778 c129df4e 9848a41e"
+  }
+
+  test "RC6 paper, 128-bit key 1: decryption" {
+    decrypt([0; 16], hex"8fc3a536 56b1f778 c129df4e 9848a41e") == [0; 16]
+  }
+
+  test "RC6 paper, 128-bit key 2: encryption" {
+    encrypt(
+      hex"01234567 89abcdef 01122334 45566778",
+      hex"02132435 46576879 8a9bacbd cedfe0f1"
+    ) == hex"524e192f 4715c623 1f51f636 7ea43f18"
+  }
+
+  test "RC6 paper, 128-bit key 2: decryption" {
+    decrypt(
+      hex"01234567 89abcdef 01122334 45566778",
+      hex"524e192f 4715c623 1f51f636 7ea43f18"
+    ) == hex"02132435 46576879 8a9bacbd cedfe0f1"
+  }
+}

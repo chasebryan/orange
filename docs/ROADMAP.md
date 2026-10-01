@@ -484,10 +484,145 @@ its acceptance requires the owner's acceptance of
 [OEP-0013](governance/oeps/OEP-0013-orange-2026-blocks.md), which bounds the
 S3j surface in [`BLOCKS_2026.md`](BLOCKS_2026.md) and builds on OEP-0012. Like
 the slices before it, it assumes only pure, total, deterministic meaning.
-Static parameters, so that one quarter round can act on four positions of a
-whole state and one `spec` can serve every field, tuples for working variables
-of different roles, loops with more than one accumulator, and array
-concatenation and slicing are the next candidate slices.
+
+S3k follows S3j. It adds tuples: a tuple type `(T, U)` of two through 16
+elements, each a scalar or an array, a tuple `(a, b)`, the selection `.k` of
+element k, and tuple patterns that name each element where a `let` binding or
+a loop's accumulator is declared, so that a function gives several values and
+a loop carries several accumulators. SHA-256 carries a through h as eight
+named accumulators, ChaCha20's quarter round takes four words and gives four
+as RFC 8439 writes it, and Ascon-Hash256 carries its state as five named
+words; all three reproduce their standards' values. It is implemented and
+tested, and its acceptance requires the owner's acceptance of
+[OEP-0014](governance/oeps/OEP-0014-orange-2026-tuples.md), which bounds the
+S3k surface in [`TUPLES_2026.md`](TUPLES_2026.md) and builds on OEP-0013. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3l follows S3k. It adds bytes: a byte string `"..."` is the array
+`Word[8]^n` of the ASCII bytes of its text and a hex string `hex"..."` that of
+its hex digit pairs, `++` joins two arrays, and a slice `x[a..b]` and a slice
+update `x with [a..b] = v` read and replace a run of elements whose bounds are
+built from literals and loop indices, proved a fixed distance apart and in
+range before the program runs. HMAC-SHA-256 writes RFC 4231's keys and
+messages as the RFC prints them and pads SHA-256's input with `++`, and
+ChaCha20-Poly1305 writes RFC 8439's plaintext as text and its key, nonce, and
+additional data in hex; both reproduce their standards' values. It is
+implemented and tested, and its acceptance requires the owner's acceptance of
+[OEP-0015](governance/oeps/OEP-0015-orange-2026-bytes.md), which bounds the
+S3l surface in [`BYTES_2026.md`](BYTES_2026.md) and builds on OEP-0014. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3m follows S3l. It adds sizes: a `spec` may declare size parameters with
+finite ranges, as `spec pad[len in 1..120](m: Word[8]^len)`, and stands for
+one instance for each value of its sizes, at most 256, each checked as the
+function written out with those values; sizes built from integer literals and
+size parameters write array lengths, fill lengths, and loop bounds; and a call
+names its instance by its sizes, as `pad[3](m)`, or by its arguments' lengths.
+SHA-256 is written once for every message of 1 through 119 bytes,
+HMAC-SHA-256 once for every key of 1 through 63 bytes and message of 1
+through 55, and Poly1305 once for every message of 1 through 255 bytes, and
+each reproduces its standard's values. It is implemented and tested, and its
+acceptance requires the owner's acceptance of
+[OEP-0016](governance/oeps/OEP-0016-orange-2026-sizes.md), which bounds the
+S3m surface in [`SIZES_2026.md`](SIZES_2026.md) and builds on OEP-0015. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3n follows S3m. It adds byte orders: a conversion may name one,
+`x as big T` or `x as little T`, and then reads words, a word or an array of
+words, as the words of another width with the same number of bits, as an
+`Int`, or as a `Mod[m]`, and writes an `Int` or a residue as words, the first
+word most significant for `big` and least significant for `little`. SHA-256
+and SHA-512 read their blocks as big-endian words and write their digests as
+big-endian bytes, ChaCha20 reads its state from "expand 32-byte k", the key,
+the counter, and the nonce as little-endian words, Poly1305 reads each block
+as an element of its field, and X25519 reads and writes its coordinates as
+little-endian residues, each in one conversion; all reproduce their
+standards' values, and the schemes of `orangec enc`, rewritten the same way,
+seal a megabyte in about a third of the time with the same bytes. It is
+implemented and tested, and its acceptance requires the owner's acceptance of
+[OEP-0017](governance/oeps/OEP-0017-orange-2026-byte-order.md), which bounds
+the S3n surface in [`ORDER_2026.md`](ORDER_2026.md) and builds on OEP-0016.
+Like the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3o follows S3n. It adds type parameters: a `spec` may list the types it is
+written for in its brackets, beside or instead of sizes, as
+`spec pow[K in {F, L, P, Q, D}](x: K, e: Int) -> K`, and stands for one
+instance for each combination of its sizes' values and types, at most four
+parameters in brackets and 256 instances, each checked as the function
+written out; a call names its instance by its types, `pow[F](x, e)`, or lets
+its arguments' types and, where they do not decide, the type its place
+expects choose. Exponentiation, Fermat inversion, and Euler's criterion are
+written once for the five prime fields of Curve25519, its subgroup,
+Poly1305, ML-KEM, and ML-DSA, reproducing RFC 8032's square root of −1 and
+the roots of unity of FIPS 203 and FIPS 204, and SHA-256 and SHA-512 share
+one Ch, one Maj, and one round, reproducing FIPS 180-4's digests. Finding a
+call's instance now reads each argument once, which also removes a checking
+cost that doubled with each level of conditionals nested in sized calls'
+arguments. It is implemented and tested, and its acceptance requires the
+owner's acceptance of
+[OEP-0018](governance/oeps/OEP-0018-orange-2026-type-parameters.md), which
+bounds the S3o surface in [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md)
+and builds on OEP-0017. Like the slices before it, it assumes only pure,
+total, deterministic meaning.
+
+S3p follows S3o. It lifts the length of an array, an array literal, and a
+byte string from 256 to 65,536 elements, the most iterations a loop has and
+the values of a 16-bit word, so a `Word[16]` indexes the longest array with
+no check at run time, and it keeps every cost per element, so a long array is
+built in rows placed with slice updates. RFC 8439's long vectors, the
+375-byte test vector 2 of appendix A.2 and the 265-byte ciphertext of
+appendix A.5, are written as the RFC prints them and reproduced byte for
+byte, and a table of the 65,536 powers of 3 modulo the Fermat prime
+2^16 + 1 is built and read by 16-bit words. `orangec eval` gains `--steps`,
+which sets a run's step budget up to 1,073,741,824, `--spec`, which evaluates
+only the functions it names, and `--stats`, which reports the steps each
+used. It is implemented and tested, and its acceptance requires the owner's
+acceptance of
+[OEP-0019](governance/oeps/OEP-0019-orange-2026-lengths.md), which bounds the
+S3p surface in [`LENGTHS_2026.md`](LENGTHS_2026.md) and builds on OEP-0018.
+Like the slices before it, it assumes only pure, total, deterministic
+meaning.
+
+S3q follows S3p. It adds known-answer tests: a module states what its
+functions must give as `test "TITLE" { claim }` beside them, a title of
+printable ASCII that says where the claim comes from and a `Bool` expression
+with its own `let` bindings, checked as a function without parameters and
+never called or evaluated by `orangec eval`. `==` and `!=` compare arrays and
+tuples whole, every part compared whether or not an earlier part differs, so
+a comparison costs the same wherever its operands differ. `orangec test` runs
+the root module's tests in source order under one step budget, reports each
+with both values and the first difference of a failed `left == right`, and
+exits with status 1 when any fails. Seven of RFC 8439's examples and test
+vectors are written as tests with their inputs and expected bytes as the RFC
+prints them. It is implemented and tested, and its acceptance requires the
+owner's acceptance of
+[OEP-0020](governance/oeps/OEP-0020-orange-2026-tests.md), which bounds the
+S3q surface in [`TESTS_2026.md`](TESTS_2026.md) and builds on OEP-0019. Like
+the slices before it, it assumes only pure, total, deterministic meaning.
+
+S3r follows S3q. It lets the amount of a shift or rotation be computed: any
+`Int` or word expression, typed by its first typed leaf, such as `x <<< r` or
+`x >> (i % 8)`. Every amount has a value: `a << k` and `a >> k` are
+floor(a · 2^k) and floor(a · 2^−k) modulo 2^n, so a shift by the width or more
+gives 0 and a negative amount shifts the other way, and a rotation turns by
+its amount modulo the width. An amount written as one integer literal keeps
+S3b's rule, from 0 through n − 1, and a computed amount costs one step
+whatever its size. RC6-32/20/16 is written with its data-dependent rotations
+as its paper writes them and reproduces its 128-bit-key vectors both ways,
+SHA3-256 computes rho's offsets and iota's round constants as FIPS 202 defines
+them and reproduces NIST's examples, and ML-KEM's zetas are derived by
+bit reversal and exponentiation as FIPS 203 defines them. It is implemented
+and tested, and its acceptance requires the owner's acceptance of
+[OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md), which
+bounds the S3r surface in [`AMOUNTS_2026.md`](AMOUNTS_2026.md) and builds on
+OEP-0020. Like the slices before it, it assumes only pure, total,
+deterministic meaning. Arrays of arrays, so that a state or a key schedule is
+a table of rows, moduli written with parameters, so that one `spec` can serve
+every field rather than a listed few, lists of types named once for several
+functions, positions given as parameters, so that one quarter round can act on
+four positions of a whole state, slices and words at positions computed from
+data, and tests that claim a call stops or a source is rejected are the next
+candidate slices.
 
 Only one slice is stabilized at a time. Research may run ahead, but code for a
 dependent stage does not claim completion before its inputs are explicit.
@@ -533,8 +668,8 @@ ST-REL, which ties ST-MIRROR at zero isolation obligations and re-identifies six
 subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. D-004 remains proposed pending owner review, S3 remains
-incomplete, S3b through S3j are implemented and await owner review under
-OEP-0005 through OEP-0013, and Orange remains 30% complete by its unchanged
+incomplete, S3b through S3q are implemented and await owner review under
+OEP-0005 through OEP-0020, and Orange remains 30% complete by its unchanged
 3-of-10 binary gate-closure score.
 
 ## 7. Quality and claim metrics

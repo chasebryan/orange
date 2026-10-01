@@ -21,6 +21,24 @@ Until then, the compiler behavior it describes exists so that the proposal can
 be reviewed against running code, and it establishes no accepted language
 meaning. It accepts no D-004 candidate.
 
+> [!NOTE]
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, extends this
+> document with tuples and tuple patterns, which lift the exclusion of loops
+> with more than one accumulator and of destructuring in section 12: a block's
+> binding may name each element of a tuple, and a loop may carry several
+> accumulators, and [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015,
+> adds byte strings, `++`, and slices, so that a step may take one block of a
+> message as `m[16 * j..16 * j + 16]`, and [`SIZES_2026.md`](SIZES_2026.md),
+> proposed under OEP-0016, lets a loop's bounds be sizes, as `for b in
+> 0..blocks`, and [`ORDER_2026.md`](ORDER_2026.md), proposed under OEP-0017,
+> lets a step read a block of a message as words in one conversion, as `m[16 *
+> j..16 * j + 16] as little Word[64]^2`.
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> lets a step's and a branch's bindings have a function's type parameter as
+> their type. [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019,
+> lets a block's bindings hold arrays of up to 65,536 elements. Every source
+> this document accepts keeps its meaning under all six.
+
 The terms **must**, **must not**, and **may** are normative in this document.
 
 ## 1. The idea

@@ -26,9 +26,27 @@ meaning. It accepts no D-004 candidate.
 > document with the integers modulo a constant, as `Mod[(1 << 255) - 19]`, and
 > with `type` declarations, which follow a module's `use` declarations. A
 > residue type crosses a module boundary by its value, and a type name stays in
-> its module. [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013,
-> lets a loop's step and each branch begin with `let` bindings. Every source
-> this document accepts keeps its meaning under both.
+> its module. [`BLOCKS_2026.md`](BLOCKS_2026.md), proposed under OEP-0013, lets
+> a loop's step and each branch begin with `let` bindings, and
+> [`TUPLES_2026.md`](TUPLES_2026.md), proposed under OEP-0014, adds tuples,
+> whose types cross a module boundary by their elements, and
+> [`BYTES_2026.md`](BYTES_2026.md), proposed under OEP-0015, adds byte strings,
+> joins, and slices, which cross a module boundary as the arrays they are, and
+> [`SIZES_2026.md`](SIZES_2026.md), proposed under OEP-0016, adds sized
+> functions, whose instances are called across a module boundary as
+> `sha256::sha256(m)` or `m::f[2](x)`, and [`ORDER_2026.md`](ORDER_2026.md),
+> proposed under OEP-0017, adds conversions in a byte order, which convert
+> values of every module's types alike, and
+> [`TYPE_PARAMETERS_2026.md`](TYPE_PARAMETERS_2026.md), proposed under OEP-0018,
+> adds type parameters, whose instances are called across a module boundary as
+> `field::cube[Kyber](5)`: a type entry names a type in the caller's module,
+> matched by equality with the types the callee lists.
+> [`LENGTHS_2026.md`](LENGTHS_2026.md), proposed under OEP-0019, lets `orangec
+> eval --spec` evaluate only the named functions of the root module.
+> [`TESTS_2026.md`](TESTS_2026.md), proposed under OEP-0020, adds known-answer
+> tests, of which only the root module's are checked and run: a used module's
+> tests are neither, until that module is the root. Every source this document
+> accepts keeps its meaning under all nine.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

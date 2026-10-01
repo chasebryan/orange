@@ -1,0 +1,36 @@
+// S3l conformance: the typing of byte strings, joins, slices, and slice
+// updates. A byte string is `Word[8]^n` for its n bytes, 1 through 256, each
+// a printable ASCII character or an escape; `++` joins arrays into an array
+// of their lengths' sum; and a slice's bounds are literals and loop indices,
+// a fixed positive distance apart and inside the array at every step.
+edition 2026;
+module bytes_types {
+  spec short() -> Word[8]^4 { "abc" }
+  spec words() -> Word[32]^3 { "abc" }
+  spec accented() -> Word[8]^2 { "é" }
+  spec dotted() -> Word[8]^3 { "a·b" }
+  spec empty() -> Word[8]^1 { "" }
+  spec joined() -> Word[8]^8 { "abc" ++ "de" }
+  spec scalar() -> Word[32] { "ab" ++ "cd" }
+  spec word(x: Word[32]) -> Word[8]^4 { x ++ "abc" }
+  spec elements(x: Word[32]^2) -> Word[8]^4 { "ab" ++ x }
+  spec beyond(x: Word[8]^8) -> Word[8]^4 { x[6..10] }
+  spec equal(x: Word[8]^8) -> Word[8]^1 { x[4..4] }
+  spec backward(x: Word[8]^8) -> Word[8]^3 { x[5..2] }
+  spec data(x: Word[8]^8, n: Int) -> Word[8]^4 { x[n..n + 4] }
+  spec varying(x: Word[8]^8) -> Word[8]^8 {
+    for i in 0..2 with y: Word[8]^8 = x { y with [i..2 * i + 1] = [0] }
+  }
+  spec squared(x: Word[8]^8) -> Word[8]^2 {
+    for i in 0..2 with y: Word[8]^2 = [0; 2] { x[i * i..i * i + 2] }
+  }
+  spec stepping(x: Word[8]^8) -> Word[8]^8 {
+    for i in 0..4 with y: Word[8]^8 = x { y with [2 * i + 1..2 * i + 3] = "ab" }
+  }
+  spec length(x: Word[8]^8) -> Word[8]^3 { x[0..4] }
+  spec element(x: Word[32]^8) -> Word[8]^4 { x[..4] }
+  spec tuple(t: (Int, Int)) -> Int^1 { t[0..1] }
+  spec value(x: Word[8]^8) -> Word[8]^8 { x with [0..2] = "abc" }
+  spec base(w: Word[32]) -> Word[32] { w with [0..1] = [0] }
+  spec total() -> Word[8]^256 { [0; 200] ++ [0; 100] }
+}

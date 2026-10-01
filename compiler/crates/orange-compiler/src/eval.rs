@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use crate::core::{
     ArrayType, CoreArray, CoreBinding, CoreConditional, CoreExpression, CoreFunction,
-    CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreType, CoreValue, ExactInteger,
-    MAX_EXACT_INTEGER_BITS, Modulus, Residue,
+    CoreFunctionId, CoreModule, CoreNode, CoreNodeKind, CoreTuple, CoreType, CoreValue,
+    ExactInteger, MAX_EXACT_INTEGER_BITS, Modulus, Residue, TupleType,
 };
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
-use crate::parser::{BinaryOperator, UnaryOperator};
+use crate::parser::{BinaryOperator, ByteOrder, UnaryOperator};
 use crate::source::Span;
 
 /// Maximum reference-evaluation steps performed for one source module.
@@ -42,8 +42,17 @@ pub struct EvaluatedFunction {
     module: Arc<str>,
     /// Exact ASCII function name.
     name: String,
+    /// The values of the function's sizes in the instance evaluated, each
+    /// type parameter's the position of its type in its list; empty for a
+    /// function without sizes or types.
+    sizes: Vec<u32>,
+    /// The instance's sizes and types in brackets as a call writes them,
+    /// `[2]` or `[1, F]`; empty for a function without sizes or types.
+    instance: String,
     /// Exact evaluated value.
     value: CoreValue,
+    /// Steps the function's evaluation used.
+    steps: usize,
 }
 
 impl EvaluatedFunction {
@@ -65,9 +74,25 @@ impl EvaluatedFunction {
         &self.name
     }
 
+    /// Returns the values of the function's sizes in the instance
+    /// evaluated, with each type parameter's the position of its type in
+    /// its list, or an empty slice for a function without sizes or types.
+    #[must_use]
+    pub fn sizes(&self) -> &[u32] {
+        &self.sizes
+    }
+
+    /// Returns the instance's sizes and types in brackets as a call writes
+    /// them, `[2]` or `[1, F]`, or an empty string for a function without
+    /// sizes or types.
+    #[must_use]
+    pub fn instance(&self) -> &str {
+        &self.instance
+    }
+
     /// Returns the statically checked result type.
     #[must_use]
-    pub const fn result_type(&self) -> CoreType {
+    pub fn result_type(&self) -> CoreType {
         self.value.ty()
     }
 
@@ -76,15 +101,25 @@ impl EvaluatedFunction {
     pub const fn value(&self) -> &CoreValue {
         &self.value
     }
+
+    /// Returns the steps the function's evaluation used, which count toward
+    /// the budget of the whole evaluation.
+    #[must_use]
+    pub const fn steps(&self) -> usize {
+        self.steps
+    }
 }
 
 impl fmt::Display for EvaluatedFunction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // An instance of a function with sizes or types is named as a call
+        // names it.
         write!(
             formatter,
-            "{}::{}: {} = {}",
+            "{}::{}{}: {} = {}",
             self.module(),
             self.name(),
+            self.instance,
             self.result_type(),
             self.value()
         )
@@ -142,6 +177,268 @@ impl EvaluationResult {
 #[must_use]
 pub fn evaluate(core: &CoreModule) -> EvaluationResult {
     evaluate_with_limit(core, MAX_EVALUATION_STEPS_PER_SOURCE)
+}
+
+/// Evaluates the typed Core functions of the root module without
+/// parameters that `select` admits, in source order, within `step_limit`
+/// steps together.
+///
+/// [`evaluate`] is this function admitting every such function within
+/// [`MAX_EVALUATION_STEPS_PER_SOURCE`] steps. Each result records the steps
+/// its function used.
+#[must_use]
+pub fn evaluate_selected(
+    core: &CoreModule,
+    step_limit: usize,
+    select: impl Fn(&CoreFunction) -> bool,
+) -> EvaluationResult {
+    evaluate_entries(
+        core,
+        step_limit,
+        &select,
+        |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+        Reservations::DEFAULT,
+    )
+}
+
+/// The outcome of one known-answer test.
+///
+/// ```compile_fail
+/// use orange_compiler::TestOutcome;
+///
+/// fn forge_pass(outcome: &mut TestOutcome) {
+///     outcome.passed = true;
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TestOutcome {
+    /// Identity of the test's Core function.
+    id: CoreFunctionId,
+    /// The test's title.
+    title: String,
+    /// Whether the test's expression was `true`.
+    passed: bool,
+    /// The values compared, left then right, when the test failed and its
+    /// expression ends in `left == right`.
+    sides: Option<(CoreValue, CoreValue)>,
+    /// Steps the test's evaluation used.
+    steps: usize,
+}
+
+impl TestOutcome {
+    /// Returns the identity of the test's Core function.
+    #[must_use]
+    pub const fn id(&self) -> CoreFunctionId {
+        self.id
+    }
+
+    /// Returns the test's title.
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Returns whether the test's expression was `true`.
+    #[must_use]
+    pub const fn passed(&self) -> bool {
+        self.passed
+    }
+
+    /// Returns the values a failed test compared, left then right, when its
+    /// expression ends in `left == right`; `None` for a test that passed or
+    /// ends otherwise.
+    #[must_use]
+    pub fn sides(&self) -> Option<(&CoreValue, &CoreValue)> {
+        self.sides.as_ref().map(|(left, right)| (left, right))
+    }
+
+    /// Returns the steps the test's evaluation used, which count toward the
+    /// budget of the whole run.
+    #[must_use]
+    pub const fn steps(&self) -> usize {
+        self.steps
+    }
+}
+
+/// The complete result of running a module's known-answer tests.
+///
+/// ```compile_fail
+/// use orange_compiler::TestRun;
+///
+/// fn replace_outcomes(run: &mut TestRun) {
+///     run.outcomes = None;
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TestRun {
+    /// Outcomes in source order, present only when every test ran to a
+    /// value.
+    outcomes: Option<Vec<TestOutcome>>,
+    /// Evaluation-resource diagnostics in deterministic source order.
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl TestRun {
+    /// Returns the outcomes in source order, or `None` when a test stopped.
+    #[must_use]
+    pub fn outcomes(&self) -> Option<&[TestOutcome]> {
+        self.outcomes.as_deref()
+    }
+
+    /// Returns evaluation-resource diagnostics in deterministic source order.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
+    /// Returns whether a test stopped before every test ran to a value.
+    #[must_use]
+    pub const fn has_errors(&self) -> bool {
+        self.outcomes.is_none()
+    }
+
+    /// Returns whether every test ran and passed; true for a module without
+    /// tests.
+    #[must_use]
+    pub fn passed(&self) -> bool {
+        self.outcomes
+            .as_ref()
+            .is_some_and(|outcomes| outcomes.iter().all(TestOutcome::passed))
+    }
+}
+
+/// Runs the root module's known-answer tests in source order, within
+/// `step_limit` steps together.
+///
+/// Each test's expression is evaluated as a function without parameters.
+/// A test passes when it is `true`; a test that fails and ends in
+/// `left == right` keeps both values for its report. A test that stops,
+/// at the step limit or any other resource limit, stops the run, and no
+/// outcome is returned.
+#[must_use]
+pub fn run_tests(core: &CoreModule, step_limit: usize) -> TestRun {
+    run_tests_with(core, step_limit, Reservations::DEFAULT)
+}
+
+fn run_tests_with(core: &CoreModule, step_limit: usize, reservations: Reservations) -> TestRun {
+    let failure = |result: EvaluationResult| TestRun {
+        outcomes: None,
+        diagnostics: result.diagnostics,
+    };
+    let mut diagnostics = Vec::new();
+    if !(reservations.diagnostics)(&mut diagnostics, 1) {
+        return TestRun {
+            outcomes: None,
+            diagnostics,
+        };
+    }
+    let tests = core.tests();
+    let mut outcomes = Vec::new();
+    if outcomes.try_reserve_exact(tests.len()).is_err() {
+        return failure(test_allocation_failure(
+            diagnostics,
+            core.span,
+            "test outcome storage could not be reserved",
+        ));
+    }
+    let Some(literals) = share_literals(core) else {
+        return failure(test_allocation_failure(
+            diagnostics,
+            core.span,
+            "evaluated exact integer storage could not be reserved",
+        ));
+    };
+    let mut machine = Machine {
+        core,
+        literals,
+        steps: 0,
+        step_limit,
+        reservations,
+        stack: Vec::new(),
+        frames: Vec::new(),
+        inner_frames: 0,
+    };
+    for test in tests {
+        let Some(title) = test.title.as_deref() else {
+            return failure(stopped(
+                diagnostics,
+                test,
+                Stop::InconsistentCore,
+                step_limit,
+                true,
+            ));
+        };
+        let steps_before = machine.steps;
+        let mut sides = None;
+        let passed = match machine.run_with(test, Vec::new(), Some(&mut sides)) {
+            Ok(Value::Bool(passed)) => passed,
+            Ok(_) => {
+                return failure(stopped(
+                    diagnostics,
+                    test,
+                    Stop::InconsistentCore,
+                    step_limit,
+                    false,
+                ));
+            }
+            Err(stop) => {
+                return failure(stopped(
+                    diagnostics,
+                    test,
+                    stop,
+                    step_limit,
+                    steps_before == machine.steps,
+                ));
+            }
+        };
+        let operand = test.body.root().and_then(|root| match root.kind() {
+            CoreNodeKind::Compare {
+                operator: BinaryOperator::Equal,
+                operand,
+            } => Some(operand),
+            _ => None,
+        });
+        let sides = match (passed, sides, operand) {
+            (false, Some((left, right)), Some(operand)) => {
+                let copied = result_value(left, operand, reservations)
+                    .and_then(|left| Ok((left, result_value(right, operand, reservations)?)));
+                match copied {
+                    Ok(sides) => Some(sides),
+                    Err(Stop::Allocation(label)) => {
+                        return failure(test_allocation_failure(
+                            diagnostics,
+                            test.name_span,
+                            label,
+                        ));
+                    }
+                    Err(stop) => {
+                        return failure(stopped(diagnostics, test, stop, step_limit, false));
+                    }
+                }
+            }
+            _ => None,
+        };
+        let mut owned = String::new();
+        if !(reservations.name)(&mut owned, title.len()) {
+            return failure(test_allocation_failure(
+                diagnostics,
+                test.name_span,
+                "test title storage could not be reserved",
+            ));
+        }
+        owned.push_str(title);
+        outcomes.push(TestOutcome {
+            id: test.id,
+            title: owned,
+            passed,
+            sides,
+            steps: machine.steps.saturating_sub(steps_before),
+        });
+    }
+    TestRun {
+        outcomes: Some(outcomes),
+        diagnostics,
+    }
 }
 
 /// The result of calling one function through an [`Evaluator`].
@@ -240,17 +537,29 @@ impl<'core> Evaluator<'core> {
         self.machine.core
     }
 
-    /// Returns the root module's function named `name`, if there is one.
+    /// Returns the root module's function named `name`, if there is one and
+    /// it declares no size parameters.
     ///
     /// Functions of the modules the root uses are reached only through the
     /// root's calls, so two modules may each declare a function of one name.
+    /// A function with size parameters is one Core function per instance, all
+    /// of one name, and is reached one instance at a time through
+    /// [`Evaluator::instance`].
     #[must_use]
     pub fn function(&self, name: &str) -> Option<&'core CoreFunction> {
+        self.instance(name, &[])
+    }
+
+    /// Returns the instance of the root module's function named `name` whose
+    /// sizes, in declaration order, are `sizes`, if there is one. Empty
+    /// `sizes` name a function without size parameters.
+    #[must_use]
+    pub fn instance(&self, name: &str, sizes: &[u32]) -> Option<&'core CoreFunction> {
         self.machine
             .core
             .entry_functions()
             .iter()
-            .find(|function| function.name == name)
+            .find(|function| function.name == name && function.sizes() == sizes)
     }
 
     /// Calls `function` on `arguments` within `step_limit` evaluation steps.
@@ -289,7 +598,7 @@ impl<'core> Evaluator<'core> {
         machine.step_limit = step_limit;
         let value = host_values(arguments, machine.reservations)
             .and_then(|arguments| machine.run(function, arguments))
-            .and_then(|value| result_value(value, function.result_type, machine.reservations));
+            .and_then(|value| result_value(value, &function.result_type, machine.reservations));
         let steps = machine.steps;
         // Release the call's values and frames; their storage is kept.
         machine.stack.clear();
@@ -351,13 +660,32 @@ fn host_value(value: &CoreValue, reservations: Reservations) -> Result<Value, St
                 ));
             }
             for element in array.elements() {
-                if matches!(element, CoreValue::Array(_)) {
+                if matches!(element, CoreValue::Array(_) | CoreValue::Tuple(_)) {
                     return Err(Stop::InconsistentCore);
                 }
                 elements.push(host_value(element, reservations)?);
             }
             Value::Array(Rc::new(ArrayValue {
                 ty: array.ty(),
+                elements,
+            }))
+        }
+        CoreValue::Tuple(tuple) => {
+            let mut elements = Vec::new();
+            if !(reservations.array)(&mut elements, tuple.elements().len()) {
+                return Err(Stop::Allocation(
+                    "evaluation tuple storage could not be reserved",
+                ));
+            }
+            // A tuple holds no tuple, so this recursion is one level deep.
+            for element in tuple.elements() {
+                if matches!(element, CoreValue::Tuple(_)) {
+                    return Err(Stop::InconsistentCore);
+                }
+                elements.push(host_value(element, reservations)?);
+            }
+            Value::Tuple(Rc::new(TupleValue {
+                ty: tuple.ty().clone(),
                 elements,
             }))
         }
@@ -441,12 +769,20 @@ enum Value {
     /// the modulus is the type's.
     Mod(Rc<ExactInteger>),
     Array(Rc<ArrayValue>),
+    Tuple(Rc<TupleValue>),
 }
 
 /// An array value with the type it was built at.
 #[derive(Debug)]
 struct ArrayValue {
     ty: ArrayType,
+    elements: Vec<Value>,
+}
+
+/// A tuple value with the type it was built at.
+#[derive(Debug)]
+struct TupleValue {
+    ty: TupleType,
     elements: Vec<Value>,
 }
 
@@ -573,12 +909,13 @@ fn branch_part(function: &CoreFunction, id: usize, condition: bool) -> Option<us
 }
 
 /// Returns whether a value has exactly the type `ty`.
-fn has_type(value: &Value, ty: CoreType) -> bool {
+fn has_type(value: &Value, ty: &CoreType) -> bool {
     match (value, ty) {
         (Value::Int(_), CoreType::Int) | (Value::Bool(_), CoreType::Bool) => true,
         (Value::Word(word), ty) => word_mask(ty).is_some_and(|mask| (*word & !mask) == 0),
         (Value::Mod(value), CoreType::Mod(modulus)) => modulus.contains(value),
-        (Value::Array(array), CoreType::Array(array_type)) => array.ty == array_type,
+        (Value::Array(array), CoreType::Array(array_type)) => array.ty == *array_type,
+        (Value::Tuple(tuple), CoreType::Tuple(tuple_type)) => tuple.ty == *tuple_type,
         _ => false,
     }
 }
@@ -592,9 +929,19 @@ enum Stop {
     InconsistentCore,
 }
 
-/// Shared `Int` literals and residue literals, indexed by function,
+/// Shared `Int`, residue, and array literals, indexed by function,
 /// expression part, and node.
-type SharedLiterals = Vec<Vec<Vec<Option<Rc<ExactInteger>>>>>;
+type SharedLiterals = Vec<Vec<Vec<Option<SharedLiteral>>>>;
+
+/// A literal built once before evaluation and shared by every evaluation
+/// of its node.
+enum SharedLiteral {
+    /// The value of an `Int` literal or the least residue of a residue
+    /// literal.
+    Integer(Rc<ExactInteger>),
+    /// An array literal, such as a byte string.
+    Array(Rc<ArrayValue>),
+}
 
 struct Machine<'core> {
     core: &'core CoreModule,
@@ -627,9 +974,13 @@ const fn bulk_cost(length: usize) -> usize {
     if length <= 64 { 1 } else { length.div_ceil(64) }
 }
 
-fn word_mask(ty: CoreType) -> Option<u64> {
+fn word_mask(ty: &CoreType) -> Option<u64> {
     match ty {
-        CoreType::Int | CoreType::Bool | CoreType::Mod(_) | CoreType::Array(_) => None,
+        CoreType::Int
+        | CoreType::Bool
+        | CoreType::Mod(_)
+        | CoreType::Array(_)
+        | CoreType::Tuple(_) => None,
         CoreType::Word8 => Some(u64::from(u8::MAX)),
         CoreType::Word16 => Some(u64::from(u16::MAX)),
         CoreType::Word32 => Some(u64::from(u32::MAX)),
@@ -662,9 +1013,84 @@ fn word_binary(operator: BinaryOperator, mask: u64, left: u64, right: u64) -> Op
         | BinaryOperator::Greater
         | BinaryOperator::GreaterEqual
         | BinaryOperator::LogicalAnd
-        | BinaryOperator::LogicalOr => return None,
+        | BinaryOperator::LogicalOr
+        | BinaryOperator::Concat => return None,
     };
     Some(value & mask)
+}
+
+/// A shift or rotation amount computed from data: its sign, its magnitude
+/// when that fits 64 bits, and its residue modulo 2^64.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Amount {
+    negative: bool,
+    magnitude: Option<u64>,
+    low: u64,
+}
+
+impl Amount {
+    /// The amount of an unsigned word's value.
+    const fn of_word(value: u64) -> Self {
+        Self {
+            negative: false,
+            magnitude: Some(value),
+            low: value,
+        }
+    }
+
+    /// The amount of an `Int`, which may be negative and far larger than
+    /// any width.
+    fn of_int(value: &ExactInteger) -> Self {
+        Self {
+            negative: value.is_negative(),
+            magnitude: value.magnitude_u64(),
+            low: value.modulo_2_64(),
+        }
+    }
+}
+
+/// Shifts or rotates an n-bit word by an amount computed from data. `<<`
+/// by k gives the residue of floor(value * 2^k) modulo 2^n and `>>` by k
+/// that of floor(value * 2^-k), so a negative amount shifts the other way
+/// and a shift by n or more in either direction gives 0. A rotation turns
+/// by the least residue of k modulo n, which for a width that is a power of
+/// two is read from k's residue modulo 2^64; `>>>` by k is `<<<` by -k.
+fn word_shift_by(
+    operator: BinaryOperator,
+    bits: u32,
+    mask: u64,
+    value: u64,
+    amount: Amount,
+) -> Option<u64> {
+    if !bits.is_power_of_two() || bits > 64 {
+        return None;
+    }
+    let turn = u32::try_from(amount.low & u64::from(bits.checked_sub(1)?)).ok()?;
+    let within = amount
+        .magnitude
+        .filter(|magnitude| *magnitude < u64::from(bits))
+        .and_then(|magnitude| u32::try_from(magnitude).ok());
+    match operator {
+        BinaryOperator::RotateLeft => {
+            word_shift(BinaryOperator::RotateLeft, bits, mask, value, turn)
+        }
+        BinaryOperator::RotateRight => {
+            word_shift(BinaryOperator::RotateRight, bits, mask, value, turn)
+        }
+        BinaryOperator::ShiftLeft | BinaryOperator::ShiftRight => {
+            let Some(by) = within else {
+                return Some(0);
+            };
+            let left = (operator == BinaryOperator::ShiftLeft) != amount.negative;
+            let direction = if left {
+                BinaryOperator::ShiftLeft
+            } else {
+                BinaryOperator::ShiftRight
+            };
+            word_shift(direction, bits, mask, value, by)
+        }
+        _ => None,
+    }
 }
 
 /// Shifts or rotates an n-bit word by `amount`, where `amount < bits`.
@@ -705,11 +1131,34 @@ fn word_shift(
         | BinaryOperator::Greater
         | BinaryOperator::GreaterEqual
         | BinaryOperator::LogicalAnd
-        | BinaryOperator::LogicalOr => None,
+        | BinaryOperator::LogicalOr
+        | BinaryOperator::Concat => None,
     }
 }
 
 /// Returns whether `ordering` satisfies the comparison `operator`.
+/// Returns whether two scalars of `ty` are equal, without charge, or stops
+/// when either is not a value of `ty`.
+fn plain_equal(ty: &CoreType, left: &Value, right: &Value) -> Result<bool, Stop> {
+    match (ty, left, right) {
+        (CoreType::Bool, Value::Bool(left), Value::Bool(right)) => Ok(left == right),
+        (CoreType::Mod(modulus), Value::Mod(left), Value::Mod(right)) => {
+            if !(modulus.contains(left) && modulus.contains(right)) {
+                return Err(Stop::InconsistentCore);
+            }
+            Ok(left.compare(right) == std::cmp::Ordering::Equal)
+        }
+        (ty, Value::Word(left), Value::Word(right)) => {
+            let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
+            if (left | right) & !mask != 0 {
+                return Err(Stop::InconsistentCore);
+            }
+            Ok(left == right)
+        }
+        _ => Err(Stop::InconsistentCore),
+    }
+}
+
 fn compares(operator: BinaryOperator, ordering: std::cmp::Ordering) -> Option<bool> {
     use std::cmp::Ordering::{Equal, Greater, Less};
     Some(match operator {
@@ -750,7 +1199,7 @@ impl<'core> Machine<'core> {
     fn pop_int(&mut self) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Int(value) => Ok(value),
-            Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
+            Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) | Value::Tuple(_) => {
                 Err(Stop::InconsistentCore)
             }
         }
@@ -759,7 +1208,7 @@ impl<'core> Machine<'core> {
     fn pop_bool(&mut self) -> Result<bool, Stop> {
         match self.pop()? {
             Value::Bool(value) => Ok(value),
-            Value::Int(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
+            Value::Int(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) | Value::Tuple(_) => {
                 Err(Stop::InconsistentCore)
             }
         }
@@ -768,7 +1217,7 @@ impl<'core> Machine<'core> {
     fn pop_word(&mut self) -> Result<u64, Stop> {
         match self.pop()? {
             Value::Word(value) => Ok(value),
-            Value::Int(_) | Value::Bool(_) | Value::Mod(_) | Value::Array(_) => {
+            Value::Int(_) | Value::Bool(_) | Value::Mod(_) | Value::Array(_) | Value::Tuple(_) => {
                 Err(Stop::InconsistentCore)
             }
         }
@@ -778,9 +1227,12 @@ impl<'core> Machine<'core> {
     fn pop_residue(&mut self, modulus: Modulus) -> Result<Rc<ExactInteger>, Stop> {
         match self.pop()? {
             Value::Mod(value) if modulus.contains(&value) => Ok(value),
-            Value::Int(_) | Value::Bool(_) | Value::Word(_) | Value::Mod(_) | Value::Array(_) => {
-                Err(Stop::InconsistentCore)
-            }
+            Value::Int(_)
+            | Value::Bool(_)
+            | Value::Word(_)
+            | Value::Mod(_)
+            | Value::Array(_)
+            | Value::Tuple(_) => Err(Stop::InconsistentCore),
         }
     }
 
@@ -829,10 +1281,10 @@ impl<'core> Machine<'core> {
 
     /// Pops an operand of type `from` and returns its integer value: an
     /// `Int` itself, a word's unsigned value, or a residue's least residue.
-    fn pop_integer(&mut self, from: CoreType) -> Result<Rc<ExactInteger>, Stop> {
+    fn pop_integer(&mut self, from: &CoreType) -> Result<Rc<ExactInteger>, Stop> {
         match from {
             CoreType::Int => self.pop_int(),
-            CoreType::Mod(modulus) => self.pop_residue(modulus),
+            CoreType::Mod(modulus) => self.pop_residue(*modulus),
             _ => {
                 let mask = word_mask(from).ok_or(Stop::InconsistentCore)?;
                 let word = self.pop_word()?;
@@ -848,6 +1300,70 @@ impl<'core> Machine<'core> {
 
     /// Replaces the top `length` values of the current expression with one
     /// array of type `ty` holding them in order.
+    /// Returns whether two values of `ty` are equal, comparing every part
+    /// whatever the first difference: an array of words or of `Bool` costs
+    /// one step for each 64 elements, as every array operation does, and
+    /// every other part what its own comparison costs.
+    ///
+    /// Recursion is bounded by the depth of types: a tuple holds arrays and
+    /// scalars, and an array holds scalars.
+    fn equal_values(&mut self, ty: &CoreType, left: &Value, right: &Value) -> Result<bool, Stop> {
+        match (ty, left, right) {
+            (CoreType::Array(array), Value::Array(left), Value::Array(right)) => {
+                if left.ty != *array
+                    || right.ty != *array
+                    || left.elements.len() != right.elements.len()
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let element = array.element();
+                let mut equal = true;
+                if element == CoreType::Bool || word_mask(&element).is_some() {
+                    self.charge(bulk_cost(left.elements.len()))?;
+                    for (left, right) in left.elements.iter().zip(&right.elements) {
+                        equal &= plain_equal(&element, left, right)?;
+                    }
+                } else {
+                    for (left, right) in left.elements.iter().zip(&right.elements) {
+                        equal &= self.equal_values(&element, left, right)?;
+                    }
+                }
+                Ok(equal)
+            }
+            (CoreType::Tuple(tuple), Value::Tuple(left), Value::Tuple(right)) => {
+                if left.ty != *tuple
+                    || right.ty != *tuple
+                    || left.elements.len() != tuple.elements().len()
+                    || right.elements.len() != tuple.elements().len()
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut equal = true;
+                for ((element, left), right) in tuple
+                    .elements()
+                    .iter()
+                    .zip(&left.elements)
+                    .zip(&right.elements)
+                {
+                    equal &= self.equal_values(element, left, right)?;
+                }
+                Ok(equal)
+            }
+            (CoreType::Int, Value::Int(left), Value::Int(right)) => {
+                self.charge(digits(left).max(digits(right)).saturating_add(1))?;
+                Ok(left.compare(right) == std::cmp::Ordering::Equal)
+            }
+            (CoreType::Mod(modulus), Value::Mod(_), Value::Mod(_)) => {
+                self.charge(modulus_digits(*modulus).saturating_add(1))?;
+                plain_equal(ty, left, right)
+            }
+            _ => {
+                self.charge(1)?;
+                plain_equal(ty, left, right)
+            }
+        }
+    }
+
     fn build_array(&mut self, ty: ArrayType, length: usize, floor: usize) -> Result<Value, Stop> {
         if usize::try_from(ty.length()).ok() != Some(length) {
             return Err(Stop::InconsistentCore);
@@ -865,12 +1381,42 @@ impl<'core> Machine<'core> {
             ));
         }
         for element in self.stack.drain(start..) {
-            if !has_type(&element, ty.element()) {
+            if !has_type(&element, &ty.element()) {
                 return Err(Stop::InconsistentCore);
             }
             elements.push(element);
         }
         Ok(Value::Array(Rc::new(ArrayValue { ty, elements })))
+    }
+
+    /// Builds a tuple of type `ty` from the top `count` values of the
+    /// stack, which lie above `floor`.
+    fn build_tuple(&mut self, ty: &TupleType, count: usize, floor: usize) -> Result<Value, Stop> {
+        if ty.elements().len() != count {
+            return Err(Stop::InconsistentCore);
+        }
+        let start = self
+            .stack
+            .len()
+            .checked_sub(count)
+            .filter(|start| *start >= floor)
+            .ok_or(Stop::InconsistentCore)?;
+        let mut elements = Vec::new();
+        if !(self.reservations.array)(&mut elements, count) {
+            return Err(Stop::Allocation(
+                "evaluation tuple storage could not be reserved",
+            ));
+        }
+        for (element, element_type) in self.stack.drain(start..).zip(ty.elements()) {
+            if !has_type(&element, element_type) {
+                return Err(Stop::InconsistentCore);
+            }
+            elements.push(element);
+        }
+        Ok(Value::Tuple(Rc::new(TupleValue {
+            ty: ty.clone(),
+            elements,
+        })))
     }
 
     fn checked_int(&self, value: ExactInteger, span: Span) -> Result<Value, Stop> {
@@ -883,6 +1429,18 @@ impl<'core> Machine<'core> {
     /// Evaluates one function to completion on `arguments`, which have
     /// exactly its parameter types.
     fn run(&mut self, root: &'core CoreFunction, arguments: Vec<Value>) -> Result<Value, Stop> {
+        self.run_with(root, arguments, None)
+    }
+
+    /// Evaluates `root` on `arguments`. When `sides` is given and the root's
+    /// body ends in `left == right`, the two operands' values are kept
+    /// there as they are compared.
+    fn run_with(
+        &mut self,
+        root: &'core CoreFunction,
+        arguments: Vec<Value>,
+        mut sides: Option<&mut Option<(Value, Value)>>,
+    ) -> Result<Value, Stop> {
         self.stack.clear();
         self.frames.clear();
         self.inner_frames = 0;
@@ -966,6 +1524,25 @@ impl<'core> Machine<'core> {
             let scope = self.scope()?;
             if let Some(frame) = self.frames.last_mut() {
                 frame.next = frame.next.saturating_add(1);
+            }
+            // The root body's last node, a comparison `==`, has its two
+            // operands on top of the stack.
+            if let Some(sides) = sides.as_deref_mut()
+                && self.frames.len() == 1
+                && part == function.locals.len()
+                && offset.saturating_add(1) == expression.nodes.len()
+                && matches!(
+                    node.kind,
+                    CoreNodeKind::Compare {
+                        operator: BinaryOperator::Equal,
+                        ..
+                    }
+                )
+            {
+                let mut operands = self.stack.iter().rev();
+                if let (Some(right), Some(left)) = (operands.next(), operands.next()) {
+                    *sides = Some((left.clone(), right.clone()));
+                }
             }
             self.step(function, base, part, offset, scope, node)?;
         }
@@ -1055,7 +1632,7 @@ impl<'core> Machine<'core> {
             || !self
                 .stack
                 .last()
-                .is_some_and(|value| has_type(value, binding.ty()))
+                .is_some_and(|value| has_type(value, &binding.ty()))
         {
             return Err(Stop::InconsistentCore);
         }
@@ -1103,7 +1680,7 @@ impl<'core> Machine<'core> {
         let FrameKind::Loop(active) = &mut frame.kind else {
             return Err(Stop::InconsistentCore);
         };
-        if self.stack.len() != active.floor || !has_type(&value, r#loop.ty) {
+        if self.stack.len() != active.floor || !has_type(&value, &r#loop.ty) {
             return Err(Stop::InconsistentCore);
         }
         active.bound = 0;
@@ -1145,7 +1722,7 @@ impl<'core> Machine<'core> {
             finished.floor,
             finished.bound,
         )?;
-        if self.stack.len() != finished.floor || !has_type(&value, conditional.ty) {
+        if self.stack.len() != finished.floor || !has_type(&value, &conditional.ty) {
             return Err(Stop::InconsistentCore);
         }
         self.inner_frames = self.inner_frames.saturating_sub(1);
@@ -1175,7 +1752,7 @@ impl<'core> Machine<'core> {
         function: &'core CoreFunction,
         base: usize,
         id: u32,
-        ty: CoreType,
+        ty: &CoreType,
     ) -> Result<(), Stop> {
         self.charge(1)?;
         let condition = self.pop_bool()?;
@@ -1186,7 +1763,7 @@ impl<'core> Machine<'core> {
             .ok_or(Stop::InconsistentCore)?;
         // The loops active in this function must be exactly those that
         // enclose the conditional.
-        if !self.active_loops_are(&conditional.scope) || conditional.ty != ty {
+        if !self.active_loops_are(&conditional.scope) || conditional.ty != *ty {
             return Err(Stop::InconsistentCore);
         }
         let part = branch_part(function, index, condition).ok_or(Stop::InconsistentCore)?;
@@ -1220,7 +1797,7 @@ impl<'core> Machine<'core> {
         bindings: &[CoreBinding],
         (floor, bound): (usize, usize),
         index: u32,
-        ty: CoreType,
+        ty: &CoreType,
     ) -> Result<Value, Stop> {
         let index = usize::try_from(index)
             .ok()
@@ -1229,7 +1806,7 @@ impl<'core> Machine<'core> {
         let binding = bindings.get(index).ok_or(Stop::InconsistentCore)?;
         let slot = floor.checked_add(index).ok_or(Stop::InconsistentCore)?;
         let value = self.stack.get(slot).ok_or(Stop::InconsistentCore)?;
-        if binding.ty() != ty || !has_type(value, ty) {
+        if binding.ty != *ty || !has_type(value, ty) {
             return Err(Stop::InconsistentCore);
         }
         Ok(value.clone())
@@ -1271,6 +1848,24 @@ impl<'core> Machine<'core> {
             .ok_or(Stop::InconsistentCore)
     }
 
+    /// Pops the `Int` end and then the `Int` start of a slice of `length`
+    /// elements, which analysis proved to lie `length` apart from 0 up.
+    /// The end is checked against the array when the run is taken.
+    fn pop_bounds(&mut self, length: usize) -> Result<(usize, usize), Stop> {
+        let position = |value: Rc<ExactInteger>| {
+            value
+                .to_i64()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or(Stop::InconsistentCore)
+        };
+        let end = position(self.pop_int()?)?;
+        let start = position(self.pop_int()?)?;
+        if start.checked_add(length) != Some(end) {
+            return Err(Stop::InconsistentCore);
+        }
+        Ok((start, end))
+    }
+
     /// Begins the loop numbered `id` of `function` with the popped initial
     /// accumulator.
     fn begin_loop(
@@ -1278,7 +1873,7 @@ impl<'core> Machine<'core> {
         function: &'core CoreFunction,
         base: usize,
         id: u32,
-        ty: CoreType,
+        ty: &CoreType,
     ) -> Result<(), Stop> {
         self.charge(1)?;
         let accumulator = self.pop()?;
@@ -1293,7 +1888,7 @@ impl<'core> Machine<'core> {
             .map(|(_, enclosing)| enclosing)
             .ok_or(Stop::InconsistentCore)?;
         if !self.active_loops_are(enclosing)
-            || r#loop.ty != ty
+            || r#loop.ty != *ty
             || r#loop.start >= r#loop.end
             || !has_type(&accumulator, ty)
         {
@@ -1342,7 +1937,7 @@ impl<'core> Machine<'core> {
                 self.charge(1)?;
                 let literal = value;
                 let value = match literal {
-                    CoreValue::Int(_) | CoreValue::Mod(_) => {
+                    CoreValue::Int(_) | CoreValue::Mod(_) | CoreValue::Array(_) => {
                         let index = usize::try_from(function.id.index())
                             .map_err(|_| Stop::InconsistentCore)?;
                         let shared = self
@@ -1352,10 +1947,22 @@ impl<'core> Machine<'core> {
                             .and_then(|literals| literals.get(offset))
                             .and_then(Option::as_ref)
                             .ok_or(Stop::InconsistentCore)?;
-                        match literal {
-                            CoreValue::Int(_) => Value::Int(Rc::clone(shared)),
-                            _ => Value::Mod(Rc::clone(shared)),
+                        let value = match (literal, shared) {
+                            (CoreValue::Int(_), SharedLiteral::Integer(shared)) => {
+                                Value::Int(Rc::clone(shared))
+                            }
+                            (CoreValue::Mod(_), SharedLiteral::Integer(shared)) => {
+                                Value::Mod(Rc::clone(shared))
+                            }
+                            (CoreValue::Array(_), SharedLiteral::Array(shared)) => {
+                                Value::Array(Rc::clone(shared))
+                            }
+                            _ => return Err(Stop::InconsistentCore),
+                        };
+                        if !has_type(&value, &node.ty) {
+                            return Err(Stop::InconsistentCore);
                         }
+                        value
                     }
                     CoreValue::Bool(value) => Value::Bool(*value),
                     word => Value::Word(word.word_as_u64().ok_or(Stop::InconsistentCore)?),
@@ -1432,7 +2039,7 @@ impl<'core> Machine<'core> {
                 Ok(())
             }
             CoreNodeKind::Unary(operator) => {
-                let value = match (operator, word_mask(node.ty)) {
+                let value = match (operator, word_mask(&node.ty)) {
                     (UnaryOperator::Not, None) if node.ty == CoreType::Bool => {
                         self.charge(1)?;
                         Value::Bool(!self.pop_bool()?)
@@ -1483,7 +2090,7 @@ impl<'core> Machine<'core> {
                         BinaryOperator::LogicalOr => left || right,
                         _ => return Err(Stop::InconsistentCore),
                     })
-                } else if let Some(mask) = word_mask(node.ty) {
+                } else if let Some(mask) = word_mask(&node.ty) {
                     self.charge(1)?;
                     let right = self.pop_word()?;
                     let left = self.pop_word()?;
@@ -1588,8 +2195,27 @@ impl<'core> Machine<'core> {
                         self.charge(modulus_digits(*modulus).saturating_add(1))?;
                         left.compare(&right)
                     }
+                    // Arrays and tuples are compared whole, for equality
+                    // only.
+                    CoreType::Array(_) | CoreType::Tuple(_)
+                        if !matches!(
+                            operator,
+                            BinaryOperator::Equal | BinaryOperator::NotEqual
+                        ) =>
+                    {
+                        return Err(Stop::InconsistentCore);
+                    }
+                    CoreType::Array(_) | CoreType::Tuple(_) => {
+                        let right = self.pop()?;
+                        let left = self.pop()?;
+                        if self.equal_values(operand, &left, &right)? {
+                            std::cmp::Ordering::Equal
+                        } else {
+                            std::cmp::Ordering::Less
+                        }
+                    }
                     ty => {
-                        let mask = word_mask(*ty).ok_or(Stop::InconsistentCore)?;
+                        let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
                         self.charge(1)?;
                         let right = self.pop_word()?;
                         let left = self.pop_word()?;
@@ -1606,14 +2232,30 @@ impl<'core> Machine<'core> {
                 if self.stack.len() <= floor {
                     return Err(Stop::InconsistentCore);
                 }
-                self.begin_branch(function, base, *id, node.ty)
+                self.begin_branch(function, base, *id, &node.ty)
             }
             CoreNodeKind::Shift { operator, amount } => {
                 self.charge(1)?;
                 let bits = node.ty.word_bits().ok_or(Stop::InconsistentCore)?;
-                let mask = word_mask(node.ty).ok_or(Stop::InconsistentCore)?;
+                let mask = word_mask(&node.ty).ok_or(Stop::InconsistentCore)?;
                 let value = self.pop_word()?;
                 let shifted = word_shift(*operator, bits, mask, value, *amount)
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(Value::Word(shifted))
+            }
+            CoreNodeKind::ShiftBy { operator, amount } => {
+                self.charge(1)?;
+                let bits = node.ty.word_bits().ok_or(Stop::InconsistentCore)?;
+                let mask = word_mask(&node.ty).ok_or(Stop::InconsistentCore)?;
+                let by = if *amount == CoreType::Int {
+                    Amount::of_int(&*self.pop_int()?)
+                } else if word_mask(amount).is_some() {
+                    Amount::of_word(self.pop_word()?)
+                } else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let value = self.pop_word()?;
+                let shifted = word_shift_by(*operator, bits, mask, value, by)
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(Value::Word(shifted))
             }
@@ -1669,7 +2311,7 @@ impl<'core> Machine<'core> {
                 let Value::Array(array) = self.pop()? else {
                     return Err(Stop::InconsistentCore);
                 };
-                if array.ty != ty || !has_type(&value, ty.element()) {
+                if array.ty != ty || !has_type(&value, &ty.element()) {
                     return Err(Stop::InconsistentCore);
                 }
                 let mut elements = Vec::new();
@@ -1692,7 +2334,7 @@ impl<'core> Machine<'core> {
                     return Err(Stop::InconsistentCore);
                 }
                 let element = self.pop()?;
-                if !has_type(&element, ty.element()) {
+                if !has_type(&element, &ty.element()) {
                     return Err(Stop::InconsistentCore);
                 }
                 let mut elements = Vec::new();
@@ -1708,7 +2350,7 @@ impl<'core> Machine<'core> {
                 if self.stack.len() <= floor {
                     return Err(Stop::InconsistentCore);
                 }
-                self.begin_loop(function, base, *id, node.ty)
+                self.begin_loop(function, base, *id, &node.ty)
             }
             CoreNodeKind::LoopIndex(id) => {
                 self.charge(1)?;
@@ -1725,7 +2367,7 @@ impl<'core> Machine<'core> {
             CoreNodeKind::Accumulator(id) => {
                 self.charge(1)?;
                 let accumulator = self.active_loop(*id)?.accumulator.clone();
-                if !has_type(&accumulator, node.ty) {
+                if !has_type(&accumulator, &node.ty) {
                     return Err(Stop::InconsistentCore);
                 }
                 self.push(accumulator)
@@ -1741,7 +2383,7 @@ impl<'core> Machine<'core> {
                     r#loop.bindings(),
                     (active.floor, active.bound),
                     *index,
-                    node.ty,
+                    &node.ty,
                 )?;
                 self.push(value)
             }
@@ -1754,7 +2396,7 @@ impl<'core> Machine<'core> {
                     .map(|conditional| branch_bindings(conditional, active.then))
                     .ok_or(Stop::InconsistentCore)?;
                 let value =
-                    self.bound_value(bindings, (active.floor, active.bound), *index, node.ty)?;
+                    self.bound_value(bindings, (active.floor, active.bound), *index, &node.ty)?;
                 self.push(value)
             }
             CoreNodeKind::Index { index } => {
@@ -1773,12 +2415,149 @@ impl<'core> Machine<'core> {
                     .ok_or(Stop::InconsistentCore)?;
                 self.push(element)
             }
+            CoreNodeKind::Tuple { elements } => {
+                let ty = node.ty.as_tuple().ok_or(Stop::InconsistentCore)?;
+                let count = usize::try_from(*elements).map_err(|_| Stop::InconsistentCore)?;
+                // One step per element, as for an array; a tuple has at
+                // least two.
+                self.charge(count.max(1))?;
+                // Elements are intermediate values of the current expression.
+                let tuple = self.build_tuple(ty, count, floor)?;
+                self.push(tuple)
+            }
+            CoreNodeKind::Project { index } => {
+                self.charge(1)?;
+                let Value::Tuple(tuple) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if tuple.ty.element(*index) != Some(&node.ty) {
+                    return Err(Stop::InconsistentCore);
+                }
+                let index = usize::try_from(*index).map_err(|_| Stop::InconsistentCore)?;
+                let element = tuple
+                    .elements
+                    .get(index)
+                    .cloned()
+                    .ok_or(Stop::InconsistentCore)?;
+                self.push(element)
+            }
+            CoreNodeKind::Concat => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements written, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(2)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let (Value::Array(right), Value::Array(left)) = (self.pop()?, self.pop()?) else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if left.ty.element() != ty.element()
+                    || right.ty.element() != ty.element()
+                    || left.elements.len().checked_add(right.elements.len()) != Some(length)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(left.elements.iter().cloned());
+                elements.extend(right.elements.iter().cloned());
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::Slice => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements copied, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(3)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let (start, end) = self.pop_bounds(length)?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if array.ty.element() != ty.element() {
+                    return Err(Stop::InconsistentCore);
+                }
+                let run = array
+                    .elements
+                    .get(start..end)
+                    .ok_or(Stop::InconsistentCore)?;
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(run.iter().cloned());
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::SliceUpdate => {
+                let ty = node.ty.as_array().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(ty.length()).map_err(|_| Stop::InconsistentCore)?;
+                // One step per 64 elements copied, or part of 64.
+                self.charge(bulk_cost(length))?;
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(4)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let Value::Array(value) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let (start, end) = self.pop_bounds(value.elements.len())?;
+                let Value::Array(array) = self.pop()? else {
+                    return Err(Stop::InconsistentCore);
+                };
+                if array.ty != ty || value.ty.element() != ty.element() {
+                    return Err(Stop::InconsistentCore);
+                }
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                elements.extend(array.elements.iter().cloned());
+                let run = elements.get_mut(start..end).ok_or(Stop::InconsistentCore)?;
+                run.clone_from_slice(&value.elements);
+                self.push(Value::Array(Rc::new(ArrayValue { ty, elements })))
+            }
+            CoreNodeKind::Pack { from, order } => {
+                if self
+                    .stack
+                    .len()
+                    .checked_sub(1)
+                    .is_none_or(|below| below < floor)
+                {
+                    return Err(Stop::InconsistentCore);
+                }
+                let value = self.pack(from, *order, &node.ty, node.span)?;
+                self.push(value)
+            }
             CoreNodeKind::Convert { from } => {
                 self.charge(1)?;
                 if *from == CoreType::Bool || node.ty == CoreType::Bool {
                     return Err(Stop::InconsistentCore);
                 }
-                let value = match (word_mask(*from), node.ty) {
+                let value = match (word_mask(from), &node.ty) {
                     (Some(_), ty) if word_mask(ty).is_some() => {
                         let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
                         Value::Word(self.pop_word()? & mask)
@@ -1788,17 +2567,18 @@ impl<'core> Machine<'core> {
                     // modulo m, which costs one step per digit of the
                     // operand and of m.
                     (_, CoreType::Mod(modulus)) => {
-                        let value = self.pop_integer(*from)?;
+                        let modulus = *modulus;
+                        let value = self.pop_integer(from)?;
                         self.charge(digits(&value).saturating_mul(modulus_digits(modulus)))?;
                         let reduced = modulus
                             .reduce(&value, self.reservations.value_limbs)
                             .ok_or(Stop::Allocation(INTEGER_STORAGE))?;
                         Value::Mod(Rc::new(reduced))
                     }
-                    (_, CoreType::Int) => Value::Int(self.pop_integer(*from)?),
+                    (_, CoreType::Int) => Value::Int(self.pop_integer(from)?),
                     (_, ty) => {
                         let mask = word_mask(ty).ok_or(Stop::InconsistentCore)?;
-                        Value::Word(self.pop_integer(*from)?.modulo_2_64() & mask)
+                        Value::Word(self.pop_integer(from)?.modulo_2_64() & mask)
                     }
                 };
                 self.push(value)
@@ -1807,9 +2587,195 @@ impl<'core> Machine<'core> {
     }
 }
 
+impl Machine<'_> {
+    /// Pops a value of type `from` and converts it to `to` in `order`. The
+    /// words on one side spell a number of their total width, most
+    /// significant word first for `big` and least significant first for
+    /// `little`: words convert to the words of the same number, to that
+    /// number, or to its residue modulo m, and a number converts to the
+    /// words of its residue modulo 2^width. The number that words spell is
+    /// an `Int`, held to the exact-integer limit like every other: words of
+    /// more than 16,384 bits convert to a number only while it has at most
+    /// that many significant bits, and otherwise stop at `span`.
+    #[inline(never)]
+    fn pack(
+        &mut self,
+        from: &CoreType,
+        order: ByteOrder,
+        to: &CoreType,
+        span: Span,
+    ) -> Result<Value, Stop> {
+        let (bits, count) = from
+            .words()
+            .or_else(|| to.words())
+            .ok_or(Stop::InconsistentCore)?;
+        let width = bits.checked_mul(count).ok_or(Stop::InconsistentCore)?;
+        if to
+            .words()
+            .is_some_and(|(to_bits, to_count)| to_bits.checked_mul(to_count) != Some(width))
+        {
+            return Err(Stop::InconsistentCore);
+        }
+        // One step for each 64 bits packed, or part of 64.
+        let cost = usize::try_from(width.div_ceil(64)).map_err(|_| Stop::InconsistentCore)?;
+        self.charge(cost)?;
+        let digits_needed =
+            usize::try_from(width.div_ceil(32)).map_err(|_| Stop::InconsistentCore)?;
+        let mut limbs = Vec::new();
+        if !(self.reservations.value_limbs)(&mut limbs, digits_needed) {
+            return Err(Stop::Allocation(INTEGER_STORAGE));
+        }
+        limbs.resize(digits_needed, 0);
+        if from.words().is_some() {
+            let operand = self.pop()?;
+            let words: &[Value] = match (&operand, from) {
+                (Value::Array(array), CoreType::Array(ty)) if array.ty == *ty => &array.elements,
+                (Value::Word(_), _) if from.as_array().is_none() => std::slice::from_ref(&operand),
+                _ => return Err(Stop::InconsistentCore),
+            };
+            for (index, word) in words.iter().enumerate() {
+                let Value::Word(word) = word else {
+                    return Err(Stop::InconsistentCore);
+                };
+                let place = word_place(order, index, count)?;
+                write_word(&mut limbs, bits, place, *word)?;
+            }
+        } else {
+            let value = self.pop_integer(from)?;
+            write_residue(&mut limbs, &value, width)?;
+        }
+        match to {
+            CoreType::Int => self.checked_int(ExactInteger::from_limbs(limbs), span),
+            CoreType::Mod(modulus) => {
+                let value = ExactInteger::from_limbs(limbs);
+                if value.magnitude_bits() > MAX_EXACT_INTEGER_BITS {
+                    return Err(Stop::IntegerBits(span));
+                }
+                // As for `as Mod[m]`: one step per digit of the value and
+                // of m.
+                self.charge(digits(&value).saturating_mul(modulus_digits(*modulus)))?;
+                let reduced = modulus
+                    .reduce(&value, self.reservations.value_limbs)
+                    .ok_or(Stop::Allocation(INTEGER_STORAGE))?;
+                Ok(Value::Mod(Rc::new(reduced)))
+            }
+            CoreType::Array(ty) => {
+                let (bits, count) = to.words().ok_or(Stop::InconsistentCore)?;
+                let length = usize::try_from(count).map_err(|_| Stop::InconsistentCore)?;
+                let mut elements = Vec::new();
+                if !(self.reservations.array)(&mut elements, length) {
+                    return Err(Stop::Allocation(
+                        "evaluation array storage could not be reserved",
+                    ));
+                }
+                for index in 0..length {
+                    let place = word_place(order, index, count)?;
+                    elements.push(Value::Word(read_word(&limbs, bits, place)?));
+                }
+                Ok(Value::Array(Rc::new(ArrayValue { ty: *ty, elements })))
+            }
+            CoreType::Word8 | CoreType::Word16 | CoreType::Word32 | CoreType::Word64 => {
+                let (bits, _) = to.words().ok_or(Stop::InconsistentCore)?;
+                Ok(Value::Word(read_word(&limbs, bits, 0)?))
+            }
+            CoreType::Bool | CoreType::Tuple(_) => Err(Stop::InconsistentCore),
+        }
+    }
+}
+
+/// The place of the word at `index` of `count` words in the number they
+/// spell: 0 for the least significant word.
+fn word_place(order: ByteOrder, index: usize, count: u32) -> Result<u32, Stop> {
+    let index = u32::try_from(index).map_err(|_| Stop::InconsistentCore)?;
+    match order {
+        ByteOrder::Little => Ok(index),
+        ByteOrder::Big => count
+            .checked_sub(1)
+            .and_then(|last| last.checked_sub(index))
+            .ok_or(Stop::InconsistentCore),
+    }
+}
+
+/// Writes the `bits`-bit word at `place` into `limbs`, base-2^32 digits
+/// least significant first, which hold zeros there. Each admitted width
+/// divides 64, so a word lies within one digit or fills two.
+fn write_word(limbs: &mut [u32], bits: u32, place: u32, word: u64) -> Result<(), Stop> {
+    if bits < 64 && word.checked_shr(bits) != Some(0) {
+        return Err(Stop::InconsistentCore);
+    }
+    let offset = bits.checked_mul(place).ok_or(Stop::InconsistentCore)?;
+    let digit = usize::try_from(offset / 32).map_err(|_| Stop::InconsistentCore)?;
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = word.to_le_bytes();
+    let low = u32::from_le_bytes([b0, b1, b2, b3]);
+    let high = u32::from_le_bytes([b4, b5, b6, b7]);
+    let target = limbs.get_mut(digit).ok_or(Stop::InconsistentCore)?;
+    *target |= low.checked_shl(offset % 32).ok_or(Stop::InconsistentCore)?;
+    if bits == 64 {
+        let next = digit.checked_add(1).ok_or(Stop::InconsistentCore)?;
+        *limbs.get_mut(next).ok_or(Stop::InconsistentCore)? = high;
+    }
+    Ok(())
+}
+
+/// Reads the `bits`-bit word at `place` of `limbs`, base-2^32 digits least
+/// significant first.
+fn read_word(limbs: &[u32], bits: u32, place: u32) -> Result<u64, Stop> {
+    let offset = bits.checked_mul(place).ok_or(Stop::InconsistentCore)?;
+    let digit = usize::try_from(offset / 32).map_err(|_| Stop::InconsistentCore)?;
+    let low = u64::from(*limbs.get(digit).ok_or(Stop::InconsistentCore)?);
+    if bits == 64 {
+        let next = digit.checked_add(1).ok_or(Stop::InconsistentCore)?;
+        let high = u64::from(*limbs.get(next).ok_or(Stop::InconsistentCore)?);
+        return Ok((high << 32) | low);
+    }
+    let mask = 1_u64
+        .checked_shl(bits)
+        .and_then(|bound| bound.checked_sub(1))
+        .ok_or(Stop::InconsistentCore)?;
+    let word = low.checked_shr(offset % 32).ok_or(Stop::InconsistentCore)?;
+    Ok(word & mask)
+}
+
+/// Writes the residue of `value` modulo 2^`width` into `limbs`, the
+/// `width`/32 base-2^32 digits, rounded up, least significant first, which
+/// hold zeros: a negative value's residue is its two's complement.
+fn write_residue(limbs: &mut [u32], value: &ExactInteger, width: u32) -> Result<(), Stop> {
+    for (digit, magnitude) in limbs.iter_mut().zip(value.magnitude_limbs()) {
+        *digit = *magnitude;
+    }
+    if value.is_negative() {
+        // 2^width - |value|, modulo 2^width: the complement plus one.
+        let mut carry = true;
+        for digit in limbs.iter_mut() {
+            let (sum, overflow) = (!*digit).overflowing_add(u32::from(carry));
+            *digit = sum;
+            carry = overflow;
+        }
+    }
+    let spare = width % 32;
+    if spare != 0 {
+        let top = limbs.last_mut().ok_or(Stop::InconsistentCore)?;
+        *top &= 1_u32
+            .checked_shl(spare)
+            .and_then(|bound| bound.checked_sub(1))
+            .ok_or(Stop::InconsistentCore)?;
+    }
+    Ok(())
+}
+
 fn evaluate_with_reservations(
     core: &CoreModule,
     step_limit: usize,
+    reserve_values: impl FnOnce(&mut Vec<EvaluatedFunction>, usize) -> bool,
+    reservations: Reservations,
+) -> EvaluationResult {
+    evaluate_entries(core, step_limit, &|_| true, reserve_values, reservations)
+}
+
+fn evaluate_entries(
+    core: &CoreModule,
+    step_limit: usize,
+    select: &dyn Fn(&CoreFunction) -> bool,
     reserve_values: impl FnOnce(&mut Vec<EvaluatedFunction>, usize) -> bool,
     reservations: Reservations,
 ) -> EvaluationResult {
@@ -1820,12 +2786,23 @@ fn evaluate_with_reservations(
             diagnostics,
         };
     }
-    let roots = core
-        .entry_functions()
-        .iter()
-        .filter(|function| function.parameters.is_empty())
-        .count();
-    let capacity = roots.min(step_limit);
+    // The selector is asked once per function, so the reservation below and
+    // the evaluation that follows see the same functions.
+    let entries = core.entry_functions();
+    let mut roots = Vec::new();
+    if roots.try_reserve_exact(entries.len()).is_err() {
+        return allocation_failure(
+            diagnostics,
+            core.span,
+            "selected function list could not be reserved",
+        );
+    }
+    roots.extend(
+        entries
+            .iter()
+            .filter(|function| function.parameters.is_empty() && select(function)),
+    );
+    let capacity = roots.len().min(step_limit);
     let mut values = Vec::new();
     if !reserve_values(&mut values, capacity) {
         return evaluation_failure(
@@ -1857,11 +2834,7 @@ fn evaluate_with_reservations(
         inner_frames: 0,
     };
     let mut shared_module = None;
-    for function in core
-        .entry_functions()
-        .iter()
-        .filter(|function| function.parameters.is_empty())
-    {
+    for function in roots {
         let steps_before = machine.steps;
         let value = match machine.run(function, Vec::new()) {
             Ok(value) => value,
@@ -1884,7 +2857,25 @@ fn evaluate_with_reservations(
             );
         }
         name.push_str(&function.name);
-        let value = match result_value(value, function.result_type, reservations) {
+        let mut sizes = Vec::new();
+        if sizes.try_reserve_exact(function.sizes.len()).is_err() {
+            return allocation_failure(
+                diagnostics,
+                function.name_span,
+                "evaluated function sizes could not be reserved",
+            );
+        }
+        sizes.extend_from_slice(&function.sizes);
+        let mut instance = String::new();
+        if !(reservations.name)(&mut instance, function.instance.len()) {
+            return allocation_failure(
+                diagnostics,
+                function.name_span,
+                "evaluated function instance storage could not be reserved",
+            );
+        }
+        instance.push_str(&function.instance);
+        let value = match result_value(value, &function.result_type, reservations) {
             Ok(value) => value,
             Err(Stop::Allocation(label)) => {
                 return allocation_failure(diagnostics, function.name_span, label);
@@ -1896,7 +2887,10 @@ fn evaluate_with_reservations(
             id: function.id,
             module,
             name,
+            sizes,
+            instance,
             value,
+            steps: machine.steps.saturating_sub(steps_before),
         });
     }
     EvaluationResult {
@@ -1906,7 +2900,11 @@ fn evaluate_with_reservations(
 }
 
 /// Copies an evaluated value of type `ty` out of the machine's shared storage.
-fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Result<CoreValue, Stop> {
+fn result_value(
+    value: Value,
+    ty: &CoreType,
+    reservations: Reservations,
+) -> Result<CoreValue, Stop> {
     match (value, ty) {
         (Value::Int(value), CoreType::Int) => value
             .try_clone_with_reservation(reservations.value_limbs)
@@ -1919,9 +2917,9 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
             CoreValue::word_from_u64(ty, value).ok_or(Stop::InconsistentCore)
         }
         (Value::Mod(value), CoreType::Mod(modulus)) => {
-            result_residue(&value, modulus, reservations)
+            result_residue(&value, *modulus, reservations)
         }
-        (Value::Array(array), CoreType::Array(array_type)) if array.ty == array_type => {
+        (Value::Array(array), CoreType::Array(array_type)) if array.ty == *array_type => {
             let mut elements = Vec::new();
             if !(reservations.result_array)(&mut elements, array.elements.len()) {
                 return Err(Stop::Allocation(
@@ -1929,10 +2927,33 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
                 ));
             }
             for element in &array.elements {
-                elements.push(result_element(element, array_type.element(), reservations)?);
+                elements.push(result_element(
+                    element,
+                    &array_type.element(),
+                    reservations,
+                )?);
             }
-            CoreArray::new(array_type, elements)
+            CoreArray::new(*array_type, elements)
                 .map(CoreValue::Array)
+                .ok_or(Stop::InconsistentCore)
+        }
+        (Value::Tuple(tuple), CoreType::Tuple(tuple_type)) if tuple.ty == *tuple_type => {
+            let mut elements = Vec::new();
+            if !(reservations.result_array)(&mut elements, tuple.elements.len()) {
+                return Err(Stop::Allocation(
+                    "evaluated tuple storage could not be reserved",
+                ));
+            }
+            // A tuple's elements are scalars and arrays, so this recursion
+            // is one level deep.
+            for (element, element_type) in tuple.elements.iter().zip(tuple_type.elements()) {
+                if matches!(element, Value::Tuple(_)) {
+                    return Err(Stop::InconsistentCore);
+                }
+                elements.push(result_value(element.clone(), element_type, reservations)?);
+            }
+            CoreTuple::new(tuple_type.clone(), elements)
+                .map(CoreValue::Tuple)
                 .ok_or(Stop::InconsistentCore)
         }
         _ => Err(Stop::InconsistentCore),
@@ -1942,7 +2963,7 @@ fn result_value(value: Value, ty: CoreType, reservations: Reservations) -> Resul
 /// Copies one scalar array element; arrays have no array elements.
 fn result_element(
     element: &Value,
-    ty: CoreType,
+    ty: &CoreType,
     reservations: Reservations,
 ) -> Result<CoreValue, Stop> {
     match (element, ty) {
@@ -1956,7 +2977,9 @@ fn result_element(
         (Value::Word(value), ty) => {
             CoreValue::word_from_u64(ty, *value).ok_or(Stop::InconsistentCore)
         }
-        (Value::Mod(value), CoreType::Mod(modulus)) => result_residue(value, modulus, reservations),
+        (Value::Mod(value), CoreType::Mod(modulus)) => {
+            result_residue(value, *modulus, reservations)
+        }
         _ => Err(Stop::InconsistentCore),
     }
 }
@@ -1977,8 +3000,8 @@ fn result_residue(
         .ok_or(Stop::InconsistentCore)
 }
 
-/// Shares every `Int` and residue literal once so that evaluation never
-/// copies literal digits.
+/// Shares every `Int`, residue, and array literal once so that evaluation
+/// never copies literal digits or a byte string's bytes.
 fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     let mut shared = Vec::new();
     shared.try_reserve_exact(core.functions.len()).ok()?;
@@ -2012,14 +3035,27 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
             literals.try_reserve_exact(expression.nodes.len()).ok()?;
             for node in &expression.nodes {
                 literals.push(match &node.kind {
-                    CoreNodeKind::Literal(CoreValue::Int(value)) => Some(Rc::new(
-                        value.try_clone_with_reservation(reserve_value_limbs)?,
+                    CoreNodeKind::Literal(CoreValue::Int(value)) => Some(SharedLiteral::Integer(
+                        Rc::new(value.try_clone_with_reservation(reserve_value_limbs)?),
                     )),
-                    CoreNodeKind::Literal(CoreValue::Mod(residue)) => Some(Rc::new(
-                        residue
-                            .value()
-                            .try_clone_with_reservation(reserve_value_limbs)?,
-                    )),
+                    CoreNodeKind::Literal(CoreValue::Mod(residue)) => {
+                        Some(SharedLiteral::Integer(Rc::new(
+                            residue
+                                .value()
+                                .try_clone_with_reservation(reserve_value_limbs)?,
+                        )))
+                    }
+                    CoreNodeKind::Literal(CoreValue::Array(array)) => {
+                        let mut elements = Vec::new();
+                        elements.try_reserve_exact(array.elements().len()).ok()?;
+                        for element in array.elements() {
+                            elements.push(shared_element(element)?);
+                        }
+                        Some(SharedLiteral::Array(Rc::new(ArrayValue {
+                            ty: array.ty(),
+                            elements,
+                        })))
+                    }
                     _ => None,
                 });
             }
@@ -2030,6 +3066,25 @@ fn share_literals(core: &CoreModule) -> Option<SharedLiterals> {
     Some(shared)
 }
 
+/// Returns the evaluator's value of a scalar element of an array literal,
+/// or `None` when storage cannot be reserved or the element is not a
+/// scalar.
+fn shared_element(element: &CoreValue) -> Option<Value> {
+    Some(match element {
+        CoreValue::Int(value) => Value::Int(Rc::new(
+            value.try_clone_with_reservation(reserve_value_limbs)?,
+        )),
+        CoreValue::Mod(residue) => Value::Mod(Rc::new(
+            residue
+                .value()
+                .try_clone_with_reservation(reserve_value_limbs)?,
+        )),
+        CoreValue::Bool(value) => Value::Bool(*value),
+        CoreValue::Array(_) | CoreValue::Tuple(_) => return None,
+        word => Value::Word(word.word_as_u64()?),
+    })
+}
+
 fn stopped(
     diagnostics: Vec<Diagnostic>,
     function: &CoreFunction,
@@ -2037,20 +3092,44 @@ fn stopped(
     step_limit: usize,
     before_function: bool,
 ) -> EvaluationResult {
+    // A test is reported at its title whatever stopped it, with the place
+    // of a limit that has one as a secondary label.
+    let test = function.title.is_some();
     let diagnostic = match stop {
         Stop::Steps => Diagnostic::error(
             DiagnosticCode::EvaluationResourceLimit,
             "reference evaluation step limit exceeded",
             function.name_span,
         )
-        .with_label(if before_function {
-            "evaluation stopped before this function"
-        } else {
-            "evaluation stopped while evaluating this function"
+        .with_label(match (test, before_function) {
+            (false, true) => "evaluation stopped before this function",
+            (false, false) => "evaluation stopped while evaluating this function",
+            (true, true) => "evaluation stopped before this test",
+            (true, false) => "evaluation stopped while evaluating this test",
         })
         .with_note(format!(
             "at most {step_limit} evaluation steps are permitted"
         )),
+        Stop::CallDepth(span) if test => Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            "reference evaluation call depth limit exceeded",
+            function.name_span,
+        )
+        .with_label("evaluation stopped while evaluating this test")
+        .with_secondary_span(span, "this call exceeds the depth limit")
+        .with_note(format!(
+            "at most {MAX_CALL_DEPTH} nested calls are permitted"
+        )),
+        Stop::IntegerBits(span) if test => Diagnostic::error(
+            DiagnosticCode::EvaluationResourceLimit,
+            format!(
+                "exact integer result exceeds the {MAX_EXACT_INTEGER_BITS}-significant-bit limit"
+            ),
+            function.name_span,
+        )
+        .with_label("evaluation stopped while evaluating this test")
+        .with_secondary_span(span, "result is too large for the reference evaluator")
+        .with_note("`Int` is unbounded; this is a resource limit, not a finite width"),
         Stop::CallDepth(span) => Diagnostic::error(
             DiagnosticCode::EvaluationResourceLimit,
             "reference evaluation call depth limit exceeded",
@@ -2082,18 +3161,45 @@ fn stopped(
             "reference evaluation received inconsistent Core",
             function.name_span,
         )
-        .with_label("evaluation stopped in this function"),
+        .with_label(if test {
+            "evaluation stopped in this test"
+        } else {
+            "evaluation stopped in this function"
+        }),
     };
-    evaluation_failure(
-        diagnostics,
-        diagnostic.with_note("no partial value set is returned"),
-    )
+    let note = if test {
+        NO_TEST_OUTCOME_NOTE
+    } else {
+        "no partial value set is returned"
+    };
+    evaluation_failure(diagnostics, diagnostic.with_note(note))
 }
+
+/// What a test run that stops returns.
+const NO_TEST_OUTCOME_NOTE: &str = "no test outcome is reported";
 
 fn allocation_failure(
     diagnostics: Vec<Diagnostic>,
     span: crate::source::Span,
     label: &'static str,
+) -> EvaluationResult {
+    allocation_failure_noted(diagnostics, span, label, "no partial value set is returned")
+}
+
+/// A test run's allocation failure, which reports no outcome.
+fn test_allocation_failure(
+    diagnostics: Vec<Diagnostic>,
+    span: crate::source::Span,
+    label: &'static str,
+) -> EvaluationResult {
+    allocation_failure_noted(diagnostics, span, label, NO_TEST_OUTCOME_NOTE)
+}
+
+fn allocation_failure_noted(
+    diagnostics: Vec<Diagnostic>,
+    span: crate::source::Span,
+    label: &'static str,
+    note: &'static str,
 ) -> EvaluationResult {
     evaluation_failure(
         diagnostics,
@@ -2103,7 +3209,7 @@ fn allocation_failure(
             span,
         )
         .with_label(label)
-        .with_note("no partial value set is returned"),
+        .with_note(note),
     )
 }
 
@@ -2396,6 +3502,34 @@ mod tests {
             "evaluated function name storage could not be reserved"
         );
 
+        // An instance's name in brackets is reserved as its function's is.
+        let instance_core = core(concat!(
+            "edition 2026; module values {\n",
+            "  spec pick[K in {Word[8], Word[16]}]() -> K { 1 }\n",
+            "}\n",
+        ));
+        let instance_failure = evaluate_with_reservations(
+            &instance_core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            Reservations {
+                name: |name, bytes| {
+                    bytes != "[Word[16]]".len() && name.try_reserve_exact(bytes).is_ok()
+                },
+                ..Reservations::DEFAULT
+            },
+        );
+        assert!(instance_failure.values().is_none());
+        assert_eq!(instance_failure.diagnostics().len(), 1);
+        assert_eq!(
+            instance_failure.diagnostics()[0].primary_span(),
+            instance_core.functions[1].name_span
+        );
+        assert_eq!(
+            instance_failure.diagnostics()[0].label(),
+            "evaluated function instance storage could not be reserved"
+        );
+
         let value_core = core(concat!(
             "edition 2026; module values {\n",
             "  spec first() -> Word[8] { 1 }\n",
@@ -2553,6 +3687,196 @@ mod tests {
                 }
             }
             assert_eq!(values_of(&members), expected, "{ty}");
+        }
+    }
+
+    #[test]
+    fn computed_shifts_and_rotations_follow_their_definition_at_every_width() {
+        // `<<` by k is floor(a * 2^k) modulo 2^n and `>>` by k is
+        // floor(a * 2^-k) modulo 2^n, so either gives 0 once |k| >= n; a
+        // rotation turns by k modulo n. Each is checked for every `Int`
+        // amount from -2n - 1 through 2n + 1, amounts at and past 64 bits,
+        // one of 16,384 bits, and every byte amount.
+        let power = |exponent: usize| {
+            let digits = "0".repeat(exponent / 4);
+            let lead = 1_u32 << (exponent % 4);
+            format!("0x{lead}{digits}")
+        };
+        let huge = [
+            (String::from("18446744073709551615"), u64::MAX),
+            (String::from("-18446744073709551615"), 1),
+            (String::from("18446744073709551616"), 0),
+            (String::from("-18446744073709551616"), 0),
+            (format!("{} + 3", power(200)), 3),
+            (format!("0 - {} - 1", power(200)), u64::MAX),
+            (power(16_383), 0),
+            (format!("0 - {}", power(16_383)), 0),
+        ];
+        for (ty, bits) in WORDS {
+            let modulus = 1_u128 << bits;
+            let mask = modulus - 1;
+            let n = i64::from(bits);
+            let shift = |value: u128, k: i64| {
+                if k >= n || k <= -n {
+                    0
+                } else if k >= 0 {
+                    (value << k) & mask
+                } else {
+                    value >> -k
+                }
+            };
+            let rotate = |value: u128, k: i64| {
+                let r = u32::try_from(k.rem_euclid(n)).unwrap();
+                ((value << r) | (value >> ((bits - r) % bits))) & mask
+            };
+            let value = word_corpus(bits)[9];
+            let mut members = format!(
+                "  spec shl(a: {ty}, k: Int) -> {ty} {{ a << k }}\n\
+                 \x20 spec shr(a: {ty}, k: Int) -> {ty} {{ a >> k }}\n\
+                 \x20 spec rotl(a: {ty}, k: Int) -> {ty} {{ a <<< k }}\n\
+                 \x20 spec rotr(a: {ty}, k: Int) -> {ty} {{ a >>> k }}\n\
+                 \x20 spec byte(a: {ty}, k: Word[8]) -> ({ty}, {ty}, {ty}, {ty}) {{\n\
+                 \x20   (a << k, a >> k, a <<< k, a >>> k)\n\
+                 \x20 }}\n"
+            );
+            let four = |values: [u128; 4]| {
+                let [a, b, c, d] = values.map(|value| render_word(bits, value));
+                format!("({a}, {b}, {c}, {d})")
+            };
+            let mut expected = Vec::new();
+            for k in -(2 * n + 1)..=(2 * n + 1) {
+                let name = format!("int{}", expected.len());
+                members.push_str(&format!(
+                    "  spec {name}() -> ({ty}, {ty}, {ty}, {ty}) {{\n\
+                     \x20   (shl({value}, {k}), shr({value}, {k}), rotl({value}, {k}), rotr({value}, {k}))\n\
+                     \x20 }}\n"
+                ));
+                expected.push(format!(
+                    "{name} = {}",
+                    four([
+                        shift(value, k),
+                        shift(value, -k),
+                        rotate(value, k),
+                        rotate(value, -k)
+                    ])
+                ));
+            }
+            // Past 63 bits the amount is only its sign, whether it is below
+            // n, and its residue modulo n, here written as a residue of
+            // 2^64 whose low bits are those of the amount.
+            for (amount, residue) in &huge {
+                let name = format!("int{}", expected.len());
+                members.push_str(&format!(
+                    "  spec {name}() -> ({ty}, {ty}, {ty}, {ty}) {{\n\
+                     \x20   (shl({value}, {amount}), shr({value}, {amount}), rotl({value}, {amount}), rotr({value}, {amount}))\n\
+                     \x20 }}\n"
+                ));
+                let turn = i64::try_from(u128::from(*residue) % u128::from(bits)).unwrap();
+                expected.push(format!(
+                    "{name} = {}",
+                    four([0, 0, rotate(value, turn), rotate(value, -turn)])
+                ));
+            }
+            for k in 0..=255_i64 {
+                let name = format!("byte{k}");
+                members.push_str(&format!(
+                    "  spec {name}() -> ({ty}, {ty}, {ty}, {ty}) {{ byte({value}, {k}) }}\n"
+                ));
+                expected.push(format!(
+                    "{name} = {}",
+                    four([
+                        shift(value, k),
+                        shift(value, -k),
+                        rotate(value, k),
+                        rotate(value, -k)
+                    ])
+                ));
+            }
+            assert_eq!(values_of(&members), expected, "{ty}");
+        }
+    }
+
+    #[test]
+    fn a_computed_amount_costs_one_step_whatever_its_size() {
+        let core = core(&format!(
+            "edition 2026; module m {{\n\
+             \x20 spec turn(a: Word[32], k: Int) -> Word[32] {{ a <<< k }}\n\
+             \x20 spec literal() -> Word[32] {{ 0x80000001 <<< 3 }}\n\
+             \x20 spec small() -> Word[32] {{ turn(0x80000001, 3) }}\n\
+             \x20 spec large() -> Word[32] {{ turn(0x80000001, 0x1{}3) }}\n\
+             \x20 spec shifted() -> Word[32] {{ turn(0x80000001, -3) }}\n\
+             }}\n",
+            "0".repeat(4_094)
+        ));
+        let result = evaluate(&core);
+        let values = result.values().unwrap();
+        let steps = values
+            .iter()
+            .map(|value| (value.name(), value.steps()))
+            .collect::<Vec<_>>();
+        // A call costs its arguments, one step for the call, and its body.
+        assert_eq!(
+            steps,
+            [("literal", 2), ("small", 6), ("large", 6), ("shifted", 6)]
+        );
+        assert_eq!(values[0].value(), values[1].value());
+        assert_eq!(values[0].value(), values[2].value());
+        assert_eq!(values[3].value(), &CoreValue::Word32(0x3000_0000));
+    }
+
+    #[test]
+    fn computed_amount_nodes_fail_closed_on_inconsistent_core() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec f(x: Word[8], k: Int) -> Word[8] { x << k }\n",
+            "  spec g() -> Word[8] { f(0x96, 3) }\n",
+            "}\n"
+        ));
+        assert_eq!(
+            base.functions[0].body.nodes[2].kind,
+            CoreNodeKind::ShiftBy {
+                operator: BinaryOperator::ShiftLeft,
+                amount: CoreType::Int,
+            }
+        );
+        let mutations: [fn(&mut CoreModule); 4] = [
+            // The amount claims to be a word, but an `Int` is given.
+            |core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::ShiftBy {
+                    operator: BinaryOperator::ShiftLeft,
+                    amount: CoreType::Word8,
+                };
+            },
+            // The amount claims to be a truth value.
+            |core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::ShiftBy {
+                    operator: BinaryOperator::ShiftLeft,
+                    amount: CoreType::Bool,
+                };
+            },
+            // The operator is not a shift or rotation.
+            |core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::ShiftBy {
+                    operator: BinaryOperator::Add,
+                    amount: CoreType::Int,
+                };
+            },
+            // The shifted value is not a word.
+            |core| {
+                core.functions[0].body.nodes[0].kind = CoreNodeKind::Parameter(1);
+            },
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
         }
     }
 
@@ -2811,6 +4135,14 @@ mod tests {
         for (members, steps) in [
             ("  spec w() -> Word[8] { (1 + 2) ^ ~3 }\n", 6),
             ("  spec w() -> Word[32] { (1 <<< 3) >> 1 }\n", 3),
+            // A shift or rotation by a computed amount also costs one step
+            // beyond its operands', whatever the amount's size.
+            ("  spec w() -> Word[32] { let k: Int = 3; 1 <<< k }\n", 4),
+            (
+                "  spec w() -> Word[32] { let k: Int = -0x1_0000_0000_0000_0000_0003; \
+                 (1 <<< k) >> k }\n",
+                6,
+            ),
             (
                 "  spec f(x: Word[8]) -> Word[8] { x + x }\n  spec w() -> Word[8] { f(7) }\n",
                 5,
@@ -2906,6 +4238,69 @@ mod tests {
             (
                 "  spec i() -> Int { if true { let a: Int = 2; a * a } else { 1 } }\n",
                 7,
+            ),
+            // A tuple of n elements costs its elements' steps and n more, as
+            // an array does; `.k` costs one step, so a read of a name of a
+            // tuple pattern costs two.
+            ("  spec t() -> (Int, Word[8]) { (1, 2) }\n", 4),
+            ("  spec t() -> Int { let p: (Int, Int) = (1, 2); p.1 }\n", 6),
+            (
+                "  spec t() -> Word[8] { let (a: Word[8], b: Word[8]) = (1, 2); a ^ b }\n",
+                9,
+            ),
+            (
+                "  spec t() -> (Int, Int) { for i in 0..2 with (a: Int, b: Int) = (0, 1) { (b, a) } }\n",
+                19,
+            ),
+            // A byte string costs one step, as every literal does; a join,
+            // a slice, or a slice update of an n-element result costs
+            // ceil(n / 64) steps beyond its operands', and an omitted bound
+            // costs the step of the literal it stands for.
+            ("  spec a() -> Word[8]^3 { \"abc\" }\n", 1),
+            (
+                "  spec a() -> Word[8]^6 { \"abc\" ++ hex\"64 65 66\" }\n",
+                3,
+            ),
+            ("  spec a() -> Word[8]^65 { [0; 64] ++ \"a\" }\n", 5),
+            (
+                "  spec a() -> Word[8]^2 { let t: Word[8]^4 = \"abcd\"; t[1..3] }\n",
+                5,
+            ),
+            (
+                "  spec a() -> Word[8]^2 { let t: Word[8]^4 = \"abcd\"; t[2..] }\n",
+                5,
+            ),
+            (
+                "  spec a() -> Word[8]^4 { \"abcd\" with [0..2] = \"xy\" }\n",
+                5,
+            ),
+            (
+                "  spec a() -> Word[8]^129 { let t: Word[8]^256 = [7; 256]; t[0..129] }\n",
+                11,
+            ),
+            // A conversion in a byte order costs one step for each 64 bits
+            // of its words, or part of 64, beyond its operand's, and into
+            // `Mod[m]` 1 * d * dm more, as `as Mod[m]` does.
+            (
+                "  spec w() -> Word[64] { \"abcdefgh\" as big Word[64] }\n",
+                2,
+            ),
+            (
+                "  spec w() -> Word[8]^9 { (hex\"00\" as big Word[8]^1) ++ [1; 8] }\n",
+                5,
+            ),
+            (
+                "  spec w() -> Word[32] { let b: Word[8]^4 = [1, 2, 3, 4]; b as big Word[32] }\n",
+                10,
+            ),
+            (
+                "  spec w() -> Word[8]^65 { let f: Word[8]^65 = [7; 65]; f as little Word[8]^65 }\n",
+                13,
+            ),
+            ("  spec m() -> Mod[7] { hex\"ff\" as big Mod[7] }\n", 3),
+            (
+                "  spec i() -> Int { let x: Word[8]^256 = [0xff; 256]; x as big Int }\n",
+                38,
             ),
             // Integer division costs 1 + d1 * max(d2, 1); word division
             // costs one step.
@@ -3158,6 +4553,86 @@ mod tests {
                     .map(|index| format!("; t{index} }} else {{ x }}"))
                     .collect::<String>()
             ),
+            // A join of the most operands an expression's height admits,
+            // bounds nested in groups, slice updates nested in updated
+            // values, and slices of calls nested in calls.
+            format!(
+                "let y: Word[32]^{} = [x]{}; y[0]",
+                MAX_EXPRESSION_HEIGHT - 1,
+                " ++ [x]".repeat(MAX_EXPRESSION_HEIGHT - 2)
+            ),
+            format!(
+                "let y: Word[32]^1 = h([x])[{}0{}..1]; y[0]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 2),
+                ")".repeat(MAX_EXPRESSION_NESTING - 2)
+            ),
+            format!(
+                "{}h([x]){}[0]",
+                "h([x] with [..1] = ".repeat(MAX_EXPRESSION_NESTING / 2 - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING / 2 - 1)
+            ),
+            format!(
+                "let y: Word[32]^1 = {}[x]{}; y[0]",
+                "h(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")[..1]".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            // Sized calls nested in sized calls, calls without sizes that
+            // take the instance their arguments fit nested in each other,
+            // and a fill's length nested in groups.
+            nested("s[1](", "x", ")"),
+            format!(
+                "{}[x]{}[0]",
+                "t(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            format!(
+                "h([x; {}1{}])[0]",
+                "(".repeat(MAX_EXPRESSION_NESTING - 2),
+                ")".repeat(MAX_EXPRESSION_NESTING - 2)
+            ),
+            // Tuples of calls' elements nested in calls, and a tuple
+            // pattern in every nested step of loops whose accumulators are
+            // tuples.
+            format!(
+                "{}x{}",
+                "p((".repeat(MAX_EXPRESSION_NESTING / 2),
+                ", x)).0".repeat(MAX_EXPRESSION_NESTING / 2)
+            ),
+            format!(
+                "let r: (Word[32], Word[32]) = {}(c{last}, d{last}){}; r.1",
+                (0..MAX_EXPRESSION_NESTING - 1)
+                    .map(|index| format!(
+                        "for i{index} in 0..1 with (a{index}: Word[32], b{index}: Word[32]) = \
+                         (x, x) {{ let (c{index}: Word[32], d{index}: Word[32]) = \
+                         (b{index}, a{index}); "
+                    ))
+                    .collect::<String>(),
+                " }".repeat(MAX_EXPRESSION_NESTING - 1),
+                last = MAX_EXPRESSION_NESTING - 2
+            ),
+            // Words packed and unpacked in turn, nested in groups, and an
+            // array literal of calls packed in calls.
+            nested_by(
+                "((",
+                "x",
+                " as little Word[8]^4) as big Word[32])",
+                MAX_EXPRESSION_NESTING / 2,
+            ),
+            nested_by("g([", "x", "] as big Word[32])", MAX_EXPRESSION_NESTING / 2),
+            // Calls of typed functions nested in each other's arguments:
+            // each naming its instance, each fitting one by its argument's
+            // type, arrays fitting by their elements and length, and calls
+            // that only their place chooses among, around one that only its
+            // place chooses either.
+            // `Word[32]`'s own brackets are one level more.
+            nested_by("u[Word[32]](", "x", ")", MAX_EXPRESSION_NESTING - 1),
+            nested("u(", "x", ")"),
+            format!(
+                "{}[x]{}[0]",
+                "v(".repeat(MAX_EXPRESSION_NESTING - 1),
+                ")".repeat(MAX_EXPRESSION_NESTING - 1)
+            ),
+            nested_by("u(", "z(true)", ")", MAX_EXPRESSION_NESTING - 1),
         ];
         let sources = bodies
             .iter()
@@ -3165,6 +4640,12 @@ mod tests {
                 format!(
                     "edition 2026; module m {{\n  spec g(x: Word[32]) -> Word[32] {{ x }}\n  \
                      spec h(x: Word[32]^1) -> Word[32]^1 {{ x }}\n  \
+                     spec p(t: (Word[32], Word[32])) -> (Word[32], Word[32]) {{ t }}\n  \
+                     spec s[n in 1..2](x: Word[32]) -> Word[32] {{ x }}\n  \
+                     spec t[n in 1..3](x: Word[32]^n) -> Word[32]^n {{ x }}\n  \
+                     spec u[K in {{Word[16], Word[32]}}](x: K) -> K {{ x }}\n  \
+                     spec v[K in {{Word[16], Word[32]}}, n in 1..3](x: K^n) -> K^n {{ x }}\n  \
+                     spec z[K in {{Word[16], Word[32]}}](b: Bool) -> K {{ 0 }}\n  \
                      spec f(x: Word[32]) -> Word[32] {{ {body} }}\n  \
                      spec root() -> Word[32] {{ f(0x9e3779b9) }}\n}}\n"
                 )
@@ -3183,6 +4664,68 @@ mod tests {
             })
             .unwrap();
         assert_eq!(worker.join().unwrap(), vec![Some(1); bodies.len()]);
+    }
+
+    #[test]
+    fn every_instance_of_a_sized_root_is_evaluated_and_named_by_its_sizes() {
+        let (_, core) = analyzed(concat!(
+            "edition 2026; module sizes {\n",
+            "  spec zeros[n in 2..4]() -> Word[8]^n { [0; n] }\n",
+            "  spec count[a in 1..3, b in 5..6]() -> Int { (a * 100) + b }\n",
+            "  spec twice[k in 1..3](x: Word[8]^k) -> Word[8]^(2 * k) { x ++ x }\n",
+            "  spec pair() -> Word[8]^4 { twice(hex\"ab cd\") }\n",
+            "}\n"
+        ));
+        let result = evaluate(&core);
+        assert_eq!(result.diagnostics(), []);
+        let values = result.values().unwrap();
+        assert_eq!(
+            values.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            [
+                "sizes::zeros[2]: Word[8]^2 = [0x00, 0x00]",
+                "sizes::zeros[3]: Word[8]^3 = [0x00, 0x00, 0x00]",
+                "sizes::count[1, 5]: Int = 105",
+                "sizes::count[2, 5]: Int = 205",
+                "sizes::pair: Word[8]^4 = [0xab, 0xcd, 0xab, 0xcd]",
+            ]
+        );
+        assert_eq!(values[2].sizes(), [1, 5]);
+        assert_eq!(values[4].sizes(), []);
+    }
+
+    #[test]
+    fn every_instance_of_a_typed_root_is_evaluated_and_named_by_its_types() {
+        let (_, core) = analyzed(concat!(
+            "edition 2026; module types {\n",
+            "  type F = Mod[7];\n",
+            "  type Q = Mod[13];\n",
+            "  spec minus_one[K in {F, Q}]() -> K { let n: Int = -1; n as K }\n",
+            "  spec zeros[W in {Word[8], Word[16]}, n in 1..3]() -> W^n { [0; n] }\n",
+            "  spec top() -> Q { minus_one() }\n",
+            "}\n"
+        ));
+        let result = evaluate(&core);
+        assert_eq!(result.diagnostics(), []);
+        let values = result.values().unwrap();
+        assert_eq!(
+            values.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            [
+                "types::minus_one[F]: Mod[7] = 6",
+                "types::minus_one[Q]: Mod[13] = 12",
+                "types::zeros[Word[8], 1]: Word[8]^1 = [0x00]",
+                "types::zeros[Word[8], 2]: Word[8]^2 = [0x00, 0x00]",
+                "types::zeros[Word[16], 1]: Word[16]^1 = [0x0000]",
+                "types::zeros[Word[16], 2]: Word[16]^2 = [0x0000, 0x0000]",
+                "types::top: Mod[13] = 12",
+            ]
+        );
+        // A type parameter's value is the position of its type in its list.
+        assert_eq!(values[1].sizes(), [1]);
+        assert_eq!(values[1].instance(), "[Q]");
+        assert_eq!(values[4].sizes(), [1, 1]);
+        assert_eq!(values[4].instance(), "[Word[16], 1]");
+        assert_eq!(values[6].sizes(), []);
+        assert_eq!(values[6].instance(), "");
     }
 
     #[test]
@@ -3241,6 +4784,439 @@ mod tests {
             }
         }
         assert_eq!(values_of(&members), expected);
+    }
+
+    /// Renders `count` words of `bits` bits as Orange prints them: one word,
+    /// or an array when `array` is set.
+    fn render_words(bits: u32, words: &[u128], array: bool) -> String {
+        let rendered = words
+            .iter()
+            .map(|word| render_word(bits, *word))
+            .collect::<Vec<_>>();
+        if array {
+            format!("[{}]", rendered.join(", "))
+        } else {
+            rendered.concat()
+        }
+    }
+
+    /// The type of `count` words of `bits` bits: one word, or an array.
+    fn words_type(bits: u32, count: u32, array: bool) -> String {
+        if array {
+            format!("Word[{bits}]^{count}")
+        } else {
+            format!("Word[{bits}]")
+        }
+    }
+
+    /// Splits `value`, of `bits * count` bits, into its words in `order`.
+    fn split(value: u128, bits: u32, count: u32, big: bool) -> Vec<u128> {
+        let mask = if bits == 128 {
+            u128::MAX
+        } else {
+            (1 << bits) - 1
+        };
+        (0..count)
+            .map(|index| {
+                let place = if big { count - 1 - index } else { index };
+                (value >> (bits * place)) & mask
+            })
+            .collect()
+    }
+
+    #[test]
+    fn byte_orders_match_a_wide_reference_for_every_pair_of_widths() {
+        let values = [
+            0_u128,
+            1,
+            u128::MAX,
+            0x0123_4567_89ab_cdef_fedc_ba98_7654_3210,
+            0x8000_0000_0000_0000_0000_0000_0000_0001,
+            0x00ff_00ff_00ff_00ff_00ff_00ff_00ff_00ff,
+        ];
+        let mut members = String::new();
+        let mut expected = Vec::new();
+        let mut count = 0;
+        for (_, from_bits) in WORDS {
+            for (_, to_bits) in WORDS {
+                let lcm = from_bits.max(to_bits);
+                for total in [lcm, 64.max(lcm), 128] {
+                    let mask = if total == 128 {
+                        u128::MAX
+                    } else {
+                        (1 << total) - 1
+                    };
+                    let (from_count, to_count) = (total / from_bits, total / to_bits);
+                    for (value_index, value) in values.iter().enumerate() {
+                        let value = value & mask;
+                        for big in [true, false] {
+                            // A single word is written both as a word and
+                            // as an array of one, once each.
+                            let from_array = from_count > 1 || value_index % 2 == 1;
+                            let to_array = to_count > 1 || value_index % 3 == 1;
+                            let words = split(value, from_bits, from_count, big);
+                            let literal = if from_array {
+                                format!(
+                                    "[{}]",
+                                    words
+                                        .iter()
+                                        .map(|word| format!("{word:#x}"))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
+                            } else {
+                                format!("{:#x}", words[0])
+                            };
+                            let (from, to) = (
+                                words_type(from_bits, from_count, from_array),
+                                words_type(to_bits, to_count, to_array),
+                            );
+                            let order = if big { "big" } else { "little" };
+                            let name = format!("p{count}");
+                            count += 1;
+                            members.push_str(&format!(
+                                "  spec {name}() -> {to} {{ let v: {from} = {literal}; \
+                                 v as {order} {to} }}\n"
+                            ));
+                            let result = split(value, to_bits, to_count, big);
+                            expected.push(format!(
+                                "{name} = {}",
+                                render_words(to_bits, &result, to_array)
+                            ));
+                            // The number the words spell.
+                            let name = format!("p{count}");
+                            count += 1;
+                            members.push_str(&format!(
+                                "  spec {name}() -> Int {{ let v: {from} = {literal}; \
+                                 v as {order} Int }}\n"
+                            ));
+                            expected.push(format!("{name} = {value}"));
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(values_of(&members), expected);
+    }
+
+    #[test]
+    fn byte_orders_write_numbers_as_their_residues_and_read_residues() {
+        assert_eq!(
+            values_of(concat!(
+                "  spec minus_one() -> Word[8]^3 { let n: Int = -1; n as big Word[8]^3 }\n",
+                "  spec minus_two() -> Word[16]^2 { let n: Int = -2; n as little Word[16]^2 }\n",
+                "  spec wraps() -> Word[8]^2 { let n: Int = 65539; n as big Word[8]^2 }\n",
+                "  spec negative_wraps() -> Word[32] { let n: Int = -4294967297; n as big Word[32] }\n",
+                "  spec wide() -> Word[64]^4 {\n",
+                "    let n: Int = 1606938044258990275541962092341162602522202993782792835301376;\n",
+                "    n as little Word[64]^4\n",
+                "  }\n",
+                "  spec all_ones() -> Word[64]^4 { let n: Int = -1; n as big Word[64]^4 }\n",
+                "  spec residue() -> Word[8]^2 { let m: Mod[65537] = -1; m as big Word[8]^2 }\n",
+                "  spec small_residue() -> Word[8]^2 { let m: Mod[7] = 6; m as big Word[8]^2 }\n",
+                "  spec reduced() -> Mod[7] { hex\"ff\" as big Mod[7] }\n",
+                "  spec prime() -> Mod[(1 << 130) - 5] {\n",
+                "    let b: Word[8]^17 = [0xff; 17];\n",
+                "    b as little Mod[(1 << 130) - 5]\n",
+                "  }\n",
+                "  spec round_trip() -> Word[8]^4 {\n",
+                "    let x: Word[32] = 0xdeadbeef;\n",
+                "    ((x as little Word[8]^4) as big Word[32]) as big Word[8]^4\n",
+                "  }\n",
+            )),
+            [
+                "minus_one = [0xff, 0xff, 0xff]",
+                "minus_two = [0xfffe, 0xffff]",
+                "wraps = [0x00, 0x03]",
+                "negative_wraps = 0xffffffff",
+                "wide = [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, \
+                 0x0000000000000100]",
+                "all_ones = [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, \
+                 0xffffffffffffffff]",
+                "residue = [0x00, 0x00]",
+                "small_residue = [0x00, 0x06]",
+                "reduced = 3",
+                // 2^136 - 1 modulo 2^130 - 5 is 2^136 - 1 - 64 * (2^130 - 5).
+                "prime = 319",
+                "round_trip = [0xef, 0xbe, 0xad, 0xde]",
+            ]
+        );
+    }
+
+    #[test]
+    fn byte_orders_reach_the_widest_array_and_integer() {
+        // 256 words of 64 bits spell a number of 16,384 bits, the widest an
+        // `Int` holds, and unpack back to themselves.
+        let values = values_of(concat!(
+            "  spec widest() -> Word[64]^256 {\n",
+            "    let x: Word[64]^256 = [0xffffffffffffffff; 256];\n",
+            "    (x as big Int) as little Word[64]^256\n",
+            "  }\n",
+            "  spec ones() -> Word[64]^32 {\n",
+            "    let x: Word[8]^256 = [0xff; 256];\n",
+            "    let n: Int = x as big Int;\n",
+            "    n as little Word[64]^32\n",
+            "  }\n",
+            // 2^2048 is 0 modulo 2^2048.
+            "  spec wraps() -> Word[64]^32 {\n",
+            "    let x: Word[8]^256 = [0xff; 256];\n",
+            "    let n: Int = x as big Int;\n",
+            "    (n + 1) as little Word[64]^32\n",
+            "  }\n",
+        ));
+        let ones = |count: usize| vec!["0xffffffffffffffff"; count].join(", ");
+        let zeros = vec!["0x0000000000000000"; 32].join(", ");
+        assert_eq!(
+            values,
+            [
+                format!("widest = [{}]", ones(256)),
+                format!("ones = [{}]", ones(32)),
+                format!("wraps = [{zeros}]"),
+            ]
+        );
+    }
+
+    #[test]
+    fn words_convert_to_numbers_only_within_the_exact_integer_limit() {
+        // Words of any admitted length convert to words of the same bits. To
+        // a number they convert while it has at most 16,384 significant bits:
+        // 2,049 bytes led by a zero spell 2^16384 - 1, which F4 = 65537
+        // divides, and led by a one they spell a number of 16,385 bits.
+        let values = values_of(concat!(
+            "  spec long() -> Word[64] {\n",
+            "    let w: Word[64]^8192 = [0x0102030405060708; 8192];\n",
+            "    let b: Word[8]^65536 = w as little Word[8]^65536;\n",
+            "    let back: Word[64]^8192 = b as big Word[64]^8192;\n",
+            "    back[8191]\n",
+            "  }\n",
+            "  spec leading_zero() -> Int {\n",
+            "    let x: Word[8]^2049 = [0; 1] ++ [0xff; 2048];\n",
+            "    (x as big Int) % 65537\n",
+            "  }\n",
+            "  spec residue() -> Mod[65537] {\n",
+            "    let x: Word[8]^2049 = [0xff; 2048] ++ [0; 1];\n",
+            "    x as little Mod[65537]\n",
+            "  }\n",
+        ));
+        assert_eq!(
+            values,
+            [
+                "long = 0x0807060504030201",
+                "leading_zero = 0",
+                "residue = 0",
+            ]
+        );
+        for (target, order, bytes) in [
+            ("Int", "big", "[1; 1] ++ [0; 2048]"),
+            ("Int", "little", "[0; 2048] ++ [1; 1]"),
+            ("Mod[65537]", "big", "[1; 1] ++ [0; 2048]"),
+            ("Mod[65537]", "little", "[0xff; 2049]"),
+        ] {
+            let (diagnostic, covered, core) = single_failure(
+                &format!(
+                    "  spec over() -> {target} {{\n    let x: Word[8]^2049 = {bytes};\n    \
+                     x as {order} {target}\n  }}\n"
+                ),
+                MAX_EVALUATION_STEPS_PER_SOURCE,
+            );
+            assert_eq!(
+                diagnostic.message(),
+                "exact integer result exceeds the 16384-significant-bit limit",
+                "{target} {order}"
+            );
+            assert_eq!(covered, format!("x as {order} {target}"));
+            let [function] = diagnostic.secondary_spans() else {
+                panic!("the bit limit must cite the evaluated function");
+            };
+            assert_eq!(function.span(), core.functions[0].name_span);
+        }
+    }
+
+    #[test]
+    fn selected_functions_are_evaluated_in_source_order_with_their_steps() {
+        let (sources, core) = analyzed(concat!(
+            "edition 2026; module m {\n",
+            "  spec a() -> Int { 1 + 2 }\n",
+            "  spec b() -> Int { 3 }\n",
+            "  spec c[n in 1..3]() -> Int { n * 2 }\n",
+            "  spec d(x: Int) -> Int { x }\n",
+            "}\n",
+        ));
+        let rendered = |result: &EvaluationResult| {
+            result
+                .values()
+                .unwrap()
+                .iter()
+                .map(|value| (value.to_string(), value.steps()))
+                .collect::<Vec<_>>()
+        };
+        let every = evaluate_selected(&core, MAX_EVALUATION_STEPS_PER_SOURCE, |_| true);
+        assert_eq!(every, evaluate(&core));
+        let owned = |rows: &[(&str, usize)]| {
+            rows.iter()
+                .map(|(value, steps)| ((*value).to_owned(), *steps))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rendered(&every),
+            owned(&[
+                ("m::a: Int = 3", 4),
+                ("m::b: Int = 3", 1),
+                ("m::c[1]: Int = 2", 4),
+                ("m::c[2]: Int = 4", 4),
+            ])
+        );
+
+        let select = |function: &CoreFunction| ["c", "a"].contains(&function.name());
+        let chosen = evaluate_selected(&core, MAX_EVALUATION_STEPS_PER_SOURCE, select);
+        let expected = owned(&[
+            ("m::a: Int = 3", 4),
+            ("m::c[1]: Int = 2", 4),
+            ("m::c[2]: Int = 4", 4),
+        ]);
+        assert_eq!(rendered(&chosen), expected);
+        let total = expected.iter().map(|(_, steps)| steps).sum::<usize>();
+        assert_eq!(rendered(&evaluate_selected(&core, total, select)), expected);
+
+        // The budget is shared: one step fewer stops the last instance.
+        let short = evaluate_selected(&core, total - 1, select);
+        assert!(short.values().is_none());
+        let [diagnostic] = short.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", short.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            sources
+                .iter()
+                .next()
+                .unwrap()
+                .slice(diagnostic.primary_span()),
+            Some("c")
+        );
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                format!("at most {} evaluation steps are permitted", total - 1),
+                String::from("no partial value set is returned"),
+            ]
+        );
+
+        let none = evaluate_selected(&core, 1, |_| false);
+        assert_eq!(none.diagnostics(), []);
+        assert_eq!(none.values(), Some(&[][..]));
+
+        // A selector with state is asked once for each function without
+        // parameters, and what it answered then is what runs.
+        let asked = std::cell::Cell::new(0_usize);
+        let alternate = |_: &CoreFunction| {
+            asked.set(asked.get() + 1);
+            asked.get() % 2 == 1
+        };
+        let alternating = evaluate_selected(&core, MAX_EVALUATION_STEPS_PER_SOURCE, alternate);
+        assert_eq!(asked.get(), 4);
+        assert_eq!(
+            rendered(&alternating),
+            owned(&[("m::a: Int = 3", 4), ("m::c[1]: Int = 2", 4)])
+        );
+    }
+
+    #[test]
+    fn long_arrays_cost_one_step_for_each_64_elements_they_make() {
+        // Each operation is written for 256 elements and for 65,536; the
+        // difference in steps is what the extra elements cost.
+        let (_, core) = analyzed(concat!(
+            "edition 2026; module m {\n",
+            "  spec fill_short() -> Word[8]^256 { [0; 256] }\n",
+            "  spec fill_long() -> Word[8]^65536 { [0; 65536] }\n",
+            "  spec update_short() -> Word[8]^256 { let t: Word[8]^256 = [0; 256]; t with [255] = 1 }\n",
+            "  spec update_long() -> Word[8]^65536 {\n",
+            "    let t: Word[8]^65536 = [0; 65536]; t with [65535] = 1\n",
+            "  }\n",
+            "  spec join_short() -> Word[8]^256 { [0; 128] ++ [1; 128] }\n",
+            "  spec join_long() -> Word[8]^65536 { [0; 32768] ++ [1; 32768] }\n",
+            "  spec slice_short() -> Word[8]^255 { let t: Word[8]^256 = [0; 256]; t[1..] }\n",
+            "  spec slice_long() -> Word[8]^65535 { let t: Word[8]^65536 = [0; 65536]; t[1..] }\n",
+            "  spec words_short() -> Word[8]^256 {\n",
+            "    let w: Word[64]^32 = [1; 32]; w as little Word[8]^256\n",
+            "  }\n",
+            "  spec words_long() -> Word[8]^65536 {\n",
+            "    let w: Word[64]^8192 = [1; 8192]; w as little Word[8]^65536\n",
+            "  }\n",
+            "}\n",
+        ));
+        let result = evaluate(&core);
+        let steps = result
+            .values()
+            .unwrap()
+            .iter()
+            .map(|value| (value.name(), value.steps()))
+            .collect::<Vec<_>>();
+        let extra = steps
+            .chunks(2)
+            .map(|pair| (pair[1].0, pair[1].1 - pair[0].1))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            extra,
+            [
+                // 1,024 steps for 65,536 elements, against 4 for 256.
+                ("fill_long", 1_020),
+                // The fill, and an update that copies the whole array.
+                ("update_long", 2_040),
+                // Two fills of half the length, and the join.
+                ("join_long", 2_040),
+                ("slice_long", 2_040),
+                // A fill of 8,192 words and one step for each 64 bits
+                // converted: 127 and 8,160 steps more.
+                ("words_long", 8_287),
+            ]
+        );
+        assert_eq!(steps[1], ("fill_long", 1_025));
+    }
+
+    #[test]
+    fn byte_order_limb_reservation_failure_returns_no_values() {
+        let packed = core(concat!(
+            "edition 2026; module values {\n",
+            "  spec packed() -> Word[32] { \"abcd\" as big Word[32] }\n",
+            "}\n",
+        ));
+        let result = evaluate_with_reservations(
+            &packed,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            Reservations {
+                value_limbs: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        assert!(result.values().is_none());
+        assert_eq!(result.diagnostics().len(), 1);
+        assert_eq!(
+            result.diagnostics()[0].code(),
+            DiagnosticCode::EvaluationResourceLimit
+        );
+        assert_eq!(
+            result.diagnostics()[0].label(),
+            "exact integer storage could not be reserved"
+        );
+        let array_failure = evaluate_with_reservations(
+            &core(concat!(
+                "edition 2026; module values {\n",
+                "  spec unpacked() -> Word[8]^4 { let x: Word[32] = 1; x as big Word[8]^4 }\n",
+                "}\n",
+            )),
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+            Reservations {
+                array: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        assert!(array_failure.values().is_none());
+        assert_eq!(
+            array_failure.diagnostics()[0].label(),
+            "evaluation array storage could not be reserved"
+        );
     }
 
     #[test]
@@ -3413,7 +5389,7 @@ mod tests {
             "}\n"
         ));
         fn words(length: u32) -> CoreType {
-            CoreType::Array(ArrayType::new(CoreType::Word8, length).unwrap())
+            CoreType::Array(ArrayType::new(&CoreType::Word8, length).unwrap())
         }
         let mutations: [fn(&mut CoreModule); 9] = [
             // An array claims more elements than its type has.
@@ -4102,6 +6078,78 @@ mod tests {
         );
     }
 
+    /// A chain of joins as long as an expression's height admits is checked
+    /// in one frame, so a rejected chain reports once within 1 MiB of stack
+    /// wherever its offending operand is.
+    #[test]
+    fn long_rejected_joins_fit_in_one_mebibyte_of_stack() {
+        use crate::parser::MAX_EXPRESSION_HEIGHT;
+        let length = MAX_EXPRESSION_HEIGHT - 1;
+        let joined = " ++ [x]".repeat(MAX_EXPRESSION_HEIGHT - 3);
+        let bodies = [
+            format!("let y: Word[32]^{length} = missing ++ [x]{joined}; y[0]"),
+            format!("let y: Word[32]^{length} = [x]{joined} ++ missing; y[0]"),
+            format!("let y: Word[32]^{length} = \"\\xff\" ++ [x]{joined}; y[0]"),
+            format!("let y: Word[32]^{length} = [x]{joined}; y[0]"),
+        ];
+        let sources = bodies
+            .iter()
+            .map(|body| {
+                format!(
+                    "edition 2026; module m {{\n  spec f(x: Word[32]) -> Word[32] {{ {body} }}\n}}\n"
+                )
+            })
+            .collect::<Vec<_>>();
+        let worker = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                sources
+                    .iter()
+                    .map(|text| {
+                        let mut sources = SourceMap::new();
+                        let id = sources.add("evaluate.or", text.as_str()).unwrap();
+                        let source = sources.get(id).unwrap();
+                        let lexed = lex(source, Edition::E2026);
+                        let parsed = parse(source, &lexed);
+                        assert_eq!(parsed.diagnostics(), []);
+                        let analyzed = analyze(source, parsed.ast().unwrap());
+                        analyzed
+                            .diagnostics()
+                            .iter()
+                            .map(|diagnostic| (diagnostic.code(), diagnostic.message().to_owned()))
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap();
+        let unknown = (
+            DiagnosticCode::UnknownParameter,
+            String::from("`missing` is not a parameter or binding of `f`"),
+        );
+        assert_eq!(
+            worker.join().unwrap(),
+            [
+                vec![unknown.clone()],
+                vec![unknown],
+                vec![(
+                    DiagnosticCode::TypeMismatch,
+                    String::from(
+                        "this byte string has type `Word[8]^1`, but `Word[32]^1` is required here"
+                    ),
+                )],
+                vec![(
+                    DiagnosticCode::ArrayLengthMismatch,
+                    format!(
+                        "`++` joins {} and 1 elements, {} in all, but `Word[32]^{length}` has \
+                         {length}",
+                        length - 2,
+                        length - 1
+                    ),
+                )],
+            ]
+        );
+    }
+
     /// A modulus that is not a constant is rejected, but the moduli written
     /// within it, nested as deeply as the parser admits, are still evaluated
     /// within 1 MiB of stack.
@@ -4143,7 +6191,7 @@ mod tests {
     }
 
     fn bytes(values: &[u8]) -> CoreValue {
-        let ty = ArrayType::new(CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap();
+        let ty = ArrayType::new(&CoreType::Word8, u32::try_from(values.len()).unwrap()).unwrap();
         CoreValue::Array(
             CoreArray::new(
                 ty,
@@ -4218,6 +6266,75 @@ mod tests {
         let result = evaluator.call(constant, &[], 1).unwrap();
         assert_eq!(result.value(), Some(&CoreValue::Word8(7)));
         assert_eq!(result.steps(), 1);
+    }
+
+    #[test]
+    fn sized_functions_are_found_one_instance_at_a_time() {
+        let core = core(concat!(
+            "edition 2026; module sized {\n",
+            "  spec pick[n in 1..3](x: Word[8]^n) -> Word[8] { x[n - 1] }\n",
+            "  spec plain() -> Int { 1 }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        // Every instance of `pick` has its name, so a lookup by name alone
+        // finds none of them rather than whichever comes first.
+        assert!(evaluator.function("pick").is_none());
+        assert!(evaluator.instance("pick", &[]).is_none());
+        assert!(evaluator.instance("pick", &[3]).is_none());
+        assert!(evaluator.instance("pick", &[1, 1]).is_none());
+        let second = evaluator.instance("pick", &[2]).unwrap();
+        assert_eq!(second.sizes(), [2]);
+        assert!(evaluator.call(second, &[bytes(&[5])], 100).is_none());
+        let result = evaluator.call(second, &[bytes(&[5, 6])], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(6)));
+        let first = evaluator.instance("pick", &[1]).unwrap();
+        let result = evaluator.call(first, &[bytes(&[5])], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(5)));
+        let plain = evaluator.function("plain").unwrap();
+        assert!(std::ptr::eq(
+            plain,
+            evaluator.instance("plain", &[]).unwrap()
+        ));
+        assert!(evaluator.instance("plain", &[1]).is_none());
+    }
+
+    #[test]
+    fn typed_functions_are_found_one_instance_at_a_time_by_type_position() {
+        let core = core(concat!(
+            "edition 2026; module typed {\n",
+            "  type F = Mod[7];\n",
+            "  spec double[K in {Word[8], F}](x: K) -> K { x + x }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        assert!(evaluator.function("double").is_none());
+        assert!(evaluator.instance("double", &[2]).is_none());
+        let word = evaluator.instance("double", &[0]).unwrap();
+        assert_eq!(word.instance(), "[Word[8]]");
+        let result = evaluator.call(word, &[CoreValue::Word8(200)], 100).unwrap();
+        assert_eq!(result.value(), Some(&CoreValue::Word8(144)));
+        let field = evaluator.instance("double", &[1]).unwrap();
+        assert_eq!(field.instance(), "[F]");
+        let Some(modulus) = field.parameters()[0].modulus() else {
+            panic!("expected a residue type");
+        };
+        let five = CoreValue::Mod(
+            Residue::new(
+                modulus,
+                ExactInteger::from_u64(5, reserve_value_limbs).unwrap(),
+            )
+            .unwrap(),
+        );
+        // Each instance takes only its own type.
+        assert!(
+            evaluator
+                .call(word, std::slice::from_ref(&five), 100)
+                .is_none()
+        );
+        assert!(evaluator.call(field, &[CoreValue::Word8(5)], 100).is_none());
+        let result = evaluator.call(field, &[five], 100).unwrap();
+        assert_eq!(result.value().unwrap().to_string(), "3");
     }
 
     #[test]
@@ -4478,7 +6595,7 @@ mod tests {
         ));
         let mut evaluator = Evaluator::new(&core).unwrap();
         let mul = evaluator.function("mul").unwrap();
-        let field = evaluator.module().functions()[0].parameters()[0];
+        let field = evaluator.module().functions()[0].parameters()[0].clone();
         let Some(modulus) = field.modulus() else {
             panic!("expected a residue type");
         };
@@ -4668,5 +6785,658 @@ mod tests {
                 "case {index}"
             );
         }
+    }
+
+    #[test]
+    fn tuples_hold_their_elements_in_order_and_select_them_by_position() {
+        let members = concat!(
+            "  spec pair() -> (Int, Word[8]^2) { (-3, [1, 2]) }\n",
+            "  spec second() -> Word[8] { pair().1[1] }\n",
+            "  spec swap(p: (Int, Bool)) -> (Bool, Int) { (p.1, p.0) }\n",
+            "  spec swapped() -> (Bool, Int) { swap((7, true)) }\n",
+            "  spec fibonacci() -> Int {\n",
+            "    let (f: Int, g: Int) = for i in 0..10 with (a: Int, b: Int) = (0, 1) { (b, a + b) };\n",
+            "    g - f\n",
+            "  }\n",
+            "  spec rounds() -> (Word[8], Word[8]) {\n",
+            "    for i in 0..3 with (x: Word[8], y: Word[8]) = (1, 2) {\n",
+            "      let (s: Word[8], t: Word[8]) = (x + y, x ^ y); (t <<< 1, s)\n",
+            "    }\n",
+            "  }\n",
+        );
+        // (x, y) = (1, 2), then (6, 3), (10, 9), and (6, 19).
+        assert_eq!(
+            values_of(members),
+            [
+                "pair = (-3, [0x01, 0x02])",
+                "second = 0x02",
+                "swapped = (true, 7)",
+                "fibonacci = 34",
+                "rounds = (0x06, 0x13)",
+            ]
+        );
+    }
+
+    #[test]
+    fn tuple_storage_reservation_failures_return_no_values() {
+        let core = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec pair() -> (Int, Int) { (1, 2) }\n",
+            "}\n"
+        ));
+        for (reservations, label) in [
+            (
+                Reservations {
+                    array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluation tuple storage could not be reserved",
+            ),
+            (
+                Reservations {
+                    result_array: |_, _| false,
+                    ..Reservations::DEFAULT
+                },
+                "evaluated tuple storage could not be reserved",
+            ),
+        ] {
+            let run = || {
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    reservations,
+                )
+            };
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.values().is_none());
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(diagnostic.label(), label);
+        }
+    }
+
+    #[test]
+    fn inconsistent_tuples_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec pair() -> (Int, Bool) { (1, true) }\n",
+            "  spec first() -> Int { pair().0 }\n",
+            "}\n"
+        ));
+        let pair = base.functions[0].result_type.clone();
+        assert_eq!(
+            base.functions[0].body.nodes[2].kind,
+            CoreNodeKind::Tuple { elements: 2 }
+        );
+        assert_eq!(
+            base.functions[1].body.nodes[1].kind,
+            CoreNodeKind::Project { index: 0 }
+        );
+        let ints = CoreType::Tuple(TupleType::new(&[CoreType::Int, CoreType::Int]).unwrap());
+        assert_ne!(pair, ints);
+        type Mutation<'a> = Box<dyn Fn(&mut CoreModule) + 'a>;
+        let mutations: [Mutation<'_>; 8] = [
+            // A tuple claims more elements than its type has.
+            Box::new(|core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::Tuple { elements: 3 };
+            }),
+            // A tuple claims fewer elements than its type has.
+            Box::new(|core| {
+                core.functions[0].body.nodes[2].kind = CoreNodeKind::Tuple { elements: 1 };
+            }),
+            // A tuple's type is not a tuple type.
+            Box::new(|core| core.functions[0].body.nodes[2].ty = CoreType::Int),
+            // A tuple's element has another type than its type says.
+            Box::new(|core| {
+                core.functions[0].body.nodes[2].ty = ints.clone();
+                core.functions[0].result_type = ints.clone();
+            }),
+            // A selection names an element the tuple lacks.
+            Box::new(|core| {
+                core.functions[1].body.nodes[1].kind = CoreNodeKind::Project { index: 2 };
+            }),
+            // A selection claims another type than its element's.
+            Box::new(|core| core.functions[1].body.nodes[1].ty = CoreType::Bool),
+            // A selection applies to a value that is not a tuple.
+            Box::new(|core| {
+                let literal = core.functions[0].body.nodes[0].clone();
+                core.functions[1].body.nodes[0] = literal;
+            }),
+            // A function claims a tuple result of another type.
+            Box::new(|core| core.functions[0].result_type = ints.clone()),
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn byte_strings_joins_and_slices_evaluate_in_index_order() {
+        let members = concat!(
+            r#"  spec text() -> Word[8]^5 { "a\\\"\x00~" }"#,
+            "\n",
+            "  spec hex() -> Word[8]^4 { hex\"DE ad be EF\" }\n",
+            "  spec joined() -> Word[16]^3 { [1, 2] ++ [3] }\n",
+            "  spec padded() -> Word[8]^8 { \"abc\" ++ hex\"80\" ++ [0; 3] ++ [24] }\n",
+            "  spec halves(x: Word[8]^4) -> Word[8]^4 { x[2..] ++ x[..2] }\n",
+            "  spec swapped() -> Word[8]^4 { halves(\"abcd\") }\n",
+            "  spec reversed() -> Word[8]^4 {\n",
+            "    let t: Word[8]^4 = \"abcd\";\n",
+            "    for i in 0..4 with y: Word[8]^4 = t { y with [i..i + 1] = t[3 - i..4 - i] }\n",
+            "  }\n",
+            "  spec spliced() -> Int^4 { [1, 2, 3, 4] with [1..3] = [-5; 2] }\n",
+            "  spec fresh() -> Word[8]^4 {\n",
+            "    for i in 0..2 with y: Word[8]^4 = \"wxyz\" { \"abcd\" with [i..i + 1] = \"-\" }\n",
+            "  }\n",
+        );
+        // A literal is shared, never changed: the second step's `"abcd"`
+        // is the first's, unchanged by the first step's update.
+        assert_eq!(
+            values_of(members),
+            [
+                "text = [0x61, 0x5c, 0x22, 0x00, 0x7e]",
+                "hex = [0xde, 0xad, 0xbe, 0xef]",
+                "joined = [0x0001, 0x0002, 0x0003]",
+                "padded = [0x61, 0x62, 0x63, 0x80, 0x00, 0x00, 0x00, 0x18]",
+                "swapped = [0x63, 0x64, 0x61, 0x62]",
+                "reversed = [0x64, 0x63, 0x62, 0x61]",
+                "spliced = [1, -5, -5, 4]",
+                "fresh = [0x61, 0x2d, 0x63, 0x64]",
+            ]
+        );
+    }
+
+    #[test]
+    fn join_and_slice_reservation_failures_return_no_values() {
+        for members in [
+            "  spec a() -> Word[8]^6 { \"abc\" ++ \"def\" }\n",
+            "  spec a() -> Word[8]^2 { let t: Word[8]^4 = \"abcd\"; t[1..3] }\n",
+            "  spec a() -> Word[8]^4 { \"abcd\" with [0..2] = \"xy\" }\n",
+        ] {
+            let core = core(&format!("edition 2026; module m {{\n{members}}}\n"));
+            let run = || {
+                evaluate_with_reservations(
+                    &core,
+                    MAX_EVALUATION_STEPS_PER_SOURCE,
+                    |values, capacity| values.try_reserve_exact(capacity).is_ok(),
+                    Reservations {
+                        array: |_, _| false,
+                        ..Reservations::DEFAULT
+                    },
+                )
+            };
+            let first = run();
+            assert_eq!(first, run());
+            assert!(first.values().is_none(), "{members}");
+            let [diagnostic] = first.diagnostics() else {
+                panic!("an allocation failure must produce exactly one diagnostic");
+            };
+            assert_eq!(
+                diagnostic.message(),
+                "reference evaluation result allocation failed"
+            );
+            assert_eq!(
+                diagnostic.label(),
+                "evaluation array storage could not be reserved",
+                "{members}"
+            );
+        }
+    }
+
+    #[test]
+    fn inconsistent_joins_and_slices_fail_closed() {
+        let base = core(concat!(
+            "edition 2026; module m {\n",
+            "  spec join() -> Word[8]^4 { \"ab\" ++ \"cd\" }\n",
+            "  spec slice() -> Word[8]^2 { let t: Word[8]^4 = \"abcd\"; t[1..3] }\n",
+            "  spec update() -> Word[8]^4 { let t: Word[8]^4 = \"abcd\"; t with [1..3] = \"xy\" }\n",
+            "}\n"
+        ));
+        fn words(element: &CoreType, length: u32) -> CoreType {
+            CoreType::Array(ArrayType::new(element, length).unwrap())
+        }
+        fn int(value: u64) -> CoreNodeKind {
+            CoreNodeKind::Literal(CoreValue::Int(
+                ExactInteger::from_u64(value, |limbs, count| {
+                    limbs.try_reserve_exact(count).is_ok()
+                })
+                .unwrap(),
+            ))
+        }
+        assert_eq!(base.functions[0].body.nodes[2].kind, CoreNodeKind::Concat);
+        assert_eq!(base.functions[1].body.nodes[3].kind, CoreNodeKind::Slice);
+        assert_eq!(
+            base.functions[2].body.nodes[4].kind,
+            CoreNodeKind::SliceUpdate
+        );
+        let mutations: [fn(&mut CoreModule); 14] = [
+            // A join's type is not an array type.
+            |core| core.functions[0].body.nodes[2].ty = CoreType::Word8,
+            // A join claims more elements than its operands have.
+            |core| {
+                core.functions[0].body.nodes[2].ty = words(&CoreType::Word8, 5);
+                core.functions[0].result_type = words(&CoreType::Word8, 5);
+            },
+            // A join's operands have another element type than its own.
+            |core| {
+                core.functions[0].body.nodes[2].ty = words(&CoreType::Word16, 4);
+                core.functions[0].result_type = words(&CoreType::Word16, 4);
+            },
+            // A join's operand is not an array.
+            |core| {
+                core.functions[0].body.nodes[1].kind = CoreNodeKind::Literal(CoreValue::Word8(1));
+                core.functions[0].body.nodes[1].ty = CoreType::Word8;
+            },
+            // A join takes an operand from below its expression.
+            |core| {
+                core.functions[0].body.nodes.remove(0);
+            },
+            // A byte string claims another type than its bytes have.
+            |core| core.functions[0].body.nodes[0].ty = words(&CoreType::Word8, 3),
+            // A slice ends before it starts.
+            |core| {
+                core.functions[1].body.nodes[1].kind = int(3);
+                core.functions[1].body.nodes[2].kind = int(1);
+            },
+            // A slice reaches past the end of its array.
+            |core| {
+                core.functions[1].body.nodes[1].kind = int(3);
+                core.functions[1].body.nodes[2].kind = int(5);
+            },
+            // A slice claims another length than its bounds give.
+            |core| {
+                core.functions[1].body.nodes[3].ty = words(&CoreType::Word8, 3);
+                core.functions[1].result_type = words(&CoreType::Word8, 3);
+            },
+            // A slice's bound is not an `Int`.
+            |core| {
+                core.functions[1].body.nodes[1].kind = CoreNodeKind::Literal(CoreValue::Word8(1));
+                core.functions[1].body.nodes[1].ty = CoreType::Word8;
+            },
+            // A slice's array has another element type than its own.
+            |core| {
+                core.functions[1].body.nodes[3].ty = words(&CoreType::Word16, 2);
+                core.functions[1].result_type = words(&CoreType::Word16, 2);
+            },
+            // A slice update's value has another length than its bounds.
+            |core| {
+                core.functions[2].body.nodes[3].kind = CoreNodeKind::Literal(CoreValue::Array(
+                    CoreArray::new(
+                        ArrayType::new(&CoreType::Word8, 3).unwrap(),
+                        vec![CoreValue::Word8(0); 3],
+                    )
+                    .unwrap(),
+                ));
+                core.functions[2].body.nodes[3].ty = words(&CoreType::Word8, 3);
+            },
+            // A slice update claims another type than its array's.
+            |core| {
+                core.functions[2].body.nodes[4].ty = words(&CoreType::Word8, 5);
+                core.functions[2].result_type = words(&CoreType::Word8, 5);
+            },
+            // A slice update takes an operand from below its expression.
+            |core| {
+                core.functions[2].body.nodes.remove(3);
+            },
+        ];
+        for (index, mutate) in mutations.iter().enumerate() {
+            let mut core = base.clone();
+            mutate(&mut core);
+            let result = evaluate(&core);
+            assert_eq!(result, evaluate(&core), "case {index}");
+            assert!(result.values().is_none(), "case {index}");
+            assert_eq!(
+                result.diagnostics()[0].message(),
+                "reference evaluation received inconsistent Core",
+                "case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn whole_values_compare_every_part_at_the_cost_of_their_parts() {
+        let core = core(concat!(
+            "edition 2026; module whole {\n",
+            "  spec bytes_1(x: Word[8]^1, y: Word[8]^1) -> Bool { x == y }\n",
+            "  spec bytes_64(x: Word[8]^64, y: Word[8]^64) -> Bool { x == y }\n",
+            "  spec bytes_65(x: Word[8]^65, y: Word[8]^65) -> Bool { x != y }\n",
+            "  spec bytes_long(x: Word[8]^65536, y: Word[8]^65536) -> Bool { x == y }\n",
+            "  spec numbers(x: Int^3, y: Int^3) -> Bool { x == y }\n",
+            "  spec pairs(p: (Word[32], Int^2), q: (Word[32], Int^2)) -> Bool { p == q }\n",
+            "}\n",
+        ));
+        let mut evaluator = Evaluator::new(&core).unwrap();
+        let mut call = |name: &str, left: CoreValue, right: CoreValue| {
+            let function = evaluator.function(name).unwrap();
+            let result = evaluator.call(function, &[left, right], 1 << 20).unwrap();
+            assert_eq!(result.diagnostics(), [], "{name}");
+            let Some(CoreValue::Bool(value)) = result.value() else {
+                panic!("{name} gave {:?}", result.value());
+            };
+            (*value, result.steps())
+        };
+        // Two steps load the parameters. Words and truth values are compared
+        // in rows of 64 elements, as an update writes them, and every row is
+        // compared whether or not an earlier one differs.
+        let zeros = |length: usize| bytes(&vec![0; length]);
+        let first_differs = |length: usize| {
+            let mut values = vec![0; length];
+            values[0] = 1;
+            bytes(&values)
+        };
+        assert_eq!(call("bytes_1", zeros(1), zeros(1)), (true, 3));
+        assert_eq!(call("bytes_1", zeros(1), first_differs(1)), (false, 3));
+        assert_eq!(call("bytes_64", zeros(64), zeros(64)), (true, 3));
+        assert_eq!(call("bytes_65", zeros(65), zeros(65)), (false, 4));
+        assert_eq!(call("bytes_65", first_differs(65), zeros(65)), (true, 4));
+        assert_eq!(
+            call("bytes_long", zeros(65536), first_differs(65536)),
+            (false, 2 + 1024)
+        );
+        assert_eq!(
+            call("bytes_long", zeros(65536), zeros(65536)),
+            (true, 2 + 1024)
+        );
+        // Numbers cost what comparing each costs alone: one step more than
+        // the digits of the longer.
+        let int = |value: u64| {
+            CoreValue::Int(ExactInteger::from_u64(value, reserve_value_limbs).unwrap())
+        };
+        let ints = |values: [u64; 3]| {
+            CoreValue::Array(
+                CoreArray::new(
+                    ArrayType::new(&CoreType::Int, 3).unwrap(),
+                    values.into_iter().map(int).collect(),
+                )
+                .unwrap(),
+            )
+        };
+        // 0 has no digits, 7 one, and 2^40 two.
+        assert_eq!(
+            call("numbers", ints([0, 7, 1 << 40]), ints([0, 7, 1 << 40])),
+            (true, 2 + 1 + 2 + 3)
+        );
+        assert_eq!(
+            call("numbers", ints([1, 7, 1 << 40]), ints([0, 7, 1 << 40])),
+            (false, 2 + 2 + 2 + 3)
+        );
+        // A tuple costs the sum of its parts.
+        let pair = |word: u32, values: [u64; 2]| {
+            let elements = CoreValue::Array(
+                CoreArray::new(
+                    ArrayType::new(&CoreType::Int, 2).unwrap(),
+                    values.into_iter().map(int).collect(),
+                )
+                .unwrap(),
+            );
+            let ty = TupleType::new(&[
+                CoreType::Word32,
+                CoreType::Array(ArrayType::new(&CoreType::Int, 2).unwrap()),
+            ])
+            .unwrap();
+            CoreValue::Tuple(CoreTuple::new(ty, vec![CoreValue::Word32(word), elements]).unwrap())
+        };
+        assert_eq!(
+            call("pairs", pair(9, [1, 2]), pair(9, [1, 2])),
+            (true, 2 + 1 + 2 + 2)
+        );
+        assert_eq!(
+            call("pairs", pair(8, [1, 2]), pair(9, [1, 2])),
+            (false, 2 + 1 + 2 + 2)
+        );
+    }
+
+    const TESTED: &str = concat!(
+        "edition 2026; module tested {\n",
+        "  spec square(x: Int) -> Int { x * x }\n",
+        "  spec nine() -> Int { square(3) }\n",
+        "  test \"three squared\" { square(3) == 9 }\n",
+        "  test \"a pair\" { let p: (Int, Bool) = (square(2), true); p == (5, true) }\n",
+        "  test \"both\" { (square(1) == 1) && (square(2) == 5) }\n",
+        "  test \"not equal\" { square(2) != 4 }\n",
+        "}\n",
+    );
+
+    #[test]
+    fn tests_run_in_source_order_and_keep_what_a_failed_equality_compared() {
+        let core = core(TESTED);
+        // Evaluation runs the module's functions and never its tests.
+        let evaluated = evaluate(&core);
+        assert_eq!(
+            evaluated
+                .values()
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["tested::nine: Int = 9"]
+        );
+
+        let run = run_tests(&core, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.diagnostics(), []);
+        assert!(!run.has_errors());
+        assert!(!run.passed());
+        let outcomes = run.outcomes().unwrap();
+        let rows = outcomes
+            .iter()
+            .map(|outcome| {
+                (
+                    outcome.title(),
+                    outcome.passed(),
+                    outcome
+                        .sides()
+                        .map(|(left, right)| (left.to_string(), right.to_string())),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows,
+            [
+                ("three squared", true, None),
+                (
+                    "a pair",
+                    false,
+                    Some((String::from("(4, true)"), String::from("(5, true)")))
+                ),
+                // Only a test whose expression is one `==` keeps its sides.
+                ("both", false, None),
+                ("not equal", false, None),
+            ]
+        );
+        assert_eq!(
+            outcomes.iter().map(TestOutcome::id).collect::<Vec<_>>(),
+            core.tests()
+                .iter()
+                .map(CoreFunction::id)
+                .collect::<Vec<_>>()
+        );
+        assert!(outcomes.iter().all(|outcome| outcome.steps() > 0));
+
+        // The budget covers the whole run: exactly enough passes, and one
+        // step fewer stops the last test, and with it the run.
+        let total = outcomes.iter().map(TestOutcome::steps).sum::<usize>();
+        assert_eq!(run_tests(&core, total), run);
+        let short = run_tests(&core, total - 1);
+        assert!(short.has_errors());
+        assert!(!short.passed());
+        assert_eq!(short.outcomes(), None);
+        let [diagnostic] = short.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", short.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation step limit exceeded"
+        );
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        assert_eq!(diagnostic.primary_span(), core.tests()[3].name_span);
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                format!("at most {} evaluation steps are permitted", total - 1),
+                String::from("no test outcome is reported"),
+            ]
+        );
+        assert_eq!(run_tests(&core, total - 1), short);
+    }
+
+    #[test]
+    fn every_limit_that_stops_a_test_is_reported_at_its_title() {
+        // An `Int` past its limit stops the run at the test's title, with
+        // the operation that made it as a secondary label.
+        let text = concat!(
+            "edition 2026; module grow {\n",
+            "  spec tower() -> Int { for i in 0..15 with x: Int = 2 { x * x } }\n",
+            "  test \"first\" { true }\n",
+            "  test \"a tower of squares\" { tower() > 0 }\n",
+            "}\n",
+        );
+        let core = core(text);
+        let run = run_tests(&core, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.message(),
+            "exact integer result exceeds the 16384-significant-bit limit"
+        );
+        assert_eq!(diagnostic.primary_span(), core.tests()[1].name_span);
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        let [secondary] = diagnostic.secondary_spans() else {
+            panic!("expected one secondary span: {diagnostic:?}");
+        };
+        let product = text.find("x * x").unwrap();
+        assert_eq!(
+            (
+                secondary.span().start().bytes(),
+                secondary.span().end().bytes()
+            ),
+            (
+                u32::try_from(product).unwrap(),
+                u32::try_from(product + 5).unwrap()
+            ),
+            "the secondary span is the product"
+        );
+        assert_eq!(
+            secondary.label(),
+            "result is too large for the reference evaluator"
+        );
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                "`Int` is unbounded; this is a resource limit, not a finite width",
+                "no test outcome is reported",
+            ]
+        );
+
+        // Calls nested past the depth limit stop at the test's title too,
+        // with the call that went too deep as a secondary label.
+        let depth = MAX_CALL_DEPTH + 1;
+        let mut text = String::from("edition 2026; module deep {\n");
+        for level in 0..depth {
+            text.push_str(&format!(
+                "  spec f{level}() -> Int {{ f{}() }}\n",
+                level + 1
+            ));
+        }
+        text.push_str(&format!("  spec f{depth}() -> Int {{ 1 }}\n"));
+        text.push_str("  test \"deep\" { f0() == 1 }\n}\n");
+        let deep = self::core(&text);
+        let run = run_tests(&deep, MAX_EVALUATION_STEPS_PER_SOURCE);
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(
+            diagnostic.message(),
+            "reference evaluation call depth limit exceeded"
+        );
+        assert_eq!(diagnostic.primary_span(), deep.tests()[0].name_span);
+        assert_eq!(
+            diagnostic.label(),
+            "evaluation stopped while evaluating this test"
+        );
+        let [secondary] = diagnostic.secondary_spans() else {
+            panic!("expected one secondary span: {diagnostic:?}");
+        };
+        assert_eq!(secondary.label(), "this call exceeds the depth limit");
+        assert_eq!(
+            diagnostic.notes(),
+            [
+                format!("at most {MAX_CALL_DEPTH} nested calls are permitted"),
+                String::from("no test outcome is reported"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_module_without_tests_passes_them_all() {
+        let core = core("edition 2026; module none { spec one() -> Int { 1 } }");
+        let run = run_tests(&core, 1);
+        assert_eq!(run.outcomes(), Some(&[][..]));
+        assert!(run.passed());
+        assert!(!run.has_errors());
+    }
+
+    #[test]
+    fn test_storage_failures_report_no_outcome() {
+        let core = core(TESTED);
+        let run = run_tests_with(
+            &core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            Reservations {
+                name: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        assert_eq!(run.outcomes(), None);
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(diagnostic.code(), DiagnosticCode::EvaluationResourceLimit);
+        assert_eq!(
+            diagnostic.label(),
+            "test title storage could not be reserved"
+        );
+        assert_eq!(diagnostic.primary_span(), core.tests()[0].name_span);
+        assert_eq!(diagnostic.notes(), ["no test outcome is reported"]);
+
+        let run = run_tests_with(
+            &core,
+            MAX_EVALUATION_STEPS_PER_SOURCE,
+            Reservations {
+                result_array: |_, _| false,
+                ..Reservations::DEFAULT
+            },
+        );
+        let [diagnostic] = run.diagnostics() else {
+            panic!("expected one diagnostic: {:?}", run.diagnostics());
+        };
+        assert_eq!(diagnostic.notes(), ["no test outcome is reported"]);
+        assert_eq!(run.outcomes(), None);
     }
 }

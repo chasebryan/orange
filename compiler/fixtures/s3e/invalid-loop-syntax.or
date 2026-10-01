@@ -1,13 +1,13 @@
 // S3e rejection: a loop is written `for i in a..b with s: T = start { step }`
-// with literal bounds, an update is written `x with [i] = v` and is grouped
-// when it is an operand, and a fill literal is written `[e; n]`.
+// with integer or size bounds, an update `x with [i] = v` is grouped when it
+// is an operand, and a fill literal is written `[e; n]`.
 edition 2026;
 module syntax {
   spec no_accumulator() -> Int { for i in 0..4 { i } }
-  spec variable_bound(n: Int) -> Int { for i in 0..n with s: Int = 0 { s } }
+  spec variable_bound(n: Int) -> Int { for i in 0..-n with s: Int = 0 { s } }
   spec untyped() -> Int { for i in 0..4 with s = 0 { s } }
   spec no_equals(x: Word[8]^2) -> Word[8]^2 { x with [0] 1 }
   spec ungrouped(x: Word[8]^2, y: Word[8]^2) -> Word[8]^2 { x ^ y with [0] = 1 }
-  spec fill_length(n: Int) -> Word[8]^4 { [0; n] }
+  spec fill_length(n: Int) -> Word[8]^4 { [0; -n] }
   spec no_index(x: Word[8]^2) -> Word[8] { x[] }
 }

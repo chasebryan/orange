@@ -257,13 +257,13 @@ Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. What the language still shapes:
+None that prevented anything. This rendering retains a flat round-key array
+and an inner loop that places four words from the S-box bound in the outer
+step. `encrypt` and `decrypt` index round keys with the loop variable and
+pass four words to `round` and `inverse_round`.
 
-- A loop carries one accumulator, so the four words of a round key are
-  placed by an inner loop. The S-box is bound once in the outer step.
-  Writing four words at a parameter index is still not expressible.
-- Indices must be static, so a spec cannot take the round number and read
-  its round key from the `Word[32]^132`; `encrypt` and `decrypt` index the
-  round keys with the loop variable and pass the four words to `round` and
-  `inverse_round`, and the S-box of a round is chosen by an eight-arm
-  conditional on `i % 8` rather than by indexing a list of functions.
+The current implemented slices also offer tuple accumulators, array slices
+and slice updates, and bounded data-dependent indices. Their absence from
+this rendering is not a language limitation. The S-box of a round is still
+chosen by an eight-arm conditional on `i % 8`; lists of functions are not
+part of the implemented language.

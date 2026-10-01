@@ -71,10 +71,13 @@ single-bit change to the ciphertext, tag, associated data, or nonce tried was
 rejected. `crates/orangec/tests/crypt.rs` opens files sealed by an independent
 Python implementation of format 1 for every built-in scheme.
 
-The evaluator runs about 44,000 to 55,000 steps to seal one chunk (`orangec
+The evaluator runs about 24,000 to 28,000 steps to seal one chunk (`orangec
 schemes` prints the exact count). `orangec` evaluates chunks on every core of
 the machine, one evaluator per core; on four cores, sealing or opening a
-megabyte takes about two and a half seconds.
+megabyte takes about one second. Each scheme reads its bytes as words, and
+writes words as bytes, with the byte-order conversions of S3n (`as little`),
+which does in one step what a loop over bytes did in many; that made every
+scheme about three times as fast, and each still gives the same bytes.
 
 ## The scheme interface
 
@@ -91,7 +94,7 @@ module NAME {
   underscores. It is written into every sealed file.
 - `orangec` reads the sizes from these signatures. `S = C + T`, where `T` is
   the tag length. Keys are 16 to 64 bytes, nonces 12 to 29 bytes, tags and
-  chunks at least 16 bytes, and a sealed chunk `S` at most 256 bytes, the
+  chunks at least 16 bytes, and a sealed chunk `S` at most 65,536 bytes, the
   longest array Orange has. The associated data is always the 64-byte header.
 - `seal` is authenticated encryption: `authentic(k, n, a, seal(k, n, a, p))`
   is `true`, and `open` of it returns `p`. `authentic` must be `true` only for
@@ -100,6 +103,9 @@ module NAME {
 - Each call may take at most 16,777,216 evaluation steps.
 - The parameter names above are the convention; `orangec` checks the types in
   order.
+- The three specifications declare no size parameters: each is one function
+  whose sizes are its signature's. They may call functions that do, such as
+  a hash written once for every message length.
 - A scheme program may use other modules, which `orangec` reads from beside
   it as it does for `orangec check`: `use chacha20;` reads `chacha20.or`. The
   three specifications must be the program's own, declared in its root
