@@ -149,7 +149,7 @@ implemented language slice:
 
 ```console
 $ orangec --version
-orangec 0.0.1 (Orange edition 2026; implemented slice S3s)
+orangec 0.0.1 (Orange edition 2026; implemented slice S3t)
 ```
 
 The slice identifies implemented behavior; its proposal's acceptance status

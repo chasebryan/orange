@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -19,13 +20,21 @@ struct Program(PathBuf);
 
 impl Program {
     fn new(extra: &str) -> Self {
-        let path = std::env::temp_dir().join(format!(
+        // Cargo fixes the scratch root at build time; runtime temporary-path
+        // environment variables cannot redirect these generated programs.
+        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
             "orange-field25519-{}-{}.or",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let definitions = SOURCE.trim_end().strip_suffix('}').unwrap();
-        fs::write(&path, format!("{definitions}\n{extra}\n}}\n")).unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap()
+            .write_all(format!("{definitions}\n{extra}\n}}\n").as_bytes())
+            .unwrap();
         Self(path)
     }
 }
