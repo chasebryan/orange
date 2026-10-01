@@ -48,6 +48,12 @@ rebuild, or multi-person governance.
 
 ## 3. Solo workstreams
 
+The 2026-10-01 owner direction targets the complete 1.0 product.
+[`RELEASE_1_0_EXECUTION.md`](RELEASE_1_0_EXECUTION.md) records its full scope,
+engineering sequence, clean-environment journeys and remaining owner decision
+work. It adds no release authority or acceptance and does not substitute a
+preview for the complete product.
+
 One owner performs the work, but the boundaries remain distinct:
 
 | ID | Workstream | Permanent responsibility |
@@ -628,9 +634,25 @@ immutable rows, host value checks, and deterministic evaluation costs.
 as proposed and in owner review; it advances the P1/P6 vocabulary of
 [OEP-0022](governance/oeps/OEP-0022-crypto-language-development-plan.md).
 No proof, transform, backend, or target is selected by this implementation.
-Moduli written with parameters, so that one `spec` can serve
-every field rather than a listed few, lists of types named once for several
-functions, positions given as parameters, so that one quarter round can act on
+
+S3t follows S3s with modulus expressions over a function's own finite size
+parameters. Each declared instance is checked eagerly with a concrete domain,
+so `Mod[(1 << bits) - 19]` can share one arithmetic definition without mixing
+its moduli. Global aliases and finite type lists remain concrete. The
+[static-modulus proposal](STATIC_MODULI_2026.md) and
+[OEP-0024](governance/oeps/OEP-0024-orange-2026-static-moduli.md) record the
+implemented slice in owner review; they add no proof, primality or native claim.
+
+OEP-0022 P2 also has permanent executable five-limb definitions in
+[`field25519-limbs.or`](../algorithms/x25519/field25519-limbs.or): exact
+reconstruction and abstraction, tight/loose/canonical predicates, addition,
+carrying and canonicalization. Boundary and generated mathematical-reference
+tests check these observations; transparent aliases do not enforce an invariant
+or establish refinement. Wide multiplication, checked P3 contracts and full
+X25519 implementation refinement remain later obligations.
+
+Lists of types named once for several functions, positions given as parameters,
+so that one quarter round can act on
 four positions of a whole state, slices and words at positions computed from
 data, and tests that claim a call stops or a source is rejected are the next
 candidate slices.

@@ -73,8 +73,8 @@ only convenient notation.
 
 ## Scope and non-goals
 
-The current accepted foothold is S3a. S3b through S3s are implemented and in
-owner review under OEP-0005 through OEP-0021 and OEP-0023; implementation is not semantic
+The current accepted foothold is S3a. S3b through S3t are implemented and in
+owner review under OEP-0005 through OEP-0021, OEP-0023 and OEP-0024; implementation is not semantic
 acceptance. The current evaluator admits `Int`, `Bool`, `Word[8]`, `Word[16]`,
 `Word[32]`, `Word[64]`, `Mod[m]`, scalar arrays and rank-two arrays with
 at most 65,536 scalar elements,
@@ -125,6 +125,10 @@ selects no candidate and replaces no exact-revision acceptance requirement.
 S3k, S3l, S3m, and S3o already implement parts of P1: tuples and tuple loop
 state, concatenation and slicing, bounded size parameters, and finite type
 parameters. Their records are OEP-0014, OEP-0015, OEP-0016, and OEP-0018.
+S3s adds bounded scalar rows under OEP-0023. S3t adds modulus expressions
+over own finite size instances under
+[OEP-0024](OEP-0024-orange-2026-static-moduli.md). These implementations
+remain in owner review and do not select universal parameter constraints.
 Review these implementations against the criteria below before proposing
 remaining parameter domains or constraints; this plan does not accept them.
 
@@ -186,6 +190,17 @@ Acceptance criteria:
 - The same field value can have multiple admitted mathematical representations.
 - The definitions introduce no machine layout, timing guarantee, accepted
   refinement rule, or implicit enforcement through today's transparent aliases.
+
+The permanent P2 source
+[`field25519-limbs.or`](../../../algorithms/x25519/field25519-limbs.or)
+now implements reconstruction, abstraction, the three predicates, exact limb
+addition, two-pass carrying and canonicalization. Seven hand-derived answer
+pairs and generated 320-bit binary-reference tests exercise the boundary
+observations. Selected `second_fold` uses 380 reference steps and rejects a
+379-step budget without output. The
+[entry documentation](../../../algorithms/x25519/README.md) records limits;
+transparent aliases do not enforce these contracts. This is P2 implementation
+evidence, not P3 acceptance, refinement or universal proof.
 
 ### P3 Checked representations and proof automation
 
@@ -328,8 +343,10 @@ Acceptance criteria:
   positioned ChaCha20 quarter round against the P1 criteria as permanent fixtures.
 - [ ] Review implemented tuples, tuple accumulators, concatenation, and slicing
   against the P1 criteria; keep any remaining semantic choices in separate slices.
-- [ ] Define P2 reconstruction, abstraction, and tight/loose/canonical predicates
+- [x] Define P2 reconstruction, abstraction, and tight/loose/canonical predicates
   with boundary fixtures and deterministic evaluation costs.
+- [ ] Review the P2 definitions and S3t modulus instances against the stated
+  criteria; record no P3 or semantic acceptance from their tests.
 - [ ] Prepare the P3 operation-obligation inventory while the existing S4
   decision work progresses; select no proof foundation or solver by doing so.
 - [ ] Define wide arithmetic and operation schedules before scheduling P4

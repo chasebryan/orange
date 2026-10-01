@@ -14,6 +14,8 @@ pub(super) enum TypeClass {
     ArrayLengthValue(Span, ExactInteger),
     /// A length written with sizes that has no value.
     Size(SizeFault),
+    /// A size-dependent modulus has no admitted value in this instance.
+    Modulus(ModulusFault),
     MissingModulus,
     /// A declared name whose type already has two array dimensions,
     /// followed by the span of `^LENGTH`.
@@ -47,6 +49,18 @@ pub(super) struct ResolvedModulus {
     pub(super) key: (u32, u32),
     /// The modulus, or `None` when its expression was reported.
     pub(super) modulus: Option<Modulus>,
+    /// Its value is computed in each concrete instance rather than once
+    /// for the module. `modulus` is then `None`, without a prior report.
+    pub(super) dependent: bool,
+}
+
+/// Why a modulus has no value within a concrete function instance.
+pub(super) enum ModulusFault {
+    NotConstant(Span),
+    ShiftAmount(Span),
+    Value(Span, ExactInteger),
+    TooLarge(Span),
+    Storage(Span),
 }
 
 pub(super) struct DeclaredType<'ast> {
@@ -85,6 +99,18 @@ impl TypeTable<'_> {
     /// Returns the declaration of `name`, if the module declares it.
     pub(super) fn name(&self, name: &str) -> Option<&DeclaredType<'_>> {
         self.names.iter().find(|declared| declared.name == name)
+    }
+
+    /// Whether this written type computes a modulus in each instance.
+    pub(super) fn modulus_depends_on_sizes(&self, syntax: &TypeSyntax) -> bool {
+        syntax
+            .modulus()
+            .and_then(|expression| self.modulus(expression))
+            .is_some_and(|entry| entry.dependent)
+            || syntax
+                .elements
+                .iter()
+                .any(|element| self.modulus_depends_on_sizes(element))
     }
 }
 
@@ -176,6 +202,14 @@ pub(super) fn classify_scalar_type(
     if let Some(expression) = syntax.modulus() {
         return match table.modulus(expression) {
             Some(ResolvedModulus {
+                dependent: true, ..
+            }) => table
+                .sizes
+                .modulus(source, expression)
+                .map_or_else(TypeClass::Modulus, |modulus| {
+                    TypeClass::Resolved(CoreType::Mod(modulus))
+                }),
+            Some(ResolvedModulus {
                 modulus: Some(modulus),
                 ..
             }) => TypeClass::Resolved(CoreType::Mod(*modulus)),
@@ -232,10 +266,134 @@ pub(super) fn silent_type(
     }
 }
 
+/// Whether a modulus expression mentions one of the current sizes. This
+/// recognizes names inside even an unsupported arithmetic operator so
+/// that its eventual report identifies the first concrete instance.
+/// Parser-established expression height bounds this recursion.
+fn references_size(expression: &Expression, instance: Instance<'_>) -> bool {
+    match &expression.kind {
+        ExpressionKind::Name(name) => instance.find(&name.text).is_some(),
+        ExpressionKind::Parenthesized(inner) => references_size(inner, instance),
+        ExpressionKind::Unary(unary) => references_size(&unary.operand, instance),
+        ExpressionKind::Binary(binary) => {
+            references_size(&binary.left, instance) || references_size(&binary.right, instance)
+        }
+        _ => false,
+    }
+}
+
+/// The same value-specific label for module constants and instance moduli.
+fn invalid_modulus_label(value: &ExactInteger) -> String {
+    if value.magnitude_bits() > MAX_MODULUS_BITS && !value.is_negative() {
+        format!("this modulus has {} bits", value.magnitude_bits())
+    } else if value.magnitude_bits() <= 64 {
+        format!("this modulus is {value}")
+    } else {
+        String::from("this modulus is negative")
+    }
+}
+
+impl SizeScope<'_> {
+    /// Computes a concrete modulus with precisely the modulus-expression
+    /// operators. Size arithmetic's division, remainder and prefix
+    /// negation are not added to this separate static expression domain.
+    pub(super) fn modulus(
+        &self,
+        source: &SourceFile,
+        expression: &Expression,
+    ) -> Result<Modulus, ModulusFault> {
+        let value = self.modulus_value(source, expression)?;
+        Modulus::new(&value).ok_or(ModulusFault::Value(expression.span, value))
+    }
+
+    /// Each visited part and each significant literal digit is charged as
+    /// an event, as for module-constant moduli. Values remain exact within
+    /// the same integer and fallible storage limits.
+    /// Parser-established expression height bounds this recursion.
+    fn modulus_value(
+        &self,
+        source: &SourceFile,
+        expression: &Expression,
+    ) -> Result<ExactInteger, ModulusFault> {
+        self.evaluated.set(self.evaluated.get().saturating_add(1));
+        let storage = ModulusFault::Storage(expression.span);
+        let reserve = self.reserve;
+        let value = match &expression.kind {
+            ExpressionKind::Literal(literal) => self.modulus_literal(source, literal)?,
+            ExpressionKind::Name(name) => match self.instance.find(&name.text) {
+                Some((_, value)) => {
+                    ExactInteger::from_u64(u64::from(value), reserve).ok_or(storage)?
+                }
+                None => return Err(ModulusFault::NotConstant(name.span)),
+            },
+            ExpressionKind::Parenthesized(inner) => return self.modulus_value(source, inner),
+            ExpressionKind::Binary(binary) if binary.operator == BinaryOperator::ShiftLeft => {
+                let left = self.modulus_value(source, &binary.left)?;
+                let right = self.modulus_value(source, &binary.right)?;
+                let amount = right
+                    .to_i64()
+                    .and_then(|amount| usize::try_from(amount).ok())
+                    .filter(|amount| *amount <= self.bits)
+                    .ok_or(ModulusFault::ShiftAmount(binary.right.span))?;
+                ExactInteger::power_of_two(amount, reserve)
+                    .and_then(|power| left.multiply(&power, reserve))
+                    .ok_or(storage)?
+            }
+            ExpressionKind::Binary(binary)
+                if matches!(
+                    binary.operator,
+                    BinaryOperator::Add | BinaryOperator::Subtract | BinaryOperator::Multiply
+                ) =>
+            {
+                let left = self.modulus_value(source, &binary.left)?;
+                let right = self.modulus_value(source, &binary.right)?;
+                match binary.operator {
+                    BinaryOperator::Add => left.add(&right, reserve),
+                    BinaryOperator::Subtract => left.subtract(&right, reserve),
+                    _ => left.multiply(&right, reserve),
+                }
+                .ok_or(storage)?
+            }
+            _ => return Err(ModulusFault::NotConstant(expression.span)),
+        };
+        if value.magnitude_bits() > self.bits {
+            return Err(ModulusFault::TooLarge(expression.span));
+        }
+        Ok(value)
+    }
+
+    fn modulus_literal(
+        &self,
+        source: &SourceFile,
+        literal: &IntegerLiteral,
+    ) -> Result<ExactInteger, ModulusFault> {
+        let storage = || ModulusFault::Storage(literal.span);
+        let spelling = source.slice(literal.magnitude_span).ok_or_else(storage)?;
+        self.evaluated.set(self.evaluated.get().saturating_add(1));
+        let (radix, digits) = split_radix(spelling);
+        let mut magnitude = Magnitude::zero();
+        let mut significant = false;
+        for character in digits.chars().filter(|character| *character != '_') {
+            let digit = character.to_digit(radix).ok_or_else(storage)?;
+            significant |= digit != 0;
+            if significant {
+                self.evaluated.set(self.evaluated.get().saturating_add(1));
+            }
+            if !magnitude.multiply_add_with_reservation(radix, digit, self.reserve_limb) {
+                return Err(storage());
+            }
+            if magnitude.bit_len() > self.bits {
+                return Err(ModulusFault::TooLarge(literal.magnitude_span));
+            }
+        }
+        Ok(ExactInteger::new(literal.negative, magnitude))
+    }
+}
+
 impl<'source, 'ast> Analyzer<'source, 'ast> {
-    /// Evaluates every modulus written in the module's `type` declarations
-    /// and typed `spec` functions, once each and in source order, before any
-    /// type is resolved.
+    /// Indexes every written modulus before types are resolved. A modulus
+    /// without size parameters is evaluated once in source order; one
+    /// using a function's sizes is evaluated in each concrete instance.
     pub(super) fn resolve_moduli(&mut self) {
         let module = &self.ast.module;
         for declaration in &module.types {
@@ -249,6 +407,15 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
             for ty in function.sizes.iter().flat_map(|size| &size.types) {
                 self.resolve_modulus(ty);
             }
+            // Lists are independent of every instance. Only signatures
+            // and bodies may use the function's finite size parameters.
+            self.enter_instance(
+                Instance {
+                    parameters: &function.sizes,
+                    values: [0; MAX_SIZES_PER_FUNCTION],
+                },
+                &[],
+            );
             for parameter in &function.parameters {
                 self.resolve_modulus(&parameter.ty);
             }
@@ -258,6 +425,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                 self.resolve_moduli_within(&binding.value);
             }
             self.resolve_moduli_within(&body.expression);
+            self.enter_instance(Instance::NONE, &[]);
         }
         // A test's moduli are resolved only where its body is checked.
         if self.tests {
@@ -378,9 +546,13 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if self.halted {
             return;
         }
-        let modulus = self
-            .constant(expression)
-            .and_then(|value| self.checked_modulus(expression.span, &value));
+        let dependent = references_size(expression, self.types.sizes.instance);
+        let modulus = if dependent {
+            None
+        } else {
+            self.constant(expression)
+                .and_then(|value| self.checked_modulus(expression.span, &value))
+        };
         if self.halted {
             return;
         }
@@ -391,6 +563,7 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         self.types.moduli.push(ResolvedModulus {
             key: span_key(expression.span),
             modulus,
+            dependent,
         });
         // A modulus that is not a constant may still hold a conversion or a
         // loop whose type has a modulus of its own; that one is evaluated too.
@@ -482,20 +655,19 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         if let Some(modulus) = Modulus::new(value) {
             return Some(modulus);
         }
-        let label = if value.magnitude_bits() > MAX_MODULUS_BITS && !value.is_negative() {
-            format!("this modulus has {} bits", value.magnitude_bits())
-        } else if value.magnitude_bits() <= 64 {
-            format!("this modulus is {value}")
-        } else {
-            String::from("this modulus is negative")
-        };
-        self.report_invalid_modulus(span, label);
+        self.report_invalid_modulus(span, invalid_modulus_label(value));
         None
     }
 
     #[cold]
     #[inline(never)]
     pub(super) fn report_invalid_modulus(&mut self, span: Span, label: String) {
+        self.report_invalid_modulus_with_note(span, label, MODULUS_NOTE);
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn report_invalid_modulus_with_note(&mut self, span: Span, label: String, note: &str) {
         if self.begin_report(span) {
             self.diagnostics.push(
                 Diagnostic::error(
@@ -504,8 +676,57 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                     span,
                 )
                 .with_label(label)
-                .with_note(MODULUS_NOTE),
+                .with_note(note),
             );
+        }
+    }
+
+    /// Reports a deferred modulus's first fault in the current instance.
+    #[cold]
+    #[inline(never)]
+    pub(super) fn report_modulus_fault(&mut self, fault: ModulusFault) {
+        match fault {
+            ModulusFault::NotConstant(span) => {
+                self.report_invalid_modulus_with_note(
+                    span,
+                    String::from("not a constant integer expression"),
+                    STATIC_MODULUS_NOTE,
+                );
+            }
+            ModulusFault::ShiftAmount(span) => self.report_invalid_modulus_with_note(
+                span,
+                format!(
+                    "a shift amount in a modulus is from 0 through {}",
+                    self.limits.integer_bits
+                ),
+                STATIC_MODULUS_NOTE,
+            ),
+            ModulusFault::Value(span, value) => {
+                self.report_invalid_modulus_with_note(
+                    span,
+                    invalid_modulus_label(&value),
+                    STATIC_MODULUS_NOTE,
+                );
+            }
+            ModulusFault::TooLarge(span) => {
+                if self.begin_report(span) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::IntegerMagnitudeLimit,
+                            format!(
+                                "integer magnitude exceeds the {}-significant-bit limit",
+                                self.limits.integer_bits
+                            ),
+                            span,
+                        )
+                        .with_label("this value of the modulus is too large")
+                        .with_note("the value is rejected rather than truncated or approximated"),
+                    );
+                }
+            }
+            ModulusFault::Storage(span) => {
+                self.resource_limit(span, "exact integer storage allocation failed");
+            }
         }
     }
 
@@ -596,6 +817,10 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
         }
         match class {
             TypeClass::Resolved(ty) => Some(ty),
+            TypeClass::Modulus(fault) => {
+                self.report_modulus_fault(fault);
+                None
+            }
             TypeClass::Unresolved => None,
             TypeClass::Unindexed => {
                 self.resource_limit(syntax.span, "semantic modulus table is inconsistent");

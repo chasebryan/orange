@@ -30,6 +30,16 @@ language meaning. It accepts no D-004 candidate.
 > still has at most 256 instances, and `orangec eval --spec pow` evaluates
 > every instance of `pow` alone. Every source this document accepts keeps its
 > meaning under it.
+>
+> [`STATIC_MODULI_2026.md`](STATIC_MODULI_2026.md), proposed under
+> OEP-0024 as S3t, admits a function's own finite size names in modulus
+> expressions and direct explicit type arguments, as `identity[Mod[n]](x)`.
+> Each declared instance resolves its exact concrete modulus before fitting
+> arguments and results. Finite type-parameter lists remain independent of
+> sizes: `T in {Mod[n]}` is rejected even if `n` is declared earlier, and
+> module aliases remain concrete. The original invalid-type-argument note
+> remains unchanged; faults in the newly admitted direct `Mod[e]` path use
+> S3t's static-modulus diagnostic note.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

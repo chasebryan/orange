@@ -168,9 +168,16 @@ subject classes to its seven. That result is contributor-produced and
 unreviewed, and it is not a D-004 recommendation until the owner disposes every
 candidate and hard gate. Integrity parsing and structural oracles ratify no
 Orange semantics. D-004 remains proposed pending owner review of these results,
-S3b through S3s are implemented and await owner review under OEP-0005 through
-OEP-0021 and OEP-0023, and Orange's 3-of-10 (30%) binary gate-closure score remains
+S3b through S3t are implemented and await owner review under OEP-0005 through
+OEP-0021, OEP-0023 and OEP-0024, and Orange's 3-of-10 (30%) binary gate-closure score remains
 unchanged; that mechanical score is not release readiness.
+
+The 2026-10-01 owner direction retains the complete 1.0 target.
+[`RELEASE_1_0_EXECUTION.md`](RELEASE_1_0_EXECUTION.md) maps the full charter
+scope and eight journeys to permanent engineering and their actual decision
+gates. S3t size-dependent moduli and P2 field-representation predicates are
+proof-neutral development; they accept no semantic stratum or proof foundation,
+complete no release journey and authorize no distribution.
 
 ## D-005 — Public assurance model
 

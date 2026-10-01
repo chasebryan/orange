@@ -9,6 +9,17 @@ Edition: `2026`
 > chained index selections. Its shape limits and diagnostics replace the
 > blanket rejection of arrays of arrays below. Repeated `^` type syntax
 > remains rejected.
+>
+> S3t, proposed in [`STATIC_MODULI_2026.md`](STATIC_MODULI_2026.md) under
+> OEP-0024, additionally admits a function's own finite size names in
+> `Mod[e]`, including signatures, body annotations, conversions and direct
+> explicit type arguments. Each declared instance is checked eagerly with its
+> exact concrete modulus. Module-level aliases and finite type-parameter lists
+> remain concrete. Section 4's once-per-source evaluation and constant-only
+> scope continue to apply to its original constant expressions; S3t specifies
+> the new instance-dependent positions separately. Original constant-modulus
+> diagnostic notes retain their exact text; new dependent-modulus and direct
+> `Mod[e]` type-argument faults use the S3t static-scope note.
 
 Snapshot: 2026-09-30
 

@@ -1,0 +1,24 @@
+edition 2026;
+module rings {
+  spec reduce[m in 2..8](x: Int) -> Mod[m] { x as Mod[m] }
+  spec add[m in 2..8](x: Mod[m], y: Mod[m]) -> Mod[m] { x + y }
+  spec inverse[m in 2..8](x: Mod[m]) -> Mod[m] { 1 / x }
+  spec zero[m in 2..8]() -> Mod[m] { 0 }
+  spec result() -> (Mod[3], Mod[4], Mod[7]) {
+    (add[3](2, 2), reduce[4](-1), zero[7]())
+  }
+  test "one arithmetic definition retains each modulus" {
+    (add[3](2, 2) == 1) && (add[4](2, 2) == 0) && (add[7](2, 2) == 4)
+  }
+  test "negative integers become least residues in each instance" {
+    (reduce[3](-1) == 2) && (reduce[4](-1) == 3) && (reduce[7](-1) == 6)
+  }
+  test "composite rings keep total inverse semantics" {
+    (inverse[4](2) == 0) && (inverse[4](3) == 3) && (inverse[7](2) == 4)
+  }
+  test "expected results and typed arguments select exact instances" {
+    let x: Mod[5] = 4;
+    let y: Mod[5] = zero();
+    add(x, y) == 4
+  }
+}

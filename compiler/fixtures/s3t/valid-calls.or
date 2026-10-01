@@ -1,0 +1,21 @@
+edition 2026;
+module calls {
+  spec identity[T in {Mod[3], Mod[4]}](x: T) -> T { x }
+  spec forward[m in 3..5](x: Mod[m]) -> Mod[m] { identity[Mod[m]](x) }
+  spec choose[m in 3..5](flag: Bool, x: Int) -> Mod[m] {
+    if flag {
+      let value: Mod[m] = x as Mod[m];
+      forward[m](value)
+    } else {
+      let value: Mod[m] = 0;
+      forward[m](value)
+    }
+  }
+  spec result() -> (Mod[3], Mod[4]) { (choose[3](true, 8), choose[4](true, 8)) }
+  test "explicit type arguments use the caller's static sizes" {
+    (forward[3](2) == 2) && (forward[4](3) == 3)
+  }
+  test "branch annotations are resolved in their own instance" {
+    (choose[3](true, 8) == 2) && (choose[4](true, 8) == 0) && (choose[4](false, 8) == 0)
+  }
+}

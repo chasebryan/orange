@@ -1,0 +1,5 @@
+edition 2026;
+module static_ring {
+  spec reduce[m in 3..12](x: Int) -> Mod[m] { x as Mod[m] }
+  spec sum[m in 3..12](x: Mod[m], y: Mod[m]) -> Mod[m] { x + y }
+}

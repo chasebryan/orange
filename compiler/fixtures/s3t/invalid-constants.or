@@ -1,0 +1,8 @@
+edition 2026;
+module invalid_constants {
+  spec divided[m in 2..4]() -> Mod[m / 2] { 0 }
+  spec remainder[m in 2..4]() -> Mod[m % 2] { 0 }
+  spec shifted[m in 2..4]() -> Mod[16 >> m] { 0 }
+  spec helper(x: Int) -> Int { x + 2 }
+  spec called[m in 2..4]() -> Mod[helper(m)] { 0 }
+}

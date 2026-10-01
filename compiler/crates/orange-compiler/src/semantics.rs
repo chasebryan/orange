@@ -81,6 +81,9 @@ fn aggregate_operator_note(ty: &CoreType) -> &'static str {
 }
 const MODULUS_NOTE: &str = "a modulus is a constant built from integer literals with `+`, `-`, \
      `*`, `<<`, and parentheses, as in `Mod[(1 << 255) - 19]`";
+const STATIC_MODULUS_NOTE: &str = "a modulus is built from integer literals and, within a function \
+     instance, its size parameters with `+`, `-`, `*`, `<<`, and parentheses, as in \
+     `Mod[(1 << bits) - 19]`; a module type declaration or a listed type uses no size parameters";
 const BUILT_IN_TYPE_NAMES: [&str; 4] = ["Int", "Bool", "Word", "Mod"];
 const STATIC_INDEX_NOTE: &str = "every index is proved in range when the program is checked: a \
      word index ranges over its type, and an `Int` index is built from integer literals, loop \
@@ -520,6 +523,9 @@ struct Signature<'ast> {
     listed: Vec<Vec<Option<CoreType>>>,
     /// The listed types as written, by the parameter's position.
     spellings: Vec<Vec<String>>,
+    /// A parameter or result type computes its modulus from the sizes.
+    /// Such instances fit by exact types as well as array lengths.
+    modular_sizes: bool,
     /// The parameter and result types of each instance, in order.
     instances: Vec<InstanceSignature>,
 }
@@ -536,6 +542,10 @@ impl InstanceSignature {
 }
 
 impl Signature<'_> {
+    fn fits_types(&self) -> bool {
+        self.modular_sizes || self.sizes.iter().any(SizeParameter::is_type)
+    }
+
     /// Returns the identity of the instance at `index`.
     fn instance_id(&self, index: usize) -> Option<CoreFunctionId> {
         usize::try_from(self.id.index())
@@ -1423,12 +1433,18 @@ impl<'source, 'ast> Analyzer<'source, 'ast> {
                         });
                     }
                     self.enter_instance(Instance::NONE, &[]);
+                    let modular_sizes = function
+                        .parameters
+                        .iter()
+                        .any(|parameter| self.types.modulus_depends_on_sizes(&parameter.ty))
+                        || self.types.modulus_depends_on_sizes(&body.result_type);
                     Some(Signature {
                         id,
                         sizes: &function.sizes,
                         ranges,
                         listed,
                         spellings,
+                        modular_sizes,
                         instances,
                     })
                 }

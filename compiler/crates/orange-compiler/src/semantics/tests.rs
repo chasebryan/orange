@@ -10081,6 +10081,513 @@ fn calls_name_an_instance_by_its_types_or_fit_one_by_argument_and_result_types()
 }
 
 #[test]
+fn size_dependent_moduli_resolve_exact_signatures_and_fit_arguments_and_results() {
+    let (_, core) = accepted(concat!(
+        "  spec square[bits in 130..132](x: Mod[(1 << bits) - 5]) -> Mod[(1 << bits) - 5] { x * x }\n",
+        "  spec one[bits in 130..132]() -> Mod[(1 << bits) - 5] { 1 }\n",
+        "  spec argument(x: Mod[(1 << 131) - 5]) -> Mod[(1 << 131) - 5] { square(x) }\n",
+        "  spec place() -> Mod[(1 << 130) - 5] { one() }\n",
+        "  spec named() -> Mod[(1 << 131) - 5] { square[131](3) }\n",
+    ));
+    assert_eq!(
+        core.functions
+            .iter()
+            .take(4)
+            .map(|function| (
+                function.name(),
+                function.instance(),
+                function.result_type().to_string()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("square", "[130]", String::from("Mod[(1 << 130) - 5]")),
+            ("square", "[131]", String::from("Mod[(1 << 131) - 5]")),
+            ("one", "[130]", String::from("Mod[(1 << 130) - 5]")),
+            ("one", "[131]", String::from("Mod[(1 << 131) - 5]")),
+        ]
+    );
+    assert_eq!(call_targets(core.functions[4].body()), [1]);
+    assert_eq!(call_targets(core.functions[5].body()), [2]);
+    assert_eq!(call_targets(core.functions[6].body()), [1]);
+    let evaluated = crate::eval::evaluate(&core);
+    assert_eq!(evaluated.diagnostics(), []);
+    assert_eq!(
+        evaluated
+            .values()
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        [
+            "m::one[130]: Mod[(1 << 130) - 5] = 1",
+            "m::one[131]: Mod[(1 << 131) - 5] = 1",
+            "m::place: Mod[(1 << 130) - 5] = 1",
+            "m::named: Mod[(1 << 131) - 5] = 9",
+        ]
+    );
+}
+
+#[test]
+fn size_dependent_moduli_work_in_body_types_conversions_arrays_and_explicit_type_arguments() {
+    let (_, core) = accepted(concat!(
+        "  spec square[K in {Mod[127], Mod[255]}](x: K) -> K { x * x }\n",
+        "  spec rows[bits in 7..9]() -> Mod[(1 << bits) - 1]^2 {\n",
+        "    let (a: Mod[(1 << bits) - 1], b: Mod[(1 << bits) - 1]) = (3, 4);\n",
+        "    let r: Mod[(1 << bits) - 1]^2 = [a, b];\n",
+        "    for i in 0..2 with s: Mod[(1 << bits) - 1]^2 = r {\n",
+        "      let x: Mod[(1 << bits) - 1] = (i as Mod[(1 << bits) - 1]) + s[i];\n",
+        "      s with [i] = square[Mod[(1 << bits) - 1]](x)\n",
+        "    }\n",
+        "  }\n",
+        "  spec array[K in {Mod[127]^2, Mod[255]^2}](x: K) -> K { x }\n",
+        "  spec explicit() -> Mod[255]^2 { array[Mod[255]^2]([1, 2]) }\n",
+    ));
+    for (function, target) in [(2, 0), (3, 1)] {
+        let step = core.functions[function].loops()[0].step();
+        assert_eq!(call_targets(step), [target]);
+    }
+    assert_eq!(call_targets(core.functions[6].body()), [5]);
+    let evaluated = crate::eval::evaluate(&core);
+    assert_eq!(evaluated.diagnostics(), []);
+    assert_eq!(
+        evaluated
+            .values()
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        [
+            "m::rows[7]: Mod[127]^2 = [9, 25]",
+            "m::rows[8]: Mod[255]^2 = [9, 25]",
+            "m::explicit: Mod[255]^2 = [1, 2]",
+        ]
+    );
+}
+
+#[test]
+fn size_dependent_moduli_preserve_exact_identity_and_report_ambiguous_calls() {
+    let (fixture, result) = rejected(concat!(
+        "  spec square[n in 7..9](x: Mod[n]) -> Mod[n] { x * x }\n",
+        "  spec zero[n in 7..9]() -> Mod[n] { 0 }\n",
+        "  spec mixed(x: Mod[9]) -> Mod[9] { square(x) }\n",
+        "  spec literal() -> Bool { zero() == 0 }\n",
+        "  spec explicit() -> Mod[8] { square[7](3) }\n",
+        "  spec unequal[n in 7..9](x: Mod[n]) -> Bool { let zero: Int = 0; x == (zero as Mod[n + 1]) }\n",
+    ));
+    assert_eq!(
+        result
+            .diagnostics()
+            .iter()
+            .map(Diagnostic::code)
+            .collect::<Vec<_>>(),
+        [
+            DiagnosticCode::SizeRange,
+            DiagnosticCode::SizeCount,
+            DiagnosticCode::TypeMismatch,
+            DiagnosticCode::TypeMismatch,
+        ]
+    );
+    assert!(
+        result.diagnostics()[0]
+            .message()
+            .contains("takes arguments of these types")
+    );
+    assert!(
+        result.diagnostics()[1]
+            .message()
+            .contains("`zero[7]` and `zero[8]`")
+    );
+    assert!(
+        result.diagnostics()[3]
+            .notes()
+            .iter()
+            .any(|note| note.contains("`unequal[7]`"))
+    );
+    assert_eq!(
+        fixture
+            .source()
+            .slice(result.diagnostics()[0].primary_span()),
+        Some("square(x)")
+    );
+}
+
+#[test]
+fn size_dependent_moduli_eagerly_reject_first_bad_uncalled_instance() {
+    let (fixture, result) = rejected(concat!(
+        "  spec decreasing[n in 2..5]() -> Mod[5 - n] { 0 }\n",
+        "  spec wide[bits in 520..523]() -> Mod[(1 << bits) - 1] { 0 }\n",
+    ));
+    assert_eq!(
+        labelled(&fixture, &result),
+        [
+            (
+                DiagnosticCode::InvalidModulus,
+                "5 - n",
+                String::from("this modulus is 1")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "(1 << bits) - 1",
+                String::from("this modulus has 522 bits")
+            ),
+        ]
+    );
+    assert!(
+        result.diagnostics()[0]
+            .notes()
+            .last()
+            .unwrap()
+            .contains("`decreasing[4]`")
+    );
+    assert!(
+        result.diagnostics()[1]
+            .notes()
+            .last()
+            .unwrap()
+            .contains("`wide[522]`")
+    );
+}
+
+#[test]
+fn size_dependent_moduli_keep_the_static_operator_and_scope_boundaries() {
+    let (fixture, result) = rejected(concat!(
+        "  type Global = Mod[n];\n",
+        "  spec listed[n in 7..9, K in {Mod[n]}](x: K) -> K { x }\n",
+        "  spec divide[n in 7..9]() -> Mod[n / 1] { 0 }\n",
+        "  spec remainder[n in 7..9]() -> Mod[n % 2] { 0 }\n",
+        "  spec negate[n in 7..9]() -> Mod[-(n)] { 0 }\n",
+        "  spec runtime[n in 7..9](x: Int) -> Int { (x as Mod[n + x]) as Int }\n",
+        "  spec type_name[K in {Int}, n in 7..9]() -> Mod[n + K] { 0 }\n",
+        "  spec negative_shift[n in 0..1]() -> Mod[1 << (n - 1)] { 0 }\n",
+        "  spec large_shift[n in 16385..16386]() -> Mod[1 << n] { 0 }\n",
+    ));
+    assert_eq!(
+        labelled(&fixture, &result),
+        [
+            (
+                DiagnosticCode::InvalidModulus,
+                "n",
+                String::from("not a constant integer expression")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "n",
+                String::from("not a constant integer expression")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "n / 1",
+                String::from("not a constant integer expression")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "n % 2",
+                String::from("not a constant integer expression")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "-(n)",
+                String::from("not a constant integer expression")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "x",
+                String::from("not a constant integer expression")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "K",
+                String::from("not a constant integer expression")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "(n - 1)",
+                String::from("a shift amount in a modulus is from 0 through 16384")
+            ),
+            (
+                DiagnosticCode::InvalidModulus,
+                "n",
+                String::from("a shift amount in a modulus is from 0 through 16384")
+            ),
+        ]
+    );
+}
+
+#[test]
+fn size_dependent_moduli_preserve_constant_diagnostic_notes() {
+    for members in [
+        "  type Invalid = Mod[1];\n",
+        "  spec constant() -> Mod[1] { 0 }\n",
+        "  spec constant[n in 2..3]() -> Mod[1] { 0 }\n",
+        "  spec bare() -> Mod { 0 }\n",
+    ] {
+        let (_, result) = rejected(members);
+        assert_eq!(result.diagnostics().len(), 1);
+        assert_eq!(result.diagnostics()[0].notes(), [MODULUS_NOTE]);
+    }
+    for members in [
+        "  spec dependent[n in 2..3]() -> Mod[n - 1] { 0 }\n",
+        "  spec dependent[n in 2..3]() -> Mod[1 << (n - 3)] { 0 }\n",
+        "  spec dependent[n in 2..3]() -> Mod[n / 1] { 0 }\n",
+        "  spec identity[K in {Mod[7]}](x: K) -> K { x }\n\
+           spec argument() -> Mod[7] { identity[Mod[1]](0) }\n",
+    ] {
+        let (_, result) = rejected(members);
+        assert_eq!(result.diagnostics().len(), 1);
+        assert_eq!(
+            result.diagnostics()[0].notes().first().unwrap(),
+            STATIC_MODULUS_NOTE
+        );
+    }
+}
+
+#[test]
+fn size_dependent_moduli_preserve_existing_not_a_type_diagnostic_notes() {
+    let expected = "a type in a call's brackets is `Int`, `Bool`, `Word[n]`, an \
+        array of one of them such as `Word[8]^4`, the name of a `type` declaration, or a type \
+        parameter of the calling function";
+    for argument in ["x", "3"] {
+        let (_, result) = rejected(&format!(
+            "  spec identity[K in {{Int}}](x: K) -> K {{ x }}\n\
+               spec wrong(x: Int) -> Int {{ identity[{argument}](x) }}\n"
+        ));
+        assert_eq!(result.diagnostics().len(), 1);
+        let diagnostic = &result.diagnostics()[0];
+        assert_eq!(diagnostic.code(), DiagnosticCode::TypeParameter);
+        assert_eq!(diagnostic.label(), "this is not a type");
+        assert_eq!(diagnostic.notes(), [expected]);
+    }
+}
+
+#[test]
+fn size_dependent_moduli_obey_integer_event_and_storage_limits_without_partial_core() {
+    let fixture = module("  spec f[n in 8..9]() -> Mod[(1 << n) * (1 << n)] { 0 }\n");
+    let result = fixture.analyze_with(Limits {
+        integer_bits: 16,
+        ..Limits::DEFAULT
+    });
+    assert!(result.core().is_none());
+    assert_eq!(
+        labelled(&fixture, &result),
+        [(
+            DiagnosticCode::IntegerMagnitudeLimit,
+            "(1 << n) * (1 << n)",
+            String::from("this value of the modulus is too large")
+        ),]
+    );
+    let fixture = module("  spec f[n in 7..9]() -> Mod[n + 1] { 0 }\n");
+    let needed = (1..200)
+        .find(|events| {
+            fixture
+                .analyze_with(Limits {
+                    events: *events,
+                    ..Limits::DEFAULT
+                })
+                .core()
+                .is_some()
+        })
+        .unwrap();
+    let result = fixture.analyze_with(Limits {
+        events: needed - 1,
+        ..Limits::DEFAULT
+    });
+    assert!(result.core().is_none());
+    assert_eq!(
+        result
+            .diagnostics()
+            .iter()
+            .map(Diagnostic::code)
+            .collect::<Vec<_>>(),
+        [DiagnosticCode::SemanticResourceLimit]
+    );
+    for fail_literal in [false, true] {
+        let mut analyzer = Analyzer::new(fixture.source(), &fixture.ast, Limits::DEFAULT);
+        if fail_literal {
+            analyzer.reserve_magnitude_limb = |_| false;
+        } else {
+            analyzer.reserve_range_limbs = |_, _| false;
+        }
+        let result = analyzer.run();
+        assert!(result.core().is_none());
+        assert_eq!(
+            result
+                .diagnostics()
+                .iter()
+                .map(Diagnostic::code)
+                .collect::<Vec<_>>(),
+            [DiagnosticCode::SemanticResourceLimit]
+        );
+    }
+}
+
+#[test]
+fn size_dependent_moduli_charge_parts_and_literal_digits_in_each_resolution() {
+    let needed = |members: &str| {
+        let fixture = module(members);
+        (1..200)
+            .find(|events| {
+                fixture
+                    .analyze_with(Limits {
+                        events: *events,
+                        ..Limits::DEFAULT
+                    })
+                    .core()
+                    .is_some()
+            })
+            .unwrap()
+    };
+    let plain = needed("  spec f[n in 3..4](x: Int) -> Int { 0 }\n");
+    let residue = needed("  spec f[n in 3..4](x: Mod[n + 4]) -> Int { 0 }\n");
+    // Three expression nodes and the literal's prefix and significant
+    // digit are charged once in the signature and once in the body.
+    assert_eq!(residue - plain, 2 * (3 + 1 + 1));
+}
+
+#[test]
+fn size_dependent_moduli_preserve_reference_evaluation_costs() {
+    let (_, dynamic) = accepted("  spec f[n in 255..256]() -> Mod[(1 << n) - 19] { 3 * 3 }\n");
+    let (_, fixed) = accepted("  spec f() -> Mod[(1 << 255) - 19] { 3 * 3 }\n");
+    let dynamic = crate::eval::evaluate(&dynamic);
+    let fixed = crate::eval::evaluate(&fixed);
+    let dynamic = &dynamic.values().unwrap()[0];
+    let fixed = &fixed.values().unwrap()[0];
+    assert_eq!(dynamic.value(), fixed.value());
+    assert_eq!(dynamic.result_type(), fixed.result_type());
+    assert_eq!(dynamic.steps(), fixed.steps());
+}
+
+#[test]
+fn size_dependent_moduli_are_available_through_used_module_signatures() {
+    let program = Program::new(&[
+        "edition 2026; module main { use family; spec value() -> Mod[31] { family::one() } \
+         spec argument(x: Mod[63]) -> Mod[63] { family::square(x) } \
+         spec named() -> Mod[31] { family::square[5](3) } }",
+        "edition 2026; module family { \
+         spec one[bits in 5..7]() -> Mod[(1 << bits) - 1] { 1 } \
+         spec square[bits in 5..7](x: Mod[(1 << bits) - 1]) -> Mod[(1 << bits) - 1] { x * x } }",
+    ]);
+    let result = program.analyze();
+    assert_eq!(result.diagnostics(), []);
+    let core = result.core().unwrap();
+    assert_eq!(call_targets(core.functions()[4].body()), [0]);
+    assert_eq!(call_targets(core.functions()[5].body()), [3]);
+    assert_eq!(call_targets(core.functions()[6].body()), [2]);
+    let evaluated = crate::eval::evaluate(core);
+    assert_eq!(evaluated.diagnostics(), []);
+    assert_eq!(
+        evaluated
+            .values()
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["main::value: Mod[31] = 1", "main::named: Mod[31] = 9"]
+    );
+}
+
+#[test]
+fn size_dependent_moduli_fit_multiple_sizes_without_merging_equal_modulus_instances() {
+    let (_, core) = accepted(concat!(
+        "  spec convert[n in 7..9, m in 9..11](x: Mod[n]) -> Mod[m] { x as Mod[m] }\n",
+        "  spec selected(x: Mod[7]) -> Mod[10] { convert(x) }\n",
+    ));
+    assert_eq!(call_targets(core.functions[4].body()), [1]);
+    let (_, result) = rejected(concat!(
+        "  spec same[n in 2..4, m in 3..5]() -> Mod[n + m] { 0 }\n",
+        "  spec ambiguous() -> Mod[6] { same() }\n",
+    ));
+    assert_eq!(result.diagnostics().len(), 1);
+    assert_eq!(result.diagnostics()[0].code(), DiagnosticCode::SizeCount);
+    assert!(
+        result.diagnostics()[0]
+            .message()
+            .contains("`same[2, 4]` and `same[3, 3]`")
+    );
+}
+
+#[test]
+fn size_dependent_moduli_keep_finite_instance_and_array_shape_limits() {
+    let (_, core) = accepted("  spec f[n in 2..258]() -> Mod[n] { 0 }\n");
+    assert_eq!(core.functions.len(), MAX_INSTANCES_PER_FUNCTION);
+    assert_eq!(core.functions.first().unwrap().result_type, residue_type(2));
+    assert_eq!(
+        core.functions.last().unwrap().result_type,
+        residue_type(257)
+    );
+    let (_, result) = rejected("  spec f[n in 2..259]() -> Mod[n] { 0 }\n");
+    assert_eq!(result.diagnostics().len(), 1);
+    assert_eq!(result.diagnostics()[0].code(), DiagnosticCode::SizeRange);
+    assert!(result.diagnostics()[0].message().contains("257 instances"));
+    let (_, result) = rejected("  spec f[n in 2..3]() -> Mod[n]^65537 { [0; 65537] }\n");
+    assert_eq!(
+        result.diagnostics()[0].code(),
+        DiagnosticCode::UnsupportedArrayLength
+    );
+}
+
+#[test]
+fn size_dependent_moduli_report_invalid_explicit_modular_type_arguments() {
+    let (fixture, result) = rejected(concat!(
+        "  spec identity[K in {Mod[7]}](x: K) -> K { x }\n",
+        "  spec one[n in 1..2]() -> Mod[7] { identity[Mod[n]](0) }\n",
+        "  spec runtime(x: Int) -> Mod[7] { identity[Mod[x]](0) }\n",
+        "  spec outside() -> Mod[7] { identity[Mod[11]](0) }\n",
+    ));
+    assert_eq!(
+        result
+            .diagnostics()
+            .iter()
+            .map(Diagnostic::code)
+            .collect::<Vec<_>>(),
+        [
+            DiagnosticCode::InvalidModulus,
+            DiagnosticCode::InvalidModulus,
+            DiagnosticCode::TypeParameter
+        ]
+    );
+    assert_eq!(
+        fixture
+            .source()
+            .slice(result.diagnostics()[0].primary_span()),
+        Some("n")
+    );
+    assert_eq!(
+        fixture
+            .source()
+            .slice(result.diagnostics()[1].primary_span()),
+        Some("x")
+    );
+    assert!(
+        result.diagnostics()[0]
+            .notes()
+            .last()
+            .unwrap()
+            .contains("`one[1]`")
+    );
+}
+
+#[test]
+fn size_dependent_moduli_at_maximum_expression_height_fit_in_one_mebibyte_of_stack() {
+    let expression = format!(
+        "n{}",
+        " + 0".repeat(crate::parser::MAX_EXPRESSION_HEIGHT - 1)
+    );
+    let text =
+        format!("edition 2026; module m {{ spec f[n in 2..3]() -> Mod[{expression}] {{ 0 }} }}");
+    let worker = std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(move || {
+            let fixture = Fixture::new(text);
+            let analyzed = fixture.analyze();
+            assert_eq!(analyzed.diagnostics(), []);
+            let core = analyzed.core().unwrap();
+            assert_eq!(core.functions()[0].result_type(), residue_type(2));
+        })
+        .unwrap();
+    worker.join().unwrap();
+}
+
+#[test]
 fn calls_that_give_no_listed_type_are_reported_at_the_call() {
     let (fixture, result) = rejected(concat!(
         "  type F = Mod[(1 << 255) - 19];\n",
