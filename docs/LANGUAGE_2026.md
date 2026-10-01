@@ -136,6 +136,13 @@ unresolved.
 > shifting the other way, and a rotation turning by its amount modulo the
 > width. An amount written as one integer literal is still from 0 through
 > n - 1. It adds no token, reserved word, or diagnostic code.
+>
+> The S3s slice proposed in [`NESTED_ARRAYS_2026.md`](NESTED_ARRAYS_2026.md)
+> under OEP-0023, also in review, builds on S3r with rank-two arrays:
+> `type Row = Word[32]^4; type Matrix = Row^4;` and `m[i][j]`. Both axes
+> are checked and their scalar product is at most 65,536. It adds chained
+> index selections, with no new token or reserved word; repeated `^` type
+> syntax remains rejected.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 

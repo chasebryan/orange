@@ -1,0 +1,37 @@
+// Rank-two arrays retain rows as values. Indexing and updates address one
+// axis at a time, and slices and joins operate on the outer axis.
+edition 2026;
+module matrices {
+  type Row = Word[16]^3;
+  type Matrix = Row^2;
+
+  spec literal() -> Matrix { [[1, 2, 3], [4, 5, 6]] }
+  spec filled() -> Matrix { [[7; 3]; 2] }
+  spec selection() -> Word[16] { literal()[1][2] }
+
+  spec replaced() -> Matrix {
+    let m: Matrix = literal();
+    m with [1] = (m[1] with [0] = 9)
+  }
+
+  spec row_join() -> Row { literal()[0][0..1] ++ literal()[1][1..3] }
+  spec outer_slice() -> Row^1 { literal()[1..2] }
+  spec outer_join() -> Matrix { literal()[0..1] ++ literal()[1..2] }
+
+  spec splice() -> Matrix {
+    let m: Matrix = literal();
+    m with [0..1] = [[9, 8, 7]]
+  }
+
+  spec packaged() -> (Matrix, Bool) { (replaced(), true) }
+
+  test "nested literals preserve row order" { literal() == [[1, 2, 3], [4, 5, 6]] }
+  test "a fill evaluates one row then repeats it" { filled() == [[7, 7, 7], [7, 7, 7]] }
+  test "selection checks each axis" { selection() == 6 }
+  test "a row update preserves the other row" { replaced() == [[1, 2, 3], [9, 5, 6]] }
+  test "inner slices and joins preserve scalar order" { row_join() == [1, 5, 6] }
+  test "an outer slice is still an array of rows" { outer_slice() == [[4, 5, 6]] }
+  test "outer concatenation reconstructs the matrix" { outer_join() == literal() }
+  test "slice replacement updates complete rows" { splice() == [[9, 8, 7], [4, 5, 6]] }
+  test "tuples retain complete matrix values" { packaged() == ([[1, 2, 3], [9, 5, 6]], true) }
+}

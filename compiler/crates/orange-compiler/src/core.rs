@@ -761,7 +761,7 @@ pub enum CoreType {
     Word64,
     /// An element of the integers modulo m, written `Mod[m]`.
     Mod(Modulus),
-    /// A fixed-length array of one scalar type, written `T^n`.
+    /// A fixed-length array of scalars or scalar rows, written `T^n`.
     Array(ArrayType),
     /// A tuple of scalar and array types, written `(T0, T1, ...)`.
     Tuple(TupleType),
@@ -900,7 +900,14 @@ impl fmt::Display for CoreType {
             Self::Word32 => formatter.write_str("Word[32]"),
             Self::Word64 => formatter.write_str("Word[64]"),
             Self::Mod(modulus) => write!(formatter, "Mod[{modulus}]"),
-            Self::Array(array) => write!(formatter, "{}^{}", array.element(), array.length()),
+            Self::Array(array) => {
+                let element = array.element();
+                if element.is_scalar() {
+                    write!(formatter, "{element}^{}", array.length())
+                } else {
+                    write!(formatter, "({element})^{}", array.length())
+                }
+            }
             Self::Tuple(tuple) => {
                 formatter.write_str("(")?;
                 for (index, element) in tuple.elements().iter().enumerate() {
@@ -918,16 +925,18 @@ impl fmt::Display for CoreType {
 /// Longest admitted array type.
 pub const MAX_ARRAY_LENGTH: u32 = 65_536;
 
-/// A fixed-length array type `T^n`: `n` values of the scalar type `T`, for
-/// `n` from 1 through [`MAX_ARRAY_LENGTH`].
+/// A fixed-length array type `T^n`: `n` scalars or scalar rows of type `T`.
+/// Each dimension and the total number of scalars are from 1 through
+/// [`MAX_ARRAY_LENGTH`]. There are at most two dimensions.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArrayType {
     element: Scalar,
+    row_length: Option<u32>,
     length: u32,
 }
 
-/// The scalar element type of an array, kept separate so that an array's
-/// element is a scalar by construction.
+/// The scalar leaf type of an array, kept separate so that an array has
+/// at most the two dimensions represented by [`ArrayType`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Scalar {
     Int,
@@ -941,29 +950,49 @@ enum Scalar {
 
 impl ArrayType {
     /// Returns the array type of `length` elements of `element`, or `None`
-    /// when `element` is an array or a tuple or `length` is outside 1
-    /// through [`MAX_ARRAY_LENGTH`].
+    /// when `element` is a tuple or an array of rows, a dimension is outside
+    /// 1 through [`MAX_ARRAY_LENGTH`], or the total number of scalars exceeds
+    /// that limit.
     #[must_use]
     pub const fn new(element: &CoreType, length: u32) -> Option<Self> {
-        let element = match element {
-            CoreType::Int => Scalar::Int,
-            CoreType::Bool => Scalar::Bool,
-            CoreType::Word8 => Scalar::Word8,
-            CoreType::Word16 => Scalar::Word16,
-            CoreType::Word32 => Scalar::Word32,
-            CoreType::Word64 => Scalar::Word64,
-            CoreType::Mod(modulus) => Scalar::Mod(*modulus),
-            CoreType::Array(_) | CoreType::Tuple(_) => return None,
-        };
         if length == 0 || length > MAX_ARRAY_LENGTH {
             return None;
         }
-        Some(Self { element, length })
+        let (element, row_length) = match element {
+            CoreType::Int => (Scalar::Int, None),
+            CoreType::Bool => (Scalar::Bool, None),
+            CoreType::Word8 => (Scalar::Word8, None),
+            CoreType::Word16 => (Scalar::Word16, None),
+            CoreType::Word32 => (Scalar::Word32, None),
+            CoreType::Word64 => (Scalar::Word64, None),
+            CoreType::Mod(modulus) => (Scalar::Mod(*modulus), None),
+            CoreType::Array(row) => {
+                if row.row_length.is_some()
+                    || !matches!(length.checked_mul(row.length), Some(cells) if cells <= MAX_ARRAY_LENGTH)
+                {
+                    return None;
+                }
+                (row.element, Some(row.length))
+            }
+            CoreType::Tuple(_) => return None,
+        };
+        Some(Self {
+            element,
+            row_length,
+            length,
+        })
     }
 
-    /// Returns the scalar element type.
+    /// Returns the exact element type, a scalar or a scalar row.
     #[must_use]
     pub const fn element(self) -> CoreType {
+        if let Some(length) = self.row_length {
+            return CoreType::Array(Self {
+                element: self.element,
+                row_length: None,
+                length,
+            });
+        }
         match self.element {
             Scalar::Int => CoreType::Int,
             Scalar::Bool => CoreType::Bool,
@@ -979,6 +1008,15 @@ impl ArrayType {
     #[must_use]
     pub const fn length(self) -> u32 {
         self.length
+    }
+
+    /// Returns the total number of scalar leaves, including every row.
+    #[must_use]
+    pub const fn scalar_length(self) -> u32 {
+        match self.row_length {
+            Some(length) => self.length.saturating_mul(length),
+            None => self.length,
+        }
     }
 }
 
@@ -1060,7 +1098,7 @@ pub enum CoreValue {
     Word64(u64),
     /// An element of the integers modulo m.
     Mod(Residue),
-    /// A fixed-length array of scalar values.
+    /// A fixed-length array of scalar values or scalar rows.
     Array(CoreArray),
     /// A tuple of scalar and array values.
     Tuple(CoreTuple),
@@ -2375,8 +2413,67 @@ mod tests {
             assert_eq!(ArrayType::new(element, u32::MAX), None);
         }
         let array = CoreType::Array(ArrayType::new(&CoreType::Word32, 4).unwrap());
-        assert_eq!(ArrayType::new(&array, 2), None);
         assert_eq!(array.to_string(), "Word[32]^4");
+    }
+
+    #[test]
+    fn matrix_types_preserve_both_dimensions_and_bound_the_scalar_product() {
+        for element in CoreType::SCALARS {
+            for (columns, rows) in [(1, 65536), (256, 256), (65536, 1), (4, 7)] {
+                let row = ArrayType::new(element, columns).unwrap();
+                let matrix = ArrayType::new(&CoreType::Array(row), rows).unwrap();
+                assert_eq!(matrix.element(), CoreType::Array(row));
+                assert_eq!(matrix.length(), rows);
+                assert_eq!(matrix.scalar_length(), rows * columns);
+                assert_eq!(row.scalar_length(), columns);
+                let ty = CoreType::Array(matrix);
+                assert_eq!(ty.to_string(), format!("({element}^{columns})^{rows}"));
+                assert_eq!(ty.words(), None, "matrices are never byte-order operands");
+                assert_eq!(ArrayType::new(&ty, 1), None, "a third rank is rejected");
+                assert_eq!(ArrayType::new(&CoreType::Array(row), 0), None);
+            }
+            let row = CoreType::Array(ArrayType::new(element, 256).unwrap());
+            assert_eq!(ArrayType::new(&row, 257), None);
+            let longest = CoreType::Array(ArrayType::new(element, MAX_ARRAY_LENGTH).unwrap());
+            assert_eq!(ArrayType::new(&longest, MAX_ARRAY_LENGTH), None);
+        }
+        let row = CoreType::Array(ArrayType::new(&CoreType::Word8, 2).unwrap());
+        let wide = CoreType::Array(ArrayType::new(&CoreType::Word8, 3).unwrap());
+        assert_ne!(ArrayType::new(&row, 3), ArrayType::new(&wide, 2));
+        let field = CoreType::Mod(modulus_of(&exact(3329)));
+        let row = CoreType::Array(ArrayType::new(&field, 257).unwrap());
+        let matrix = ArrayType::new(&row, 255).unwrap();
+        assert_eq!(matrix.scalar_length(), 65535);
+        assert_eq!(matrix.element(), row);
+        assert_eq!(CoreType::Array(matrix).to_string(), "(Mod[3329]^257)^255");
+        assert_eq!(ArrayType::new(&row, 256), None);
+    }
+
+    #[test]
+    fn matrix_values_reject_ragged_rows_and_preserve_nested_display() {
+        let row = ArrayType::new(&CoreType::Word8, 2).unwrap();
+        let matrix = ArrayType::new(&CoreType::Array(row), 2).unwrap();
+        let values = || {
+            vec![
+                CoreValue::Array(
+                    CoreArray::new(row, vec![CoreValue::Word8(1), CoreValue::Word8(2)]).unwrap(),
+                ),
+                CoreValue::Array(
+                    CoreArray::new(row, vec![CoreValue::Word8(3), CoreValue::Word8(4)]).unwrap(),
+                ),
+            ]
+        };
+        let value = CoreValue::Array(CoreArray::new(matrix, values()).unwrap());
+        assert_eq!(value.ty(), CoreType::Array(matrix));
+        assert_eq!(value.to_string(), "[[0x01, 0x02], [0x03, 0x04]]");
+        let mut short = values();
+        short.pop();
+        assert_eq!(CoreArray::new(matrix, short), None);
+        let mut ragged = values();
+        let short_row = ArrayType::new(&CoreType::Word8, 1).unwrap();
+        ragged[1] = CoreValue::Array(CoreArray::new(short_row, vec![CoreValue::Word8(3)]).unwrap());
+        assert_eq!(CoreArray::new(matrix, ragged), None);
+        assert_eq!(CoreArray::new(matrix, vec![CoreValue::Word8(1); 2]), None);
     }
 
     #[test]

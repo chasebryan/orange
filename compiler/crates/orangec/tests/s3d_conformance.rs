@@ -155,7 +155,7 @@ const CASES: [Case; 8] = [
                 "Orange 2026 has no empty arrays",
                 "expected an operator or the end of the expression",
                 "expected the end of the type after its array length",
-                "arrays of arrays are not part of Orange 2026",
+                "repeated `^` dimensions are not type syntax",
             ],
         },
         rules: &["S3D-GRAMMAR-01", "S3D-DIAG-01", "S3D-DETERMINISM-01"],

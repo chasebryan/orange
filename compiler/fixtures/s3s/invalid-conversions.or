@@ -1,0 +1,9 @@
+edition 2026;
+module conversions {
+  type Row = Word[8]^2;
+  type Matrix = Row^2;
+  spec flatten(x: Matrix) -> Word[8]^4 { x as little Word[8]^4 }
+  spec pack(x: Matrix) -> Word[32] { x as big Word[32] }
+  spec unpack(x: Word[32]) -> Matrix { x as little Matrix }
+  spec number(x: Matrix) -> Int { x as Int }
+}

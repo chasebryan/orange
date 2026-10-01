@@ -616,8 +616,19 @@ and tested, and its acceptance requires the owner's acceptance of
 [OEP-0021](governance/oeps/OEP-0021-orange-2026-computed-amounts.md), which
 bounds the S3r surface in [`AMOUNTS_2026.md`](AMOUNTS_2026.md) and builds on
 OEP-0020. Like the slices before it, it assumes only pure, total,
-deterministic meaning. Arrays of arrays, so that a state or a key schedule is
-a table of rows, moduli written with parameters, so that one `spec` can serve
+deterministic meaning.
+
+S3s follows S3r with bounded rank-two arrays, so that a state, key schedule,
+or polynomial vector is a table of scalar rows. Existing aliases construct
+rows and matrices, every index is proved in range on its own axis, and the
+scalar product is limited to 65,536. The permanent Core retains exact shapes,
+immutable rows, host value checks, and deterministic evaluation costs.
+[OEP-0023](governance/oeps/OEP-0023-orange-2026-nested-arrays.md) and
+[`NESTED_ARRAYS_2026.md`](NESTED_ARRAYS_2026.md) record this implemented slice
+as proposed and in owner review; it advances the P1/P6 vocabulary of
+[OEP-0022](governance/oeps/OEP-0022-crypto-language-development-plan.md).
+No proof, transform, backend, or target is selected by this implementation.
+Moduli written with parameters, so that one `spec` can serve
 every field rather than a listed few, lists of types named once for several
 functions, positions given as parameters, so that one quarter round can act on
 four positions of a whole state, slices and words at positions computed from

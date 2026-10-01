@@ -1,0 +1,9 @@
+edition 2026;
+module types {
+  type Row = Word[8]^256;
+  type Grid = Row^256;
+  type Cube = Grid^1;
+  type TooLarge = Row^257;
+  type Pair = (Int, Int);
+  type Pairs = Pair^2;
+}

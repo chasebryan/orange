@@ -61,7 +61,9 @@ revision `a82a5cec2ee4359dc2fe66171f17c93146747333`; D-004 remains unresolved.
 > in [`TESTS_2026.md`](TESTS_2026.md) under OEP-0020, which adds known-answer
 > tests and whole-value equality, and the S3r slice proposed in
 > [`AMOUNTS_2026.md`](AMOUNTS_2026.md) under OEP-0021, which adds shift and
-> rotation amounts computed from data.
+> rotation amounts computed from data, and the S3s slice proposed in
+> [`NESTED_ARRAYS_2026.md`](NESTED_ARRAYS_2026.md) under OEP-0023, which
+> adds bounded rectangular arrays of scalar rows.
 
 The terms **must**, **must not**, and **may** are normative in this document.
 
