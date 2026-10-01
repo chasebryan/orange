@@ -155,17 +155,12 @@ not carry the permutation tables. The S-box boolean forms are Osvik's
 rather than a transcription from the proposal's tables; each was verified
 against its table on all sixteen inputs, so a reader who trusts the tables
 can trust the formulas, but the formulas are not the proposal's text. The
-key schedule's `with` updates on a 140-word and a 132-word array dominate
-the cost: measured under `orangec eval` by bisection with a filler spec,
-an S-box costs about 70 steps, the linear transformation 45, a round about
-180, encryption of a block about 6,400 steps and decryption about 7,200,
-while the prekeys cost about 25,600 steps and the whole key schedule about
-65,500, because every update of a 132- or 140-element accumulator costs
-its length and a loop step cannot bind a value, so the S-box of each round
-key is computed four times, once per word it places. A vector, key
-schedule included, therefore costs about 70,000 steps for encryption and
-75,000 for decryption; the twelve vectors of the file use about 835,000 of
-the 1,048,576 steps, and two more would fit. Not expressed: constant-time
+key schedule binds each round key's S-box once and then writes its four
+words. Measured by the evaluator's step counter: the prekeys cost 5,894
+steps, the whole key schedule 12,557, encryption of one block 19,232 steps
+with its schedule and about 6,700 without it, and decryption 19,990 steps
+with its schedule and about 7,400 without it. The twelve vectors use
+234,170 of the 1,048,576 steps. Not expressed: constant-time
 behaviour (the evaluator specifies values, not timing), any mode of
 operation, and the standard (non-bitsliced) description with IP and FP.
 
@@ -262,16 +257,13 @@ Orange Book chapter 12.
 
 ## Gaps
 
-None that prevented anything. Two features of the language shaped the
-file:
+None that prevented anything. This rendering retains a flat round-key array
+and an inner loop that places four words from the S-box bound in the outer
+step. `encrypt` and `decrypt` index round keys with the loop variable and
+pass four words to `round` and `inverse_round`.
 
-- A loop step is one expression and cannot bind a value, so `key_schedule`
-  recomputes the S-box of a round key for each of the four words it
-  places (about 13,000 of the key schedule's 65,500 steps); a `let` inside
-  the step, or a spec that could write four words at a parameter index,
-  would remove that.
-- Indices must be static, so a spec cannot take the round number and read
-  its round key from the `Word[32]^132`; `encrypt` and `decrypt` index the
-  round keys with the loop variable and pass the four words to `round` and
-  `inverse_round`, and the S-box of a round is chosen by an eight-arm
-  conditional on `i % 8` rather than by indexing a list of functions.
+The current implemented slices also offer tuple accumulators, array slices
+and slice updates, and bounded data-dependent indices. Their absence from
+this rendering is not a language limitation. The S-box of a round is still
+chosen by an eight-arm conditional on `i % 8`; lists of functions are not
+part of the implemented language.

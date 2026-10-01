@@ -124,3 +124,4 @@ success does not establish technical soundness or authority approval.
 | [OEP-0019](OEP-0019-orange-2026-lengths.md) | Review | Orange 2026 lengths and evaluation controls: arrays, literals, and byte strings of up to 65,536 elements, and `orangec eval --steps`, `--spec`, and `--stats` (S3p) |
 | [OEP-0020](OEP-0020-orange-2026-tests.md) | Review | Orange 2026 known-answer tests and whole-value equality: `test "TITLE" { claim }` beside the functions, `==` and `!=` on arrays and tuples, and `orangec test` (S3q) |
 | [OEP-0021](OEP-0021-orange-2026-computed-amounts.md) | Review | Orange 2026 computed shift and rotation amounts: any `Int` or word expression as the amount of `<<`, `>>`, `<<<`, and `>>>`, with a meaning at every amount (S3r) |
+| [OEP-0022](OEP-0022-crypto-language-development-plan.md) | Draft | Informational development plan: static parameters, mathematical domains, checked representations, X25519 arithmetic, ML-KEM transformations, and finite games |

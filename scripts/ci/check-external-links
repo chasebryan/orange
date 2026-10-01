@@ -28,6 +28,9 @@ readonly REQUEST_TIMEOUT_SECONDS="20"
 # IACR ePrint currently rejects automated clients with HTTP 403. Keep its
 # primary-source citations, exclude only that exact HTTPS host from automation,
 # and review those links manually when research evidence is refreshed.
+# D-004 stores a partial, byte-identical baseline from the commit below. Resolve
+# its local links against that complete historical tree, including fragments,
+# without changing the stored evidence or checking it against today's sources.
 exec -- /usr/bin/env \
   --ignore-environment \
   -- \
@@ -38,6 +41,7 @@ exec -- /usr/bin/env \
   "$LYCHEE" \
   --exclude '^https://eprint\.iacr\.org/' \
   --exclude-all-private \
+  --remap '^file://.*/research/decisions/D-004/baseline/(.*)$ https://github.com/chasebryan/orange/blob/265ce9ca1f3bc7060d1a6db9f822f2c43494ab95/$1' \
   --extensions md,yml \
   --host-concurrency "$MAXIMUM_HOST_CONCURRENCY" \
   --include-fragments \
