@@ -512,16 +512,14 @@ module serpent {
   // The round keys K_0 to K_32, each four words: K_i is S_((3 - i) mod 8)
   // applied bitsliced to (w_4i, w_4i+1, w_4i+2, w_4i+3), so K_0 uses S3,
   // K_1 uses S2, and so on down and around to K_32 using S3 again. The
-  // result is one Word[32]^132 with K_i at indices 4i to 4i + 3. A loop
-  // step is one expression, so the S-box is recomputed for each of the
-  // four words it places.
+  // result is one Word[32]^132 with K_i at indices 4i to 4i + 3. The step
+  // binds the S-box once and then places its four words.
   spec key_schedule(k: Word[32]^8) -> Word[32]^132 {
     let w: Word[32]^140 = prekeys(k);
     for i in 0..33 with sk: Word[32]^132 = [0; 132] {
-      for j in 0..4 with t: Word[32]^132 = sk {
-        t with [4 * i + j] =
-          round_sbox(3 - i, [w[4 * i + 8], w[4 * i + 9], w[4 * i + 10], w[4 * i + 11]])[j]
-      }
+      let box: Word[32]^4 =
+        round_sbox(3 - i, [w[4 * i + 8], w[4 * i + 9], w[4 * i + 10], w[4 * i + 11]]);
+      for j in 0..4 with t: Word[32]^132 = sk { t with [4 * i + j] = box[j] }
     }
   }
 

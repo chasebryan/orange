@@ -15,9 +15,10 @@ Every entry is a reference evaluation of a specification. None of them is a
 corpus entry in the sense of [The Orange Book](../docs/THE_ORANGE_BOOK.md),
 chapter 12: no entry makes a constant-time, side-channel, performance,
 interoperability or certification claim, and the Orange 2026 slices they use
-(S3b through S3f) are proposed, not accepted. What an entry does claim is
-narrow and checked by machine: the recorded vectors, taken from the sources
-each README names, are reproduced byte for byte.
+(S3b through S3j) are proposed, not accepted. Serpent's key schedule uses a
+block, so a round key's S-box is named once inside its loop. What an entry
+does claim is narrow and checked by machine: the recorded vectors, taken from
+the sources each README names, are reproduced byte for byte.
 
 ## The entries
 
