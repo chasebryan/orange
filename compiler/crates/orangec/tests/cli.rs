@@ -1095,7 +1095,7 @@ fn usage_errors_have_a_distinct_exit_status() {
             "  -o, --output <FILE>   Output path [default: FILE.orange; dec strips .orange]\n",
             "      --                End option parsing\n",
             "  -h, --help            Print help\n",
-            "  -V, --version         Print version\n",
+            "  -V, --version         Print version and implemented language slice\n",
             "\n",
             "Use `-` as a file name to read UTF-8 source from standard input. Sealing runs\n",
             "Orange programs on the reference evaluator, which is not constant-time; the\n",
@@ -1113,7 +1113,7 @@ fn usage_errors_have_a_distinct_exit_status() {
     assert_eq!(
         String::from_utf8(version_first.stdout).unwrap(),
         format!(
-            "orangec {} (Orange edition 2026)\n",
+            "orangec {} (Orange edition 2026; implemented slice S3r)\n",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -1142,6 +1142,34 @@ fn usage_errors_have_a_distinct_exit_status() {
         String::from_utf8(repeated_edition.stderr).unwrap(),
         format!("orangec: option `--edition` may be specified at most once\n\n{help}")
     );
+}
+
+#[test]
+fn version_slice_has_executable_language_evidence() {
+    // The package version alone cannot distinguish a literal-only compiler
+    // from the later expression slices. Check the actual binary's latest
+    // slice marker together with the behavior that distinguishes S3r.
+    let version = orangec().arg("--version").output().unwrap();
+    assert!(version.status.success());
+    assert_eq!(version.stderr, b"");
+    assert!(version.stdout.ends_with(b"; implemented slice S3r)\n"));
+
+    let source = concat!(
+        "edition 2026; module version_probe {\n",
+        "  spec turn(x: Word[8], k: Int) -> Word[8] { x <<< k }\n",
+        "  spec sample() -> (Word[8], Word[8]) { (turn(0x96, -1), turn(0x96, 8)) }\n",
+        "  test \"S3r computed rotations\" { sample() == (0x4b, 0x96) }\n",
+        "}\n",
+    );
+    for _ in 0..2 {
+        let output = run_with_stdin(&["test", "-"], source.as_bytes());
+        assert_eq!(output.status.code(), Some(0));
+        assert_eq!(output.stderr, b"");
+        assert_eq!(
+            output.stdout,
+            b"test \"S3r computed rotations\" ... ok\n1 test: 1 passed, 0 failed\n"
+        );
+    }
 }
 
 #[test]
