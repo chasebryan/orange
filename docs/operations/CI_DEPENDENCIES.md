@@ -279,6 +279,14 @@ The required invariant check invokes repository-owned Bash and Python files:
   per-host concurrency at 2, total concurrency at 16, retries at 3, and each
   request at 20 seconds.
 
+D-004's `baseline/` stores 17 byte-identical inputs rather than a complete
+repository. The link helper remaps only local URLs within that stored baseline
+to the complete source tree at commit
+`265ce9ca1f3bc7060d1a6db9f822f2c43494ab95`, where all 17 original paths have
+the same bytes. It checks those historical targets and fragments over HTTPS;
+live local links keep their ordinary filesystem checks. Stored evidence, its
+digests, and the endpoint exclusions remain unchanged.
+
 These are first-party repository methods, not third-party dependencies. The
 repository has no selected license while D-018 is blocked. This inventory does
 not grant third parties permission to reuse those files.

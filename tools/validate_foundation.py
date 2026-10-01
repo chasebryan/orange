@@ -873,7 +873,7 @@ show_patched_versions: true
 comment_summary_in_pr: never
 warn_only: false
 """
-_PHD = "5e47fcabfcead9e120792329dd8a7a6a36c12348ad35e66ba9c72129a26e2c0e"
+_PHD = "99a52003e271fff6161b4739ef484466e164234b010ea43ee6f3cd582c840f67"
 _CR = (
     "run: /usr/bin/env -u BASH_ENV -u ENV -u GNUMAKEFLAGS -u MAKEFLAGS -u MAKEFILES "
     "-u MAKEOVERRIDES -u MFLAGS /usr/bin/make --no-builtin-rules --no-builtin-variables check-compiler"
@@ -1139,6 +1139,7 @@ _LU = {
     "scripts/ci/check-external-links": (
         "--exclude '^https://eprint\\.iacr\\.org/'",
         "--exclude-all-private",
+        "--remap '^file://.*/research/decisions/D-004/baseline/(.*)$ https://github.com/chasebryan/orange/blob/265ce9ca1f3bc7060d1a6db9f822f2c43494ab95/$1'",
         "--extensions md,yml",
         '--host-concurrency "$MAXIMUM_HOST_CONCURRENCY"',
         "--include-fragments",

@@ -1671,6 +1671,8 @@ jobs:
                     "--exclude",
                     r"^https://eprint\.iacr\.org/",
                     "--exclude-all-private",
+                    "--remap",
+                    r"^file://.*/research/decisions/D-004/baseline/(.*)$ https://github.com/chasebryan/orange/blob/265ce9ca1f3bc7060d1a6db9f822f2c43494ab95/$1",
                     "--extensions",
                     "md,yml",
                     "--host-concurrency",
